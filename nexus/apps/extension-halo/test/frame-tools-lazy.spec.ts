@@ -18,8 +18,8 @@ function readJson(relativePath: string): Record<string, unknown> {
 	return JSON.parse(read(relativePath)) as Record<string, unknown>;
 }
 
-describe('HALO lazy all-frame tool runtime', () => {
-	test('keeps one data-only frame-tool message authority without pulling global contracts into startup', () => {
+describe('HALO release-admitted lazy all-frame runtime', () => {
+	test('keeps the full data-only message vocabulary without admitting every catalog capability', () => {
 		const authority = read('../src/content/frame-tool-messages.ts');
 		const bootstrap = read('../src/entry/content-frame-tools.ts');
 		const runtime = read('../src/entry/content-frame-tools-runtime.ts');
@@ -46,9 +46,15 @@ describe('HALO lazy all-frame tool runtime', () => {
 		expect(runtime).not.toContain('@nexus/contracts');
 		expect(bootstrap).toContain("from '../content/frame-tool-messages'");
 		expect(runtime).toContain("from '../content/frame-tool-messages'");
+
+		// Catalog vocabulary is broader than this release executable surface.
+		expect(bootstrap).not.toContain('FRAME_TOOL_DOM_SELECTOR_START');
+		expect(bootstrap).not.toContain('FRAME_TOOL_ANNOTATE_START');
+		expect(runtime).not.toContain('FRAME_TOOL_DOM_SELECTOR_START');
+		expect(runtime).not.toContain('FRAME_TOOL_ANNOTATE_START');
 	});
 
-	test('keeps heavy frame-tool implementations out of the static all-frame bootstrap', () => {
+	test('keeps only admitted Ruler implementation behind the shared lazy runtime', () => {
 		const bootstrap = read('../src/entry/content-frame-tools.ts');
 		const runtime = read('../src/entry/content-frame-tools-runtime.ts');
 
@@ -60,11 +66,11 @@ describe('HALO lazy all-frame tool runtime', () => {
 		expect(bootstrap).toContain('if (!runtimePromise && DEACTIVATION_TYPES.has(type))');
 
 		expect(runtime).toContain("import * as Ruler from '../content/ruler'");
-		expect(runtime).toContain("import * as DomSelector from '../content/dom-selector'");
-		expect(runtime).toContain("import * as PageAnnotate from '../content/page-annotate'");
+		expect(runtime).not.toContain("../content/dom-selector");
+		expect(runtime).not.toContain("../content/page-annotate");
 	});
 
-	test('emits the lazy runtime as ESM under the existing tools web-accessible domain', () => {
+	test('emits the admitted lazy runtime as ESM under the existing tools resource domain', () => {
 		const build = read('../build.ts');
 		const manifest = readJson('../public/manifest.json');
 		const resources = manifest.web_accessible_resources as Array<{
