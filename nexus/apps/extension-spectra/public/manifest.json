@@ -10,13 +10,13 @@
     "alarms",
     "webNavigation",
     "storage",
-    "downloads",
     "tabCapture",
     "offscreen",
     "scripting",
     "favicon"
   ],
   "optional_permissions": [
+    "downloads",
     "userScripts"
   ],
   "host_permissions": [
