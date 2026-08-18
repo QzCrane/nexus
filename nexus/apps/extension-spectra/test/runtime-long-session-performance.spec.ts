@@ -81,7 +81,7 @@ async function readRuntimeStatus(options: Page, tabId: number): Promise<{
 	}, tabId);
 }
 
-test('records long-session hotkey, heap, context and long-task evidence', async () => {
+test('records long-session hotkey, heap, CPU, context and long-task evidence', async () => {
 	const profileDir = await mkdtemp(join(tmpdir(), 'spectra-long-session-'));
 	let browser: Browser | null = null;
 	let server: ReturnType<typeof Bun.serve> | null = null;
@@ -131,6 +131,10 @@ test('records long-session hotkey, heap, context and long-task evidence', async 
 		rendererClient = await mediaPage.createCDPSession();
 		await rendererClient.send('Performance.enable');
 		await rendererClient.send('HeapProfiler.enable');
+		const baselineMetrics = (await rendererClient.send('Performance.getMetrics')).metrics;
+		let previousTaskDuration = metricValue(baselineMetrics, 'TaskDuration');
+		let previousScriptDuration = metricValue(baselineMetrics, 'ScriptDuration');
+		let previousThreadTime = metricValue(baselineMetrics, 'ThreadTime');
 		const longTaskSupported = await mediaPage.evaluate(() => PerformanceObserver.supportedEntryTypes.includes('longtask'));
 		expect(longTaskSupported).toBe(true);
 		await mediaPage.evaluate(() => {
@@ -162,6 +166,15 @@ test('records long-session hotkey, heap, context and long-task evidence', async 
 			expect(status.runtimeRevision).toBeNull();
 			await rendererClient.send('HeapProfiler.collectGarbage');
 			const metrics = (await rendererClient.send('Performance.getMetrics')).metrics;
+			const taskDuration = metricValue(metrics, 'TaskDuration');
+			const scriptDuration = metricValue(metrics, 'ScriptDuration');
+			const threadTime = metricValue(metrics, 'ThreadTime');
+			const taskDeltaMs = Math.max(0, (taskDuration - previousTaskDuration) * 1_000);
+			const scriptDeltaMs = Math.max(0, (scriptDuration - previousScriptDuration) * 1_000);
+			const threadDeltaMs = Math.max(0, (threadTime - previousThreadTime) * 1_000);
+			previousTaskDuration = taskDuration;
+			previousScriptDuration = scriptDuration;
+			previousThreadTime = threadTime;
 			const longTasks = await mediaPage.evaluate(() => {
 				const state = (window as Window & {
 					__spectraLongTaskProbe?: { entries: number[]; cursor: number };
@@ -181,6 +194,9 @@ test('records long-session hotkey, heap, context and long-task evidence', async 
 				{ metric: 'spectra.hotkey.long-session.heap-used', value: metricValue(metrics, 'JSHeapUsedSize'), unit: 'bytes' },
 				{ metric: 'spectra.hotkey.long-session.dom-nodes', value: metricValue(metrics, 'Nodes'), unit: 'count' },
 				{ metric: 'spectra.hotkey.long-session.extension-contexts', value: contextCount, unit: 'count' },
+				{ metric: 'spectra.hotkey.long-session.renderer-task-time', value: taskDeltaMs, unit: 'ms' },
+				{ metric: 'spectra.hotkey.long-session.renderer-script-time', value: scriptDeltaMs, unit: 'ms' },
+				{ metric: 'spectra.hotkey.long-session.renderer-thread-time', value: threadDeltaMs, unit: 'ms' },
 				{ metric: 'spectra.hotkey.long-session.long-task-count', value: longTasks.count, unit: 'count' },
 				{ metric: 'spectra.hotkey.long-session.long-task-duration', value: longTasks.duration, unit: 'ms' },
 				{ metric: 'spectra.hotkey.long-session.runtime-retained', value: status.ready ? 1 : 0, unit: 'count' },
@@ -192,6 +208,9 @@ test('records long-session hotkey, heap, context and long-task evidence', async 
 			'spectra.hotkey.long-session.heap-used',
 			'spectra.hotkey.long-session.dom-nodes',
 			'spectra.hotkey.long-session.extension-contexts',
+			'spectra.hotkey.long-session.renderer-task-time',
+			'spectra.hotkey.long-session.renderer-script-time',
+			'spectra.hotkey.long-session.renderer-thread-time',
 			'spectra.hotkey.long-session.long-task-count',
 			'spectra.hotkey.long-session.long-task-duration',
 			'spectra.hotkey.long-session.runtime-retained',
