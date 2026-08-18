@@ -3,8 +3,9 @@
 
 import type { ToolCategory } from '../../i18n/types';
 import type { PluginType, ScriptType } from '../registry/taxonomy';
+import type { ReleaseStatus } from '../registry/release-admission';
 
-export type ToolStatus = 'ready' | 'beta' | 'coming' | 'disabled' | 'available';
+export type ToolStatus = ReleaseStatus;
 
 /**
  * Unified plugin metadata (used by PLUGIN_REGISTRY)
@@ -37,7 +38,7 @@ export interface PluginMeta {
 		excludeMatches?: string[];
 		world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
 	};
-	// Runtime-only fields (not from manifest)
+	// Product release state. Module enablement is owned separately by ModuleState.
 	status?: ToolStatus;
 	name?: string;
 	description?: string;
