@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/minimum-chrome.yml'
+      - 'nexus/browser-floor.json'
       - 'nexus/apps/extension-spectra/**'
       - 'nexus/apps/extension-halo/**'
       - 'nexus/packages/**'
@@ -15,6 +16,7 @@ on:
       - main
     paths:
       - '.github/workflows/minimum-chrome.yml'
+      - 'nexus/browser-floor.json'
       - 'nexus/apps/extension-spectra/**'
       - 'nexus/apps/extension-halo/**'
       - 'nexus/packages/**'
@@ -30,13 +32,9 @@ concurrency:
   group: minimum-chrome-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  CHROME_FLOOR_VERSION: '135.0.7049.114'
-  CHROME_FLOOR_SHA256: 'dd86dbace037a9b6c4bc993fc4e20ee768a804923850511e53255743760d8b82'
-
 jobs:
-  chrome-135:
-    name: Chrome 135 product floor
+  chrome-floor:
+    name: Minimum Chrome product floor
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -61,7 +59,11 @@ jobs:
         working-directory: nexus/apps/extension-halo
         run: bunx playwright install-deps chromium
 
-      - name: Download and verify Chrome 135.0.7049.114
+      - name: Resolve canonical Chrome floor
+        shell: bash
+        run: bun nexus/scripts/browser-floor.ts github-env >> "$GITHUB_ENV"
+
+      - name: Download and verify canonical Chrome floor
         shell: bash
         run: |
           set -euo pipefail
@@ -70,10 +72,10 @@ jobs:
           mkdir -p "$chrome_root"
           curl --fail --location --retry 4 --retry-all-errors \
             --output "$archive" \
-            "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FLOOR_VERSION}/linux64/chrome-linux64.zip"
+            "$CHROME_FLOOR_URL"
           printf '%s  %s\n' "$CHROME_FLOOR_SHA256" "$archive" | sha256sum --check --strict
           unzip -q "$archive" -d "$chrome_root"
-          executable="$chrome_root/chrome-linux64/chrome"
+          executable="$chrome_root/$CHROME_FLOOR_EXECUTABLE"
           test -x "$executable"
           version_output="$($executable --version)"
           printf 'Pinned browser: %s\n' "$version_output"
@@ -82,12 +84,11 @@ jobs:
             *) echo "Expected Chrome ${CHROME_FLOOR_VERSION}, got ${version_output}" >&2; exit 1 ;;
           esac
           echo "NEXUS_CHROME_EXECUTABLE=$executable" >> "$GITHUB_ENV"
-          echo "NEXUS_EXPECTED_CHROME_VERSION=${CHROME_FLOOR_VERSION}" >> "$GITHUB_ENV"
 
-      - name: Prove SPECTRA real Action Popup multi-tab behavior on Chrome 135
+      - name: Prove SPECTRA real Action Popup multi-tab behavior on Chrome floor
         working-directory: nexus/apps/extension-spectra
         run: bun test test/tab-visibility-chrome.spec.ts
 
-      - name: Prove HALO admitted SidePanel and page capabilities on Chrome 135
+      - name: Prove HALO admitted SidePanel and page capabilities on Chrome floor
         working-directory: nexus/apps/extension-halo
         run: bunx playwright test test/minimum-chrome-playwright.spec.ts --workers=1
