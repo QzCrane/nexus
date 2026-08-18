@@ -120,7 +120,7 @@ async function main(): Promise<void> {
   let bgEqDrawer: EqCurveDrawerFactory | undefined;
 
   try {
-    // goal: render cards for other tabs that were recently audibly active to allow multi-tab management
+    // goal: render every other currently manageable media tab, including paused/silent native media discovered by the lightweight bootstrap
     const result = await sendSpectraRequest('spectra.tab.visible.list', {});
     if (!result.ok) throw new Error(result.error.message);
     const visibleTabIds = result.data.tabs;
@@ -174,6 +174,10 @@ async function main(): Promise<void> {
 
   const { updateCardsI18n } = await import('./views/i18n-apply');
   updateCardsI18n(dict, gSettings.visualizerEnabled);
+
+  // Exact UI readiness boundary for browser evidence. Static HTML exists before
+  // runtime state is reconciled, so performance/smoke probes must wait here.
+  document.documentElement.dataset.spectraReady = 'true';
 }
 
 document.addEventListener('DOMContentLoaded', main);
