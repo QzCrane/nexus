@@ -1,17 +1,21 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, test, type BrowserContext, type Worker } from '@playwright/test';
+import { chromium, expect, test, type BrowserContext, type Worker } from '@playwright/test';
 import {
+	runtimePerformanceIdentityFromEnvironment,
 	writeRuntimePerformanceEvidence,
 	type RuntimePerformanceSample,
 } from '../../../scripts/runtime-performance';
 
-const DIST_PATH = fileURLToPath(new URL('../dist/', import.meta.url));
+const DIST_PATH = resolve(
+	process.env.HALO_EXTENSION_DIR?.trim() || fileURLToPath(new URL('../dist/', import.meta.url)),
+);
 const SAMPLE_COUNT = 20;
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
+const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
 
 async function extensionWorker(context: BrowserContext): Promise<Worker> {
 	const existing = context.serviceWorkers()[0];
@@ -64,6 +68,7 @@ test.describe('HALO runtime performance evidence', () => {
 				});
 				if (!observedBrowserVersion) {
 					observedBrowserVersion = chromeVersion(await page.evaluate(() => navigator.userAgent));
+					if (EXPECTED_CHROME) expect(observedBrowserVersion).toContain(EXPECTED_CHROME);
 				}
 			} finally {
 				await context?.close();
@@ -80,6 +85,7 @@ test.describe('HALO runtime performance evidence', () => {
 			product: 'halo',
 			browser: { name: 'Chromium', version: observedBrowserVersion || 'unknown' },
 			samples,
+			identity: runtimePerformanceIdentityFromEnvironment(),
 		});
 	});
 });
