@@ -3,10 +3,11 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { fileURLToPath } from 'node:url';
 import { join, resolve } from 'node:path';
 import puppeteer, { type Browser, type CDPSession, type Target } from 'puppeteer';
 import {
+	runtimePerformanceIdentityFromEnvironment,
+	runtimePerformanceOutputPath,
 	writeRuntimePerformanceEvidence,
 	type RuntimePerformanceSample,
 } from '../../../scripts/runtime-performance';
@@ -15,9 +16,7 @@ const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.m
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
 const SAMPLE_COUNT = 20;
-const OUTPUT_PATH = fileURLToPath(
-	new URL('../../../../artifacts/performance/spectra-worker-wake.json', import.meta.url),
-);
+const OUTPUT_PATH = runtimePerformanceOutputPath('spectra-worker-wake.json');
 if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
@@ -138,6 +137,7 @@ test('records twenty browser-owned MV3 service-worker wake samples', async () =>
 			browser: { name: 'Chrome', version: browserVersion },
 			samples,
 			outputPath: OUTPUT_PATH,
+			identity: runtimePerformanceIdentityFromEnvironment(),
 		});
 	} finally {
 		await client?.send('ServiceWorker.disable').catch(() => undefined);
