@@ -70,7 +70,7 @@ describe('HALO release-admitted lazy all-frame runtime', () => {
 		expect(runtime).not.toContain("../content/page-annotate");
 	});
 
-	test('emits the admitted lazy runtime as ESM under the existing tools resource domain', () => {
+	test('emits only exact admitted lazy runtimes as web-accessible resources', () => {
 		const build = read('../build.ts');
 		const manifest = readJson('../public/manifest.json');
 		const resources = manifest.web_accessible_resources as Array<{
@@ -78,13 +78,18 @@ describe('HALO release-admitted lazy all-frame runtime', () => {
 			resources?: string[];
 			use_dynamic_url?: boolean;
 		}>;
-		const toolsResource = resources.find((entry) => entry.resources?.includes('tools/*'));
 
 		expect(build).toContain("out: 'tools/_frame-tools/runtime.js', kind: 'module'");
 		expect(build).toMatch(/kind === 'module'[\s\S]*format: 'esm'/u);
-		expect(toolsResource).toMatchObject({
+		expect(resources).toEqual([{
+			resources: [
+				'tools/_frame-tools/runtime.js',
+				'tools/_hover-zoom/runtime.js',
+			],
 			matches: ['<all_urls>'],
 			use_dynamic_url: true,
-		});
+		}]);
+		expect(resources.flatMap((entry) => entry.resources ?? [])).not.toContain('tools/*');
+		expect(resources.flatMap((entry) => entry.resources ?? [])).not.toContain('scripts/*');
 	});
 });
