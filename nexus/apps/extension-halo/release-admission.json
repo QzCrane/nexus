@@ -1,0 +1,65 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "id": "bilibili-enhancer",
+      "stage": "beta",
+      "surfaces": ["script-runtime"],
+      "reason": "Explicit beta packaged script."
+    },
+    {
+      "id": "color-picker",
+      "stage": "ready",
+      "surfaces": ["panel"],
+      "reason": "Explicit ready user-facing panel."
+    },
+    {
+      "id": "hover-zoom",
+      "stage": "ready",
+      "surfaces": ["panel", "content-runtime", "background-runtime"],
+      "reason": "Ready panel plus the shipped lightweight content host and Background DNR reconciliation owner."
+    },
+    {
+      "id": "json-formatter",
+      "stage": "ready",
+      "surfaces": ["panel"],
+      "reason": "Explicit ready user-facing panel."
+    },
+    {
+      "id": "outline",
+      "stage": "ready",
+      "surfaces": ["panel"],
+      "reason": "Explicit ready user-facing panel."
+    },
+    {
+      "id": "qrcode",
+      "stage": "ready",
+      "surfaces": ["panel", "background-runtime"],
+      "reason": "Ready panel and context-menu activation delivery owner."
+    },
+    {
+      "id": "ruler",
+      "stage": "ready",
+      "surfaces": ["panel", "content-runtime"],
+      "reason": "Ready panel and the admitted Frame Tools content-runtime capability."
+    },
+    {
+      "id": "settings",
+      "stage": "ready",
+      "surfaces": ["panel"],
+      "reason": "Core ready settings panel."
+    },
+    {
+      "id": "smooth-scroll",
+      "stage": "support",
+      "surfaces": ["content-runtime"],
+      "reason": "Existing shipped document-start runtime retained without implicitly publishing its currently unclassified panel."
+    },
+    {
+      "id": "userscripts",
+      "stage": "support",
+      "surfaces": ["panel", "background-runtime"],
+      "reason": "Runtime and editor support required by admitted packaged/user scripts; support admission is independent from catalog maturity status."
+    }
+  ]
+}
