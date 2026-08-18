@@ -25,10 +25,10 @@ describe('SPECTRA optional capability admission', () => {
 	});
 
 	test('keeps chrome.permissions.request in the shared direct user-gesture owner', () => {
-		expect(permissionOwner).toContain('return chrome.permissions.request({ permissions: [permission] });');
-		expect(permissionOwner.indexOf('chrome.permissions.request')).toBeLessThan(
-		permissionOwner.indexOf('hasOptionalPermission(permission)'),
-	);
+		const requestOwner = permissionOwner.slice(permissionOwner.indexOf('export function requestOptionalPermission'));
+		expect(requestOwner).toContain('return chrome.permissions.request({ permissions: [permission] });');
+		expect(requestOwner).not.toContain('await hasOptionalPermission');
+		expect(requestOwner).not.toContain('chrome.permissions.contains');
 		expect(clickGate).toContain('event.stopImmediatePropagation()');
 		expect(clickGate).toContain('const request = requestOptionalPermission(permission);');
 		expect(clickGate).toContain('button.click();');
