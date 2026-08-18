@@ -4,6 +4,10 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { canonicalPluginDirectoryNames } from '../../../scripts/registry-gen/discover.ts';
 import { emitGeneratedFile } from '../../../scripts/registry-gen/utils.ts';
+import {
+	isReleaseAdmitted,
+	normalizeReleaseStatus,
+} from '../src/kernel/registry/release-admission';
 
 describe('HALO registry generation', () => {
 	test('canonicalizes filesystem discovery order before generating artifacts', () => {
@@ -52,6 +56,53 @@ describe('HALO registry generation', () => {
 		expect(generated).toContain("distribution: 'bundled'");
 		expect(generated).not.toMatch(/\n\s*size:\s*\d+/u);
 		expect(generated).not.toContain("version: '1.0.0'");
+	});
+
+	test('separates product release status from module enablement', () => {
+		// Missing status historically shipped. Preserve compatibility until every
+		// legacy manifest is explicitly migrated, but never let builtIn/optional
+		// enablement rewrite an explicit product status again.
+		expect(normalizeReleaseStatus(undefined)).toBe('ready');
+		expect(isReleaseAdmitted(undefined)).toBe(true);
+		expect(isReleaseAdmitted('ready')).toBe(true);
+		expect(isReleaseAdmitted('beta')).toBe(true);
+		expect(isReleaseAdmitted('coming')).toBe(false);
+		expect(isReleaseAdmitted('disabled')).toBe(false);
+		expect(() => normalizeReleaseStatus('available')).toThrow('invalid HALO release status');
+	});
+
+	test('keeps catalog-only panels out of the production import graph', () => {
+		const generated = readFileSync(
+			new URL('../src/components/_generated-tool-loader.ts', import.meta.url),
+			'utf8',
+		);
+		const catalogOnlyIds = [
+			'archive',
+			'base64',
+			'clipboard',
+			'pdf',
+			'regex',
+			'screenshot',
+			'sticky-notes',
+			'timer',
+		];
+		for (const id of catalogOnlyIds) {
+			expect(generated).not.toContain(`'${id}': memoizePanelLoader`);
+			expect(generated).not.toContain(`'${id}': lazy(`);
+		}
+		// Legacy implicit-ready modules remain present until their manifests are
+		// explicitly classified, avoiding an accidental product-removal migration.
+		expect(generated).toContain("'hash': memoizePanelLoader(() => import('../tools/hash/panel')");
+	});
+
+	test('keeps catalog-only background profiles out of startup projection', () => {
+		const projection = readFileSync(
+			new URL('../src/kernel/registry/_generated-background-active.ts', import.meta.url),
+			'utf8',
+		);
+		expect(projection).not.toContain('"clipboard"');
+		expect(projection).not.toContain('"timer"');
+		expect(projection).toContain('"hover-zoom"');
 	});
 
 	test('keeps panel preload authority renderer-neutral', () => {
