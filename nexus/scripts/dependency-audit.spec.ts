@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	classifyAuditResult,
 	runDependencyAudit,
+	runDependencyAuditWithEvidence,
 } from './dependency-audit';
 
 describe('dependency audit authority', () => {
@@ -58,5 +59,32 @@ describe('dependency audit authority', () => {
 			wait: async () => undefined,
 		})).resolves.toBeUndefined();
 		expect(results).toHaveLength(0);
+	});
+
+	test('emits supply-chain evidence only after a clean advisory result', async () => {
+		let evidenceCalls = 0;
+		const digest = await runDependencyAuditWithEvidence({
+			execute: () => ({ status: 0, stdout: '{}', stderr: '' }),
+			wait: async () => undefined,
+		}, () => {
+			evidenceCalls += 1;
+			return 'a'.repeat(64);
+		});
+		expect(digest).toBe('a'.repeat(64));
+		expect(evidenceCalls).toBe(1);
+
+		evidenceCalls = 0;
+		await expect(runDependencyAuditWithEvidence({
+			execute: () => ({
+				status: 1,
+				stdout: JSON.stringify({ bad: [{ severity: 'critical' }] }),
+				stderr: '',
+			}),
+			wait: async () => undefined,
+		}, () => {
+			evidenceCalls += 1;
+			return 'b'.repeat(64);
+		})).rejects.toThrow('advisories for: bad');
+		expect(evidenceCalls).toBe(0);
 	});
 });
