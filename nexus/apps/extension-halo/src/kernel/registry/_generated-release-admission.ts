@@ -78,6 +78,44 @@ export const RELEASE_WEB_ACCESSIBLE_RESOURCES = Object.freeze([
   "tools/_frame-tools/runtime.js",
   "tools/_hover-zoom/runtime.js"
 ] as const);
+export const RELEASE_ACTIVE_SERVICE_CONTRACTS = Object.freeze([
+  {
+    "id": "bilibili-enhancer",
+    "kind": "saat-registry",
+    "area": "local",
+    "key": "halo_saat_scripts",
+    "owner": "kernel/services/saat-service",
+    "readiness": "persisted packaged-script registration reconciled",
+    "disposer": "obsolete registered script is unregistered during registry reconciliation"
+  },
+  {
+    "id": "hover-zoom",
+    "kind": "storage-enabled",
+    "area": "local",
+    "key": "halo_hover_zoom_settings",
+    "defaultEnabled": true,
+    "owner": "content-hover-zoom",
+    "readiness": "storage snapshot hydrated or later change observed",
+    "disposer": "settings disable/page retirement disposes the page runtime"
+  },
+  {
+    "id": "smooth-scroll",
+    "kind": "storage-enabled",
+    "area": "sync",
+    "key": "HALO_SMOOTH_SCROLL_SETTINGS",
+    "defaultEnabled": true,
+    "owner": "content-smooth-scroll",
+    "readiness": "storage snapshot hydrated or later change observed",
+    "disposer": "settings disable/page retirement removes input ownership"
+  },
+  {
+    "id": "userscripts",
+    "kind": "userscripts-authority",
+    "owner": "system/userscripts/storage-authority",
+    "readiness": "user-script storage authority hydrated",
+    "disposer": "subscription disposer retires SidePanel observation"
+  }
+] as const);
 export const RELEASE_STAGE_BY_ID = Object.freeze({
   "bilibili-enhancer": "beta",
   "color-picker": "ready",
