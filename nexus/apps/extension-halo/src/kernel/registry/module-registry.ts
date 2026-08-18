@@ -2,6 +2,7 @@
 // inv: Product release status is immutable metadata; enablement lives in ModuleState.
 
 import type { PluginMeta } from '../core/tool-registry-types';
+import { normalizeReleaseStatus } from './release-admission';
 import { PLUGIN_REGISTRY, type PluginMeta as GeneratedPluginMeta } from './_generated';
 
 // Bundled-module enablement status. No packaged bytes are installed or removed.
@@ -23,10 +24,17 @@ export interface ModuleManagerState {
 	lastSync: number;
 }
 
-// Product readiness is generated from manifest release status. Never derive it
-// from builtIn/optional enablement: a bundled coming module must remain coming,
+function normalizeProductStatus(plugin: GeneratedPluginMeta): PluginMeta {
+	return {
+		...plugin,
+		status: normalizeReleaseStatus(plugin.status),
+	};
+}
+
+// Product readiness is normalized once from manifest metadata. Never derive it
+// from builtIn/optional enablement: a bundled coming module remains coming,
 // and an optional ready module remains ready even while locally disabled.
-export const ALL_MODULES: PluginMeta[] = PLUGIN_REGISTRY;
+export const ALL_MODULES: PluginMeta[] = PLUGIN_REGISTRY.map(normalizeProductStatus);
 
 // Core modules (builtIn: true)
 export const CORE_MODULES: PluginMeta[] = ALL_MODULES.filter((module) => module.builtIn);
