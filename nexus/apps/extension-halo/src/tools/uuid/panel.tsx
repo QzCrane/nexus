@@ -37,18 +37,14 @@ const styles: Record<string, React.CSSProperties> = {
 	toast: { position: 'fixed', bottom: '60px', left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', background: 'var(--halo-accent)', borderRadius: '24px', fontSize: '12px', fontWeight: 500, color: '#fff', zIndex: 1000 },
 };
 
-export const UUIDPanel: React.FC = () => {
-    const { t } = useTranslation();
-    const { showToast } = useToast();
+export const UuidPanel: React.FC = () => {
+	const { t } = useTranslation();
+	const { showToast } = useToast();
 	const [version, setVersion] = useToolState<UUIDVersion>('uuid-version', 'v4');
 	const [count, setCount] = useToolState<number>('uuid-count', 1);
 	const [uppercase, setUppercase] = useToolState<boolean>('uuid-upper', false);
 	const [hyphens, setHyphens] = useToolState<boolean>('uuid-hyphens', true);
 	const [result, setResult] = useToolState<string>('uuid', '');
-
-	// const [toast, setToast] = useState<string | null>(null); // Removed
-
-	// const showToast = ... // Removed local implementation
 
 	const handleGenerate = useCallback(() => {
 		const generated: string[] = [];
@@ -60,8 +56,6 @@ export const UUIDPanel: React.FC = () => {
 				case 'v7': raw = generateV7(); break;
 				case 'ULID': raw = generateULID(); break;
 			}
-			// ULID default is no hyphens, force hyphens option doesn't apply cleanly to ULID unless manually added (not standard), 
-			// but we can apply uppercase/lowercase. ULID is usually uppercase.
 			const formatted = formatUUID(raw, uppercase, version === 'ULID' ? false : hyphens);
 			generated.push(formatted);
 		}
@@ -70,7 +64,6 @@ export const UUIDPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
-			{/* Options */}
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 					<div style={styles.row}>
@@ -85,7 +78,7 @@ export const UUIDPanel: React.FC = () => {
 							</button>
 						))}
 					</div>
-					
+
 					<div style={styles.row}>
 						<span style={styles.label}>{t('uuid.count')}:</span>
 						<input
@@ -117,7 +110,6 @@ export const UUIDPanel: React.FC = () => {
 				</div>
 			</Card>
 
-			{/* Result */}
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={styles.row}>
@@ -138,7 +130,9 @@ export const UUIDPanel: React.FC = () => {
 					/>
 				</div>
 			</Card>
-{/* Toast removed */}
 		</div>
 	);
 };
+
+// Compatibility export for direct consumers written before loader identity was canonicalized.
+export const UUIDPanel = UuidPanel;
