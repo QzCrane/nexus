@@ -39,11 +39,15 @@
       "narrowing": "Downloads is requested only from the Popup Screenshot click or the Options Save gesture for a Screenshot hotkey; Background never requests it and refuses screenshot persistence when the grant is absent."
     },
     "tabCapture": {
-      "decision": "optionalization-candidate",
-      "capability": "Acquire a tab audio stream only when a processor path requires Capture.",
-      "evidence": [{ "path": "apps/extension-spectra/src/background/handlers/capture.ts", "marker": "chrome.tabCapture" }],
-      "narrowing": "Capture is lazy but may be entered from multiple control paths; an optional grant must preserve Chrome's user-activation constraint and recovery semantics.",
-      "migrationTask": "LEAST-PRIVILEGE-PROOF"
+      "decision": "required",
+      "capability": "Provide the last-resort full-output processor for Boost, EQ and other DSP when complete Media WebAudio coverage cannot be proven.",
+      "evidence": [
+        { "path": "apps/extension-spectra/src/content/logic/mode-executor.ts", "marker": "Capture is the last-resort full-output path" },
+        { "path": "apps/extension-spectra/src/background/control-coordinator.ts", "marker": "captureAdmissionForInvocation" },
+        { "path": "apps/extension-spectra/src/background/shortcuts.ts", "marker": "submitExtensionInvokedControlRequest" },
+        { "path": "apps/extension-spectra/src/background/handlers/capture.ts", "marker": "chrome.tabCapture" }
+      ],
+      "narrowing": "Capture is not a separable add-on: core full-output DSP may fall back to it from Popup, Chrome command, or current-page hotkey invocations. The coordinator already narrows new Capture to a current active target whose foreground and target document identities match. Making the API permission optional would require a second permission gesture before otherwise valid core shortcut/control invocations and would change the product's deterministic fallback contract."
     },
     "offscreen": {
       "decision": "required",
