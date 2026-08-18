@@ -89,6 +89,9 @@ jobs:
       - name: Check platform contract
         run: bun run check:platform
 
+      - name: Check governance closure
+        run: bun --cwd nexus check:governance
+
       - name: Check toolchain, docs, and architecture
         run: |
           bun --cwd nexus check:toolchain
