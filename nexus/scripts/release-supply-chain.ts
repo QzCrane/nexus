@@ -1,4 +1,4 @@
-// goal: bind each staged release ZIP to the exact dependency/license graph and build identity
+// goal: bind each final release ZIP to the exact dependency/license graph and build identity
 // inv: sidecars are deterministic for identical artifact/source/tool inputs and never enter the extension ZIP
 
 import { createHash } from 'node:crypto';
@@ -91,6 +91,17 @@ function writeCanonicalJson(path: string, value: unknown): string {
 	return sha256Buffer(content);
 }
 
+export function finalArtifactPath(product: 'halo' | 'spectra'): string {
+	const extensionDir = resolve(workspaceDir, `apps/extension-${product}`);
+	const pkg = JSON.parse(readFileSync(resolve(extensionDir, 'package.json'), 'utf8')) as { version?: unknown };
+	if (typeof pkg.version !== 'string' || !/^\d+\.\d+\.\d+$/u.test(pkg.version)) {
+		throw new Error(`${product}: package version is not SemVer`);
+	}
+	return product === 'halo'
+		? resolve(extensionDir, `release/.staging/halo-v${pkg.version}.zip`)
+		: resolve(extensionDir, `release/spectra-v${pkg.version}.zip`);
+}
+
 export function generateReleaseSupplyChainEvidence({
 	product,
 	artifactPath,
@@ -153,4 +164,12 @@ export function generateReleaseSupplyChainEvidence({
 	const provenanceSha256 = writeCanonicalJson(provenancePath, provenance);
 	console.log(`✓ Release supply-chain evidence: ${relative(repositoryRoot, provenancePath).replaceAll('\\', '/')} (${provenanceSha256})`);
 	return { licensePath, provenancePath, licensesSha256, provenanceSha256, provenance };
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+	const product = process.argv[2];
+	if (product !== 'halo' && product !== 'spectra') {
+		throw new Error('usage: bun scripts/release-supply-chain.ts <halo|spectra>');
+	}
+	generateReleaseSupplyChainEvidence({ product, artifactPath: finalArtifactPath(product) });
 }
