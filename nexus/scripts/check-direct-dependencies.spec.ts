@@ -23,6 +23,8 @@ describe('direct dependency usage policy', () => {
 			'@types/qrcode:type-package-in-runtime-dependencies',
 			'file-saver:unused-runtime-direct',
 			'jszip:unused-runtime-direct',
+			'react-dom:source-import-not-shipped-runtime',
+			'react:source-import-not-shipped-runtime',
 		].sort());
 		expect(() => checkDirectDependencies(policy)).not.toThrow();
 	});
@@ -33,9 +35,21 @@ describe('direct dependency usage policy', () => {
 		expect(() => checkDirectDependencies(policy)).toThrow('Direct dependency debt drifted');
 	});
 
-	test('requires the Preact renderer alias exception while source remains React-compatible', () => {
+	test('requires the Preact renderer runtime exception while source remains React-compatible', () => {
 		const policy = structuredClone(current);
 		policy.acceptedNonSourceRuntimeUse = [];
+		expect(() => checkDirectDependencies(policy)).toThrow('Direct dependency debt drifted');
+	});
+
+	test('cannot forget that the Preact production renderer replaces React and ReactDOM', () => {
+		const policy = structuredClone(current);
+		delete policy.acceptedNonSourceRuntimeUse[0].replacesSourceRuntimeDependencies;
+		expect(() => checkDirectDependencies(policy)).toThrow('Direct dependency debt drifted');
+	});
+
+	test('cannot keep React in runtime dependencies while deleting its classification debt', () => {
+		const policy = structuredClone(current);
+		policy.knownDebt = policy.knownDebt.filter((entry: { dependency: string }) => entry.dependency !== 'react');
 		expect(() => checkDirectDependencies(policy)).toThrow('Direct dependency debt drifted');
 	});
 
