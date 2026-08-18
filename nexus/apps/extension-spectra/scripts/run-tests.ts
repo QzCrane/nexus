@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const testDir = resolve(projectDir, 'test');
 const chromeIntegrationTests = new Set([
+	'diagnostics-chrome.spec.ts',
 	'smoke.spec.ts',
 	'tab-visibility-chrome.spec.ts',
 ]);
