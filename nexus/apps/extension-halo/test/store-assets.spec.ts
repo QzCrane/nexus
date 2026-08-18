@@ -49,7 +49,9 @@ test('captures the deterministic production HALO SidePanel visual state', async 
 			],
 		});
 		if (expectedChrome) {
-			expect(await context.browser()?.version()).toContain(expectedChrome);
+			const launchedBrowser = context.browser();
+			if (!launchedBrowser) throw new Error('HALO visual capture has no Browser identity');
+			expect(launchedBrowser.version()).toContain(expectedChrome);
 		}
 		const background = context.serviceWorkers()[0] ??
 			await context.waitForEvent('serviceworker', { timeout: 10_000 });
@@ -67,7 +69,6 @@ test('captures the deterministic production HALO SidePanel visual state', async 
 		await expect(page.locator('[data-tool-id]').first()).toBeVisible({
 			timeout: 10_000,
 		});
-		await expect(page.locator('html')).toHaveAttribute('lang', /en/i).catch(() => undefined);
 		await mkdir(dirname(screenshotPath), { recursive: true });
 		await page.screenshot({
 			path: screenshotPath,
