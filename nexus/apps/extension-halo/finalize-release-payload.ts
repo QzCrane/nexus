@@ -86,6 +86,10 @@ function verifyActivationClosures(analysis: BuildAnalysis): void {
 	}
 }
 
+function normalizedOutputIdentity(value: string): string {
+	return value.replaceAll('\\', '/').replace(/^\.\//u, '');
+}
+
 function verifyBuildEntryProjection(analysis: BuildAnalysis): void {
 	if (!Array.isArray(analysis.entries)) throw new Error('HALO build analysis has no entry projection');
 	const expected = new Map<string, string>([
@@ -97,20 +101,26 @@ function verifyBuildEntryProjection(analysis: BuildAnalysis): void {
 		['sidepanel-init.js', 'src/entry/sidepanel-init.ts'],
 	]);
 	const actual = new Map<string, string>();
+
 	for (const entry of analysis.entries) {
 		if (typeof entry.entry !== 'string' || !entry.outputs || typeof entry.outputs !== 'object') continue;
-		const entryPoints = new Set(
-			Object.values(entry.outputs)
-				.map((detail) => detail.entryPoint)
-				.filter((value): value is string => typeof value === 'string'),
-		);
-		if (entryPoints.size !== 1) {
-			throw new Error(`HALO build output ${entry.entry} has ambiguous source entrypoints`);
+		const output = normalizedOutputIdentity(entry.entry);
+		const matchingOutputs = Object.entries(entry.outputs).filter(([candidate]) => {
+			const normalized = normalizedOutputIdentity(candidate);
+			return normalized === output || normalized.endsWith(`/${output}`);
+		});
+		if (matchingOutputs.length !== 1) {
+			throw new Error(
+				`HALO build output ${output} must have exactly one primary metafile output; found ${matchingOutputs.length}`,
+			);
 		}
-		const [entryPoint] = entryPoints;
-		if (!entryPoint) throw new Error(`HALO build output ${entry.entry} has no source entrypoint`);
-		actual.set(entry.entry, entryPoint.replaceAll('\\', '/'));
+		const detail = matchingOutputs[0]?.[1];
+		if (!detail || typeof detail.entryPoint !== 'string') {
+			throw new Error(`HALO build output ${output} has no primary source entrypoint`);
+		}
+		actual.set(output, detail.entryPoint.replaceAll('\\', '/'));
 	}
+
 	if (actual.size !== expected.size) {
 		throw new Error(`HALO build entry projection count mismatch: expected ${expected.size}, got ${actual.size}`);
 	}
