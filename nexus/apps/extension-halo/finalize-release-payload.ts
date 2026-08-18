@@ -1,13 +1,11 @@
-// goal: turn HALO release admission into a physical dist boundary
-// inv: catalog-only plugin implementation bytes cannot survive into the release artifact
+// goal: prove HALO release admission is already the physical dist boundary
+// inv: the producer emits zero catalog-only executable bytes; finalization verifies and never cleans them up
 
 import {
 	existsSync,
 	readdirSync,
 	readFileSync,
 	rmSync,
-	statSync,
-	unlinkSync,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +15,7 @@ import {
 	RELEASE_PANEL_IDS,
 	RELEASE_SCRIPT_RUNTIME_IDS,
 	RELEASE_WEB_ACCESSIBLE_RESOURCES,
+	RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES,
 } from './src/kernel/registry/_generated-release-admission';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,76 +37,28 @@ const admittedToolRuntimeDirectories = new Set(
 		.filter((segment): segment is string => Boolean(segment)),
 );
 
-function removeTree(directory: string): number {
-	if (!existsSync(directory)) return 0;
-	let bytes = 0;
-	const stack = [directory];
-	while (stack.length > 0) {
-		const current = stack.pop();
-		if (!current) continue;
-		for (const entry of readdirSync(current, { withFileTypes: true })) {
-			const candidate = path.join(current, entry.name);
-			if (entry.isDirectory()) stack.push(candidate);
-			else if (entry.isFile()) bytes += statSync(candidate).size;
-		}
-	}
-	rmSync(directory, {
-		recursive: true,
-		force: true,
-		maxRetries: 5,
-		retryDelay: 100,
-	});
-	return bytes;
-}
-
-function removeFile(file: string): number {
-	if (!existsSync(file)) return 0;
-	const bytes = statSync(file).size;
-	unlinkSync(file);
-	return bytes;
-}
-
-function pruneGeneratedExecutableSurfaces(): { bytes: number; paths: string[] } {
-	let bytes = 0;
-	const paths: string[] = [];
-	const roots = [
-		{
-			directory: path.join(distDir, 'tools'),
-			allowed: (id: string) => admittedScriptRuntimeIds.has(id) || admittedToolRuntimeDirectories.has(id),
-		},
-		{
-			directory: path.join(distDir, 'scripts'),
-			allowed: (id: string) => admittedScriptRuntimeIds.has(id),
-		},
-	];
-
-	for (const root of roots) {
-		if (!existsSync(root.directory)) continue;
-		for (const entry of readdirSync(root.directory, { withFileTypes: true })) {
-			if (!entry.isDirectory() || root.allowed(entry.name)) continue;
-			const candidate = path.join(root.directory, entry.name);
-			bytes += removeTree(candidate);
-			paths.push(path.relative(distDir, candidate).replaceAll('\\', '/'));
-		}
-	}
-
-	for (const entry of readdirSync(distDir, { withFileTypes: true })) {
-		if (!entry.isFile() || !/^content-[A-Za-z0-9_-]+\.js$/u.test(entry.name)) continue;
-		if (admittedContentOutputs.has(entry.name)) continue;
-		const candidate = path.join(distDir, entry.name);
-		bytes += removeFile(candidate);
-		paths.push(entry.name);
-	}
-	return { bytes, paths: paths.sort() };
-}
-
 interface ActivationClosure {
 	entryPoint?: unknown;
 	target?: unknown;
 }
 
+interface BuildOutputDetail {
+	entryPoint?: string;
+}
+
 interface BuildAnalysis {
 	sidepanelActivationClosures?: ActivationClosure[];
+	entries?: Array<{
+		entry?: unknown;
+		outputs?: Record<string, BuildOutputDetail>;
+	}>;
+}
+
+function readBuildAnalysis(): BuildAnalysis {
+	if (!existsSync(analysisPath)) {
+		throw new Error('HALO release payload requires build-analysis.json from production --analyze build');
+	}
+	return JSON.parse(readFileSync(analysisPath, 'utf8')) as BuildAnalysis;
 }
 
 function pluginIdFromEntryPoint(entryPoint: string): string | null {
@@ -116,11 +67,7 @@ function pluginIdFromEntryPoint(entryPoint: string): string | null {
 	return match?.[1] ?? null;
 }
 
-function verifyActivationClosures(): void {
-	if (!existsSync(analysisPath)) {
-		throw new Error('HALO release payload requires build-analysis.json from production --analyze build');
-	}
-	const analysis = JSON.parse(readFileSync(analysisPath, 'utf8')) as BuildAnalysis;
+function verifyActivationClosures(analysis: BuildAnalysis): void {
 	if (!Array.isArray(analysis.sidepanelActivationClosures)
 		|| analysis.sidepanelActivationClosures.length === 0) {
 		throw new Error('HALO release payload has no measured SidePanel activation closures');
@@ -136,6 +83,43 @@ function verifyActivationClosures(): void {
 		throw new Error(
 			`HALO catalog-only implementation entered SidePanel production closures: ${violations.sort().join(', ')}`,
 		);
+	}
+}
+
+function verifyBuildEntryProjection(analysis: BuildAnalysis): void {
+	if (!Array.isArray(analysis.entries)) throw new Error('HALO build analysis has no entry projection');
+	const expected = new Map<string, string>([
+		['content.js', 'src/entry/content.ts'],
+		...RELEASE_CONTENT_SCRIPTS.map((entry) => [entry.js, entry.entry] as const),
+		...RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES.map((entry) => [entry.output, entry.entry] as const),
+		['background.js', 'src/entry/background.ts'],
+		['sidepanel.js', 'src/entry/sidepanel.tsx'],
+		['sidepanel-init.js', 'src/entry/sidepanel-init.ts'],
+	]);
+	const actual = new Map<string, string>();
+	for (const entry of analysis.entries) {
+		if (typeof entry.entry !== 'string' || !entry.outputs || typeof entry.outputs !== 'object') continue;
+		const entryPoints = new Set(
+			Object.values(entry.outputs)
+				.map((detail) => detail.entryPoint)
+				.filter((value): value is string => typeof value === 'string'),
+		);
+		if (entryPoints.size !== 1) {
+			throw new Error(`HALO build output ${entry.entry} has ambiguous source entrypoints`);
+		}
+		const [entryPoint] = entryPoints;
+		if (!entryPoint) throw new Error(`HALO build output ${entry.entry} has no source entrypoint`);
+		actual.set(entry.entry, entryPoint.replaceAll('\\', '/'));
+	}
+	if (actual.size !== expected.size) {
+		throw new Error(`HALO build entry projection count mismatch: expected ${expected.size}, got ${actual.size}`);
+	}
+	for (const [output, source] of expected) {
+		if (actual.get(output) !== source) {
+			throw new Error(
+				`HALO build entry projection mismatch for ${output}: expected ${source}, got ${String(actual.get(output))}`,
+			);
+		}
 	}
 }
 
@@ -252,19 +236,17 @@ function verifyGeneratedExecutableSurfaces(): void {
 
 export function finalizeReleasePayload(): void {
 	if (!existsSync(distDir)) throw new Error('HALO dist/ is missing; build before finalizing release payload');
-	verifyActivationClosures();
+	const analysis = readBuildAnalysis();
+	verifyActivationClosures(analysis);
+	verifyBuildEntryProjection(analysis);
 	verifyPackagedScriptRuntime();
 	verifyBuiltManifest();
-	const pruned = pruneGeneratedExecutableSurfaces();
 	verifyGeneratedExecutableSurfaces();
 
 	// The analysis file is exact-head build evidence for the verifier, not a user
 	// release asset. Do not inflate or expose the production extension with it.
 	rmSync(analysisPath, { force: true });
-	const detail = pruned.paths.length > 0
-		? `; retired ${pruned.paths.length} catalog-only generated path(s), ${pruned.bytes} byte(s)`
-		: '; producer already emitted zero catalog-only generated paths';
-	console.log(`✓ HALO release payload: ${admittedPluginIds.size} admitted modules${detail}`);
+	console.log(`✓ HALO release payload: ${admittedPluginIds.size} admitted modules; producer emitted zero catalog-only executable paths`);
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
