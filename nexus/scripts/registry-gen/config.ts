@@ -9,6 +9,7 @@ const __dirname = path.dirname(__filename);
 
 export const HALO_ROOT = path.resolve(__dirname, '../../apps/extension-halo/src');
 export const HALO_APP_ROOT = path.dirname(HALO_ROOT);
+export const HALO_MANIFEST_BASE = path.join(HALO_APP_ROOT, 'manifest.base.json');
 export const HALO_MANIFEST = path.join(HALO_APP_ROOT, 'public/manifest.json');
 export const HALO_RELEASE_ADMISSION = path.join(HALO_APP_ROOT, 'release-admission.json');
 export const TOOLS_DIR = path.join(HALO_ROOT, 'tools');
