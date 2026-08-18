@@ -6,9 +6,9 @@
 	"type": "module",
 	"scripts": {
 		"dev": "bun ../../scripts/generate-tool-registry.ts && bun build.ts --watch",
-		"build": "bun build.ts",
+		"build": "bun build.ts --analyze && bun finalize-release-payload.ts",
 		"build:dev": "bun build.ts --dev",
-		"build:prod": "bun build.ts",
+		"build:prod": "bun build.ts --analyze && bun finalize-release-payload.ts",
 		"lint": "bun ../../scripts/run-strict-biome.ts .",
 		"typecheck": "bun tsc --noEmit",
 		"test": "bun run test:unit",
