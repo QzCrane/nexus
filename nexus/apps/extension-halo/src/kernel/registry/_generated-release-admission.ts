@@ -80,15 +80,6 @@ export const RELEASE_WEB_ACCESSIBLE_RESOURCES = Object.freeze([
 ] as const);
 export const RELEASE_ACTIVE_SERVICE_CONTRACTS = Object.freeze([
   {
-    "id": "bilibili-enhancer",
-    "kind": "saat-registry",
-    "area": "local",
-    "key": "halo_saat_scripts",
-    "owner": "kernel/services/saat-service",
-    "readiness": "persisted packaged-script registration reconciled",
-    "disposer": "obsolete registered script is unregistered during registry reconciliation"
-  },
-  {
     "id": "hover-zoom",
     "kind": "storage-enabled",
     "area": "local",
