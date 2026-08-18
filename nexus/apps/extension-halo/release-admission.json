@@ -17,6 +17,14 @@
       "id": "hover-zoom",
       "stage": "ready",
       "surfaces": ["panel", "content-runtime", "background-runtime"],
+      "contentScript": {
+        "js": "content-hover-zoom.js",
+        "runAt": "document_idle",
+        "allFrames": false
+      },
+      "webAccessibleResources": [
+        "tools/_hover-zoom/runtime.js"
+      ],
       "reason": "Ready panel plus the shipped lightweight content host and Background DNR reconciliation owner."
     },
     {
@@ -41,7 +49,15 @@
       "id": "ruler",
       "stage": "ready",
       "surfaces": ["panel", "content-runtime"],
-      "reason": "Ready panel and the admitted Frame Tools content-runtime capability."
+      "contentScript": {
+        "js": "content-frame-tools.js",
+        "runAt": "document_start",
+        "allFrames": true
+      },
+      "webAccessibleResources": [
+        "tools/_frame-tools/runtime.js"
+      ],
+      "reason": "Ready panel and the admitted Ruler-only Frame Tools content-runtime capability."
     },
     {
       "id": "settings",
@@ -53,6 +69,11 @@
       "id": "smooth-scroll",
       "stage": "support",
       "surfaces": ["content-runtime"],
+      "contentScript": {
+        "js": "content-smooth-scroll.js",
+        "runAt": "document_start",
+        "allFrames": false
+      },
       "reason": "Existing shipped document-start runtime retained without implicitly publishing its currently unclassified panel."
     },
     {
