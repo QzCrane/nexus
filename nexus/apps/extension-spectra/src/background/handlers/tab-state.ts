@@ -11,9 +11,12 @@ import { swLog } from '../../shared/logger';
 import {
 	SPECTRA_PROTOCOL_VERSION,
 	isSpectraRequestEnvelope,
+	isSpectraResponse,
 	rpcFailure,
 	rpcSuccess,
 } from '@nexus/contracts';
+
+const MEDIA_PROBE_CONCURRENCY = 8;
 
 export function recordMediaState(
 	tabId: number,
@@ -31,30 +34,91 @@ function isRecent(timestamp: number, now: number): boolean {
 	return timestamp > 0 && now >= timestamp && now - timestamp < TAB_VISIBLE_THRESHOLD_MS;
 }
 
+function canProbeTab(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: number } {
+	if (!Number.isInteger(tab.id) || Number(tab.id) <= 0) return false;
+	if (!tab.url) return false;
+	try {
+		const protocol = new URL(tab.url).protocol;
+		return protocol === 'http:' || protocol === 'https:' || protocol === 'file:';
+	} catch {
+		return false;
+	}
+}
+
+async function hasNativeMedia(tabId: number): Promise<boolean> {
+	const request = {
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		requestId: crypto.randomUUID(),
+		type: 'spectra.control.actual.read' as const,
+		payload: {
+			fields: ['playing'] as const,
+			target: null,
+		},
+		tabId,
+	};
+	try {
+		const response: unknown = await chrome.tabs.sendMessage(tabId, request);
+		return isSpectraResponse('spectra.control.actual.read', response) && response.ok;
+	} catch {
+		// Restricted pages, disabled file access, stale extension documents and tabs
+		// that disappear during Popup discovery are ordinary negative probes.
+		return false;
+	}
+}
+
+async function probeMediaTabs(tabs: readonly (chrome.tabs.Tab & { id: number })[]): Promise<number[]> {
+	if (tabs.length === 0) return [];
+	const discovered: number[] = [];
+	let nextIndex = 0;
+	const workerCount = Math.min(MEDIA_PROBE_CONCURRENCY, tabs.length);
+	const workers = Array.from({ length: workerCount }, async () => {
+		while (true) {
+			const index = nextIndex;
+			nextIndex += 1;
+			const tab = tabs[index];
+			if (!tab) return;
+			if (await hasNativeMedia(tab.id)) discovered.push(tab.id);
+		}
+	});
+	await Promise.all(workers);
+	return discovered;
+}
+
 export async function resolveVisibleTabs(now = Date.now()): Promise<{ tabs: number[] }> {
 	const visibleTabsSet = new Set<number>();
+	const allTabs = await chrome.tabs.query({});
 
-	const currentTabs = await chrome.tabs.query({ active: true });
-	for (const tab of currentTabs) {
-		if (tab.id) visibleTabsSet.add(tab.id);
+	// Chrome-owned active/audible facts are zero-probe admission paths.
+	for (const tab of allTabs) {
+		if (!tab.id) continue;
+		if (tab.active || tab.audible) visibleTabsSet.add(tab.id);
 	}
 
-	const audibleTabs = await chrome.tabs.query({ audible: true });
-	for (const tab of audibleTabs) {
-		if (tab.id) visibleTabsSet.add(tab.id);
-	}
-
+	// Bounded recent activity keeps a just-paused/just-switched tab stable even
+	// when its content host becomes temporarily unreachable during navigation.
 	for (const [tabId, state] of tabAudioStates.entries()) {
 		const isRecentlyAudible = isRecent(state.lastAudibleTime, now);
 		const isRecentlyActivated = isRecent(state.lastActivatedTime, now);
 		if (isRecentlyAudible || isRecentlyActivated) {
 			visibleTabsSet.add(tabId);
 		} else if (!visibleTabsSet.has(tabId)) {
-			// Media reports are telemetry, not a visibility lease. Prune entries with
-			// no bounded Chrome-owned activity so the set cannot grow forever.
+			// Media reports remain telemetry, not a durable visibility lease. The
+			// exact current document is re-probed below, so stale service-worker heap
+			// cannot keep a removed media surface visible forever.
 			tabAudioStates.delete(tabId);
 		}
 	}
+
+	// Complete multi-tab management cannot depend on a 60-second activity lease:
+	// paused and muted media tabs remain valid control targets. Reuse the always-on
+	// bootstrap's side-effect-free native `playing` read instead of acquiring the
+	// heavy Content Runtime or adding a recurring media heartbeat. Popup discovery
+	// is the trigger, probing is bounded, and worker restart naturally reconstructs
+	// the inventory from live documents.
+	const probeCandidates = allTabs.filter(
+		(tab): tab is chrome.tabs.Tab & { id: number } => canProbeTab(tab) && !visibleTabsSet.has(tab.id),
+	);
+	for (const tabId of await probeMediaTabs(probeCandidates)) visibleTabsSet.add(tabId);
 
 	const tabs = Array.from(visibleTabsSet).sort((left, right) => left - right);
 	swLog.debug(`[SPECTRA] Resolved visible tabs: ${tabs.join(', ')}`);
