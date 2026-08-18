@@ -88,6 +88,9 @@ jobs:
           bun install --cwd "$BASE_ROOT/nexus" --frozen-lockfile
           bun install --cwd nexus --frozen-lockfile
 
+      - name: Verify candidate comparison governance
+        run: bun --cwd nexus check:governance
+
       - name: Build base and candidate production artifacts
         shell: bash
         run: |
