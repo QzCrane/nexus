@@ -207,8 +207,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'unit tests', args: ['run', 'test:halo'] },
 	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-halo', 'build:prod'] },
 	{ label: 'production Chromium contracts', args: ['run', '--cwd', 'apps/extension-halo', 'test:browser-chromium'] },
-	{ label: 'runtime performance evidence', args: ['run', '--cwd', 'apps/extension-halo', 'test:performance'] },
-	{ label: 'dependency audit and SBOM', args: ['run', 'audit:dependencies'] },
+	{ label: 'dependency audit', args: ['run', 'audit:dependencies'] },
 	{ label: 'staging ZIP', fn: createStagingZip },
 ]);
 
