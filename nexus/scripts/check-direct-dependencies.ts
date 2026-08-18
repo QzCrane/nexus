@@ -1,5 +1,5 @@
 // goal: make direct dependency usage/classification debt executable instead of relying on periodic manual package.json review
-// inv: external runtime directs need a live src import or explicit build owner; known debt is exact and cannot silently grow or linger after repair
+// inv: external runtime directs need a live shipped owner or explicit build owner; source imports replaced out of production are development dependencies, not runtime dependencies
 
 import ts from 'typescript';
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
@@ -21,13 +21,18 @@ interface AcceptedException {
 	evidencePath: string;
 	marker: string;
 	reason: string;
+	replacesSourceRuntimeDependencies?: string[];
 }
 
 interface DebtEntry {
 	packagePath: string;
 	section: 'dependencies' | 'devDependencies';
 	dependency: string;
-	kind: 'unused-runtime-direct' | 'type-package-in-runtime-dependencies' | 'orphan-type-direct';
+	kind:
+		| 'unused-runtime-direct'
+		| 'type-package-in-runtime-dependencies'
+		| 'orphan-type-direct'
+		| 'source-import-not-shipped-runtime';
 	resolution: string;
 }
 
@@ -141,6 +146,7 @@ export function findDirectDependencyIssues(
 ): DirectDependencyIssue[] {
 	if (policy.schemaVersion !== 1) throw new Error('direct dependency policy schemaVersion must be 1');
 	const exceptionKeys = new Set<string>();
+	const replacedSourceRuntimeDependencies = new Map<string, Set<string>>();
 	for (const exception of policy.acceptedNonSourceRuntimeUse ?? []) {
 		const id = `${exception.packagePath}\0${exception.dependency}`;
 		if (exceptionKeys.has(id)) throw new Error(`duplicate direct dependency exception: ${exception.packagePath}:${exception.dependency}`);
@@ -161,6 +167,28 @@ export function findDirectDependencyIssues(
 		if (!existsSync(evidencePath) || !readFileSync(evidencePath, 'utf8').includes(exception.marker)) {
 			throw new Error(`${exception.packagePath}:${exception.dependency} exception evidence is stale`);
 		}
+
+		const replaced = exception.replacesSourceRuntimeDependencies ?? [];
+		if (new Set(replaced).size !== replaced.length) {
+			throw new Error(`${exception.packagePath}:${exception.dependency} replacement targets contain duplicates`);
+		}
+		const targetSet = replacedSourceRuntimeDependencies.get(exception.packagePath) ?? new Set<string>();
+		for (const target of replaced) {
+			if (!target || target === exception.dependency) {
+				throw new Error(`${exception.packagePath}:${exception.dependency} has an invalid replacement target`);
+			}
+			if (targetSet.has(target)) {
+				throw new Error(`${exception.packagePath}:${target} is replaced by more than one runtime exception`);
+			}
+			if (!manifest.dependencies?.[target] && !manifest.devDependencies?.[target]) {
+				throw new Error(`${exception.packagePath}:${target} replacement target is not a direct dependency`);
+			}
+			if (!imports.has(target)) {
+				throw new Error(`${exception.packagePath}:${target} replacement target is not imported by src`);
+			}
+			targetSet.add(target);
+		}
+		replacedSourceRuntimeDependencies.set(exception.packagePath, targetSet);
 	}
 
 	const issues: DirectDependencyIssue[] = [];
@@ -170,6 +198,7 @@ export function findDirectDependencyIssues(
 		const manifest = readJson<PackageDocument>(manifestPath);
 		const imports = sourceDependencies(dirname(manifestPath));
 		packageState.set(packagePath, { manifest, imports });
+		const replaced = replacedSourceRuntimeDependencies.get(packagePath) ?? new Set<string>();
 		for (const [dependency, version] of Object.entries(manifest.dependencies ?? {})) {
 			if (version.startsWith('workspace:')) continue;
 			if (dependency.startsWith('@types/')) {
@@ -181,7 +210,17 @@ export function findDirectDependencyIssues(
 				});
 				continue;
 			}
-			if (imports.has(dependency)) continue;
+			if (imports.has(dependency)) {
+				if (replaced.has(dependency)) {
+					issues.push({
+						packagePath,
+						section: 'dependencies',
+						dependency,
+						kind: 'source-import-not-shipped-runtime',
+					});
+				}
+				continue;
+			}
 			if (exceptionKeys.has(`${packagePath}\0${dependency}`)) continue;
 			issues.push({
 				packagePath,
