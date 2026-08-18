@@ -45,7 +45,7 @@ Required for bounded lifecycle work that must survive Manifest V3 service-worker
 ### `downloads`
 
 ```text
-Currently required only to save user-initiated screenshot captures of the current visible tab as PNG files in the user's Downloads directory under a spectra/ subfolder. SPECTRA listens for the download completion event solely to acknowledge the screenshot operation; it does not read, upload, or modify any other downloaded file, history, or path. The release permission policy tracks migration to an optional capability grant because screenshot can also be invoked through shortcut/control paths that must remain deterministic.
+Optional. SPECTRA requests Downloads permission only from an explicit screenshot user gesture: clicking Screenshot in the Popup, or saving a Screenshot hotkey in Options. Background never requests the permission and refuses screenshot persistence when the grant is absent. When granted, it is used only to save that user-requested visible-tab screenshot as a PNG under a spectra/ subfolder and to observe completion of that same download. SPECTRA does not read, upload, modify, or enumerate unrelated downloaded files or download history.
 ```
 
 ### `tabCapture`
