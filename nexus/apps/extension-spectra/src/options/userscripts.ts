@@ -1,21 +1,12 @@
 // goal: owns optional userScripts permission admission plus Chrome's separate platform enablement gate
 
+import { hasOptionalPermission, requestOptionalPermission } from '../shared/optional-permission-admission';
 import { t } from './i18n';
-
-const USER_SCRIPTS_PERMISSION = 'userScripts' as const;
-
-async function hasUserScriptsPermission(): Promise<boolean> {
-	try {
-		return await chrome.permissions.contains({ permissions: [USER_SCRIPTS_PERMISSION] });
-	} catch {
-		return false;
-	}
-}
 
 // eff: checks both the optional permission and Chrome's Developer Mode / Allow User Scripts platform gate
 async function checkUserScriptsAvailable(): Promise<boolean> {
-	if (!await hasUserScriptsPermission()) return false;
 	try {
+		if (!await hasOptionalPermission('userScripts')) return false;
 		await chrome.userScripts.getScripts();
 		return true;
 	} catch {
@@ -47,12 +38,11 @@ function openExtensionSettings(): void {
 }
 
 async function requestUserScriptsCapability(): Promise<void> {
-	// chrome.permissions.request must remain the first asynchronous capability
-	// boundary inside this click handler so the request is attributable to the
-	// user's explicit feature-enable gesture.
+	// requestOptionalPermission stays directly under this click path; Background
+	// never requests optional permissions and only consumes already granted APIs.
 	let granted = false;
 	try {
-		granted = await chrome.permissions.request({ permissions: [USER_SCRIPTS_PERMISSION] });
+		granted = await requestOptionalPermission('userScripts');
 	} catch {
 		granted = false;
 	}
