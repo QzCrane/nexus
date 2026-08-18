@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "phase": "compatibility-prep",
+  "currentLockedVersion": "5.9.3",
+  "compatibilityApi": {
+    "package": "@typescript/typescript6",
+    "version": "6.0.2",
+    "plannedAlias": "typescript",
+    "reason": "TypeScript 7.0 has no programmatic API. Repository governance tools that import from typescript must remain on the TypeScript 6 API until a new native API is proven sufficient."
+  },
+  "nativeCli": {
+    "package": "typescript",
+    "version": "7.0.2",
+    "plannedAlias": "@typescript/native",
+    "reason": "Run the native TypeScript 7 compiler side-by-side for diagnostics and performance comparison without replacing API consumers."
+  },
+  "programmaticApiConsumers": [
+    {
+      "path": "scripts/run-strict-biome.ts",
+      "marker": "ts.isParenthesizedExpression",
+      "role": "repository lint and no-op source analysis",
+      "publicProjection": true
+    },
+    {
+      "path": "scripts/permission-capabilities.ts",
+      "marker": "ts.createSourceFile",
+      "role": "permission runtime syntax evidence",
+      "publicProjection": false
+    },
+    {
+      "path": "apps/extension-halo/check-release-source-graph.ts",
+      "marker": "ts.createSourceFile",
+      "role": "HALO production source-graph admission",
+      "publicProjection": false
+    }
+  ],
+  "ts6DeprecatedConfig": [
+    "baseUrl",
+    "downlevelIteration",
+    "moduleResolution=node",
+    "moduleResolution=node10",
+    "moduleResolution=classic",
+    "target=es5",
+    "module=amd",
+    "module=umd",
+    "module=system",
+    "outFile",
+    "esModuleInterop=false",
+    "allowSyntheticDefaultImports=false",
+    "alwaysStrict=false",
+    "ignoreDeprecations"
+  ],
+  "stages": [
+    {
+      "id": "compatibility-prep",
+      "requires": [
+        "Keep the exact installed compiler at TypeScript 5.9.3 while removing configuration constructs that TypeScript 6 deprecates and TypeScript 7 removes.",
+        "Do not silence migration debt with ignoreDeprecations.",
+        "Census every programmatic TypeScript API consumer before changing package identity."
+      ]
+    },
+    {
+      "id": "ts6-api-clean",
+      "requires": [
+        "Alias typescript to @typescript/typescript6 and regenerate the exact Bun lockfile.",
+        "Run all API-consuming governance tools, typechecks, builds and focused tests under TypeScript 6.0.2.",
+        "Run TypeScript 6 with stableTypeOrdering for the explicit TypeScript 7 diagnostic-equivalence comparison; do not make stableTypeOrdering a permanent default solely for the migration."
+      ]
+    },
+    {
+      "id": "dual-cli",
+      "requires": [
+        "Add @typescript/native as an npm alias to TypeScript 7 while keeping the typescript import identity on the TypeScript 6 compatibility API.",
+        "Run TypeScript 6 and TypeScript 7 typechecks independently on the same exact source and dependency lock.",
+        "Compare exit status and normalized diagnostics, then compare build/artifact/runtime evidence; measure wall time and memory separately from correctness."
+      ]
+    },
+    {
+      "id": "native-default",
+      "requires": [
+        "Promote the TypeScript 7 CLI to the default project-wide typecheck only after equivalence evidence is green.",
+        "Keep programmatic tooling on the TypeScript 6 compatibility API; a faster CLI is not evidence that the old API can be removed."
+      ]
+    },
+    {
+      "id": "api-convergence",
+      "requires": [
+        "Evaluate the TypeScript 7.1-or-later native API as a new API surface rather than assuming TypeScript 6 API compatibility.",
+        "Migrate each listed API consumer with focused semantic equivalence tests before deleting the TypeScript 6 compatibility package.",
+        "Remove the compatibility layer only when no repository or public projection imports the old TypeScript API."
+      ]
+    }
+  ]
+}
