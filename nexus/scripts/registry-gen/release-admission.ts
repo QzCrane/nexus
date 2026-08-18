@@ -38,6 +38,17 @@ export interface ReleaseAdmission {
 	modules: ReleaseAdmissionModule[];
 }
 
+interface DiscoveredModuleLike {
+	id: string;
+	pluginType: string;
+	panelPath: string | null;
+}
+
+interface PluginManifestLike {
+	status?: unknown;
+	script?: unknown;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -143,8 +154,8 @@ export function hasReleaseSurface(
 
 export function validateReleaseAdmissionAgainstModules(
 	admission: ReleaseAdmission,
-	allModules: readonly any[],
-	manifestsMap: ReadonlyMap<string, any>,
+	allModules: readonly DiscoveredModuleLike[],
+	manifestsMap: ReadonlyMap<string, PluginManifestLike>,
 ): void {
 	const moduleById = new Map(allModules.map((module) => [module.id, module]));
 	const admissionMap = releaseAdmissionMap(admission);
@@ -194,7 +205,7 @@ export function validateReleaseAdmissionAgainstModules(
 		const manifest = manifestsMap.get(module.id);
 		if (!manifest || (manifest.status !== 'ready' && manifest.status !== 'beta')) continue;
 		if (!admissionMap.has(module.id)) {
-			throw new Error(`${module.id}: ${manifest.status} catalog status requires explicit release admission`);
+			throw new Error(`${module.id}: ${String(manifest.status)} catalog status requires explicit release admission`);
 		}
 		const entry = admissionMap.get(module.id)!;
 		if (entry.stage !== manifest.status) {
