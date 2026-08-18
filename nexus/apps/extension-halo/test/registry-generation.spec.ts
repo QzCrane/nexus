@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { canonicalPluginDirectoryNames } from '../../../scripts/registry-gen/discover.ts';
+import { parseReleaseAdmission } from '../../../scripts/registry-gen/release-admission.ts';
 import { emitGeneratedFile } from '../../../scripts/registry-gen/utils.ts';
 
 describe('HALO registry generation', () => {
@@ -54,7 +55,7 @@ describe('HALO registry generation', () => {
 		expect(generated).not.toContain("version: '1.0.0'");
 	});
 
-	test('keeps panel preload authority renderer-neutral', () => {
+	test('keeps panel preload authority renderer-neutral and release-admitted', () => {
 		const generator = readFileSync(
 			new URL('../../../scripts/registry-gen/gen-loader.ts', import.meta.url),
 			'utf8',
@@ -68,17 +69,66 @@ describe('HALO registry generation', () => {
 			'utf8',
 		);
 
-		expect(generator).toContain('export const generatedToolLoaders');
+		expect(generator).toContain('hasReleaseSurface');
 		expect(generator).toContain('memoizePanelLoader');
 		expect(generator).toContain('lazy(generatedToolLoaders');
 		expect(generated).toContain('export const generatedToolLoaders');
-		expect(generated).toContain("'hash': memoizePanelLoader(() => import('../tools/hash/panel')");
-		expect(generated).toContain("'hash': lazy(generatedToolLoaders.hash)");
+		expect(generated).toContain("'color-picker': memoizePanelLoader(() => import('../tools/color-picker/panel')");
+		expect(generated).toContain("'color-picker': lazy(generatedToolLoaders['color-picker'])");
+		expect(generated).toContain("'userscripts': memoizePanelLoader(() => import('../system/userscripts/panel')");
+		expect(generated).not.toContain("import('../tools/pdf/panel')");
+		expect(generated).not.toContain("import('../tools/hash/panel')");
+		expect(generated).not.toContain("import('../tools/clipboard/panel')");
 		expect(runtime).toContain('generatedToolLoaders[toolId]()');
 
 		for (const source of [generator, generated, runtime]) {
 			expect(source).not.toContain('_payload');
 			expect(source).not.toContain('_init');
 		}
+	});
+
+	test('separates catalog inventory from physical release admission', () => {
+		const catalog = readFileSync(
+			new URL('../src/kernel/registry/_generated.ts', import.meta.url),
+			'utf8',
+		);
+		const projection = readFileSync(
+			new URL('../src/kernel/registry/_generated-release-admission.ts', import.meta.url),
+			'utf8',
+		);
+		const scriptRuntime = readFileSync(
+			new URL('../public/script-plugin-runtime.json', import.meta.url),
+			'utf8',
+		);
+		const backgroundProjection = readFileSync(
+			new URL('../src/kernel/registry/_generated-background-active.ts', import.meta.url),
+			'utf8',
+		);
+
+		// PDF remains a source/catalog item but cannot pull its >1 MiB implementation
+		// closure into a production SidePanel release while it is not admitted.
+		expect(catalog).toContain("id: 'pdf'");
+		expect(projection).not.toMatch(/RELEASE_ADMITTED_PLUGIN_IDS[\s\S]*"pdf"/u);
+		expect(scriptRuntime).toContain('"bilibili-enhancer"');
+		expect(scriptRuntime).not.toContain('"bilibili-plus"');
+		expect(backgroundProjection).toContain('"smooth-scroll": true');
+		expect(backgroundProjection).not.toContain('"clipboard"');
+		expect(backgroundProjection).not.toContain('"timer"');
+	});
+
+	test('release admission is sorted, unique and rejects ambiguous surface state', () => {
+		const current = JSON.parse(readFileSync(
+			new URL('../release-admission.json', import.meta.url),
+			'utf8',
+		));
+		expect(() => parseReleaseAdmission(current)).not.toThrow();
+
+		const duplicate = structuredClone(current);
+		duplicate.modules.splice(1, 0, structuredClone(duplicate.modules[0]));
+		expect(() => parseReleaseAdmission(duplicate)).toThrow(/duplicates|sorted/u);
+
+		const invalid = structuredClone(current);
+		invalid.modules[0].surfaces = ['panel', 'panel'];
+		expect(() => parseReleaseAdmission(invalid)).toThrow('duplicates a surface');
 	});
 });
