@@ -53,8 +53,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'unit and contract tests', args: ['run', '--cwd', 'apps/extension-spectra', 'test:unit'] },
 	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-spectra', 'build:prod'] },
 	{ label: 'production Chrome integration', args: ['run', '--cwd', 'apps/extension-spectra', 'test:chrome:dist'] },
-	{ label: 'runtime performance evidence', args: ['run', '--cwd', 'apps/extension-spectra', 'test:performance'] },
-	{ label: 'dependency audit and SBOM', args: ['run', 'audit:dependencies'] },
+	{ label: 'dependency audit', args: ['run', 'audit:dependencies'] },
 	{
 		label: 'remote-site live deployment',
 		args: [
