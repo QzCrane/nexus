@@ -51,6 +51,7 @@
 		"bun.lock",
 		"closeout-policy.json",
 		"feature-promotion.json",
+		"package.json",
 		"apps/extension-halo/release-admission.json",
 		"apps/extension-halo/release-test-owners.json",
 		"apps/extension-spectra/permission-policy.json",
@@ -61,6 +62,7 @@
 		"scripts/closeout-evidence.ts",
 		"scripts/dependency-audit.ts",
 		"scripts/generate-sbom.ts",
+		"scripts/release-supply-chain.ts",
 		"scripts/runtime-performance.ts",
 		"scripts/release-halo.ts",
 		"scripts/release-spectra.ts"
