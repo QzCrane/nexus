@@ -51,7 +51,7 @@ Optional. SPECTRA requests Downloads permission only from an explicit screenshot
 ### `tabCapture`
 
 ```text
-Currently required only when an admitted full-output audio feature needs to process the current active tab locally. A new Capture can start only from a Popup or browser command invocation for that same active tab; page activity, restore, remote control, warm update, and alternate background-tab shortcuts cannot start it. SPECTRA does not record or upload captured audio. The release permission policy tracks an optional-permission migration only if the user-activation and recovery contracts can be preserved.
+Required because Capture is the last-resort full-output audio processor for core Boost, equalizer and related DSP when complete Media WebAudio coverage cannot be proven. A new Capture is admitted only for the exact current active document after an explicit SPECTRA invocation: the Popup, a Chrome command, or an extension-owned hotkey gesture in that same foreground page. Background-target shortcuts, remote commands, restore/system work, navigation recovery and ordinary page activity cannot create a new Capture. Existing acknowledged Capture state may be reconciled after Manifest V3 worker restart. SPECTRA does not record or upload captured audio.
 ```
 
 ### `offscreen`
