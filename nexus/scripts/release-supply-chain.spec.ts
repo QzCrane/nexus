@@ -13,7 +13,7 @@ function sha256(value: Uint8Array | string): string {
 }
 
 describe('artifact-bound release supply-chain evidence', () => {
-	test('normalizes only external packages into a deterministic license inventory', () => {
+	test('labels the current external-package inventory as workspace-scoped, not artifact-scoped', () => {
 		const inventory = buildLicenseInventory({
 			components: [
 				{
@@ -34,7 +34,9 @@ describe('artifact-bound release supply-chain evidence', () => {
 			],
 		});
 		expect(inventory).toEqual({
-			schemaVersion: 1,
+			schemaVersion: 2,
+			scope: 'workspace-installed-graph',
+			artifactScoped: false,
 			packages: [
 				{ name: 'a', version: '1.0.0', license: 'UNKNOWN', bomRef: 'pkg:npm/a@1.0.0' },
 				{ name: 'z', version: '2.0.0', license: 'MIT', bomRef: 'pkg:npm/z@2.0.0' },
@@ -42,7 +44,7 @@ describe('artifact-bound release supply-chain evidence', () => {
 		});
 	});
 
-	test('binds ZIP, SBOM, licenses and exact Git identity without modifying the ZIP', () => {
+	test('binds ZIP, scoped SBOM/license evidence, product inputs and exact Git identity without modifying ZIP', () => {
 		const directory = mkdtempSync(resolve(tmpdir(), 'nexus-supply-chain-'));
 		try {
 			const artifactPath = resolve(directory, 'halo.zip');
@@ -65,17 +67,40 @@ describe('artifact-bound release supply-chain evidence', () => {
 			});
 			expect(readFileSync(artifactPath)).toEqual(artifact);
 			expect(result.provenance).toMatchObject({
-				schemaVersion: 1,
+				schemaVersion: 2,
 				product: 'halo',
 				head: 'a'.repeat(40),
 				tree: 'b'.repeat(40),
 				artifact: { sha256: sha256(artifact), bytes: artifact.length },
-				licenses: { packages: 1, unknown: 0 },
+				sbom: { scope: 'workspace-installed-graph', artifactScoped: false },
+				licenses: {
+					scope: 'workspace-installed-graph',
+					artifactScoped: false,
+					packages: 1,
+					unknown: 0,
+				},
+				inputs: {
+					workspaceLock: { path: 'nexus/bun.lock' },
+					repositoryLock: { path: 'bun.lock' },
+				},
 			});
+			expect(result.provenance.inputs.product.map(({ path }: { path: string }) => path)).toEqual([
+				'nexus/apps/extension-halo/package.json',
+				'nexus/apps/extension-halo/build.ts',
+				'nexus/apps/extension-halo/public/manifest.json',
+				'nexus/apps/extension-halo/release-admission.json',
+				'nexus/apps/extension-halo/release-test-owners.json',
+			]);
+			expect(result.provenance.inputs.product.every(({ sha256: digest }: { sha256: string }) => /^[a-f0-9]{64}$/u.test(digest))).toBe(true);
 			const licenses = JSON.parse(readFileSync(result.licensePath, 'utf8'));
-			expect(licenses.packages).toEqual([{
-				name: 'example', version: '1.0.0', license: 'Apache-2.0', bomRef: 'pkg:npm/example@1.0.0',
-			}]);
+			expect(licenses).toEqual({
+				schemaVersion: 2,
+				scope: 'workspace-installed-graph',
+				artifactScoped: false,
+				packages: [{
+					name: 'example', version: '1.0.0', license: 'Apache-2.0', bomRef: 'pkg:npm/example@1.0.0',
+				}],
+			});
 		} finally {
 			rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 		}
