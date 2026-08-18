@@ -105,19 +105,20 @@ describe('HALO release tooling', () => {
 		expect(engine).not.toContain('chrome.scripting.executeScript({');
 	});
 
-	test('locks content-script ownership to the smallest required frame and lifecycle scope', () => {
+	test('generates only release-admitted content and exact web-accessible resources', () => {
 		const manifest = readJson('../public/manifest.json');
+		const baseManifest = readJson('../manifest.base.json');
 		const contentScripts = manifest.content_scripts as ContentScriptManifestEntry[];
 		const byEntry = new Map(
 			contentScripts.map((entry) => [entry.js?.[0], entry]),
 		);
 
+		expect(baseManifest.web_accessible_resources).toBeUndefined();
 		expect([...byEntry.keys()]).toEqual([
 			'content.js',
-			'content-smooth-scroll.js',
-			'content-frame-tools.js',
 			'content-hover-zoom.js',
-			'content-clipboard.js',
+			'content-frame-tools.js',
+			'content-smooth-scroll.js',
 		]);
 		expect(byEntry.get('content.js')).toMatchObject({
 			run_at: 'document_start',
@@ -135,10 +136,23 @@ describe('HALO release tooling', () => {
 			run_at: 'document_idle',
 			all_frames: false,
 		});
-		expect(byEntry.get('content-clipboard.js')).toMatchObject({
-			run_at: 'document_idle',
-			all_frames: true,
-		});
+		expect(byEntry.has('content-clipboard.js')).toBe(false);
+
+		expect(manifest.web_accessible_resources).toEqual([{
+			resources: [
+				'tools/_frame-tools/runtime.js',
+				'tools/_hover-zoom/runtime.js',
+			],
+			matches: ['<all_urls>'],
+			use_dynamic_url: true,
+		}]);
+		const manifestGenerator = readFileSync(
+			new URL('../../../scripts/registry-gen/gen-release-manifest.ts', import.meta.url),
+			'utf8',
+		);
+		expect(manifestGenerator).toContain('release admission owns them');
+		expect(manifestGenerator).not.toContain("'tools/*'");
+		expect(manifestGenerator).not.toContain("'scripts/*'");
 	});
 
 	test('keeps the standard build production-grade, measured, and physically release-admitted', () => {
@@ -161,7 +175,10 @@ describe('HALO release tooling', () => {
 		expect(finalizer).toContain('sidepanelActivationClosures');
 		expect(finalizer).toContain('RELEASE_PANEL_IDS');
 		expect(finalizer).toContain('RELEASE_SCRIPT_RUNTIME_IDS');
+		expect(finalizer).toContain('RELEASE_CONTENT_SCRIPTS');
+		expect(finalizer).toContain('RELEASE_WEB_ACCESSIBLE_RESOURCES');
 		expect(finalizer).toContain('catalog-only implementation entered SidePanel production closures');
+		expect(finalizer).toContain('built manifest content_scripts differ from release admission');
 		expect(finalizer).toContain("rmSync(analysisPath, { force: true })");
 	});
 
@@ -183,6 +200,8 @@ describe('HALO release tooling', () => {
 		expect(admission.schemaVersion).toBe(1);
 		expect(projection).toContain('RELEASE_ADMITTED_PLUGIN_IDS');
 		expect(projection).toContain('RELEASE_PANEL_IDS');
+		expect(projection).toContain('RELEASE_CONTENT_SCRIPTS');
+		expect(projection).toContain('RELEASE_WEB_ACCESSIBLE_RESOURCES');
 		expect(loader).not.toContain("import('../tools/pdf/panel')");
 		expect(loader).not.toContain("import('../tools/clipboard/panel')");
 		expect(scriptRuntime).toContain('"bilibili-enhancer"');
