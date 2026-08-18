@@ -45,9 +45,8 @@
 	"web_accessible_resources": [
 		{
 			"resources": [
-				"tools/*",
-				"scripts/*",
-				"assets/*"
+				"tools/_frame-tools/runtime.js",
+				"tools/_hover-zoom/runtime.js"
 			],
 			"matches": [
 				"<all_urls>"
