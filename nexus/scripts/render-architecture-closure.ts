@@ -13,16 +13,38 @@ function escapeCell(value: string): string {
 	return value.replaceAll('|', '\\|').replaceAll('\n', ' ');
 }
 
-export function renderArchitectureClosure(): string {
+function renderStatusTable(): { manifest: ReturnType<typeof readArchitectureClosureManifest>; counts: string; table: string } {
 	const manifest = readArchitectureClosureManifest();
 	const statusCounts = new Map<string, number>();
-	for (const task of manifest.tasks) {
-		statusCounts.set(task.status, (statusCounts.get(task.status) ?? 0) + 1);
-	}
-	const table = manifest.tasks.map((task) => (
-		`| \`${escapeCell(task.id)}\` | ${task.priority} | ${escapeCell(task.area)} | ${escapeCell(task.owner)} | ${task.status} | ${task.acceptance.length} | ${task.evidence.length} |`
-	)).join('\n');
+	for (const task of manifest.tasks) statusCounts.set(task.status, (statusCounts.get(task.status) ?? 0) + 1);
+	return {
+		manifest,
+		counts: ['queued', 'active', 'blocked', 'done', 'rejected']
+			.map((status) => `${status}=${statusCounts.get(status) ?? 0}`).join(', '),
+		table: manifest.tasks.map((task) => (
+			`| \`${escapeCell(task.id)}\` | ${task.priority} | ${escapeCell(task.area)} | ${escapeCell(task.owner)} | ${task.status} | ${task.acceptance.length} | ${task.evidence.length} |`
+		)).join('\n'),
+	};
+}
 
+function renderProjectionBody(): string {
+	const { manifest, counts, table } = renderStatusTable();
+	return `# Architecture Closure Epoch
+
+The canonical task owner is [\`nexus/architecture-closure.json\`](../blob/${manifest.branch}/nexus/architecture-closure.json). This is a generated **status/index projection** only. Do not edit task semantics, acceptance clauses, evidence, blockers, or state here.
+
+Single execution branch: \`${manifest.branch}\`. Priority is fixed at **P0 → P1 → P2**. Individual HALO feature internals remain P2 unless they block shared release correctness.
+
+Current projection: ${manifest.tasks.length} retained tasks; ${counts}.
+
+| Task | Priority | Area | Owner | Status | Acceptance clauses | Evidence items |
+| --- | --- | --- | --- | --- | ---: | ---: |
+${table}
+`;
+}
+
+export function renderArchitectureClosure(): string {
+	const { manifest } = renderStatusTable();
 	return `---
 type: reference
 status: active
@@ -33,18 +55,11 @@ issue: ${manifest.issue}
 branch: ${manifest.branch}
 ---
 
-# Architecture Closure Epoch
+${renderProjectionBody()}`;
+}
 
-This is a generated **status/index projection** of [\`architecture-closure.json\`](../architecture-closure.json). Do not edit task semantics, acceptance clauses, evidence, blockers, or state here. The JSON manifest is the sole task authority; GitHub Issue #${manifest.issue} is another thin projection.
-
-Priority is fixed at **P0 → P1 → P2**. Individual HALO feature internals remain P2 unless they block shared release correctness.
-
-Current projection: ${manifest.tasks.length} retained tasks; ${['queued', 'active', 'blocked', 'done', 'rejected'].map((status) => `${status}=${statusCounts.get(status) ?? 0}`).join(', ')}.
-
-| Task | Priority | Area | Owner | Status | Acceptance clauses | Evidence items |
-| --- | --- | --- | --- | --- | ---: | ---: |
-${table}
-`;
+export function renderArchitectureClosureIssueBody(): string {
+	return `<!-- generated from nexus/architecture-closure.json; do not hand-edit task state -->\n${renderProjectionBody()}`;
 }
 
 export function checkArchitectureClosureProjection(): void {
@@ -63,7 +78,9 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 		console.log('✓ Wrote docs/architecture-closure.md');
 	} else if (mode === '--check') {
 		checkArchitectureClosureProjection();
-	} else if (mode === '--issue-body' || mode === '--stdout') {
+	} else if (mode === '--issue-body') {
+		process.stdout.write(renderArchitectureClosureIssueBody());
+	} else if (mode === '--stdout') {
 		process.stdout.write(renderArchitectureClosure());
 	} else {
 		throw new Error(`Unknown render-architecture-closure mode: ${mode}`);
