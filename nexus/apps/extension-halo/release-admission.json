@@ -5,6 +5,12 @@
       "id": "bilibili-enhancer",
       "stage": "beta",
       "surfaces": ["script-runtime"],
+      "activeService": {
+        "kind": "saat-registry",
+        "owner": "kernel/services/saat-service",
+        "readiness": "persisted packaged-script registration reconciled",
+        "disposer": "obsolete registered script is unregistered during registry reconciliation"
+      },
       "reason": "Explicit beta packaged script."
     },
     {
@@ -29,6 +35,15 @@
           "output": "tools/_hover-zoom/runtime.js"
         }
       ],
+      "activeService": {
+        "kind": "storage-enabled",
+        "area": "local",
+        "key": "halo_hover_zoom_settings",
+        "defaultEnabled": true,
+        "owner": "content-hover-zoom",
+        "readiness": "storage snapshot hydrated or later change observed",
+        "disposer": "settings disable/page retirement disposes the page runtime"
+      },
       "reason": "Ready panel plus the shipped lightweight content host and Background DNR reconciliation owner."
     },
     {
@@ -83,12 +98,27 @@
         "runAt": "document_start",
         "allFrames": false
       },
+      "activeService": {
+        "kind": "storage-enabled",
+        "area": "sync",
+        "key": "HALO_SMOOTH_SCROLL_SETTINGS",
+        "defaultEnabled": true,
+        "owner": "content-smooth-scroll",
+        "readiness": "storage snapshot hydrated or later change observed",
+        "disposer": "settings disable/page retirement removes input ownership"
+      },
       "reason": "Existing shipped document-start runtime retained without implicitly publishing its currently unclassified panel."
     },
     {
       "id": "userscripts",
       "stage": "support",
       "surfaces": ["panel", "background-runtime"],
+      "activeService": {
+        "kind": "userscripts-authority",
+        "owner": "system/userscripts/storage-authority",
+        "readiness": "user-script storage authority hydrated",
+        "disposer": "subscription disposer retires SidePanel observation"
+      },
       "reason": "Runtime and editor support required by admitted packaged/user scripts; support admission is independent from catalog maturity status."
     }
   ]
