@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	buildRuntimePerformanceEvidence,
 	percentile,
+	runtimePerformanceIdentityFromEnvironment,
 	summarizeRuntimePerformance,
 	type RuntimePerformanceSample,
 } from './runtime-performance';
@@ -63,5 +64,20 @@ describe('runtime performance evidence', () => {
 			tree: 'b'.repeat(40),
 			host: { browser: { name: 'Chrome', version: 'fixture' } },
 		});
+	});
+
+	test('accepts an explicit measured-target identity only when head and tree are both exact SHAs', () => {
+		expect(runtimePerformanceIdentityFromEnvironment({})).toBeUndefined();
+		expect(runtimePerformanceIdentityFromEnvironment({
+			NEXUS_PERFORMANCE_TARGET_HEAD: 'a'.repeat(40),
+			NEXUS_PERFORMANCE_TARGET_TREE: 'b'.repeat(40),
+		})).toEqual({ head: 'a'.repeat(40), tree: 'b'.repeat(40) });
+		expect(() => runtimePerformanceIdentityFromEnvironment({
+			NEXUS_PERFORMANCE_TARGET_HEAD: 'a'.repeat(40),
+		})).toThrow('must be supplied together');
+		expect(() => runtimePerformanceIdentityFromEnvironment({
+			NEXUS_PERFORMANCE_TARGET_HEAD: 'not-a-sha',
+			NEXUS_PERFORMANCE_TARGET_TREE: 'b'.repeat(40),
+		})).toThrow('exact Git head/tree');
 	});
 });
