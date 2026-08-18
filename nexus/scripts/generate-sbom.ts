@@ -4,7 +4,6 @@
 import { createHash } from 'node:crypto';
 import {
 	existsSync,
-	lstatSync,
 	mkdirSync,
 	readdirSync,
 	readFileSync,
@@ -164,8 +163,10 @@ function resolveDependencyPackageJson(
 	workspaceRoot: string,
 ): string | null {
 	let current = resolve(fromDirectory);
-	const stop = resolve(workspaceRoot, '..');
-	while (current.startsWith(stop)) {
+	const boundary = resolve(workspaceRoot, '..');
+	while (true) {
+		const escapedBoundary = relative(boundary, current);
+		if (escapedBoundary.startsWith('..')) break;
 		const candidate = join(current, 'node_modules', dependencyName, 'package.json');
 		if (existsSync(candidate)) return candidate;
 		const parent = dirname(current);
@@ -175,9 +176,13 @@ function resolveDependencyPackageJson(
 	return null;
 }
 
-function componentFor(pkg: InstalledPackage, internal: boolean): CycloneDxComponent {
+function componentFor(
+	pkg: InstalledPackage,
+	internal: boolean,
+	rootPackageDirectory: string,
+): CycloneDxComponent {
 	const component: CycloneDxComponent = {
-		type: pkg.packageDir === workspaceDir ? 'application' : 'library',
+		type: resolve(pkg.packageDir) === resolve(rootPackageDirectory) ? 'application' : 'library',
 		'bom-ref': pkg.bomRef,
 		name: pkg.name,
 		version: pkg.version,
@@ -215,7 +220,7 @@ export function buildCycloneDxBom({
 	for (const pkg of [...workspacePackages, ...installedPackages]) allPackages.set(pkg.bomRef, pkg);
 	const workspaceRefs = new Set(workspacePackages.map((pkg) => pkg.bomRef));
 	const components = [...allPackages.values()]
-		.map((pkg) => componentFor(pkg, workspaceRefs.has(pkg.bomRef)))
+		.map((pkg) => componentFor(pkg, workspaceRefs.has(pkg.bomRef), workspaceRoot))
 		.sort((left, right) => left['bom-ref'].localeCompare(right['bom-ref']));
 
 	const dependencies = [...allPackages.values()].map((pkg) => {
@@ -238,7 +243,7 @@ export function buildCycloneDxBom({
 		specVersion: '1.6',
 		version: 1,
 		metadata: {
-			component: componentFor(rootPackage, true),
+			component: componentFor(rootPackage, true, workspaceRoot),
 			properties: [
 				{ name: 'nexus:bun-version', value: bunVersion },
 				{ name: 'nexus:lockfile-sha256', value: sha256File(lockfilePath) },
@@ -264,7 +269,7 @@ export function generateSbom(outputPath = defaultOutput): string {
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const args = process.argv.slice(2);
-	if (args.length > 2 || args[0] && args[0] !== '--out') {
+	if (args.length > 2 || (args[0] !== undefined && args[0] !== '--out')) {
 		throw new Error('usage: bun scripts/generate-sbom.ts [--out <path>]');
 	}
 	generateSbom(args[0] === '--out' && args[1] ? resolve(args[1]) : defaultOutput);
