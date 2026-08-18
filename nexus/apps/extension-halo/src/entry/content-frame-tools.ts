@@ -4,7 +4,6 @@
 import {
 	FRAME_TOOL_RULER_CANCEL,
 	FRAME_TOOL_RULER_START,
-	type FrameToolMessageType,
 } from '../content/frame-tool-messages';
 
 const LOG_TAG = '[HALO:FrameTools]';
@@ -89,7 +88,3 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	// one admitted Ruler capability independently even though one response wins.
 	return true;
 });
-
-// Type-only reference keeps the data authority honest without admitting every
-// catalog message into this physical content surface.
-void (undefined as FrameToolMessageType | undefined);
