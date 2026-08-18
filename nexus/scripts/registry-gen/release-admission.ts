@@ -32,12 +32,29 @@ export interface ReleaseWebAccessibleRuntime {
 	output: string;
 }
 
+interface ReleaseActiveServiceBase {
+	owner: string;
+	readiness: string;
+	disposer: string;
+}
+
+export type ReleaseActiveService =
+	| (ReleaseActiveServiceBase & {
+		kind: 'storage-enabled';
+		area: 'local' | 'sync';
+		key: string;
+		defaultEnabled: boolean;
+	})
+	| (ReleaseActiveServiceBase & { kind: 'userscripts-authority' })
+	| (ReleaseActiveServiceBase & { kind: 'saat-registry' });
+
 export interface ReleaseAdmissionModule {
 	id: string;
 	stage: HaloReleaseStage;
 	surfaces: HaloReleaseSurface[];
 	contentScript?: ReleaseContentScript;
 	webAccessibleRuntimes?: ReleaseWebAccessibleRuntime[];
+	activeService?: ReleaseActiveService;
 	reason: string;
 }
 
@@ -63,6 +80,44 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isNonEmptyString(value: unknown): value is string {
 	return typeof value === 'string' && value.trim().length > 0;
+}
+
+function lifecycleText(value: unknown, id: string, field: string): string {
+	if (!isNonEmptyString(value) || value.length > 512) {
+		throw new Error(`${id}: activeService.${field} must be a non-empty string <=512 chars`);
+	}
+	return value.trim();
+}
+
+function parseActiveService(value: unknown, id: string): ReleaseActiveService | undefined {
+	if (value === undefined) return undefined;
+	if (!isRecord(value)
+		|| (value.kind !== 'storage-enabled'
+			&& value.kind !== 'userscripts-authority'
+			&& value.kind !== 'saat-registry')) {
+		throw new Error(`${id}: activeService is malformed`);
+	}
+	const base = {
+		owner: lifecycleText(value.owner, id, 'owner'),
+		readiness: lifecycleText(value.readiness, id, 'readiness'),
+		disposer: lifecycleText(value.disposer, id, 'disposer'),
+	};
+	if (value.kind === 'storage-enabled') {
+		if ((value.area !== 'local' && value.area !== 'sync')
+			|| !isNonEmptyString(value.key)
+			|| !/^[A-Za-z0-9_.:-]{1,128}$/u.test(value.key)
+			|| typeof value.defaultEnabled !== 'boolean') {
+			throw new Error(`${id}: storage-enabled activeService is malformed`);
+		}
+		return {
+			kind: value.kind,
+			area: value.area,
+			key: value.key,
+			defaultEnabled: value.defaultEnabled,
+			...base,
+		};
+	}
+	return { kind: value.kind, ...base };
 }
 
 function parseSourceEntry(value: unknown, id: string, field: string): string {
@@ -153,12 +208,24 @@ export function parseReleaseAdmission(value: unknown): ReleaseAdmission {
 		}
 		const contentScript = parseContentScript(raw.contentScript, raw.id);
 		const webAccessibleRuntimes = parseWebAccessibleRuntimes(raw.webAccessibleRuntimes, raw.id);
+		const activeService = parseActiveService(raw.activeService, raw.id);
 		const hasContentRuntime = raw.surfaces.includes('content-runtime');
 		if (hasContentRuntime !== Boolean(contentScript)) {
 			throw new Error(`${raw.id}: content-runtime surface and contentScript must be declared together`);
 		}
 		if (webAccessibleRuntimes && !hasContentRuntime) {
 			throw new Error(`${raw.id}: webAccessibleRuntimes require content-runtime admission`);
+		}
+		if (activeService?.kind === 'saat-registry' && !raw.surfaces.includes('script-runtime')) {
+			throw new Error(`${raw.id}: saat-registry activeService requires script-runtime admission`);
+		}
+		if (activeService?.kind === 'userscripts-authority' && !raw.surfaces.includes('background-runtime')) {
+			throw new Error(`${raw.id}: userscripts-authority activeService requires background-runtime admission`);
+		}
+		if (activeService?.kind === 'storage-enabled'
+			&& !raw.surfaces.includes('content-runtime')
+			&& !raw.surfaces.includes('background-runtime')) {
+			throw new Error(`${raw.id}: storage-enabled activeService requires a runtime surface`);
 		}
 
 		seen.add(raw.id);
@@ -169,6 +236,7 @@ export function parseReleaseAdmission(value: unknown): ReleaseAdmission {
 			surfaces: raw.surfaces as HaloReleaseSurface[],
 			...(contentScript ? { contentScript } : {}),
 			...(webAccessibleRuntimes ? { webAccessibleRuntimes } : {}),
+			...(activeService ? { activeService } : {}),
 			reason: raw.reason,
 		};
 	});
@@ -201,6 +269,7 @@ export function validateReleaseAdmissionAgainstModules(
 	const contentOutputs = new Set<string>();
 	const sourceEntries = new Set<string>();
 	const runtimeOutputs = new Set<string>();
+	const storageOwners = new Set<string>();
 
 	for (const entry of admission.modules) {
 		const module = moduleById.get(entry.id);
@@ -246,6 +315,11 @@ export function validateReleaseAdmissionAgainstModules(
 			runtimeOutputs.add(runtime.output);
 			sourceEntries.add(runtime.entry);
 		}
+		if (entry.activeService?.kind === 'storage-enabled') {
+			const identity = `${entry.activeService.area}:${entry.activeService.key}`;
+			if (storageOwners.has(identity)) throw new Error(`active-service storage has multiple owners: ${identity}`);
+			storageOwners.add(identity);
+		}
 	}
 
 	// A manifest may describe arbitrary catalog inventory, but an explicitly
@@ -285,6 +359,9 @@ export function generateReleaseAdmissionProjection(
 		})))
 		.sort((left, right) => left.output.localeCompare(right.output));
 	const webAccessibleResources = webAccessibleRuntimeEntries.map((entry) => entry.output);
+	const activeServices = admission.modules.flatMap((entry) => entry.activeService
+		? [{ id: entry.id, ...entry.activeService }]
+		: []);
 	const content = `// AUTO-GENERATED - DO NOT EDIT
 // Generated by: bun run generate-registry
 // Physical release admission projection; catalog inventory remains in _generated.ts.
@@ -299,6 +376,7 @@ export const RELEASE_BACKGROUND_RUNTIME_IDS = Object.freeze(${JSON.stringify(byS
 export const RELEASE_CONTENT_SCRIPTS = Object.freeze(${JSON.stringify(contentScripts, null, 2)} as const);
 export const RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES = Object.freeze(${JSON.stringify(webAccessibleRuntimeEntries, null, 2)} as const);
 export const RELEASE_WEB_ACCESSIBLE_RESOURCES = Object.freeze(${JSON.stringify(webAccessibleResources, null, 2)} as const);
+export const RELEASE_ACTIVE_SERVICE_CONTRACTS = Object.freeze(${JSON.stringify(activeServices, null, 2)} as const);
 export const RELEASE_STAGE_BY_ID = Object.freeze(${JSON.stringify(stages, null, 2)} as const);
 
 export type ReleaseStage = 'catalog' | (typeof RELEASE_STAGE_BY_ID)[keyof typeof RELEASE_STAGE_BY_ID];
