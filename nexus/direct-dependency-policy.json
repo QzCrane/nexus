@@ -6,7 +6,8 @@
       "dependency": "preact",
       "evidencePath": "apps/extension-halo/build.ts",
       "marker": "'react': 'preact/compat'",
-      "reason": "HALO source is React-compatible while the production SidePanel renderer is aliased to one Preact compat runtime by the build owner."
+      "reason": "HALO source is React-compatible while the production SidePanel renderer is aliased to one Preact compat runtime by the build owner.",
+      "replacesSourceRuntimeDependencies": ["react", "react-dom"]
     }
   ],
   "knownDebt": [
@@ -30,6 +31,20 @@
       "dependency": "@types/qrcode",
       "kind": "type-package-in-runtime-dependencies",
       "resolution": "Move to devDependencies while regenerating nexus/bun.lock; type declarations do not belong to the runtime dependency set."
+    },
+    {
+      "packagePath": "apps/extension-halo/package.json",
+      "section": "dependencies",
+      "dependency": "react",
+      "kind": "source-import-not-shipped-runtime",
+      "resolution": "Move React to devDependencies when regenerating nexus/bun.lock; source compatibility is retained, but the production SidePanel aliases React to Preact and rejects React runtime inputs."
+    },
+    {
+      "packagePath": "apps/extension-halo/package.json",
+      "section": "dependencies",
+      "dependency": "react-dom",
+      "kind": "source-import-not-shipped-runtime",
+      "resolution": "Move ReactDOM to devDependencies when regenerating nexus/bun.lock; the production renderer resolves react-dom/client and react-dom through Preact compat and forbids ReactDOM runtime inputs."
     },
     {
       "packagePath": "apps/extension-halo/package.json",
