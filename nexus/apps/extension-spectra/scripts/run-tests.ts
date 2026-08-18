@@ -5,7 +5,10 @@ import { fileURLToPath } from 'node:url';
 
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const testDir = resolve(projectDir, 'test');
-const chromeIntegrationTests = new Set(['smoke.spec.ts']);
+const chromeIntegrationTests = new Set([
+	'smoke.spec.ts',
+	'tab-visibility-chrome.spec.ts',
+]);
 
 function walk(directory) {
 	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
