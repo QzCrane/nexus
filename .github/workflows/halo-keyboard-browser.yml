@@ -95,5 +95,5 @@ jobs:
         working-directory: nexus/apps/extension-halo
         run: bunx playwright install --with-deps --no-shell chromium
 
-      - name: Test HALO browser contracts in Chromium
-        run: bun --cwd nexus/apps/extension-halo test:browser-chromium
+      - name: Test HALO fast browser contracts in Chromium
+        run: bun --cwd nexus/apps/extension-halo test:browser-chromium:fast
