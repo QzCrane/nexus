@@ -1,8 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { resolve } from 'node:path';
 import {
 	buildRuntimePerformanceEvidence,
 	percentile,
 	runtimePerformanceIdentityFromEnvironment,
+	runtimePerformanceOutputPath,
 	summarizeRuntimePerformance,
 	type RuntimePerformanceSample,
 } from './runtime-performance';
@@ -79,5 +81,18 @@ describe('runtime performance evidence', () => {
 			NEXUS_PERFORMANCE_TARGET_HEAD: 'not-a-sha',
 			NEXUS_PERFORMANCE_TARGET_TREE: 'b'.repeat(40),
 		})).toThrow('exact Git head/tree');
+	});
+
+	test('isolates comparison output without allowing path traversal through a workload filename', () => {
+		const root = resolve('/tmp/nexus-performance-comparison');
+		expect(runtimePerformanceOutputPath('spectra-worker-wake.json', {
+			NEXUS_PERFORMANCE_OUTPUT_DIR: root,
+		})).toBe(resolve(root, 'spectra-worker-wake.json'));
+		expect(() => runtimePerformanceOutputPath('../escape.json', {
+			NEXUS_PERFORMANCE_OUTPUT_DIR: root,
+		})).toThrow('one local file name');
+		expect(() => runtimePerformanceOutputPath('nested/escape.json', {
+			NEXUS_PERFORMANCE_OUTPUT_DIR: root,
+		})).toThrow('one local file name');
 	});
 });
