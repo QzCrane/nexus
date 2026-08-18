@@ -12,6 +12,35 @@ afterEach(() => {
 });
 
 describe('Chrome-native screenshot acknowledgement', () => {
+	test('fails before capture when optional Downloads permission is absent', async () => {
+		let tabApiTouched = false;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				permissions: { contains: async () => false },
+				tabs: {
+					query: async () => { tabApiTouched = true; return []; },
+				},
+			},
+		});
+		await expect(screenshotHandlerTestApi.captureAndSaveWithGrantedPermission(
+			{ id: 7, windowId: 3, active: true } as chrome.tabs.Tab,
+			{
+				captureToken: 'capture-token-denied',
+				rect: {
+					x: 0,
+					y: 0,
+					width: 10,
+					height: 10,
+					viewportWidth: 10,
+					viewportHeight: 10,
+				},
+			},
+			async () => undefined,
+		)).rejects.toThrow('Downloads permission');
+		expect(tabApiTouched).toBe(false);
+	});
+
 	test('does not report saved until Chrome confirms download completion', async () => {
 		let downloadListener: ((delta: chrome.downloads.DownloadDelta) => void) | null = null;
 		let targetVerificationCount = 0;
