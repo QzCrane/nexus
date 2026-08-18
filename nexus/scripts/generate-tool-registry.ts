@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // goal: Auto-generate HALO registry artifacts from manifest files
-// eff: Canonical UI registry plus minimal background/install projections
+// eff: Canonical catalog plus release-admitted runtime projections
 
 import { readFileSync } from 'node:fs';
 import {
@@ -17,6 +17,7 @@ import {
 } from './registry-gen/gen-registry.ts';
 import { generateLoader } from './registry-gen/gen-loader.ts';
 import { generateI18n } from './registry-gen/gen-i18n.ts';
+import { normalizeReleaseStatus } from '../apps/extension-halo/src/kernel/registry/release-admission.ts';
 
 function main() {
 	const args = process.argv.slice(2);
@@ -52,6 +53,9 @@ function main() {
 	for (const module of validModules) {
 		const manifest = manifestsMap.get(module.id);
 		const declaredType = manifest.pluginType;
+		// Validate release status even while omitted legacy manifests still
+		// normalize to ready for backward compatibility.
+		normalizeReleaseStatus(manifest.status);
 		if ('size' in manifest) {
 			throw new Error(
 				`${module.id}: source-directory size is not release artifact evidence; remove manifest.size`,
@@ -90,7 +94,7 @@ function main() {
 	generateRegistry(validModules, manifestsMap, releaseVersion, mode);
 	generateBackgroundActiveProjection(validModules, manifestsMap, mode);
 	generateScriptRuntimeManifest(validModules, manifestsMap, mode);
-	generateLoader(validModules, mode);
+	generateLoader(validModules, manifestsMap, mode);
 	generateI18n(validModules, mode);
 
 	console.log(`\n✨ Registry ${mode === 'check' ? 'check' : 'generation'} complete!`);
