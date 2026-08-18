@@ -1,8 +1,10 @@
 // goal: make physical HALO release admission independent from source/catalog presence
 // inv: a module enters an executable release surface only through this exact owner
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
+	HALO_APP_ROOT,
 	HALO_RELEASE_ADMISSION,
 	OUTPUT_RELEASE_ADMISSION,
 } from './config.ts';
@@ -19,9 +21,15 @@ export const RELEASE_SURFACES = [
 export type HaloReleaseSurface = typeof RELEASE_SURFACES[number];
 
 export interface ReleaseContentScript {
+	entry: string;
 	js: string;
 	runAt: 'document_start' | 'document_idle';
 	allFrames: boolean;
+}
+
+export interface ReleaseWebAccessibleRuntime {
+	entry: string;
+	output: string;
 }
 
 export interface ReleaseAdmissionModule {
@@ -29,7 +37,7 @@ export interface ReleaseAdmissionModule {
 	stage: HaloReleaseStage;
 	surfaces: HaloReleaseSurface[];
 	contentScript?: ReleaseContentScript;
-	webAccessibleResources?: string[];
+	webAccessibleRuntimes?: ReleaseWebAccessibleRuntime[];
 	reason: string;
 }
 
@@ -57,31 +65,62 @@ function isNonEmptyString(value: unknown): value is string {
 	return typeof value === 'string' && value.trim().length > 0;
 }
 
+function parseSourceEntry(value: unknown, id: string, field: string): string {
+	if (!isNonEmptyString(value)
+		|| !/^src\/entry\/[A-Za-z0-9_./-]+\.tsx?$/u.test(value)
+		|| value.includes('..')) {
+		throw new Error(`${id}: ${field} must be an exact src/entry TypeScript path`);
+	}
+	if (!existsSync(resolve(HALO_APP_ROOT, value))) {
+		throw new Error(`${id}: ${field} does not exist: ${value}`);
+	}
+	return value;
+}
+
 function parseContentScript(value: unknown, id: string): ReleaseContentScript | undefined {
 	if (value === undefined) return undefined;
 	if (!isRecord(value)
 		|| !isNonEmptyString(value.js)
-		|| !/^[A-Za-z0-9_./-]+\.js$/u.test(value.js)
+		|| !/^[A-Za-z0-9_-]+\.js$/u.test(value.js)
 		|| (value.runAt !== 'document_start' && value.runAt !== 'document_idle')
 		|| typeof value.allFrames !== 'boolean') {
 		throw new Error(`${id}: contentScript is malformed`);
 	}
 	return {
+		entry: parseSourceEntry(value.entry, id, 'contentScript.entry'),
 		js: value.js,
 		runAt: value.runAt,
 		allFrames: value.allFrames,
 	};
 }
 
-function parseResourceList(value: unknown, id: string): string[] | undefined {
+function parseWebAccessibleRuntimes(
+	value: unknown,
+	id: string,
+): ReleaseWebAccessibleRuntime[] | undefined {
 	if (value === undefined) return undefined;
-	if (!Array.isArray(value)
-		|| value.length === 0
-		|| value.some((resource) => !isNonEmptyString(resource) || resource.includes('*') || resource.startsWith('/'))
-		|| new Set(value).size !== value.length) {
-		throw new Error(`${id}: webAccessibleResources must be unique exact relative paths`);
+	if (!Array.isArray(value) || value.length === 0 || value.length > 32) {
+		throw new Error(`${id}: webAccessibleRuntimes must contain 1..32 exact runtime entries`);
 	}
-	return [...value].sort() as string[];
+	const outputs = new Set<string>();
+	const entries = new Set<string>();
+	const runtimes = value.map((raw, index): ReleaseWebAccessibleRuntime => {
+		if (!isRecord(raw)
+			|| !isNonEmptyString(raw.output)
+			|| raw.output.includes('*')
+			|| raw.output.startsWith('/')
+			|| raw.output.includes('..')
+			|| !/^[A-Za-z0-9_./-]+\.js$/u.test(raw.output)) {
+			throw new Error(`${id}: webAccessibleRuntimes[${index}] is malformed`);
+		}
+		const entry = parseSourceEntry(raw.entry, id, `webAccessibleRuntimes[${index}].entry`);
+		if (outputs.has(raw.output)) throw new Error(`${id}: duplicates web runtime output ${raw.output}`);
+		if (entries.has(entry)) throw new Error(`${id}: duplicates web runtime source ${entry}`);
+		outputs.add(raw.output);
+		entries.add(entry);
+		return { entry, output: raw.output };
+	});
+	return runtimes.sort((left, right) => left.output.localeCompare(right.output));
 }
 
 export function parseReleaseAdmission(value: unknown): ReleaseAdmission {
@@ -113,13 +152,13 @@ export function parseReleaseAdmission(value: unknown): ReleaseAdmission {
 			throw new Error(`HALO release admission ${raw.id} duplicates a surface`);
 		}
 		const contentScript = parseContentScript(raw.contentScript, raw.id);
-		const webAccessibleResources = parseResourceList(raw.webAccessibleResources, raw.id);
+		const webAccessibleRuntimes = parseWebAccessibleRuntimes(raw.webAccessibleRuntimes, raw.id);
 		const hasContentRuntime = raw.surfaces.includes('content-runtime');
 		if (hasContentRuntime !== Boolean(contentScript)) {
 			throw new Error(`${raw.id}: content-runtime surface and contentScript must be declared together`);
 		}
-		if (webAccessibleResources && !hasContentRuntime) {
-			throw new Error(`${raw.id}: webAccessibleResources require content-runtime admission`);
+		if (webAccessibleRuntimes && !hasContentRuntime) {
+			throw new Error(`${raw.id}: webAccessibleRuntimes require content-runtime admission`);
 		}
 
 		seen.add(raw.id);
@@ -129,7 +168,7 @@ export function parseReleaseAdmission(value: unknown): ReleaseAdmission {
 			stage: raw.stage as HaloReleaseStage,
 			surfaces: raw.surfaces as HaloReleaseSurface[],
 			...(contentScript ? { contentScript } : {}),
-			...(webAccessibleResources ? { webAccessibleResources } : {}),
+			...(webAccessibleRuntimes ? { webAccessibleRuntimes } : {}),
 			reason: raw.reason,
 		};
 	});
@@ -160,7 +199,8 @@ export function validateReleaseAdmissionAgainstModules(
 	const moduleById = new Map(allModules.map((module) => [module.id, module]));
 	const admissionMap = releaseAdmissionMap(admission);
 	const contentOutputs = new Set<string>();
-	const resources = new Set<string>();
+	const sourceEntries = new Set<string>();
+	const runtimeOutputs = new Set<string>();
 
 	for (const entry of admission.modules) {
 		const module = moduleById.get(entry.id);
@@ -190,11 +230,21 @@ export function validateReleaseAdmissionAgainstModules(
 			if (contentOutputs.has(entry.contentScript.js)) {
 				throw new Error(`content-script output has multiple release owners: ${entry.contentScript.js}`);
 			}
+			if (sourceEntries.has(entry.contentScript.entry)) {
+				throw new Error(`content-script source has multiple release owners: ${entry.contentScript.entry}`);
+			}
 			contentOutputs.add(entry.contentScript.js);
+			sourceEntries.add(entry.contentScript.entry);
 		}
-		for (const resource of entry.webAccessibleResources ?? []) {
-			if (resources.has(resource)) throw new Error(`web-accessible resource has multiple owners: ${resource}`);
-			resources.add(resource);
+		for (const runtime of entry.webAccessibleRuntimes ?? []) {
+			if (runtimeOutputs.has(runtime.output)) {
+				throw new Error(`web-accessible runtime output has multiple owners: ${runtime.output}`);
+			}
+			if (sourceEntries.has(runtime.entry)) {
+				throw new Error(`web-accessible runtime source has multiple owners: ${runtime.entry}`);
+			}
+			runtimeOutputs.add(runtime.output);
+			sourceEntries.add(runtime.entry);
 		}
 	}
 
@@ -228,7 +278,13 @@ export function generateReleaseAdmissionProjection(
 	const contentScripts = admission.modules.flatMap((entry) => entry.contentScript
 		? [{ id: entry.id, ...entry.contentScript }]
 		: []);
-	const webAccessibleResources = admission.modules.flatMap((entry) => entry.webAccessibleResources ?? []).sort();
+	const webAccessibleRuntimeEntries = admission.modules
+		.flatMap((entry) => (entry.webAccessibleRuntimes ?? []).map((runtime) => ({
+			id: entry.id,
+			...runtime,
+		})))
+		.sort((left, right) => left.output.localeCompare(right.output));
+	const webAccessibleResources = webAccessibleRuntimeEntries.map((entry) => entry.output);
 	const content = `// AUTO-GENERATED - DO NOT EDIT
 // Generated by: bun run generate-registry
 // Physical release admission projection; catalog inventory remains in _generated.ts.
@@ -241,6 +297,7 @@ export const RELEASE_SCRIPT_RUNTIME_IDS = Object.freeze(${JSON.stringify(bySurfa
 export const RELEASE_CONTENT_RUNTIME_IDS = Object.freeze(${JSON.stringify(bySurface['content-runtime'], null, 2)} as const);
 export const RELEASE_BACKGROUND_RUNTIME_IDS = Object.freeze(${JSON.stringify(bySurface['background-runtime'], null, 2)} as const);
 export const RELEASE_CONTENT_SCRIPTS = Object.freeze(${JSON.stringify(contentScripts, null, 2)} as const);
+export const RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES = Object.freeze(${JSON.stringify(webAccessibleRuntimeEntries, null, 2)} as const);
 export const RELEASE_WEB_ACCESSIBLE_RESOURCES = Object.freeze(${JSON.stringify(webAccessibleResources, null, 2)} as const);
 export const RELEASE_STAGE_BY_ID = Object.freeze(${JSON.stringify(stages, null, 2)} as const);
 
