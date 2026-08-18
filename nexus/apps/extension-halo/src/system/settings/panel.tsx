@@ -4,13 +4,20 @@
 import type React from 'react';
 import { useState, useCallback, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
-import { createLogger } from '@nexus/kernel';
+import {
+	buildLocalDiagnosticBundle,
+	createDiagnosticEventBuffer,
+	createLogger,
+	downloadLocalDiagnosticBundle,
+	installUnhandledDiagnosticEvents,
+} from '@nexus/kernel';
 import { useTranslation, type Locale, detectLocale, LOCALES } from '../../i18n';
 import type { HaloSettings } from '../../kernel';
 import { DEFAULT_SETTINGS } from '../../kernel';
 import { loadSettings, saveSettings, getThemeColors, applyTheme } from '../../kernel';
 import { styles } from './panel.styles';
 import { useOverlay } from '../../components/ui/overlay';
+import { useActiveServices } from '../../components/sidepanel/ActiveServicesContext';
 import { AppearanceSettings } from './AppearanceSettings';
 import { InterfaceSettings } from './InterfaceSettings';
 
@@ -23,11 +30,16 @@ export interface SettingsPanelProps {
 export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }) => {
 	const { t, setting, setLocale } = useTranslation();
 	const { showToast } = useOverlay();
+	const { activeServices, bgToolIds } = useActiveServices();
 	const [settings, setSettings] = useState<HaloSettings>(DEFAULT_SETTINGS);
+	const [diagnosticEvents] = useState(() => createDiagnosticEventBuffer());
+	const manifestVersion = chrome.runtime.getManifest().version;
 
 	useEffect(() => {
 		loadSettings().then(setSettings);
 	}, []);
+
+	useEffect(() => installUnhandledDiagnosticEvents(diagnosticEvents, 'settings'), [diagnosticEvents]);
 
 	const updateSetting = useCallback(async <K extends keyof HaloSettings>(
 		key: K,
@@ -60,6 +72,34 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }
 		onSettingsChange?.(updated);
 		showToast({ message: `${t('settings.resetAll')} ✓`, type: 'success' });
 	}, [onSettingsChange, showToast, t]);
+
+	const handleDiagnostics = useCallback(async () => {
+		try {
+			const bundle = await buildLocalDiagnosticBundle({
+				product: 'HALO',
+				owners: {
+					activeServiceCount: activeServices.size,
+					backgroundMechanismCount: bgToolIds.length,
+					settingsSurfaceActive: true,
+				},
+				events: diagnosticEvents,
+			});
+			diagnosticEvents.record('info', 'settings', 'diagnostic-exported');
+			downloadLocalDiagnosticBundle(bundle);
+			showToast({
+				message: t('settings.diagnosticsExported', {
+					defaultValue: 'Diagnostic JSON exported locally. No data was sent.',
+				}),
+				type: 'success',
+			});
+		} catch {
+			diagnosticEvents.record('error', 'settings', 'diagnostic-export-failed');
+			showToast({
+				message: t('settings.diagnosticsFailed', { defaultValue: 'Diagnostic export failed.' }),
+				type: 'error',
+			});
+		}
+	}, [activeServices.size, bgToolIds.length, diagnosticEvents, showToast, t]);
 
 	return (
 		<div style={styles.wrapper}>
@@ -102,12 +142,20 @@ export const SettingsPanel: React.FC<SettingsPanelProps> = ({ onSettingsChange }
 					<button type="button" style={styles.resetBtn} onClick={handleReset}>
 						↻ {t('settings.resetAll')}
 					</button>
+					<button type="button" style={styles.resetBtn} onClick={() => void handleDiagnostics()}>
+						🧪 {t('settings.exportDiagnostics', { defaultValue: 'Export diagnostic JSON' })}
+					</button>
+					<div style={styles.sublabel}>
+						{t('settings.diagnosticsPrivacy', {
+							defaultValue: 'Local-only redacted snapshot; excludes URLs, titles, storage values and secrets.',
+						})}
+					</div>
 				</div>
 			</Card>
 
 			{/* Version */}
 			<div style={styles.version}>
-				HALO v0.2.0 • {t('settings.version')}
+				HALO v{manifestVersion} • {t('settings.version')}
 			</div>
 
 		</div>
