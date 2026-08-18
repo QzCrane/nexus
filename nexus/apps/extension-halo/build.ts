@@ -24,6 +24,7 @@ import {
 	assertActivationClosureBudget,
 	measureDynamicActivationClosures,
 } from './build-activation-closures';
+import { isReleaseAdmitted } from './src/kernel/registry/release-admission';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -33,14 +34,15 @@ const isDev = process.argv.includes('--dev') || isWatch;
 const isAnalyze = process.argv.includes('--analyze');
 const distDir = path.join(__dirname, 'dist');
 
-// Production ceilings are the audited KiB buckets from the 2026-08-13
-// cross-platform production build. They are regression gates, not aspirations:
+// Production ceilings are audited regression gates, not aspirations:
 // intentional growth requires an explicit architecture + budget change.
 const PRODUCTION_BUDGET_KIB = Object.freeze({
 	background: 32,
 	allFrameDocumentStart: 1,
 	topFrameDocumentStart: 26,
-	allFrameDocumentIdle: 2,
+	// No release-admitted all-frame document_idle host remains. Reintroducing
+	// one is a new cross-frame capability and must change this budget explicitly.
+	allFrameDocumentIdle: 0,
 	topFrameDocumentIdle: 14,
 	sidepanelStartup: 36,
 	frameToolsRuntime: 8,
@@ -120,15 +122,43 @@ cpSync(path.join(__dirname, 'public'), distDir, { recursive: true });
 
 const toolsDir = path.join(__dirname, 'src/tools');
 const scriptsDir = path.join(__dirname, 'src/scripts');
+const systemDir = path.join(__dirname, 'src/system');
 const distToolsDir = path.join(distDir, 'tools');
 const distScriptsDir = path.join(distDir, 'scripts');
 
 mkdirSync(distToolsDir, { recursive: true });
 mkdirSync(distScriptsDir, { recursive: true });
 
+function readPluginManifest(directory, id) {
+	const manifestPath = path.join(directory, id, 'manifest.json');
+	if (!existsSync(manifestPath)) return null;
+	return JSON.parse(readFileSync(manifestPath, 'utf8'));
+}
+
+function isPluginReleaseAdmitted(directory, id) {
+	const manifest = readPluginManifest(directory, id);
+	return manifest ? isReleaseAdmitted(manifest.status) : false;
+}
+
+function catalogOnlyPanelRoots() {
+	const roots = [];
+	for (const [directory, sourceSegment] of [
+		[toolsDir, 'src/tools'],
+		[systemDir, 'src/system'],
+	]) {
+		if (!existsSync(directory)) continue;
+		for (const entry of readdirSync(directory, { withFileTypes: true })) {
+			if (!entry.isDirectory() || isPluginReleaseAdmitted(directory, entry.name)) continue;
+			roots.push(`${sourceSegment}/${entry.name}/`);
+		}
+	}
+	return roots;
+}
+
 async function buildScriptFiles(sourceDir, destBaseDir) {
 	if (!existsSync(sourceDir)) return 0;
-	const dirs = readdirSync(sourceDir, { withFileTypes: true }).filter((entry) => entry.isDirectory());
+	const dirs = readdirSync(sourceDir, { withFileTypes: true })
+		.filter((entry) => entry.isDirectory() && isPluginReleaseAdmitted(sourceDir, entry.name));
 
 	const promises = dirs.map(async (dir) => {
 		const scriptJs = path.join(sourceDir, dir.name, 'script.js');
@@ -180,7 +210,6 @@ const entries = [
 	{ entry: 'src/entry/content-frame-tools-runtime.ts', out: 'tools/_frame-tools/runtime.js', kind: 'module' },
 	{ entry: 'src/entry/content-hover-zoom.ts', out: 'content-hover-zoom.js', kind: 'classic' },
 	{ entry: 'src/entry/content-hover-zoom-runtime.ts', out: 'tools/_hover-zoom/runtime.js', kind: 'module' },
-	{ entry: 'src/entry/content-clipboard.ts', out: 'content-clipboard.js', kind: 'classic' },
 	{ entry: 'src/entry/background.ts', out: 'background.js', kind: 'classic' },
 	{ entry: 'src/entry/sidepanel.tsx', out: 'sidepanel.js', kind: 'sidepanel' },
 	{ entry: 'src/entry/sidepanel-init.ts', out: 'sidepanel-init.js', kind: 'classic' },
@@ -325,6 +354,17 @@ function assertProductionSidepanelRenderer(metafile) {
 	}
 }
 
+function assertNoCatalogOnlySidepanelInputs(metafile) {
+	if (isDev) return;
+	const inputs = Object.keys(metafile?.inputs ?? {})
+		.map((input) => path.relative(__dirname, path.resolve(__dirname, input)).replaceAll('\\', '/'));
+	const forbiddenRoots = catalogOnlyPanelRoots();
+	const leaked = inputs.filter((input) => forbiddenRoots.some((root) => input.startsWith(root)));
+	if (leaked.length > 0) {
+		throw new Error(`HALO catalog-only source entered production SidePanel graph: ${leaked.join(', ')}`);
+	}
+}
+
 function assertProductionBudgets(measurements) {
 	if (isDev) return;
 	for (const [name, bytes] of Object.entries(measurements)) {
@@ -410,6 +450,7 @@ if (isWatch) {
 
 	const sidepanelResult = resultFor('sidepanel.js');
 	assertProductionSidepanelRenderer(sidepanelResult.result.metafile);
+	assertNoCatalogOnlySidepanelInputs(sidepanelResult.result.metafile);
 	const sidepanelStartup = staticOutputClosure(sidepanelResult.result.metafile, 'sidepanel.js');
 	if (!sidepanelStartup) {
 		throw new Error('HALO SidePanel startup closure could not be resolved from the esbuild metafile');
