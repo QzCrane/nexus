@@ -1,5 +1,5 @@
-// goal: keep human backlog views as deterministic projections of architecture-closure.json
-// inv: the JSON manifest is the only editable task authority; docs/Issue bodies are generated views
+// goal: keep human backlog views as thin deterministic projections of architecture-closure.json
+// inv: the JSON manifest is the only owner of task semantics; docs/Issue repeat only navigation/status metadata
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -22,17 +22,6 @@ export function renderArchitectureClosure(): string {
 	const table = manifest.tasks.map((task) => (
 		`| \`${escapeCell(task.id)}\` | ${task.priority} | ${escapeCell(task.area)} | ${escapeCell(task.owner)} | ${task.status} | ${task.acceptance.length} | ${task.evidence.length} |`
 	)).join('\n');
-	const taskDetails = manifest.tasks.map((task) => {
-		const acceptance = task.acceptance.map((item) => `- ${item}`).join('\n');
-		const evidence = task.evidence.length > 0
-			? task.evidence.map((item) => `- \`${item}\``).join('\n')
-			: '- None retained yet.';
-		const blocker = task.blocker ? `\n\n**Blocker**\n\n${task.blocker}` : '';
-		const counterEvidence = task.counterEvidence?.length
-			? `\n\n**Counter-evidence**\n\n${task.counterEvidence.map((item) => `- ${item}`).join('\n')}`
-			: '';
-		return `## ${task.id}\n\n- Priority: **${task.priority}**\n- Area: \`${task.area}\`\n- Owner: \`${task.owner}\`\n- Status: **${task.status}**\n\n**Acceptance**\n\n${acceptance}\n\n**Retained evidence**\n\n${evidence}${blocker}${counterEvidence}`;
-	}).join('\n\n');
 
 	return `---
 type: reference
@@ -46,7 +35,7 @@ branch: ${manifest.branch}
 
 # Architecture Closure Epoch
 
-This file is generated from [\`architecture-closure.json\`](../architecture-closure.json). **Do not edit task state here.** The JSON manifest is the sole editable task authority; GitHub Issue #${manifest.issue} and this document are projections.
+This is a generated **status/index projection** of [\`architecture-closure.json\`](../architecture-closure.json). Do not edit task semantics, acceptance clauses, evidence, blockers, or state here. The JSON manifest is the sole task authority; GitHub Issue #${manifest.issue} is another thin projection.
 
 Priority is fixed at **P0 → P1 → P2**. Individual HALO feature internals remain P2 unless they block shared release correctness.
 
@@ -55,8 +44,6 @@ Current projection: ${manifest.tasks.length} retained tasks; ${['queued', 'activ
 | Task | Priority | Area | Owner | Status | Acceptance clauses | Evidence items |
 | --- | --- | --- | --- | --- | ---: | ---: |
 ${table}
-
-${taskDetails}
 `;
 }
 
