@@ -11,7 +11,7 @@
         --halo-bg-tertiary: #2a2a2a;
         --halo-text: #f0f0f0;
         --halo-text-secondary: #b0b0b0;
-        --halo-text-muted: #666666;
+        --halo-text-muted: #9a9a9a;
         --halo-border: #444444;
         --halo-accent: #7c3aed;
         --halo-input-bg: #2a2a2a;
@@ -29,14 +29,17 @@
       * {
         box-sizing: border-box;
       }
-      /* Reset button default styles to prevent black box flash */
+      /* Reset browser-specific button chrome without removing keyboard focus. */
       button {
         -webkit-tap-highlight-color: transparent;
         -webkit-appearance: none;
         appearance: none;
       }
-      button:focus,
-      button:active {
+      :where(button, input, textarea, select, [tabindex]):focus-visible {
+        outline: 2px solid var(--halo-accent);
+        outline-offset: 2px;
+      }
+      :where(button, input, textarea, select, [tabindex]):focus:not(:focus-visible) {
         outline: none;
       }
       body {
@@ -74,6 +77,17 @@
         to {
           opacity: 1;
           transform: translateX(0);
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+          transition-delay: 0ms !important;
         }
       }
       /* Code editor text selection - high contrast for readability */
