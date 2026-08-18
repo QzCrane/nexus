@@ -42,21 +42,36 @@ export const RELEASE_BACKGROUND_RUNTIME_IDS = Object.freeze([
 export const RELEASE_CONTENT_SCRIPTS = Object.freeze([
   {
     "id": "hover-zoom",
+    "entry": "src/entry/content-hover-zoom.ts",
     "js": "content-hover-zoom.js",
     "runAt": "document_idle",
     "allFrames": false
   },
   {
     "id": "ruler",
+    "entry": "src/entry/content-frame-tools.ts",
     "js": "content-frame-tools.js",
     "runAt": "document_start",
     "allFrames": true
   },
   {
     "id": "smooth-scroll",
+    "entry": "src/entry/content-smooth-scroll.ts",
     "js": "content-smooth-scroll.js",
     "runAt": "document_start",
     "allFrames": false
+  }
+] as const);
+export const RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES = Object.freeze([
+  {
+    "id": "ruler",
+    "entry": "src/entry/content-frame-tools-runtime.ts",
+    "output": "tools/_frame-tools/runtime.js"
+  },
+  {
+    "id": "hover-zoom",
+    "entry": "src/entry/content-hover-zoom-runtime.ts",
+    "output": "tools/_hover-zoom/runtime.js"
   }
 ] as const);
 export const RELEASE_WEB_ACCESSIBLE_RESOURCES = Object.freeze([
