@@ -7,6 +7,7 @@ import { initSiteEditor } from './site-editor';
 import { initModal } from './modal';
 import { initUserScriptsSection } from './userscripts';
 import { initDiagnosticsSection } from './diagnostics';
+import { installOptionsOptionalPermissionAdmission } from './optional-permission-ui';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
 import { bindOptionsRetry, clearOptionsError, showOptionsError } from './status';
 
@@ -18,6 +19,8 @@ async function init(): Promise<void> {
 
 	await initI18n();
 	initModal();
+	const disposeOptionalPermissionAdmission = installOptionsOptionalPermissionAdmission();
+	window.addEventListener('pagehide', disposeOptionalPermissionAdmission, { once: true });
 
 	await initSlotsEditor();
 	await initSiteEditor();
