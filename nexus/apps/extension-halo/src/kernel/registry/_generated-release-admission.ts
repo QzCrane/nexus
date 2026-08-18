@@ -37,6 +37,30 @@ export const RELEASE_BACKGROUND_RUNTIME_IDS = Object.freeze([
   "qrcode",
   "userscripts"
 ] as const);
+export const RELEASE_CONTENT_SCRIPTS = Object.freeze([
+  {
+    "id": "hover-zoom",
+    "js": "content-hover-zoom.js",
+    "runAt": "document_idle",
+    "allFrames": false
+  },
+  {
+    "id": "ruler",
+    "js": "content-frame-tools.js",
+    "runAt": "document_start",
+    "allFrames": true
+  },
+  {
+    "id": "smooth-scroll",
+    "js": "content-smooth-scroll.js",
+    "runAt": "document_start",
+    "allFrames": false
+  }
+] as const);
+export const RELEASE_WEB_ACCESSIBLE_RESOURCES = Object.freeze([
+  "tools/_frame-tools/runtime.js",
+  "tools/_hover-zoom/runtime.js"
+] as const);
 export const RELEASE_STAGE_BY_ID = Object.freeze({
   "bilibili-enhancer": "beta",
   "color-picker": "ready",
