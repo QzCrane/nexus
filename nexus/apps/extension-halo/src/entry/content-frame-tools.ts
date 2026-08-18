@@ -1,11 +1,7 @@
-// goal: minimal all-frame command bootstrap for iframe-spanning HALO tools
-// inv: Heavy tool implementations load only after an explicit activation command.
+// goal: minimal all-frame command bootstrap for release-admitted iframe-spanning HALO tools
+// inv: Catalog-only frame tools cannot trigger or load implementation code.
 
 import {
-	FRAME_TOOL_ANNOTATE_START,
-	FRAME_TOOL_ANNOTATE_STOP,
-	FRAME_TOOL_DOM_SELECTOR_START,
-	FRAME_TOOL_DOM_SELECTOR_STOP,
 	FRAME_TOOL_RULER_CANCEL,
 	FRAME_TOOL_RULER_START,
 	type FrameToolMessageType,
@@ -14,29 +10,27 @@ import {
 const LOG_TAG = '[HALO:FrameTools]';
 const RUNTIME_PATH = 'tools/_frame-tools/runtime.js';
 
-const FRAME_TOOL_TYPES = new Set<FrameToolMessageType>([
+type AdmittedFrameToolMessageType =
+	| typeof FRAME_TOOL_RULER_START
+	| typeof FRAME_TOOL_RULER_CANCEL;
+
+const FRAME_TOOL_TYPES = new Set<AdmittedFrameToolMessageType>([
 	FRAME_TOOL_RULER_START,
 	FRAME_TOOL_RULER_CANCEL,
-	FRAME_TOOL_DOM_SELECTOR_START,
-	FRAME_TOOL_DOM_SELECTOR_STOP,
-	FRAME_TOOL_ANNOTATE_START,
-	FRAME_TOOL_ANNOTATE_STOP,
 ]);
 
-const DEACTIVATION_TYPES = new Set<FrameToolMessageType>([
+const DEACTIVATION_TYPES = new Set<AdmittedFrameToolMessageType>([
 	FRAME_TOOL_RULER_CANCEL,
-	FRAME_TOOL_DOM_SELECTOR_STOP,
-	FRAME_TOOL_ANNOTATE_STOP,
 ]);
 
 interface FrameToolRuntime {
-	handleFrameToolMessage(message: { type: FrameToolMessageType }): boolean;
+	handleFrameToolMessage(message: { type: AdmittedFrameToolMessageType }): boolean;
 }
 
 let runtimePromise: Promise<FrameToolRuntime> | null = null;
 
-function isFrameToolMessageType(value: string): value is FrameToolMessageType {
-	return FRAME_TOOL_TYPES.has(value as FrameToolMessageType);
+function isAdmittedFrameToolMessageType(value: string): value is AdmittedFrameToolMessageType {
+	return FRAME_TOOL_TYPES.has(value as AdmittedFrameToolMessageType);
 }
 
 function loadRuntime(): Promise<FrameToolRuntime> {
@@ -66,14 +60,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 		!message ||
 		typeof message !== 'object' ||
 		typeof message.type !== 'string' ||
-		!isFrameToolMessageType(message.type)
+		!isAdmittedFrameToolMessageType(message.type)
 	) {
 		return false;
 	}
 
 	const type = message.type;
 	// A stop before the first activation owns no runtime state. Do not turn a
-	// no-op cleanup into a network/module load in every frame.
+	// no-op cleanup into a module load in every frame.
 	if (!runtimePromise && DEACTIVATION_TYPES.has(type)) {
 		sendResponse({ success: true, loaded: false });
 		return false;
@@ -91,8 +85,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 			sendResponse({ success: false, loaded: false });
 		});
 
-	// Keep the message channel alive until the lazy module has loaded and the
-	// command has executed. tabs.sendMessage broadcasts to every frame host;
-	// each frame executes independently even though only one response is used.
+	// tabs.sendMessage broadcasts to every frame host; each frame executes the
+	// one admitted Ruler capability independently even though one response wins.
 	return true;
 });
+
+// Type-only reference keeps the data authority honest without admitting every
+// catalog message into this physical content surface.
+void (undefined as FrameToolMessageType | undefined);
