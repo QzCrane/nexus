@@ -48,7 +48,7 @@ beforeAll(async () => {
 			'--disable-setuid-sandbox',
 		],
 	});
-	if (EXPECTED_CHROME) expect(browser.version()).toContain(EXPECTED_CHROME);
+	if (EXPECTED_CHROME) expect(await browser.version()).toContain(EXPECTED_CHROME);
 	const workerTarget: Target = await browser.waitForTarget(
 		(target) => target.type() === 'service_worker'
 			&& /^chrome-extension:\/\/[^/]+\/background\.js$/u.test(target.url()),
@@ -80,7 +80,6 @@ describe('SPECTRA local diagnostic export privacy', () => {
 			await options.waitForSelector('#diagnostics-export-btn', { timeout: 10_000 });
 			await options.evaluate(() => {
 				const scope = window as Window & { __spectraDiagnosticJson?: string };
-				const originalCreateObjectURL = URL.createObjectURL.bind(URL);
 				URL.createObjectURL = ((blob: Blob) => {
 					void blob.text().then((text) => { scope.__spectraDiagnosticJson = text; });
 					return 'blob:diagnostic-test';
@@ -88,7 +87,6 @@ describe('SPECTRA local diagnostic export privacy', () => {
 				HTMLAnchorElement.prototype.click = function click(): void {
 					// Test-only: capture the Blob above without navigating/downloading.
 				};
-				void originalCreateObjectURL;
 			});
 			await options.click('#diagnostics-export-btn');
 			await options.waitForFunction(
