@@ -25,6 +25,7 @@
 			"PUPPETEER_SKIP_DOWNLOAD": "true"
 		},
 		"lanes": [
+			["install", "--cwd", "..", "--frozen-lockfile", "--ignore-scripts"],
 			["install", "--frozen-lockfile"],
 			["run", "check:toolchain"],
 			["test", "scripts/platform-contract.test.ts"],
@@ -50,12 +51,14 @@
 		"browser-floor.json",
 		"bun.lock",
 		"closeout-policy.json",
+		"dependency-domains.json",
 		"feature-promotion.json",
 		"package.json",
 		"apps/extension-halo/release-admission.json",
 		"apps/extension-halo/release-test-owners.json",
 		"apps/extension-spectra/permission-policy.json",
 		"scripts/check-architecture-closure.ts",
+		"scripts/check-dependency-domains.ts",
 		"scripts/check-feature-promotion.ts",
 		"scripts/check-release-test-owners.ts",
 		"scripts/check-spectra-least-privilege.ts",
