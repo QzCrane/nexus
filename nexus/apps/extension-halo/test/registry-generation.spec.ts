@@ -105,6 +105,23 @@ describe('HALO registry generation', () => {
 		expect(projection).toContain('"hover-zoom"');
 	});
 
+	test('exposes only the two page-loaded packaged runtimes to web origins', () => {
+		const manifest = JSON.parse(readFileSync(
+			new URL('../public/manifest.json', import.meta.url),
+			'utf8',
+		)) as {
+			web_accessible_resources?: Array<{ resources?: string[]; matches?: string[]; use_dynamic_url?: boolean }>;
+		};
+		expect(manifest.web_accessible_resources).toEqual([{
+			resources: [
+				'tools/_frame-tools/runtime.js',
+				'tools/_hover-zoom/runtime.js',
+			],
+			matches: ['<all_urls>'],
+			use_dynamic_url: true,
+		}]);
+	});
+
 	test('keeps panel preload authority renderer-neutral', () => {
 		const generator = readFileSync(
 			new URL('../../../scripts/registry-gen/gen-loader.ts', import.meta.url),
