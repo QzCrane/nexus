@@ -1,0 +1,91 @@
+name: Minimum Chrome compatibility
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/minimum-chrome.yml'
+      - 'nexus/apps/extension-spectra/**'
+      - 'nexus/apps/extension-halo/**'
+      - 'nexus/packages/**'
+      - 'nexus/scripts/**'
+      - 'nexus/package.json'
+      - 'nexus/bun.lock'
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/minimum-chrome.yml'
+      - 'nexus/apps/extension-spectra/**'
+      - 'nexus/apps/extension-halo/**'
+      - 'nexus/packages/**'
+      - 'nexus/scripts/**'
+      - 'nexus/package.json'
+      - 'nexus/bun.lock'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: minimum-chrome-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CHROME_FLOOR_VERSION: '135.0.7049.114'
+  CHROME_FLOOR_SHA256: 'dd86dbace037a9b6c4bc993fc4e20ee768a804923850511e53255743760d8b82'
+
+jobs:
+  chrome-135:
+    name: Chrome 135 product floor
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+      - name: Set up Bun 1.3.14
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.14
+
+      - name: Install frozen workspace
+        run: bun install --cwd nexus --frozen-lockfile
+
+      - name: Verify governance before browser work
+        run: bun --cwd nexus check:governance
+
+      - name: Build exact production candidates
+        run: bun run build
+
+      - name: Install browser system dependencies
+        working-directory: nexus/apps/extension-halo
+        run: bunx playwright install-deps chromium
+
+      - name: Download and verify Chrome 135.0.7049.114
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_root="$RUNNER_TEMP/chrome-floor"
+          archive="$RUNNER_TEMP/chrome-linux64.zip"
+          mkdir -p "$chrome_root"
+          curl --fail --location --retry 4 --retry-all-errors \
+            --output "$archive" \
+            "https://storage.googleapis.com/chrome-for-testing-public/${CHROME_FLOOR_VERSION}/linux64/chrome-linux64.zip"
+          printf '%s  %s\n' "$CHROME_FLOOR_SHA256" "$archive" | sha256sum --check --strict
+          unzip -q "$archive" -d "$chrome_root"
+          executable="$chrome_root/chrome-linux64/chrome"
+          test -x "$executable"
+          version_output="$($executable --version)"
+          printf 'Pinned browser: %s\n' "$version_output"
+          case "$version_output" in
+            *"${CHROME_FLOOR_VERSION}"*) ;;
+            *) echo "Expected Chrome ${CHROME_FLOOR_VERSION}, got ${version_output}" >&2; exit 1 ;;
+          esac
+          echo "NEXUS_CHROME_EXECUTABLE=$executable" >> "$GITHUB_ENV"
+          echo "NEXUS_EXPECTED_CHROME_VERSION=${CHROME_FLOOR_VERSION}" >> "$GITHUB_ENV"
+
+      - name: Prove SPECTRA real Action Popup multi-tab behavior on Chrome 135
+        run: bun test nexus/apps/extension-spectra/test/tab-visibility-chrome.spec.ts
+
+      - name: Prove HALO admitted SidePanel and page capabilities on Chrome 135
+        run: bunx playwright test nexus/apps/extension-halo/test/minimum-chrome-playwright.spec.ts --workers=1
