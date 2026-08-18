@@ -141,19 +141,52 @@ describe('HALO release tooling', () => {
 		});
 	});
 
-	test('keeps the standard build production-grade and SidePanel lazy loading physical', () => {
+	test('keeps the standard build production-grade, measured, and physically release-admitted', () => {
 		const packageJson = readJson('../package.json');
 		const scripts = packageJson.scripts as Record<string, string>;
 		const sidepanelHtml = readFileSync(
 			new URL('../public/sidepanel.html', import.meta.url),
 			'utf8',
 		);
+		const finalizer = readFileSync(
+			new URL('../finalize-release-payload.ts', import.meta.url),
+			'utf8',
+		);
 
-		expect(scripts.build).toBe('bun build.ts');
-		expect(scripts['build:prod']).toBe('bun build.ts');
+		expect(scripts.build).toBe('bun build.ts --analyze && bun finalize-release-payload.ts');
+		expect(scripts['build:prod']).toBe('bun build.ts --analyze && bun finalize-release-payload.ts');
 		expect(scripts['build:dev']).toBe('bun build.ts --dev');
 		expect(scripts.dev).toContain('generate-tool-registry.ts');
 		expect(sidepanelHtml).toContain('<script type="module" src="sidepanel.js"></script>');
+		expect(finalizer).toContain('sidepanelActivationClosures');
+		expect(finalizer).toContain('RELEASE_PANEL_IDS');
+		expect(finalizer).toContain('RELEASE_SCRIPT_RUNTIME_IDS');
+		expect(finalizer).toContain('catalog-only implementation entered SidePanel production closures');
+		expect(finalizer).toContain("rmSync(analysisPath, { force: true })");
+	});
+
+	test('keeps catalog metadata and physical release admission as separate authorities', () => {
+		const admission = readJson('../release-admission.json');
+		const projection = readFileSync(
+			new URL('../src/kernel/registry/_generated-release-admission.ts', import.meta.url),
+			'utf8',
+		);
+		const loader = readFileSync(
+			new URL('../src/components/_generated-tool-loader.ts', import.meta.url),
+			'utf8',
+		);
+		const scriptRuntime = readFileSync(
+			new URL('../public/script-plugin-runtime.json', import.meta.url),
+			'utf8',
+		);
+
+		expect(admission.schemaVersion).toBe(1);
+		expect(projection).toContain('RELEASE_ADMITTED_PLUGIN_IDS');
+		expect(projection).toContain('RELEASE_PANEL_IDS');
+		expect(loader).not.toContain("import('../tools/pdf/panel')");
+		expect(loader).not.toContain("import('../tools/clipboard/panel')");
+		expect(scriptRuntime).toContain('"bilibili-enhancer"');
+		expect(scriptRuntime).not.toContain('"bilibili-plus"');
 	});
 
 	test('keeps install-only SaaT metadata out of the ordinary service-worker code graph', () => {
@@ -195,6 +228,8 @@ describe('HALO release tooling', () => {
 		expect(compactProjection).not.toContain('sourceFile');
 		expect(compactProjection).not.toContain('sourceAnchor');
 		expect(compactProjection).not.toContain('sourceDetail');
+		expect(compactProjection).not.toContain('"clipboard"');
+		expect(compactProjection).not.toContain('"timer"');
 		expect(activeServices).toContain("from '../../kernel/registry/_generated-background-active'");
 		expect(activeServices).not.toContain('BACKGROUND_PROFILES_MAP');
 		expect(categorizedTools).toContain("from '../../../kernel/registry/_generated-background-active'");
