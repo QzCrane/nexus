@@ -7,11 +7,14 @@ import { initCard } from './card';
 import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
+import { installPopupOptionalPermissionAdmission } from './optional-permission-ui';
 import type { EqCurveDrawerFactory } from './card/types';
 
 // eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
 async function main(): Promise<void> {
   enableSmoothScroll();
+  const disposeOptionalPermissionAdmission = installPopupOptionalPermissionAdmission();
+  window.addEventListener('pagehide', disposeOptionalPermissionAdmission, { once: true });
 
   let activeTab: chrome.tabs.Tab | null = null;
   try {
