@@ -16,6 +16,7 @@
 		"package": "bun run --cwd ../.. release:spectra",
 		"package:dist": "bun scripts/create-release.ts --stage",
 		"package:stage": "bun run package:dist",
+		"capture:visual-baseline": "bun scripts/capture-visual-baseline.ts",
 		"test:unit": "bun scripts/run-tests.ts",
 		"test:watch": "bun test --watch test",
 		"test": "bun run test:unit && bun run test:chrome",
