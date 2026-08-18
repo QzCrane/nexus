@@ -28,6 +28,7 @@
 			["install", "--cwd", "..", "--frozen-lockfile", "--ignore-scripts"],
 			["install", "--frozen-lockfile"],
 			["run", "check:toolchain"],
+			["scripts/check-dependency-domains.ts"],
 			["test", "scripts/platform-contract.test.ts"],
 			["run", "check:governance"],
 			["scripts/generate-tool-registry.ts", "--check"],
