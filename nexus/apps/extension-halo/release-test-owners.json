@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "owners": {
+    "bilibili-enhancer": ["test/bilibili-enhancer-contract.spec.ts"],
+    "hover-zoom": ["test/hover-zoom-authority.spec.ts", "test/hover-zoom-lazy.spec.ts"],
+    "qrcode": ["test/context-menu-activation.spec.ts"],
+    "ruler": ["test/frame-tools-lazy.spec.ts"],
+    "smooth-scroll": ["test/smooth-scroll-keyboard-contract.spec.ts"],
+    "userscripts": ["test/user-scripts-readiness-races.spec.ts", "test/user-scripts-storage-authority.spec.ts"]
+  }
+}
