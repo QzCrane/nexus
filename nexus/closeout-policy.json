@@ -25,6 +25,7 @@
 			"PUPPETEER_SKIP_DOWNLOAD": "true"
 		},
 		"lanes": [
+			["install", "--cwd", "..", "--frozen-lockfile", "--ignore-scripts"],
 			["install", "--frozen-lockfile"],
 			["run", "check:toolchain"],
 			["test", "scripts/platform-contract.test.ts"],
@@ -44,10 +45,13 @@
 		}
 	},
 	"toolFiles": [
+		"../bun.lock",
+		"../package.json",
 		"bun.lock",
 		"closeout-policy.json",
 		"scripts/closeout-evidence.ts",
 		"scripts/dependency-audit.ts",
+		"scripts/generate-sbom.ts",
 		"scripts/release-halo.ts",
 		"scripts/release-spectra.ts"
 	]
