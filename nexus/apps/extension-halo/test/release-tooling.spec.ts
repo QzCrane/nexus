@@ -105,7 +105,7 @@ describe('HALO release tooling', () => {
 		expect(engine).not.toContain('chrome.scripting.executeScript({');
 	});
 
-	test('locks content-script ownership to the smallest required frame and lifecycle scope', () => {
+	test('locks content-script ownership to release-admitted frame and lifecycle scope', () => {
 		const manifest = readJson('../public/manifest.json');
 		const contentScripts = manifest.content_scripts as ContentScriptManifestEntry[];
 		const byEntry = new Map(
@@ -117,7 +117,6 @@ describe('HALO release tooling', () => {
 			'content-smooth-scroll.js',
 			'content-frame-tools.js',
 			'content-hover-zoom.js',
-			'content-clipboard.js',
 		]);
 		expect(byEntry.get('content.js')).toMatchObject({
 			run_at: 'document_start',
@@ -135,10 +134,31 @@ describe('HALO release tooling', () => {
 			run_at: 'document_idle',
 			all_frames: false,
 		});
-		expect(byEntry.get('content-clipboard.js')).toMatchObject({
-			run_at: 'document_idle',
-			all_frames: true,
-		});
+		expect(byEntry.has('content-clipboard.js')).toBe(false);
+		expect(contentScripts.some((entry) => entry.run_at === 'document_idle' && entry.all_frames === true))
+			.toBe(false);
+	});
+
+	test('keeps catalog-only modules out of production runtime projections', () => {
+		const loader = readFileSync(
+			new URL('../src/components/_generated-tool-loader.ts', import.meta.url),
+			'utf8',
+		);
+		const backgroundProjection = readFileSync(
+			new URL('../src/kernel/registry/_generated-background-active.ts', import.meta.url),
+			'utf8',
+		);
+		const build = readFileSync(new URL('../build.ts', import.meta.url), 'utf8');
+		const catalogOnlyIds = [
+			'archive', 'base64', 'clipboard', 'pdf', 'regex', 'screenshot', 'sticky-notes', 'timer',
+		];
+		for (const id of catalogOnlyIds) {
+			expect(loader).not.toContain(`'${id}': memoizePanelLoader`);
+		}
+		expect(backgroundProjection).not.toContain('"clipboard"');
+		expect(backgroundProjection).not.toContain('"timer"');
+		expect(build).not.toContain("out: 'content-clipboard.js'");
+		expect(build).toContain('assertNoCatalogOnlySidepanelInputs');
 	});
 
 	test('keeps the standard build production-grade and SidePanel lazy loading physical', () => {
