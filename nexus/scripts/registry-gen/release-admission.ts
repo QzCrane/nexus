@@ -46,7 +46,11 @@ export type ReleaseActiveService =
 		defaultEnabled: boolean;
 	})
 	| (ReleaseActiveServiceBase & { kind: 'userscripts-authority' })
-	| (ReleaseActiveServiceBase & { kind: 'saat-registry' });
+	| (ReleaseActiveServiceBase & {
+		kind: 'saat-registry';
+		area: 'local';
+		key: string;
+	});
 
 export interface ReleaseAdmissionModule {
 	id: string;
@@ -89,6 +93,13 @@ function lifecycleText(value: unknown, id: string, field: string): string {
 	return value.trim();
 }
 
+function storageKey(value: unknown, id: string, kind: string): string {
+	if (!isNonEmptyString(value) || !/^[A-Za-z0-9_.:-]{1,128}$/u.test(value)) {
+		throw new Error(`${id}: ${kind} activeService storage key is malformed`);
+	}
+	return value;
+}
+
 function parseActiveService(value: unknown, id: string): ReleaseActiveService | undefined {
 	if (value === undefined) return undefined;
 	if (!isRecord(value)
@@ -104,16 +115,25 @@ function parseActiveService(value: unknown, id: string): ReleaseActiveService | 
 	};
 	if (value.kind === 'storage-enabled') {
 		if ((value.area !== 'local' && value.area !== 'sync')
-			|| !isNonEmptyString(value.key)
-			|| !/^[A-Za-z0-9_.:-]{1,128}$/u.test(value.key)
 			|| typeof value.defaultEnabled !== 'boolean') {
 			throw new Error(`${id}: storage-enabled activeService is malformed`);
 		}
 		return {
 			kind: value.kind,
 			area: value.area,
-			key: value.key,
+			key: storageKey(value.key, id, value.kind),
 			defaultEnabled: value.defaultEnabled,
+			...base,
+		};
+	}
+	if (value.kind === 'saat-registry') {
+		if (value.area !== 'local') {
+			throw new Error(`${id}: saat-registry activeService must use local storage`);
+		}
+		return {
+			kind: value.kind,
+			area: 'local',
+			key: storageKey(value.key, id, value.kind),
 			...base,
 		};
 	}
@@ -315,7 +335,8 @@ export function validateReleaseAdmissionAgainstModules(
 			runtimeOutputs.add(runtime.output);
 			sourceEntries.add(runtime.entry);
 		}
-		if (entry.activeService?.kind === 'storage-enabled') {
+		if (entry.activeService?.kind === 'storage-enabled'
+			|| entry.activeService?.kind === 'saat-registry') {
 			const identity = `${entry.activeService.area}:${entry.activeService.key}`;
 			if (storageOwners.has(identity)) throw new Error(`active-service storage has multiple owners: ${identity}`);
 			storageOwners.add(identity);
