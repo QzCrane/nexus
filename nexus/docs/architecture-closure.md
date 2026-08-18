@@ -10,9 +10,9 @@ branch: codex/nexus-architecture-closure
 
 # Architecture Closure Epoch
 
-This is a generated **status/index projection** of [`architecture-closure.json`](../architecture-closure.json). Do not edit task semantics, acceptance clauses, evidence, blockers, or state here. The JSON manifest is the sole task authority; GitHub Issue #32 is another thin projection.
+The canonical task owner is [`architecture-closure.json`](../architecture-closure.json). This is a generated **status/index projection** only. Do not edit task semantics, acceptance clauses, evidence, blockers, or state here.
 
-Priority is fixed at **P0 → P1 → P2**. Individual HALO feature internals remain P2 unless they block shared release correctness.
+Single execution branch: `codex/nexus-architecture-closure`. Priority is fixed at **P0 → P1 → P2**. Individual HALO feature internals remain P2 unless they block shared release correctness.
 
 Current projection: 29 retained tasks; queued=7, active=21, blocked=1, done=0, rejected=0.
 
