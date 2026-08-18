@@ -23,7 +23,6 @@ import {
 	type SaaTPluginDescriptor,
 } from '../kernel/services/saat-service';
 import { isPrivateHost } from '../kernel/utils/ssrf-guard';
-import { saveToClipboardHistory } from '../tools/clipboard/core';
 import { reconcileAntiHotlinkRules, type AntiHotlinkReceipt } from '../tools/hover-zoom/logic/engine';
 import { parseHoverZoomSettings } from '../tools/hover-zoom/settings';
 import { STORAGE_KEY as HOVER_ZOOM_STORAGE_KEY } from '../tools/hover-zoom/types';
@@ -325,19 +324,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 				error: error instanceof Error ? error.message : String(error),
 			});
 		});
-		return true;
-	}
-
-	if (message.type === 'HALO_CLIPBOARD_ADD') {
-		const { text, sourceUrl, sourceTitle } = message;
-		saveToClipboardHistory(
-			text,
-			sourceUrl || sender.url,
-			sourceTitle || sender.tab?.title,
-		).then(
-			() => { sendResponse({ success: true }); },
-			(error) => { sendResponse({ success: false, error: String(error) }); },
-		);
 		return true;
 	}
 
