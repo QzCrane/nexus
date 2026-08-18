@@ -30,14 +30,14 @@
       "decision": "optionalization-candidate",
       "capability": "Save an explicitly requested screenshot through Chrome's download manager.",
       "evidence": [{ "path": "apps/extension-spectra/src/background/handlers/screenshot.ts", "marker": "chrome.downloads" }],
-      "narrowing": "The capability is user-invoked and should not remain an install-time grant if Chrome's optional-permission contract can preserve the same save semantics.",
+      "narrowing": "Screenshot may also be invoked through shortcut/control paths, so moving the grant requires a durable capability-admission UX rather than a manifest-only change.",
       "migrationTask": "LEAST-PRIVILEGE-PROOF"
     },
     "tabCapture": {
       "decision": "optionalization-candidate",
       "capability": "Acquire a tab audio stream only when a processor path requires Capture.",
       "evidence": [{ "path": "apps/extension-spectra/src/background/handlers/capture.ts", "marker": "chrome.tabCapture" }],
-      "narrowing": "Capture is deliberately lazy and user-visible; permission admission should be capability-bound if Chrome permits an equivalent optional flow.",
+      "narrowing": "Capture is lazy but may be entered from multiple control paths; an optional grant must preserve Chrome's user-activation constraint and recovery semantics.",
       "migrationTask": "LEAST-PRIVILEGE-PROOF"
     },
     "offscreen": {
@@ -47,11 +47,13 @@
       "narrowing": "The offscreen document is a shared lifecycle owner for multiple admitted runtime capabilities; it is not itself an independently exposed user permission flow."
     },
     "userScripts": {
-      "decision": "optionalization-candidate",
-      "capability": "Register user-authored scripts only after the user configures the User Scripts feature.",
-      "evidence": [{ "path": "apps/extension-spectra/src/background/handlers/user-scripts.ts", "marker": "chrome.userScripts" }],
-      "narrowing": "User Scripts is not required for baseline media control and should be permission-admitted when the feature is enabled if platform semantics allow it.",
-      "migrationTask": "LEAST-PRIVILEGE-PROOF"
+      "decision": "optional",
+      "capability": "Execute user-authored scripts only after the user explicitly enables the User Scripts feature.",
+      "evidence": [
+        { "path": "apps/extension-spectra/src/options/userscripts.ts", "marker": "chrome.permissions.request" },
+        { "path": "apps/extension-spectra/src/background/handlers/user-scripts.ts", "marker": "chrome.userScripts" }
+      ],
+      "narrowing": "The optional permission is requested from the Options feature-enable click before Chrome's separate Developer Mode or Allow User Scripts platform gate is checked."
     },
     "scripting": {
       "decision": "required",
