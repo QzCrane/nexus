@@ -73,7 +73,7 @@ afterAll(async () => {
 });
 
 describe('SPECTRA local diagnostic export privacy', () => {
-	test('exports useful browser facts without tab URL/title/token content', async () => {
+	test('exports useful browser and owner facts without tab URL/title/token content', async () => {
 		const options = await browser.newPage();
 		try {
 			await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
@@ -103,6 +103,7 @@ describe('SPECTRA local diagnostic export privacy', () => {
 				permissions?: string[];
 				origins?: { grantCount?: number; broadGrant?: boolean };
 				contexts?: Record<string, number>;
+				owners?: Record<string, boolean | number | null>;
 			};
 			expect(bundle.product).toBe('SPECTRA');
 			expect(bundle.manifestVersion).toMatch(/^\d+\.\d+\.\d+$/u);
@@ -111,6 +112,26 @@ describe('SPECTRA local diagnostic export privacy', () => {
 			expect(typeof bundle.origins?.grantCount).toBe('number');
 			expect(typeof bundle.origins?.broadGrant).toBe('boolean');
 			expect(Object.keys(bundle.contexts ?? {}).length).toBeGreaterThan(0);
+
+			const owners = bundle.owners ?? {};
+			for (const key of [
+				'backgroundSurfaceActive',
+				'audibleTabCount',
+				'userScriptsPermissionGranted',
+				'captureStateCount',
+				'activeCaptureCount',
+				'badgeStateCount',
+				'mediaTabStateCount',
+				'offscreenLeaseCount',
+				'offscreenHostStateUnknown',
+				'offscreenReconcileSucceeded',
+				'offscreenAudioProcessorCount',
+				'offscreenRemoteSessionCount',
+			]) {
+				expect(Object.hasOwn(owners, key)).toBe(true);
+				const value = owners[key];
+				expect(value === null || typeof value === 'boolean' || typeof value === 'number').toBe(true);
+			}
 
 			expect(json).not.toContain('PRIVATE_DIAGNOSTIC_TITLE');
 			expect(json).not.toContain('PRIVATE_DIAGNOSTIC_BODY');
