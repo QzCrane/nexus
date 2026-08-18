@@ -8,7 +8,9 @@ const testDir = resolve(projectDir, 'test');
 const chromeIntegrationTests = new Set([
 	'diagnostics-chrome.spec.ts',
 	'performance.spec.ts',
+	'runtime-long-session-performance.spec.ts',
 	'runtime-stress-performance.spec.ts',
+	'service-worker-wake-performance.spec.ts',
 	'smoke.spec.ts',
 	'tab-visibility-chrome.spec.ts',
 ]);
