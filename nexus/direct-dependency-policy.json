@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "acceptedNonSourceRuntimeUse": [
+    {
+      "packagePath": "apps/extension-halo/package.json",
+      "dependency": "preact",
+      "evidencePath": "apps/extension-halo/build.ts",
+      "marker": "'react': 'preact/compat'",
+      "reason": "HALO source is React-compatible while the production SidePanel renderer is aliased to one Preact compat runtime by the build owner."
+    }
+  ],
+  "knownDebt": [
+    {
+      "packagePath": "apps/extension-halo/package.json",
+      "section": "dependencies",
+      "dependency": "file-saver",
+      "kind": "unused-runtime-direct",
+      "resolution": "Remove the package and regenerate nexus/bun.lock with Bun; direct source search has no live import owner."
+    },
+    {
+      "packagePath": "apps/extension-halo/package.json",
+      "section": "dependencies",
+      "dependency": "@types/qrcode",
+      "kind": "type-package-in-runtime-dependencies",
+      "resolution": "Move to devDependencies while regenerating nexus/bun.lock; type declarations do not belong to the runtime dependency set."
+    },
+    {
+      "packagePath": "apps/extension-halo/package.json",
+      "section": "devDependencies",
+      "dependency": "@types/file-saver",
+      "kind": "orphan-type-direct",
+      "resolution": "Remove together with unused file-saver when the lockfile can be regenerated and frozen-install verified."
+    }
+  ]
+}
