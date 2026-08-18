@@ -1,0 +1,375 @@
+{
+  "schemaVersion": 1,
+  "issue": 32,
+  "branch": "codex/nexus-architecture-closure",
+  "priorityPolicy": {
+    "order": ["P0", "P1", "P2"],
+    "haloFeatureInternals": "P2",
+    "rule": "Repository, NEXUS, SPECTRA, release, toolchain and shared HALO architecture close before individual HALO feature optimization unless a feature defect blocks release correctness."
+  },
+  "tasks": [
+    {
+      "id": "SPECTRA-MEDIA-TAB-INVENTORY",
+      "priority": "P0",
+      "area": "spectra",
+      "owner": "spectra-runtime",
+      "status": "active",
+      "acceptance": [
+        "Popup discovers paused and muted media tabs beyond the recent-activity window.",
+        "Discovery does not acquire the heavy Content Runtime merely to enumerate media tabs.",
+        "Service-worker restart reconstructs inventory from live documents.",
+        "Probe fan-out is bounded and receiver failures are isolated.",
+        "Unit and installed-browser evidence cover multiple tabs."
+      ],
+      "evidence": [
+        "apps/extension-spectra/src/background/handlers/tab-state.ts",
+        "apps/extension-spectra/test/tab-visibility.spec.ts"
+      ]
+    },
+    {
+      "id": "HALO-RELEASE-ADMISSION",
+      "priority": "P0",
+      "area": "halo-shared",
+      "owner": "halo-build",
+      "status": "queued",
+      "acceptance": [
+        "Only explicitly shipped ready or beta modules enter the production dynamic-import and release payload graph.",
+        "Coming, disabled and unspecified modules may remain in source/catalog but are absent from the production ZIP unless explicitly admitted as non-executable catalog data.",
+        "Production artifact tests prove excluded module code and dependencies are physically absent."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-EXPLICIT-RELEASE-STAGE",
+      "priority": "P0",
+      "area": "halo-shared",
+      "owner": "halo-registry",
+      "status": "queued",
+      "acceptance": [
+        "Every plugin has an explicit release stage; missing status cannot silently mean coming or shipped.",
+        "Source presence, catalog visibility, payload admission and runtime enablement are distinct generated facts.",
+        "Registry generation fails closed on ambiguous release state."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-GENERATED-RESOURCE-SURFACES",
+      "priority": "P0",
+      "area": "halo-shared",
+      "owner": "halo-build",
+      "status": "queued",
+      "acceptance": [
+        "Web-accessible resources and runtime/content entry surfaces are generated from admitted capabilities.",
+        "Release build rejects broad orphan resource exposure and source/projection drift."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "BACKLOG-SSOT",
+      "priority": "P0",
+      "area": "repository",
+      "owner": "repository-governance",
+      "status": "queued",
+      "acceptance": [
+        "Authoritative roadmap work has one machine-readable owner and cannot coexist with a misleading zero-backlog projection.",
+        "GitHub issue/project projections are derived or reconciled from that owner."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ARCHITECTURE-CLOSURE-MANIFEST",
+      "priority": "P0",
+      "area": "repository",
+      "owner": "repository-governance",
+      "status": "active",
+      "acceptance": [
+        "Every retained closure item has id, priority, owner, status and acceptance evidence requirements.",
+        "CI validates schema, unique ids, terminal evidence and the HALO feature P2 priority rule."
+      ],
+      "evidence": [
+        "architecture-closure.json",
+        "scripts/check-architecture-closure.ts",
+        "scripts/architecture-closure.spec.ts"
+      ]
+    },
+    {
+      "id": "CONTINUOUS-GREEN-REPLAY",
+      "priority": "P0",
+      "area": "ci",
+      "owner": "repository-ci",
+      "status": "queued",
+      "acceptance": [
+        "At least one stable independent replay lane executes repository code continuously and is expected green on main.",
+        "Exact-head local product evidence remains independent rather than being weakened or replaced."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "MINIMUM-CHROME-EVIDENCE",
+      "priority": "P0",
+      "area": "release",
+      "owner": "browser-compatibility",
+      "status": "queued",
+      "acceptance": [
+        "The declared minimum Chrome version is exercised by a pinned browser lane, or the manifest floor is raised to the continuously proven version.",
+        "Current-Chrome and minimum-Chrome evidence are reported separately."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "RUNTIME-PERFORMANCE-SLOS",
+      "priority": "P0",
+      "area": "performance",
+      "owner": "performance-governance",
+      "status": "queued",
+      "acceptance": [
+        "Exact-head evidence measures cold interactive latency, hotkey end-to-end latency and service-worker wake latency.",
+        "Long-task, CPU, heap/leak and tab/media-scale stress workloads have reproducible budgets.",
+        "Runtime SLO evidence is release-bound and distinct from bundle byte ceilings."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "FEATURE-PROMOTION-GATE",
+      "priority": "P0",
+      "area": "governance",
+      "owner": "release-governance",
+      "status": "queued",
+      "acceptance": [
+        "Promotion to ready requires correctness, failure-boundary, lifecycle/restart, permission/privacy, accessibility, runtime resource, bundle and browser evidence.",
+        "Promotion is rejected mechanically when an applicable evidence owner is absent."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "DEPENDENCY-DEAD-DIRECTS",
+      "priority": "P1",
+      "area": "dependencies",
+      "owner": "dependency-governance",
+      "status": "queued",
+      "acceptance": [
+        "Unused direct dependencies are removed after full build/test proof; first candidates are HALO file-saver and @types/file-saver.",
+        "Type-only dependencies are classified as development dependencies unless runtime packaging proves otherwise."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "DEPENDENCY-LIFECYCLE-POLICY",
+      "priority": "P1",
+      "area": "dependencies",
+      "owner": "dependency-governance",
+      "status": "queued",
+      "acceptance": [
+        "Dependency governance covers vulnerability, freshness, maintenance health, license, bundle contribution and replacement value.",
+        "A clean advisory audit cannot be reported as complete dependency lifecycle health."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "DEPENDENCY-UPDATE-AUTOMATION",
+      "priority": "P1",
+      "area": "dependencies",
+      "owner": "dependency-governance",
+      "status": "queued",
+      "acceptance": [
+        "Automated update PRs exist for package dependencies and GitHub Actions pins.",
+        "Low-risk update promotion includes tests plus production artifact/performance deltas."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "TYPESCRIPT-7-EPOCH",
+      "priority": "P1",
+      "area": "toolchain",
+      "owner": "toolchain-governance",
+      "status": "queued",
+      "acceptance": [
+        "TypeScript 7 migration is evaluated as a dedicated compiler epoch rather than a blind dependency bump.",
+        "Diagnostics, typecheck, build, artifact and runtime comparisons are recorded before promotion.",
+        "Obsolete TypeScript 5 compatibility glue is removed only after the migration proves equivalence or improvement."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "DIRECT-DEPENDENCY-REVALIDATION",
+      "priority": "P1",
+      "area": "dependencies",
+      "owner": "dependency-governance",
+      "status": "queued",
+      "acceptance": [
+        "Direct dependency versions are revalidated against current stable upstream releases and repository compatibility.",
+        "Playwright, esbuild, Biome, Turbo, Terser, darkreader, jose and pinyin-pro are explicitly reconciled."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "LOCK-DOMAIN-AUTHORITY",
+      "priority": "P1",
+      "area": "toolchain",
+      "owner": "toolchain-governance",
+      "status": "queued",
+      "acceptance": [
+        "Root and nexus lock/resolution domains are either intentionally separate with independent frozen-install evidence or converged to one authority.",
+        "No unverified dependency universe exists outside CI/release ownership."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "IMMUTABLE-ACTIONS",
+      "priority": "P1",
+      "area": "supply-chain",
+      "owner": "supply-chain",
+      "status": "queued",
+      "acceptance": [
+        "Third-party GitHub Actions are pinned to immutable commit SHAs.",
+        "Automated dependency ownership updates those SHAs without returning to mutable tags."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "SBOM-LICENSE-PROVENANCE",
+      "priority": "P1",
+      "area": "supply-chain",
+      "owner": "supply-chain",
+      "status": "queued",
+      "acceptance": [
+        "Each release emits a machine-readable SBOM and third-party license inventory bound to the exact artifact.",
+        "Build provenance/attestation binds source, builder/tool identity and resulting artifact digest."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "LEAST-PRIVILEGE-PROOF",
+      "priority": "P1",
+      "area": "security",
+      "owner": "permission-governance",
+      "status": "queued",
+      "acceptance": [
+        "Permission verification distinguishes declared-and-used from required-at-install.",
+        "SPECTRA required permissions and host scope have machine-readable least-privilege rationale or are moved to narrower optional/capability-bound admission."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "LOCAL-DIAGNOSTIC-BUNDLE",
+      "priority": "P1",
+      "area": "observability",
+      "owner": "diagnostics",
+      "status": "queued",
+      "acceptance": [
+        "Users can explicitly export a redacted bounded diagnostic bundle without default remote telemetry.",
+        "Bundle includes version/browser/permission/runtime identity, relevant owner/lease state and bounded recent errors/events without secrets or unnecessary URL data."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "ACCESSIBILITY-GATE",
+      "priority": "P1",
+      "area": "quality",
+      "owner": "ui-quality",
+      "status": "queued",
+      "acceptance": [
+        "Critical Popup and SidePanel paths have automated keyboard, focus and accessible-name/state checks.",
+        "Zoom, reduced-motion and contrast-sensitive states have explicit acceptance evidence."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "VISUAL-REGRESSION-GATE",
+      "priority": "P1",
+      "area": "quality",
+      "owner": "ui-quality",
+      "status": "queued",
+      "acceptance": [
+        "Critical UI states have deterministic visual regression evidence across representative theme, locale and constrained-width states.",
+        "Visual evidence is supplemental to semantic/browser assertions, not a substitute."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "PROPERTY-MUTATION-TESTING",
+      "priority": "P1",
+      "area": "quality",
+      "owner": "test-governance",
+      "status": "queued",
+      "acceptance": [
+        "Property or mutation testing is applied selectively to parsers, protocol guards and state machines where it finds failures ordinary examples miss.",
+        "No global vanity coverage percentage substitutes for risk-owned evidence."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "RISK-WEIGHTED-TEST-OWNERSHIP",
+      "priority": "P1",
+      "area": "quality",
+      "owner": "test-governance",
+      "status": "queued",
+      "acceptance": [
+        "Large or high-risk activation/runtime closures cannot be promoted without focused behavior contracts.",
+        "Release tooling detects admitted high-risk modules that have no registered focused test owner."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-GENERATED-CONTENT-ENTRY",
+      "priority": "P1",
+      "area": "halo-shared",
+      "owner": "halo-runtime",
+      "status": "queued",
+      "acceptance": [
+        "Content execution requirements are generated from plugin capability metadata rather than parallel manual lists/imports.",
+        "Generator drift fails repository verification."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-GENERATED-ACTIVE-SERVICES",
+      "priority": "P1",
+      "area": "halo-shared",
+      "owner": "halo-runtime",
+      "status": "queued",
+      "acceptance": [
+        "Active service projection derives from owned lifecycle contracts rather than a manual storage-key/service list.",
+        "Every projected service has an owner, readiness semantics and disposer."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-BACKGROUND-DEADLINES",
+      "priority": "P1",
+      "area": "halo-shared",
+      "owner": "halo-runtime",
+      "status": "queued",
+      "acceptance": [
+        "Timers expected to survive an unmounted SidePanel use persisted deadline state plus Background/alarm ownership.",
+        "Restart, duplicate/late alarms and completion side effects are idempotent and tested."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-PDF-CLOSURE",
+      "priority": "P2",
+      "area": "halo-feature",
+      "owner": "halo-pdf",
+      "status": "queued",
+      "acceptance": [
+        "Every requested split range is preserved in the user-visible result.",
+        "File/count/page/aggregate byte limits, cancellation and bounded execution prevent unbounded SidePanel memory/CPU use.",
+        "Heavy PDF work is isolated from the UI owner and has focused correctness/resource tests before ready promotion."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-FEATURE-TAIL-AUDIT",
+      "priority": "P2",
+      "area": "halo-feature",
+      "owner": "halo-product",
+      "status": "queued",
+      "acceptance": [
+        "Remaining individual feature internals are audited only after shared release-admission, lifecycle, dependency and evidence gates are established.",
+        "Any promoted feature defect discovered earlier may preempt this order only when it blocks release correctness."
+      ],
+      "evidence": []
+    }
+  ]
+}
