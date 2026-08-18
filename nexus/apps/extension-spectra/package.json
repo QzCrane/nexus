@@ -20,6 +20,7 @@
 		"test:watch": "bun test --watch test",
 		"test": "bun run test:unit && bun run test:chrome",
 		"test:smoke": "bun test test/smoke.spec.ts && bun test test/tab-visibility-chrome.spec.ts",
+		"test:performance": "bun test test/performance.spec.ts",
 		"test:chrome:dist": "bun run test:smoke",
 		"test:chrome": "bun run build:dev && bun run test:chrome:dist",
 		"test:e2e": "bun run test:chrome",
