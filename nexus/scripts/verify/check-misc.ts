@@ -6,6 +6,46 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { error, ok, warn, section } from './utils.ts';
 
+const ACTION_SHA_PATTERN = /^[0-9a-f]{40}$/iu;
+
+export function workflowActionPinIssues(workflowsDirectory: string): string[] {
+	if (!fs.existsSync(workflowsDirectory)) return ['workflow directory is missing'];
+	const issues: string[] = [];
+	const workflowFiles = fs.readdirSync(workflowsDirectory, { withFileTypes: true })
+		.filter((entry) => entry.isFile() && /\.ya?ml$/iu.test(entry.name))
+		.map((entry) => entry.name)
+		.sort();
+
+	for (const workflowFile of workflowFiles) {
+		const content = fs.readFileSync(path.join(workflowsDirectory, workflowFile), 'utf8');
+		const lines = content.split(/\r?\n/u);
+		for (let index = 0; index < lines.length; index += 1) {
+			const line = lines[index] ?? '';
+			const match = /^\s*(?:-\s*)?uses:\s*["']?([^\s"'#]+)["']?(?:\s+#.*)?$/u.exec(line);
+			if (!match) continue;
+			const specifier = match[1] ?? '';
+			if (specifier.startsWith('./') || specifier.startsWith('docker://')) continue;
+			const separator = specifier.lastIndexOf('@');
+			const ref = separator >= 0 ? specifier.slice(separator + 1) : '';
+			if (!ACTION_SHA_PATTERN.test(ref)) {
+				issues.push(`${workflowFile}:${index + 1}: ${specifier} must use an immutable 40-hex commit SHA`);
+			}
+		}
+	}
+	return issues;
+}
+
+export function checkWorkflowActionPins(ROOT: string): void {
+	section('检查 GitHub Actions immutable pin...');
+	const workflowsDirectory = path.resolve(ROOT, '..', '.github', 'workflows');
+	const issues = workflowActionPinIssues(workflowsDirectory);
+	if (issues.length > 0) {
+		for (const issue of issues) error(issue);
+		return;
+	}
+	ok('所有第三方 GitHub Actions 均固定到 immutable commit SHA');
+}
+
 export function checkDependencyDirection(ROOT) {
 	section('检查依赖方向...');
 
