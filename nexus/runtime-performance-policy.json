@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "phase": "baseline",
+  "minimumSamplesPerMetric": 20,
+  "minimumIndependentRunsBeforeBudget": 2,
+  "products": {
+    "spectra": {
+      "packagePath": "apps/extension-spectra/package.json",
+      "script": "test:performance",
+      "workloads": [
+        {
+          "testPath": "apps/extension-spectra/test/performance.spec.ts",
+          "metrics": [
+            "spectra.popup.cold-profile-to-interactive",
+            "spectra.popup.navigation-to-interactive"
+          ]
+        },
+        {
+          "testPath": "apps/extension-spectra/test/runtime-stress-performance.spec.ts",
+          "metrics": [
+            "spectra.media-tabs20.inventory-roundtrip",
+            "spectra.hotkey.speed-up.first-document-e2e"
+          ]
+        },
+        {
+          "testPath": "apps/extension-spectra/test/service-worker-wake-performance.spec.ts",
+          "metrics": [
+            "spectra.service-worker.stopped-to-running",
+            "spectra.service-worker.stopped-to-rpc-response"
+          ]
+        },
+        {
+          "testPath": "apps/extension-spectra/test/runtime-long-session-performance.spec.ts",
+          "metrics": [
+            "spectra.hotkey.long-session.batch20-e2e",
+            "spectra.hotkey.long-session.heap-used",
+            "spectra.hotkey.long-session.dom-nodes",
+            "spectra.hotkey.long-session.extension-contexts",
+            "spectra.hotkey.long-session.renderer-task-time",
+            "spectra.hotkey.long-session.renderer-script-time",
+            "spectra.hotkey.long-session.renderer-thread-time",
+            "spectra.hotkey.long-session.long-task-count",
+            "spectra.hotkey.long-session.long-task-duration",
+            "spectra.hotkey.long-session.runtime-retained"
+          ]
+        }
+      ]
+    },
+    "halo": {
+      "packagePath": "apps/extension-halo/package.json",
+      "script": "test:performance",
+      "workloads": [
+        {
+          "testPath": "apps/extension-halo/test/sidepanel-performance-playwright.spec.ts",
+          "metrics": [
+            "halo.sidepanel.cold-profile-to-interactive",
+            "halo.sidepanel.navigation-to-interactive"
+          ]
+        }
+      ]
+    }
+  }
+}
