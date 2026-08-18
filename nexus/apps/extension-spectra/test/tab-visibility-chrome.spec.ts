@@ -138,7 +138,7 @@ beforeAll(async () => {
 		],
 	});
 	if (EXPECTED_CHROME) {
-		expect(browser.version()).toContain(EXPECTED_CHROME);
+		expect(await browser.version()).toContain(EXPECTED_CHROME);
 	}
 
 	const serviceWorkerTarget: Target = await browser.waitForTarget(
