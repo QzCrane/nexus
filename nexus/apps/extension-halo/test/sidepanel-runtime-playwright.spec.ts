@@ -12,6 +12,7 @@ import {
 } from '@playwright/test';
 
 const DIST_PATH = fileURLToPath(new URL('../dist/', import.meta.url));
+const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 
 async function extensionWorker(context: BrowserContext): Promise<Worker> {
 	const existing = context.serviceWorkers()[0];
@@ -50,7 +51,9 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 
 		try {
 			context = await chromium.launchPersistentContext(profilePath, {
-				channel: 'chromium',
+				...(EXPLICIT_CHROME
+					? { executablePath: EXPLICIT_CHROME }
+					: { channel: 'chromium' as const }),
 				headless: true,
 				viewport: { width: 520, height: 760 },
 				args: [
@@ -85,8 +88,9 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			await page.keyboard.press('Escape');
 			await expect(search).toHaveValue('');
 
-			const hashTool = page.locator('button[data-tool-id="hash"]');
-			await expect(hashTool).toBeVisible();
+			const jsonTool = page.locator('button[data-tool-id="json-formatter"]');
+			await expect(jsonTool).toBeVisible();
+			await expect(jsonTool).toBeEnabled();
 
 			// Ignore any startup chunk traffic. Every URL below this point must be
 			// caused by the explicit hover/click interactions under test.
@@ -94,21 +98,22 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 
 			// Hover preload must cross a real production panel-chunk boundary before
 			// selection. This proves HALO no longer relies on React.lazy private fields.
-			await hashTool.hover();
+			await jsonTool.hover();
 			await expect.poll(() => lazyChunkUrls.size, { timeout: 10_000 }).toBeGreaterThan(0);
 			const preloadedChunkUrls = new Set(lazyChunkUrls);
 
 			// Selection must still cross a distinct LauncherToolPage lazy/Suspense
-			// boundary while the Hash panel module is already owned by the memoized loader.
-			await hashTool.click();
+			// boundary while the admitted JSON Formatter panel is already owned by
+			// the memoized loader.
+			await jsonTool.click();
 			await expect.poll(
 				() => [...lazyChunkUrls].filter((url) => !preloadedChunkUrls.has(url)).length,
 				{ timeout: 10_000 },
 			).toBeGreaterThan(0);
-			const hashInput = page.locator('textarea').first();
-			await expect(hashInput).toBeVisible();
-			await hashInput.fill('preact-compat-proof');
-			await expect(hashInput).toHaveValue('preact-compat-proof');
+			const jsonInput = page.locator('textarea').first();
+			await expect(jsonInput).toBeVisible();
+			await jsonInput.fill('{"release":"admitted"}');
+			await expect(jsonInput).toHaveValue('{"release":"admitted"}');
 
 			// Dock uses createPortal() for its delayed tooltip. Prove the portal is
 			// physically mounted under body rather than inside the React root.
