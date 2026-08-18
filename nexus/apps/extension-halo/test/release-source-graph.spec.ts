@@ -25,6 +25,7 @@ describe('HALO production source graph admission', () => {
 		);
 		expect(source).toContain('ts.SyntaxKind.ImportKeyword');
 		expect(source).toContain("node.expression.text === 'require'");
-		expect(source).toContain("/^src\\/(tools|scripts|system)\\/([^/]+)/");
+		expect(source).toContain("tools|scripts|system");
+		expect(source).toContain('pluginIdentity');
 	});
 });
