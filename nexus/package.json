@@ -25,7 +25,7 @@
 		"test:watch:halo": "bun --cwd apps/extension-halo test:watch",
 		"check:toolchain": "bun scripts/check-toolchain.ts",
 		"check:platform": "bun test scripts/platform-contract.test.ts && bun scripts/check-platform-contract.ts",
-		"check:governance": "bun test scripts/permission-governance.spec.ts scripts/closeout-governance.spec.ts scripts/dependency-audit.spec.ts scripts/verify/check-misc.spec.ts scripts/generate-sbom.spec.ts",
+		"check:governance": "bun test scripts/permission-governance.spec.ts scripts/closeout-governance.spec.ts scripts/dependency-audit.spec.ts scripts/verify/check-misc.spec.ts scripts/generate-sbom.spec.ts scripts/runtime-performance.spec.ts",
 		"audit:dependencies": "bun scripts/dependency-audit.ts",
 		"generate:sbom": "bun scripts/generate-sbom.ts",
 		"check:public-projections": "bun scripts/check-public-projections.ts",
