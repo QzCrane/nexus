@@ -6,104 +6,86 @@ import {
 	BACKGROUND_PLUGIN_IDS,
 } from '../../kernel/registry/_generated-background-active';
 import {
+	RELEASE_ACTIVE_SERVICE_CONTRACTS,
+	RELEASE_SCRIPT_RUNTIME_IDS,
+} from '../../kernel/registry/_generated-release-admission';
+import {
 	getUserScriptsStorageSnapshot,
 	subscribeUserScriptsStorage,
+	type UserScriptsStorageSnapshot,
 } from '../../system/userscripts/storage-authority';
-import { parseClipboardSettings } from '../../tools/clipboard/types';
-
-interface ActiveServiceScript {
-	id: string;
-	enabled: boolean;
-	saatToolId?: string;
-}
 
 export interface ActiveServiceStorageState {
 	ready: boolean;
-	clipboardEnabled: boolean;
-	hoverZoomEnabled: boolean;
-	userscriptsEnabled: boolean;
-	smoothScrollEnabled: boolean;
-	userScripts: ActiveServiceScript[];
-	saatScripts: ActiveServiceScript[];
+	enabledById: Readonly<Record<string, boolean>>;
 }
 
-type RuntimeStorageField = Exclude<keyof ActiveServiceStorageState, 'ready'>;
+type ActiveServiceContract = (typeof RELEASE_ACTIVE_SERVICE_CONTRACTS)[number];
+type StorageEnabledContract = Extract<ActiveServiceContract, { kind: 'storage-enabled' }>;
+
+const STORAGE_ENABLED_CONTRACTS: readonly StorageEnabledContract[] =
+	RELEASE_ACTIVE_SERVICE_CONTRACTS.filter(
+		(contract): contract is StorageEnabledContract => contract.kind === 'storage-enabled',
+	);
+const USERSCRIPTS_AUTHORITY_IDS = RELEASE_ACTIVE_SERVICE_CONTRACTS
+	.filter((contract) => contract.kind === 'userscripts-authority')
+	.map((contract) => contract.id);
+const RELEASE_SCRIPT_RUNTIME_ID_SET = new Set<string>(RELEASE_SCRIPT_RUNTIME_IDS);
+const STORAGE_CONTRACT_BY_EVENT = new Map(
+	STORAGE_ENABLED_CONTRACTS.map((contract) => [`${contract.area}:${contract.key}`, contract]),
+);
+const STORAGE_KEYS_BY_AREA = Object.freeze({
+	local: STORAGE_ENABLED_CONTRACTS.filter((contract) => contract.area === 'local').map((contract) => contract.key),
+	sync: STORAGE_ENABLED_CONTRACTS.filter((contract) => contract.area === 'sync').map((contract) => contract.key),
+});
 
 const EMPTY_STORAGE_STATE: ActiveServiceStorageState = {
 	ready: false,
-	clipboardEnabled: false,
-	hoverZoomEnabled: false,
-	userscriptsEnabled: false,
-	smoothScrollEnabled: false,
-	userScripts: [],
-	saatScripts: [],
+	enabledById: Object.freeze({}),
 };
 
-const TRUE_BACKGROUND_IDS = BACKGROUND_PLUGIN_IDS.filter(
+const TRUE_BACKGROUND_IDS = Object.freeze(BACKGROUND_PLUGIN_IDS.filter(
 	(id) => BACKGROUND_ACTIVE_ONLY_MAP[id] === false,
-);
+));
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function isActiveServiceScript(value: unknown): value is ActiveServiceScript {
-	if (!isRecord(value)) return false;
-	return typeof value.id === 'string'
-		&& typeof value.enabled === 'boolean'
-		&& (value.saatToolId === undefined || typeof value.saatToolId === 'string');
-}
-
-function readScripts(value: unknown): ActiveServiceScript[] {
-	if (!isRecord(value) || !Array.isArray(value.scripts)) return [];
-	return value.scripts.filter(isActiveServiceScript);
-}
-
-function readEnabled(value: unknown, fallback = true): boolean {
+function readEnabled(value: unknown, fallback: boolean): boolean {
 	if (!isRecord(value) || typeof value.enabled !== 'boolean') return fallback;
 	return value.enabled;
 }
 
-function sameScripts(left: readonly ActiveServiceScript[], right: readonly ActiveServiceScript[]): boolean {
-	return left.length === right.length && left.every((item, index) => {
-		const candidate = right[index];
-		return candidate?.id === item.id
-			&& candidate.enabled === item.enabled
-			&& candidate.saatToolId === item.saatToolId;
-	});
+function sameEnabledById(
+	left: Readonly<Record<string, boolean>>,
+	right: Readonly<Record<string, boolean>>,
+): boolean {
+	const leftKeys = Object.keys(left);
+	const rightKeys = Object.keys(right);
+	return leftKeys.length === rightKeys.length
+		&& leftKeys.every((id) => right[id] === left[id]);
 }
 
-function sameStorageState(left: ActiveServiceStorageState, right: ActiveServiceStorageState): boolean {
-	return left.ready === right.ready
-		&& left.clipboardEnabled === right.clipboardEnabled
-		&& left.hoverZoomEnabled === right.hoverZoomEnabled
-		&& left.userscriptsEnabled === right.userscriptsEnabled
-		&& left.smoothScrollEnabled === right.smoothScrollEnabled
-		&& sameScripts(left.userScripts, right.userScripts)
-		&& sameScripts(left.saatScripts, right.saatScripts);
+function sameStorageState(
+	left: ActiveServiceStorageState,
+	right: ActiveServiceStorageState,
+): boolean {
+	return left.ready === right.ready && sameEnabledById(left.enabledById, right.enabledById);
 }
 
 export function mergeInitialActiveServiceStorageState(
 	current: ActiveServiceStorageState,
 	initial: ActiveServiceStorageState,
-	eventOwnedFields: ReadonlySet<RuntimeStorageField>,
+	eventOwnedIds: ReadonlySet<string>,
 ): ActiveServiceStorageState {
+	const enabledById: Record<string, boolean> = { ...initial.enabledById };
+	for (const id of eventOwnedIds) {
+		if (current.enabledById[id] !== undefined) enabledById[id] = current.enabledById[id];
+	}
 	const merged: ActiveServiceStorageState = {
 		ready: true,
-		clipboardEnabled: eventOwnedFields.has('clipboardEnabled')
-			? current.clipboardEnabled
-			: initial.clipboardEnabled,
-		hoverZoomEnabled: eventOwnedFields.has('hoverZoomEnabled')
-			? current.hoverZoomEnabled
-			: initial.hoverZoomEnabled,
-		userscriptsEnabled: eventOwnedFields.has('userscriptsEnabled')
-			? current.userscriptsEnabled
-			: initial.userscriptsEnabled,
-		smoothScrollEnabled: eventOwnedFields.has('smoothScrollEnabled')
-			? current.smoothScrollEnabled
-			: initial.smoothScrollEnabled,
-		userScripts: eventOwnedFields.has('userScripts') ? current.userScripts : initial.userScripts,
-		saatScripts: eventOwnedFields.has('saatScripts') ? current.saatScripts : initial.saatScripts,
+		enabledById: Object.freeze(enabledById),
 	};
 	return sameStorageState(current, merged) ? current : merged;
 }
@@ -112,95 +94,68 @@ function initialStorageState(
 	local: Record<string, unknown>,
 	sync: Record<string, unknown>,
 ): ActiveServiceStorageState {
-	return {
-		ready: true,
-		clipboardEnabled: parseClipboardSettings(local.halo_tool_clipboard_settings).enabled,
-		hoverZoomEnabled: readEnabled(local.halo_hover_zoom_settings),
-		userscriptsEnabled: false,
-		smoothScrollEnabled: readEnabled(sync.HALO_SMOOTH_SCROLL_SETTINGS),
-		userScripts: [],
-		saatScripts: readScripts(local.halo_saat_scripts),
-	};
+	const enabledById: Record<string, boolean> = {};
+	for (const contract of STORAGE_ENABLED_CONTRACTS) {
+		const source = contract.area === 'local' ? local : sync;
+		enabledById[contract.id] = readEnabled(source[contract.key], contract.defaultEnabled);
+	}
+	return { ready: true, enabledById: Object.freeze(enabledById) };
 }
 
 function applyStorageChanges(
 	current: ActiveServiceStorageState,
 	changes: Record<string, chrome.storage.StorageChange>,
 	area: string,
-	eventOwnedFields: Set<RuntimeStorageField>,
+	eventOwnedIds: Set<string>,
 ): ActiveServiceStorageState {
-	let next = current;
-	const patch = (field: RuntimeStorageField, value: ActiveServiceStorageState[RuntimeStorageField]) => {
-		eventOwnedFields.add(field);
-		if (next[field] === value) return;
-		next = { ...next, [field]: value };
-	};
-
-	if (area === 'local') {
-		const clipboard = changes.halo_tool_clipboard_settings;
-		if (clipboard) patch('clipboardEnabled', parseClipboardSettings(clipboard.newValue).enabled);
-
-		const hoverZoom = changes.halo_hover_zoom_settings;
-		if (hoverZoom) patch('hoverZoomEnabled', readEnabled(hoverZoom.newValue));
-
-		const saat = changes.halo_saat_scripts;
-		if (saat) {
-			const scripts = readScripts(saat.newValue);
-			eventOwnedFields.add('saatScripts');
-			if (!sameScripts(next.saatScripts, scripts)) next = { ...next, saatScripts: scripts };
-		}
+	if (area !== 'local' && area !== 'sync') return current;
+	let enabledById: Record<string, boolean> | null = null;
+	for (const [key, change] of Object.entries(changes)) {
+		const contract = STORAGE_CONTRACT_BY_EVENT.get(`${area}:${key}`);
+		if (!contract) continue;
+		eventOwnedIds.add(contract.id);
+		const enabled = readEnabled(change.newValue, contract.defaultEnabled);
+		if (current.enabledById[contract.id] === enabled) continue;
+		enabledById ??= { ...current.enabledById };
+		enabledById[contract.id] = enabled;
 	}
-
-	if (area === 'sync') {
-		const smoothScroll = changes.HALO_SMOOTH_SCROLL_SETTINGS;
-		if (smoothScroll) patch('smoothScrollEnabled', readEnabled(smoothScroll.newValue));
-	}
-
-	return next;
+	return enabledById ? { ...current, enabledById: Object.freeze(enabledById) } : current;
 }
 
 function hasRelevantStorageChange(
 	changes: Record<string, chrome.storage.StorageChange>,
 	area: string,
 ): boolean {
-	if (area === 'local') {
-		return Boolean(
-			changes.halo_tool_clipboard_settings
-			|| changes.halo_hover_zoom_settings
-			|| changes.halo_saat_scripts,
-		);
-	}
-	return area === 'sync' && Boolean(changes.HALO_SMOOTH_SCROLL_SETTINGS);
+	if (area !== 'local' && area !== 'sync') return false;
+	return Object.keys(changes).some((key) => STORAGE_CONTRACT_BY_EVENT.has(`${area}:${key}`));
 }
 
-function deriveActiveServices(state: ActiveServiceStorageState): Set<string> {
+function deriveActiveServices(
+	storageState: ActiveServiceStorageState,
+	userScriptsSnapshot: UserScriptsStorageSnapshot,
+): Set<string> {
 	const active = new Set<string>();
-	if (!state.ready) return active;
+	if (!storageState.ready || !userScriptsSnapshot.ready) return active;
 
-	if (state.clipboardEnabled) active.add('clipboard');
-	if (state.hoverZoomEnabled) active.add('hover-zoom');
-	if (state.userscriptsEnabled) active.add('userscripts');
-	if (state.smoothScrollEnabled) active.add('smooth-scroll');
-
-	for (const script of state.userScripts) {
-		if (!state.userscriptsEnabled || !script.enabled) continue;
-		active.add(script.id);
-		if (script.saatToolId) active.add(script.saatToolId);
+	for (const [id, enabled] of Object.entries(storageState.enabledById)) {
+		if (enabled) active.add(id);
 	}
-	for (const script of state.saatScripts) {
-		if (script.enabled && script.saatToolId) active.add(script.saatToolId);
+	if (userScriptsSnapshot.globalEnabled) {
+		for (const id of USERSCRIPTS_AUTHORITY_IDS) active.add(id);
+		for (const script of userScriptsSnapshot.scripts) {
+			if (!script.enabled) continue;
+			if (script.managedBy === 'packaged-script') {
+				const releaseId = script.saatToolId ?? script.id;
+				if (RELEASE_SCRIPT_RUNTIME_ID_SET.has(releaseId)) active.add(releaseId);
+				continue;
+			}
+			if (script.managedBy === undefined) active.add(script.id);
+			// `saat-tool` records are legacy/tool-script runtime state. The current
+			// release admission has no tool script-runtime surface, so stale rows
+			// may not resurrect a catalog-only tool in the Active category.
+		}
 	}
 	return active;
-}
-
-function deriveScriptIds(state: ActiveServiceStorageState): string[] {
-	if (!state.ready) return [];
-	const ids: string[] = [];
-	for (const script of state.userScripts) {
-		ids.push(script.id);
-		if (script.saatToolId) ids.push(script.saatToolId);
-	}
-	return ids;
 }
 
 interface ActiveServicesContextType {
@@ -211,9 +166,9 @@ interface ActiveServicesContextType {
 const ActiveServicesContext = createContext<ActiveServicesContextType | undefined>(undefined);
 
 /**
- * SidePanel status projection. Physical storage-change delivery is multiplexed
- * with the UserScripts authority so this provider does not register a second
- * chrome.storage.onChanged listener in the same JS context.
+ * SidePanel status projection. Release admission owns every packaged runtime
+ * status source; UserScripts keeps its independent external-store authority.
+ * The provider knows no individual plugin id or storage key.
  */
 export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
 	const [storageState, setStorageState] = useState<ActiveServiceStorageState>(EMPTY_STORAGE_STATE);
@@ -225,29 +180,28 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 
 	useEffect(() => {
 		let disposed = false;
-		const eventOwnedFields = new Set<RuntimeStorageField>();
+		const eventOwnedIds = new Set<string>();
 
 		const listener = (
 			changes: Record<string, chrome.storage.StorageChange>,
 			area: string,
 		) => {
 			if (disposed || !hasRelevantStorageChange(changes, area)) return;
-			setStorageState((current) => applyStorageChanges(current, changes, area, eventOwnedFields));
+			setStorageState((current) => applyStorageChanges(current, changes, area, eventOwnedIds));
 		};
 		const unsubscribeStorageChanges = subscribeHaloStorageChanges(listener);
+		const localRead = STORAGE_KEYS_BY_AREA.local.length > 0
+			? chrome.storage.local.get(STORAGE_KEYS_BY_AREA.local)
+			: Promise.resolve({});
+		const syncRead = STORAGE_KEYS_BY_AREA.sync.length > 0
+			? chrome.storage.sync.get(STORAGE_KEYS_BY_AREA.sync)
+			: Promise.resolve({});
 
-		void Promise.all([
-			chrome.storage.local.get([
-				'halo_tool_clipboard_settings',
-				'halo_hover_zoom_settings',
-				'halo_saat_scripts',
-			]),
-			chrome.storage.sync.get('HALO_SMOOTH_SCROLL_SETTINGS'),
-		]).then(([local, sync]) => {
+		void Promise.all([localRead, syncRead]).then(([local, sync]) => {
 			if (disposed) return;
 			const initial = initialStorageState(local, sync);
 			setStorageState((current) =>
-				mergeInitialActiveServiceStorageState(current, initial, eventOwnedFields));
+				mergeInitialActiveServiceStorageState(current, initial, eventOwnedIds));
 		}).catch((error: unknown) => {
 			if (disposed) return;
 			console.error('[HALO:RuntimeStatus] Initial storage hydration failed', error);
@@ -260,26 +214,11 @@ export const ActiveServicesProvider: React.FC<{ children: React.ReactNode }> = (
 		};
 	}, []);
 
-	const userScripts = useMemo<ActiveServiceScript[]>(
-		() => userScriptsSnapshot.scripts.map((script) => ({
-			id: script.id,
-			enabled: script.enabled,
-			...(script.saatToolId ? { saatToolId: script.saatToolId } : {}),
-		})),
-		[userScriptsSnapshot.scripts],
+	const activeServices = useMemo(
+		() => deriveActiveServices(storageState, userScriptsSnapshot),
+		[storageState, userScriptsSnapshot],
 	);
-	const combinedState = useMemo<ActiveServiceStorageState>(() => ({
-		...storageState,
-		ready: storageState.ready && userScriptsSnapshot.ready,
-		userscriptsEnabled: userScriptsSnapshot.globalEnabled,
-		userScripts,
-	}), [storageState, userScriptsSnapshot.ready, userScriptsSnapshot.globalEnabled, userScripts]);
-
-	const activeServices = useMemo(() => deriveActiveServices(combinedState), [combinedState]);
-	const bgToolIds = useMemo(
-		() => [...TRUE_BACKGROUND_IDS, ...deriveScriptIds(combinedState)],
-		[combinedState],
-	);
+	const bgToolIds = useMemo(() => [...TRUE_BACKGROUND_IDS], []);
 	const value = useMemo(
 		() => ({ activeServices, bgToolIds }),
 		[activeServices, bgToolIds],
