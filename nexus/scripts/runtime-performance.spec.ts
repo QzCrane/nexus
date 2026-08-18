@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import {
 	buildRuntimePerformanceEvidence,
 	percentile,
@@ -63,5 +64,34 @@ describe('runtime performance evidence', () => {
 			tree: 'b'.repeat(40),
 			host: { browser: { name: 'Chrome', version: 'fixture' } },
 		});
+	});
+
+	test('keeps both product browser release lanes physically connected to percentile evidence', () => {
+		const haloPackage = JSON.parse(readFileSync(
+			new URL('../apps/extension-halo/package.json', import.meta.url),
+			'utf8',
+		)) as { scripts: Record<string, string> };
+		const spectraPackage = JSON.parse(readFileSync(
+			new URL('../apps/extension-spectra/package.json', import.meta.url),
+			'utf8',
+		)) as { scripts: Record<string, string> };
+		const haloPerf = readFileSync(
+			new URL('../apps/extension-halo/test/sidepanel-performance-playwright.spec.ts', import.meta.url),
+			'utf8',
+		);
+		const spectraPerf = readFileSync(
+			new URL('../apps/extension-spectra/test/performance.spec.ts', import.meta.url),
+			'utf8',
+		);
+		const closeoutPolicy = readFileSync(new URL('../closeout-policy.json', import.meta.url), 'utf8');
+
+		expect(haloPackage.scripts['test:browser-chromium']).toContain('sidepanel-performance-playwright.spec.ts');
+		expect(spectraPackage.scripts['test:chrome:dist']).toContain('test:performance');
+		expect(haloPerf).toContain('SAMPLE_COUNT = 20');
+		expect(haloPerf).toContain('writeRuntimePerformanceEvidence');
+		expect(spectraPerf).toContain('SAMPLE_COUNT = 20');
+		expect(spectraPerf).toContain('data-spectra-ready');
+		expect(spectraPerf).toContain('writeRuntimePerformanceEvidence');
+		expect(closeoutPolicy).toContain('scripts/runtime-performance.ts');
 	});
 });
