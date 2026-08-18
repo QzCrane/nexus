@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "phase": "baseline-required",
+  "browserOwner": "browser-floor.json",
+  "comparison": "exact-png-sha256",
+  "states": [
+    {
+      "id": "halo.sidepanel.home.dark.en.1280x800",
+      "product": "halo",
+      "captureTest": "apps/extension-halo/test/store-assets.spec.ts",
+      "updateScript": "capture:store-assets",
+      "packagePath": "apps/extension-halo/package.json",
+      "baselinePath": "apps/extension-halo/store-listings/assets/halo-sidepanel-1280x800.png",
+      "width": 1280,
+      "height": 800,
+      "locale": "en",
+      "theme": "dark",
+      "reducedMotion": true,
+      "baselineSha256": null,
+      "provenance": "Existing store asset predates the pinned Chrome visual policy and must be re-recorded before enforcement."
+    },
+    {
+      "id": "spectra.popup.empty.dark.en-US.390x600",
+      "product": "spectra",
+      "captureTest": "apps/extension-spectra/test/visual-baseline.spec.ts",
+      "updateScript": "capture:visual-baseline",
+      "packagePath": "apps/extension-spectra/package.json",
+      "baselinePath": "apps/extension-spectra/store-listings/assets/spectra-popup-empty-390x600.png",
+      "width": 390,
+      "height": 600,
+      "locale": "en-US",
+      "theme": "dark",
+      "reducedMotion": true,
+      "baselineSha256": null,
+      "provenance": "No certified baseline exists yet; first pinned Chrome-for-Testing recording requires explicit review."
+    }
+  ]
+}
