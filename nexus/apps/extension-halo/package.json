@@ -16,6 +16,7 @@
 		"test:watch": "bun test --watch test",
 		"test:smooth-scroll": "bun test test/smooth-scroll.spec.ts test/smooth-scroll-keyboard-contract.spec.ts",
 		"test:browser-chromium": "bunx playwright test test/smooth-scroll-keyboard-playwright.spec.ts test/frame-tools-lazy-playwright.spec.ts test/hover-zoom-lazy-playwright.spec.ts test/sidepanel-runtime-playwright.spec.ts --workers=1",
+		"test:performance": "bunx playwright test test/sidepanel-performance-playwright.spec.ts --workers=1",
 		"test:keyboard-chromium": "bun run test:browser-chromium",
 		"test:ui": "bun run test:playwright",
 		"test:playwright": "bun run build:prod && bunx playwright test test/*-playwright.spec.ts --workers=1",
