@@ -13,7 +13,12 @@ import { checkAiContextFiles } from './verify/check-ai-context.ts';
 import { checkContractsPurity } from './verify/check-contracts.ts';
 import { checkSourceFileLength } from './verify/check-file-length.ts';
 import { checkHardcodedActions } from './verify/check-actions.ts';
-import { checkDependencyDirection, checkReadmeAI, checkHtmlResources } from './verify/check-misc.ts';
+import {
+	checkDependencyDirection,
+	checkHtmlResources,
+	checkReadmeAI,
+	checkWorkflowActionPins,
+} from './verify/check-misc.ts';
 import { checkChineseComments } from './verify/check-chinese.ts';
 import { checkPermissionUsage } from './verify/check-permissions.ts';
 import { checkSpectraControlArchitecture } from './verify/check-spectra-control.ts';
@@ -38,6 +43,7 @@ function main() {
 	checkContractsPurity(ROOT);
 	checkReadmeAI(ROOT);
 	checkDependencyDirection(ROOT);
+	checkWorkflowActionPins(ROOT);
 	checkSourceFileLength(ROOT);
 	checkHardcodedActions(ROOT);
 	checkHtmlResources(ROOT);
