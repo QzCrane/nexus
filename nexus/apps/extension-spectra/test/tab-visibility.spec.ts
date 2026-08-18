@@ -66,6 +66,15 @@ describe('complete visible media tab lifecycle', () => {
 		expect(sendMessage.mock.calls.map(([tabId]) => tabId)).toEqual([22]);
 	});
 
+	test('never revives a removed tab from a stale recent-activity row', async () => {
+		const now = 1_000_000;
+		installChrome([tab(25)], new Map([[25, 'empty']]));
+		markTabActivated(24, now - 1_000);
+
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [] });
+		expect(tabAudioStates.has(24)).toBe(false);
+	});
+
 	test('prunes expired telemetry instead of treating media reports as durable leases', async () => {
 		const now = 1_000_000;
 		installChrome([tab(30)], new Map([[30, 'empty']]));
