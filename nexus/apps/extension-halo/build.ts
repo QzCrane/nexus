@@ -44,7 +44,7 @@ const minimumChromeMajor = Number.parseInt(String(sourceManifest.minimum_chrome_
 if (!Number.isSafeInteger(minimumChromeMajor) || minimumChromeMajor < 100) {
 	throw new Error(`HALO manifest has invalid minimum_chrome_version: ${String(sourceManifest.minimum_chrome_version)}`);
 }
-const BROWSER_TARGET = Object.freeze([`chrome${minimumChromeMajor}`]);
+const BROWSER_TARGET = `chrome${minimumChromeMajor}`;
 
 // Production ceilings are audited regression gates, not aspirations:
 // intentional growth requires an explicit architecture + budget change.
