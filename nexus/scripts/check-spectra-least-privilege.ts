@@ -1,5 +1,5 @@
-// goal: prove every SPECTRA install-time permission has an explicit least-privilege decision and live code owner
-// inv: manifest required grants and policy are exact-set equal; evidence is executable-source anchored
+// goal: prove every SPECTRA permission has an explicit least-privilege decision and live code owner
+// inv: manifest required/optional grants are exact projections of policy decisions; evidence is source anchored
 
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
@@ -15,7 +15,7 @@ interface EvidenceOwner {
 }
 
 interface PermissionDecision {
-	decision: 'required' | 'optionalization-candidate';
+	decision: 'required' | 'optional' | 'optionalization-candidate';
 	capability: string;
 	evidence: EvidenceOwner[];
 	narrowing: string;
@@ -31,7 +31,9 @@ interface PermissionPolicy {
 
 interface ManifestLike {
 	permissions?: unknown;
+	optional_permissions?: unknown;
 	host_permissions?: unknown;
+	optional_host_permissions?: unknown;
 }
 
 function readJson<T>(path: string): T {
@@ -39,6 +41,7 @@ function readJson<T>(path: string): T {
 }
 
 function stringArray(value: unknown, field: string): string[] {
+	if (value === undefined) return [];
 	if (!Array.isArray(value) || value.some((entry) => typeof entry !== 'string')) {
 		throw new Error(`SPECTRA ${field} must be an array of strings`);
 	}
@@ -52,7 +55,9 @@ function canonical(values: readonly string[]): string {
 
 function validateDecision(id: string, decision: PermissionDecision): void {
 	if (!decision || typeof decision !== 'object') throw new Error(`${id}: policy entry must be an object`);
-	if (decision.decision !== 'required' && decision.decision !== 'optionalization-candidate') {
+	if (decision.decision !== 'required'
+		&& decision.decision !== 'optional'
+		&& decision.decision !== 'optionalization-candidate') {
 		throw new Error(`${id}: unknown permission decision ${String(decision.decision)}`);
 	}
 	for (const [field, value] of [
@@ -83,8 +88,20 @@ function validateDecision(id: string, decision: PermissionDecision): void {
 			throw new Error(`${id}: optionalization candidate must remain owned by LEAST-PRIVILEGE-PROOF`);
 		}
 	} else if (decision.migrationTask !== undefined) {
-		throw new Error(`${id}: required decision cannot carry an optionalization migration task`);
+		throw new Error(`${id}: only optionalization candidates may carry a migration task`);
 	}
+}
+
+function projection(
+	decisions: Readonly<Record<string, PermissionDecision>>,
+	kind: 'required' | 'optional',
+): string[] {
+	return Object.entries(decisions).flatMap(([id, decision]) => {
+		if (kind === 'required') {
+			return decision.decision === 'required' || decision.decision === 'optionalization-candidate' ? [id] : [];
+		}
+		return decision.decision === 'optional' ? [id] : [];
+	}).sort();
 }
 
 export function checkSpectraLeastPrivilege({
@@ -98,18 +115,28 @@ export function checkSpectraLeastPrivilege({
 		throw new Error('SPECTRA permission policy must use schemaVersion 1 and app=spectra');
 	}
 	const manifestPermissions = stringArray(manifest.permissions, 'manifest.permissions');
+	const manifestOptionalPermissions = stringArray(manifest.optional_permissions, 'manifest.optional_permissions');
 	const manifestHosts = stringArray(manifest.host_permissions, 'manifest.host_permissions');
-	const policyPermissions = Object.keys(policy.permissions).sort();
-	const policyHosts = Object.keys(policy.hostPermissions).sort();
-	if (canonical(manifestPermissions) !== canonical(policyPermissions)) {
-		throw new Error(`SPECTRA required permission policy drift: manifest=${manifestPermissions.join(',')} policy=${policyPermissions.join(',')}`);
+	const manifestOptionalHosts = stringArray(manifest.optional_host_permissions, 'manifest.optional_host_permissions');
+	const requiredPermissions = projection(policy.permissions, 'required');
+	const optionalPermissions = projection(policy.permissions, 'optional');
+	const requiredHosts = projection(policy.hostPermissions, 'required');
+	const optionalHosts = projection(policy.hostPermissions, 'optional');
+	if (canonical(manifestPermissions) !== canonical(requiredPermissions)) {
+		throw new Error(`SPECTRA required permission policy drift: manifest=${manifestPermissions.join(',')} policy=${requiredPermissions.join(',')}`);
 	}
-	if (canonical(manifestHosts) !== canonical(policyHosts)) {
-		throw new Error(`SPECTRA required host policy drift: manifest=${manifestHosts.join(',')} policy=${policyHosts.join(',')}`);
+	if (canonical(manifestOptionalPermissions) !== canonical(optionalPermissions)) {
+		throw new Error(`SPECTRA optional permission policy drift: manifest=${manifestOptionalPermissions.join(',')} policy=${optionalPermissions.join(',')}`);
+	}
+	if (canonical(manifestHosts) !== canonical(requiredHosts)) {
+		throw new Error(`SPECTRA required host policy drift: manifest=${manifestHosts.join(',')} policy=${requiredHosts.join(',')}`);
+	}
+	if (canonical(manifestOptionalHosts) !== canonical(optionalHosts)) {
+		throw new Error(`SPECTRA optional host policy drift: manifest=${manifestOptionalHosts.join(',')} policy=${optionalHosts.join(',')}`);
 	}
 	for (const [id, decision] of Object.entries(policy.permissions)) validateDecision(id, decision);
 	for (const [id, decision] of Object.entries(policy.hostPermissions)) validateDecision(`host:${id}`, decision);
-	console.log(`✓ SPECTRA least-privilege policy: ${policyPermissions.length} permissions + ${policyHosts.length} host scope(s)`);
+	console.log(`✓ SPECTRA least-privilege policy: required=${requiredPermissions.length}, optional=${optionalPermissions.length}, hosts=${requiredHosts.length + optionalHosts.length}`);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
