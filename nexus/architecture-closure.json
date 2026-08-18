@@ -34,15 +34,17 @@
       "owner": "halo-build",
       "status": "active",
       "acceptance": [
-        "Only explicitly shipped ready or beta modules enter the production dynamic-import and release payload graph.",
+        "Only explicitly shipped ready or beta modules enter the production dynamic-import, transitive source-import and release payload graph.",
         "Coming, disabled and unspecified modules may remain in source/catalog but are absent from the production ZIP unless explicitly admitted as non-executable catalog data.",
-        "Production artifact tests prove excluded module code and dependencies are physically absent."
+        "Production source-graph and artifact tests prove excluded module code and dependencies are physically absent."
       ],
       "evidence": [
         "apps/extension-halo/release-admission.json",
         "scripts/registry-gen/release-admission.ts",
+        "apps/extension-halo/check-release-source-graph.ts",
         "apps/extension-halo/build.ts",
         "apps/extension-halo/finalize-release-payload.ts",
+        "apps/extension-halo/test/release-source-graph.spec.ts",
         "apps/extension-halo/test/release-admission-build.spec.ts"
       ]
     },
@@ -71,14 +73,16 @@
       "status": "active",
       "acceptance": [
         "Web-accessible resources and runtime/content entry surfaces are generated from admitted capabilities.",
-        "Release build rejects broad orphan resource exposure and source/projection drift."
+        "Release build rejects broad orphan resource exposure, catalog-only transitive imports and source/projection drift."
       ],
       "evidence": [
         "scripts/registry-gen/gen-release-manifest.ts",
         "apps/extension-halo/public/manifest.json",
+        "apps/extension-halo/check-release-source-graph.ts",
         "apps/extension-halo/build.ts",
         "apps/extension-halo/finalize-release-payload.ts",
-        "apps/extension-halo/test/release-tooling.spec.ts"
+        "apps/extension-halo/test/release-tooling.spec.ts",
+        "apps/extension-halo/test/release-source-graph.spec.ts"
       ]
     },
     {
@@ -157,14 +161,20 @@
       "status": "active",
       "acceptance": [
         "Exact-head evidence measures cold interactive latency, hotkey end-to-end latency and service-worker wake latency.",
-        "Long-task, CPU, heap/leak and tab/media-scale stress workloads have reproducible budgets.",
-        "Runtime SLO evidence is release-bound and distinct from bundle byte ceilings."
+        "Long-task, CPU, heap/leak and tab/media-scale stress workloads have reproducible evidence before budgets are admitted.",
+        "Runtime SLO evidence is release-bound and distinct from bundle byte ceilings; hard budgets cannot be invented before at least two independent baseline runs."
       ],
       "evidence": [
+        "runtime-performance-policy.json",
         "scripts/runtime-performance.ts",
         "scripts/runtime-performance.spec.ts",
+        "scripts/check-runtime-performance-policy.ts",
+        "scripts/check-runtime-performance-policy.spec.ts",
         "apps/extension-halo/test/sidepanel-performance-playwright.spec.ts",
-        "apps/extension-spectra/test/performance.spec.ts"
+        "apps/extension-spectra/test/performance.spec.ts",
+        "apps/extension-spectra/test/runtime-stress-performance.spec.ts",
+        "apps/extension-spectra/test/service-worker-wake-performance.spec.ts",
+        "apps/extension-spectra/test/runtime-long-session-performance.spec.ts"
       ]
     },
     {
@@ -190,10 +200,13 @@
       "owner": "dependency-governance",
       "status": "active",
       "acceptance": [
-        "Unused direct dependencies are removed after full build/test proof; first candidates are HALO file-saver and @types/file-saver.",
-        "Type-only dependencies are classified as development dependencies unless runtime packaging proves otherwise."
+        "Unused direct dependencies are machine-detected and removed only with regenerated lock plus full build/test proof.",
+        "Current retained debt includes HALO file-saver, jszip, @types/file-saver and runtime-misclassified @types/qrcode; stale or newly introduced debt fails governance."
       ],
       "evidence": [
+        "direct-dependency-policy.json",
+        "scripts/check-direct-dependencies.ts",
+        "scripts/check-direct-dependencies.spec.ts",
         "apps/extension-halo/package.json",
         "bun.lock"
       ]
@@ -205,11 +218,15 @@
       "owner": "dependency-governance",
       "status": "active",
       "acceptance": [
-        "Dependency governance covers vulnerability, freshness, maintenance health, license, bundle contribution and replacement value.",
-        "A clean advisory audit cannot be reported as complete dependency lifecycle health."
+        "Dependency governance covers vulnerability, freshness, maintenance health, license, bundle contribution, direct-use classification and replacement value.",
+        "A clean advisory audit cannot be reported as complete dependency lifecycle health, and every executable lock domain is audited independently."
       ],
       "evidence": [
+        "dependency-domains.json",
+        "direct-dependency-policy.json",
         "scripts/dependency-audit.ts",
+        "scripts/dependency-audit.spec.ts",
+        "scripts/check-direct-dependencies.ts",
         "scripts/generate-sbom.ts",
         "scripts/release-supply-chain.ts",
         ".github/dependabot.yml"
@@ -227,7 +244,8 @@
       ],
       "evidence": [
         ".github/dependabot.yml",
-        "scripts/runtime-performance.ts"
+        "scripts/runtime-performance.ts",
+        "runtime-performance-policy.json"
       ]
     },
     {
@@ -269,6 +287,7 @@
         "dependency-domains.json",
         "scripts/check-dependency-domains.ts",
         "scripts/check-dependency-domains.spec.ts",
+        "scripts/dependency-audit.ts",
         "closeout-policy.json",
         "../.github/workflows/cross-platform.yml"
       ]
@@ -319,11 +338,18 @@
         "SPECTRA required permissions and host scope have machine-readable least-privilege rationale or are moved to narrower optional/capability-bound admission."
       ],
       "evidence": [
+        "apps/extension-spectra/public/manifest.json",
         "apps/extension-spectra/permission-policy.json",
         "scripts/check-spectra-least-privilege.ts",
         "scripts/check-spectra-least-privilege.spec.ts",
+        "apps/extension-spectra/src/shared/optional-permission-admission.ts",
+        "apps/extension-spectra/src/shared/optional-permission-click-gate.ts",
         "apps/extension-spectra/src/options/userscripts.ts",
-        "apps/extension-spectra/test/optional-permission-admission.spec.ts"
+        "apps/extension-spectra/src/popup/optional-permission-ui.ts",
+        "apps/extension-spectra/src/options/optional-permission-ui.ts",
+        "apps/extension-spectra/test/optional-permission-admission.spec.ts",
+        "apps/extension-spectra/test/tab-capture-permission-contract.spec.ts",
+        "apps/extension-spectra/test/screenshot-handler.spec.ts"
       ]
     },
     {
@@ -331,12 +357,19 @@
       "priority": "P1",
       "area": "observability",
       "owner": "diagnostics",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
-        "Users can explicitly export a redacted bounded diagnostic bundle without default remote telemetry.",
-        "Bundle includes version/browser/permission/runtime identity, relevant owner/lease state and bounded recent errors/events without secrets or unnecessary URL data."
+        "Users can explicitly export a redacted bounded diagnostic bundle without default remote telemetry or a new always-on diagnostic background owner.",
+        "Bundle includes version/browser/permission/runtime identity and bounded non-PII state while proving URL/title/token/storage values cannot leak."
       ],
-      "evidence": []
+      "evidence": [
+        "packages/nexus-kernel/src/diagnostics.ts",
+        "scripts/diagnostics-contract.spec.ts",
+        "apps/extension-spectra/src/options/diagnostics.ts",
+        "apps/extension-spectra/test/diagnostics-chrome.spec.ts",
+        "apps/extension-halo/src/system/settings/panel.tsx",
+        "apps/extension-halo/test/sidepanel-diagnostics-playwright.spec.ts"
+      ]
     },
     {
       "id": "ACCESSIBILITY-GATE",
@@ -359,12 +392,20 @@
       "priority": "P1",
       "area": "quality",
       "owner": "ui-quality",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
-        "Critical UI states have deterministic visual regression evidence across representative theme, locale and constrained-width states.",
-        "Visual evidence is supplemental to semantic/browser assertions, not a substitute."
+        "Critical UI states have deterministic visual capture owners pinned to browser, viewport, locale, theme and reduced-motion state; ordinary tests cannot overwrite baselines.",
+        "The policy remains baseline-required until pinned Chrome baselines are explicitly re-recorded and reviewed, after which exact SHA comparison may be enforced without invented fuzzy thresholds."
       ],
-      "evidence": []
+      "evidence": [
+        "visual-regression-policy.json",
+        "scripts/check-visual-regression-policy.ts",
+        "scripts/check-visual-regression-policy.spec.ts",
+        "apps/extension-halo/test/store-assets.spec.ts",
+        "apps/extension-halo/scripts/capture-store-assets.ts",
+        "apps/extension-spectra/test/visual-baseline.spec.ts",
+        "apps/extension-spectra/scripts/capture-visual-baseline.ts"
+      ]
     },
     {
       "id": "PROPERTY-MUTATION-TESTING",
@@ -406,13 +447,15 @@
       "status": "active",
       "acceptance": [
         "Content execution requirements are generated from plugin capability metadata rather than parallel manual lists/imports.",
-        "Generator drift fails repository verification."
+        "Generator and transitive production source-graph drift fail repository verification."
       ],
       "evidence": [
         "apps/extension-halo/release-admission.json",
         "apps/extension-halo/src/kernel/registry/_generated-release-admission.ts",
+        "apps/extension-halo/check-release-source-graph.ts",
         "apps/extension-halo/build.ts",
-        "apps/extension-halo/finalize-release-payload.ts"
+        "apps/extension-halo/finalize-release-payload.ts",
+        "apps/extension-halo/test/release-source-graph.spec.ts"
       ]
     },
     {
