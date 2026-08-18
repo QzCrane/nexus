@@ -16,7 +16,7 @@ const __filename = fileURLToPath(import.meta.url);
 const appRoot = path.dirname(__filename);
 const srcRoot = path.join(appRoot, 'src');
 const admittedIds = new Set<string>(RELEASE_ADMITTED_PLUGIN_IDS);
-const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs'] as const;
+const SOURCE_EXTENSIONS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs'] as const;
 
 function normalizedRelative(file: string): string {
 	return path.relative(appRoot, file).replaceAll('\\', '/');
@@ -28,16 +28,33 @@ function pluginIdentity(file: string): { kind: string; id: string } | null {
 	return match?.[1] && match[2] ? { kind: match[1], id: match[2] } : null;
 }
 
-function resolveSourceModule(importer: string, specifier: string): string | null {
+function emittedSpecifierCandidates(unresolved: string): string[] {
+	const extension = path.extname(unresolved);
+	if (!extension) {
+		return [
+			...SOURCE_EXTENSIONS.map((candidateExtension) => `${unresolved}${candidateExtension}`),
+			...SOURCE_EXTENSIONS.map((candidateExtension) => path.join(unresolved, `index${candidateExtension}`)),
+		];
+	}
+	const base = unresolved.slice(0, -extension.length);
+	switch (extension) {
+		case '.js':
+			return [`${base}.ts`, `${base}.tsx`, `${base}.js`, unresolved];
+		case '.jsx':
+			return [`${base}.tsx`, `${base}.jsx`, unresolved];
+		case '.mjs':
+			return [`${base}.mts`, `${base}.mjs`, unresolved];
+		case '.cjs':
+			return [`${base}.cts`, `${base}.cjs`, unresolved];
+		default:
+			return [unresolved];
+	}
+}
+
+export function resolveSourceModule(importer: string, specifier: string): string | null {
 	if (!specifier.startsWith('.')) return null;
 	const unresolved = path.resolve(path.dirname(importer), specifier);
-	const candidates = path.extname(unresolved)
-		? [unresolved]
-		: [
-			...SOURCE_EXTENSIONS.map((extension) => `${unresolved}${extension}`),
-			...SOURCE_EXTENSIONS.map((extension) => path.join(unresolved, `index${extension}`)),
-		];
-	for (const candidate of candidates) {
+	for (const candidate of emittedSpecifierCandidates(unresolved)) {
 		if (!existsSync(candidate)) continue;
 		const relative = path.relative(appRoot, candidate);
 		if (relative.startsWith('..') || path.isAbsolute(relative)) return null;
