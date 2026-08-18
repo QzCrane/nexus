@@ -87,16 +87,24 @@ async function probeMediaTabs(tabs: readonly (chrome.tabs.Tab & { id: number })[
 export async function resolveVisibleTabs(now = Date.now()): Promise<{ tabs: number[] }> {
 	const visibleTabsSet = new Set<number>();
 	const allTabs = await chrome.tabs.query({});
+	const liveTabIds = new Set<number>();
 
 	// Chrome-owned active/audible facts are zero-probe admission paths.
 	for (const tab of allTabs) {
 		if (!tab.id) continue;
+		liveTabIds.add(tab.id);
 		if (tab.active || tab.audible) visibleTabsSet.add(tab.id);
 	}
 
-	// Bounded recent activity keeps a just-paused/just-switched tab stable even
-	// when its content host becomes temporarily unreachable during navigation.
+	// Bounded recent activity keeps a just-paused/just-switched live tab stable
+	// even when its content host becomes temporarily unreachable during navigation.
 	for (const [tabId, state] of tabAudioStates.entries()) {
+		if (!liveTabIds.has(tabId)) {
+			// onRemoved normally owns this cleanup, but visibility must remain correct
+			// if worker/event ordering leaves a stale volatile row behind.
+			tabAudioStates.delete(tabId);
+			continue;
+		}
 		const isRecentlyAudible = isRecent(state.lastAudibleTime, now);
 		const isRecentlyActivated = isRecent(state.lastActivatedTime, now);
 		if (isRecentlyAudible || isRecentlyActivated) {
