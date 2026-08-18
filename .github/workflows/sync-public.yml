@@ -56,7 +56,10 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-      - name: Install private dependencies
+      - name: Verify private repository-governance lock
+        run: bun install --cwd private --frozen-lockfile --ignore-scripts
+
+      - name: Install private workspace dependencies
         run: bun install --cwd private/nexus --frozen-lockfile
 
       - name: Validate private source
