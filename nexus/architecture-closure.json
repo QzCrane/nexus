@@ -23,7 +23,8 @@
       ],
       "evidence": [
         "apps/extension-spectra/src/background/handlers/tab-state.ts",
-        "apps/extension-spectra/test/tab-visibility.spec.ts"
+        "apps/extension-spectra/test/tab-visibility.spec.ts",
+        "apps/extension-spectra/test/tab-visibility-chrome.spec.ts"
       ]
     },
     {
@@ -31,50 +32,70 @@
       "priority": "P0",
       "area": "halo-shared",
       "owner": "halo-build",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Only explicitly shipped ready or beta modules enter the production dynamic-import and release payload graph.",
         "Coming, disabled and unspecified modules may remain in source/catalog but are absent from the production ZIP unless explicitly admitted as non-executable catalog data.",
         "Production artifact tests prove excluded module code and dependencies are physically absent."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-halo/release-admission.json",
+        "scripts/registry-gen/release-admission.ts",
+        "apps/extension-halo/build.ts",
+        "apps/extension-halo/finalize-release-payload.ts",
+        "apps/extension-halo/test/release-admission-build.spec.ts"
+      ]
     },
     {
       "id": "HALO-EXPLICIT-RELEASE-STAGE",
       "priority": "P0",
       "area": "halo-shared",
       "owner": "halo-registry",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Every plugin has an explicit release stage; missing status cannot silently mean coming or shipped.",
         "Source presence, catalog visibility, payload admission and runtime enablement are distinct generated facts.",
         "Registry generation fails closed on ambiguous release state."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-halo/release-admission.json",
+        "apps/extension-halo/src/kernel/registry/_generated-release-admission.ts",
+        "apps/extension-halo/test/registry-generation.spec.ts"
+      ]
     },
     {
       "id": "HALO-GENERATED-RESOURCE-SURFACES",
       "priority": "P0",
       "area": "halo-shared",
       "owner": "halo-build",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Web-accessible resources and runtime/content entry surfaces are generated from admitted capabilities.",
         "Release build rejects broad orphan resource exposure and source/projection drift."
       ],
-      "evidence": []
+      "evidence": [
+        "scripts/registry-gen/gen-release-manifest.ts",
+        "apps/extension-halo/public/manifest.json",
+        "apps/extension-halo/build.ts",
+        "apps/extension-halo/finalize-release-payload.ts",
+        "apps/extension-halo/test/release-tooling.spec.ts"
+      ]
     },
     {
       "id": "BACKLOG-SSOT",
       "priority": "P0",
       "area": "repository",
       "owner": "repository-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Authoritative roadmap work has one machine-readable owner and cannot coexist with a misleading zero-backlog projection.",
         "GitHub issue/project projections are derived or reconciled from that owner."
       ],
-      "evidence": []
+      "evidence": [
+        "architecture-closure.json",
+        "scripts/render-architecture-closure.ts",
+        ".github/workflows/architecture-closure-sync.yml"
+      ]
     },
     {
       "id": "ARCHITECTURE-CLOSURE-MANIFEST",
@@ -89,7 +110,8 @@
       "evidence": [
         "architecture-closure.json",
         "scripts/check-architecture-closure.ts",
-        "scripts/architecture-closure.spec.ts"
+        "scripts/architecture-closure.spec.ts",
+        "docs/architecture-closure.md"
       ]
     },
     {
@@ -97,85 +119,116 @@
       "priority": "P0",
       "area": "ci",
       "owner": "repository-ci",
-      "status": "queued",
+      "status": "blocked",
       "acceptance": [
         "At least one stable independent replay lane executes repository code continuously and is expected green on main.",
         "Exact-head local product evidence remains independent rather than being weakened or replaced."
       ],
-      "evidence": []
+      "evidence": [
+        ".github/workflows/cross-platform.yml",
+        ".github/workflows/halo-keyboard-browser.yml",
+        ".github/workflows/minimum-chrome.yml"
+      ],
+      "blocker": "GitHub-hosted jobs for the current private repository still terminate before Checkout with zero executable steps, so no hosted run can be represented as green until runner allocation is restored."
     },
     {
       "id": "MINIMUM-CHROME-EVIDENCE",
       "priority": "P0",
       "area": "release",
       "owner": "browser-compatibility",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "The declared minimum Chrome version is exercised by a pinned browser lane, or the manifest floor is raised to the continuously proven version.",
         "Current-Chrome and minimum-Chrome evidence are reported separately."
       ],
-      "evidence": []
+      "evidence": [
+        "browser-floor.json",
+        "scripts/browser-floor.ts",
+        ".github/workflows/minimum-chrome.yml",
+        "apps/extension-halo/test/minimum-chrome-playwright.spec.ts",
+        "apps/extension-spectra/test/tab-visibility-chrome.spec.ts"
+      ]
     },
     {
       "id": "RUNTIME-PERFORMANCE-SLOS",
       "priority": "P0",
       "area": "performance",
       "owner": "performance-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Exact-head evidence measures cold interactive latency, hotkey end-to-end latency and service-worker wake latency.",
         "Long-task, CPU, heap/leak and tab/media-scale stress workloads have reproducible budgets.",
         "Runtime SLO evidence is release-bound and distinct from bundle byte ceilings."
       ],
-      "evidence": []
+      "evidence": [
+        "scripts/runtime-performance.ts",
+        "scripts/runtime-performance.spec.ts",
+        "apps/extension-halo/test/sidepanel-performance-playwright.spec.ts",
+        "apps/extension-spectra/test/performance.spec.ts"
+      ]
     },
     {
       "id": "FEATURE-PROMOTION-GATE",
       "priority": "P0",
       "area": "governance",
       "owner": "release-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Promotion to ready requires correctness, failure-boundary, lifecycle/restart, permission/privacy, accessibility, runtime resource, bundle and browser evidence.",
         "Promotion is rejected mechanically when an applicable evidence owner is absent."
       ],
-      "evidence": []
+      "evidence": [
+        "feature-promotion.json",
+        "scripts/check-feature-promotion.ts",
+        "scripts/check-feature-promotion.spec.ts"
+      ]
     },
     {
       "id": "DEPENDENCY-DEAD-DIRECTS",
       "priority": "P1",
       "area": "dependencies",
       "owner": "dependency-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Unused direct dependencies are removed after full build/test proof; first candidates are HALO file-saver and @types/file-saver.",
         "Type-only dependencies are classified as development dependencies unless runtime packaging proves otherwise."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-halo/package.json",
+        "bun.lock"
+      ]
     },
     {
       "id": "DEPENDENCY-LIFECYCLE-POLICY",
       "priority": "P1",
       "area": "dependencies",
       "owner": "dependency-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Dependency governance covers vulnerability, freshness, maintenance health, license, bundle contribution and replacement value.",
         "A clean advisory audit cannot be reported as complete dependency lifecycle health."
       ],
-      "evidence": []
+      "evidence": [
+        "scripts/dependency-audit.ts",
+        "scripts/generate-sbom.ts",
+        "scripts/release-supply-chain.ts",
+        ".github/dependabot.yml"
+      ]
     },
     {
       "id": "DEPENDENCY-UPDATE-AUTOMATION",
       "priority": "P1",
       "area": "dependencies",
       "owner": "dependency-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Automated update PRs exist for package dependencies and GitHub Actions pins.",
         "Low-risk update promotion includes tests plus production artifact/performance deltas."
       ],
-      "evidence": []
+      "evidence": [
+        ".github/dependabot.yml",
+        "scripts/runtime-performance.ts"
+      ]
     },
     {
       "id": "TYPESCRIPT-7-EPOCH",
@@ -207,48 +260,71 @@
       "priority": "P1",
       "area": "toolchain",
       "owner": "toolchain-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Root and nexus lock/resolution domains are either intentionally separate with independent frozen-install evidence or converged to one authority.",
         "No unverified dependency universe exists outside CI/release ownership."
       ],
-      "evidence": []
+      "evidence": [
+        "dependency-domains.json",
+        "scripts/check-dependency-domains.ts",
+        "scripts/check-dependency-domains.spec.ts",
+        "closeout-policy.json",
+        "../.github/workflows/cross-platform.yml"
+      ]
     },
     {
       "id": "IMMUTABLE-ACTIONS",
       "priority": "P1",
       "area": "supply-chain",
       "owner": "supply-chain",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Third-party GitHub Actions are pinned to immutable commit SHAs.",
         "Automated dependency ownership updates those SHAs without returning to mutable tags."
       ],
-      "evidence": []
+      "evidence": [
+        "scripts/check-workflow-actions.ts",
+        "scripts/workflow-actions.spec.ts",
+        "../.github/dependabot.yml",
+        "../.github/workflows/cross-platform.yml"
+      ]
     },
     {
       "id": "SBOM-LICENSE-PROVENANCE",
       "priority": "P1",
       "area": "supply-chain",
       "owner": "supply-chain",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Each release emits a machine-readable SBOM and third-party license inventory bound to the exact artifact.",
         "Build provenance/attestation binds source, builder/tool identity and resulting artifact digest."
       ],
-      "evidence": []
+      "evidence": [
+        "scripts/generate-sbom.ts",
+        "scripts/generate-sbom.spec.ts",
+        "scripts/release-supply-chain.ts",
+        "scripts/release-supply-chain.spec.ts",
+        "package.json"
+      ]
     },
     {
       "id": "LEAST-PRIVILEGE-PROOF",
       "priority": "P1",
       "area": "security",
       "owner": "permission-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Permission verification distinguishes declared-and-used from required-at-install.",
         "SPECTRA required permissions and host scope have machine-readable least-privilege rationale or are moved to narrower optional/capability-bound admission."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-spectra/permission-policy.json",
+        "scripts/check-spectra-least-privilege.ts",
+        "scripts/check-spectra-least-privilege.spec.ts",
+        "apps/extension-spectra/src/options/userscripts.ts",
+        "apps/extension-spectra/test/optional-permission-admission.spec.ts"
+      ]
     },
     {
       "id": "LOCAL-DIAGNOSTIC-BUNDLE",
@@ -267,12 +343,16 @@
       "priority": "P1",
       "area": "quality",
       "owner": "ui-quality",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Critical Popup and SidePanel paths have automated keyboard, focus and accessible-name/state checks.",
         "Zoom, reduced-motion and contrast-sensitive states have explicit acceptance evidence."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-halo/public/sidepanel.html",
+        "apps/extension-halo/test/sidepanel-accessibility-playwright.spec.ts",
+        "apps/extension-spectra/test/smoke.spec.ts"
+      ]
     },
     {
       "id": "VISUAL-REGRESSION-GATE",
@@ -291,58 +371,76 @@
       "priority": "P1",
       "area": "quality",
       "owner": "test-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Property or mutation testing is applied selectively to parsers, protocol guards and state machines where it finds failures ordinary examples miss.",
         "No global vanity coverage percentage substitutes for risk-owned evidence."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-halo/test/release-admission-properties.spec.ts",
+        "scripts/registry-gen/release-admission.ts"
+      ]
     },
     {
       "id": "RISK-WEIGHTED-TEST-OWNERSHIP",
       "priority": "P1",
       "area": "quality",
       "owner": "test-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Large or high-risk activation/runtime closures cannot be promoted without focused behavior contracts.",
         "Release tooling detects admitted high-risk modules that have no registered focused test owner."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-halo/release-test-owners.json",
+        "scripts/check-release-test-owners.ts",
+        "scripts/check-release-test-owners.spec.ts",
+        "apps/extension-halo/test/bilibili-enhancer-contract.spec.ts"
+      ]
     },
     {
       "id": "HALO-GENERATED-CONTENT-ENTRY",
       "priority": "P1",
       "area": "halo-shared",
       "owner": "halo-runtime",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Content execution requirements are generated from plugin capability metadata rather than parallel manual lists/imports.",
         "Generator drift fails repository verification."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-halo/release-admission.json",
+        "apps/extension-halo/src/kernel/registry/_generated-release-admission.ts",
+        "apps/extension-halo/build.ts",
+        "apps/extension-halo/finalize-release-payload.ts"
+      ]
     },
     {
       "id": "HALO-GENERATED-ACTIVE-SERVICES",
       "priority": "P1",
       "area": "halo-shared",
       "owner": "halo-runtime",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "Active service projection derives from owned lifecycle contracts rather than a manual storage-key/service list.",
         "Every projected service has an owner, readiness semantics and disposer."
       ],
-      "evidence": []
+      "evidence": [
+        "apps/extension-halo/release-admission.json",
+        "apps/extension-halo/src/kernel/registry/_generated-release-admission.ts",
+        "apps/extension-halo/src/components/sidepanel/ActiveServicesContext.tsx",
+        "apps/extension-halo/test/ui-interaction-semantics.spec.ts"
+      ]
     },
     {
       "id": "HALO-BACKGROUND-DEADLINES",
-      "priority": "P1",
-      "area": "halo-shared",
-      "owner": "halo-runtime",
+      "priority": "P2",
+      "area": "halo-feature",
+      "owner": "halo-timers",
       "status": "queued",
       "acceptance": [
-        "Timers expected to survive an unmounted SidePanel use persisted deadline state plus Background/alarm ownership.",
-        "Restart, duplicate/late alarms and completion side effects are idempotent and tested."
+        "A Timer or Pomodoro feature cannot be promoted from catalog-only status until work expected to survive an unmounted SidePanel uses persisted deadline state plus Background/alarm ownership.",
+        "Any future promoted timer proves restart, duplicate/late alarm and completion side-effect idempotence before release admission."
       ],
       "evidence": []
     },
