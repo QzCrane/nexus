@@ -25,6 +25,11 @@ export interface RuntimePerformanceSummary {
 	mean: number;
 }
 
+export interface RuntimePerformanceIdentity {
+	head: string;
+	tree: string;
+}
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspaceDir = dirname(scriptDir);
 const repositoryRoot = dirname(workspaceDir);
@@ -84,7 +89,14 @@ export function summarizeRuntimePerformance(
 	});
 }
 
-function gitIdentity(): { head: string; tree: string } {
+function assertIdentity(identity: RuntimePerformanceIdentity): RuntimePerformanceIdentity {
+	if (!/^[a-f0-9]{40}$/u.test(identity.head) || !/^[a-f0-9]{40}$/u.test(identity.tree)) {
+		throw new Error('runtime performance evidence requires exact Git head/tree');
+	}
+	return identity;
+}
+
+function gitIdentity(): RuntimePerformanceIdentity {
 	const run = (args: string[]) => {
 		const result = spawnSync('git', args, {
 			cwd: repositoryRoot,
@@ -95,12 +107,25 @@ function gitIdentity(): { head: string; tree: string } {
 		if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${String(result.stderr ?? '')}`);
 		return String(result.stdout ?? '').trim();
 	};
-	const head = run(['rev-parse', 'HEAD']);
-	const tree = run(['rev-parse', 'HEAD^{tree}']);
-	if (!/^[a-f0-9]{40}$/u.test(head) || !/^[a-f0-9]{40}$/u.test(tree)) {
-		throw new Error('runtime performance evidence requires exact Git head/tree');
+	return assertIdentity({
+		head: run(['rev-parse', 'HEAD']),
+		tree: run(['rev-parse', 'HEAD^{tree}']),
+	});
+}
+
+// Dependency-update comparisons execute one fixed candidate workload against
+// two separately built extension directories. Explicit identity keeps the
+// measurement bound to the artifact under test rather than to the test-code checkout.
+export function runtimePerformanceIdentityFromEnvironment(
+	environment: NodeJS.ProcessEnv = process.env,
+): RuntimePerformanceIdentity | undefined {
+	const head = environment.NEXUS_PERFORMANCE_TARGET_HEAD?.trim();
+	const tree = environment.NEXUS_PERFORMANCE_TARGET_TREE?.trim();
+	if (!head && !tree) return undefined;
+	if (!head || !tree) {
+		throw new Error('NEXUS_PERFORMANCE_TARGET_HEAD and NEXUS_PERFORMANCE_TARGET_TREE must be supplied together');
 	}
-	return { head, tree };
+	return assertIdentity({ head, tree });
 }
 
 export function buildRuntimePerformanceEvidence({
@@ -114,14 +139,15 @@ export function buildRuntimePerformanceEvidence({
 	browser: { name: string; version: string };
 	samples: readonly RuntimePerformanceSample[];
 	recordedAt?: string;
-	identity?: { head: string; tree: string };
+	identity?: RuntimePerformanceIdentity;
 }) {
+	const exactIdentity = assertIdentity(identity);
 	return {
 		schemaVersion: 1,
 		recordedAt,
 		product,
-		head: identity.head,
-		tree: identity.tree,
+		head: exactIdentity.head,
+		tree: exactIdentity.tree,
 		host: {
 			platform: platform(),
 			arch: arch(),
@@ -138,13 +164,23 @@ export function writeRuntimePerformanceEvidence({
 	browser,
 	samples,
 	outputPath,
+	identity,
+	recordedAt,
 }: {
 	product: 'halo' | 'spectra';
 	browser: { name: string; version: string };
 	samples: readonly RuntimePerformanceSample[];
 	outputPath?: string;
+	identity?: RuntimePerformanceIdentity;
+	recordedAt?: string;
 }): string {
-	const evidence = buildRuntimePerformanceEvidence({ product, browser, samples });
+	const evidence = buildRuntimePerformanceEvidence({
+		product,
+		browser,
+		samples,
+		...(identity ? { identity } : {}),
+		...(recordedAt ? { recordedAt } : {}),
+	});
 	const path = outputPath ?? resolve(repositoryRoot, 'artifacts', 'performance', `${product}.${evidence.head}.json`);
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(evidence, null, 2)}\n`);
