@@ -2,7 +2,6 @@
   "manifest_version": 3,
   "name": "HALO - Local Utility SidePanel",
   "version": "0.6.2",
-  "minimum_chrome_version": "135",
   "description": "Local-first SidePanel utilities with no ads or telemetry and explicit, user-invoked network tools.",
   "permissions": [
     "storage",
