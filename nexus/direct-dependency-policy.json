@@ -20,6 +20,13 @@
     {
       "packagePath": "apps/extension-halo/package.json",
       "section": "dependencies",
+      "dependency": "jszip",
+      "kind": "unused-runtime-direct",
+      "resolution": "Remove the package and regenerate nexus/bun.lock with Bun; repository source search finds no JSZip or jszip runtime owner."
+    },
+    {
+      "packagePath": "apps/extension-halo/package.json",
+      "section": "dependencies",
       "dependency": "@types/qrcode",
       "kind": "type-package-in-runtime-dependencies",
       "resolution": "Move to devDependencies while regenerating nexus/bun.lock; type declarations do not belong to the runtime dependency set."
