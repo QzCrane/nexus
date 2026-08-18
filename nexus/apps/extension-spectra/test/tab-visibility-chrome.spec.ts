@@ -7,6 +7,7 @@ import puppeteer, { type Browser, type Page, type Target, type WebWorker } from 
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
+const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
 if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
@@ -136,6 +137,9 @@ beforeAll(async () => {
 			'--disable-setuid-sandbox',
 		],
 	});
+	if (EXPECTED_CHROME) {
+		expect(browser.version()).toContain(EXPECTED_CHROME);
+	}
 
 	const serviceWorkerTarget: Target = await browser.waitForTarget(
 		(target) => target.type() === 'service_worker'
