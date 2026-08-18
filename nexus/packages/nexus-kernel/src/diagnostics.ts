@@ -39,6 +39,14 @@ export interface DiagnosticEventBuffer {
 	clear(): void;
 }
 
+export interface LocalDiagnosticRawFacts {
+	readonly manifestVersion: string;
+	readonly userAgent: string;
+	readonly permissions: readonly string[];
+	readonly origins: readonly string[];
+	readonly contextTypes: readonly string[];
+}
+
 const SAFE_TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/u;
 const SAFE_PERMISSION = /^[A-Za-z][A-Za-z0-9_.:-]{0,63}$/u;
 const MAX_EVENTS = 64;
@@ -99,27 +107,65 @@ export function createDiagnosticEventBuffer(maxEvents = MAX_EVENTS): DiagnosticE
 	};
 }
 
-async function collectBrowserFacts(): Promise<{
-	permissions: string[];
-	originGrantCount: number;
-	broadOriginGrant: boolean;
-	contexts: Record<string, number>;
-}> {
-	const grants = await chrome.permissions.getAll();
-	const permissions = (grants.permissions ?? []).filter((permission) => SAFE_PERMISSION.test(permission)).sort();
-	const origins = grants.origins ?? [];
-	const contexts = await chrome.runtime.getContexts({});
+export function assembleLocalDiagnosticBundle({
+	product,
+	facts,
+	owners,
+	events,
+	generatedAt,
+}: {
+	product: DiagnosticProduct;
+	facts: LocalDiagnosticRawFacts;
+	owners: DiagnosticOwnerSummary;
+	events: readonly DiagnosticEvent[];
+	generatedAt: string;
+}): LocalDiagnosticBundle {
+	if (product !== 'SPECTRA' && product !== 'HALO') throw new Error('unsupported diagnostic product');
+	if (!/^\d+\.\d+\.\d+$/u.test(facts.manifestVersion)) throw new Error('diagnostic manifest version must be SemVer');
+	const permissions = [...new Set(facts.permissions.filter((permission) => SAFE_PERMISSION.test(permission)))].sort();
 	const contextCounts: Record<string, number> = {};
-	for (const context of contexts) {
-		const type = String(context.contextType);
-		if (!SAFE_TOKEN.test(type)) continue;
-		contextCounts[type] = (contextCounts[type] ?? 0) + 1;
+	for (const contextType of facts.contextTypes) {
+		if (!SAFE_TOKEN.test(contextType)) continue;
+		contextCounts[contextType] = (contextCounts[contextType] ?? 0) + 1;
 	}
+	const safeEvents = events.slice(-MAX_EVENTS).map((event) => Object.freeze({
+		sequence: event.sequence,
+		timestamp: event.timestamp,
+		level: event.level,
+		scope: safeToken(event.scope, 'scope'),
+		code: safeToken(event.code, 'code'),
+	}));
+	return Object.freeze({
+		schemaVersion: 1,
+		product,
+		generatedAt,
+		manifestVersion: facts.manifestVersion,
+		browser: Object.freeze({
+			userAgentFamily: 'Chromium' as const,
+			major: browserMajor(facts.userAgent),
+		}),
+		permissions: Object.freeze(permissions),
+		origins: Object.freeze({
+			grantCount: facts.origins.length,
+			broadGrant: facts.origins.some((origin) => BROAD_ORIGINS.has(origin)),
+		}),
+		contexts: Object.freeze(Object.fromEntries(
+			Object.entries(contextCounts).sort(([left], [right]) => left.localeCompare(right)),
+		)),
+		owners: validateOwnerSummary(owners),
+		recentEvents: Object.freeze(safeEvents),
+	});
+}
+
+async function collectBrowserFacts(): Promise<LocalDiagnosticRawFacts> {
+	const grants = await chrome.permissions.getAll();
+	const contexts = await chrome.runtime.getContexts({});
 	return {
-		permissions,
-		originGrantCount: origins.length,
-		broadOriginGrant: origins.some((origin) => BROAD_ORIGINS.has(origin)),
-		contexts: Object.fromEntries(Object.entries(contextCounts).sort(([left], [right]) => left.localeCompare(right))),
+		manifestVersion: chrome.runtime.getManifest().version,
+		userAgent: navigator.userAgent,
+		permissions: grants.permissions ?? [],
+		origins: grants.origins ?? [],
+		contextTypes: contexts.map((context) => String(context.contextType)),
 	};
 }
 
@@ -134,28 +180,16 @@ export async function buildLocalDiagnosticBundle({
 	events: DiagnosticEventBuffer;
 	generatedAt?: string;
 }): Promise<LocalDiagnosticBundle> {
-	if (product !== 'SPECTRA' && product !== 'HALO') throw new Error('unsupported diagnostic product');
 	const [facts, ownerState] = await Promise.all([
 		collectBrowserFacts(),
 		typeof owners === 'function' ? owners() : owners,
 	]);
-	return Object.freeze({
-		schemaVersion: 1,
+	return assembleLocalDiagnosticBundle({
 		product,
+		facts,
+		owners: ownerState,
+		events: events.read(),
 		generatedAt,
-		manifestVersion: chrome.runtime.getManifest().version,
-		browser: Object.freeze({
-			userAgentFamily: 'Chromium' as const,
-			major: browserMajor(navigator.userAgent),
-		}),
-		permissions: Object.freeze(facts.permissions),
-		origins: Object.freeze({
-			grantCount: facts.originGrantCount,
-			broadGrant: facts.broadOriginGrant,
-		}),
-		contexts: Object.freeze(facts.contexts),
-		owners: validateOwnerSummary(ownerState),
-		recentEvents: events.read(),
 	});
 }
 
