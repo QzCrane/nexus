@@ -91,7 +91,8 @@ export function generateReleaseManifest(
 	}
 
 	const webResources = admission.modules
-		.flatMap((module) => module.webAccessibleResources ?? [])
+		.flatMap((module) => module.webAccessibleRuntimes ?? [])
+		.map((runtime) => runtime.output)
 		.sort();
 	if (new Set(webResources).size !== webResources.length) {
 		throw new Error('HALO release manifest has duplicate web-accessible resources');
