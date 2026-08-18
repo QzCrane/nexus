@@ -52,6 +52,7 @@
 		"scripts/closeout-evidence.ts",
 		"scripts/dependency-audit.ts",
 		"scripts/generate-sbom.ts",
+		"scripts/runtime-performance.ts",
 		"scripts/release-halo.ts",
 		"scripts/release-spectra.ts"
 	]
