@@ -22,6 +22,7 @@ describe('direct dependency usage policy', () => {
 			'@types/file-saver:orphan-type-direct',
 			'@types/qrcode:type-package-in-runtime-dependencies',
 			'file-saver:unused-runtime-direct',
+			'jszip:unused-runtime-direct',
 		].sort());
 		expect(() => checkDirectDependencies(policy)).not.toThrow();
 	});
