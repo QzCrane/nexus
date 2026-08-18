@@ -85,7 +85,9 @@ jobs:
           echo "NEXUS_EXPECTED_CHROME_VERSION=${CHROME_FLOOR_VERSION}" >> "$GITHUB_ENV"
 
       - name: Prove SPECTRA real Action Popup multi-tab behavior on Chrome 135
-        run: bun test nexus/apps/extension-spectra/test/tab-visibility-chrome.spec.ts
+        working-directory: nexus/apps/extension-spectra
+        run: bun test test/tab-visibility-chrome.spec.ts
 
       - name: Prove HALO admitted SidePanel and page capabilities on Chrome 135
-        run: bunx playwright test nexus/apps/extension-halo/test/minimum-chrome-playwright.spec.ts --workers=1
+        working-directory: nexus/apps/extension-halo
+        run: bunx playwright test test/minimum-chrome-playwright.spec.ts --workers=1
