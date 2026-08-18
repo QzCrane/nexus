@@ -6,8 +6,12 @@ import { join, resolve } from 'node:path';
 import puppeteer, { type Browser, type Page, type Target, type WebWorker } from 'puppeteer';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
+const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
+}
+if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
+	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
 
 let browser: Browser;
@@ -122,6 +126,7 @@ beforeAll(async () => {
 	foregroundUrl = `http://127.0.0.1:${server.port}/foreground`;
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-tab-visibility-'));
 	browser = await puppeteer.launch({
+		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 		headless: true,
 		userDataDir: profileDir,
 		args: [
