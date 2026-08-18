@@ -9,14 +9,20 @@ const current = JSON.parse(
 	readFileSync(new URL('../direct-dependency-policy.json', import.meta.url), 'utf8'),
 );
 
+function compactIssues(policy: unknown): string[] {
+	return findDirectDependencyIssues(policy as never)
+		.map(({ dependency, kind }) => `${dependency}:${kind}`)
+		.sort();
+}
+
 describe('direct dependency usage policy', () => {
 	test('matches the checked-in dependency debt exactly', () => {
 		const policy = structuredClone(current);
-		expect(findDirectDependencyIssues(policy).map(({ dependency, kind }) => ({ dependency, kind }))).toEqual([
-			{ dependency: '@types/qrcode', kind: 'type-package-in-runtime-dependencies' },
-			{ dependency: 'file-saver', kind: 'unused-runtime-direct' },
-			{ dependency: '@types/file-saver', kind: 'orphan-type-direct' },
-		].sort((left, right) => `${left.dependency}:${left.kind}`.localeCompare(`${right.dependency}:${right.kind}`)));
+		expect(compactIssues(policy)).toEqual([
+			'@types/file-saver:orphan-type-direct',
+			'@types/qrcode:type-package-in-runtime-dependencies',
+			'file-saver:unused-runtime-direct',
+		].sort());
 		expect(() => checkDirectDependencies(policy)).not.toThrow();
 	});
 
