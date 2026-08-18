@@ -174,6 +174,11 @@ async function main(): Promise<void> {
 
   const { updateCardsI18n } = await import('./views/i18n-apply');
   updateCardsI18n(dict, gSettings.visualizerEnabled);
+
+  // Exact UI readiness boundary for browser evidence. Static HTML exists before
+  // runtime state is reconciled, so performance and smoke probes must wait for
+  // this marker instead of treating DOMContentLoaded as product readiness.
+  document.documentElement.dataset.spectraReady = 'true';
 }
 
 document.addEventListener('DOMContentLoaded', main);
