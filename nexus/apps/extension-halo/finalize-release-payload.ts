@@ -7,14 +7,16 @@ import {
 	readFileSync,
 	rmSync,
 	statSync,
+	unlinkSync,
 } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	RELEASE_ADMITTED_PLUGIN_IDS,
-	RELEASE_CONTENT_RUNTIME_IDS,
+	RELEASE_CONTENT_SCRIPTS,
 	RELEASE_PANEL_IDS,
 	RELEASE_SCRIPT_RUNTIME_IDS,
+	RELEASE_WEB_ACCESSIBLE_RESOURCES,
 } from './src/kernel/registry/_generated-release-admission';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -25,7 +27,16 @@ const analysisPath = path.join(distDir, 'build-analysis.json');
 const admittedPluginIds = new Set<string>(RELEASE_ADMITTED_PLUGIN_IDS);
 const admittedPanelIds = new Set<string>(RELEASE_PANEL_IDS);
 const admittedScriptRuntimeIds = new Set<string>(RELEASE_SCRIPT_RUNTIME_IDS);
-const admittedContentRuntimeIds = new Set<string>(RELEASE_CONTENT_RUNTIME_IDS);
+const admittedContentOutputs = new Set<string>([
+	'content.js',
+	...RELEASE_CONTENT_SCRIPTS.map((entry) => entry.js),
+]);
+const admittedToolRuntimeDirectories = new Set(
+	RELEASE_WEB_ACCESSIBLE_RESOURCES
+		.filter((resource) => resource.startsWith('tools/'))
+		.map((resource) => resource.split('/')[1])
+		.filter((segment): segment is string => Boolean(segment)),
+);
 
 function removeTree(directory: string): number {
 	if (!existsSync(directory)) return 0;
@@ -49,14 +60,20 @@ function removeTree(directory: string): number {
 	return bytes;
 }
 
-function pruneGeneratedPluginDirectories(): { bytes: number; paths: string[] } {
+function removeFile(file: string): number {
+	if (!existsSync(file)) return 0;
+	const bytes = statSync(file).size;
+	unlinkSync(file);
+	return bytes;
+}
+
+function pruneGeneratedExecutableSurfaces(): { bytes: number; paths: string[] } {
 	let bytes = 0;
 	const paths: string[] = [];
 	const roots = [
 		{
 			directory: path.join(distDir, 'tools'),
-			allowed: (id: string) => admittedPluginIds.has(id)
-				|| id.startsWith('_') && admittedContentRuntimeIds.size > 0,
+			allowed: (id: string) => admittedPluginIds.has(id) || admittedToolRuntimeDirectories.has(id),
 		},
 		{
 			directory: path.join(distDir, 'scripts'),
@@ -72,6 +89,14 @@ function pruneGeneratedPluginDirectories(): { bytes: number; paths: string[] } {
 			bytes += removeTree(candidate);
 			paths.push(path.relative(distDir, candidate).replaceAll('\\', '/'));
 		}
+	}
+
+	for (const entry of readdirSync(distDir, { withFileTypes: true })) {
+		if (!entry.isFile() || !/^content-[A-Za-z0-9_-]+\.js$/u.test(entry.name)) continue;
+		if (admittedContentOutputs.has(entry.name)) continue;
+		const candidate = path.join(distDir, entry.name);
+		bytes += removeFile(candidate);
+		paths.push(entry.name);
 	}
 	return { bytes, paths: paths.sort() };
 }
@@ -138,7 +163,55 @@ function verifyPackagedScriptRuntime(): void {
 	}
 }
 
-function verifyGeneratedExecutableDirectories(): void {
+function verifyBuiltManifest(): void {
+	const manifestPath = path.join(distDir, 'manifest.json');
+	const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as {
+		content_scripts?: Array<{
+			matches?: unknown;
+			js?: unknown;
+			run_at?: unknown;
+			all_frames?: unknown;
+		}>;
+		web_accessible_resources?: Array<{
+			resources?: unknown;
+			matches?: unknown;
+			use_dynamic_url?: unknown;
+		}>;
+	};
+	if (!Array.isArray(manifest.content_scripts)) throw new Error('HALO built manifest has no content_scripts');
+	const actualContent = manifest.content_scripts.map((entry) => ({
+		matches: entry.matches,
+		js: entry.js,
+		runAt: entry.run_at,
+		allFrames: entry.all_frames,
+	}));
+	const expectedContent = [
+		{ matches: ['<all_urls>'], js: ['content.js'], runAt: 'document_start', allFrames: false },
+		...RELEASE_CONTENT_SCRIPTS.map((entry) => ({
+			matches: ['<all_urls>'],
+			js: [entry.js],
+			runAt: entry.runAt,
+			allFrames: entry.allFrames,
+		})),
+	];
+	if (JSON.stringify(actualContent) !== JSON.stringify(expectedContent)) {
+		throw new Error('HALO built manifest content_scripts differ from release admission');
+	}
+
+	const resources = manifest.web_accessible_resources;
+	if (!Array.isArray(resources) || resources.length !== 1) {
+		throw new Error('HALO built manifest must have one exact web-accessible resource owner');
+	}
+	const [resourceOwner] = resources;
+	if (!resourceOwner
+		|| JSON.stringify(resourceOwner.resources) !== JSON.stringify([...RELEASE_WEB_ACCESSIBLE_RESOURCES])
+		|| JSON.stringify(resourceOwner.matches) !== JSON.stringify(['<all_urls>'])
+		|| resourceOwner.use_dynamic_url !== true) {
+		throw new Error('HALO built manifest web-accessible resources differ from release admission');
+	}
+}
+
+function verifyGeneratedExecutableSurfaces(): void {
 	const scriptsDir = path.join(distDir, 'scripts');
 	const actualScripts = existsSync(scriptsDir)
 		? readdirSync(scriptsDir, { withFileTypes: true })
@@ -156,11 +229,24 @@ function verifyGeneratedExecutableDirectories(): void {
 		? readdirSync(toolsDir, { withFileTypes: true })
 			.filter((entry) => entry.isDirectory())
 			.map((entry) => entry.name)
-			.filter((id) => !admittedPluginIds.has(id) && !id.startsWith('_'))
+			.filter((id) => !admittedPluginIds.has(id) && !admittedToolRuntimeDirectories.has(id))
 			.sort()
 		: [];
 	if (unexpectedTools.length > 0) {
 		throw new Error(`HALO unadmitted dist/tools directories survived: ${unexpectedTools.join(', ')}`);
+	}
+	const unexpectedContent = readdirSync(distDir, { withFileTypes: true })
+		.filter((entry) => entry.isFile() && /^content-[A-Za-z0-9_-]+\.js$/u.test(entry.name))
+		.map((entry) => entry.name)
+		.filter((output) => !admittedContentOutputs.has(output))
+		.sort();
+	if (unexpectedContent.length > 0) {
+		throw new Error(`HALO unadmitted content outputs survived: ${unexpectedContent.join(', ')}`);
+	}
+	for (const resource of RELEASE_WEB_ACCESSIBLE_RESOURCES) {
+		if (!existsSync(path.join(distDir, resource))) {
+			throw new Error(`HALO admitted web-accessible resource is missing: ${resource}`);
+		}
 	}
 }
 
@@ -168,8 +254,9 @@ export function finalizeReleasePayload(): void {
 	if (!existsSync(distDir)) throw new Error('HALO dist/ is missing; build before finalizing release payload');
 	verifyActivationClosures();
 	verifyPackagedScriptRuntime();
-	const pruned = pruneGeneratedPluginDirectories();
-	verifyGeneratedExecutableDirectories();
+	verifyBuiltManifest();
+	const pruned = pruneGeneratedExecutableSurfaces();
+	verifyGeneratedExecutableSurfaces();
 
 	// The analysis file is exact-head build evidence for the verifier, not a user
 	// release asset. Do not inflate or expose the production extension with it.
