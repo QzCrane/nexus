@@ -89,6 +89,9 @@ jobs:
       - name: Install product-workspace dependencies
         run: bun install --cwd nexus --frozen-lockfile
 
+      - name: Check dependency-domain authority
+        run: bun nexus/scripts/check-dependency-domains.ts
+
       - name: Check platform contract
         run: bun run check:platform
 
