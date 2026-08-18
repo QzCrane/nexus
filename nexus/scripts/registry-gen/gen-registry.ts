@@ -7,16 +7,12 @@ import {
 	OUTPUT_SCRIPT_RUNTIME,
 } from './config.ts';
 import { emitGeneratedFile, type GenerationMode } from './utils.ts';
-import {
-	isReleaseAdmitted,
-	normalizeReleaseStatus,
-} from '../../apps/extension-halo/src/kernel/registry/release-admission.ts';
+import { isReleaseAdmitted } from '../../apps/extension-halo/src/kernel/registry/release-admission.ts';
 
 /**
- * Generate the canonical full registry. Its schema remains the source for UI
- * metadata and detailed resource-impact provenance. Catalog presence and
- * executable release admission are separate: coming/disabled modules remain
- * discoverable metadata but cannot enter runtime projections.
+ * Generate the canonical full registry. Catalog metadata intentionally preserves
+ * the manifest's product status verbatim; runtime normalization/admission is a
+ * separate boundary so enablement cannot rewrite product readiness.
  */
 export function generateRegistry(
 	allModules,
@@ -61,7 +57,7 @@ export interface PluginMeta {
 	version: string;
 	distribution: 'bundled';
 	builtIn: boolean;
-	status: 'ready' | 'beta' | 'coming' | 'disabled';
+	status?: 'ready' | 'beta' | 'coming' | 'disabled';
 	keywords: string[];
 	permissions?: string[];
 	background?: BackgroundProfile;
@@ -79,7 +75,6 @@ export interface PluginMeta {
 			? JSON.stringify(manifest.background)
 			: 'undefined';
 		const scriptConfig = manifest.script ? JSON.stringify(manifest.script) : 'undefined';
-		const status = normalizeReleaseStatus(manifest.status);
 		return `\t{
 \t\tid: '${manifest.id}',
 \t\ticon: '${manifest.icon}',
@@ -88,7 +83,7 @@ export interface PluginMeta {
 \t\tversion: '${releaseVersion}',
 \t\tdistribution: 'bundled',
 \t\tbuiltIn: ${manifest.builtIn ?? false},
-\t\tstatus: '${status}',
+\t\tstatus: ${manifest.status ? `'${manifest.status}'` : 'undefined'},
 \t\tkeywords: ${keywords},
 \t\tpermissions: ${permissions},
 \t\tbackground: ${background},
@@ -112,10 +107,6 @@ export interface PluginMeta {
 		if (manifest.background) backgroundMap[module.id] = manifest.background;
 	}
 
-	const releaseAdmittedIds = allModules
-		.filter((module) => isReleaseAdmitted(manifestsMap.get(module.id)?.status))
-		.map((module) => module.id);
-
 	const content = `${header}
 export const PLUGIN_REGISTRY: PluginMeta[] = [
 ${allModules.map(generateEntry).join(',\n')}
@@ -126,15 +117,11 @@ export const HALO_RELEASE_VERSION = '${releaseVersion}';
 export const PLUGIN_IDS = [${allModules.map((module) => `'${module.id}'`).join(', ')}] as const;
 export type PluginId = (typeof PLUGIN_IDS)[number];
 
-export const RELEASE_ADMITTED_PLUGIN_IDS = [${releaseAdmittedIds.map((id) => `'${id}'`).join(', ')}] as const;
-export type ReleaseAdmittedPluginId = (typeof RELEASE_ADMITTED_PLUGIN_IDS)[number];
-
 // Runtime filters (SSOT)
 export const getToolPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'tool');
 export const getScriptPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'script');
 export const getSystemPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType === 'system');
 export const getUserPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.pluginType !== 'system');
-export const getReleaseAdmittedPlugins = () => PLUGIN_REGISTRY.filter((plugin) => plugin.status === 'ready' || plugin.status === 'beta');
 
 export const PERMISSION_USAGE_MAP: Record<string, string[]> = ${JSON.stringify(permissionMap, null, 4)};
 
