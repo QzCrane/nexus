@@ -13,7 +13,11 @@ function escapeCell(value: string): string {
 	return value.replaceAll('|', '\\|').replaceAll('\n', ' ');
 }
 
-function renderStatusTable(): { manifest: ReturnType<typeof readArchitectureClosureManifest>; counts: string; table: string } {
+function projectionFacts(): {
+	manifest: ReturnType<typeof readArchitectureClosureManifest>;
+	counts: string;
+	table: string;
+} {
 	const manifest = readArchitectureClosureManifest();
 	const statusCounts = new Map<string, number>();
 	for (const task of manifest.tasks) statusCounts.set(task.status, (statusCounts.get(task.status) ?? 0) + 1);
@@ -27,11 +31,11 @@ function renderStatusTable(): { manifest: ReturnType<typeof readArchitectureClos
 	};
 }
 
-function renderProjectionBody(): string {
-	const { manifest, counts, table } = renderStatusTable();
+function statusSection(canonicalLink: string): string {
+	const { manifest, counts, table } = projectionFacts();
 	return `# Architecture Closure Epoch
 
-The canonical task owner is [\`nexus/architecture-closure.json\`](../blob/${manifest.branch}/nexus/architecture-closure.json). This is a generated **status/index projection** only. Do not edit task semantics, acceptance clauses, evidence, blockers, or state here.
+The canonical task owner is ${canonicalLink}. This is a generated **status/index projection** only. Do not edit task semantics, acceptance clauses, evidence, blockers, or state here.
 
 Single execution branch: \`${manifest.branch}\`. Priority is fixed at **P0 → P1 → P2**. Individual HALO feature internals remain P2 unless they block shared release correctness.
 
@@ -44,7 +48,7 @@ ${table}
 }
 
 export function renderArchitectureClosure(): string {
-	const { manifest } = renderStatusTable();
+	const { manifest } = projectionFacts();
 	return `---
 type: reference
 status: active
@@ -55,11 +59,12 @@ issue: ${manifest.issue}
 branch: ${manifest.branch}
 ---
 
-${renderProjectionBody()}`;
+${statusSection('[`architecture-closure.json`](../architecture-closure.json)')}`;
 }
 
 export function renderArchitectureClosureIssueBody(): string {
-	return `<!-- generated from nexus/architecture-closure.json; do not hand-edit task state -->\n${renderProjectionBody()}`;
+	const { manifest } = projectionFacts();
+	return `<!-- generated from nexus/architecture-closure.json; do not hand-edit task state -->\n${statusSection(`[\`nexus/architecture-closure.json\`](../blob/${manifest.branch}/nexus/architecture-closure.json)`)}`;
 }
 
 export function checkArchitectureClosureProjection(): void {
