@@ -73,7 +73,7 @@ function pruneGeneratedExecutableSurfaces(): { bytes: number; paths: string[] } 
 	const roots = [
 		{
 			directory: path.join(distDir, 'tools'),
-			allowed: (id: string) => admittedPluginIds.has(id) || admittedToolRuntimeDirectories.has(id),
+			allowed: (id: string) => admittedScriptRuntimeIds.has(id) || admittedToolRuntimeDirectories.has(id),
 		},
 		{
 			directory: path.join(distDir, 'scripts'),
@@ -229,7 +229,7 @@ function verifyGeneratedExecutableSurfaces(): void {
 		? readdirSync(toolsDir, { withFileTypes: true })
 			.filter((entry) => entry.isDirectory())
 			.map((entry) => entry.name)
-			.filter((id) => !admittedPluginIds.has(id) && !admittedToolRuntimeDirectories.has(id))
+			.filter((id) => !admittedScriptRuntimeIds.has(id) && !admittedToolRuntimeDirectories.has(id))
 			.sort()
 		: [];
 	if (unexpectedTools.length > 0) {
