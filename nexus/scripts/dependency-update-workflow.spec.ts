@@ -21,6 +21,15 @@ describe('dependency update evidence workflow', () => {
 		expect(workflow).toContain('bun --cwd nexus run build');
 	});
 
+	test('fails candidate governance before any production build or browser measurement', () => {
+		const governance = workflow.indexOf('bun --cwd nexus check:governance');
+		const build = workflow.indexOf('bun --cwd "$BASE_ROOT/nexus" run build');
+		const browser = workflow.indexOf('bunx playwright install-deps chromium');
+		expect(governance).toBeGreaterThan(0);
+		expect(governance).toBeLessThan(build);
+		expect(build).toBeLessThan(browser);
+	});
+
 	test('uses the candidate workload for both measured artifact directories and exact identities', () => {
 		const baseMeasure = workflow.slice(
 			workflow.indexOf('- name: Measure base artifacts with candidate workload'),
