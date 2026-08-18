@@ -77,10 +77,16 @@ describe('HALO release tooling', () => {
 			.toThrow('Unsafe HALO release path');
 	});
 
-	test('checks version parity before expensive release gates', () => {
+	test('checks version parity before expensive release gates and binds runtime evidence before packaging', () => {
 		expect(RELEASE_STEPS[0]?.label).toBe('version parity');
 		expect(RELEASE_STEPS.at(-1)?.label).toBe('staging ZIP');
-		expect(RELEASE_STEPS.find((step) => step.label === 'dependency audit')?.args).toEqual([
+		expect(RELEASE_STEPS.find((step) => step.label === 'runtime performance evidence')?.args).toEqual([
+			'run',
+			'--cwd',
+			'apps/extension-halo',
+			'test:performance',
+		]);
+		expect(RELEASE_STEPS.find((step) => step.label === 'dependency audit and SBOM')?.args).toEqual([
 			'run',
 			'audit:dependencies',
 		]);
@@ -170,6 +176,7 @@ describe('HALO release tooling', () => {
 		expect(scripts.build).toBe('bun build.ts --analyze && bun finalize-release-payload.ts');
 		expect(scripts['build:prod']).toBe('bun build.ts --analyze && bun finalize-release-payload.ts');
 		expect(scripts['build:dev']).toBe('bun build.ts --dev');
+		expect(scripts['test:performance']).toContain('sidepanel-performance-playwright.spec.ts');
 		expect(scripts.dev).toContain('generate-tool-registry.ts');
 		expect(sidepanelHtml).toContain('<script type="module" src="sidepanel.js"></script>');
 		expect(finalizer).toContain('sidepanelActivationClosures');
