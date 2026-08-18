@@ -6,6 +6,7 @@ import { initSlotsEditor } from './slots-editor';
 import { initSiteEditor } from './site-editor';
 import { initModal } from './modal';
 import { initUserScriptsSection } from './userscripts';
+import { initDiagnosticsSection } from './diagnostics';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
 import { bindOptionsRetry, clearOptionsError, showOptionsError } from './status';
 
@@ -21,6 +22,7 @@ async function init(): Promise<void> {
 	await initSlotsEditor();
 	await initSiteEditor();
 	await initUserScriptsSection();
+	initDiagnosticsSection();
 
 	const link = document.getElementById('chrome-shortcuts-link');
 	if (link) {
