@@ -20,11 +20,8 @@ describe('HALO manifest-derived startup surfaces', () => {
 			'content-smooth-scroll.js',
 			'content.js',
 		],
-		allFrameDocumentIdle: ['content-clipboard.js'],
-		topFrameDocumentIdle: [
-			'content-clipboard.js',
-			'content-hover-zoom.js',
-		],
+		allFrameDocumentIdle: [],
+		topFrameDocumentIdle: ['content-hover-zoom.js'],
 	});
 	});
 
