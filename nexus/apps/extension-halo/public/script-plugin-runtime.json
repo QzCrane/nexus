@@ -11,17 +11,5 @@
         "*://live.bilibili.com/*"
       ]
     }
-  },
-  {
-    "id": "bilibili-plus",
-    "pluginType": "script",
-    "builtIn": true,
-    "script": {
-      "type": "javascript",
-      "runAt": "document_start",
-      "matches": [
-        "*://*.bilibili.com/*"
-      ]
-    }
   }
 ]
