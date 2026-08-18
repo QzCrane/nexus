@@ -128,6 +128,18 @@ export function runtimePerformanceIdentityFromEnvironment(
 	return assertIdentity({ head, tree });
 }
 
+export function runtimePerformanceOutputPath(
+	filename: string,
+	environment: NodeJS.ProcessEnv = process.env,
+): string {
+	if (!filename || filename.includes('/') || filename.includes('\\') || filename === '.' || filename === '..') {
+		throw new Error('runtime performance output filename must be one local file name');
+	}
+	const override = environment.NEXUS_PERFORMANCE_OUTPUT_DIR?.trim();
+	const directory = override ? resolve(override) : resolve(repositoryRoot, 'artifacts', 'performance');
+	return resolve(directory, filename);
+}
+
 export function buildRuntimePerformanceEvidence({
 	product,
 	browser,
@@ -181,7 +193,7 @@ export function writeRuntimePerformanceEvidence({
 		...(identity ? { identity } : {}),
 		...(recordedAt ? { recordedAt } : {}),
 	});
-	const path = outputPath ?? resolve(repositoryRoot, 'artifacts', 'performance', `${product}.${evidence.head}.json`);
+	const path = outputPath ?? runtimePerformanceOutputPath(`${product}.${evidence.head}.json`);
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(evidence, null, 2)}\n`);
 	console.log(`✓ Runtime performance evidence: ${relative(repositoryRoot, path).replaceAll('\\', '/')}`);
