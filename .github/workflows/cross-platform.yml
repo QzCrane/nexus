@@ -83,7 +83,10 @@ jobs:
             turbo-quality-${{ runner.os }}-${{ hashFiles('nexus/bun.lock') }}-
             turbo-quality-${{ runner.os }}-
 
-      - name: Install workspace dependencies
+      - name: Freeze repository-governance dependencies
+        run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Install product-workspace dependencies
         run: bun install --cwd nexus --frozen-lockfile
 
       - name: Check platform contract
