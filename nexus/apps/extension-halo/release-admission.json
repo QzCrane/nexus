@@ -5,14 +5,6 @@
       "id": "bilibili-enhancer",
       "stage": "beta",
       "surfaces": ["script-runtime"],
-      "activeService": {
-        "kind": "saat-registry",
-        "area": "local",
-        "key": "halo_saat_scripts",
-        "owner": "kernel/services/saat-service",
-        "readiness": "persisted packaged-script registration reconciled",
-        "disposer": "obsolete registered script is unregistered during registry reconciliation"
-      },
       "reason": "Explicit beta packaged script."
     },
     {
