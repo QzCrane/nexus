@@ -47,12 +47,7 @@ export const useSidePanelState = () => {
 	);
 	const visibleTools = useMemo(() => {
 		if (modulesLoading) return TOOL_REGISTRY;
-		return TOOL_REGISTRY
-			.filter((tool) => enabledToolIds.has(tool.id))
-			.map(tool => ({
-				...tool,
-				status: tool.status === 'available' ? 'ready' : tool.status
-			}));
+		return TOOL_REGISTRY.filter((tool) => enabledToolIds.has(tool.id));
 	}, [modulesLoading, enabledToolIds]);
 
 	// Settings/theme are independent of module-manager hydration. Load them once
@@ -90,9 +85,10 @@ export const useSidePanelState = () => {
 	}, [modulesLoading, isEnabledSnapshot, loadOpenTools]);
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
-		const tool = TOOL_REGISTRY.find(t => t.id === toolId);
-		if (tool?.status === 'coming') return;
-		if (!tool?.builtIn && !enabledToolIds.has(toolId)) return;
+		const tool = TOOL_REGISTRY.find((candidate) => candidate.id === toolId);
+		const releaseAdmitted = tool?.status === 'ready' || tool?.status === 'beta';
+		if (!releaseAdmitted) return;
+		if (!tool.builtIn && !enabledToolIds.has(toolId)) return;
 		await baseToolSelect(toolId);
 	}, [baseToolSelect, enabledToolIds]);
 
