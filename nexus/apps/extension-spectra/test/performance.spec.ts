@@ -6,6 +6,7 @@ import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
 import puppeteer, { type Browser } from 'puppeteer';
 import {
+	runtimePerformanceIdentityFromEnvironment,
 	writeRuntimePerformanceEvidence,
 	type RuntimePerformanceSample,
 } from '../../../scripts/runtime-performance';
@@ -81,5 +82,6 @@ test('records twenty independent SPECTRA Popup cold-interactive samples', async 
 		product: 'spectra',
 		browser: { name: 'Chrome', version: observedBrowserVersion || 'unknown' },
 		samples,
+		identity: runtimePerformanceIdentityFromEnvironment(),
 	});
 }, 180_000);
