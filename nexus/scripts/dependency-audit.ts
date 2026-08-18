@@ -4,6 +4,7 @@
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { generateSbom } from './generate-sbom.ts';
 
 interface AuditProcessResult {
 	status: number | null;
@@ -98,6 +99,14 @@ export async function runDependencyAudit({
 	throw new Error(`Dependency audit infrastructure failed after ${attempts} attempts: ${lastFailure}`);
 }
 
+export async function runDependencyAuditWithEvidence(
+	auditOptions: Parameters<typeof runDependencyAudit>[0] = {},
+	generateEvidence: () => string = generateSbom,
+): Promise<string> {
+	await runDependencyAudit(auditOptions);
+	return generateEvidence();
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-	await runDependencyAudit();
+	await runDependencyAuditWithEvidence();
 }
