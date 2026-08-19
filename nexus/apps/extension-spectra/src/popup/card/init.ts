@@ -6,6 +6,7 @@ import {
   type AudioSessionSnapshot,
 } from '@nexus/contracts';
 import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
+import { currentTopDocumentId, isCurrentTopDocument } from '../../shared/top-document';
 import { cardRenderCallbacks } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
 import {
@@ -79,18 +80,28 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   if (!tab.id) return false;
   const tabId = tab.id;
+  const documentId = await currentTopDocumentId(tabId);
+  if (!documentId) return false;
 
   // All four inputs below are independent, side-effect-free snapshot reads.
-  // Read them in one latency window; serializing session/remote behind runtime
-  // status made Popup initialization scale by multiple RPC round trips per tab.
-  const runtimeStatusPromise = sendSpectraTabRequest(tabId, 'spectra.audio.runtime.get', {})
-    .then((result) => result.ok ? result.data : null)
-    .catch(() => null);
+  // Read them in one latency window and fence every document-owned result to the
+  // top document captured above. tabId is stable across navigation and is not a
+  // sufficient identity for one Popup card generation.
+  const runtimeStatusPromise = sendSpectraTabRequest(
+    tabId,
+    'spectra.audio.runtime.get',
+    {},
+    { documentId },
+  ).then((result) => result.ok ? result.data : null).catch(() => null);
   const controlSnapshotPromise = sendSpectraRequest(
     'spectra.control.snapshot.get',
     { tabId },
-    { tabId },
-  ).then((response) => response.ok ? response.data : null).catch(() => null);
+    { tabId, documentId },
+  ).then((response) => {
+    if (!response.ok) return null;
+    const snapshot = response.data;
+    return snapshot && snapshot.documentId !== documentId ? null : snapshot;
+  }).catch(() => null);
   const acknowledgedSessionPromise: Promise<AudioSessionSnapshot | null> = sendSpectraRequest(
     'spectra.audio.session.get',
     { tabId },
@@ -108,6 +119,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     acknowledgedSessionPromise,
     remoteActivePromise,
   ]);
+  // A navigation during the parallel snapshot window invalidates the complete
+  // card rather than mixing new tab metadata with old runtime/control facts.
+  if (!await isCurrentTopDocument(tabId, documentId)) return false;
   let acknowledgedSession = sessionSnapshot;
 
 	// Processor color is valid only when lifecycle and field-level actual state
