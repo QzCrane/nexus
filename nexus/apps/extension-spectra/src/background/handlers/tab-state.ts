@@ -8,6 +8,7 @@ import {
 } from '../state';
 import { injectContentScriptOnDemand } from '../upgrade-manager';
 import { swLog } from '../../shared/logger';
+import { currentTopDocumentId } from '../../shared/top-document';
 import {
 	SPECTRA_PROTOCOL_VERSION,
 	isSpectraRequestEnvelope,
@@ -42,17 +43,6 @@ function canProbeTab(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: numbe
 		return protocol === 'http:' || protocol === 'https:' || protocol === 'file:';
 	} catch {
 		return false;
-	}
-}
-
-async function currentTopDocumentId(tabId: number): Promise<string | null> {
-	try {
-		const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
-		const documentId = frame?.documentId;
-		return typeof documentId === 'string' && documentId.length > 0 ? documentId : null;
-	} catch {
-		// A disappearing/navigating/restricted top frame has no stable probe owner.
-		return null;
 	}
 }
 
