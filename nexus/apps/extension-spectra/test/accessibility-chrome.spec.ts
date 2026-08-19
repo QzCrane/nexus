@@ -94,7 +94,12 @@ function cssTimeMs(value: string): number {
 	return token.endsWith('ms') ? numeric : numeric * 1_000;
 }
 
-async function optionsMutedContrast(page: Page): Promise<{ dark: number; light: number }> {
+async function themeContrasts(page: Page): Promise<{
+	focusDark: number;
+	focusLight: number;
+	mutedDark: number | null;
+	mutedLight: number | null;
+}> {
 	return page.evaluate(() => {
 		function parseRgb(value: string): [number, number, number] {
 			const numbers = value.match(/[\d.]+/gu)?.map(Number) ?? [];
@@ -119,18 +124,35 @@ async function optionsMutedContrast(page: Page): Promise<{ dark: number; light: 
 			const right = luminance(background);
 			return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
 		}
-		function read(theme: 'dark' | 'light'): number {
+		function read(theme: 'dark' | 'light') {
 			document.documentElement.dataset.theme = theme;
-			const probe = document.createElement('span');
-			probe.style.color = 'var(--text-muted)';
-			probe.style.backgroundColor = 'var(--bg-tertiary)';
-			document.body.append(probe);
-			const style = getComputedStyle(probe);
-			const result = ratio(style.color, style.backgroundColor);
-			probe.remove();
-			return result;
+			const sentinel = document.getElementById('spectra-a11y-focus-sentinel') as HTMLElement | null;
+			if (!sentinel) throw new Error('focus sentinel missing');
+			const focusStyle = getComputedStyle(sentinel);
+			const bodyStyle = getComputedStyle(document.body);
+			let muted: number | null = null;
+			if (location.pathname.endsWith('/options.html')) {
+				const probe = document.createElement('span');
+				probe.style.color = 'var(--text-muted)';
+				probe.style.backgroundColor = 'var(--bg-tertiary)';
+				document.body.append(probe);
+				const style = getComputedStyle(probe);
+				muted = ratio(style.color, style.backgroundColor);
+				probe.remove();
+			}
+			return {
+				focus: ratio(focusStyle.outlineColor, bodyStyle.backgroundColor),
+				muted,
+			};
 		}
-		return { dark: read('dark'), light: read('light') };
+		const dark = read('dark');
+		const light = read('light');
+		return {
+			focusDark: dark.focus,
+			focusLight: light.focus,
+			mutedDark: dark.muted,
+			mutedLight: light.muted,
+		};
 	});
 }
 
@@ -200,10 +222,12 @@ async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void>
 		expect(facts.viewportWidth, `${path} test viewport`).toBe(320);
 		expect(facts.scrollWidth, `${path} 320px reflow`).toBeLessThanOrEqual(facts.viewportWidth + 1);
 
+		const contrast = await themeContrasts(page);
+		expect(contrast.focusDark, `${path} dark focus-ring contrast`).toBeGreaterThanOrEqual(3);
+		expect(contrast.focusLight, `${path} light focus-ring contrast`).toBeGreaterThanOrEqual(3);
 		if (path === 'options.html') {
-			const contrast = await optionsMutedContrast(page);
-			expect(contrast.dark, 'Options dark muted-text contrast').toBeGreaterThanOrEqual(4.5);
-			expect(contrast.light, 'Options light muted-text contrast').toBeGreaterThanOrEqual(4.5);
+			expect(contrast.mutedDark, 'Options dark muted-text contrast').toBeGreaterThanOrEqual(4.5);
+			expect(contrast.mutedLight, 'Options light muted-text contrast').toBeGreaterThanOrEqual(4.5);
 		}
 	} finally {
 		await page.close();
