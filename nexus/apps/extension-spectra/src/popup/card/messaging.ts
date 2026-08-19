@@ -12,21 +12,44 @@ import { projectAcknowledgedProcessorLifecycle } from './state';
 
 export interface MessagingParams {
   tabId: number;
+  documentId: string;
   state: CardInternalState;
   render: () => void;
+  onDocumentReplaced: () => void;
 }
 
 // post: returns a cleanup function that removes the chrome.runtime.onMessage listener
 export function setupCardMessaging(params: MessagingParams): () => void {
-  const { tabId, state, render } = params;
+  const { tabId, documentId, state, render, onDocumentReplaced } = params;
+  let replacementObserved = false;
+  const retireProjection = () => {
+    if (replacementObserved) return;
+    replacementObserved = true;
+    onDocumentReplaced();
+  };
 
   const onMessageListener = (
 	rawMessage: unknown,
     sender: chrome.runtime.MessageSender
   ): boolean | undefined => {
+	// A transient Popup card is a projection of one exact top-level document,
+	// never of a tabId across navigation. Rebuild the whole Popup on replacement
+	// so tab metadata, inventory, lifecycle and control state advance atomically.
+	if (sender.tab?.id === tabId && sender.documentId && sender.documentId !== documentId) {
+		retireProjection();
+		return false;
+	}
+	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.navigation.changed') {
+		if (rawMessage.tabId === tabId && rawMessage.documentId !== documentId) retireProjection();
+		return false;
+	}
 	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.control.snapshot.changed') {
 		const snapshot = rawMessage.payload;
 		if (snapshot.tabId !== tabId) return false;
+		if (snapshot.documentId !== documentId) {
+			retireProjection();
+			return false;
+		}
 		if (snapshot.generation < state.controlGeneration
 			|| snapshot.generation === state.controlGeneration
 				&& snapshot.revision < state.controlRevision) return false;
@@ -34,8 +57,8 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 		const lifecycleMatches = state.audioDocumentId === snapshot.documentId
 			&& state.audioOrigin === snapshot.origin;
 		if (!lifecycleMatches) {
-			// Never carry a purple Capture lifecycle across a navigation or a worker
-			// identity reset while waiting for the matching session handshake.
+			// Never carry a purple Capture lifecycle across a worker identity reset
+			// while waiting for the matching session handshake.
 			state.actualMode = 'bypass';
 			state.desiredMode = 'bypass';
 			state.phase = 'idle';
@@ -69,10 +92,14 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 	}
 	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.session.changed') {
 		const snapshot = rawMessage.payload;
+		if (snapshot.tabId !== tabId) return false;
+		if (snapshot.documentId !== documentId) {
+			retireProjection();
+			return false;
+		}
 		const control = state.controlSnapshot;
 		const matchesControl = audioSessionMatchesControlDocument(snapshot, control);
-		if (snapshot.tabId === tabId
-			&& matchesControl
+		if (matchesControl
 			&& (snapshot.generation > state.audioGeneration
 				|| snapshot.generation === state.audioGeneration
 					&& snapshot.configRevision >= state.audioConfigRevision)) {
