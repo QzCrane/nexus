@@ -21,22 +21,68 @@ export interface ActiveServiceStorageState {
 }
 
 type ActiveServiceContract = (typeof RELEASE_ACTIVE_SERVICE_CONTRACTS)[number];
-type StorageEnabledContract = Extract<ActiveServiceContract, { kind: 'storage-enabled' }>;
+interface StorageBackedActiveServiceContract {
+	readonly id: string;
+	readonly kind: 'storage-enabled' | 'saat-registry';
+	readonly area: 'local' | 'sync';
+	readonly key: string;
+	readonly defaultEnabled?: boolean;
+	readonly owner: string;
+	readonly readiness: string;
+	readonly disposer: string;
+}
 
-const STORAGE_ENABLED_CONTRACTS: readonly StorageEnabledContract[] =
-	RELEASE_ACTIVE_SERVICE_CONTRACTS.filter(
-		(contract): contract is StorageEnabledContract => contract.kind === 'storage-enabled',
-	);
+const SUPPORTED_ACTIVE_SERVICE_KINDS = new Set([
+	'storage-enabled',
+	'userscripts-authority',
+	'saat-registry',
+]);
+for (const contract of RELEASE_ACTIVE_SERVICE_CONTRACTS) {
+	if (!SUPPORTED_ACTIVE_SERVICE_KINDS.has(contract.kind)) {
+		throw new Error(`Unsupported generated active-service kind: ${String(contract.kind)}`);
+	}
+	for (const field of ['owner', 'readiness', 'disposer'] as const) {
+		if (typeof contract[field] !== 'string' || contract[field].trim().length === 0) {
+			throw new Error(`${contract.id}: generated active-service ${field} is missing`);
+		}
+	}
+}
+
+const STORAGE_BACKED_CONTRACTS = RELEASE_ACTIVE_SERVICE_CONTRACTS.filter(
+	(contract) => 'area' in contract && 'key' in contract,
+) as readonly StorageBackedActiveServiceContract[];
 const USERSCRIPTS_AUTHORITY_IDS = RELEASE_ACTIVE_SERVICE_CONTRACTS
 	.filter((contract) => contract.kind === 'userscripts-authority')
 	.map((contract) => contract.id);
 const RELEASE_SCRIPT_RUNTIME_ID_SET = new Set<string>(RELEASE_SCRIPT_RUNTIME_IDS);
-const STORAGE_CONTRACT_BY_EVENT = new Map(
-	STORAGE_ENABLED_CONTRACTS.map((contract) => [`${contract.area}:${contract.key}`, contract]),
-);
+
+function storageEventKey(area: 'local' | 'sync', key: string): string {
+	return `${area}:${key}`;
+}
+
+function groupStorageBackedContracts(): ReadonlyMap<string, readonly StorageBackedActiveServiceContract[]> {
+	const grouped = new Map<string, StorageBackedActiveServiceContract[]>();
+	for (const contract of STORAGE_BACKED_CONTRACTS) {
+		const eventKey = storageEventKey(contract.area, contract.key);
+		const bucket = grouped.get(eventKey) ?? [];
+		bucket.push(contract);
+		grouped.set(eventKey, bucket);
+	}
+	return grouped;
+}
+
+const STORAGE_CONTRACTS_BY_EVENT = groupStorageBackedContracts();
 const STORAGE_KEYS_BY_AREA = Object.freeze({
-	local: STORAGE_ENABLED_CONTRACTS.filter((contract) => contract.area === 'local').map((contract) => contract.key),
-	sync: STORAGE_ENABLED_CONTRACTS.filter((contract) => contract.area === 'sync').map((contract) => contract.key),
+	local: [...new Set(
+		STORAGE_BACKED_CONTRACTS
+			.filter((contract) => contract.area === 'local')
+			.map((contract) => contract.key),
+	)],
+	sync: [...new Set(
+		STORAGE_BACKED_CONTRACTS
+			.filter((contract) => contract.area === 'sync')
+			.map((contract) => contract.key),
+	)],
 });
 
 const EMPTY_STORAGE_STATE: ActiveServiceStorageState = {
@@ -55,6 +101,24 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function readEnabled(value: unknown, fallback: boolean): boolean {
 	if (!isRecord(value) || typeof value.enabled !== 'boolean') return fallback;
 	return value.enabled;
+}
+
+export function isSaatRegistryServiceEnabled(value: unknown, serviceId: string): boolean {
+	if (!isRecord(value) || value.globalEnabled !== true || !Array.isArray(value.scripts)) return false;
+	return value.scripts.some((script) => isRecord(script)
+		&& script.managedBy === 'saat-tool'
+		&& script.saatToolId === serviceId
+		&& script.enabled === true);
+}
+
+function readStorageBackedContractEnabled(
+	contract: StorageBackedActiveServiceContract,
+	value: unknown,
+): boolean {
+	if (contract.kind === 'storage-enabled') {
+		return readEnabled(value, contract.defaultEnabled ?? false);
+	}
+	return isSaatRegistryServiceEnabled(value, contract.id);
 }
 
 function sameEnabledById(
@@ -95,9 +159,9 @@ function initialStorageState(
 	sync: Record<string, unknown>,
 ): ActiveServiceStorageState {
 	const enabledById: Record<string, boolean> = {};
-	for (const contract of STORAGE_ENABLED_CONTRACTS) {
+	for (const contract of STORAGE_BACKED_CONTRACTS) {
 		const source = contract.area === 'local' ? local : sync;
-		enabledById[contract.id] = readEnabled(source[contract.key], contract.defaultEnabled);
+		enabledById[contract.id] = readStorageBackedContractEnabled(contract, source[contract.key]);
 	}
 	return { ready: true, enabledById: Object.freeze(enabledById) };
 }
@@ -111,13 +175,15 @@ function applyStorageChanges(
 	if (area !== 'local' && area !== 'sync') return current;
 	let enabledById: Record<string, boolean> | null = null;
 	for (const [key, change] of Object.entries(changes)) {
-		const contract = STORAGE_CONTRACT_BY_EVENT.get(`${area}:${key}`);
-		if (!contract) continue;
-		eventOwnedIds.add(contract.id);
-		const enabled = readEnabled(change.newValue, contract.defaultEnabled);
-		if (current.enabledById[contract.id] === enabled) continue;
-		enabledById ??= { ...current.enabledById };
-		enabledById[contract.id] = enabled;
+		const contracts = STORAGE_CONTRACTS_BY_EVENT.get(storageEventKey(area, key));
+		if (!contracts) continue;
+		for (const contract of contracts) {
+			eventOwnedIds.add(contract.id);
+			const enabled = readStorageBackedContractEnabled(contract, change.newValue);
+			if (current.enabledById[contract.id] === enabled) continue;
+			enabledById ??= { ...current.enabledById };
+			enabledById[contract.id] = enabled;
+		}
 	}
 	return enabledById ? { ...current, enabledById: Object.freeze(enabledById) } : current;
 }
@@ -127,7 +193,7 @@ function hasRelevantStorageChange(
 	area: string,
 ): boolean {
 	if (area !== 'local' && area !== 'sync') return false;
-	return Object.keys(changes).some((key) => STORAGE_CONTRACT_BY_EVENT.has(`${area}:${key}`));
+	return Object.keys(changes).some((key) => STORAGE_CONTRACTS_BY_EVENT.has(storageEventKey(area, key)));
 }
 
 function deriveActiveServices(
@@ -150,9 +216,9 @@ function deriveActiveServices(
 				continue;
 			}
 			if (script.managedBy === undefined) active.add(script.id);
-			// `saat-tool` records are legacy/tool-script runtime state. The current
-			// release admission has no tool script-runtime surface, so stale rows
-			// may not resurrect a catalog-only tool in the Active category.
+			// SaaT-tool activity is owned by generated `saat-registry` contracts.
+			// A stale registry row cannot resurrect a catalog-only tool unless that
+			// tool is physically release-admitted with an active-service contract.
 		}
 	}
 	return active;
