@@ -20,7 +20,7 @@ afterEach(() => {
 describe('complete visible media tab lifecycle', () => {
 	test('discovers paused or muted media tabs beyond the recent-activity window', async () => {
 		const now = 1_000_000;
-		const sendMessage = installChrome([
+		const { sendMessage } = installChrome([
 			tab(1, { active: true }),
 			tab(2, { audible: true }),
 			tab(3),
@@ -33,6 +33,10 @@ describe('complete visible media tab lifecycle', () => {
 
 		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [1, 2, 3] });
 		expect(sendMessage.mock.calls.map(([tabId]) => tabId)).toEqual([3, 4]);
+		expect(sendMessage.mock.calls.map(([, , options]) => options)).toEqual([
+			{ documentId: 'document-3' },
+			{ documentId: 'document-4' },
+		]);
 	});
 
 	test('reconstructs media inventory after service-worker heap loss', async () => {
@@ -50,7 +54,7 @@ describe('complete visible media tab lifecycle', () => {
 
 	test('retains bounded recent Chrome activity while probing current media truth', async () => {
 		const now = 1_000_000;
-		const sendMessage = installChrome([
+		const { sendMessage } = installChrome([
 			tab(20),
 			tab(21),
 			tab(22),
@@ -102,6 +106,30 @@ describe('complete visible media tab lifecycle', () => {
 		expect(await resolveVisibleTabs()).toEqual({ tabs: [42] });
 	});
 
+	test('rejects a delayed positive media response after the tab navigates to a different document', async () => {
+		const { sendMessage, getFrame } = installChrome(
+			[tab(60)],
+			new Map([[60, 'media']]),
+			(_tabId, readIndex) => readIndex === 0 ? 'document-old' : 'document-new',
+		);
+
+		expect(await resolveVisibleTabs()).toEqual({ tabs: [] });
+		expect(sendMessage.mock.calls).toHaveLength(1);
+		expect(sendMessage.mock.calls[0]?.[2]).toEqual({ documentId: 'document-old' });
+		expect(getFrame.mock.calls).toHaveLength(2);
+	});
+
+	test('fails closed before messaging when the top-frame document identity is unavailable', async () => {
+		const { sendMessage } = installChrome(
+			[tab(61)],
+			new Map([[61, 'media']]),
+			() => null,
+		);
+
+		expect(await resolveVisibleTabs()).toEqual({ tabs: [] });
+		expect(sendMessage.mock.calls).toHaveLength(0);
+	});
+
 	test('bounds Popup-triggered media probes to eight concurrent documents', async () => {
 		let inFlight = 0;
 		let maxInFlight = 0;
@@ -128,6 +156,7 @@ describe('complete visible media tab lifecycle', () => {
 
 type ProbeResult = 'media' | 'empty' | 'invalid' | 'throw';
 type ProbeResolver = Map<number, ProbeResult> | ((tabId: number) => ProbeResult | Promise<ProbeResult>);
+type DocumentResolver = (tabId: number, readIndex: number) => string | null | Promise<string | null>;
 
 function tab(
 	id: number,
@@ -150,12 +179,32 @@ function tab(
 	};
 }
 
-function installChrome(tabs: chrome.tabs.Tab[], resolver: ProbeResolver) {
+function installChrome(
+	tabs: chrome.tabs.Tab[],
+	resolver: ProbeResolver,
+	documentResolver: DocumentResolver = (tabId) => `document-${tabId}`,
+) {
 	const query = mock(async () => tabs);
-	const sendMessage = mock(async (tabId: number, message: unknown) => {
+	const documentReads = new Map<number, number>();
+	const getFrame = mock(async ({ tabId, frameId }: { tabId: number; frameId: number }) => {
+		if (frameId !== 0) throw new Error(`unexpected frame ${frameId}`);
+		const readIndex = documentReads.get(tabId) ?? 0;
+		documentReads.set(tabId, readIndex + 1);
+		const documentId = await documentResolver(tabId, readIndex);
+		return documentId ? { documentId } : null;
+	});
+	const sendMessage = mock(async (
+		tabId: number,
+		message: unknown,
+		options?: { documentId?: string },
+	) => {
 		if (!message || typeof message !== 'object'
 			|| (message as { type?: unknown }).type !== 'spectra.control.actual.read') {
 			throw new Error('unexpected probe message');
+		}
+		if (options?.documentId !== `document-${tabId}`
+			&& !options?.documentId?.startsWith('document-')) {
+			throw new Error(`probe was not bound to a document: ${String(options?.documentId)}`);
 		}
 		const outcome = resolver instanceof Map
 			? resolver.get(tabId) ?? 'empty'
@@ -183,7 +232,10 @@ function installChrome(tabs: chrome.tabs.Tab[], resolver: ProbeResolver) {
 	});
 	Object.defineProperty(globalThis, 'chrome', {
 		configurable: true,
-		value: { tabs: { query, sendMessage } },
+		value: {
+			tabs: { query, sendMessage },
+			webNavigation: { getFrame },
+		},
 	});
-	return sendMessage;
+	return { sendMessage, getFrame };
 }
