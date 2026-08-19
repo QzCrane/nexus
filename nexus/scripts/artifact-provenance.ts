@@ -22,6 +22,7 @@ const ZIP_LOCAL_FILE_SIGNATURE = 0x04034b50;
 const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const ZIP_END_SIGNATURE = 0x06054b50;
 const ZIP_DATA_DESCRIPTOR_FLAG = 0x0008;
+const ZIP_UTF8_FLAG = 0x0800;
 
 export type ArtifactOriginKind =
 	| 'repository-static'
@@ -61,6 +62,12 @@ export interface StoredZipEntryEvidence {
 interface BuildOutputDetail {
 	entryPoint?: unknown;
 	inputs?: unknown;
+}
+
+interface LocalStoredZipEntry extends StoredZipEntryEvidence {
+	crc32: number;
+	localOffset: number;
+	flags: number;
 }
 
 function sha256Bytes(value: Uint8Array | string): string {
@@ -284,23 +291,19 @@ export function verifyArtifactProvenance({
 	}
 }
 
-export function readStoredZipEntries(path: string): StoredZipEntryEvidence[] {
-	const bytes = readFileSync(path);
-	const entries: StoredZipEntryEvidence[] = [];
+function readLocalStoredEntries(bytes: Buffer): { entries: LocalStoredZipEntry[]; centralOffset: number } {
+	const entries: LocalStoredZipEntry[] = [];
 	const names = new Set<string>();
 	let offset = 0;
-	let foundCentralDirectory = false;
 	while (offset + 4 <= bytes.length) {
 		const signature = bytes.readUInt32LE(offset);
-		if (signature === ZIP_CENTRAL_DIRECTORY_SIGNATURE || signature === ZIP_END_SIGNATURE) {
-			foundCentralDirectory = true;
-			break;
-		}
+		if (signature === ZIP_CENTRAL_DIRECTORY_SIGNATURE) return { entries, centralOffset: offset };
 		if (signature !== ZIP_LOCAL_FILE_SIGNATURE || offset + 30 > bytes.length) {
 			throw new Error(`release ZIP has malformed local-file header at byte ${offset}`);
 		}
 		const flags = bytes.readUInt16LE(offset + 6);
 		const method = bytes.readUInt16LE(offset + 8);
+		const crc32 = bytes.readUInt32LE(offset + 14);
 		const compressedSize = bytes.readUInt32LE(offset + 18);
 		const uncompressedSize = bytes.readUInt32LE(offset + 22);
 		const nameLength = bytes.readUInt16LE(offset + 26);
@@ -308,6 +311,7 @@ export function readStoredZipEntries(path: string): StoredZipEntryEvidence[] {
 		if ((flags & ZIP_DATA_DESCRIPTOR_FLAG) !== 0) {
 			throw new Error('release ZIP data descriptors are forbidden for deterministic provenance');
 		}
+		if ((flags & ~ZIP_UTF8_FLAG) !== 0) throw new Error('release ZIP contains unsupported local-file flags');
 		if (method !== 0 || compressedSize !== uncompressedSize) {
 			throw new Error('release ZIP provenance supports deterministic STORED entries only');
 		}
@@ -322,13 +326,91 @@ export function readStoredZipEntries(path: string): StoredZipEntryEvidence[] {
 		if (names.has(name)) throw new Error(`release ZIP repeats entry path ${name}`);
 		names.add(name);
 		const data = bytes.subarray(dataStart, dataEnd);
-		entries.push({ path: name, sha256: sha256Bytes(data), bytes: data.length });
+		entries.push({
+			path: name,
+			sha256: sha256Bytes(data),
+			bytes: data.length,
+			crc32,
+			localOffset: offset,
+			flags,
+		});
 		offset = dataEnd;
 	}
-	if (!foundCentralDirectory || entries.length === 0) {
-		throw new Error('release ZIP is missing local entries or central directory');
+	throw new Error('release ZIP is missing central directory');
+}
+
+function verifyCentralDirectory(
+	bytes: Buffer,
+	localEntries: readonly LocalStoredZipEntry[],
+	centralOffset: number,
+): void {
+	const byPath = new Map(localEntries.map((entry) => [entry.path, entry]));
+	const seen = new Set<string>();
+	let offset = centralOffset;
+	while (offset + 4 <= bytes.length && bytes.readUInt32LE(offset) === ZIP_CENTRAL_DIRECTORY_SIGNATURE) {
+		if (offset + 46 > bytes.length) throw new Error('release ZIP central-directory header exceeds archive bounds');
+		const flags = bytes.readUInt16LE(offset + 8);
+		const method = bytes.readUInt16LE(offset + 10);
+		const crc32 = bytes.readUInt32LE(offset + 16);
+		const compressedSize = bytes.readUInt32LE(offset + 20);
+		const uncompressedSize = bytes.readUInt32LE(offset + 24);
+		const nameLength = bytes.readUInt16LE(offset + 28);
+		const extraLength = bytes.readUInt16LE(offset + 30);
+		const commentLength = bytes.readUInt16LE(offset + 32);
+		const diskStart = bytes.readUInt16LE(offset + 34);
+		const localOffset = bytes.readUInt32LE(offset + 42);
+		if ((flags & ZIP_DATA_DESCRIPTOR_FLAG) !== 0 || (flags & ~ZIP_UTF8_FLAG) !== 0) {
+			throw new Error('release ZIP contains unsupported central-directory flags');
+		}
+		if (method !== 0 || compressedSize !== uncompressedSize || diskStart !== 0) {
+			throw new Error('release ZIP central directory violates deterministic STORED contract');
+		}
+		const nameStart = offset + 46;
+		const next = nameStart + nameLength + extraLength + commentLength;
+		if (nameLength === 0 || next > bytes.length) throw new Error('release ZIP central-directory entry exceeds archive bounds');
+		const name = bytes.subarray(nameStart, nameStart + nameLength).toString('utf8');
+		assertSafeArchivePath(name);
+		if (seen.has(name)) throw new Error(`release ZIP central directory repeats entry path ${name}`);
+		seen.add(name);
+		const local = byPath.get(name);
+		if (!local
+			|| local.flags !== flags
+			|| local.crc32 !== crc32
+			|| local.bytes !== uncompressedSize
+			|| local.localOffset !== localOffset) {
+			throw new Error(`release ZIP central directory disagrees with local entry ${name}`);
+		}
+		offset = next;
 	}
-	return entries.sort((left, right) => left.path.localeCompare(right.path));
+	if (seen.size !== localEntries.length) {
+		throw new Error(`release ZIP central directory count mismatch: local=${localEntries.length}, central=${seen.size}`);
+	}
+	if (offset + 22 > bytes.length || bytes.readUInt32LE(offset) !== ZIP_END_SIGNATURE) {
+		throw new Error('release ZIP is missing EOCD immediately after central directory');
+	}
+	const diskNumber = bytes.readUInt16LE(offset + 4);
+	const centralDisk = bytes.readUInt16LE(offset + 6);
+	const entriesOnDisk = bytes.readUInt16LE(offset + 8);
+	const totalEntries = bytes.readUInt16LE(offset + 10);
+	const centralSize = bytes.readUInt32LE(offset + 12);
+	const recordedCentralOffset = bytes.readUInt32LE(offset + 16);
+	const commentLength = bytes.readUInt16LE(offset + 20);
+	if (diskNumber !== 0 || centralDisk !== 0 || entriesOnDisk !== localEntries.length
+		|| totalEntries !== localEntries.length || recordedCentralOffset !== centralOffset
+		|| centralSize !== offset - centralOffset || commentLength !== 0) {
+		throw new Error('release ZIP EOCD disagrees with deterministic central directory');
+	}
+	if (offset + 22 !== bytes.length) throw new Error('release ZIP contains trailing bytes after EOCD');
+}
+
+export function readStoredZipEntries(path: string): StoredZipEntryEvidence[] {
+	const bytes = readFileSync(path);
+	const { entries, centralOffset } = readLocalStoredEntries(bytes);
+	if (entries.length === 0) throw new Error('release ZIP has no local file entries');
+	verifyCentralDirectory(bytes, entries, centralOffset);
+	return entries
+		.map(({ path: entryPath, sha256, bytes: entryBytes }) => ({ path: entryPath, sha256, bytes: entryBytes }))
+		.sort((left, right) => left.path.localeCompare(right.path));
 }
 
 export function verifyStoredZipAgainstProvenance({
