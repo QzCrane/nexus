@@ -87,6 +87,22 @@ async function customWheelIsPrevented(page: Page): Promise<boolean> {
 	});
 }
 
+async function probeScrollTop(page: Page): Promise<number> {
+	return page.evaluate(() => {
+		const probe = document.getElementById('spectra-a11y-scroll-probe');
+		if (!(probe instanceof HTMLElement)) throw new Error('scroll probe missing');
+		return probe.scrollTop;
+	});
+}
+
+async function nextAnimationFrames(page: Page, count = 2): Promise<void> {
+	await page.evaluate(async (frameCount) => {
+		for (let index = 0; index < frameCount; index++) {
+			await new Promise<void>((resolveFrame) => requestAnimationFrame(() => resolveFrame()));
+		}
+	}, count);
+}
+
 function cssTimeMs(value: string): number {
 	const token = value.split(',')[0]?.trim() ?? '';
 	const numeric = Number.parseFloat(token);
@@ -99,17 +115,30 @@ async function themeContrasts(page: Page): Promise<{
 	focusLight: number;
 	mutedDark: number | null;
 	mutedLight: number | null;
+	placeholderDark: number | null;
+	placeholderLight: number | null;
 }> {
 	return page.evaluate(() => {
-		function parseRgb(value: string): [number, number, number] {
+		type Rgba = [number, number, number, number];
+
+		function parseColor(value: string): Rgba {
 			const numbers = value.match(/[\d.]+/gu)?.map(Number) ?? [];
 			if (numbers.length < 3 || numbers.slice(0, 3).some((entry) => !Number.isFinite(entry))) {
-				throw new Error(`Unable to parse computed RGB color: ${value}`);
+				throw new Error(`Unable to parse computed color: ${value}`);
 			}
-			return [numbers[0] ?? 0, numbers[1] ?? 0, numbers[2] ?? 0];
+			return [numbers[0] ?? 0, numbers[1] ?? 0, numbers[2] ?? 0, numbers[3] ?? 1];
 		}
-		function luminance(value: string): number {
-			const components = parseRgb(value).map((component) => {
+		function opaqueRgb(color: Rgba, background: Rgba): Rgba {
+			const alpha = Math.max(0, Math.min(1, color[3]));
+			return [
+				color[0] * alpha + background[0] * (1 - alpha),
+				color[1] * alpha + background[1] * (1 - alpha),
+				color[2] * alpha + background[2] * (1 - alpha),
+				1,
+			];
+		}
+		function luminance(color: Rgba): number {
+			const components = color.slice(0, 3).map((component) => {
 				const normalized = component / 255;
 				return normalized <= 0.04045
 					? normalized / 12.92
@@ -119,30 +148,53 @@ async function themeContrasts(page: Page): Promise<{
 				+ 0.7152 * (components[1] ?? 0)
 				+ 0.0722 * (components[2] ?? 0);
 		}
-		function ratio(foreground: string, background: string): number {
-			const left = luminance(foreground);
+		function ratio(foreground: Rgba, background: Rgba): number {
+			const opaqueForeground = opaqueRgb(foreground, background);
+			const left = luminance(opaqueForeground);
 			const right = luminance(background);
 			return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
+		}
+		function opaqueBackground(element: Element): Rgba {
+			let cursor: Element | null = element;
+			while (cursor) {
+				const color = parseColor(getComputedStyle(cursor).backgroundColor);
+				if (color[3] >= 0.999) return color;
+				cursor = cursor.parentElement;
+			}
+			return parseColor(getComputedStyle(document.body).backgroundColor);
+		}
+		function actualTextContrast(element: HTMLElement): number {
+			const style = getComputedStyle(element);
+			const foreground = parseColor(style.color);
+			foreground[3] *= Number.parseFloat(style.opacity) || 1;
+			return ratio(foreground, opaqueBackground(element));
+		}
+		function placeholderContrast(input: HTMLInputElement): number {
+			const style = getComputedStyle(input, '::placeholder');
+			const foreground = parseColor(style.color);
+			foreground[3] *= Number.parseFloat(style.opacity) || 1;
+			return ratio(foreground, opaqueBackground(input));
 		}
 		function read(theme: 'dark' | 'light') {
 			document.documentElement.dataset.theme = theme;
 			const sentinel = document.getElementById('spectra-a11y-focus-sentinel') as HTMLElement | null;
 			if (!sentinel) throw new Error('focus sentinel missing');
 			const focusStyle = getComputedStyle(sentinel);
-			const bodyStyle = getComputedStyle(document.body);
+			const bodyBackground = parseColor(getComputedStyle(document.body).backgroundColor);
 			let muted: number | null = null;
+			let placeholder: number | null = null;
 			if (location.pathname.endsWith('/options.html')) {
-				const probe = document.createElement('span');
-				probe.style.color = 'var(--text-muted)';
-				probe.style.backgroundColor = 'var(--bg-tertiary)';
-				document.body.append(probe);
-				const style = getComputedStyle(probe);
-				muted = ratio(style.color, style.backgroundColor);
-				probe.remove();
+				const mutedText = document.querySelector<HTMLElement>('.section-desc');
+				const siteInput = document.getElementById('site-input');
+				if (!mutedText) throw new Error('real muted text probe missing');
+				if (!(siteInput instanceof HTMLInputElement)) throw new Error('real placeholder probe missing');
+				muted = actualTextContrast(mutedText);
+				placeholder = placeholderContrast(siteInput);
 			}
 			return {
-				focus: ratio(focusStyle.outlineColor, bodyStyle.backgroundColor),
+				focus: ratio(parseColor(focusStyle.outlineColor), bodyBackground),
 				muted,
+				placeholder,
 			};
 		}
 		const dark = read('dark');
@@ -152,6 +204,8 @@ async function themeContrasts(page: Page): Promise<{
 			focusLight: light.focus,
 			mutedDark: dark.muted,
 			mutedLight: light.muted,
+			placeholderDark: dark.placeholder,
+			placeholderLight: light.placeholder,
 		};
 	});
 }
@@ -161,13 +215,16 @@ async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void>
 	try {
 		// The custom scroll engine owns normal wheel motion at a non-boundary.
 		expect(await customWheelIsPrevented(page), `${path} normal smooth-scroll owner`).toBe(true);
+		// Ensure the normal-motion wheel produced an active rAF trajectory before changing policy.
+		await nextAnimationFrames(page, 1);
 
 		// Media-query changes after initialization must cancel/unbind the rAF engine.
 		await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }]);
 		await page.waitForFunction(() => matchMedia('(prefers-reduced-motion: reduce)').matches);
-		await page.evaluate(() => new Promise<void>((resolveFrame) => {
-			requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
-		}));
+		await nextAnimationFrames(page, 2);
+		const stoppedScrollTop = await probeScrollTop(page);
+		await new Promise((resolveDelay) => setTimeout(resolveDelay, 80));
+		expect(await probeScrollTop(page), `${path} pending rAF is cancelled under reduced motion`).toBe(stoppedScrollTop);
 		expect(await customWheelIsPrevented(page), `${path} reduced-motion wheel pass-through`).toBe(false);
 
 		await page.evaluate(() => {
@@ -226,16 +283,25 @@ async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void>
 		expect(contrast.focusDark, `${path} dark focus-ring contrast`).toBeGreaterThanOrEqual(3);
 		expect(contrast.focusLight, `${path} light focus-ring contrast`).toBeGreaterThanOrEqual(3);
 		if (path === 'options.html') {
-			expect(contrast.mutedDark, 'Options dark muted-text contrast').toBeGreaterThanOrEqual(4.5);
-			expect(contrast.mutedLight, 'Options light muted-text contrast').toBeGreaterThanOrEqual(4.5);
+			expect(contrast.mutedDark, 'Options dark real muted-text contrast').toBeGreaterThanOrEqual(4.5);
+			expect(contrast.mutedLight, 'Options light real muted-text contrast').toBeGreaterThanOrEqual(4.5);
+			expect(contrast.placeholderDark, 'Options dark real placeholder contrast').toBeGreaterThanOrEqual(4.5);
+			expect(contrast.placeholderLight, 'Options light real placeholder contrast').toBeGreaterThanOrEqual(4.5);
 		}
+
+		// Restoring the OS preference at runtime must reacquire the same wheel owner;
+		// a one-way reduce transition would leave the product permanently degraded.
+		await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }]);
+		await page.waitForFunction(() => !matchMedia('(prefers-reduced-motion: reduce)').matches);
+		await nextAnimationFrames(page, 2);
+		expect(await customWheelIsPrevented(page), `${path} restored smooth-scroll owner`).toBe(true);
 	} finally {
 		await page.close();
 	}
 }
 
 describe('SPECTRA extension-page accessibility', () => {
-	test('Popup and Options preserve focus, motion preference, contrast, and 320px reflow', async () => {
+	test('Popup and Options preserve focus, dynamic motion preference, contrast, and 320px reflow', async () => {
 		await assertSurface('popup.html');
 		await assertSurface('options.html');
 	}, 90_000);
