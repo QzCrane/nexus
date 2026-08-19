@@ -96,7 +96,34 @@ async function firstSpeedUpLatency(page: Page): Promise<number> {
 	return performance.now() - started;
 }
 
-test('records scaled inventory and first-hotkey physical runtime latency', async () => {
+async function openRealActionPopup(browser: Browser, worker: WebWorker, extensionId: string): Promise<Page> {
+	const knownTargets = new Set(browser.targets());
+	const popupUrl = `chrome-extension://${extensionId}/popup.html`;
+	const targetPromise = browser.waitForTarget(
+		(target) => !knownTargets.has(target) && target.url() === popupUrl,
+		{ timeout: 10_000 },
+	);
+	await worker.evaluate(async () => chrome.action.openPopup());
+	const target = await targetPromise;
+	const popup = await target.asPage();
+	if (!popup) throw new Error('Unable to attach to SPECTRA Action Popup');
+	return popup;
+}
+
+async function closeActionPopup(page: Page): Promise<void> {
+	if (page.isClosed()) return;
+	await page.evaluate(() => window.close()).catch(() => undefined);
+	await eventually(
+		async () => page.isClosed(),
+		(closed) => closed,
+		'Action Popup close',
+		2_000,
+	).catch(async () => {
+		if (!page.isClosed()) await page.close();
+	});
+}
+
+test('records scaled inventory, full Popup rendering, and first-hotkey physical runtime latency', async () => {
 	const profileDir = await mkdtemp(join(tmpdir(), 'spectra-runtime-stress-'));
 	let browser: Browser | null = null;
 	let server: ReturnType<typeof Bun.serve> | null = null;
@@ -152,6 +179,7 @@ test('records scaled inventory and first-hotkey physical runtime latency', async
 		expect(await readBootstrapStatus(worker, probeTabId)).toMatchObject({ ready: false, runtimeRevision: null });
 		const options = await browser.newPage();
 		await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
+		await options.bringToFront();
 		const samples: RuntimePerformanceSample[] = [];
 		for (let sample = 0; sample < SAMPLE_COUNT; sample += 1) {
 			const started = performance.now();
@@ -174,6 +202,38 @@ test('records scaled inventory and first-hotkey physical runtime latency', async
 		}
 		expect(await readBootstrapStatus(worker, probeTabId)).toMatchObject({ ready: false, runtimeRevision: null });
 
+		for (let sample = 0; sample < SAMPLE_COUNT; sample += 1) {
+			await options.bringToFront();
+			const started = performance.now();
+			const popup = await openRealActionPopup(browser, worker, extensionId);
+			try {
+				await popup.waitForSelector('#bg-stack .glass-card', { timeout: 10_000 });
+				const firstReadyAt = performance.now();
+				await popup.waitForFunction(
+					(expectedCount) => document.querySelectorAll('#bg-stack .glass-card').length >= expectedCount,
+					{ timeout: 20_000 },
+					MEDIA_TAB_COUNT,
+				);
+				const allReadyAt = performance.now();
+				samples.push(
+					{
+						metric: 'spectra.media-tabs20.popup-first-card-ready',
+						value: firstReadyAt - started,
+						unit: 'ms',
+					},
+					{
+						metric: 'spectra.media-tabs20.popup-all-cards-ready',
+						value: allReadyAt - started,
+						unit: 'ms',
+					},
+				);
+				expect(await popup.$eval('#bg-badge', (element) => element.textContent)).toBe(String(MEDIA_TAB_COUNT));
+			} finally {
+				await closeActionPopup(popup);
+			}
+		}
+		expect(await readBootstrapStatus(worker, probeTabId)).toMatchObject({ ready: false, runtimeRevision: null });
+
 		for (const page of pages) {
 			samples.push({
 				metric: 'spectra.hotkey.speed-up.first-document-e2e',
@@ -182,8 +242,14 @@ test('records scaled inventory and first-hotkey physical runtime latency', async
 			});
 		}
 
-		expect(samples.filter(({ metric }) => metric.includes('inventory'))).toHaveLength(SAMPLE_COUNT);
-		expect(samples.filter(({ metric }) => metric.includes('hotkey'))).toHaveLength(MEDIA_TAB_COUNT);
+		for (const metric of [
+			'spectra.media-tabs20.inventory-roundtrip',
+			'spectra.media-tabs20.popup-first-card-ready',
+			'spectra.media-tabs20.popup-all-cards-ready',
+			'spectra.hotkey.speed-up.first-document-e2e',
+		]) {
+			expect(samples.filter((sample) => sample.metric === metric), metric).toHaveLength(SAMPLE_COUNT);
+		}
 		writeRuntimePerformanceEvidence({
 			product: 'spectra',
 			browser: { name: 'Chrome', version: browserVersion },
@@ -201,4 +267,4 @@ test('records scaled inventory and first-hotkey physical runtime latency', async
 			retryDelay: 100,
 		});
 	}
-}, 180_000);
+}, 300_000);
