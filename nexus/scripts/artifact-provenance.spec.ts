@@ -11,6 +11,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	buildArtifactProvenance,
+	normalizeBuildOutputIdentity,
 	readStoredZipEntries,
 	verifyArtifactProvenance,
 	verifyStoredZipAgainstProvenance,
@@ -27,6 +28,19 @@ function tempDist(prefix: string): string {
 }
 
 describe('whole extension artifact provenance', () => {
+	test('normalizes relative, Unix absolute, and Windows absolute esbuild output identities', () => {
+		for (const input of [
+			'background.js',
+			'dist/background.js',
+			'/workspace/nexus/apps/extension-spectra/dist/background.js',
+			'C:\\workspace\\nexus\\apps\\extension-spectra\\dist\\background.js',
+		]) {
+			expect(normalizeBuildOutputIdentity(input), input).toBe('background.js');
+		}
+		expect(normalizeBuildOutputIdentity('/tmp/dist-cache/dist/chunks/popup.js'))
+			.toBe('chunks/popup.js');
+	});
+
 	test('classifies repository static files and generated bundles without guessing', () => {
 		const dist = tempDist('nexus-artifact-provenance-');
 		try {
