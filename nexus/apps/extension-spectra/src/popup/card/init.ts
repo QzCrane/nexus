@@ -80,37 +80,35 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   if (!tab.id) return false;
   const tabId = tab.id;
 
-  // rule: status reads are side-effect free; an unreachable document is omitted
-  // until navigation or an explicit user operation installs the content runtime.
-  const getRuntimeStatus = async () => {
-    try {
-      const result = await sendSpectraTabRequest(tabId, 'spectra.audio.runtime.get', {});
-      return result.ok ? result.data : null;
-    } catch {
-      return null;
-    }
-  };
+  // All four inputs below are independent, side-effect-free snapshot reads.
+  // Read them in one latency window; serializing session/remote behind runtime
+  // status made Popup initialization scale by multiple RPC round trips per tab.
+  const runtimeStatusPromise = sendSpectraTabRequest(tabId, 'spectra.audio.runtime.get', {})
+    .then((result) => result.ok ? result.data : null)
+    .catch(() => null);
+  const controlSnapshotPromise = sendSpectraRequest(
+    'spectra.control.snapshot.get',
+    { tabId },
+    { tabId },
+  ).then((response) => response.ok ? response.data : null).catch(() => null);
+  const acknowledgedSessionPromise: Promise<AudioSessionSnapshot | null> = sendSpectraRequest(
+    'spectra.audio.session.get',
+    { tabId },
+    { tabId },
+  ).then((response) => response.ok ? response.data : null).catch(() => null);
+  const remoteActivePromise = sendSpectraRequest(
+    'spectra.remote.session.get',
+    { tabId },
+    { tabId },
+  ).then((response) => response.ok && response.data.connected).catch(() => false);
 
-  const [status, controlSnapshot] = await Promise.all([
-    getRuntimeStatus(),
-    sendSpectraRequest(
-      'spectra.control.snapshot.get',
-      { tabId },
-      { tabId },
-    ).then((response) => response.ok ? response.data : null).catch(() => null),
+  const [status, controlSnapshot, sessionSnapshot, isRemoteActive] = await Promise.all([
+    runtimeStatusPromise,
+    controlSnapshotPromise,
+    acknowledgedSessionPromise,
+    remoteActivePromise,
   ]);
-
-  let acknowledgedSession: AudioSessionSnapshot | null = null;
-  try {
-    const response = await sendSpectraRequest(
-      'spectra.audio.session.get',
-      { tabId },
-      { tabId },
-    );
-    if (response.ok) acknowledgedSession = response.data;
-  } catch {
-    acknowledgedSession = null;
-  }
+  let acknowledgedSession = sessionSnapshot;
 
 	// Processor color is valid only when lifecycle and field-level actual state
 	// identify the same document. A direct runtime read may fill this role only
@@ -128,18 +126,6 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 		actualMode: lifecycle?.actualMode,
 		phase: lifecycle?.phase ?? 'idle',
 	});
-
-  let isRemoteActive = false;
-  try {
-    const remoteStatus = await sendSpectraRequest(
-      'spectra.remote.session.get',
-      { tabId },
-      { tabId },
-    );
-    isRemoteActive = remoteStatus.ok && remoteStatus.data.connected;
-  } catch {
-    isRemoteActive = false;
-  }
 
   const hasActiveMedia = tab.audible || isCaptureActive || status?.isPlaying === true;
 
