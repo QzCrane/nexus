@@ -1,7 +1,12 @@
 // goal: defines internal types, state interfaces, and configuration defaults for the popup tab card component
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
-import type { ControlFieldStates, ControlSnapshot } from '@nexus/contracts';
+import type {
+  AudioRuntimeStatus,
+  AudioSessionSnapshot,
+  ControlFieldStates,
+  ControlSnapshot,
+} from '@nexus/contracts';
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import type {
   AudioSessionError,
@@ -39,6 +44,14 @@ export interface CardInternalState {
   draggingField: 'volume' | null;
 }
 
+export interface CardSnapshot {
+  documentId: string;
+  status: AudioRuntimeStatus | null;
+  controlSnapshot: ControlSnapshot | null;
+  sessionSnapshot: AudioSessionSnapshot | null;
+  isRemoteActive: boolean;
+}
+
 export type EqCurveDrawerFactory = (
   canvas: HTMLCanvasElement,
   sliderRow: HTMLElement,
@@ -54,6 +67,7 @@ export interface InitCardParams {
   getGlobalSettings: () => GlobalSettings;
   isBackground?: boolean;
   createEqCurveDrawer?: EqCurveDrawerFactory;
+  snapshot?: CardSnapshot;
 }
 
 // CardContext: unified handle passed to sub-modules (rendering, messaging, events) to access shared tab state and UI refs
