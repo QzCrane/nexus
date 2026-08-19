@@ -6,6 +6,7 @@ import { fileURLToPath } from 'node:url';
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const testDir = resolve(projectDir, 'test');
 const chromeIntegrationTests = new Set([
+	'accessibility-chrome.spec.ts',
 	'diagnostics-chrome.spec.ts',
 	'performance.spec.ts',
 	'runtime-long-session-performance.spec.ts',
