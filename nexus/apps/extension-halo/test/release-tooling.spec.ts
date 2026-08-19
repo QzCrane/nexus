@@ -155,22 +155,32 @@ describe('HALO release tooling', () => {
 		expect(manifestGenerator).not.toContain("'scripts/*'");
 	});
 
-	test('keeps the standard build production-grade, measured, and physically release-admitted', () => {
+	test('keeps the standard build production-grade, measured, physically release-admitted, and dependency-evidenced', () => {
 		const packageJson = readJson('../package.json');
 		const scripts = packageJson.scripts as Record<string, string>;
 		const sidepanelHtml = readFileSync(
 			new URL('../public/sidepanel.html', import.meta.url),
 			'utf8',
 		);
+		const build = readFileSync(new URL('../build.ts', import.meta.url), 'utf8');
 		const finalizer = readFileSync(
 			new URL('../finalize-release-payload.ts', import.meta.url),
 			'utf8',
 		);
 
-		expect(scripts.build).toBe('bun build.ts --analyze && bun finalize-release-payload.ts');
-		expect(scripts['build:prod']).toBe('bun build.ts --analyze && bun finalize-release-payload.ts');
+		expect(scripts.build).toBe(
+			'bun check-release-source-graph.ts && bun build.ts --analyze && bun finalize-release-payload.ts',
+		);
+		expect(scripts['build:prod']).toBe(
+			'bun check-release-source-graph.ts && bun build.ts --analyze && bun ../../scripts/capture-retained-dependencies.ts halo --keep-analysis && bun finalize-release-payload.ts',
+		);
 		expect(scripts['build:dev']).toBe('bun build.ts --dev');
 		expect(scripts.dev).toContain('generate-tool-registry.ts');
+		expect(scripts['build:prod']).toContain('capture-retained-dependencies.ts halo --keep-analysis');
+		expect(build).toContain('const scriptBuildAnalyses = []');
+		expect(build).toContain('metafile: isAnalyze');
+		expect(build).toContain('inputs: detail.inputs');
+		expect(build).toContain('scriptBuildAnalyses');
 		expect(sidepanelHtml).toContain('<script type="module" src="sidepanel.js"></script>');
 		expect(finalizer).toContain('sidepanelActivationClosures');
 		expect(finalizer).toContain('RELEASE_PANEL_IDS');
