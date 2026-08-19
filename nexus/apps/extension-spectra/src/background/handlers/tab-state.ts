@@ -25,7 +25,6 @@ export function recordMediaState(
 ): { reported: true } {
 	const state = getOrCreateTabAudioState(tabId);
 	state.hasMediaElement = payload.hasMediaElement;
-	state.userManuallyActivated = state.userManuallyActivated || payload.userInteracted;
 
 	swLog.debug(`[SPECTRA] Tab ${tabId} reported media: ${payload.hasMediaElement}`);
 	return { reported: true };
@@ -97,15 +96,18 @@ export async function resolveVisibleTabs(now = Date.now()): Promise<{ tabs: numb
 	const allTabs = await chrome.tabs.query({});
 	const liveTabIds = new Set<number>();
 
-	// Chrome-owned active/audible facts are zero-probe admission paths.
+	// Audible is a Chrome-owned media fact and needs no probe. `active` is not a
+	// media capability: chrome.tabs.query({}) has one active tab per window, so
+	// admitting active tabs would surface ordinary pages from unrelated windows.
 	for (const tab of allTabs) {
 		if (!tab.id) continue;
 		liveTabIds.add(tab.id);
-		if (tab.active || tab.audible) visibleTabsSet.add(tab.id);
+		if (tab.audible) visibleTabsSet.add(tab.id);
 	}
 
-	// Bounded recent activity keeps a just-paused/just-switched live tab stable
-	// even when its content host becomes temporarily unreachable during navigation.
+	// Bounded recent activity is only a grace signal for a tab that already has
+	// media/audio evidence. Generic tab activation can never create or preserve a
+	// media card. Exact current-document probing below remains the final authority.
 	for (const [tabId, state] of tabAudioStates.entries()) {
 		if (!liveTabIds.has(tabId)) {
 			// onRemoved normally owns this cleanup, but visibility must remain correct
@@ -114,8 +116,9 @@ export async function resolveVisibleTabs(now = Date.now()): Promise<{ tabs: numb
 			continue;
 		}
 		const isRecentlyAudible = isRecent(state.lastAudibleTime, now);
-		const isRecentlyActivated = isRecent(state.lastActivatedTime, now);
-		if (isRecentlyAudible || isRecentlyActivated) {
+		const isRecentlyActivatedMedia = isRecent(state.lastActivatedTime, now)
+			&& (state.hasMediaElement || isRecentlyAudible);
+		if (isRecentlyAudible || isRecentlyActivatedMedia) {
 			visibleTabsSet.add(tabId);
 		} else if (!visibleTabsSet.has(tabId)) {
 			// Media reports remain telemetry, not a durable visibility lease. The
