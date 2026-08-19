@@ -18,7 +18,7 @@ afterEach(() => {
 });
 
 describe('complete visible media tab lifecycle', () => {
-	test('discovers paused or muted media tabs beyond the recent-activity window', async () => {
+	test('discovers paused or muted media tabs without treating active non-media tabs as media', async () => {
 		const now = 1_000_000;
 		const { sendMessage } = installChrome([
 			tab(1, { active: true }),
@@ -27,16 +27,31 @@ describe('complete visible media tab lifecycle', () => {
 			tab(4),
 			tab(5, { url: 'chrome://settings/' }),
 		], new Map([
+			[1, 'empty'],
 			[3, 'media'],
 			[4, 'empty'],
 		]));
 
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [1, 2, 3] });
-		expect(sendMessage.mock.calls.map(([tabId]) => tabId)).toEqual([3, 4]);
-		expect(sendMessage.mock.calls.map(([, , options]) => options)).toEqual([
-			{ documentId: 'document-3' },
-			{ documentId: 'document-4' },
-		]);
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [2, 3] });
+		expect(sendMessage.mock.calls.map(([tabId]) => tabId).sort((a, b) => Number(a) - Number(b)))
+			.toEqual([1, 3, 4]);
+		expect(sendMessage.mock.calls.every(([, , options]) => (
+		typeof options?.documentId === 'string' && options.documentId.startsWith('document-')
+	))).toBe(true);
+	});
+
+	test('never admits ordinary active tabs from another window without media truth', async () => {
+		const { sendMessage } = installChrome([
+			tab(6, { active: true, windowId: 1 }),
+			tab(7, { active: true, windowId: 2 }),
+		], new Map([
+			[6, 'empty'],
+			[7, 'empty'],
+		]));
+
+		expect(await resolveVisibleTabs()).toEqual({ tabs: [] });
+		expect(sendMessage.mock.calls.map(([tabId]) => tabId).sort((a, b) => Number(a) - Number(b)))
+			.toEqual([6, 7]);
 	});
 
 	test('reconstructs media inventory after service-worker heap loss', async () => {
@@ -52,7 +67,7 @@ describe('complete visible media tab lifecycle', () => {
 		expect(await resolveVisibleTabs()).toEqual({ tabs: [10] });
 	});
 
-	test('retains bounded recent Chrome activity while probing current media truth', async () => {
+	test('retains bounded recent activity only for known media/audio state while probing current truth', async () => {
 		const now = 1_000_000;
 		const { sendMessage } = installChrome([
 			tab(20),
@@ -61,19 +76,35 @@ describe('complete visible media tab lifecycle', () => {
 		], new Map([
 			[22, 'media'],
 		]));
+		recordMediaState(20, { hasMediaElement: true, userInteracted: false });
 		markTabActivated(20, now - 1_000);
 		markTabAudible(21, true, now - 2_000);
 		markTabAudible(21, false, now - 500);
 
 		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [20, 21, 22] });
-		// Recent activity is already admitted and does not pay a document probe.
+		// Recent media/audio evidence is already admitted and does not pay a probe.
 		expect(sendMessage.mock.calls.map(([tabId]) => tabId)).toEqual([22]);
 	});
 
-	test('never revives a removed tab from a stale recent-activity row', async () => {
+	test('does not create or retain a recent media lease for an activated non-media tab', async () => {
+		const now = 1_000_000;
+		installChrome([tab(23, { active: true })], new Map([[23, 'empty']]));
+		markTabActivated(23, now - 1_000);
+		expect(tabAudioStates.has(23)).toBe(false);
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [] });
+
+		recordMediaState(23, { hasMediaElement: false, userInteracted: true });
+		markTabActivated(23, now - 500);
+		expect(tabAudioStates.get(23)?.lastActivatedTime).toBe(now - 500);
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [] });
+	});
+
+	test('never revives a removed tab from a stale recent media row', async () => {
 		const now = 1_000_000;
 		installChrome([tab(25)], new Map([[25, 'empty']]));
+		recordMediaState(24, { hasMediaElement: true, userInteracted: false });
 		markTabActivated(24, now - 1_000);
+		expect(tabAudioStates.has(24)).toBe(true);
 
 		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [] });
 		expect(tabAudioStates.has(24)).toBe(false);
@@ -160,14 +191,14 @@ type DocumentResolver = (tabId: number, readIndex: number) => string | null | Pr
 
 function tab(
 	id: number,
-	overrides: { active?: boolean; audible?: boolean; url?: string } = {},
+	overrides: { active?: boolean; audible?: boolean; url?: string; windowId?: number } = {},
 ): chrome.tabs.Tab {
 	return {
 		id,
 		index: id,
 		pinned: false,
 		highlighted: false,
-		windowId: 1,
+		windowId: overrides.windowId ?? 1,
 		active: overrides.active ?? false,
 		incognito: false,
 		selected: overrides.active ?? false,
