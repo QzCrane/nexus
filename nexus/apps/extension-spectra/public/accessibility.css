@@ -1,0 +1,28 @@
+/* Shared SPECTRA extension-page accessibility policy.
+ * Product CSS may choose visuals, but it may not erase keyboard focus or
+ * force motion after the user requests reduced motion. */
+
+:where(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid currentColor !important;
+  outline-offset: 2px !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    transition-delay: 0ms !important;
+  }
+}
