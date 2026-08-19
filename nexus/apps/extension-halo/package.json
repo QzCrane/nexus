@@ -18,6 +18,7 @@
 		"test:browser-chromium:fast": "bunx playwright test test/smooth-scroll-keyboard-playwright.spec.ts test/frame-tools-lazy-playwright.spec.ts test/hover-zoom-lazy-playwright.spec.ts test/sidepanel-runtime-playwright.spec.ts test/sidepanel-accessibility-playwright.spec.ts test/sidepanel-diagnostics-playwright.spec.ts --workers=1",
 		"test:browser-chromium": "bun run test:browser-chromium:fast && bun run test:performance",
 		"test:performance": "bunx playwright test test/sidepanel-performance-playwright.spec.ts --workers=1",
+		"test:visual": "bunx playwright test test/store-assets.spec.ts --workers=1",
 		"test:keyboard-chromium": "bun run test:browser-chromium:fast",
 		"test:ui": "bun run test:playwright",
 		"test:playwright": "bun run build:prod && bunx playwright test test/*-playwright.spec.ts --workers=1",
