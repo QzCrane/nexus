@@ -804,11 +804,6 @@ function isContentRuntimeReleasePayload(
 	if (!isRecord(value)
 		|| !hasOnlyKeys(value, CONTENT_RUNTIME_RELEASE_PAYLOAD_KEYS)
 		|| !isRuntimeRevision(value.runtimeRevision)) return false;
-	// rule: validate each optional field independently — the previous all-or-none check
-	// required ALL four fields to be present+valid if ANY was present, rejecting partial
-	// identities like { tabId: 5 } alone. The type declaration permits each of
-	// tabId/documentId/reason/capability to be omitted independently (mirrors
-	// isContentRuntimeEnsurePayload's per-field optional pattern at lines ~756-763).
 	return (value.tabId === undefined || isPositiveInteger(value.tabId))
 		&& (value.documentId === undefined || isDocumentId(value.documentId))
 		&& (value.reason === undefined || (
@@ -1783,7 +1778,6 @@ export function isRpcError(value: unknown): value is RpcError {
 		&& typeof value.retryable === 'boolean';
 }
 
-// post: rejects unknown message types and malformed payloads before a handler sees them
 export function isSpectraRequestEnvelope(value: unknown): value is SpectraRequestEnvelope {
 	if (!isRecord(value)
 		|| !hasValidRequestEnvelopeBase(value)
@@ -1795,8 +1789,6 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 			&& (value.tabId === undefined || value.tabId === value.payload.tabId);
 	}
 	if (value.type === 'spectra.audio.session.current') {
-		// Current-document recovery is deliberately sender-bound. A caller may not
-		// self-assert routing fields that could be mistaken for Chrome sender data.
 		return value.tabId === undefined
 			&& value.documentId === undefined
 			&& value.generation === undefined;
@@ -1805,7 +1797,6 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 		return isTabIdPayload(value.payload) && value.tabId === value.payload.tabId;
 	}
 	if (value.type === 'spectra.content.default-hotkey.trigger') {
-		// The browser sender identity is authoritative for this page event.
 		return value.tabId === undefined
 			&& value.documentId === undefined
 			&& value.generation === undefined;
@@ -1860,7 +1851,6 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 	return true;
 }
 
-// post: accepts only versioned, type-correlated events with trustworthy routing metadata
 export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnvelope {
 	if (!isRecord(value)
 		|| !hasValidEventEnvelopeBase(value)
@@ -1894,7 +1884,6 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 	return true;
 }
 
-// post: validates both the RpcResult shape and request-specific response data
 export function isSpectraResponse<T extends SpectraRequestType>(
 	type: T,
 	value: unknown,
