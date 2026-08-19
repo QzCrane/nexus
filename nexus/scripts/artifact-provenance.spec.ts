@@ -1,0 +1,118 @@
+import { describe, expect, test } from 'bun:test';
+import {
+	mkdirSync,
+	mkdtempSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import {
+	buildArtifactProvenance,
+	verifyArtifactProvenance,
+} from './artifact-provenance';
+
+const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
+
+function tempDist(prefix: string): string {
+	const root = mkdtempSync(resolve(tmpdir(), prefix));
+	const dist = resolve(root, 'dist');
+	mkdirSync(dist, { recursive: true });
+	return dist;
+}
+
+describe('whole extension artifact provenance', () => {
+	test('classifies repository static files and generated bundles without guessing', () => {
+		const dist = tempDist('nexus-artifact-provenance-');
+		try {
+			writeFileSync(
+				resolve(dist, 'manifest.json'),
+				readFileSync(resolve(workspaceDir, 'apps/extension-halo/public/manifest.json')),
+			);
+			writeFileSync(resolve(dist, 'background.js'), 'export const runtime = true;\n');
+			const evidence = buildArtifactProvenance({
+				product: 'halo',
+				distDir: dist,
+				analysisSha256: 'a'.repeat(64),
+				analysis: {
+					entries: [{ outputs: {
+						'background.js': { entryPoint: 'src/entry/background.ts', inputs: {} },
+					} }],
+				},
+			});
+			expect(evidence).toMatchObject({
+				schemaVersion: 1,
+				product: 'halo',
+				scope: 'whole-extension-dist',
+				wholeArtifactScoped: true,
+			});
+			expect(evidence.files.map(({ path, origin }) => ({ path, kind: origin.kind }))).toEqual([
+				{ path: 'background.js', kind: 'generated-bundle' },
+				{ path: 'manifest.json', kind: 'repository-static' },
+			]);
+			expect(evidence.files.find(({ path }) => path === 'background.js')?.origin.entryPoint)
+				.toBe('src/entry/background.ts');
+			expect(() => verifyArtifactProvenance({ product: 'halo', distDir: dist, evidence })).not.toThrow();
+		} finally {
+			rmSync(dirname(dist), { recursive: true, force: true });
+		}
+	});
+
+	test('recognizes deterministic SPECTRA i18n metadata generation', () => {
+		const dist = tempDist('nexus-artifact-i18n-');
+		try {
+			mkdirSync(resolve(dist, 'i18n'), { recursive: true });
+			writeFileSync(resolve(dist, 'i18n/en-US.json.gz'), Buffer.from([1, 2, 3]));
+			writeFileSync(resolve(dist, 'background.js'), 'export {};\n');
+			const evidence = buildArtifactProvenance({
+				product: 'spectra',
+				distDir: dist,
+				analysisSha256: 'b'.repeat(64),
+				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
+			});
+			expect(evidence.files.find(({ path }) => path === 'i18n/en-US.json.gz')?.origin)
+				.toMatchObject({ kind: 'generated-metadata', owner: 'nexus/apps/extension-spectra/scripts/i18n-assets.ts' });
+		} finally {
+			rmSync(dirname(dist), { recursive: true, force: true });
+		}
+	});
+
+	test('fails closed on an unowned release file', () => {
+		const dist = tempDist('nexus-artifact-unknown-');
+		try {
+			writeFileSync(resolve(dist, 'background.js'), 'export {};\n');
+			writeFileSync(resolve(dist, 'mystery.bin'), 'unknown-origin');
+			expect(() => buildArtifactProvenance({
+				product: 'spectra',
+				distDir: dist,
+				analysisSha256: 'c'.repeat(64),
+				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
+			})).toThrow('has no explicit provenance owner: mystery.bin');
+		} finally {
+			rmSync(dirname(dist), { recursive: true, force: true });
+		}
+	});
+
+	test('detects both byte mutation and unrecorded additions after capture', () => {
+		const dist = tempDist('nexus-artifact-drift-');
+		try {
+			writeFileSync(resolve(dist, 'background.js'), 'export const one = 1;\n');
+			const evidence = buildArtifactProvenance({
+				product: 'spectra',
+				distDir: dist,
+				analysisSha256: 'd'.repeat(64),
+				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
+			});
+			writeFileSync(resolve(dist, 'background.js'), 'export const two = 2;\n');
+			expect(() => verifyArtifactProvenance({ product: 'spectra', distDir: dist, evidence }))
+				.toThrow('dist changed after whole-artifact provenance capture');
+			writeFileSync(resolve(dist, 'extra.js'), 'extra');
+			expect(() => verifyArtifactProvenance({ product: 'spectra', distDir: dist, evidence }))
+				.toThrow('unrecorded release file extra.js');
+		} finally {
+			rmSync(dirname(dist), { recursive: true, force: true });
+		}
+	});
+});
