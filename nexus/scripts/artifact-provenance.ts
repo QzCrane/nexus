@@ -18,6 +18,10 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspaceDir = dirname(scriptDir);
 const repositoryRoot = dirname(workspaceDir);
 const TEMP_ANALYSIS = 'build-analysis.json';
+const ZIP_LOCAL_FILE_SIGNATURE = 0x04034b50;
+const ZIP_CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
+const ZIP_END_SIGNATURE = 0x06054b50;
+const ZIP_DATA_DESCRIPTOR_FLAG = 0x0008;
 
 export type ArtifactOriginKind =
 	| 'repository-static'
@@ -46,6 +50,12 @@ export interface ArtifactProvenanceEvidence {
 	wholeArtifactScoped: true;
 	analysisSha256: string;
 	files: ArtifactFileEvidence[];
+}
+
+export interface StoredZipEntryEvidence {
+	path: string;
+	sha256: string;
+	bytes: number;
 }
 
 interface BuildOutputDetail {
@@ -78,6 +88,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function normalizePath(value: string): string {
 	return value.replaceAll('\\', '/').replace(/^\.\//u, '');
+}
+
+function assertSafeArchivePath(path: string): void {
+	if (!path || path.startsWith('/') || path.includes('\\') || path.includes('\0')) {
+		throw new Error(`unsafe ZIP entry path: ${JSON.stringify(path)}`);
+	}
+	const segments = path.split('/');
+	if (segments.some((segment) => segment === '' || segment === '.' || segment === '..')) {
+		throw new Error(`unsafe ZIP entry path: ${JSON.stringify(path)}`);
+	}
 }
 
 function collectBuildOutputs(value: unknown, outputs = new Map<string, string | null>()): Map<string, string | null> {
@@ -209,6 +229,23 @@ function canonical(value: unknown): string {
 	return JSON.stringify(value);
 }
 
+function evidenceIdentity(files: readonly Pick<ArtifactFileEvidence, 'path' | 'sha256' | 'bytes'>[]): Array<{
+	path: string;
+	sha256: string;
+	bytes: number;
+}> {
+	const seen = new Set<string>();
+	return files.map(({ path, sha256, bytes }) => {
+		assertSafeArchivePath(path);
+		if (seen.has(path)) throw new Error(`artifact provenance repeats release path ${path}`);
+		seen.add(path);
+		if (!/^[a-f0-9]{64}$/u.test(sha256) || !Number.isSafeInteger(bytes) || bytes < 0) {
+			throw new Error(`artifact provenance has invalid file identity for ${path}`);
+		}
+		return { path, sha256, bytes };
+	}).sort((left, right) => left.path.localeCompare(right.path));
+}
+
 export function verifyArtifactProvenance({
 	product,
 	distDir,
@@ -222,17 +259,83 @@ export function verifyArtifactProvenance({
 		|| evidence.scope !== 'whole-extension-dist' || evidence.wholeArtifactScoped !== true) {
 		throw new Error(`${product}: artifact provenance evidence is malformed`);
 	}
+	const recorded = new Map(evidence.files.map((entry) => [entry.path, entry]));
+	if (recorded.size !== evidence.files.length) throw new Error(`${product}: artifact provenance repeats a release path`);
 	const currentFiles = walkFiles(distDir).flatMap((file): ArtifactFileEvidence[] => {
 		const relativePath = normalizePath(relative(distDir, file));
 		if (relativePath === TEMP_ANALYSIS) return [];
-		const recorded = evidence.files.find((entry) => entry.path === relativePath);
-		if (!recorded) throw new Error(`${product}: dist contains unrecorded release file ${relativePath}`);
-		return [{ ...recorded, sha256: sha256File(file), bytes: statSync(file).size }];
-	}).sort((left, right) => left.path.localeCompare(right.path));
-	const recordedIdentity = evidence.files.map(({ path, sha256, bytes }) => ({ path, sha256, bytes }));
-	const currentIdentity = currentFiles.map(({ path, sha256, bytes }) => ({ path, sha256, bytes }));
-	if (canonical(currentIdentity) !== canonical(recordedIdentity)) {
+		const entry = recorded.get(relativePath);
+		if (!entry) throw new Error(`${product}: dist contains unrecorded release file ${relativePath}`);
+		return [{ ...entry, sha256: sha256File(file), bytes: statSync(file).size }];
+	});
+	if (canonical(evidenceIdentity(currentFiles)) !== canonical(evidenceIdentity(evidence.files))) {
 		throw new Error(`${product}: dist changed after whole-artifact provenance capture`);
+	}
+}
+
+export function readStoredZipEntries(path: string): StoredZipEntryEvidence[] {
+	const bytes = readFileSync(path);
+	const entries: StoredZipEntryEvidence[] = [];
+	const names = new Set<string>();
+	let offset = 0;
+	let foundCentralDirectory = false;
+	while (offset + 4 <= bytes.length) {
+		const signature = bytes.readUInt32LE(offset);
+		if (signature === ZIP_CENTRAL_DIRECTORY_SIGNATURE || signature === ZIP_END_SIGNATURE) {
+			foundCentralDirectory = true;
+			break;
+		}
+		if (signature !== ZIP_LOCAL_FILE_SIGNATURE || offset + 30 > bytes.length) {
+			throw new Error(`release ZIP has malformed local-file header at byte ${offset}`);
+		}
+		const flags = bytes.readUInt16LE(offset + 6);
+		const method = bytes.readUInt16LE(offset + 8);
+		const compressedSize = bytes.readUInt32LE(offset + 18);
+		const uncompressedSize = bytes.readUInt32LE(offset + 22);
+		const nameLength = bytes.readUInt16LE(offset + 26);
+		const extraLength = bytes.readUInt16LE(offset + 28);
+		if ((flags & ZIP_DATA_DESCRIPTOR_FLAG) !== 0) {
+			throw new Error('release ZIP data descriptors are forbidden for deterministic provenance');
+		}
+		if (method !== 0 || compressedSize !== uncompressedSize) {
+			throw new Error('release ZIP provenance supports deterministic STORED entries only');
+		}
+		const nameStart = offset + 30;
+		const dataStart = nameStart + nameLength + extraLength;
+		const dataEnd = dataStart + compressedSize;
+		if (nameLength === 0 || dataStart > bytes.length || dataEnd > bytes.length) {
+			throw new Error(`release ZIP entry exceeds archive bounds at byte ${offset}`);
+		}
+		const name = bytes.subarray(nameStart, nameStart + nameLength).toString('utf8');
+		assertSafeArchivePath(name);
+		if (names.has(name)) throw new Error(`release ZIP repeats entry path ${name}`);
+		names.add(name);
+		const data = bytes.subarray(dataStart, dataEnd);
+		entries.push({ path: name, sha256: sha256Bytes(data), bytes: data.length });
+		offset = dataEnd;
+	}
+	if (!foundCentralDirectory || entries.length === 0) {
+		throw new Error('release ZIP is missing local entries or central directory');
+	}
+	return entries.sort((left, right) => left.path.localeCompare(right.path));
+}
+
+export function verifyStoredZipAgainstProvenance({
+	product,
+	artifactPath,
+	evidence,
+}: {
+	product: 'halo' | 'spectra';
+	artifactPath: string;
+	evidence: ArtifactProvenanceEvidence;
+}): void {
+	if (evidence.product !== product || evidence.wholeArtifactScoped !== true) {
+		throw new Error(`${product}: artifact provenance cannot validate this ZIP`);
+	}
+	const archive = readStoredZipEntries(artifactPath);
+	const expected = evidenceIdentity(evidence.files);
+	if (canonical(archive) !== canonical(expected)) {
+		throw new Error(`${product}: final ZIP differs from whole-artifact provenance`);
 	}
 }
 
