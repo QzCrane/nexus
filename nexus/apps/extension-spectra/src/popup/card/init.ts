@@ -31,15 +31,16 @@ interface PopupObservationLease {
 const observationLeases = new Map<number, PopupObservationLease>();
 let popupClosing = false;
 
-async function acquirePopupObservation(tabId: number): Promise<void> {
+async function acquirePopupObservation(tabId: number, documentId: string): Promise<void> {
   if (observationLeases.has(tabId) || popupClosing) return;
   const capability = `popup:${crypto.randomUUID()}`;
   const response = await sendSpectraRequest('spectra.content.runtime.ensure', {
     tabId,
+    documentId,
     reason: 'observation',
     capability,
   }).catch(() => null);
-  if (!response?.ok) return;
+  if (!response?.ok || response.data.documentId !== documentId) return;
   const lease = {
     documentId: response.data.documentId,
     runtimeRevision: response.data.runtimeRevision,
@@ -233,7 +234,13 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // note: register the update handle globally so settings can trigger re-renders from the Settings view
   registerCard(tabId, state.config, update, () => state.config);
 
-  const cleanupMessaging = setupCardMessaging({ tabId, state, render });
+  const cleanupMessaging = setupCardMessaging({
+    tabId,
+    documentId,
+    state,
+    render,
+    onDocumentReplaced: () => window.location.reload(),
+  });
   window.addEventListener('unload', cleanupMessaging);
 
   cardRenderCallbacks.push(() => {
@@ -246,7 +253,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // a document-scoped observation lease installs only event listeners/registry
   // state so page-side changes can flow back to Popup. It never admits MAIN,
   // AudioContext or offscreen processing by itself.
-  if (!params.isBackground) void acquirePopupObservation(tabId);
+  if (!params.isBackground) void acquirePopupObservation(tabId, documentId);
 
   // goal: dynamically import the visualizer loop to optimize initial popup load time
   if (ui.canvas) {
