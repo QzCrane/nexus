@@ -8,6 +8,11 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     open-pull-requests-limit: 4
     rebase-strategy: auto
     commit-message:
@@ -27,6 +32,11 @@ updates:
       day: monday
       time: "04:20"
       timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
+      semver-major-days: 30
+      semver-minor-days: 7
+      semver-patch-days: 3
     open-pull-requests-limit: 6
     rebase-strategy: auto
     commit-message:
@@ -58,6 +68,8 @@ updates:
       day: monday
       time: "04:40"
       timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
     open-pull-requests-limit: 4
     rebase-strategy: auto
     commit-message:
