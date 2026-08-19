@@ -1,7 +1,18 @@
 /* Shared SPECTRA extension-page accessibility policy.
  * Product CSS may choose visuals, but it may not erase keyboard focus, force
- * motion after the user requests reduced motion, or force horizontal scrolling
- * at narrow reflow widths. */
+ * motion after the user requests reduced motion, regress readable muted text,
+ * or force horizontal scrolling at narrow reflow widths. */
+
+/* Options' previous muted tokens were 3.34:1 in dark mode and ~2.5:1 in light
+ * mode. These values remain >=4.5:1 against the Options surfaces where the
+ * muted token is used, while Popup uses its independent --g2 palette. */
+:root {
+  --text-muted: #8f8f8f;
+}
+
+[data-theme="light"] {
+  --text-muted: #666666;
+}
 
 :where(
   button,
