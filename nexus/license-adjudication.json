@@ -1,0 +1,5 @@
+{
+  "schemaVersion": 1,
+  "policy": "A product-retained npm runtime package whose installed package metadata has no machine-readable license may ship only after an exact name/version adjudication records a reviewed source URL, concrete license expression, and rationale. Wildcards and package-name-only exceptions are forbidden.",
+  "unknownLicenses": []
+}
