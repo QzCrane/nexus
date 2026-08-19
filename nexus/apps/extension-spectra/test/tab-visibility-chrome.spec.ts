@@ -20,9 +20,14 @@ let serviceWorker: WebWorker;
 let extensionId = '';
 let server: ReturnType<typeof Bun.serve>;
 let profileDir = '';
-let mediaPage: Page;
+const mediaPages: Page[] = [];
 let foregroundPage: Page;
-let mediaUrl = '';
+const mediaFixtures = [
+	{ slug: 'alpha', title: 'Paused Media Alpha' },
+	{ slug: 'beta', title: 'Paused Media Beta' },
+	{ slug: 'gamma', title: 'Paused Media Gamma' },
+] as const;
+let mediaUrls: string[] = [];
 let foregroundUrl = '';
 
 interface BootstrapStatus {
@@ -109,13 +114,16 @@ beforeAll(async () => {
 		port: 0,
 		hostname: '127.0.0.1',
 		fetch(request) {
-			const pathname = new URL(request.url).pathname;
-			if (pathname === '/media') {
-				return new Response(`<!doctype html><html><head><title>Paused Media Inventory</title></head><body><video id="media" controls></video></body></html>`, {
+			const url = new URL(request.url);
+			if (url.pathname.startsWith('/media/')) {
+				const slug = url.pathname.slice('/media/'.length);
+				const fixture = mediaFixtures.find((entry) => entry.slug === slug);
+				if (!fixture) return new Response('Not found', { status: 404 });
+				return new Response(`<!doctype html><html><head><title>${fixture.title}</title></head><body><video id="media" controls></video></body></html>`, {
 					headers: { 'content-type': 'text/html; charset=utf-8' },
 				});
 			}
-			if (pathname === '/foreground') {
+			if (url.pathname === '/foreground') {
 				return new Response(`<!doctype html><html><head><title>Foreground Without Media</title></head><body>foreground</body></html>`, {
 					headers: { 'content-type': 'text/html; charset=utf-8' },
 				});
@@ -123,7 +131,7 @@ beforeAll(async () => {
 			return new Response('Not found', { status: 404 });
 		},
 	});
-	mediaUrl = `http://127.0.0.1:${server.port}/media`;
+	mediaUrls = mediaFixtures.map(({ slug }) => `http://127.0.0.1:${server.port}/media/${slug}`);
 	foregroundUrl = `http://127.0.0.1:${server.port}/foreground`;
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-tab-visibility-'));
 	browser = await puppeteer.launch({
@@ -151,13 +159,16 @@ beforeAll(async () => {
 	if (!worker) throw new Error('SPECTRA service worker target has no execution context');
 	serviceWorker = worker;
 
-	mediaPage = await browser.newPage();
-	await mediaPage.goto(mediaUrl, { waitUntil: 'domcontentloaded' });
-	await eventually(
-		() => readBootstrapStatus(mediaUrl),
-		(status) => status.bootstrapRevision.length > 0,
-		'background media bootstrap',
-	);
+	for (const url of mediaUrls) {
+		const page = await browser.newPage();
+		await page.goto(url, { waitUntil: 'domcontentloaded' });
+		await eventually(
+			() => readBootstrapStatus(url),
+			(status) => status.bootstrapRevision.length > 0,
+			`background media bootstrap ${url}`,
+		);
+		mediaPages.push(page);
+	}
 
 	foregroundPage = await browser.newPage();
 	await foregroundPage.goto(foregroundUrl, { waitUntil: 'domcontentloaded' });
@@ -178,31 +189,44 @@ afterAll(async () => {
 });
 
 describe('SPECTRA real Popup media-tab inventory', () => {
-	test('shows a paused background media tab without acquiring the heavy Content Runtime', async () => {
-		const mediaTabId = await tabIdForUrl(mediaUrl);
-		const before = await readBootstrapStatus(mediaUrl);
-		expect(before).toMatchObject({ ready: false, runtimeRevision: null });
-		expect(await mediaPage.evaluate(() => {
-			const media = document.querySelector<HTMLMediaElement>('video,audio');
-			return { exists: Boolean(media), paused: media?.paused ?? false };
-		})).toEqual({ exists: true, paused: true });
+	test('shows multiple paused background media tabs without acquiring the heavy Content Runtime', async () => {
+		const tabIds = await Promise.all(mediaUrls.map(tabIdForUrl));
+		const before = await Promise.all(mediaUrls.map(readBootstrapStatus));
+		for (const status of before) expect(status).toMatchObject({ ready: false, runtimeRevision: null });
+		for (const page of mediaPages) {
+			expect(await page.evaluate(() => {
+				const media = document.querySelector<HTMLMediaElement>('video,audio');
+				return { exists: Boolean(media), paused: media?.paused ?? false };
+			})).toEqual({ exists: true, paused: true });
+		}
 
 		const popup = await openRealActionPopup();
 		try {
-			await popup.waitForFunction((expectedTitle) => (
-				[...document.querySelectorAll<HTMLElement>('#bg-stack .glass-card .meta-title')]
-					.some((element) => element.textContent === expectedTitle)
-			), { timeout: 10_000 }, 'Paused Media Inventory');
+			const expectedTitles = mediaFixtures.map(({ title }) => title).sort();
+			await popup.waitForFunction((titles) => {
+				const actual = [...document.querySelectorAll<HTMLElement>('#bg-stack .glass-card .meta-title')]
+					.map((element) => element.textContent ?? '')
+					.sort();
+				return JSON.stringify(actual) === JSON.stringify(titles);
+			}, { timeout: 10_000 }, expectedTitles);
 
-			const backgroundCards = await popup.evaluate(() => (
-				[...document.querySelectorAll<HTMLElement>('#bg-stack .glass-card')].map((card) => ({
+			const background = await popup.evaluate(() => ({
+				cards: [...document.querySelectorAll<HTMLElement>('#bg-stack .glass-card')].map((card) => ({
 					title: card.querySelector<HTMLElement>('.meta-title')?.textContent ?? '',
 					domain: card.querySelector<HTMLElement>('.meta-domain')?.textContent ?? '',
-				}))
-			));
-			expect(backgroundCards).toEqual([
-				{ title: 'Paused Media Inventory', domain: '127.0.0.1' },
-			]);
+				})),
+				badge: document.getElementById('bg-badge')?.textContent ?? '',
+				headerHidden: document.getElementById('bg-header')?.classList.contains('hidden') ?? true,
+				pageScrollHeight: document.documentElement.scrollHeight,
+				pageClientHeight: document.documentElement.clientHeight,
+			}));
+			expect(background.cards.map(({ title }) => title).sort()).toEqual(expectedTitles);
+			expect(background.cards.every(({ domain }) => domain === '127.0.0.1')).toBe(true);
+			expect(background.badge).toBe('3');
+			expect(background.headerHidden).toBe(false);
+			// If the physical Action Popup height cannot fit all cards, the document
+			// must grow/scroll rather than clipping or silently dropping cards.
+			expect(background.pageScrollHeight).toBeGreaterThanOrEqual(background.pageClientHeight);
 
 			const popupVisibleTabs = await popup.evaluate(async () => {
 				const response = await chrome.runtime.sendMessage({
@@ -214,12 +238,12 @@ describe('SPECTRA real Popup media-tab inventory', () => {
 				if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to read Popup visible tabs');
 				return response.data.tabs as number[];
 			});
-			expect(popupVisibleTabs).toContain(mediaTabId);
+			for (const tabId of tabIds) expect(popupVisibleTabs).toContain(tabId);
 
-			const after = await readBootstrapStatus(mediaUrl);
-			expect(after).toMatchObject({ ready: false, runtimeRevision: null });
+			const after = await Promise.all(mediaUrls.map(readBootstrapStatus));
+			for (const status of after) expect(status).toMatchObject({ ready: false, runtimeRevision: null });
 		} finally {
 			await closeActionPopup(popup);
 		}
-	}, 30_000);
+	}, 45_000);
 });
