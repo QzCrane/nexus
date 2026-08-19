@@ -7,6 +7,7 @@ import {
 	buildLicenseInventory,
 	buildProductLicenseInventory,
 	generateReleaseSupplyChainEvidence,
+	parseLicenseAdjudicationPolicy,
 } from './release-supply-chain';
 
 function sha256(value: Uint8Array | string): string {
@@ -46,6 +47,14 @@ function fixtureRetained(overrides: Record<string, unknown> = {}) {
 	};
 }
 
+function emptyAdjudication() {
+	return {
+		schemaVersion: 1,
+		policy: 'A retained runtime package without machine-readable license metadata requires exact name/version review, a concrete license expression, an HTTPS source, and a durable rationale before release.',
+		unknownLicenses: [],
+	};
+}
+
 describe('artifact-bound release supply-chain evidence', () => {
 	test('keeps the complete installed inventory explicitly workspace-scoped', () => {
 		const inventory = buildLicenseInventory({
@@ -79,9 +88,9 @@ describe('artifact-bound release supply-chain evidence', () => {
 	});
 
 	test('filters product licenses to exact npm packages physically retained in the build', () => {
-		const inventory = buildProductLicenseInventory('halo', fixtureSbom(), fixtureRetained());
+		const inventory = buildProductLicenseInventory('halo', fixtureSbom(), fixtureRetained(), emptyAdjudication());
 		expect(inventory).toEqual({
-			schemaVersion: 3,
+			schemaVersion: 4,
 			scope: 'product-retained-npm-runtime',
 			npmArtifactScoped: true,
 			wholeArtifactScoped: false,
@@ -89,6 +98,7 @@ describe('artifact-bound release supply-chain evidence', () => {
 				name: 'example',
 				version: '1.0.0',
 				license: 'Apache-2.0',
+				licenseSource: 'package-metadata',
 				bomRef: 'pkg:npm/example@1.0.0',
 				bytesInOutput: 123,
 			}],
@@ -100,17 +110,69 @@ describe('artifact-bound release supply-chain evidence', () => {
 			packages: [{
 				name: 'missing', version: '1.0.0', license: 'MIT', bytesInOutput: 1, inputs: ['x'],
 			}],
-		}))).toThrow('absent from the exact installed SBOM');
+		}), emptyAdjudication())).toThrow('absent from the exact installed SBOM');
 		expect(() => buildProductLicenseInventory('halo', fixtureSbom(), fixtureRetained({
 			packages: [{
 				name: 'example', version: '2.0.0', license: 'Apache-2.0', bytesInOutput: 1, inputs: ['x'],
 			}],
-		}))).toThrow('absent from the exact installed SBOM');
+		}), emptyAdjudication())).toThrow('absent from the exact installed SBOM');
 		expect(() => buildProductLicenseInventory('halo', fixtureSbom(), fixtureRetained({
 			packages: [{
 				name: 'example', version: '1.0.0', license: 'MIT', bytesInOutput: 1, inputs: ['x'],
 			}],
-		}))).toThrow('license drift');
+		}), emptyAdjudication())).toThrow('license drift');
+	});
+
+	test('requires exact adjudication for UNKNOWN retained licenses and rejects stale exceptions', () => {
+		const unknownSbom = {
+			components: [{
+				'bom-ref': 'pkg:npm/unknown-license@1.2.3',
+				name: 'unknown-license', version: '1.2.3',
+				properties: [{ name: 'nexus:dependency-kind', value: 'external' }],
+			}],
+		};
+		const retained = fixtureRetained({
+			packages: [{
+				name: 'unknown-license', version: '1.2.3', license: null, bytesInOutput: 9, inputs: ['node_modules/unknown-license/index.js'],
+			}],
+		});
+		expect(() => buildProductLicenseInventory('halo', unknownSbom, retained, emptyAdjudication()))
+			.toThrow('UNKNOWN license and no exact adjudication');
+
+		const adjudication = {
+			...emptyAdjudication(),
+			unknownLicenses: [{
+				name: 'unknown-license',
+				version: '1.2.3',
+				licenseExpression: 'MIT',
+				source: 'https://example.com/unknown-license/LICENSE',
+				reason: 'Reviewed the exact 1.2.3 source archive and matched its bundled LICENSE text to the MIT license.',
+			}],
+		};
+		expect(buildProductLicenseInventory('halo', unknownSbom, retained, adjudication).packages[0]).toMatchObject({
+			license: 'MIT',
+			licenseSource: 'adjudication',
+			adjudicationSource: 'https://example.com/unknown-license/LICENSE',
+		});
+
+		expect(() => buildProductLicenseInventory('halo', fixtureSbom(), fixtureRetained(), {
+			...emptyAdjudication(),
+			unknownLicenses: [{
+				name: 'example', version: '1.0.0', licenseExpression: 'Apache-2.0',
+				source: 'https://example.com/LICENSE',
+				reason: 'This deliberately stale adjudication must be rejected once installed metadata declares the license explicitly.',
+			}],
+		})).toThrow('adjudication for example@1.0.0 is stale');
+	});
+
+	test('rejects wildcard or weak adjudication records before they can become release exceptions', () => {
+		expect(() => parseLicenseAdjudicationPolicy({
+			...emptyAdjudication(),
+			unknownLicenses: [{
+				name: 'example*', version: '1.0.0', licenseExpression: 'MIT', source: 'https://example.com/LICENSE',
+				reason: 'Wildcard package identities are not acceptable for exact supply-chain adjudication records.',
+			}],
+		})).toThrow('exact name/version');
 	});
 
 	test('binds ZIP, retained npm license evidence, product inputs and exact Git identity without modifying ZIP', () => {
@@ -119,21 +181,24 @@ describe('artifact-bound release supply-chain evidence', () => {
 			const artifactPath = resolve(directory, 'halo.zip');
 			const sbomPath = resolve(directory, 'nexus.cdx.json');
 			const retainedPath = resolve(directory, 'halo.retained-dependencies.json');
+			const adjudicationPath = resolve(directory, 'license-adjudication.json');
 			const artifact = Buffer.from('exact-release-artifact');
 			writeFileSync(artifactPath, artifact);
 			writeFileSync(sbomPath, `${JSON.stringify(fixtureSbom(), null, 2)}\n`);
 			writeFileSync(retainedPath, `${JSON.stringify(fixtureRetained(), null, 2)}\n`);
+			writeFileSync(adjudicationPath, `${JSON.stringify(emptyAdjudication(), null, 2)}\n`);
 			const result = generateReleaseSupplyChainEvidence({
 				product: 'halo',
 				artifactPath,
 				sbomPath,
 				retainedPath,
+				licenseAdjudicationPath: adjudicationPath,
 				recordedAt: '2026-08-18T00:00:00.000Z',
 				identity: { head: 'a'.repeat(40), tree: 'b'.repeat(40) },
 			});
 			expect(readFileSync(artifactPath)).toEqual(artifact);
 			expect(result.provenance).toMatchObject({
-				schemaVersion: 3,
+				schemaVersion: 4,
 				product: 'halo',
 				head: 'a'.repeat(40),
 				tree: 'b'.repeat(40),
@@ -150,6 +215,7 @@ describe('artifact-bound release supply-chain evidence', () => {
 					npmArtifactScoped: true,
 					wholeArtifactScoped: false,
 					packages: 1,
+					adjudicated: 0,
 					unknown: 0,
 				},
 				inputs: {
@@ -157,7 +223,8 @@ describe('artifact-bound release supply-chain evidence', () => {
 					repositoryLock: { path: 'bun.lock' },
 				},
 			});
-		expect(result.provenance.retainedDependencies.sha256).toBe(sha256(readFileSync(retainedPath)));
+			expect(result.provenance.retainedDependencies.sha256).toBe(sha256(readFileSync(retainedPath)));
+			expect(result.provenance.inputs.licenseAdjudication.sha256).toBe(sha256(readFileSync(adjudicationPath)));
 			expect(result.provenance.inputs.product.map(({ path }: { path: string }) => path)).toEqual([
 				'nexus/apps/extension-halo/package.json',
 				'nexus/apps/extension-halo/build.ts',
@@ -168,12 +235,13 @@ describe('artifact-bound release supply-chain evidence', () => {
 			expect(result.provenance.inputs.product.every(({ sha256: digest }: { sha256: string }) => /^[a-f0-9]{64}$/u.test(digest))).toBe(true);
 			const licenses = JSON.parse(readFileSync(result.licensePath, 'utf8'));
 			expect(licenses).toEqual({
-				schemaVersion: 3,
+				schemaVersion: 4,
 				scope: 'product-retained-npm-runtime',
 				npmArtifactScoped: true,
 				wholeArtifactScoped: false,
 				packages: [{
-					name: 'example', version: '1.0.0', license: 'Apache-2.0', bomRef: 'pkg:npm/example@1.0.0', bytesInOutput: 123,
+					name: 'example', version: '1.0.0', license: 'Apache-2.0', licenseSource: 'package-metadata',
+					bomRef: 'pkg:npm/example@1.0.0', bytesInOutput: 123,
 				}],
 			});
 		} finally {
