@@ -138,6 +138,7 @@ const scriptsDir = path.join(__dirname, 'src/scripts');
 const distToolsDir = path.join(distDir, 'tools');
 const distScriptsDir = path.join(distDir, 'scripts');
 const releaseScriptRuntimeIds = new Set<string>(RELEASE_SCRIPT_RUNTIME_IDS);
+const scriptBuildAnalyses = [];
 
 mkdirSync(distToolsDir, { recursive: true });
 mkdirSync(distScriptsDir, { recursive: true });
@@ -157,8 +158,9 @@ async function buildScriptFiles(sourceDir, destBaseDir) {
 		if (existsSync(scriptJs) || existsSync(scriptTs)) {
 			mkdirSync(destDir, { recursive: true });
 			try {
-				await esbuild.build({
-					entryPoints: [existsSync(scriptTs) ? scriptTs : scriptJs],
+				const sourceEntry = existsSync(scriptTs) ? scriptTs : scriptJs;
+				const result = await esbuild.build({
+					entryPoints: [sourceEntry],
 					outfile: path.join(destDir, 'script.js'),
 					bundle: true,
 					minify: !isDev,
@@ -167,7 +169,23 @@ async function buildScriptFiles(sourceDir, destBaseDir) {
 					format: 'esm',
 					legalComments: 'none',
 					logLevel: 'silent',
+					metafile: isAnalyze,
 				});
+				if (isAnalyze && result.metafile) {
+					scriptBuildAnalyses.push({
+						id: dir.name,
+						source: path.relative(__dirname, sourceEntry).replaceAll('\\', '/'),
+						output: path.relative(distDir, path.join(destDir, 'script.js')).replaceAll('\\', '/'),
+						outputs: Object.fromEntries(
+							Object.entries(result.metafile.outputs)
+								.map(([output, detail]) => [
+									relativeDist(path.resolve(__dirname, output)),
+									{ bytes: detail.bytes, entryPoint: detail.entryPoint, imports: detail.imports, inputs: detail.inputs },
+								])
+								.sort(([left], [right]) => left.localeCompare(right)),
+						),
+					});
+				}
 				built = true;
 			} catch (e) {
 				console.error(`❌ Failed to build script ${dir.name}:`, e.message);
@@ -481,6 +499,7 @@ if (isWatch) {
 			},
 			sidepanelTopInputs,
 			sidepanelActivationClosures: activationClosures,
+			scriptRuntimeBuilds: scriptBuildAnalyses.sort((left, right) => left.id.localeCompare(right.id)),
 			entries: buildResults.map(({ entry, result }) => ({
 				entry: entry.out,
 				kind: entry.kind,
@@ -488,7 +507,7 @@ if (isWatch) {
 					Object.entries(result.metafile?.outputs ?? {})
 						.map(([output, detail]) => [
 							relativeDist(path.resolve(__dirname, output)),
-							{ bytes: detail.bytes, entryPoint: detail.entryPoint, imports: detail.imports },
+							{ bytes: detail.bytes, entryPoint: detail.entryPoint, imports: detail.imports, inputs: detail.inputs },
 						])
 						.sort(([left], [right]) => left.localeCompare(right)),
 				),
