@@ -77,6 +77,42 @@ describe('whole extension artifact provenance', () => {
 		}
 	});
 
+	test('distinguishes declared SPECTRA build transforms from unexplained public-file mutation', () => {
+		const dist = tempDist('nexus-artifact-transform-');
+		try {
+			const sourceManifest = JSON.parse(readFileSync(
+				resolve(workspaceDir, 'apps/extension-spectra/public/manifest.json'),
+				'utf8',
+			)) as Record<string, unknown>;
+			writeFileSync(resolve(dist, 'manifest.json'), JSON.stringify({ ...sourceManifest, version: '9.9.9' }));
+			writeFileSync(resolve(dist, 'background.js'), 'export {};\n');
+			const evidence = buildArtifactProvenance({
+				product: 'spectra',
+				distDir: dist,
+				analysisSha256: 'f'.repeat(64),
+				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
+			});
+			expect(evidence.files.find(({ path }) => path === 'manifest.json')?.origin)
+				.toMatchObject({
+					kind: 'transformed-static',
+					owner: 'nexus/apps/extension-spectra/build.ts',
+				});
+
+			writeFileSync(
+				resolve(dist, 'accessibility.css'),
+				`${readFileSync(resolve(workspaceDir, 'apps/extension-spectra/public/accessibility.css'), 'utf8')}\n/* unexplained */\n`,
+			);
+			expect(() => buildArtifactProvenance({
+				product: 'spectra',
+				distDir: dist,
+				analysisSha256: 'f'.repeat(64),
+				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
+			})).toThrow('public release file changed without an explicit build transformer: accessibility.css');
+		} finally {
+			rmSync(dirname(dist), { recursive: true, force: true });
+		}
+	});
+
 	test('recognizes deterministic SPECTRA i18n metadata generation', () => {
 		const dist = tempDist('nexus-artifact-i18n-');
 		try {
@@ -133,7 +169,7 @@ describe('whole extension artifact provenance', () => {
 		}
 	});
 
-	test('binds the real deterministic STORED ZIP bytes to the captured whole-dist identity', () => {
+	test('binds local headers, central directory, EOCD, and payload bytes to one STORED ZIP identity', () => {
 		const dist = tempDist('nexus-artifact-zip-');
 		try {
 			const background = Buffer.from('export const value = 1;\n');
@@ -147,10 +183,11 @@ describe('whole extension artifact provenance', () => {
 				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
 			});
 			const artifact = resolve(dirname(dist), 'spectra.zip');
-			writeFileSync(artifact, createStoredArchive([
+			const pristine = createStoredArchive([
 				{ name: 'manifest.json', data: manifest },
 				{ name: 'background.js', data: background },
-			]));
+			]);
+			writeFileSync(artifact, pristine);
 			expect(readStoredZipEntries(artifact).map(({ path }) => path)).toEqual([
 				'background.js',
 				'manifest.json',
@@ -158,6 +195,17 @@ describe('whole extension artifact provenance', () => {
 			expect(() => verifyStoredZipAgainstProvenance({
 				product: 'spectra', artifactPath: artifact, evidence,
 			})).not.toThrow();
+
+			const centralSignature = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
+			const centralOffset = pristine.indexOf(centralSignature);
+			expect(centralOffset).toBeGreaterThanOrEqual(0);
+			const centralTampered = Buffer.from(pristine);
+			centralTampered[centralOffset + 16] = (centralTampered[centralOffset + 16] ?? 0) ^ 0xff;
+			writeFileSync(artifact, centralTampered);
+			expect(() => readStoredZipEntries(artifact)).toThrow('central directory disagrees with local entry');
+
+			writeFileSync(artifact, Buffer.concat([pristine, Buffer.from([0])]));
+			expect(() => readStoredZipEntries(artifact)).toThrow('trailing bytes after EOCD');
 
 			writeFileSync(artifact, createStoredArchive([
 				{ name: 'manifest.json', data: manifest },
