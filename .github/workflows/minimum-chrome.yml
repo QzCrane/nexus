@@ -96,3 +96,6 @@ jobs:
       - name: Prove HALO admitted SidePanel and page capabilities on Chrome floor
         working-directory: nexus/apps/extension-halo
         run: bunx playwright test test/minimum-chrome-playwright.spec.ts --workers=1
+
+      - name: Capture review visuals or enforce certified exact baselines on Chrome floor
+        run: bun --cwd nexus run test:visual
