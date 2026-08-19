@@ -89,6 +89,10 @@ jobs:
         working-directory: nexus/apps/extension-spectra
         run: bun test test/tab-visibility-chrome.spec.ts
 
+      - name: Prove SPECTRA extension-page accessibility on Chrome floor
+        working-directory: nexus/apps/extension-spectra
+        run: bun test test/accessibility-chrome.spec.ts
+
       - name: Prove HALO admitted SidePanel and page capabilities on Chrome floor
         working-directory: nexus/apps/extension-halo
         run: bunx playwright test test/minimum-chrome-playwright.spec.ts --workers=1
