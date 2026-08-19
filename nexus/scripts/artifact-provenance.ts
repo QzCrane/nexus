@@ -90,6 +90,17 @@ function normalizePath(value: string): string {
 	return value.replaceAll('\\', '/').replace(/^\.\//u, '');
 }
 
+// esbuild metafile output keys vary by platform/invocation. Treat everything
+// after the final physical dist boundary as the release identity so Windows
+// absolute paths cannot disagree with Linux/relative builds.
+export function normalizeBuildOutputIdentity(value: string): string {
+	const normalized = normalizePath(value);
+	if (normalized.startsWith('dist/')) return normalized.slice('dist/'.length);
+	const marker = '/dist/';
+	const boundary = normalized.lastIndexOf(marker);
+	return boundary >= 0 ? normalized.slice(boundary + marker.length) : normalized;
+}
+
 function assertSafeArchivePath(path: string): void {
 	if (!path || path.startsWith('/') || path.includes('\\') || path.includes('\0')) {
 		throw new Error(`unsafe ZIP entry path: ${JSON.stringify(path)}`);
@@ -110,7 +121,7 @@ function collectBuildOutputs(value: unknown, outputs = new Map<string, string | 
 		if (key === 'outputs' && isRecord(nested)) {
 			for (const [output, detail] of Object.entries(nested)) {
 				if (!isRecord(detail)) continue;
-				const normalized = normalizePath(output).replace(/^dist\//u, '');
+				const normalized = normalizeBuildOutputIdentity(output);
 				const entryPoint = typeof (detail as BuildOutputDetail).entryPoint === 'string'
 					? normalizePath((detail as { entryPoint: string }).entryPoint)
 					: null;
