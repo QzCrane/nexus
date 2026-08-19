@@ -94,6 +94,46 @@ function cssTimeMs(value: string): number {
 	return token.endsWith('ms') ? numeric : numeric * 1_000;
 }
 
+async function optionsMutedContrast(page: Page): Promise<{ dark: number; light: number }> {
+	return page.evaluate(() => {
+		function parseRgb(value: string): [number, number, number] {
+			const numbers = value.match(/[\d.]+/gu)?.map(Number) ?? [];
+			if (numbers.length < 3 || numbers.slice(0, 3).some((entry) => !Number.isFinite(entry))) {
+				throw new Error(`Unable to parse computed RGB color: ${value}`);
+			}
+			return [numbers[0] ?? 0, numbers[1] ?? 0, numbers[2] ?? 0];
+		}
+		function luminance(value: string): number {
+			const components = parseRgb(value).map((component) => {
+				const normalized = component / 255;
+				return normalized <= 0.04045
+					? normalized / 12.92
+					: ((normalized + 0.055) / 1.055) ** 2.4;
+			});
+			return 0.2126 * (components[0] ?? 0)
+				+ 0.7152 * (components[1] ?? 0)
+				+ 0.0722 * (components[2] ?? 0);
+		}
+		function ratio(foreground: string, background: string): number {
+			const left = luminance(foreground);
+			const right = luminance(background);
+			return (Math.max(left, right) + 0.05) / (Math.min(left, right) + 0.05);
+		}
+		function read(theme: 'dark' | 'light'): number {
+			document.documentElement.dataset.theme = theme;
+			const probe = document.createElement('span');
+			probe.style.color = 'var(--text-muted)';
+			probe.style.backgroundColor = 'var(--bg-tertiary)';
+			document.body.append(probe);
+			const style = getComputedStyle(probe);
+			const result = ratio(style.color, style.backgroundColor);
+			probe.remove();
+			return result;
+		}
+		return { dark: read('dark'), light: read('light') };
+	});
+}
+
 async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void> {
 	const page = await openSurface(path);
 	try {
@@ -159,13 +199,19 @@ async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void>
 		expect(facts.scrollBehavior, `${path} reduced CSS scroll behavior`).toBe('auto');
 		expect(facts.viewportWidth, `${path} test viewport`).toBe(320);
 		expect(facts.scrollWidth, `${path} 320px reflow`).toBeLessThanOrEqual(facts.viewportWidth + 1);
+
+		if (path === 'options.html') {
+			const contrast = await optionsMutedContrast(page);
+			expect(contrast.dark, 'Options dark muted-text contrast').toBeGreaterThanOrEqual(4.5);
+			expect(contrast.light, 'Options light muted-text contrast').toBeGreaterThanOrEqual(4.5);
+		}
 	} finally {
 		await page.close();
 	}
 }
 
 describe('SPECTRA extension-page accessibility', () => {
-	test('Popup and Options preserve keyboard focus, reduced motion, and 320px reflow', async () => {
+	test('Popup and Options preserve focus, motion preference, contrast, and 320px reflow', async () => {
 		await assertSurface('popup.html');
 		await assertSurface('options.html');
 	}, 90_000);
