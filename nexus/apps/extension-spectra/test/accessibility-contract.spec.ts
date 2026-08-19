@@ -23,10 +23,11 @@ describe('SPECTRA shared accessibility ownership', () => {
 		expect(text).toContain("query.addEventListener('change', binding.onPreferenceChange)");
 		expect(text).toContain('detachWheel(root, binding);');
 		expect(text).toContain('cancelPendingScroll();');
+		expect(text).toContain('attachWheel(root, binding);');
 		expect(text).toContain('query.removeEventListener');
 	});
 
-	test('one policy asset owns focus, reduced motion, contrast and narrow reflow', () => {
+	test('one policy asset owns focus, reduced motion, rendered muted contrast and narrow reflow', () => {
 		const text = source('public/accessibility.css');
 		expect(text).toContain(':focus-visible');
 		expect(text).toContain('@media (prefers-reduced-motion: reduce)');
@@ -35,5 +36,17 @@ describe('SPECTRA shared accessibility ownership', () => {
 		expect(text).toContain('@media (max-width: 389px)');
 		expect(text).toContain('--text-muted: #8f8f8f');
 		expect(text).toContain('--text-muted: #666666');
+		expect(text).toContain('input::placeholder');
+		expect(text).toContain('textarea::placeholder');
+		expect(text).toContain('opacity: 1;');
+	});
+
+	test('installed-browser evidence covers both motion transitions and real muted rendering', () => {
+		const text = source('test/accessibility-chrome.spec.ts');
+		expect(text).toContain('pending rAF is cancelled under reduced motion');
+		expect(text).toContain('reduced-motion wheel pass-through');
+		expect(text).toContain('restored smooth-scroll owner');
+		expect(text).toContain("document.querySelector<HTMLElement>('.section-desc')");
+		expect(text).toContain("getComputedStyle(input, '::placeholder')");
 	});
 });
