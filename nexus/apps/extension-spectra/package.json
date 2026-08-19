@@ -22,6 +22,7 @@
 		"test": "bun run test:unit && bun run test:chrome",
 		"test:smoke": "bun test test/smoke.spec.ts && bun test test/tab-visibility-chrome.spec.ts && bun test test/diagnostics-chrome.spec.ts && bun test test/accessibility-chrome.spec.ts",
 		"test:performance": "bun test test/performance.spec.ts && bun test test/runtime-stress-performance.spec.ts && bun test test/service-worker-wake-performance.spec.ts && bun test test/runtime-long-session-performance.spec.ts",
+		"test:visual": "bun test test/visual-baseline.spec.ts",
 		"test:chrome:dist:fast": "bun run test:smoke",
 		"test:chrome:dist": "bun run test:chrome:dist:fast && bun run test:performance",
 		"test:chrome": "bun run build:dev && bun run test:chrome:dist",
