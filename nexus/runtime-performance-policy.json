@@ -19,6 +19,8 @@
           "testPath": "apps/extension-spectra/test/runtime-stress-performance.spec.ts",
           "metrics": [
             "spectra.media-tabs20.inventory-roundtrip",
+            "spectra.media-tabs20.popup-first-card-ready",
+            "spectra.media-tabs20.popup-all-cards-ready",
             "spectra.hotkey.speed-up.first-document-e2e"
           ]
         },
