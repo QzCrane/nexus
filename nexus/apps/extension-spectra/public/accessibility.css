@@ -33,6 +33,14 @@
   outline-offset: 2px !important;
 }
 
+/* Keep authored placeholder colors at their computed contrast. A user-agent
+ * opacity multiplier would otherwise turn a just-over-AA muted token into a
+ * rendered contrast failure even though the color token itself is compliant. */
+input::placeholder,
+textarea::placeholder {
+  opacity: 1;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
