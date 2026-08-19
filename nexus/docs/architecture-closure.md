@@ -14,7 +14,7 @@ The canonical task owner is [`architecture-closure.json`](../architecture-closur
 
 Single execution branch: `codex/nexus-architecture-closure`. Priority is fixed at **P0 → P1 → P2**. Individual HALO feature internals remain P2 unless they block shared release correctness.
 
-Current projection: 29 retained tasks; queued=5, active=23, blocked=1, done=0, rejected=0.
+Current projection: 29 retained tasks; queued=3, active=25, blocked=1, done=0, rejected=0.
 
 | Task | Priority | Area | Owner | Status | Acceptance clauses | Evidence items |
 | --- | --- | --- | --- | --- | ---: | ---: |
@@ -24,23 +24,23 @@ Current projection: 29 retained tasks; queued=5, active=23, blocked=1, done=0, r
 | `HALO-GENERATED-RESOURCE-SURFACES` | P0 | halo-shared | halo-build | active | 2 | 7 |
 | `BACKLOG-SSOT` | P0 | repository | repository-governance | active | 2 | 3 |
 | `ARCHITECTURE-CLOSURE-MANIFEST` | P0 | repository | repository-governance | active | 2 | 4 |
-| `CONTINUOUS-GREEN-REPLAY` | P0 | ci | repository-ci | blocked | 2 | 3 |
+| `CONTINUOUS-GREEN-REPLAY` | P0 | ci | repository-ci | blocked | 2 | 4 |
 | `MINIMUM-CHROME-EVIDENCE` | P0 | release | browser-compatibility | active | 2 | 5 |
 | `RUNTIME-PERFORMANCE-SLOS` | P0 | performance | performance-governance | active | 3 | 10 |
 | `FEATURE-PROMOTION-GATE` | P0 | governance | release-governance | active | 2 | 3 |
-| `DEPENDENCY-DEAD-DIRECTS` | P1 | dependencies | dependency-governance | active | 2 | 5 |
-| `DEPENDENCY-LIFECYCLE-POLICY` | P1 | dependencies | dependency-governance | active | 2 | 8 |
-| `DEPENDENCY-UPDATE-AUTOMATION` | P1 | dependencies | dependency-governance | active | 2 | 3 |
-| `TYPESCRIPT-7-EPOCH` | P1 | toolchain | toolchain-governance | queued | 3 | 0 |
-| `DIRECT-DEPENDENCY-REVALIDATION` | P1 | dependencies | dependency-governance | queued | 2 | 0 |
+| `DEPENDENCY-DEAD-DIRECTS` | P1 | dependencies | dependency-governance | active | 2 | 6 |
+| `DEPENDENCY-LIFECYCLE-POLICY` | P1 | dependencies | dependency-governance | active | 2 | 10 |
+| `DEPENDENCY-UPDATE-AUTOMATION` | P1 | dependencies | dependency-governance | active | 2 | 9 |
+| `TYPESCRIPT-7-EPOCH` | P1 | toolchain | toolchain-governance | active | 3 | 4 |
+| `DIRECT-DEPENDENCY-REVALIDATION` | P1 | dependencies | dependency-governance | active | 2 | 4 |
 | `LOCK-DOMAIN-AUTHORITY` | P1 | toolchain | toolchain-governance | active | 2 | 6 |
-| `IMMUTABLE-ACTIONS` | P1 | supply-chain | supply-chain | active | 2 | 4 |
+| `IMMUTABLE-ACTIONS` | P1 | supply-chain | supply-chain | active | 2 | 5 |
 | `SBOM-LICENSE-PROVENANCE` | P1 | supply-chain | supply-chain | active | 2 | 5 |
 | `LEAST-PRIVILEGE-PROOF` | P1 | security | permission-governance | active | 2 | 12 |
-| `LOCAL-DIAGNOSTIC-BUNDLE` | P1 | observability | diagnostics | active | 2 | 6 |
-| `ACCESSIBILITY-GATE` | P1 | quality | ui-quality | active | 2 | 3 |
+| `LOCAL-DIAGNOSTIC-BUNDLE` | P1 | observability | diagnostics | active | 2 | 7 |
+| `ACCESSIBILITY-GATE` | P1 | quality | ui-quality | active | 2 | 7 |
 | `VISUAL-REGRESSION-GATE` | P1 | quality | ui-quality | active | 2 | 7 |
-| `PROPERTY-MUTATION-TESTING` | P1 | quality | test-governance | active | 2 | 2 |
+| `PROPERTY-MUTATION-TESTING` | P1 | quality | test-governance | active | 2 | 4 |
 | `RISK-WEIGHTED-TEST-OWNERSHIP` | P1 | quality | test-governance | active | 2 | 4 |
 | `HALO-GENERATED-CONTENT-ENTRY` | P1 | halo-shared | halo-runtime | active | 2 | 6 |
 | `HALO-GENERATED-ACTIVE-SERVICES` | P1 | halo-shared | halo-runtime | active | 2 | 4 |
