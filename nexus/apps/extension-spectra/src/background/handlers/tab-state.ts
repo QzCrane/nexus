@@ -45,7 +45,20 @@ function canProbeTab(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: numbe
 	}
 }
 
+async function currentTopDocumentId(tabId: number): Promise<string | null> {
+	try {
+		const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
+		const documentId = frame?.documentId;
+		return typeof documentId === 'string' && documentId.length > 0 ? documentId : null;
+	} catch {
+		// A disappearing/navigating/restricted top frame has no stable probe owner.
+		return null;
+	}
+}
+
 async function hasNativeMedia(tabId: number): Promise<boolean> {
+	const documentId = await currentTopDocumentId(tabId);
+	if (!documentId) return false;
 	const request = {
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
 		requestId: crypto.randomUUID(),
@@ -57,8 +70,13 @@ async function hasNativeMedia(tabId: number): Promise<boolean> {
 		tabId,
 	};
 	try {
-		const response: unknown = await chrome.tabs.sendMessage(tabId, request);
-		return isSpectraResponse('spectra.control.actual.read', response) && response.ok;
+		// tabId alone is not a document identity: frameId 0 survives navigation.
+		// Bind delivery to the exact top-frame document and, after a positive read,
+		// re-read ownership before admitting the tab. A delayed response from the old
+		// page can therefore never make the newly navigated page visible in Popup.
+		const response: unknown = await chrome.tabs.sendMessage(tabId, request, { documentId });
+		if (!(isSpectraResponse('spectra.control.actual.read', response) && response.ok)) return false;
+		return await currentTopDocumentId(tabId) === documentId;
 	} catch {
 		// Restricted pages, disabled file access, stale extension documents and tabs
 		// that disappear during Popup discovery are ordinary negative probes.
@@ -121,8 +139,8 @@ export async function resolveVisibleTabs(now = Date.now()): Promise<{ tabs: numb
 	// paused and muted media tabs remain valid control targets. Reuse the always-on
 	// bootstrap's side-effect-free native `playing` read instead of acquiring the
 	// heavy Content Runtime or adding a recurring media heartbeat. Popup discovery
-	// is the trigger, probing is bounded, and worker restart naturally reconstructs
-	// the inventory from live documents.
+	// is the trigger, probing is bounded, exact-document fenced, and worker restart
+	// naturally reconstructs the inventory from live documents.
 	const probeCandidates = allTabs.filter(
 		(tab): tab is chrome.tabs.Tab & { id: number } => canProbeTab(tab) && !visibleTabsSet.has(tab.id),
 	);
