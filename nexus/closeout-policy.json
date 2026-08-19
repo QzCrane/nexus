@@ -48,6 +48,7 @@
 	"toolFiles": [
 		"../package.json",
 		"../bun.lock",
+		"../.github/dependabot.yml",
 		"../.github/workflows/dependency-update-evidence.yml",
 		"architecture-closure.json",
 		"browser-floor.json",
@@ -76,6 +77,7 @@
 		"scripts/check-visual-regression-policy.ts",
 		"scripts/closeout-evidence.ts",
 		"scripts/dependency-audit.ts",
+		"scripts/dependency-automation.spec.ts",
 		"scripts/dependency-update-evidence.ts",
 		"scripts/generate-sbom.ts",
 		"scripts/product-artifact-snapshot.ts",
