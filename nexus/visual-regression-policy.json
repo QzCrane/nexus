@@ -3,11 +3,17 @@
   "phase": "baseline-required",
   "browserOwner": "browser-floor.json",
   "comparison": "exact-png-sha256",
+  "verification": {
+    "workspacePackagePath": "package.json",
+    "workspaceScript": "test:visual",
+    "workflowPath": "../.github/workflows/minimum-chrome.yml"
+  },
   "states": [
     {
       "id": "halo.sidepanel.home.dark.en.1280x800",
       "product": "halo",
       "captureTest": "apps/extension-halo/test/store-assets.spec.ts",
+      "verifyScript": "test:visual",
       "updateScript": "capture:store-assets",
       "packagePath": "apps/extension-halo/package.json",
       "baselinePath": "apps/extension-halo/store-listings/assets/halo-sidepanel-1280x800.png",
@@ -23,6 +29,7 @@
       "id": "spectra.popup.empty.dark.en-US.390x600",
       "product": "spectra",
       "captureTest": "apps/extension-spectra/test/visual-baseline.spec.ts",
+      "verifyScript": "test:visual",
       "updateScript": "capture:visual-baseline",
       "packagePath": "apps/extension-spectra/package.json",
       "baselinePath": "apps/extension-spectra/store-listings/assets/spectra-popup-empty-390x600.png",
