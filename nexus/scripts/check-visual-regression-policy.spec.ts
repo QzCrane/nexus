@@ -1,10 +1,18 @@
+import { createHash } from 'node:crypto';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { checkVisualRegressionPolicy } from './check-visual-regression-policy';
+import { verifyVisualRegressionCandidate } from './verify-visual-regression-candidate';
 
 const current = JSON.parse(
 	readFileSync(new URL('../visual-regression-policy.json', import.meta.url), 'utf8'),
 );
+
+function digest(content: string): string {
+	return createHash('sha256').update(content).digest('hex');
+}
 
 describe('visual regression baseline lifecycle', () => {
 	test('accepts the checked-in baseline-required capture policy', () => {
@@ -33,5 +41,74 @@ describe('visual regression baseline lifecycle', () => {
 		const policy = structuredClone(current);
 		policy.states[1].updateScript = 'missing:visual-update-owner';
 		expect(() => checkVisualRegressionPolicy(policy)).toThrow('package script missing:visual-update-owner is missing');
+	});
+
+	test('enforced exact comparison accepts an identical candidate and rejects one-byte drift', () => {
+		const directory = mkdtempSync(join(tmpdir(), 'nexus-visual-regression-'));
+		try {
+			const baselinePath = join(directory, 'baseline.png');
+			const candidatePath = join(directory, 'candidate.png');
+			const baselineContent = 'deterministic-png-fixture';
+			writeFileSync(baselinePath, baselineContent);
+			writeFileSync(candidatePath, baselineContent);
+			const policy = {
+				phase: 'enforced' as const,
+				comparison: 'exact-png-sha256' as const,
+				states: [{
+					id: 'fixture.visual.state',
+					baselinePath: 'baseline.png',
+					baselineSha256: digest(baselineContent),
+				}],
+			};
+			const matched = verifyVisualRegressionCandidate({
+				stateId: 'fixture.visual.state',
+				candidatePath,
+				baselinePath,
+				updateBaseline: false,
+				policy,
+				workspaceDir: directory,
+			});
+			expect(matched.mode).toBe('matched');
+
+			writeFileSync(candidatePath, `${baselineContent}!`);
+			expect(() => verifyVisualRegressionCandidate({
+				stateId: 'fixture.visual.state',
+				candidatePath,
+				baselinePath,
+				updateBaseline: false,
+				policy,
+				workspaceDir: directory,
+			})).toThrow('visual regression');
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
+	});
+
+	test('baseline-required captures candidates without claiming certified equality', () => {
+		const directory = mkdtempSync(join(tmpdir(), 'nexus-visual-candidate-'));
+		try {
+			const baselinePath = join(directory, 'baseline.png');
+			const candidatePath = join(directory, 'candidate.png');
+			writeFileSync(candidatePath, 'candidate-only');
+			const result = verifyVisualRegressionCandidate({
+				stateId: 'fixture.review.state',
+				candidatePath,
+				baselinePath,
+				updateBaseline: false,
+				policy: {
+					phase: 'baseline-required',
+					comparison: 'exact-png-sha256',
+					states: [{
+						id: 'fixture.review.state',
+						baselinePath: 'baseline.png',
+						baselineSha256: null,
+					}],
+				},
+				workspaceDir: directory,
+			});
+			expect(result.mode).toBe('candidate-only');
+		} finally {
+			rmSync(directory, { recursive: true, force: true });
+		}
 	});
 });
