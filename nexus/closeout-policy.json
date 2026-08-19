@@ -65,6 +65,7 @@
 		"apps/extension-halo/release-admission.json",
 		"apps/extension-halo/release-test-owners.json",
 		"apps/extension-spectra/permission-policy.json",
+		"scripts/capture-retained-dependencies.ts",
 		"scripts/check-architecture-closure.ts",
 		"scripts/check-dependency-domains.ts",
 		"scripts/check-dependency-revalidation.ts",
