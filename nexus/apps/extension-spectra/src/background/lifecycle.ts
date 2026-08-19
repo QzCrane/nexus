@@ -113,7 +113,9 @@ export function setupLifecycleListeners(): void {
 			markTabAudible(tabId, changeInfo.audible);
 		}
 		if (changeInfo.status === 'complete') {
-			// task: if a tab is refreshed and active, refresh its bounded visibility timestamp
+			// If the completing document has already established media/audio state,
+			// refresh its bounded activation grace only when it is the active tab.
+			// markTabActivated is a no-op for ordinary tabs and never creates state.
 			chrome.tabs.get(tabId).then(tab => {
 				if (tab.active) markTabActivated(tabId);
 			}).catch((error: unknown) => {
@@ -129,13 +131,12 @@ export function setupLifecycleListeners(): void {
 		void clearTabDocumentState(tabId, true);
 	});
 
-	// Task: Seed initial state with current active tabs to ensure visibility across reloads
+	// Seed only per-window activation ownership after a worker restart. Active
+	// browser tabs are not media facts, so this must not create TabAudioState.
 	chrome.tabs.query({ active: true }).then(tabs => {
-		const now = Date.now();
 		for (const tab of tabs) {
-			if (!tab.id) continue;
-			if (tab.windowId !== undefined) activeTabsByWindow.set(tab.windowId, tab.id);
-			markTabActivated(tab.id, now);
+			if (!tab.id || tab.windowId === undefined) continue;
+			activeTabsByWindow.set(tab.windowId, tab.id);
 		}
 	}).catch((error: unknown) => {
 		swLog.warn('[Lifecycle] Unable to seed active-tab ownership after worker start', error);
