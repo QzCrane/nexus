@@ -11,8 +11,11 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
 	buildArtifactProvenance,
+	readStoredZipEntries,
 	verifyArtifactProvenance,
+	verifyStoredZipAgainstProvenance,
 } from './artifact-provenance';
+import { createStoredArchive } from '../apps/extension-spectra/scripts/create-release';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 
@@ -111,6 +114,44 @@ describe('whole extension artifact provenance', () => {
 			writeFileSync(resolve(dist, 'extra.js'), 'extra');
 			expect(() => verifyArtifactProvenance({ product: 'spectra', distDir: dist, evidence }))
 				.toThrow('unrecorded release file extra.js');
+		} finally {
+			rmSync(dirname(dist), { recursive: true, force: true });
+		}
+	});
+
+	test('binds the real deterministic STORED ZIP bytes to the captured whole-dist identity', () => {
+		const dist = tempDist('nexus-artifact-zip-');
+		try {
+			const background = Buffer.from('export const value = 1;\n');
+			const manifest = readFileSync(resolve(workspaceDir, 'apps/extension-spectra/public/manifest.json'));
+			writeFileSync(resolve(dist, 'background.js'), background);
+			writeFileSync(resolve(dist, 'manifest.json'), manifest);
+			const evidence = buildArtifactProvenance({
+				product: 'spectra',
+				distDir: dist,
+				analysisSha256: 'e'.repeat(64),
+				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
+			});
+			const artifact = resolve(dirname(dist), 'spectra.zip');
+			writeFileSync(artifact, createStoredArchive([
+				{ name: 'manifest.json', data: manifest },
+				{ name: 'background.js', data: background },
+			]));
+			expect(readStoredZipEntries(artifact).map(({ path }) => path)).toEqual([
+				'background.js',
+				'manifest.json',
+			]);
+			expect(() => verifyStoredZipAgainstProvenance({
+				product: 'spectra', artifactPath: artifact, evidence,
+			})).not.toThrow();
+
+			writeFileSync(artifact, createStoredArchive([
+				{ name: 'manifest.json', data: manifest },
+				{ name: 'background.js', data: Buffer.from('tampered') },
+			]));
+			expect(() => verifyStoredZipAgainstProvenance({
+				product: 'spectra', artifactPath: artifact, evidence,
+			})).toThrow('final ZIP differs from whole-artifact provenance');
 		} finally {
 			rmSync(dirname(dist), { recursive: true, force: true });
 		}
