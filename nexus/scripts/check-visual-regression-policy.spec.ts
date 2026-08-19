@@ -43,6 +43,18 @@ describe('visual regression baseline lifecycle', () => {
 		expect(() => checkVisualRegressionPolicy(policy)).toThrow('package script missing:visual-update-owner is missing');
 	});
 
+	test('requires every visual state to have an executable non-update verification owner', () => {
+		const policy = structuredClone(current);
+		policy.states[1].verifyScript = 'missing:visual-verifier';
+		expect(() => checkVisualRegressionPolicy(policy)).toThrow('package verification script missing:visual-verifier is missing');
+	});
+
+	test('requires the workspace verification script to be physically executed by the pinned browser workflow', () => {
+		const policy = structuredClone(current);
+		policy.verification.workflowPath = 'package.json';
+		expect(() => checkVisualRegressionPolicy(policy)).toThrow('visual verification workflow does not execute');
+	});
+
 	test('enforced exact comparison accepts an identical candidate and rejects one-byte drift', () => {
 		const directory = mkdtempSync(join(tmpdir(), 'nexus-visual-regression-'));
 		try {
