@@ -124,7 +124,8 @@ describe('SPECTRA local diagnostic export privacy', () => {
 				'mediaTabStateCount',
 				'offscreenLeaseCount',
 				'offscreenHostStateUnknown',
-				'offscreenReconcileSucceeded',
+				'offscreenReadSucceeded',
+				'offscreenHostPresent',
 				'offscreenAudioProcessorCount',
 				'offscreenRemoteSessionCount',
 			]) {
