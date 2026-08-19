@@ -4,7 +4,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import puppeteer, { type Browser, type Target } from 'puppeteer';
+import { verifyVisualRegressionCandidate } from '../../../scripts/verify-visual-regression-candidate';
 
+const VISUAL_STATE_ID = 'spectra.popup.empty.dark.en-US.390x600';
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const workspaceDir = resolve(EXTENSION_DIR, '../../..');
 const baselinePath = resolve(EXTENSION_DIR, '../store-listings/assets/spectra-popup-empty-390x600.png');
@@ -24,7 +26,7 @@ if (updateBaseline && !explicitChrome) {
 
 const screenshotPath = updateBaseline ? baselinePath : candidatePath;
 
-test('captures the deterministic SPECTRA empty Popup visual state', async () => {
+test('captures and verifies the deterministic SPECTRA empty Popup visual state', async () => {
 	const profileDir = await mkdtemp(join(tmpdir(), 'spectra-visual-'));
 	let browser: Browser | null = null;
 	try {
@@ -70,10 +72,18 @@ test('captures the deterministic SPECTRA empty Popup visual state', async () => 
 		const png = await page.screenshot({ type: 'png', captureBeyondViewport: false });
 		mkdirSync(dirname(screenshotPath), { recursive: true });
 		writeFileSync(screenshotPath, png);
+		const verification = verifyVisualRegressionCandidate({
+			stateId: VISUAL_STATE_ID,
+			candidatePath,
+			baselinePath,
+			updateBaseline,
+		});
 		console.log(
-			updateBaseline
-				? `✓ Updated explicit SPECTRA visual baseline: ${baselinePath}`
-				: `✓ Captured SPECTRA visual candidate without mutating baseline: ${candidatePath}`,
+			verification.mode === 'baseline-update'
+				? `✓ Updated explicit SPECTRA visual baseline candidate ${verification.sha256}: ${baselinePath}`
+				: verification.mode === 'matched'
+					? `✓ SPECTRA visual candidate exactly matches certified baseline ${verification.sha256}`
+					: `✓ Captured SPECTRA visual review candidate ${verification.sha256}; policy still requires baseline certification: ${candidatePath}`,
 		);
 	} finally {
 		await browser?.close().catch(() => undefined);
