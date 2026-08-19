@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
 	isSpectraRequestEnvelope,
+	isSpectraResponse,
 } from '@nexus/contracts';
 
 function clone<T>(value: T): T {
@@ -53,6 +56,28 @@ function validScreenshotCapture() {
 		tabId: 42,
 		documentId: 'document-42',
 		generation: 3,
+	} as const;
+}
+
+function validRuntimeStatusResponse() {
+	return {
+		ok: true,
+		data: {
+			bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+			runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION,
+			ready: true,
+			ownedSources: [{
+				target: {
+					frameId: 0,
+					documentId: 'document-runtime',
+					mediaId: 'media-runtime',
+					sourceRevision: 1,
+					kind: 'video',
+				},
+				markerCount: 2,
+				abActive: true,
+			}],
+		},
 	} as const;
 }
 
@@ -144,5 +169,56 @@ describe('SPECTRA request-envelope structural mutations', () => {
 				expect(isSpectraRequestEnvelope(mutated), `${baseline.type}:${field}`).toBe(false);
 			}
 		}
+	});
+});
+
+describe('SPECTRA response structural mutations', () => {
+	test('runtime ownership wire shape is closed around abActive and rejects the stale tabActive alias', () => {
+		const baseline = validRuntimeStatusResponse();
+		expect(isSpectraResponse('spectra.content.runtime.status', baseline)).toBe(true);
+
+		const staleAlias = clone(baseline) as unknown as {
+			data: { ownedSources: Array<Record<string, unknown>> };
+		};
+		const ownership = staleAlias.data.ownedSources[0];
+		if (!ownership) throw new Error('runtime ownership fixture missing');
+		ownership.tabActive = ownership.abActive;
+		delete ownership.abActive;
+		expect(isSpectraResponse('spectra.content.runtime.status', staleAlias)).toBe(false);
+	});
+
+	test('runtime ownership rejects field deletion, unknown keys, bad activity types and marker bounds', () => {
+		for (const mutate of [
+			(ownership: Record<string, unknown>) => { delete ownership.abActive; },
+			(ownership: Record<string, unknown>) => { ownership.__unknownOwnershipField = true; },
+			(ownership: Record<string, unknown>) => { ownership.abActive = 'true'; },
+			(ownership: Record<string, unknown>) => { ownership.markerCount = -1; },
+			(ownership: Record<string, unknown>) => { ownership.markerCount = 1001; },
+		] as const) {
+			const mutated = clone(validRuntimeStatusResponse()) as unknown as {
+				data: { ownedSources: Array<Record<string, unknown>> };
+			};
+			const ownership = mutated.data.ownedSources[0];
+			if (!ownership) throw new Error('runtime ownership fixture missing');
+			mutate(ownership);
+			expect(isSpectraResponse('spectra.content.runtime.status', mutated)).toBe(false);
+		}
+	});
+
+	test('runtime status rejects incoherent readiness and unknown nested target fields', () => {
+		const notReady = clone(validRuntimeStatusResponse()) as unknown as {
+			data: Record<string, unknown>;
+		};
+		notReady.data.runtimeRevision = null;
+		notReady.data.ready = true;
+		expect(isSpectraResponse('spectra.content.runtime.status', notReady)).toBe(false);
+
+		const unknownTarget = clone(validRuntimeStatusResponse()) as unknown as {
+			data: { ownedSources: Array<{ target: Record<string, unknown> }> };
+		};
+		const ownership = unknownTarget.data.ownedSources[0];
+		if (!ownership) throw new Error('runtime ownership fixture missing');
+		ownership.target.__unknownTargetField = true;
+		expect(isSpectraResponse('spectra.content.runtime.status', unknownTarget)).toBe(false);
 	});
 });
