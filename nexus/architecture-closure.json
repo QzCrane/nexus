@@ -131,9 +131,10 @@
       "evidence": [
         ".github/workflows/cross-platform.yml",
         ".github/workflows/halo-keyboard-browser.yml",
-        ".github/workflows/minimum-chrome.yml"
+        ".github/workflows/minimum-chrome.yml",
+        ".github/workflows/dependency-update-evidence.yml"
       ],
-      "blocker": "GitHub-hosted jobs for the current private repository still terminate before Checkout with zero executable steps, so no hosted run can be represented as green until runner allocation is restored."
+      "blocker": "GitHub-hosted jobs for the current private repository still terminate before Checkout with zero executable steps, including the dependency-update evidence lane, so no hosted run can be represented as green until runner allocation is restored."
     },
     {
       "id": "MINIMUM-CHROME-EVIDENCE",
@@ -200,13 +201,14 @@
       "owner": "dependency-governance",
       "status": "active",
       "acceptance": [
-        "Unused direct dependencies are machine-detected and removed only with regenerated lock plus full build/test proof.",
-        "Current retained debt includes HALO file-saver, jszip, @types/file-saver and runtime-misclassified @types/qrcode; stale or newly introduced debt fails governance."
+        "Unused and production-misclassified direct dependencies are machine-detected and removed or reclassified only with regenerated lock plus full build/test proof.",
+        "Current retained debt includes HALO file-saver, jszip, @types/file-saver, runtime-misclassified @types/qrcode, and React/ReactDOM declarations that production build evidence proves are replaced by Preact; stale or newly introduced debt fails governance."
       ],
       "evidence": [
         "direct-dependency-policy.json",
         "scripts/check-direct-dependencies.ts",
         "scripts/check-direct-dependencies.spec.ts",
+        "apps/extension-halo/build.ts",
         "apps/extension-halo/package.json",
         "bun.lock"
       ]
@@ -223,9 +225,11 @@
       ],
       "evidence": [
         "dependency-domains.json",
+        "dependency-revalidation.json",
         "direct-dependency-policy.json",
         "scripts/dependency-audit.ts",
         "scripts/dependency-audit.spec.ts",
+        "scripts/check-dependency-revalidation.ts",
         "scripts/check-direct-dependencies.ts",
         "scripts/generate-sbom.ts",
         "scripts/release-supply-chain.ts",
@@ -240,12 +244,18 @@
       "status": "active",
       "acceptance": [
         "Automated update PRs exist for package dependencies and GitHub Actions pins.",
-        "Low-risk update promotion includes tests plus production artifact/performance deltas."
+        "Low-risk update promotion includes tests plus exact base/candidate production artifact and runtime-performance deltas produced by one fixed candidate workload."
       ],
       "evidence": [
         ".github/dependabot.yml",
+        ".github/workflows/dependency-update-evidence.yml",
+        "runtime-performance-policy.json",
         "scripts/runtime-performance.ts",
-        "runtime-performance-policy.json"
+        "scripts/product-artifact-snapshot.ts",
+        "scripts/product-artifact-snapshot.spec.ts",
+        "scripts/dependency-update-evidence.ts",
+        "scripts/dependency-update-evidence.spec.ts",
+        "scripts/dependency-update-workflow.spec.ts"
       ]
     },
     {
@@ -253,25 +263,35 @@
       "priority": "P1",
       "area": "toolchain",
       "owner": "toolchain-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
         "TypeScript 7 migration is evaluated as a dedicated compiler epoch rather than a blind dependency bump.",
-        "Diagnostics, typecheck, build, artifact and runtime comparisons are recorded before promotion.",
-        "Obsolete TypeScript 5 compatibility glue is removed only after the migration proves equivalence or improvement."
+        "TypeScript 6 compatibility and programmatic-API ownership are proved before TypeScript 7 native CLI dual-run, diagnostics, typecheck, build, artifact and runtime comparisons are promoted.",
+        "Obsolete TypeScript 5/6 compatibility glue is removed only after the migration proves equivalence or improvement and a replacement native API is validated."
       ],
-      "evidence": []
+      "evidence": [
+        "typescript-7-epoch.json",
+        "scripts/check-typescript-7-epoch.ts",
+        "scripts/check-typescript-7-epoch.spec.ts",
+        "tsconfig.base.json"
+      ]
     },
     {
       "id": "DIRECT-DEPENDENCY-REVALIDATION",
       "priority": "P1",
       "area": "dependencies",
       "owner": "dependency-governance",
-      "status": "queued",
+      "status": "active",
       "acceptance": [
-        "Direct dependency versions are revalidated against current stable upstream releases and repository compatibility.",
-        "Playwright, esbuild, Biome, Turbo, Terser, darkreader, jose and pinyin-pro are explicitly reconciled."
+        "Direct dependency versions are revalidated against current stable upstream releases and repository compatibility without making online freshness a nondeterministic build gate.",
+        "Playwright, esbuild, Biome, Turbo, Terser, darkreader, jose, pinyin-pro and the TypeScript compiler epoch are explicitly reconciled against the exact current lock."
       ],
-      "evidence": []
+      "evidence": [
+        "dependency-revalidation.json",
+        "scripts/check-dependency-revalidation.ts",
+        "scripts/check-dependency-revalidation.spec.ts",
+        "bun.lock"
+      ]
     },
     {
       "id": "LOCK-DOMAIN-AUTHORITY",
@@ -306,7 +326,8 @@
         "scripts/check-workflow-actions.ts",
         "scripts/workflow-actions.spec.ts",
         "../.github/dependabot.yml",
-        "../.github/workflows/cross-platform.yml"
+        "../.github/workflows/cross-platform.yml",
+        "../.github/workflows/dependency-update-evidence.yml"
       ]
     },
     {
@@ -316,8 +337,8 @@
       "owner": "supply-chain",
       "status": "active",
       "acceptance": [
-        "Each release emits a machine-readable SBOM and third-party license inventory bound to the exact artifact.",
-        "Build provenance/attestation binds source, builder/tool identity and resulting artifact digest."
+        "Each release emits a machine-readable SBOM and third-party license inventory whose current workspace-installed-graph scope is stated explicitly rather than misrepresented as an artifact-retained closure.",
+        "Build provenance binds source, product build/manifest/policy inputs, builder/tool identity and resulting artifact digest; product-retained dependency closure remains a required refinement before artifactScoped may become true."
       ],
       "evidence": [
         "scripts/generate-sbom.ts",
@@ -359,12 +380,13 @@
       "owner": "diagnostics",
       "status": "active",
       "acceptance": [
-        "Users can explicitly export a redacted bounded diagnostic bundle without default remote telemetry or a new always-on diagnostic background owner.",
-        "Bundle includes version/browser/permission/runtime identity and bounded non-PII state while proving URL/title/token/storage values cannot leak."
+        "Users can explicitly export a redacted bounded diagnostic bundle without default remote telemetry, polling, continuous log capture or diagnostic storage.",
+        "SPECTRA Background exposes an extension-UI-only observation port whose collection does not create/reconcile offscreen authority; bundles include version/browser/permission/runtime scalar facts while proving URL/title/token/storage values cannot leak."
       ],
       "evidence": [
         "packages/nexus-kernel/src/diagnostics.ts",
         "scripts/diagnostics-contract.spec.ts",
+        "apps/extension-spectra/src/background/diagnostics.ts",
         "apps/extension-spectra/src/options/diagnostics.ts",
         "apps/extension-spectra/test/diagnostics-chrome.spec.ts",
         "apps/extension-halo/src/system/settings/panel.tsx",
@@ -378,13 +400,17 @@
       "owner": "ui-quality",
       "status": "active",
       "acceptance": [
-        "Critical Popup and SidePanel paths have automated keyboard, focus and accessible-name/state checks.",
-        "Zoom, reduced-motion and contrast-sensitive states have explicit acceptance evidence."
+        "Critical SPECTRA Popup/Options and HALO SidePanel paths have automated keyboard, focus and accessible-name/state checks.",
+        "Narrow reflow, dynamic reduced-motion, contrast-sensitive states and custom scroll ownership have explicit installed-browser evidence."
       ],
       "evidence": [
         "apps/extension-halo/public/sidepanel.html",
         "apps/extension-halo/test/sidepanel-accessibility-playwright.spec.ts",
-        "apps/extension-spectra/test/smoke.spec.ts"
+        "apps/extension-spectra/public/accessibility.css",
+        "apps/extension-spectra/src/shared/accessibility.ts",
+        "apps/extension-spectra/src/shared/smooth-scroll.ts",
+        "apps/extension-spectra/test/accessibility-contract.spec.ts",
+        "apps/extension-spectra/test/accessibility-chrome.spec.ts"
       ]
     },
     {
@@ -415,11 +441,13 @@
       "status": "active",
       "acceptance": [
         "Property or mutation testing is applied selectively to parsers, protocol guards and state machines where it finds failures ordinary examples miss.",
-        "No global vanity coverage percentage substitutes for risk-owned evidence."
+        "HALO release-admission fuzz properties and SPECTRA protocol structural mutations prove closed-world rejection without substituting a global vanity coverage percentage."
       ],
       "evidence": [
         "apps/extension-halo/test/release-admission-properties.spec.ts",
-        "scripts/registry-gen/release-admission.ts"
+        "scripts/registry-gen/release-admission.ts",
+        "apps/extension-spectra/test/protocol-mutation.spec.ts",
+        "packages/contracts/src/spectra.protocol.ts"
       ]
     },
     {
