@@ -102,7 +102,7 @@ export function checkVisualRegressionPolicy(
 	if (!verificationWorkflow.includes(expectedWorkflowInvocation)) {
 		throw new Error(`visual verification workflow does not execute ${expectedWorkflowInvocation}`);
 	}
-	for (const marker of ['NEXUS_CHROME_EXECUTABLE', 'NEXUS_EXPECTED_CHROME_VERSION', 'CHROME_FLOOR_SHA256']) {
+	for (const marker of ['browser-floor.ts github-env', 'NEXUS_CHROME_EXECUTABLE', 'CHROME_FLOOR_SHA256']) {
 		if (!verificationWorkflow.includes(marker)) {
 			throw new Error(`visual verification workflow is missing pinned-browser marker ${marker}`);
 		}
