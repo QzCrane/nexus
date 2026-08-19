@@ -1,9 +1,9 @@
-// goal: make visual regression evidence explicit, pinned and non-self-updating
+// goal: make visual regression evidence explicit, pinned, executable and non-self-updating
 // inv: baseline-required cannot claim visual success; enforced baselines are exact SHA-bound artifacts recorded only through pinned capture owners
 
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { basename, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -15,6 +15,7 @@ interface VisualState {
 	id: string;
 	product: 'halo' | 'spectra';
 	captureTest: string;
+	verifyScript: string;
 	updateScript: string;
 	packagePath: string;
 	baselinePath: string;
@@ -32,6 +33,11 @@ interface VisualPolicy {
 	phase: 'baseline-required' | 'enforced';
 	browserOwner: string;
 	comparison: 'exact-png-sha256';
+	verification: {
+		workspacePackagePath: string;
+		workspaceScript: string;
+		workflowPath: string;
+	};
 	states: VisualState[];
 }
 
@@ -50,6 +56,10 @@ function positiveInteger(value: unknown, label: string): number {
 	return Number(value);
 }
 
+function normalizeRelative(path: string): string {
+	return path.replaceAll('\\', '/');
+}
+
 export function checkVisualRegressionPolicy(
 	policy: VisualPolicy = readJson<VisualPolicy>(policyPath),
 ): void {
@@ -66,6 +76,38 @@ export function checkVisualRegressionPolicy(
 	if (!browserOwnerText.includes('chromeForTestingVersion') || !browserOwnerText.includes('sha256')) {
 		throw new Error('visual browser owner must pin Chrome-for-Testing version and digest');
 	}
+
+	if (!policy.verification
+		|| typeof policy.verification.workspacePackagePath !== 'string'
+		|| typeof policy.verification.workspaceScript !== 'string'
+		|| typeof policy.verification.workflowPath !== 'string') {
+		throw new Error('visual regression policy requires one explicit verification execution owner');
+	}
+	const workspacePackagePath = resolve(workspaceDir, policy.verification.workspacePackagePath);
+	const verificationWorkflowPath = resolve(workspaceDir, policy.verification.workflowPath);
+	if (!existsSync(workspacePackagePath)) {
+		throw new Error(`visual verification workspace package is missing: ${policy.verification.workspacePackagePath}`);
+	}
+	if (!existsSync(verificationWorkflowPath)) {
+		throw new Error(`visual verification workflow is missing: ${policy.verification.workflowPath}`);
+	}
+	const workspacePackage = readJson<{ scripts?: Record<string, string> }>(workspacePackagePath);
+	const workspaceVerificationCommand = workspacePackage.scripts?.[policy.verification.workspaceScript];
+	if (!workspaceVerificationCommand) {
+		throw new Error(`visual verification workspace script is missing: ${policy.verification.workspaceScript}`);
+	}
+	const verificationWorkflow = readFileSync(verificationWorkflowPath, 'utf8');
+	const workspaceName = basename(workspaceDir);
+	const expectedWorkflowInvocation = `bun --cwd ${workspaceName} run ${policy.verification.workspaceScript}`;
+	if (!verificationWorkflow.includes(expectedWorkflowInvocation)) {
+		throw new Error(`visual verification workflow does not execute ${expectedWorkflowInvocation}`);
+	}
+	for (const marker of ['NEXUS_CHROME_EXECUTABLE', 'NEXUS_EXPECTED_CHROME_VERSION', 'CHROME_FLOOR_SHA256']) {
+		if (!verificationWorkflow.includes(marker)) {
+			throw new Error(`visual verification workflow is missing pinned-browser marker ${marker}`);
+		}
+	}
+
 	if (!Array.isArray(policy.states) || policy.states.length === 0) {
 		throw new Error('visual regression policy has no critical states');
 	}
@@ -94,8 +136,27 @@ export function checkVisualRegressionPolicy(
 		if (!existsSync(packagePath)) throw new Error(`${state.id}: package owner is missing: ${state.packagePath}`);
 		const capture = readFileSync(capturePath, 'utf8');
 		const pkg = readJson<{ scripts?: Record<string, string> }>(packagePath);
+		const verifyCommand = pkg.scripts?.[state.verifyScript];
+		if (!verifyCommand) {
+			throw new Error(`${state.id}: package verification script ${state.verifyScript} is missing`);
+		}
 		if (!pkg.scripts?.[state.updateScript]) {
 			throw new Error(`${state.id}: package script ${state.updateScript} is missing`);
+		}
+		const captureName = basename(state.captureTest);
+		if (!verifyCommand.includes(captureName)) {
+			throw new Error(`${state.id}: verification script ${state.verifyScript} does not execute ${captureName}`);
+		}
+		if (verifyCommand.includes('NEXUS_UPDATE_VISUAL_BASELINE')) {
+			throw new Error(`${state.id}: verification script may not acquire baseline-update authority`);
+		}
+		const productDir = normalizeRelative(relative(workspaceDir, dirname(packagePath)));
+		const expectedWorkspaceDelegation = `--cwd ${productDir} ${state.verifyScript}`;
+		if (!workspaceVerificationCommand.includes(expectedWorkspaceDelegation)) {
+			throw new Error(`${state.id}: workspace visual verification does not delegate to ${productDir} ${state.verifyScript}`);
+		}
+		if (!capture.includes('verifyVisualRegressionCandidate')) {
+			throw new Error(`${state.id}: capture owner does not verify the candidate against visual-regression-policy.json`);
 		}
 		for (const marker of [
 			'NEXUS_UPDATE_VISUAL_BASELINE',
@@ -127,7 +188,9 @@ export function checkVisualRegressionPolicy(
 		}
 	}
 
-	console.log(`✓ Visual regression policy: phase=${policy.phase}; states=${policy.states.length}; comparison=${policy.comparison}`);
+	console.log(
+		`✓ Visual regression policy: phase=${policy.phase}; states=${policy.states.length}; comparison=${policy.comparison}; execution=${policy.verification.workspaceScript}`,
+	);
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
