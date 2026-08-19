@@ -58,6 +58,7 @@
 		"dependency-revalidation.json",
 		"direct-dependency-policy.json",
 		"feature-promotion.json",
+		"license-adjudication.json",
 		"package.json",
 		"runtime-performance-policy.json",
 		"typescript-7-epoch.json",
