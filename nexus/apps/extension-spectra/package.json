@@ -7,7 +7,7 @@
 	"scripts": {
 		"dev": "bun build.ts --watch --dev",
 		"build": "bun build.ts && bun scripts/check-lean-hotkey-artifact.ts",
-		"build:prod": "bun build.ts --analyze && bun ../../scripts/capture-retained-dependencies.ts spectra && bun scripts/check-lean-hotkey-artifact.ts",
+		"build:prod": "bun build.ts --analyze && bun ../../scripts/capture-retained-dependencies.ts spectra --keep-analysis && bun ../../scripts/artifact-provenance.ts spectra && bun scripts/check-lean-hotkey-artifact.ts",
 		"build:dev": "bun build.ts --dev",
 		"build:sourcemap": "bun build.ts --sourcemap",
 		"build:analyze": "bun build.ts --analyze",
