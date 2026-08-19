@@ -5,14 +5,17 @@ import { initNavigation } from './views/navigation';
 import { initSettings, type SettingsState } from './views/settings';
 import { initCard } from './card';
 import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
-import { enableSmoothScroll } from '../shared/smooth-scroll';
+import { disableSmoothScroll, enableSmoothScroll } from '../shared/smooth-scroll';
+import { installAccessibilityPolicy } from '../shared/accessibility';
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { installPopupOptionalPermissionAdmission } from './optional-permission-ui';
 import type { EqCurveDrawerFactory } from './card/types';
 
 // eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
 async function main(): Promise<void> {
+  await installAccessibilityPolicy();
   enableSmoothScroll();
+  window.addEventListener('pagehide', () => disableSmoothScroll(), { once: true });
   const disposeOptionalPermissionAdmission = installPopupOptionalPermissionAdmission();
   window.addEventListener('pagehide', disposeOptionalPermissionAdmission, { once: true });
 
