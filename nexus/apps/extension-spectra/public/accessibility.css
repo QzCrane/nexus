@@ -3,14 +3,20 @@
  * motion after the user requests reduced motion, regress readable muted text,
  * or force horizontal scrolling at narrow reflow widths. */
 
-/* Options' previous muted tokens were 3.34:1 in dark mode and ~2.5:1 in light
- * mode. These values remain >=4.5:1 against the Options surfaces where the
- * muted token is used, while Popup uses its independent --g2 palette. */
+/* Light-surface focus ring is >4.5:1 against white/f5 backgrounds. Dark mode
+ * switches to a lighter ring that remains >3:1 against the darkest and card
+ * surfaces. This does not depend on the focused element's own currentColor. */
 :root {
+  --spectra-focus-ring: #2563eb;
   --text-muted: #8f8f8f;
 }
 
+[data-theme="dark"] {
+  --spectra-focus-ring: #60a5fa;
+}
+
 [data-theme="light"] {
+  --spectra-focus-ring: #2563eb;
   --text-muted: #666666;
 }
 
@@ -23,7 +29,7 @@
   summary,
   [tabindex]:not([tabindex="-1"])
 ):focus-visible {
-  outline: 2px solid currentColor !important;
+  outline: 2px solid var(--spectra-focus-ring) !important;
   outline-offset: 2px !important;
 }
 
