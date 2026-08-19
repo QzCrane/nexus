@@ -172,11 +172,12 @@ describe('HALO release tooling', () => {
 			'bun check-release-source-graph.ts && bun build.ts --analyze && bun finalize-release-payload.ts',
 		);
 		expect(scripts['build:prod']).toBe(
-			'bun check-release-source-graph.ts && bun build.ts --analyze && bun ../../scripts/capture-retained-dependencies.ts halo --keep-analysis && bun finalize-release-payload.ts',
+			'bun check-release-source-graph.ts && bun build.ts --analyze && bun ../../scripts/capture-retained-dependencies.ts halo --keep-analysis && bun ../../scripts/artifact-provenance.ts halo --keep-analysis && bun finalize-release-payload.ts',
 		);
 		expect(scripts['build:dev']).toBe('bun build.ts --dev');
 		expect(scripts.dev).toContain('generate-tool-registry.ts');
 		expect(scripts['build:prod']).toContain('capture-retained-dependencies.ts halo --keep-analysis');
+		expect(scripts['build:prod']).toContain('artifact-provenance.ts halo --keep-analysis');
 		expect(build).toContain('const scriptBuildAnalyses = []');
 		expect(build).toContain('metafile: isAnalyze');
 		expect(build).toContain('inputs: detail.inputs');
