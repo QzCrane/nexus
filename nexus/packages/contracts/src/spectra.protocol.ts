@@ -467,7 +467,7 @@ export interface SpectraRequestMap {
 	};
 	'spectra.video.ab.clear': {
 		payload: Record<string, never>;
-		response: { cleared: boolean };
+		response: { cleared: true };
 	};
 	'spectra.video.ab.get': {
 		payload: Record<string, never>;
