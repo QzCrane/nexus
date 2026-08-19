@@ -26,6 +26,7 @@ const ZIP_UTF8_FLAG = 0x0800;
 
 export type ArtifactOriginKind =
 	| 'repository-static'
+	| 'transformed-static'
 	| 'generated-bundle'
 	| 'generated-metadata'
 	| 'repository-runtime-copy';
@@ -148,13 +149,24 @@ function repositoryRelative(path: string): string {
 	return relative(repositoryRoot, path).replaceAll('\\', '/');
 }
 
-function sourceOrigin(path: string, kind: ArtifactOriginKind): ArtifactOrigin {
+function sourceOrigin(path: string, kind: ArtifactOriginKind, owner = path): ArtifactOrigin {
 	if (!existsSync(path)) throw new Error(`artifact source owner is missing: ${path}`);
 	return {
 		kind,
-		owner: repositoryRelative(path),
+		owner: repositoryRelative(owner),
 		sourceSha256: sha256File(path),
 	};
+}
+
+function spectraStaticTransformOwner(relativePath: string): boolean {
+	return relativePath === 'manifest.json'
+		|| relativePath === 'popup.html'
+		|| relativePath === 'options.html'
+		|| relativePath === 'offscreen.html'
+		|| relativePath === 'popup.css'
+		|| relativePath === 'options.css'
+		|| /^_locales\/[^/]+\/messages\.json$/u.test(relativePath)
+		|| /^icons\/[^/]+\.png$/u.test(relativePath);
 }
 
 function haloRuntimeCopySource(projectDir: string, relativePath: string): string | null {
@@ -167,15 +179,24 @@ function resolveOrigin({
 	product,
 	projectDir,
 	relativePath,
+	artifactSha256,
 	buildOutputs,
 }: {
 	product: 'halo' | 'spectra';
 	projectDir: string;
 	relativePath: string;
+	artifactSha256: string;
 	buildOutputs: ReadonlyMap<string, string | null>;
 }): ArtifactOrigin {
 	const publicSource = resolve(projectDir, 'public', relativePath);
-	if (existsSync(publicSource)) return sourceOrigin(publicSource, 'repository-static');
+	if (existsSync(publicSource)) {
+		const sourceSha = sha256File(publicSource);
+		if (sourceSha === artifactSha256) return sourceOrigin(publicSource, 'repository-static');
+		if (product === 'spectra' && spectraStaticTransformOwner(relativePath)) {
+			return sourceOrigin(publicSource, 'transformed-static', resolve(projectDir, 'build.ts'));
+		}
+		throw new Error(`${product}: public release file changed without an explicit build transformer: ${relativePath}`);
+	}
 
 	const buildOwner = buildOutputs.get(relativePath);
 	if (buildOwner !== undefined) {
@@ -188,7 +209,12 @@ function resolveOrigin({
 
 	if (product === 'halo') {
 		const copied = haloRuntimeCopySource(projectDir, relativePath);
-		if (copied && existsSync(copied)) return sourceOrigin(copied, 'repository-runtime-copy');
+		if (copied && existsSync(copied)) {
+			if (sha256File(copied) !== artifactSha256) {
+				throw new Error(`halo: copied runtime asset changed without a transformer: ${relativePath}`);
+			}
+			return sourceOrigin(copied, 'repository-runtime-copy');
+		}
 	}
 
 	if (product === 'spectra' && /^i18n\/[A-Za-z0-9-]+\.json\.gz$/u.test(relativePath)) {
@@ -218,11 +244,12 @@ export function buildArtifactProvenance({
 	const files = walkFiles(distDir).flatMap((file): ArtifactFileEvidence[] => {
 		const relativePath = normalizePath(relative(distDir, file));
 		if (relativePath === TEMP_ANALYSIS) return [];
+		const artifactSha256 = sha256File(file);
 		return [{
 			path: relativePath,
-			sha256: sha256File(file),
+			sha256: artifactSha256,
 			bytes: statSync(file).size,
-			origin: resolveOrigin({ product, projectDir, relativePath, buildOutputs }),
+			origin: resolveOrigin({ product, projectDir, relativePath, artifactSha256, buildOutputs }),
 		}];
 	}).sort((left, right) => left.path.localeCompare(right.path));
 	if (files.length === 0) throw new Error(`${product}: dist has no release files`);
