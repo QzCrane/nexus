@@ -13,6 +13,7 @@ const workspaceDir = dirname(scriptDir);
 const repositoryRoot = dirname(workspaceDir);
 const supplyChainDir = resolve(repositoryRoot, 'artifacts/supply-chain');
 const defaultSbomPath = resolve(supplyChainDir, 'nexus.cdx.json');
+const defaultLicenseAdjudicationPath = resolve(workspaceDir, 'license-adjudication.json');
 
 interface CycloneDxComponent {
 	'bom-ref'?: unknown;
@@ -42,6 +43,20 @@ interface RetainedDependencyEvidence {
 	wholeArtifactScoped?: unknown;
 	analysisSha256?: unknown;
 	packages?: unknown;
+}
+
+interface LicenseAdjudicationEntry {
+	name?: unknown;
+	version?: unknown;
+	licenseExpression?: unknown;
+	source?: unknown;
+	reason?: unknown;
+}
+
+interface LicenseAdjudicationPolicy {
+	schemaVersion?: unknown;
+	policy?: unknown;
+	unknownLicenses?: unknown;
 }
 
 function sha256Buffer(value: Uint8Array | string): string {
@@ -129,12 +144,52 @@ function validateRetainedEvidence(
 	}
 }
 
+export function parseLicenseAdjudicationPolicy(value: LicenseAdjudicationPolicy) {
+	if (value.schemaVersion !== 1
+		|| typeof value.policy !== 'string' || value.policy.trim().length < 100
+		|| !Array.isArray(value.unknownLicenses)) {
+		throw new Error('license adjudication policy is malformed');
+	}
+	const entries = new Map<string, {
+		name: string;
+		version: string;
+		licenseExpression: string;
+		source: string;
+		reason: string;
+	}>();
+	for (const raw of value.unknownLicenses as LicenseAdjudicationEntry[]) {
+		if (typeof raw.name !== 'string' || !raw.name || raw.name.includes('*')
+			|| typeof raw.version !== 'string' || !/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/u.test(raw.version)
+			|| typeof raw.licenseExpression !== 'string' || !raw.licenseExpression.trim() || raw.licenseExpression === 'UNKNOWN'
+			|| typeof raw.source !== 'string' || !/^https:\/\//u.test(raw.source)
+			|| typeof raw.reason !== 'string' || raw.reason.trim().length < 40) {
+			throw new Error('license adjudication entries require exact name/version, license, HTTPS source, and rationale');
+		}
+		const key = packageKey(raw.name, raw.version);
+		if (entries.has(key)) throw new Error(`duplicate license adjudication for ${raw.name}@${raw.version}`);
+		entries.set(key, {
+			name: raw.name,
+			version: raw.version,
+			licenseExpression: raw.licenseExpression.trim(),
+			source: raw.source,
+			reason: raw.reason.trim(),
+		});
+	}
+	return entries;
+}
+
 export function buildProductLicenseInventory(
 	product: 'halo' | 'spectra',
 	sbom: CycloneDxDocument,
 	retained: RetainedDependencyEvidence,
+	adjudication: LicenseAdjudicationPolicy = {
+		schemaVersion: 1,
+		policy: 'Retained npm packages with missing machine-readable license metadata require exact reviewed adjudication before product release evidence may be emitted.',
+		unknownLicenses: [],
+	},
 ) {
 	validateRetainedEvidence(product, retained);
+	const adjudications = parseLicenseAdjudicationPolicy(adjudication);
 	const workspaceInventory = buildLicenseInventory(sbom);
 	const components = new Map<string, (typeof workspaceInventory.packages)[number]>();
 	for (const component of workspaceInventory.packages) {
@@ -168,17 +223,26 @@ export function buildProductLicenseInventory(
 				`${product}: retained package license drift for ${entry.name}@${entry.version}: build=${observedLicense}, sbom=${component.license}`,
 			);
 		}
+		const adjudicated = adjudications.get(key);
+		if (component.license !== 'UNKNOWN' && adjudicated) {
+			throw new Error(`${product}: license adjudication for ${entry.name}@${entry.version} is stale because SBOM metadata is now explicit`);
+		}
+		if (component.license === 'UNKNOWN' && !adjudicated) {
+			throw new Error(`${product}: retained package ${entry.name}@${entry.version} has UNKNOWN license and no exact adjudication`);
+		}
 		return {
 			name: entry.name,
 			version: entry.version,
-			license: component.license,
+			license: adjudicated?.licenseExpression ?? component.license,
+			licenseSource: adjudicated ? 'adjudication' as const : 'package-metadata' as const,
+			...(adjudicated ? { adjudicationSource: adjudicated.source } : {}),
 			bomRef: component.bomRef,
 			bytesInOutput: entry.bytesInOutput,
 		};
 	}).sort((left, right) => left.name.localeCompare(right.name) || left.version.localeCompare(right.version));
 
 	return {
-		schemaVersion: 3,
+		schemaVersion: 4,
 		scope: 'product-retained-npm-runtime' as const,
 		npmArtifactScoped: true as const,
 		wholeArtifactScoped: false as const,
@@ -238,6 +302,7 @@ function governanceInputs() {
 		'dependency-revalidation.json',
 		'direct-dependency-policy.json',
 		'feature-promotion.json',
+		'license-adjudication.json',
 		'runtime-performance-policy.json',
 		'typescript-7-epoch.json',
 		'visual-regression-policy.json',
@@ -253,6 +318,7 @@ export function generateReleaseSupplyChainEvidence({
 	artifactPath,
 	sbomPath = defaultSbomPath,
 	retainedPath = retainedEvidencePath(product),
+	licenseAdjudicationPath = defaultLicenseAdjudicationPath,
 	recordedAt = new Date().toISOString(),
 	identity,
 }: {
@@ -260,6 +326,7 @@ export function generateReleaseSupplyChainEvidence({
 	artifactPath: string;
 	sbomPath?: string;
 	retainedPath?: string;
+	licenseAdjudicationPath?: string;
 	recordedAt?: string;
 	identity?: { head: string; tree: string };
 }) {
@@ -269,9 +336,11 @@ export function generateReleaseSupplyChainEvidence({
 	if (!existsSync(retainedPath)) {
 		throw new Error(`${product}: retained runtime dependency evidence is missing; rebuild the exact production candidate`);
 	}
+	if (!existsSync(licenseAdjudicationPath)) throw new Error('license adjudication policy is missing');
 	const sbom = JSON.parse(readFileSync(sbomPath, 'utf8')) as CycloneDxDocument;
 	const retained = JSON.parse(readFileSync(retainedPath, 'utf8')) as RetainedDependencyEvidence;
-	const inventory = buildProductLicenseInventory(product, sbom, retained);
+	const adjudication = JSON.parse(readFileSync(licenseAdjudicationPath, 'utf8')) as LicenseAdjudicationPolicy;
+	const inventory = buildProductLicenseInventory(product, sbom, retained, adjudication);
 	const licensePath = `${artifact}.licenses.json`;
 	const provenancePath = `${artifact}.provenance.json`;
 	mkdirSync(dirname(licensePath), { recursive: true });
@@ -281,7 +350,7 @@ export function generateReleaseSupplyChainEvidence({
 		tree: git(['rev-parse', 'HEAD^{tree}']),
 	};
 	const provenance = {
-		schemaVersion: 3,
+		schemaVersion: 4,
 		recordedAt,
 		product,
 		head: gitIdentity.head,
@@ -316,11 +385,13 @@ export function generateReleaseSupplyChainEvidence({
 			npmArtifactScoped: inventory.npmArtifactScoped,
 			wholeArtifactScoped: inventory.wholeArtifactScoped,
 			packages: inventory.packages.length,
-			unknown: inventory.packages.filter((entry) => entry.license === 'UNKNOWN').length,
+			adjudicated: inventory.packages.filter((entry) => entry.licenseSource === 'adjudication').length,
+			unknown: 0,
 		},
 		inputs: {
 			workspaceLock: hashedInput(resolve(workspaceDir, 'bun.lock')),
 			repositoryLock: hashedInput(resolve(repositoryRoot, 'bun.lock')),
+			licenseAdjudication: hashedInput(licenseAdjudicationPath),
 			product: productInputs(product),
 			governance: governanceInputs(),
 		},
