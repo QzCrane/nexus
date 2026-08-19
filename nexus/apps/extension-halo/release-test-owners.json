@@ -1,11 +1,49 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "owners": {
-    "bilibili-enhancer": ["test/bilibili-enhancer-contract.spec.ts"],
-    "hover-zoom": ["test/hover-zoom-authority.spec.ts", "test/hover-zoom-lazy.spec.ts"],
-    "qrcode": ["test/context-menu-activation.spec.ts"],
-    "ruler": ["test/frame-tools-lazy.spec.ts"],
-    "smooth-scroll": ["test/smooth-scroll-keyboard-contract.spec.ts"],
-    "userscripts": ["test/user-scripts-readiness-races.spec.ts", "test/user-scripts-storage-authority.spec.ts"]
+    "bilibili-enhancer": [
+      {
+        "path": "test/bilibili-enhancer-contract.spec.ts",
+        "focusMarkers": ["../src/scripts/bilibili-enhancer/script.js", "observer = new MutationObserver("]
+      }
+    ],
+    "hover-zoom": [
+      {
+        "path": "test/hover-zoom-authority.spec.ts",
+        "focusMarkers": ["../src/tools/hover-zoom/logic/engine", "reconcileAntiHotlinkRules"]
+      },
+      {
+        "path": "test/hover-zoom-lazy.spec.ts",
+        "focusMarkers": ["src/content/hover-zoom-runtime-loader.ts", "tools/_hover-zoom/runtime.js"]
+      }
+    ],
+    "qrcode": [
+      {
+        "path": "test/context-menu-activation.spec.ts",
+        "focusMarkers": ["persistQrcodeActivation", "QRCODE_MODE_STORAGE_KEY"]
+      }
+    ],
+    "ruler": [
+      {
+        "path": "test/frame-tools-lazy.spec.ts",
+        "focusMarkers": ["FRAME_TOOL_RULER_START", "../src/entry/content-frame-tools.ts"]
+      }
+    ],
+    "smooth-scroll": [
+      {
+        "path": "test/smooth-scroll-keyboard-contract.spec.ts",
+        "focusMarkers": ["../src/content/smooth-scroll.ts", "reconcileInputOwnership()"]
+      }
+    ],
+    "userscripts": [
+      {
+        "path": "test/user-scripts-readiness-races.spec.ts",
+        "focusMarkers": ["../src/system/userscripts/registry", "ensureUserScriptsRuntimeReady"]
+      },
+      {
+        "path": "test/user-scripts-storage-authority.spec.ts",
+        "focusMarkers": ["../src/system/userscripts/storage-authority", "subscribeUserScriptsStorage"]
+      }
+    ]
   }
 }
