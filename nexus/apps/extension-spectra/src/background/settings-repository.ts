@@ -1,46 +1,68 @@
 // goal: the only writer for SPECTRA global and hotkey settings
 
 import {
-	DEFAULT_GLOBAL_SETTINGS,
-	DEFAULT_HOTKEY_SETTINGS,
 	DEFAULT_AUDIO_CONFIG,
-	HOTKEY_ACTIONS,
-	HOTKEY_ACTION_DESCRIPTORS,
-	isHotkeyParamsForAction,
+	compileEffectiveVolume,
 	isSpectraDefaultHotkeyKeyCombo,
 	isSlotHotkeyAction,
+	MAX_SETTINGS_SNAPSHOT_ENTRIES,
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
+	createSiteRouteFingerprint,
 	findBestHostnameMatch,
+	isMediaRouteEntry,
+	isMediaRouteSettings,
+	isAudioConfigPatch,
+	isFiniteControlValue,
 	normalizeHostname,
-	resolveAudioVolume,
+	selectMediaProcessingRoute,
 	type GlobalSettings,
 	type AudioConfig,
 	type AudioPresetValue,
-	type HotkeyAction,
 	type HotkeyBinding,
 	type HotkeySettings,
 	type HotkeySiteMutation,
 	type SettingsPatch,
 	type SettingsSnapshot,
+	type MediaRouteEntry,
+	type MediaRouteSettings,
+	type MediaProcessingRoute,
+	type MediaRouteDecision,
+	type DomainEntry,
+	type DomainSource,
+	type RegistryAddResult,
+	type RegistryQueryResult,
+	type RegistryRemoveResult,
+	type RegistrySnapshot,
 	type SiteHotkeyConfig,
-	type ThemeMode,
 } from '@nexus/contracts';
+import {
+	MAX_PAUSE_RETENTION_SECONDS,
+	choosePresetFallback,
+	isPresetRecord,
+	isRecord,
+	isSnapshotPresetName,
+	isSupportedLanguage,
+	isSupportedThemeMode,
+	mergeCanonicalAudioConfig,
+	normalizeGlobalSettings,
+	normalizeHotkeySettings,
+	normalizePresetState,
+	normalizeSiteSettings,
+	sanitizeSite,
+	snapshotAudioPatch,
+	syncDefaultPresetFlags,
+} from './settings-value-normalization';
 
 const GLOBAL_KEY = 'globalSettings';
 const HOTKEY_KEY = 'hotkeySettings';
 const SITE_SETTINGS_KEY = 'siteSettings';
 const GLOBAL_PRESETS_KEY = 'globalPresets';
 const DEFAULT_PRESET_KEY = 'defaultPresetId';
+const MEDIA_ROUTES_KEY = 'siteProcessingRoutes';
+const PAGE_SCALES_KEY = 'siteVolumeScales';
+const LEGACY_MEDIA_ROUTE_KEYS = ['mediaRouteRegistry', 'restrictedRegistry', 'userRegistry'] as const;
 const META_KEY = 'spectraSettingsMeta';
-const MAX_PAUSE_RETENTION_SECONDS = 86_400;
-const UNSUPPORTED_ACTIONS = new Set<HotkeyAction>(
-	HOTKEY_ACTIONS.filter((action) => HOTKEY_ACTION_DESCRIPTORS[action].availability === 'disabled-legacy'),
-);
-const HOTKEY_ACTION_SET = new Set<string>(HOTKEY_ACTIONS);
-const SUPPORTED_LANGUAGES = new Set<GlobalSettings['lang']>([
-	'en-US', 'zh-CN', 'zh-TW', 'ja-JP', 'ko-KR', 'es-ES', 'ru-RU', 'de-DE', 'fr-FR',
-]);
-const THEME_MODES = new Set<GlobalSettings['themeMode']>(['light', 'dark', 'system']);
+const SETTINGS_STORAGE_SCHEMA_VERSION = 3 as const;
 const MAX_SITE_HOTKEY_BINDINGS = 1000;
 // note: must include EVERY field sanitizeAudioPatch handles below. Missing `preservePitch`
 // here caused `audio-site` replace-mode saves to throw `Unknown audio setting: preservePitch`
@@ -50,15 +72,15 @@ const AUDIO_CONFIG_KEYS = new Set<keyof AudioConfig>([
 ]);
 
 interface SettingsMeta {
-	schemaVersion: typeof SPECTRA_SETTINGS_SCHEMA_VERSION;
+	schemaVersion: typeof SETTINGS_STORAGE_SCHEMA_VERSION;
 	revision: number;
 	migratedAt: number;
-	legacyThemeModeMissing?: boolean;
 }
 
 export interface SettingsStorageArea {
 	get(keys: string | string[]): Promise<Record<string, unknown>>;
 	set(items: Record<string, unknown>): Promise<void>;
+	remove?(keys: string | string[]): Promise<void>;
 }
 
 export class SettingsRevisionConflictError extends Error {
@@ -73,6 +95,86 @@ export class InvalidSettingsPatchError extends Error {
 		super(message);
 		this.name = 'InvalidSettingsPatchError';
 	}
+}
+
+export class SettingsCapacityError extends InvalidSettingsPatchError {
+	constructor(
+		readonly audioSiteCount: number,
+		readonly audioPresetCount: number,
+		readonly mediaRouteCount = 0,
+	) {
+		super(
+			`Settings snapshot entry limit exceeded: ${audioSiteCount + audioPresetCount + mediaRouteCount} `
+			+ `of ${MAX_SETTINGS_SNAPSHOT_ENTRIES}`,
+		);
+		this.name = 'SettingsCapacityError';
+	}
+}
+
+function normalizeMediaRoutes(candidate: unknown): MediaRouteSettings {
+	const routes: MediaRouteSettings = {};
+	const accept = (rawDomain: unknown, rawEntry: unknown, fallbackSource: 'user' | 'auto' = 'user') => {
+		if (typeof rawDomain !== 'string') return;
+		const domain = normalizeHostname(rawDomain);
+		if (!domain) return;
+		let entry: MediaRouteEntry | null = null;
+		if (isMediaRouteEntry(rawEntry)) {
+			entry = rawEntry;
+		} else if (isRecord(rawEntry)) {
+			const route = rawEntry.route === 'direct' || rawEntry.restricted === false ? 'direct'
+				: rawEntry.route === 'capture' || rawEntry.restricted === true ? 'capture' : null;
+			if (route) {
+				entry = {
+					route,
+					source: rawEntry.source === 'auto' ? 'auto' : fallbackSource,
+					updatedAt: Number.isSafeInteger(rawEntry.updatedAt)
+						? Number(rawEntry.updatedAt)
+						: Number.isSafeInteger(rawEntry.addedAt) ? Number(rawEntry.addedAt) : 0,
+				};
+			}
+		} else if (typeof rawEntry === 'string') {
+			entry = { route: 'capture', source: fallbackSource, updatedAt: 0 };
+		}
+		if (!entry) return;
+		const previous = routes[domain];
+		if (!previous
+			|| (entry.source === 'user' && previous.source !== 'user')
+			|| (entry.source === previous.source && entry.updatedAt >= previous.updatedAt)) {
+			routes[domain] = entry;
+		}
+	};
+
+	if (isMediaRouteSettings(candidate, MAX_SETTINGS_SNAPSHOT_ENTRIES)) {
+		for (const [domain, entry] of Object.entries(candidate)) accept(domain, entry);
+	} else if (Array.isArray(candidate)) {
+		for (const value of candidate) {
+			if (typeof value === 'string') accept(value, value);
+			else if (isRecord(value)) accept(value.domain, value, value.source === 'auto' ? 'auto' : 'user');
+		}
+	}
+	return routes;
+}
+
+function selectMediaRouteStorageValue(values: Record<string, unknown>): unknown {
+	if (Object.hasOwn(values, MEDIA_ROUTES_KEY)) return values[MEDIA_ROUTES_KEY];
+	for (const key of LEGACY_MEDIA_ROUTE_KEYS) {
+		if (Object.hasOwn(values, key)) return values[key];
+	}
+	return undefined;
+}
+
+function projectMediaRouteEntry(domain: string, entry: MediaRouteEntry): DomainEntry {
+	const fingerprint = createSiteRouteFingerprint(domain);
+	if (!fingerprint) throw new InvalidSettingsPatchError('Invalid media route hostname');
+	return { domain, fingerprint, ...entry };
+}
+
+function projectMediaRouteSnapshot(routes: MediaRouteSettings): RegistrySnapshot {
+	return {
+		entries: Object.entries(routes)
+			.map(([domain, entry]) => projectMediaRouteEntry(domain, entry))
+			.sort((left, right) => left.domain.localeCompare(right.domain)),
+	};
 }
 
 function requireSite(
@@ -151,300 +253,6 @@ function applyHotkeySiteMutation(
 	return { ...current, sites, disabledLegacyBindings };
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function cloneDefaultHotkeys(): HotkeySettings {
-	return {
-		slots: { ...DEFAULT_HOTKEY_SETTINGS.slots },
-		sites: {},
-		disabledLegacyBindings: [],
-	};
-}
-
-function normalizeGlobalSettings(raw: unknown, preferLegacyAliases: boolean): GlobalSettings {
-	const source = isRecord(raw) ? raw : {};
-	const legacyLanguage = source.language;
-	const langCandidate = preferLegacyAliases && typeof legacyLanguage === 'string'
-		? legacyLanguage
-		: source.lang;
-	const themeCandidate = source.themeMode ?? source.theme;
-	const pause = typeof source.pauseRetentionSeconds === 'number' && Number.isFinite(source.pauseRetentionSeconds)
-		? Math.round(source.pauseRetentionSeconds)
-		: DEFAULT_GLOBAL_SETTINGS.pauseRetentionSeconds;
-
-	return {
-		osdEnabled: typeof source.osdEnabled === 'boolean' ? source.osdEnabled : DEFAULT_GLOBAL_SETTINGS.osdEnabled,
-		visualizerEnabled: typeof source.visualizerEnabled === 'boolean'
-			? source.visualizerEnabled
-			: DEFAULT_GLOBAL_SETTINGS.visualizerEnabled,
-		lang: typeof langCandidate === 'string' && SUPPORTED_LANGUAGES.has(langCandidate as GlobalSettings['lang'])
-			? langCandidate as GlobalSettings['lang']
-			: DEFAULT_GLOBAL_SETTINGS.lang,
-		themeMode: typeof themeCandidate === 'string' && THEME_MODES.has(themeCandidate as GlobalSettings['themeMode'])
-			? themeCandidate as GlobalSettings['themeMode']
-			: DEFAULT_GLOBAL_SETTINGS.themeMode,
-		pauseRetentionSeconds: Math.max(0, Math.min(MAX_PAUSE_RETENTION_SECONDS, pause)),
-	};
-}
-
-function sanitizeBinding(value: unknown): HotkeyBinding | null {
-	if (!isRecord(value) || typeof value.id !== 'string' || value.id.length === 0 || value.id.length > 128) return null;
-	if (typeof value.enabled !== 'boolean' || typeof value.action !== 'string' || !HOTKEY_ACTION_SET.has(value.action)) return null;
-	if (!isRecord(value.key) || typeof value.key.code !== 'string' || !isRecord(value.key.modifiers)) return null;
-	const modifiers = value.key.modifiers;
-	if (typeof modifiers.ctrl !== 'boolean' || typeof modifiers.alt !== 'boolean'
-		|| typeof modifiers.shift !== 'boolean' || typeof modifiers.meta !== 'boolean') return null;
-
-	const binding: HotkeyBinding = {
-		id: value.id,
-		enabled: value.enabled,
-		key: {
-			code: value.key.code.slice(0, 64),
-			modifiers: {
-				ctrl: modifiers.ctrl,
-				alt: modifiers.alt,
-				shift: modifiers.shift,
-				meta: modifiers.meta,
-			},
-		},
-		action: value.action as HotkeyAction,
-	};
-	if (!isHotkeyParamsForAction(binding.action, value.params)) return null;
-	if (value.params) binding.params = { ...value.params };
-	if (isRecord(value.conditions)) binding.conditions = { ...value.conditions };
-	if (value.disabledReason === 'unsupported_action'
-		|| value.disabledReason === 'reserved_default_chord') {
-		binding.disabledReason = value.disabledReason;
-	}
-	return binding;
-}
-
-function upsertDisabledLegacyBinding(
-	disabledLegacy: HotkeyBinding[],
-	binding: HotkeyBinding,
-): 'inserted' | 'updated' | 'unchanged' {
-	const candidate = structuredClone(binding);
-	const index = disabledLegacy.findIndex(({ id }) => id === candidate.id);
-	if (index < 0) {
-		disabledLegacy.push(candidate);
-		return 'inserted';
-	}
-	if (JSON.stringify(disabledLegacy[index]) === JSON.stringify(candidate)) return 'unchanged';
-	disabledLegacy[index] = candidate;
-	return 'updated';
-}
-
-function canonicalizeBindingDisability(binding: HotkeyBinding): {
-	reason: HotkeyBinding['disabledReason'];
-	changed: boolean;
-} {
-	const previousEnabled = binding.enabled;
-	const previousReason = binding.disabledReason;
-	if (isSpectraDefaultHotkeyKeyCombo(binding.key)) {
-		binding.enabled = false;
-		binding.disabledReason = 'reserved_default_chord';
-		return {
-			reason: binding.disabledReason,
-			changed: previousEnabled !== binding.enabled || previousReason !== binding.disabledReason,
-		};
-	}
-	if (UNSUPPORTED_ACTIONS.has(binding.action) || binding.disabledReason === 'unsupported_action') {
-		binding.enabled = false;
-		binding.disabledReason = 'unsupported_action';
-		return {
-			reason: binding.disabledReason,
-			changed: previousEnabled !== binding.enabled || previousReason !== binding.disabledReason,
-		};
-	}
-	if (binding.disabledReason === 'reserved_default_chord') delete binding.disabledReason;
-	return {
-		reason: undefined,
-		changed: previousReason !== binding.disabledReason,
-	};
-}
-
-function sanitizeSite(
-	value: unknown,
-	disabledLegacy: HotkeyBinding[],
-	onRepair?: () => void,
-): SiteHotkeyConfig {
-	const source = isRecord(value) ? value : {};
-	const bindings = Array.isArray(source.bindings)
-		? source.bindings.map(sanitizeBinding).filter((binding): binding is HotkeyBinding => !!binding)
-		: [];
-	for (const binding of bindings) {
-		const result = canonicalizeBindingDisability(binding);
-		if (!result.reason) {
-			if (result.changed) onRepair?.();
-			continue;
-		}
-		const legacyResult = upsertDisabledLegacyBinding(disabledLegacy, binding);
-		if (result.changed || legacyResult !== 'unchanged') {
-			onRepair?.();
-		}
-	}
-	return { enabled: source.enabled === true, bindings };
-}
-
-// post: normalization collisions retain every distinct legacy binding instead of
-// allowing a differently-cased/trailing-dot domain key to replace the whole site.
-function mergeHotkeySites(left: SiteHotkeyConfig | undefined, right: SiteHotkeyConfig): SiteHotkeyConfig {
-	if (!left) return right;
-	const bindings = new Map(left.bindings.map((binding) => [binding.id, binding]));
-	for (const binding of right.bindings) bindings.set(binding.id, binding);
-	return {
-		enabled: left.enabled || right.enabled,
-		bindings: [...bindings.values()],
-	};
-}
-
-function normalizeHotkeySettings(raw: unknown): {
-	settings: HotkeySettings;
-	requiresPersistence: boolean;
-} {
-	const source = isRecord(raw) ? raw : {};
-	const normalized = cloneDefaultHotkeys();
-	let requiresPersistence = false;
-	if (isRecord(source.slots)) {
-		for (const [command, action] of Object.entries(source.slots)) {
-			if (isSlotHotkeyAction(action)) normalized.slots[command] = action;
-		}
-	}
-
-	const disabledLegacy: HotkeyBinding[] = [];
-	if (Array.isArray(source.disabledLegacyBindings)) {
-		for (const candidate of source.disabledLegacyBindings) {
-			const binding = sanitizeBinding(candidate);
-			if (!binding) continue;
-			const result = canonicalizeBindingDisability(binding);
-			if (!result.reason) {
-				if (result.changed) requiresPersistence = true;
-				continue;
-			}
-			const duplicate = disabledLegacy.some(({ id }) => id === binding.id);
-			const legacyResult = upsertDisabledLegacyBinding(disabledLegacy, binding);
-			if (duplicate || result.changed || legacyResult === 'updated') {
-				requiresPersistence = true;
-			}
-		}
-	}
-	if (isRecord(source.sites)) {
-		for (const [rawDomain, site] of Object.entries(source.sites)) {
-			const domain = normalizeHostname(rawDomain);
-			if (!domain) continue;
-			normalized.sites[domain] = mergeHotkeySites(
-				normalized.sites[domain],
-				sanitizeSite(site, disabledLegacy, () => {
-					requiresPersistence = true;
-				}),
-			);
-		}
-	}
-	normalized.disabledLegacyBindings = disabledLegacy;
-	return { settings: normalized, requiresPersistence };
-}
-
-function normalizeSiteSettings(raw: unknown): Record<string, unknown> | null {
-	if (!isRecord(raw)) return null;
-	const normalized: Record<string, unknown> = {};
-	for (const [rawDomain, value] of Object.entries(raw)) {
-		const domain = normalizeHostname(rawDomain) ?? rawDomain;
-		if (!isRecord(value)) {
-			normalized[domain] = value;
-			continue;
-		}
-		const delay = typeof value.delay === 'number' && Number.isFinite(value.delay)
-			? Math.max(0, Math.min(500, value.delay))
-			: value.delay;
-		normalized[domain] = {
-			...(isRecord(normalized[domain]) ? normalized[domain] : {}),
-			...value,
-			...(delay === undefined ? {} : { delay }),
-		};
-	}
-	return normalized;
-}
-
-function comparePresetNames(left: string, right: string): number {
-	return left < right ? -1 : left > right ? 1 : 0;
-}
-
-type PresetRecord = Record<string, unknown> & {
-	config: Record<string, unknown>;
-	meta: Record<string, unknown>;
-};
-
-function isPresetRecord(value: unknown): value is PresetRecord {
-	return isRecord(value) && isRecord(value.config) && isRecord(value.meta);
-}
-
-function choosePresetFallback(globalPresets: Record<string, unknown>): string | null {
-	return Object.keys(globalPresets)
-		.filter((name) => isPresetRecord(globalPresets[name]))
-		.sort(comparePresetNames)[0] ?? null;
-}
-
-function hasLegacyDefaultFlag(value: unknown): boolean {
-	if (!isRecord(value)) return false;
-	if (value.isDefault === true) return true;
-	return isRecord(value.meta) && value.meta.isDefault === true;
-}
-
-function syncDefaultPresetFlags(globalPresets: Record<string, unknown>, defaultPresetId: string | null): void {
-	for (const [name, entry] of Object.entries(globalPresets)) {
-		if (!isPresetRecord(entry)) continue;
-		globalPresets[name] = {
-			...entry,
-			meta: { ...entry.meta, isDefault: name === defaultPresetId },
-		};
-	}
-}
-
-function normalizePresetState(
-	rawPresets: unknown,
-	rawDefaultPresetId: unknown,
-	hasCanonicalDefault: boolean,
-): { globalPresets: Record<string, unknown>; defaultPresetId: string | null } {
-	const source = isRecord(rawPresets) ? rawPresets : {};
-	const globalPresets: Record<string, unknown> = {};
-	for (const [name, value] of Object.entries(source)) {
-		if (!isRecord(value)) {
-			globalPresets[name] = value;
-			continue;
-		}
-		const config = isRecord(value.config) ? value.config : null;
-		const delay = typeof config?.delay === 'number' && Number.isFinite(config.delay)
-			? Math.max(0, Math.min(500, config.delay))
-			: config?.delay;
-		globalPresets[name] = {
-			...value,
-			...(config ? { config: { ...config, ...(delay === undefined ? {} : { delay }) } } : {}),
-			...(isRecord(value.meta) ? { meta: { ...value.meta } } : {}),
-		};
-	}
-
-	let defaultPresetId: string | null = null;
-	if (hasCanonicalDefault) {
-		if (rawDefaultPresetId === null) {
-			defaultPresetId = null;
-		} else if (typeof rawDefaultPresetId === 'string' && isPresetRecord(globalPresets[rawDefaultPresetId])) {
-			defaultPresetId = rawDefaultPresetId;
-		} else {
-			defaultPresetId = Object.keys(globalPresets)
-				.filter((name) => isPresetRecord(globalPresets[name]) && hasLegacyDefaultFlag(globalPresets[name]))
-				.sort(comparePresetNames)[0] ?? null;
-		}
-	} else {
-		defaultPresetId = Object.keys(globalPresets)
-			.filter((name) => isPresetRecord(globalPresets[name]) && hasLegacyDefaultFlag(globalPresets[name]))
-			.sort(comparePresetNames)[0] ?? null;
-	}
-	syncDefaultPresetFlags(globalPresets, defaultPresetId);
-	return { globalPresets, defaultPresetId };
-}
-
 function sanitizeAudioPatch(value: Partial<AudioConfig>): Partial<AudioConfig> {
 	const patch: Partial<AudioConfig> = {};
 	for (const key of Object.keys(value)) {
@@ -459,37 +267,46 @@ function sanitizeAudioPatch(value: Partial<AudioConfig>): Partial<AudioConfig> {
 		}
 	}
 	if (value.volume !== undefined) {
-		if (!Number.isFinite(value.volume) || value.volume < 0 || value.volume > 800) {
+		if (!isFiniteControlValue(value.volume, 'volume')) {
 			throw new InvalidSettingsPatchError('volume must be between 0 and 800');
 		}
 		patch.volume = value.volume;
 	}
 	if (value.volumeBase !== undefined) {
-		if (!Number.isFinite(value.volumeBase) || value.volumeBase < 0 || value.volumeBase > 100) {
+		if (!isFiniteControlValue(value.volumeBase, 'volumeBase')) {
 			throw new InvalidSettingsPatchError('volumeBase must be between 0 and 100');
 		}
 		patch.volumeBase = value.volumeBase;
 	}
 	if (value.boost !== undefined) {
-		if (!Number.isFinite(value.boost) || value.boost < 1 || value.boost > 8) {
+		if (!isFiniteControlValue(value.boost, 'boost')) {
 			throw new InvalidSettingsPatchError('boost must be between 1 and 8');
 		}
 		patch.boost = value.boost;
 	}
+	if (value.volume !== undefined && (value.volumeBase !== undefined || value.boost !== undefined)) {
+		if (value.volumeBase === undefined
+			|| value.boost === undefined
+			|| value.volume !== compileEffectiveVolume(value.volumeBase, value.boost)) {
+			throw new InvalidSettingsPatchError(
+				'volume must equal the volumeBase and boost product when all coupled fields are supplied',
+			);
+		}
+	}
 	if (value.pan !== undefined) {
-		if (!Number.isFinite(value.pan) || value.pan < -1 || value.pan > 1) {
+		if (!isFiniteControlValue(value.pan, 'pan')) {
 			throw new InvalidSettingsPatchError('pan must be between -1 and 1');
 		}
 		patch.pan = value.pan;
 	}
 	if (value.delay !== undefined) {
-		if (!Number.isFinite(value.delay) || value.delay < 0 || value.delay > 500) {
+		if (!isFiniteControlValue(value.delay, 'delay')) {
 			throw new InvalidSettingsPatchError('delay must be between 0 and 500');
 		}
 		patch.delay = value.delay;
 	}
 	if (value.speed !== undefined) {
-		if (!Number.isFinite(value.speed) || value.speed < 0.1 || value.speed > 16) {
+		if (!isFiniteControlValue(value.speed, 'speed')) {
 			throw new InvalidSettingsPatchError('speed must be between 0.1 and 16');
 		}
 		patch.speed = value.speed;
@@ -501,99 +318,12 @@ function sanitizeAudioPatch(value: Partial<AudioConfig>): Partial<AudioConfig> {
 		patch.preservePitch = value.preservePitch;
 	}
 	if (value.eqValues !== undefined) {
-		if (value.eqValues.length !== 10 || value.eqValues.some((item) => !Number.isFinite(item) || item < -12 || item > 12)) {
+		if (value.eqValues.length !== 10 || value.eqValues.some((item) => !isFiniteControlValue(item, 'eqBand'))) {
 			throw new InvalidSettingsPatchError('eqValues must contain ten values between -12 and 12');
 		}
 		patch.eqValues = [...value.eqValues];
 	}
 	return patch;
-}
-
-function mergeCanonicalAudioConfig(
-	existing: Record<string, unknown>,
-	changes: Partial<AudioConfig>,
-	mode: 'merge' | 'replace',
-): Record<string, unknown> {
-	const base = mode === 'replace'
-		? { ...DEFAULT_AUDIO_CONFIG }
-		: { ...existing };
-	const combined = { ...base, ...changes };
-	if (changes.volume === undefined && changes.volumeBase === undefined && changes.boost === undefined) {
-		return combined;
-	}
-	const resolved = changes.volumeBase !== undefined || changes.boost !== undefined
-		? resolveAudioVolume({
-			volume: Number(combined.volume ?? DEFAULT_AUDIO_CONFIG.volume),
-			volumeBase: Number(combined.volumeBase ?? DEFAULT_AUDIO_CONFIG.volumeBase),
-			boost: Number(combined.boost ?? DEFAULT_AUDIO_CONFIG.boost),
-		})
-		: changes.volume !== undefined
-			? resolveAudioVolume({ volume: changes.volume })
-			: resolveAudioVolume({
-				volume: Number(combined.volume ?? DEFAULT_AUDIO_CONFIG.volume),
-				volumeBase: Number(combined.volumeBase ?? DEFAULT_AUDIO_CONFIG.volumeBase),
-				boost: Number(combined.boost ?? DEFAULT_AUDIO_CONFIG.boost),
-			});
-	return {
-		...combined,
-		volume: resolved.effectiveVolume,
-		volumeBase: resolved.volumeBase,
-		boost: resolved.boost,
-	};
-}
-
-function snapshotAudioPatch(value: unknown): Partial<AudioConfig> {
-	if (!isRecord(value)) return {};
-	const patch: Partial<AudioConfig> = {};
-	for (const key of ['enabled', 'muted', 'compressor', 'mono', 'bass', 'preservePitch'] as const) {
-		if (typeof value[key] === 'boolean') patch[key] = value[key];
-	}
-	if (typeof value.volume === 'number' && Number.isFinite(value.volume)
-		&& value.volume >= 0 && value.volume <= 800) patch.volume = value.volume;
-	if (typeof value.volumeBase === 'number' && Number.isFinite(value.volumeBase)
-		&& value.volumeBase >= 0 && value.volumeBase <= 100) patch.volumeBase = value.volumeBase;
-	if (typeof value.boost === 'number' && Number.isFinite(value.boost)
-		&& value.boost >= 1 && value.boost <= 8) patch.boost = value.boost;
-	if (patch.volumeBase === undefined && patch.boost === undefined && patch.volume !== undefined) {
-		const migrated = resolveAudioVolume({ volume: patch.volume });
-		patch.volumeBase = migrated.volumeBase;
-		patch.boost = migrated.boost;
-	} else if (patch.volumeBase !== undefined || patch.boost !== undefined) {
-		const canonical = resolveAudioVolume({
-			volume: patch.volume ?? 100,
-			volumeBase: patch.volumeBase,
-			boost: patch.boost,
-		});
-		patch.volumeBase = canonical.volumeBase;
-		patch.boost = canonical.boost;
-		patch.volume = canonical.effectiveVolume;
-	}
-	if (typeof value.pan === 'number' && Number.isFinite(value.pan)
-		&& value.pan >= -1 && value.pan <= 1) patch.pan = value.pan;
-	if (typeof value.delay === 'number' && Number.isFinite(value.delay)) {
-		patch.delay = Math.max(0, Math.min(500, value.delay));
-	}
-	if (typeof value.speed === 'number' && Number.isFinite(value.speed)
-		&& value.speed >= 0.1 && value.speed <= 16) patch.speed = value.speed;
-	if (Array.isArray(value.eqValues)
-		&& value.eqValues.length === 10
-		&& value.eqValues.every((item) => typeof item === 'number'
-			&& Number.isFinite(item) && item >= -12 && item <= 12)) {
-		patch.eqValues = [...value.eqValues];
-	}
-	return patch;
-}
-
-function isSnapshotPresetName(name: string): boolean {
-	return name.trim().length > 0
-		&& name.length <= 128
-		&& name !== '__proto__'
-		&& name !== 'constructor'
-		&& name !== 'prototype'
-		&& [...name].every((character) => {
-			const codePoint = character.codePointAt(0) ?? 0;
-			return codePoint > 31 && codePoint !== 127;
-		});
 }
 
 function createSettingsSnapshot(
@@ -615,14 +345,27 @@ function createSettingsSnapshot(
 	const audioPresets: Record<string, AudioPresetValue> = {};
 	if (isRecord(rawPresets)) {
 		for (const [name, value] of Object.entries(rawPresets)) {
-			if (!isSnapshotPresetName(name) || !isPresetRecord(value)) continue;
-			const createdAt = typeof value.meta.createdAt === 'number'
-				&& Number.isSafeInteger(value.meta.createdAt)
-				&& value.meta.createdAt >= 0
-				? value.meta.createdAt
+			if (!isSnapshotPresetName(name)) continue;
+			// Earliest preset builds stored a bare config without the meta wrapper.
+			// Wrap that audio-shaped record instead of silently dropping the user's
+			// saved preset; opaque unknown shapes stay excluded from the snapshot.
+			let entry: unknown = value;
+			if (isRecord(entry) && !isPresetRecord(entry)) {
+				const bareCandidate = isRecord(entry.config) ? entry.config : entry;
+				if (!isAudioConfigPatch(bareCandidate)) continue;
+				entry = {
+					config: bareCandidate,
+					meta: { type: 'global', name, createdAt: 0 },
+				};
+			}
+			if (!isPresetRecord(entry)) continue;
+			const createdAt = typeof entry.meta.createdAt === 'number'
+				&& Number.isSafeInteger(entry.meta.createdAt)
+				&& entry.meta.createdAt >= 0
+				? entry.meta.createdAt
 				: 0;
 			audioPresets[name] = {
-				config: snapshotAudioPatch(value.config),
+				config: snapshotAudioPatch(entry.config),
 				meta: {
 					type: 'global',
 					name,
@@ -636,6 +379,11 @@ function createSettingsSnapshot(
 		&& Object.hasOwn(audioPresets, rawDefaultPresetId)
 		? rawDefaultPresetId
 		: null;
+	const audioSiteCount = Object.keys(audioSites).length;
+	const audioPresetCount = Object.keys(audioPresets).length;
+	if (audioSiteCount + audioPresetCount > MAX_SETTINGS_SNAPSHOT_ENTRIES) {
+		throw new SettingsCapacityError(audioSiteCount, audioPresetCount);
+	}
 
 	return {
 		schemaVersion: SPECTRA_SETTINGS_SCHEMA_VERSION,
@@ -650,15 +398,15 @@ function createSettingsSnapshot(
 
 function parseMeta(raw: unknown): SettingsMeta | null {
 	if (!isRecord(raw)
-		|| raw.schemaVersion !== SPECTRA_SETTINGS_SCHEMA_VERSION
+		|| (raw.schemaVersion !== SETTINGS_STORAGE_SCHEMA_VERSION
+			&& raw.schemaVersion !== SPECTRA_SETTINGS_SCHEMA_VERSION)
 		|| typeof raw.revision !== 'number'
 		|| !Number.isInteger(raw.revision)
 		|| raw.revision < 0) return null;
 	return {
-		schemaVersion: SPECTRA_SETTINGS_SCHEMA_VERSION,
+		schemaVersion: SETTINGS_STORAGE_SCHEMA_VERSION,
 		revision: raw.revision,
 		migratedAt: typeof raw.migratedAt === 'number' ? raw.migratedAt : Date.now(),
-		legacyThemeModeMissing: raw.legacyThemeModeMissing === true,
 	};
 }
 
@@ -706,6 +454,165 @@ export class SettingsRepository {
 		});
 	}
 
+	resolveMediaRoute(hostname: string): Promise<MediaProcessingRoute | 'auto'> {
+		return this.serialized(async () => {
+			await this.readState();
+			return selectMediaProcessingRoute(hostname, await this.readMediaRoutes());
+		});
+	}
+
+	resolveMediaRouteDecision(hostname: string): Promise<MediaRouteDecision> {
+		return this.serialized(async () => {
+			await this.readState();
+			const normalized = normalizeHostname(hostname);
+			if (!normalized) return { mediaRoute: 'auto', source: null };
+			const match = findBestHostnameMatch(
+				normalized,
+				Object.entries(await this.readMediaRoutes()),
+				([domain]) => domain,
+			);
+			return match
+				? { mediaRoute: match[1].route, source: match[1].source }
+				: { mediaRoute: 'auto', source: null };
+		});
+	}
+
+	getMediaRouteSnapshot(): Promise<RegistrySnapshot> {
+		return this.serialized(async () => {
+			await this.readState();
+			return projectMediaRouteSnapshot(await this.readMediaRoutes());
+		});
+	}
+
+	getMediaRouteSettings(): Promise<MediaRouteSettings> {
+		return this.serialized(async () => {
+			await this.readState();
+			return { ...await this.readMediaRoutes() };
+		});
+	}
+
+	queryMediaRoute(domain: string): Promise<RegistryQueryResult> {
+		return this.serialized(async () => {
+			await this.readState();
+			const normalized = normalizeHostname(domain);
+			if (!normalized) throw new InvalidSettingsPatchError('Invalid media route hostname');
+			const routes = await this.readMediaRoutes();
+			const match = findBestHostnameMatch(
+				normalized,
+				Object.entries(routes),
+				([candidate]) => candidate,
+			);
+			return { entry: match ? projectMediaRouteEntry(match[0], match[1]) : null };
+		});
+	}
+
+	addMediaRoute(
+		domain: string,
+		source: DomainSource,
+		route: MediaProcessingRoute,
+		options: { force?: boolean } = {},
+	): Promise<RegistryAddResult> {
+		return this.serialized(async () => {
+			const current = await this.readState();
+			const normalized = normalizeHostname(domain);
+			if (!normalized) throw new InvalidSettingsPatchError('Invalid media route hostname');
+			const routes = await this.readMediaRoutes();
+			const existing = routes[normalized];
+			const created = existing === undefined;
+			if (!(source === 'auto' && existing?.source === 'user' && !options.force)) {
+				routes[normalized] = { route, source, updatedAt: Date.now() };
+				await this.persistMediaRoutes(routes, current.revision + 1);
+			}
+			const snapshot = projectMediaRouteSnapshot(routes);
+			const entry = snapshot.entries.find((candidate) => candidate.domain === normalized);
+			if (!entry) throw new Error('Media route mutation did not produce a canonical entry');
+			return { ...snapshot, entry, created };
+		});
+	}
+
+	markMediaRouteProbed(
+		domain: string,
+		route: MediaProcessingRoute,
+		options: { force?: boolean } = {},
+	): Promise<RegistryAddResult> {
+		return this.addMediaRoute(domain, 'auto', route, options);
+	}
+
+	removeMediaRoute(fingerprint: string): Promise<RegistryRemoveResult> {
+		return this.serialized(async () => {
+			const current = await this.readState();
+			const routes = await this.readMediaRoutes();
+			const domain = Object.keys(routes).find((candidate) => (
+				createSiteRouteFingerprint(candidate) === fingerprint
+			));
+			if (!domain) return { ...projectMediaRouteSnapshot(routes), removed: false };
+			delete routes[domain];
+			await this.persistMediaRoutes(routes, current.revision + 1);
+			return { ...projectMediaRouteSnapshot(routes), removed: true };
+		});
+	}
+
+	clearPageNativeScale(hostname: string): Promise<void> {
+		return this.serialized(async () => {
+			const normalized = normalizeHostname(hostname);
+			if (!normalized) throw new InvalidSettingsPatchError('Invalid page-scale hostname');
+			const scales = await this.readPageScales();
+			if (!Object.hasOwn(scales, normalized)) return;
+			delete scales[normalized];
+			await this.persistPageScales(scales);
+		});
+	}
+
+	getPageNativeScale(hostname: string): Promise<boolean | null> {
+		return this.serialized(async () => {
+			const normalized = normalizeHostname(hostname);
+			if (!normalized) return null;
+			const scales = await this.readPageScales();
+			return scales[normalized]?.supported ?? null;
+		});
+	}
+
+	recordPageNativeScale(hostname: string, supported: boolean): Promise<void> {
+		return this.serialized(async () => {
+			const normalized = normalizeHostname(hostname);
+			if (!normalized) throw new InvalidSettingsPatchError('Invalid page-scale hostname');
+			const scales = await this.readPageScales();
+			const existing = scales[normalized];
+			if (existing?.supported === supported) return;
+			scales[normalized] = { supported, updatedAt: Date.now() };
+			await this.persistPageScales(scales);
+		});
+	}
+
+	private async readPageScales(): Promise<Record<string, { supported: boolean; updatedAt: number }>> {
+		const result = await this.readValues([PAGE_SCALES_KEY]);
+		const scales: Record<string, { supported: boolean; updatedAt: number }> = {};
+		if (isRecord(result[PAGE_SCALES_KEY])) {
+			for (const [domain, value] of Object.entries(result[PAGE_SCALES_KEY])) {
+				const hostname = normalizeHostname(domain);
+				if (!hostname || !isRecord(value) || typeof value.supported !== 'boolean') continue;
+				scales[hostname] = {
+					supported: value.supported,
+					updatedAt: typeof value.updatedAt === 'number' && Number.isSafeInteger(value.updatedAt)
+						? value.updatedAt
+						: 0,
+				};
+			}
+		}
+		return scales;
+	}
+
+	private async persistPageScales(
+		scales: Record<string, { supported: boolean; updatedAt: number }>,
+	): Promise<void> {
+		if (Object.keys(scales).length > MAX_SETTINGS_SNAPSHOT_ENTRIES) {
+			throw new SettingsCapacityError(0, 0, Object.keys(scales).length);
+		}
+		// Advisory detection metadata, not a user setting: persisting it must not
+		// invalidate UI patches that carry an expected settings revision.
+		await this.local.set({ [PAGE_SCALES_KEY]: scales });
+	}
+
 	flush(): Promise<void> {
 		return this.serialized(async () => undefined);
 	}
@@ -716,16 +623,13 @@ export class SettingsRepository {
 			if (expectedRevision !== undefined && expectedRevision !== current.revision) {
 				throw new SettingsRevisionConflictError(current.revision);
 			}
-			if (patch.scope === 'legacy-theme') {
-				return this.consumeLegacyTheme(current, patch.candidate);
-			}
-
 			const result = await this.readValues([
 				GLOBAL_KEY,
 				HOTKEY_KEY,
 				SITE_SETTINGS_KEY,
 				GLOBAL_PRESETS_KEY,
 				DEFAULT_PRESET_KEY,
+				MEDIA_ROUTES_KEY,
 				META_KEY,
 			]);
 			const rawGlobal = isRecord(result[GLOBAL_KEY]) ? result[GLOBAL_KEY] : {};
@@ -737,6 +641,7 @@ export class SettingsRepository {
 				Object.hasOwn(result, DEFAULT_PRESET_KEY),
 			);
 			const globalPresets = presetState.globalPresets;
+			const mediaRoutes = normalizeMediaRoutes(result[MEDIA_ROUTES_KEY]);
 			let defaultPresetId = presetState.defaultPresetId;
 			let globalSettings = current.globalSettings;
 			let hotkeySettings = current.hotkeySettings;
@@ -754,19 +659,6 @@ export class SettingsRepository {
 						else throw new InvalidSettingsPatchError(`Unsupported hotkey action: ${action}`);
 					}
 					hotkeySettings = { ...hotkeySettings, slots };
-					break;
-				}
-				case 'hotkey-site': {
-					const domain = normalizeHostname(patch.domain);
-					if (!domain) throw new InvalidSettingsPatchError('Invalid site hostname');
-					const sites = { ...hotkeySettings.sites };
-					if (patch.value === null) delete sites[domain];
-					else {
-						const disabledLegacy = [...(hotkeySettings.disabledLegacyBindings ?? [])];
-						sites[domain] = sanitizeSite(patch.value, disabledLegacy);
-						hotkeySettings = { ...hotkeySettings, disabledLegacyBindings: disabledLegacy };
-					}
-					hotkeySettings = { ...hotkeySettings, sites };
 					break;
 				}
 				case 'hotkey-site-mutation': {
@@ -833,23 +725,11 @@ export class SettingsRepository {
 			const revision = current.revision + 1;
 			const previousMeta = parseMeta(result[META_KEY]);
 			const meta: SettingsMeta = {
-				schemaVersion: SPECTRA_SETTINGS_SCHEMA_VERSION,
+				schemaVersion: SETTINGS_STORAGE_SCHEMA_VERSION,
 				revision,
 				migratedAt: previousMeta?.migratedAt ?? Date.now(),
-				legacyThemeModeMissing: patch.scope === 'global'
-					&& patch.changes.themeMode !== undefined
-					? false
-					: previousMeta?.legacyThemeModeMissing,
 			};
-			await this.local.set({
-				[GLOBAL_KEY]: { ...rawGlobal, ...globalSettings },
-				[HOTKEY_KEY]: { ...rawHotkeys, ...hotkeySettings },
-				[SITE_SETTINGS_KEY]: siteSettings,
-				[GLOBAL_PRESETS_KEY]: globalPresets,
-				[DEFAULT_PRESET_KEY]: defaultPresetId,
-				[META_KEY]: meta,
-			});
-			return createSettingsSnapshot(
+			const nextSnapshot = createSettingsSnapshot(
 				revision,
 				globalSettings,
 				hotkeySettings,
@@ -857,40 +737,17 @@ export class SettingsRepository {
 				globalPresets,
 				defaultPresetId,
 			);
-		});
-	}
-
-	// post: atomically consumes the one-release legacy theme eligibility. A
-	// normal v2 theme patch always wins because it disables this path first.
-	private async consumeLegacyTheme(
-		current: SettingsSnapshot,
-		candidate: ThemeMode | null,
-	): Promise<SettingsSnapshot> {
-		if (candidate !== null && !THEME_MODES.has(candidate)) {
-			throw new InvalidSettingsPatchError('Unsupported legacy theme mode');
-		}
-		const result = await this.readValues([GLOBAL_KEY, META_KEY]);
-		const previousMeta = parseMeta(result[META_KEY]);
-		if (!previousMeta?.legacyThemeModeMissing) return current;
-		if (candidate === null) {
 			await this.local.set({
-				[META_KEY]: { ...previousMeta, legacyThemeModeMissing: false },
+				[GLOBAL_KEY]: { ...rawGlobal, ...globalSettings },
+				[HOTKEY_KEY]: { ...rawHotkeys, ...hotkeySettings },
+				[SITE_SETTINGS_KEY]: siteSettings,
+				[GLOBAL_PRESETS_KEY]: globalPresets,
+				[DEFAULT_PRESET_KEY]: defaultPresetId,
+				[MEDIA_ROUTES_KEY]: mediaRoutes,
+				[META_KEY]: meta,
 			});
-			return current;
-		}
-
-		const rawGlobal = isRecord(result[GLOBAL_KEY]) ? result[GLOBAL_KEY] : {};
-		const globalSettings = this.applyGlobalPatch(current.globalSettings, { themeMode: candidate });
-		const revision = current.revision + 1;
-		await this.local.set({
-			[GLOBAL_KEY]: { ...rawGlobal, ...globalSettings },
-			[META_KEY]: {
-				...previousMeta,
-				revision,
-				legacyThemeModeMissing: false,
-			},
+			return nextSnapshot;
 		});
-		return { ...current, revision, globalSettings };
 	}
 
 	private applyGlobalPatch(current: GlobalSettings, changes: Partial<GlobalSettings>): GlobalSettings {
@@ -904,11 +761,11 @@ export class SettingsRepository {
 			next.visualizerEnabled = changes.visualizerEnabled;
 		}
 		if (changes.lang !== undefined) {
-			if (!SUPPORTED_LANGUAGES.has(changes.lang)) throw new InvalidSettingsPatchError('Unsupported language');
+			if (!isSupportedLanguage(changes.lang)) throw new InvalidSettingsPatchError('Unsupported language');
 			next.lang = changes.lang;
 		}
 		if (changes.themeMode !== undefined) {
-			if (!THEME_MODES.has(changes.themeMode)) throw new InvalidSettingsPatchError('Unsupported theme mode');
+			if (!isSupportedThemeMode(changes.themeMode)) throw new InvalidSettingsPatchError('Unsupported theme mode');
 			next.themeMode = changes.themeMode;
 		}
 		if (changes.pauseRetentionSeconds !== undefined) {
@@ -927,10 +784,16 @@ export class SettingsRepository {
 			SITE_SETTINGS_KEY,
 			GLOBAL_PRESETS_KEY,
 			DEFAULT_PRESET_KEY,
+			MEDIA_ROUTES_KEY,
+			...LEGACY_MEDIA_ROUTE_KEYS,
 			META_KEY,
 		]);
 		let meta = parseMeta(result[META_KEY]);
-		const requiresMigration = meta === null;
+		const rawMeta = result[META_KEY];
+		const requiresMigration = meta === null
+			|| !isRecord(rawMeta)
+			|| rawMeta.schemaVersion !== SETTINGS_STORAGE_SCHEMA_VERSION
+			|| !Object.hasOwn(result, MEDIA_ROUTES_KEY);
 		const globalSettings = normalizeGlobalSettings(result[GLOBAL_KEY], requiresMigration);
 		const hotkeyNormalization = normalizeHotkeySettings(result[HOTKEY_KEY]);
 		const hotkeySettings = hotkeyNormalization.settings;
@@ -939,6 +802,15 @@ export class SettingsRepository {
 			result[GLOBAL_PRESETS_KEY],
 			result[DEFAULT_PRESET_KEY],
 			Object.hasOwn(result, DEFAULT_PRESET_KEY),
+		);
+		const normalizedMediaRoutes = normalizeMediaRoutes(selectMediaRouteStorageValue(result));
+		const snapshot = createSettingsSnapshot(
+			meta?.revision ?? 0,
+			globalSettings,
+			hotkeySettings,
+			normalizedSiteSettings,
+			normalizedPresets.globalPresets,
+			normalizedPresets.defaultPresetId,
 		);
 
 		if (requiresMigration) {
@@ -949,35 +821,38 @@ export class SettingsRepository {
 				[HOTKEY_KEY]: { ...rawHotkeys, ...hotkeySettings },
 				[GLOBAL_PRESETS_KEY]: normalizedPresets.globalPresets,
 				[DEFAULT_PRESET_KEY]: normalizedPresets.defaultPresetId,
+				[MEDIA_ROUTES_KEY]: normalizedMediaRoutes,
 			};
 			if (Object.keys(normalizedSiteSettings).length > 0) {
 				migratedValues[SITE_SETTINGS_KEY] = normalizedSiteSettings;
 			}
 
-			// Two-phase migration: persist and read back data before marking schema v2 complete.
+			// Two-phase migration: persist and read back data before marking the current schema complete.
 			await this.local.set(migratedValues);
 			const verified = await this.local.get([
 				GLOBAL_KEY,
 				HOTKEY_KEY,
 				GLOBAL_PRESETS_KEY,
 				DEFAULT_PRESET_KEY,
+				MEDIA_ROUTES_KEY,
 				...(Object.keys(normalizedSiteSettings).length > 0 ? [SITE_SETTINGS_KEY] : []),
 			]);
 			if (!isRecord(verified[GLOBAL_KEY]) || !isRecord(verified[HOTKEY_KEY])) {
 				throw new Error('Settings migration verification failed');
 			}
 			if (!isRecord(verified[GLOBAL_PRESETS_KEY])
+				|| !isMediaRouteSettings(verified[MEDIA_ROUTES_KEY], MAX_SETTINGS_SNAPSHOT_ENTRIES)
 				|| verified[DEFAULT_PRESET_KEY] !== normalizedPresets.defaultPresetId
 				|| (Object.keys(normalizedSiteSettings).length > 0 && !isRecord(verified[SITE_SETTINGS_KEY]))) {
 				throw new Error('Settings migration verification failed');
 			}
 			meta = {
-				schemaVersion: SPECTRA_SETTINGS_SCHEMA_VERSION,
-				revision: 0,
-				migratedAt: Date.now(),
-				legacyThemeModeMissing: !Object.hasOwn(rawGlobal, 'themeMode'),
+				schemaVersion: SETTINGS_STORAGE_SCHEMA_VERSION,
+				revision: snapshot.revision,
+				migratedAt: meta?.migratedAt ?? Date.now(),
 			};
 			await this.local.set({ [META_KEY]: meta });
+			await this.local.remove?.([...LEGACY_MEDIA_ROUTE_KEYS]);
 		} else if (hotkeyNormalization.requiresPersistence) {
 			const rawHotkeys = isRecord(result[HOTKEY_KEY]) ? result[HOTKEY_KEY] : {};
 			await this.local.set({
@@ -986,18 +861,54 @@ export class SettingsRepository {
 		}
 		if (!meta) throw new Error('Settings metadata was not initialized');
 
-		return createSettingsSnapshot(
-			meta.revision,
-			globalSettings,
-			hotkeySettings,
-			normalizedSiteSettings,
-			normalizedPresets.globalPresets,
-			normalizedPresets.defaultPresetId,
-		);
+		return snapshot;
 	}
 
 	private async readValues(keys: string[]): Promise<Record<string, unknown>> {
 		return this.local.get(keys);
+	}
+
+	private async readMediaRoutes(): Promise<MediaRouteSettings> {
+		const result = await this.readValues([MEDIA_ROUTES_KEY, ...LEGACY_MEDIA_ROUTE_KEYS]);
+		const primary = normalizeMediaRoutes(result[MEDIA_ROUTES_KEY]);
+		if (Object.keys(primary).length > 0 || !Object.hasOwn(result, MEDIA_ROUTES_KEY)) return primary;
+		// A pre-v3 profile whose one-shot schema migration ran before its route
+		// data existed would otherwise strand `mediaRouteRegistry` forever: the
+		// meta gate never reopens, and the primary-key selector ignores legacy
+		// values whenever the primary key exists. Re-adopt any legacy projection
+		// that still holds entries.
+		for (const key of LEGACY_MEDIA_ROUTE_KEYS) {
+			if (!Object.hasOwn(result, key)) continue;
+			const legacy = normalizeMediaRoutes(result[key]);
+			if (Object.keys(legacy).length === 0) continue;
+			await this.local.set({ [MEDIA_ROUTES_KEY]: legacy });
+			await this.local.remove?.([key]);
+			return legacy;
+		}
+		return primary;
+	}
+
+	private async persistMediaRoutes(routes: MediaRouteSettings, revision: number): Promise<void> {
+		const snapshot = await this.readState();
+		const routeCount = Object.keys(routes).length;
+		if (Object.keys(snapshot.audioSites).length + Object.keys(snapshot.audioPresets).length + routeCount
+			> MAX_SETTINGS_SNAPSHOT_ENTRIES) {
+			throw new SettingsCapacityError(
+				Object.keys(snapshot.audioSites).length,
+				Object.keys(snapshot.audioPresets).length,
+				routeCount,
+			);
+		}
+		const stored = await this.readValues([META_KEY]);
+		const previousMeta = parseMeta(stored[META_KEY]);
+		await this.local.set({
+			[MEDIA_ROUTES_KEY]: routes,
+			[META_KEY]: {
+				schemaVersion: SETTINGS_STORAGE_SCHEMA_VERSION,
+				revision,
+				migratedAt: previousMeta?.migratedAt ?? Date.now(),
+			} satisfies SettingsMeta,
+		});
 	}
 
 	private serialized<T>(operation: () => Promise<T>): Promise<T> {

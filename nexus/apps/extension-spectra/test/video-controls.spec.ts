@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { requireValue } from './helpers/require-value';
-import type { ControlFieldState, ControlSnapshot, MediaTarget, VideoFilterState } from '@nexus/contracts';
+import type { ControlFieldState, ControlFieldStates, ControlSnapshot, MediaTarget, VideoFilterState } from '@nexus/contracts';
 import {
 	bindVideoControls,
 	setVideoControlTabId,
@@ -26,14 +26,49 @@ class FakeInput {
 	}
 }
 
+class FakeButton {
+	readonly dataset: Record<string, string>;
+	title = '';
+	disabled = false;
+	onclick: (() => void) | null = null;
+	readonly attributes = new Map<string, string>();
+	private active = false;
+	readonly classList = {
+		contains: (name: string) => name === 'active' && this.active,
+		toggle: (name: string, force?: boolean) => {
+			if (name === 'active') this.active = force ?? !this.active;
+			return this.active;
+		},
+	};
+
+	constructor(action: string) {
+		this.dataset = { action };
+	}
+
+	matches(selector: string): boolean {
+		return selector === '[data-action]' && this.dataset.action !== undefined;
+	}
+
+	setAttribute(name: string, value: string): void {
+		this.attributes.set(name, value);
+	}
+}
+
 class FakePanel {
+	readonly buttons: FakeButton[];
 	readonly brightness = new FakeInput('100');
 	readonly contrast = new FakeInput('100');
 	readonly saturate = new FakeInput('100');
 	readonly grayscale = new FakeInput('', false);
 	readonly invert = new FakeInput('', false);
 
+	constructor(buttons: FakeButton[] = []) {
+		this.buttons = buttons;
+	}
+
 	querySelector<T>(selector: string): T | null {
+		const button = this.buttons.find((candidate) => selector === `.sp-btn[data-action="${candidate.dataset.action}"]`);
+		if (button) return button as unknown as T;
 		const input = new Map<string, FakeInput>([
 			['.sp-brightness', this.brightness],
 			['.sp-contrast', this.contrast],
@@ -44,7 +79,8 @@ class FakePanel {
 		return (input ?? null) as T | null;
 	}
 
-	querySelectorAll<T>(_selector: string): T[] {
+	querySelectorAll<T>(selector: string): T[] {
+		if (selector.includes('.sp-btn[data-action]')) return this.buttons as unknown as T[];
 		return [];
 	}
 }
@@ -201,6 +237,241 @@ describe('Popup video control transport', () => {
 		harness.resolveSnapshotRequest(1, snapshot);
 		await Promise.resolve();
 	});
+
+	test('rebinds only to a newer document generation and rejects delayed old-document events', async () => {
+		const panel = new FakePanel();
+		const harness = installHarness(panel);
+		const firstTarget: MediaTarget = {
+			frameId: 0,
+			documentId: 'document:first',
+			mediaId: 'media:first',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+		const secondTarget: MediaTarget = {
+			...firstTarget,
+			documentId: 'document:second',
+			mediaId: 'media:second',
+			sourceRevision: 2,
+		};
+		setVideoControlTabId(7);
+		bindVideoControls();
+		expect(syncVideoControlSnapshot({
+			tabId: 7,
+			documentId: firstTarget.documentId,
+			origin: 'https://media.example',
+			generation: 9,
+			revision: 20,
+			activeMedia: null,
+			activeVideo: firstTarget,
+			fields: {},
+		})).toBe('accepted');
+		expect(syncVideoControlSnapshot({
+			tabId: 7,
+			documentId: secondTarget.documentId,
+			origin: 'https://media.example',
+			generation: 10,
+			revision: 1,
+			activeMedia: null,
+			activeVideo: secondTarget,
+			fields: {},
+		})).toBe('accepted');
+		expect(syncVideoControlSnapshot({
+			tabId: 7,
+			documentId: firstTarget.documentId,
+			origin: 'https://media.example',
+			generation: 9,
+			revision: 99,
+			activeMedia: null,
+			activeVideo: firstTarget,
+			fields: {},
+		})).toBe('stale');
+		panel.brightness.value = '120';
+		panel.brightness.oninput?.();
+		harness.fireOnlyTimer();
+		await waitFor(() => harness.requests.length === 1);
+		expect(controlPayload(harness.requests[0]?.message)).toMatchObject({
+			target: secondTarget,
+			baseRevision: 1,
+		});
+		harness.resolveRequest(0, secondTarget, 2);
+		await waitFor(() => harness.timers.size === 0);
+	});
+
+	test('serializes filter and discrete writes through one tab transport tail', async () => {
+		const rotate = new FakeButton('rotate');
+		const panel = new FakePanel([rotate]);
+		const harness = installHarness(panel);
+		const target: MediaTarget = {
+			frameId: 0,
+			documentId: 'document:cross-lane',
+			mediaId: 'media:cross-lane',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+
+		setVideoControlTabId(7);
+		bindVideoControls();
+		syncVideoControlSnapshot(videoSnapshot(target, 4));
+		panel.brightness.value = '130';
+		panel.brightness.oninput?.();
+		harness.fireOnlyTimer();
+		await waitFor(() => harness.requests.length === 1);
+		rotate.onclick?.();
+		expect(harness.requests).toHaveLength(1);
+
+		harness.resolveRequest(0, target, 5);
+		await waitFor(() => harness.requests.length === 2);
+		expect(controlPayload(harness.requests[1]?.message).baseRevision).toBe(5);
+		harness.resolveMutationRequest(1, target, 6, 90);
+		await waitFor(() => harness.requests.length === 2);
+
+		rotate.onclick?.();
+		await waitFor(() => harness.requests.length === 3);
+		panel.brightness.value = '160';
+		panel.brightness.oninput?.();
+		harness.fireOnlyTimer();
+		expect(harness.requests).toHaveLength(3);
+		harness.resolveMutationRequest(2, target, 7, 180);
+		await waitFor(() => harness.requests.length === 4);
+		expect(controlPayload(harness.requests[3]?.message).baseRevision).toBe(7);
+		harness.resolveRequest(3, target, 8);
+		await waitFor(() => harness.timers.size === 0);
+	});
+
+	test('rebases a new same-tab panel session after an older action settles', async () => {
+		const rotate = new FakeButton('rotate');
+		const panel = new FakePanel([rotate]);
+		const harness = installHarness(panel);
+		const target: MediaTarget = {
+			frameId: 0,
+			documentId: 'document:reopen',
+			mediaId: 'media:reopen',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+		const initial = videoSnapshot(target, 4);
+
+		setVideoControlTabId(7);
+		bindVideoControls();
+		syncVideoControlSnapshot(initial);
+		rotate.onclick?.();
+		await waitFor(() => harness.requests.length === 1);
+
+		setVideoControlTabId(null);
+		setVideoControlTabId(7);
+		syncVideoControlSnapshot(initial);
+		rotate.onclick?.();
+		expect(harness.requests).toHaveLength(1);
+
+		harness.resolveMutationRequest(0, target, 5, 90);
+		await waitFor(() => harness.requests.length === 2);
+		const refresh = requireValue(harness.requests[1], 'Expected same-tab authority refresh');
+		expect((refresh.message as { type?: unknown }).type).toBe('spectra.control.snapshot.get');
+		harness.resolveSnapshotRequest(1, videoSnapshot(target, 5));
+		await waitFor(() => harness.requests.length === 3);
+		expect(controlPayload(harness.requests[2]?.message).baseRevision).toBe(5);
+		harness.resolveMutationRequest(2, target, 6, 180);
+		await waitFor(() => harness.requests.length === 3);
+		expect(harness.toasts).toHaveLength(0);
+	});
+
+	test('does not surface an in-flight action failure after the side panel switches tabs', async () => {
+		const rotate = new FakeButton('rotate');
+		const panel = new FakePanel([rotate]);
+		const harness = installHarness(panel);
+		const firstTarget: MediaTarget = {
+			frameId: 0,
+			documentId: 'document:first-action',
+			mediaId: 'media:first-action',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+		const secondTarget: MediaTarget = {
+			...firstTarget,
+			documentId: 'document:second-action',
+			mediaId: 'media:second-action',
+			sourceRevision: 2,
+		};
+
+		setVideoControlTabId(7);
+		bindVideoControls();
+		syncVideoControlSnapshot(videoSnapshot(firstTarget, 4));
+		rotate.onclick?.();
+		await waitFor(() => harness.requests.length === 1);
+
+		setVideoControlTabId(8);
+		syncVideoControlSnapshot(videoSnapshot(secondTarget, 1, 8));
+		harness.rejectRequest(0, 'The first tab video no longer exists');
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(harness.toasts).toHaveLength(0);
+		expect(harness.requests).toHaveLength(1);
+	});
+
+	test('serializes rapid discrete actions and uses the revision from each ACK', async () => {
+		const rotate = new FakeButton('rotate');
+		const panel = new FakePanel([rotate]);
+		const harness = installHarness(panel);
+		const target: MediaTarget = {
+			frameId: 0,
+			documentId: 'document:rapid-action',
+			mediaId: 'media:rapid-action',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+
+		setVideoControlTabId(7);
+		bindVideoControls();
+		syncVideoControlSnapshot(videoSnapshot(target, 4));
+		rotate.onclick?.();
+		rotate.onclick?.();
+		await waitFor(() => harness.requests.length === 1);
+		expect(controlPayload(harness.requests[0]?.message)).toMatchObject({
+			tabId: 7,
+			target,
+			baseRevision: 4,
+		});
+
+		harness.resolveMutationRequest(0, target, 5, 90);
+		await waitFor(() => harness.requests.length === 2);
+		expect(controlPayload(harness.requests[1]?.message)).toMatchObject({
+			tabId: 7,
+			target,
+			baseRevision: 5,
+		});
+		harness.resolveMutationRequest(1, target, 6, 180);
+		await waitFor(() => harness.requests.length === 2);
+	});
+
+	test('does not let an older ACK regress the revision used by the next action', async () => {
+		const rotate = new FakeButton('rotate');
+		const panel = new FakePanel([rotate]);
+		const harness = installHarness(panel);
+		const target: MediaTarget = {
+			frameId: 0,
+			documentId: 'document:late-ack',
+			mediaId: 'media:late-ack',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+
+		setVideoControlTabId(7);
+		bindVideoControls();
+		syncVideoControlSnapshot(videoSnapshot(target, 4));
+		rotate.onclick?.();
+		await waitFor(() => harness.requests.length === 1);
+		syncVideoControlSnapshot(videoSnapshot(target, 5));
+		harness.resolveMutationRequest(0, target, 4, 90);
+		await waitFor(() => harness.requests.length === 1);
+
+		rotate.onclick?.();
+		await waitFor(() => harness.requests.length === 2);
+		expect(controlPayload(harness.requests[1]?.message).baseRevision).toBe(5);
+		harness.resolveMutationRequest(1, target, 6, 180);
+		await waitFor(() => harness.requests.length === 2);
+	});
 });
 
 function installHarness(panel: FakePanel) {
@@ -281,6 +552,25 @@ function installHarness(panel: FakePanel) {
 				},
 			});
 		},
+		resolveMutationRequest(index: number, target: MediaTarget, revision: number, rotation: 0 | 90 | 180 | 270) {
+			const request = requests[index];
+			if (!request) throw new Error(`Missing request ${index}`);
+			const fields: ControlFieldStates = {
+				rotation: fieldState(rotation, revision, `rotation:${revision}`),
+			};
+			request.resolve({
+				ok: true,
+				data: {
+					intentId: `rotation:${revision}`,
+					tabId: 7,
+					documentId: target.documentId,
+					generation: 3,
+					revision,
+					target,
+					fields,
+				},
+			});
+		},
 		rejectRequest(index: number, message: string) {
 			const request = requests[index];
 			if (!request) throw new Error(`Missing request ${index}`);
@@ -308,6 +598,19 @@ function fieldState<T>(actual: T, revision: number, intentId: string): ControlFi
 		controlled: true,
 		intentId,
 		lastError: null,
+	};
+}
+
+function videoSnapshot(target: MediaTarget, revision: number, tabId = 7): ControlSnapshot {
+	return {
+		tabId,
+		documentId: target.documentId,
+		origin: 'https://media.example',
+		generation: 3,
+		revision,
+		activeMedia: target,
+		activeVideo: target,
+		fields: {},
 	};
 }
 

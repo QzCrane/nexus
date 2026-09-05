@@ -10,6 +10,7 @@ import {
 	type SpectraPageMediaResult,
 	type SpectraPageMediaValue,
 } from '../../shared/page-media-bridge';
+import { CONTROL_VALUE_LIMITS } from '@nexus/contracts';
 
 interface MainPageMediaWindow extends Window {
 	__SPECTRA_PAGE_MEDIA_BRIDGE_V2__?: true;
@@ -27,6 +28,8 @@ interface ControllerCandidate {
 }
 
 const pageMediaFields = new Set<string>(SPECTRA_PAGE_MEDIA_FIELDS);
+const VOLUME_LIMIT = CONTROL_VALUE_LIMITS.nativeVolume;
+const SPEED_LIMIT = CONTROL_VALUE_LIMITS.speed;
 const MAX_ANCESTOR_DEPTH = 12;
 const MAX_ATTACHED_PROPERTIES = 96;
 const MAX_PROTOTYPE_DEPTH = 8;
@@ -93,8 +96,8 @@ function playbackRatePropertyReader(target: object): (() => number) | null {
 	}
 	return () => finiteNumber(
 		Reflect.get(target, 'playbackRate'),
-		0.1,
-		16,
+		SPEED_LIMIT.min,
+		SPEED_LIMIT.max,
 		'Page playback rate',
 	);
 }
@@ -108,9 +111,9 @@ function capabilityFor(
 		const setVolume = boundMethod(controller, 'setVolume');
 		if (!getVolume || !setVolume) return null;
 		return {
-			read: () => finiteNumber(getVolume(), 0, 100, 'Page volume'),
+			read: () => finiteNumber(getVolume(), VOLUME_LIMIT.min, VOLUME_LIMIT.max, 'Page volume'),
 			write: (value) => {
-				setVolume(finiteNumber(value, 0, 100, 'Requested volume'));
+				setVolume(finiteNumber(value, VOLUME_LIMIT.min, VOLUME_LIMIT.max, 'Requested volume'));
 			},
 		};
 	}
@@ -146,7 +149,7 @@ function capabilityFor(
 	}
 	const getPlaybackRate = boundMethod(controller, 'getPlaybackRate');
 	const readPlaybackRate = getPlaybackRate
-		? () => finiteNumber(getPlaybackRate(), 0.1, 16, 'Page playback rate')
+		? () => finiteNumber(getPlaybackRate(), SPEED_LIMIT.min, SPEED_LIMIT.max, 'Page playback rate')
 		: playbackRatePropertyReader(controller);
 	const setPlaybackRate = boundMethod(controller, 'setPlaybackRate')
 		?? boundMethod(controller, 'setPlaybackRateByUser')
@@ -155,14 +158,19 @@ function capabilityFor(
 		return {
 			read: readPlaybackRate,
 			write: (value) => {
-				setPlaybackRate(finiteNumber(value, 0.1, 16, 'Requested playback rate'));
+				setPlaybackRate(finiteNumber(value, SPEED_LIMIT.min, SPEED_LIMIT.max, 'Requested playback rate'));
 			},
 		};
 	}
 	const accessor = accessorCapability(controller, 'playbackRate');
 	return accessor && !(controller instanceof HTMLMediaElement) ? {
-		read: () => finiteNumber(accessor.read(), 0.1, 16, 'Page playback rate'),
-		write: (value) => accessor.write(finiteNumber(value, 0.1, 16, 'Requested playback rate')),
+		read: () => finiteNumber(accessor.read(), SPEED_LIMIT.min, SPEED_LIMIT.max, 'Page playback rate'),
+		write: (value) => accessor.write(finiteNumber(
+			value,
+			SPEED_LIMIT.min,
+			SPEED_LIMIT.max,
+			'Requested playback rate',
+		)),
 	} : null;
 }
 
@@ -238,10 +246,10 @@ function decodeRequest(element: HTMLMediaElement): SpectraPageMediaRequest | nul
 	try {
 		const request = JSON.parse(encoded) as Partial<SpectraPageMediaRequest>;
 		if (typeof request.requestId !== 'string' || request.requestId.length === 0
-			|| (request.operation !== 'read' && request.operation !== 'write')
+			|| (request.operation !== 'read' && request.operation !== 'write' && request.operation !== 'probe')
 			|| typeof request.field !== 'string' || !pageMediaFields.has(request.field)) return null;
-		if (request.operation === 'read') {
-			return { requestId: request.requestId, operation: 'read', field: request.field as SpectraPageMediaField };
+		if (request.operation !== 'write') {
+			return { requestId: request.requestId, operation: request.operation, field: request.field as SpectraPageMediaField };
 		}
 		const valueValid = request.field === 'mediaMuted'
 			? typeof request.value === 'boolean'
@@ -263,6 +271,20 @@ function onPageMediaRequest(event: Event): void {
 	if (!(element instanceof HTMLMediaElement)) return;
 	const request = decodeRequest(element);
 	if (!request) return;
+	// A probe is pure capability discovery: no read, no write, no page-visible
+	// side effect. Page-entry solidification uses it to record, per site, whether
+	// an amplified page volume controller exists.
+	if (request.operation === 'probe') {
+		const supported = findCapability(element, request.field) !== null;
+		const probeResult: SpectraPageMediaResult = {
+			requestId: request.requestId,
+			field: request.field,
+			supported,
+			actual: null,
+		};
+		element.setAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE, JSON.stringify(probeResult));
+		return;
+	}
 	const capability = findCapability(element, request.field);
 	if (!capability) {
 		const unsupported: SpectraPageMediaResult = {

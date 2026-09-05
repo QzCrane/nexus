@@ -14,11 +14,8 @@ import type {
 import {
 	DEFAULT_HOTKEY_SETTINGS,
 	SPECTRA_PROTOCOL_VERSION,
-	isSpectraRequestEnvelope,
 	isSlotHotkeyAction,
 	resolveSpectraHotkeyActualFeedback,
-	rpcFailure,
-	rpcSuccess,
 } from '@nexus/contracts';
 import { swLog } from '../shared/logger';
 import { settingsRepository } from './settings-repository';
@@ -29,6 +26,7 @@ import {
 	type ExtensionInvocationContext,
 } from './control-coordinator';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from './background-rpc';
 
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
 const BUILTIN_CHROME_COMMAND_ACTIONS = {
@@ -200,7 +198,7 @@ export function setupShortcutListeners(): void {
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| candidate.type !== 'spectra.content.default-hotkey.trigger') return false;
-		if (!isSpectraRequestEnvelope(message)
+		if (!isBackgroundRequestEnvelope(message)
 			|| message.type !== 'spectra.content.default-hotkey.trigger') {
 			sendResponse(rpcFailure('invalid_request', 'Malformed default hotkey trigger'));
 			return false;
@@ -426,18 +424,18 @@ async function notifyShortcutFeedback(
 	feedback?: SpectraHotkeyActualFeedback,
 	gesture?: string,
 	expectedDocumentId?: string,
+	runtimePort: ShortcutRuntimePort = shortcutRuntimePort,
 ): Promise<void> {
 	if (active.id === undefined || target.id === undefined) return;
-	const capability = 'hotkey-actual-feedback';
+	const capability = `feedback:${crypto.randomUUID()}`;
 	let documentId: string | null = null;
 	try {
 		const initialFrame = await chrome.webNavigation.getFrame({ tabId: active.id, frameId: 0 });
 		if (!initialFrame?.documentId
 			|| expectedDocumentId && initialFrame.documentId !== expectedDocumentId) return;
-		const ready = await ensureContentRuntime(
+		const ready = await runtimePort.ensure(
 			active.id,
 			expectedDocumentId ?? initialFrame.documentId,
-			'hotkey',
 			capability,
 		);
 		documentId = ready.documentId;
@@ -461,7 +459,7 @@ async function notifyShortcutFeedback(
 	} catch (error) {
 		swLog.debug(`Shortcut feedback was unavailable: ${error instanceof Error ? error.message : String(error)}`);
 	} finally {
-		if (documentId) releaseContentRuntimeLease(active.id, documentId, 'hotkey', capability);
+		if (documentId) runtimePort.release(active.id, documentId, capability);
 	}
 }
 
@@ -584,4 +582,5 @@ export const shortcutTestApi = {
 	defaultHotkeySenderIdentity,
 	runDefaultPageHotkey,
 	runSitePageHotkey,
+	notifyShortcutFeedback,
 };

@@ -319,4 +319,49 @@ describe('document-bound acknowledged control sessions', () => {
 			portablePatch: {},
 		});
 	});
+
+	test('migrates a legacy AudioConfig missing the volume pair before strict validation', async () => {
+		const legacyConfig: Record<string, unknown> = { ...DEFAULT_AUDIO_CONFIG };
+		Reflect.deleteProperty(legacyConfig, 'volumeBase');
+		Reflect.deleteProperty(legacyConfig, 'boost');
+		const storedLegacyConfig = {
+			...legacyConfig,
+			volume: 275,
+			muted: true,
+			speed: 1.8,
+		};
+		values.tab_session_7 = {
+			identity: firstDocument,
+			config: storedLegacyConfig,
+			updatedAt: 456,
+		};
+
+		const migrated = await getTabControlSession(7, firstDocument);
+		expect(migrated).toMatchObject({
+			volumeBase: 100,
+			boost: 2.75,
+			mediaMuted: true,
+			speed: 1.8,
+		});
+		expect(values.tab_session_7).toMatchObject({
+			version: 3,
+			patch: { volumeBase: 100, boost: 2.75, mediaMuted: true, speed: 1.8 },
+			portablePatch: {},
+		});
+	});
+
+	test('clears a malformed legacy AudioConfig instead of bypassing strict validation', async () => {
+		const malformedConfig: Record<string, unknown> = { ...DEFAULT_AUDIO_CONFIG };
+		Reflect.deleteProperty(malformedConfig, 'volumeBase');
+		Reflect.deleteProperty(malformedConfig, 'boost');
+		Reflect.deleteProperty(malformedConfig, 'preservePitch');
+		values.tab_session_7 = {
+			identity: firstDocument,
+			config: malformedConfig,
+			updatedAt: 789,
+		};
+
+		expect(await getTabControlSession(7, firstDocument)).toBeNull();
+		expect(values.tab_session_7).toBeUndefined();
+	});
 });

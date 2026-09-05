@@ -2,12 +2,19 @@
 // features: apply preset, global vs site-specific, search/filter, set as default, preview config
 
 import type { AudioConfig } from '@nexus/kernel';
-import { resolveAudioVolume } from '@nexus/contracts';
-import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import type { I18NDict } from '../types';
-import { getSettingsSnapshot, patchSettings } from '../../shared/settings-client';
+import {
+	getSettingsSnapshot,
+	patchSettings,
+	subscribeSettingsSnapshots,
+} from '../../shared/settings-client';
 import { handleDialogKeydown } from '../utils/dialog';
 import { showPopupToast } from '../toast';
+import {
+	getPresetApplyTarget,
+	subscribePresetTargetChanges,
+	type PresetApplyTarget,
+} from './preset-target';
 
 // perf: preset types for global vs site-specific
 export type PresetType = 'site' | 'global';
@@ -31,46 +38,57 @@ let clearBtn: HTMLButtonElement | null = null;
 let searchInput: HTMLInputElement | null = null;
 let currentDict: I18NDict;
 let currentDomain: string = '';
-let onApplyPreset: ((config: Partial<AudioConfig>) => void) | null = null;
 let closeActivePreview: ((restoreFocus?: boolean) => void) | null = null;
 let latestRefreshRevision = 0;
+let unsubscribeSettings: (() => void) | null = null;
 
-// eff: initializes the presets UI with search, filters, and action handlers
-// note: domain and applyHandler are optional - when not provided, preset application is disabled
-export function initPresetsUI(
-	dict: I18NDict,
-	domain?: string,
-	applyHandler?: (config: Partial<AudioConfig>) => void
-): void {
+let unsubscribeTargetChanges: (() => void) | null = null;
+
+function readPresetApplyTarget(): PresetApplyTarget | null {
+	const target = getPresetApplyTarget();
+	if (target) currentDomain = target.domain;
+	return target;
+}
+
+function presentPresetFailure(error: unknown): void {
+	showPopupToast(error instanceof Error ? error.message : String(error), 'error');
+}
+
+// eff: initializes the presets UI with search, filters, and action handlers.
+// Preset application is intentionally target-driven: the active card registers
+// the live tab identity and its acknowledged update/rollback pipeline after the
+// Popup has initialized. There is no fallback callback that could apply a
+// preset to an ambiguous or stale tab.
+export function initPresetsUI(dict: I18NDict): void {
+	disposePresetsUI();
 	currentDict = dict;
 	listEl = document.getElementById('presets-list');
 	emptyEl = document.getElementById('presets-empty');
 	clearBtn = document.getElementById('btn-clear-presets') as HTMLButtonElement | null;
 	searchInput = document.getElementById('preset-search') as HTMLInputElement | null;
 
-	currentDomain = domain || '';
-	onApplyPreset = applyHandler || null;
+	currentDomain = '';
 
 	if (clearBtn) clearBtn.onclick = handleClearAll;
 	if (searchInput) {
-		searchInput.oninput = () => { void refreshPresetsList(); };
+		searchInput.oninput = () => { void refreshPresetsList().catch(presentPresetFailure); };
 		searchInput.placeholder = currentDict.presetSearchPlaceholder;
 	}
+	unsubscribeTargetChanges = subscribePresetTargetChanges(() => {
+		void refreshPresetsList().catch(presentPresetFailure);
+	});
 
 
 	// eff: refresh only from the background repository's validated snapshot event
-	chrome.runtime.onMessage.addListener((message: unknown) => {
-		if (isSpectraUiEventEnvelope(message) && message.type === 'spectra.settings.changed') {
-			void refreshPresetsList();
-		}
-		return false;
+	unsubscribeSettings = subscribeSettingsSnapshots(() => {
+		void refreshPresetsList().catch(presentPresetFailure);
 	});
 
-	void refreshPresetsList();
+	void refreshPresetsList().catch(presentPresetFailure);
 }
 
 // eff: refreshes the preset list with search filtering
-async function refreshPresetsList(): Promise<void> {
+export async function refreshPresetsList(): Promise<void> {
 	if (!listEl || !emptyEl) return;
 	const list = listEl;
 	const empty = emptyEl;
@@ -188,9 +206,13 @@ function createPresetItem(
 	applyBtn.textContent = '✓';
 	applyBtn.title = currentDict.presetApplyTooltip;
 	applyBtn.setAttribute('aria-label', currentDict.presetApplyTooltip);
+	const target = readPresetApplyTarget();
+	const canApply = target !== null && (type === 'global' || target.domain === id);
+	applyBtn.disabled = !canApply;
+	applyBtn.setAttribute('aria-disabled', String(!canApply));
 	applyBtn.onclick = (e) => {
 		e.stopPropagation();
-		handleApplyPreset(id, type, config);
+		void handleApplyPreset(id, type, config);
 	};
 
 	// preview button
@@ -249,16 +271,11 @@ function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 	// and read like a multiplier (e.g. "100% × 2.0") rather than the
 	// one-control value the popup slider exposes (e.g. "200%").
 	if (config.volume !== undefined) {
-		const volume = resolveAudioVolume({
-			volume: config.volume,
-			volumeBase: config.volumeBase,
-			boost: config.boost,
-		});
 		const volSpan = document.createElement('span');
 		volSpan.className = 'vol-highlight';
-		const display = Number.isInteger(volume.effectiveVolume)
-			? String(volume.effectiveVolume)
-			: volume.effectiveVolume.toFixed(1).replace(/\.0$/u, '');
+		const display = Number.isInteger(config.volume)
+			? String(config.volume)
+			: config.volume.toFixed(1).replace(/\.0$/u, '');
 		volSpan.textContent = `${display}%`;
 		fragment.appendChild(volSpan);
 	}
@@ -305,17 +322,37 @@ function createSummaryNodes(config: Partial<AudioConfig>): DocumentFragment {
 
 // eff: applies preset config to current site
 async function handleApplyPreset(id: string, type: PresetType, config: Partial<AudioConfig>): Promise<void> {
-	if (onApplyPreset) {
-		onApplyPreset(config);
+	const target = readPresetApplyTarget();
+	const domain = target?.domain || currentDomain;
+	if (!target) {
+		showPopupToast(currentDict.presetNoTarget, 'error');
+		return;
+	}
+	if (type === 'site' && target && target.domain !== id) {
+		showPopupToast(currentDict.presetNoTarget, 'error');
+		return;
 	}
 
-	// eff: if global preset applied, also save to current site
-	if (type === 'global' && currentDomain) {
-		await patchSettings({ scope: 'audio-site', domain: currentDomain, value: config, mode: 'replace' });
-	}
+	const previous = target?.readCurrent?.();
+	try {
+		await target.apply(config);
 
-	// feedback: visual confirmation
-	showPopupToast(currentDict.presetAppliedToast(id));
+		// A global preset also becomes the selected site's persisted preset. If
+		// persistence fails, restore the last acknowledged runtime config.
+		if (type === 'global' && domain) {
+			await patchSettings({ scope: 'audio-site', domain, value: config, mode: 'replace' });
+		}
+		showPopupToast(currentDict.presetAppliedToast(id));
+	} catch (error: unknown) {
+		if (target && previous) {
+			try {
+				await target.apply(previous);
+			} catch (rollbackError: unknown) {
+				presentPresetFailure(rollbackError);
+			}
+		}
+		presentPresetFailure(error);
+	}
 }
 
 // eff: shows preset details in a modal/preview panel
@@ -375,33 +412,42 @@ function showPresetPreview(id: string, config: Partial<AudioConfig>): void {
 // eff: sets or removes a global preset as default
 async function handleSetDefaultPreset(id: string, type: PresetType, setAsDefault: boolean): Promise<void> {
 	if (type !== 'global') return;
-
-	await patchSettings({ scope: 'default-preset', value: setAsDefault ? id : null });
-
-	void refreshPresetsList();
+	try {
+		await patchSettings({ scope: 'default-preset', value: setAsDefault ? id : null });
+		await refreshPresetsList();
+	} catch (error: unknown) {
+		presentPresetFailure(error);
+	}
 }
 
 // eff: deletes a preset
 async function handleDeletePreset(id: string, type: PresetType): Promise<void> {
-	if (type === 'site') {
-		await patchSettings({ scope: 'audio-site', domain: id, value: null });
-	} else {
-		await patchSettings({ scope: 'audio-preset', name: id, value: null });
+	try {
+		if (type === 'site') {
+			await patchSettings({ scope: 'audio-site', domain: id, value: null });
+		} else {
+			await patchSettings({ scope: 'audio-preset', name: id, value: null });
+		}
+		await refreshPresetsList();
+	} catch (error: unknown) {
+		presentPresetFailure(error);
 	}
-
-	void refreshPresetsList();
 }
 
 async function handleClearAll(): Promise<void> {
-	const { sitePresets, globalPresets } = await loadAllPresets();
-	for (const domain of Object.keys(sitePresets)) {
-		await patchSettings({ scope: 'audio-site', domain, value: null });
+	try {
+		const { sitePresets, globalPresets } = await loadAllPresets();
+		for (const domain of Object.keys(sitePresets)) {
+			await patchSettings({ scope: 'audio-site', domain, value: null });
+		}
+		for (const name of Object.keys(globalPresets)) {
+			await patchSettings({ scope: 'audio-preset', name, value: null });
+		}
+		await patchSettings({ scope: 'default-preset', value: null });
+		await refreshPresetsList();
+	} catch (error: unknown) {
+		presentPresetFailure(error);
 	}
-	for (const name of Object.keys(globalPresets)) {
-		await patchSettings({ scope: 'audio-preset', name, value: null });
-	}
-	await patchSettings({ scope: 'default-preset', value: null });
-	void refreshPresetsList();
 }
 
 // eff: loads all presets from storage
@@ -419,13 +465,6 @@ async function loadAllPresets(): Promise<{
 	};
 }
 
-// eff: gets the default preset config for new sites
-export async function getDefaultPreset(): Promise<Partial<AudioConfig> | null> {
-	const { globalPresets, defaultId } = await loadAllPresets();
-	if (!defaultId || !globalPresets[defaultId]) return null;
-	return globalPresets[defaultId].config;
-}
-
 // eff: saves current config as a global preset
 // Zero-interaction save: the preset name is auto-generated from the localized
 // base label plus a compact timestamp, with a numeric suffix on collision so
@@ -434,9 +473,17 @@ export async function getDefaultPreset(): Promise<Partial<AudioConfig> | null> {
 // current domain, which read as "name this after the domain" and was the
 // root complaint behind the request that global presets stop being named
 // after the domain.
-export async function saveGlobalPreset(config: Partial<AudioConfig>): Promise<string> {
+export async function saveGlobalPreset(
+	config: Partial<AudioConfig>,
+	dict?: I18NDict,
+): Promise<string> {
 	const { globalPresets } = await loadAllPresets();
-	const baseName = currentDict.presetDefaultName;
+	// The card's save-as-global action can run before the settings drawer ever
+	// mounted this view, so the module dictionary alone is not enough here.
+	const active = dict
+		?? currentDict
+		?? (await import('./i18n-apply')).getCurrentDict();
+	const baseName = active?.presetDefaultName ?? 'Preset';
 	const stamp = formatPresetStamp(new Date());
 	const name = resolveUniquePresetName(baseName, stamp, globalPresets);
 	await patchSettings({
@@ -479,5 +526,18 @@ export function updatePresetsI18n(dict: I18NDict): void {
 	if (searchInput) {
 		searchInput.placeholder = dict.presetSearchPlaceholder;
 	}
-	void refreshPresetsList();
+	void refreshPresetsList().catch(presentPresetFailure);
+}
+
+export function disposePresetsUI(): void {
+	// Invalidate refreshes that are still awaiting the settings repository so a
+	// disposed/reinitialized panel cannot repopulate a stale DOM list.
+	latestRefreshRevision += 1;
+	unsubscribeSettings?.();
+	unsubscribeSettings = null;
+	unsubscribeTargetChanges?.();
+	unsubscribeTargetChanges = null;
+	closeActivePreview?.(false);
+	closeActivePreview = null;
+	currentDomain = '';
 }

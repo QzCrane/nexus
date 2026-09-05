@@ -1,41 +1,36 @@
 // goal: defines messaging listeners for the tab card to handle state synchronization between the popup, background, and content scripts
 
-import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import {
 	audioSessionMatchesControlDocument,
 	isActiveCaptureLifecycle,
 } from '@nexus/contracts';
 import type { CardInternalState } from './types';
-import { applyLegacyCardMessage } from './legacy-message-adapter';
 import { mergeControlSnapshot } from './types';
 import { projectAcknowledgedProcessorLifecycle } from './state';
+import { classifyControlSnapshot } from '../control-snapshot-order';
+import { subscribePopupTabUiEvents, type PopupUiEvent } from '../ui-event-hub';
 
 export interface MessagingParams {
-  tabId: number;
-  state: CardInternalState;
-  render: () => void;
+	tabId: number;
+	state: CardInternalState;
+	render: () => void;
 }
 
-// post: returns a cleanup function that removes the chrome.runtime.onMessage listener
-export function setupCardMessaging(params: MessagingParams): () => void {
-  const { tabId, state, render } = params;
-
-  const onMessageListener = (
-	rawMessage: unknown,
-    sender: chrome.runtime.MessageSender
-  ): boolean | undefined => {
-	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.control.snapshot.changed') {
-		const snapshot = rawMessage.payload;
-		if (snapshot.tabId !== tabId) return false;
-		if (snapshot.generation < state.controlGeneration
-			|| snapshot.generation === state.controlGeneration
-				&& snapshot.revision < state.controlRevision) return false;
-		state.controlSnapshot = snapshot;
-		const lifecycleMatches = state.audioDocumentId === snapshot.documentId
-			&& state.audioOrigin === snapshot.origin;
-		if (!lifecycleMatches) {
-			// Never carry a purple Capture lifecycle across a navigation or a worker
-			// identity reset while waiting for the matching session handshake.
+// post: applies one authoritative ControlSnapshot to the card projection.  The
+// snapshot is the only field-level source of truth; session events are handled
+// separately below and can only contribute processor lifecycle.
+export function applyControlSnapshot(
+	state: CardInternalState,
+	snapshot: import('@nexus/contracts').ControlSnapshot,
+	render: () => void,
+): boolean {
+	const current = state.controlSnapshot;
+	const admission = classifyControlSnapshot(current, snapshot);
+	if (admission !== 'accepted') return false;
+	if (current) {
+		if (snapshot.documentId !== current.documentId || snapshot.origin !== current.origin) {
+			// A document transition replaces the complete projection.  Do not carry
+			// purple Capture state or any optimistic values across navigation.
 			state.actualMode = 'bypass';
 			state.desiredMode = 'bypass';
 			state.phase = 'idle';
@@ -45,29 +40,65 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 			state.audioGeneration = -1;
 			state.audioConfigRevision = 0;
 		}
-		state.stableConfig = mergeControlSnapshot(state.stableConfig, snapshot);
-		projectAcknowledgedProcessorLifecycle(state, snapshot.fields);
-		const incoming = state.stableConfig;
-		if (state.draggingField === 'volume') {
-			const {
-				volume: _volume,
-				volumeBase: _volumeBase,
-				boost: _boost,
-				muted: _muted,
-				...otherConfig
-			} = incoming;
-			state.config = { ...state.config, ...otherConfig };
-		} else {
-			state.config = incoming;
-		}
+	}
+	state.controlSnapshot = snapshot;
+	const lifecycleMatches = state.audioDocumentId === snapshot.documentId
+		&& state.audioOrigin === snapshot.origin;
+	if (!lifecycleMatches) {
+		state.actualMode = 'bypass';
+		state.desiredMode = 'bypass';
+		state.phase = 'idle';
+		state.isCaptureActive = false;
+		state.audioDocumentId = null;
+		state.audioOrigin = null;
+		state.audioGeneration = -1;
+		state.audioConfigRevision = 0;
+	}
+	state.stableConfig = mergeControlSnapshot(state.stableConfig, snapshot);
+	projectAcknowledgedProcessorLifecycle(state, snapshot.fields);
+	const incoming = state.stableConfig;
+	if (state.draggingField === 'volume') {
+		const {
+			volume: _volume,
+			volumeBase: _volumeBase,
+			boost: _boost,
+			muted: _muted,
+			...otherConfig
+		} = incoming;
+		state.config = { ...state.config, ...otherConfig };
+	} else {
+		state.config = incoming;
+	}
+	const identityChanged = current !== null
+		&& (snapshot.documentId !== current.documentId || snapshot.origin !== current.origin);
+	if (!current || identityChanged) {
+		// Revisions are scoped to a document. Carrying a larger revision from the
+		// previous navigation would make every subsequent intent use an invalid
+		// baseRevision and strand the newly active page in a permanent conflict.
+		state.controlGeneration = snapshot.generation;
+		state.controlRevision = snapshot.revision;
+	} else {
 		state.controlGeneration = Math.max(state.controlGeneration, snapshot.generation);
 		state.controlRevision = Math.max(state.controlRevision, snapshot.revision);
-		state.lastError = Object.values(snapshot.fields)
-			.find((field) => field?.lastError)?.lastError ?? null;
-		render();
-		return false;
 	}
-	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.session.changed') {
+	state.lastError = Object.values(snapshot.fields)
+		.find((field) => field?.lastError)?.lastError ?? null;
+	render();
+	return true;
+}
+
+// post: returns a cleanup function that removes the chrome.runtime.onMessage listener
+export function setupCardMessaging(params: MessagingParams): () => void {
+  const { tabId, state, render } = params;
+
+	const onMessage = (rawMessage: PopupUiEvent): void => {
+	if (rawMessage.type === 'spectra.control.snapshot.changed') {
+		const snapshot = rawMessage.payload;
+		if (snapshot.tabId !== tabId) return;
+		applyControlSnapshot(state, snapshot, render);
+		return;
+	}
+	if (rawMessage.type === 'spectra.audio.session.changed') {
 		const snapshot = rawMessage.payload;
 		const control = state.controlSnapshot;
 		const matchesControl = audioSessionMatchesControlDocument(snapshot, control);
@@ -93,20 +124,14 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 			});
 			render();
 		}
-		return false;
+		return;
 	}
-	// Capture lifecycle events are compatibility notifications, not authoritative
-	// UI state. The preceding session.changed snapshot is the only mode/phase source.
-	if (isSpectraUiEventEnvelope(rawMessage) && rawMessage.type === 'spectra.audio.capture.changed') return false;
-	applyLegacyCardMessage(rawMessage, sender, params);
-    return false;
+	// Exact-document Capture lifecycle events belong to the content runtime, not
+	// Popup state. The preceding session.changed snapshot is the UI authority.
+	if (rawMessage.type === 'spectra.audio.capture.changed') return;
   };
 
-  chrome.runtime.onMessage.addListener(onMessageListener);
-
-  return () => {
-    chrome.runtime.onMessage.removeListener(onMessageListener);
-  };
+  return subscribePopupTabUiEvents(tabId, onMessage);
 }
 
 // eff: attempts to establish a long-lived port connection to the content script for high-frequency signaling

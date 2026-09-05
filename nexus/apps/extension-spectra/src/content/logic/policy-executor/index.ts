@@ -1,35 +1,19 @@
-// goal: orchestrates PolicyEngine decisions with AudioController and CaptureManager
+// goal: choose the lowest-cost complete audio owner from native, Media WebAudio, and Capture
 
-import { isDefaultAudioConfig, resolveAudioVolume } from '@nexus/contracts';
-import {
-	assessMediaSourceCoverage,
-	type PolicyContext,
-	type MediaSourceEligibilityEvidence,
-	type UrlInfo,
-} from '@nexus/audio-engine';
+import { resolveDesiredAudioMode } from '@nexus/contracts';
+import { assessMediaSourceCoverage } from '@nexus/audio-engine';
 import { logger } from '../../../shared/logger';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
-import { executeMode, hasUserGesture, initModeExecutorCallbacks } from '../mode-executor';
+import { createModeExecutor } from '../mode-executor';
 import type { PolicyApplicationOptions, PolicyExecutor, InternalState } from './types';
 import { updateBadge, broadcastUI } from './badge-sync';
 import { updateConfig } from './config-updater';
-import { getActiveMediaRegistry } from '../../core/media-registry';
 import {
 	createSiteEligibilityCache,
+	type SiteEligibility,
 } from './eligibility-cache';
 
 const log = logger.content;
-
-export function evaluateMediaSourceEligibility(
-	elements: readonly HTMLMediaElement[],
-	hasKnownBindingFailure: (element: HTMLMediaElement) => boolean = () => false,
-	evidenceFor: (element: HTMLMediaElement) => MediaSourceEligibilityEvidence | undefined = () => undefined,
-): InternalState['corsStatus'] {
-	const coverage = assessMediaSourceCoverage(elements, evidenceFor);
-	if (coverage.eligibility === 'unsafe') return 'RESTRICTED';
-	if (!coverage.fullCoverage) return 'PENDING';
-	return elements.some(hasKnownBindingFailure) ? 'RESTRICTED' : 'SAFE';
-}
 
 export async function createPolicyExecutor(
 	deps: PolicyExecutorDeps,
@@ -37,62 +21,38 @@ export async function createPolicyExecutor(
 	isCurrent: () => boolean = () => true,
 ): Promise<PolicyExecutor | null> {
 	if (!isCurrent()) return null;
-	const istate: InternalState = { corsStatus: 'PENDING', lastBadgeHash: '', lastSyncHash: '' };
-	const eligibilityCache = createSiteEligibilityCache(window.location.hostname);
+	const internalState: InternalState = { lastBadgeHash: '', lastSyncHash: '' };
+	const eligibilityCache = createSiteEligibilityCache(state.mediaRoute);
+	let applyTail: Promise<void> = Promise.resolve();
+	let disposed = false;
 
-	const evaluateSourceEligibility = (): InternalState['corsStatus'] => {
-		const registry = getActiveMediaRegistry();
-		if (!registry) return 'PENDING';
-		const elements = registry.list().map(({ element }) => element);
-		return evaluateMediaSourceEligibility(
-			elements,
-			(element) => deps.audioController.hasKnownBindingFailure(element),
-			(element) => typeof registry.getEligibilityEvidence === 'function'
-				? registry.getEligibilityEvidence(element)
-				: undefined,
+	const liveEligibility = (): SiteEligibility => {
+		const media = deps.mediaRegistry.list().map(({ element }) => element);
+		const coverage = assessMediaSourceCoverage(
+			media,
+			(element) => deps.mediaRegistry.getEligibilityEvidence(element),
 		);
+		if (coverage.eligibility === 'unsafe'
+			|| media.some((element) => deps.audioController.hasKnownBindingFailure(element))) return 'RESTRICTED';
+		return coverage.fullCoverage ? 'SAFE' : 'PENDING';
 	};
 
-	const getUrlInfo = (): UrlInfo => ({
-		fullUrl: window.location.href, domain: window.location.hostname, pathname: window.location.pathname, isIframe: window.self !== window.top
-	});
-
-	const applyState = async (options: PolicyApplicationOptions = {}): Promise<void> => {
-		const u = getUrlInfo();
-		istate.corsStatus = await eligibilityCache.resolve(evaluateSourceEligibility());
-		// Full-output DSP may claim Media WebAudio coverage only when every
-		// registered source is proven safe before its irreversible binding.
-		// Unselected media remains unknown and therefore takes the conservative
-		// Capture path instead of producing a partial WebAudio ACK.
-		const restrict = istate.corsStatus !== 'SAFE';
-
-		const volume = resolveAudioVolume(state.config);
-		const ctx: PolicyContext = {
-			urlInfo: u,
-			enabled: state.config.enabled && (
-				state.userHasInteracted
-				|| !isDefaultAudioConfig(state.config)
+	const applyCurrentState = async (options: PolicyApplicationOptions = {}): Promise<void> => {
+		if (!isCurrent()) return;
+		const eligibility = await eligibilityCache.resolve(liveEligibility());
+		if (!isCurrent()) return;
+		state.mediaRoute = eligibility === 'SAFE'
+			? 'direct'
+			: eligibility === 'RESTRICTED' ? 'capture' : 'auto';
+		const media = deps.mediaRegistry.list().map(({ element }) => element);
+		const mode = resolveDesiredAudioMode(state.config, {
+			visualizer: state.visualizerSubscribers.size > 0,
+			mediaRoute: state.mediaRoute,
+			mediaWebAudio: deps.audioController.canAttachAll(
+				media,
+				(element) => deps.mediaRegistry.getEligibilityEvidence(element),
 			),
-			volume: volume.effectiveVolume,
-			userInteracted: state.userHasInteracted,
-			forceNative: false,
-			isRestricted: restrict,
-			hasMediaElement: (getActiveMediaRegistry()?.list().length ?? 0) > 0,
-			hasAudioContext: deps.audioController.isReady(),
-			config: state.config,
-		};
-
-		if (!deps.policyEngine?.calculateMode) {
-			// Standard media properties are owned exclusively by
-			// NativeMediaExecutor. A missing DSP planner is a transparent bypass,
-			// never an alternate DOM writer.
-			state.actualMode = 'bypass';
-			state.phase = 'idle';
-			return;
-		}
-
-		const policyMode = deps.policyEngine.calculateMode(ctx);
-		const mode = policyMode;
+		});
 		state.desiredMode = mode;
 		const modeChanged = mode !== state.activeMode;
 		if (modeChanged) {
@@ -100,28 +60,59 @@ export async function createPolicyExecutor(
 			state.activeMode = mode;
 		}
 
-		await executeMode(
-			deps,
-			state,
+		await modeExecutor.execute(
 			modeChanged || options.navigation === true || options.modeIntent === true,
 			options.captureAdmission,
 		);
+		if (!isCurrent()) return;
 		await eligibilityCache.recordActual(state.actualMode, state.phase);
-		updateBadge(deps, state, istate);
-		broadcastUI(deps, state, istate);
+		if (!isCurrent()) return;
+		updateBadge(deps, state, internalState);
+		broadcastUI(deps, state, internalState);
 	};
 
-	const disposeModeExecutor = initModeExecutorCallbacks(deps, state, () => updateBadge(deps, state, istate), () => broadcastUI(deps, state, istate), (ch, opt) => updateConfig(deps, state, istate, ch, opt, applyState));
+	// A single document owns one physical audio graph. Serialize every policy
+	// application so 100↔110 and visualizer changes cannot concurrently bypass
+	// and re-apply the same graph. Because config is read when the queued task
+	// starts, superseded slider values naturally coalesce to the latest intent.
+	const applyState = (options: PolicyApplicationOptions = {}): Promise<void> => {
+		const operation = applyTail.then(() => {
+			if (disposed || !isCurrent()) return;
+			return applyCurrentState(options);
+		});
+		applyTail = operation.catch(() => undefined);
+		return operation;
+	};
+
+	const modeExecutor = createModeExecutor(
+		deps,
+		state,
+		() => updateBadge(deps, state, internalState),
+		() => broadcastUI(deps, state, internalState),
+	);
 
 	return {
-		dispose: disposeModeExecutor,
+		dispose() {
+			disposed = true;
+			modeExecutor.dispose();
+		},
 		applyState,
-		updateBadge: () => updateBadge(deps, state, istate),
-		updateConfig: (ch, opt) => updateConfig(deps, state, istate, ch, opt, applyState),
-		hasUserGesture: () => hasUserGesture(state),
+		updateBadge: () => updateBadge(deps, state, internalState),
+		updateConfig: (changes, options) => updateConfig(
+			deps,
+			state,
+			internalState,
+			changes,
+			options,
+			applyState,
+		),
 		markUserInteracted: () => { state.userHasInteracted = true; },
+		async refreshMediaRoute() {
+			const route = await eligibilityCache.refresh();
+			state.mediaRoute = route;
+			return route;
+		},
 		getActiveMode: () => state.activeMode,
-		getUrlInfo,
 	};
 }
 

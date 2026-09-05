@@ -2,6 +2,8 @@
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
+	CONTROL_VALUE_LIMITS,
+	clampControlValue,
 	isSpectraRequestEnvelope,
 	rpcFailure,
 	rpcSuccess,
@@ -22,17 +24,35 @@ import {
 	type MediaTarget,
 } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/spectra-client';
-import {
+import type {
 	MediaRegistry,
-	type MediaRegistryEvent,
-	type MediaRegistryRemovalReason,
+	MediaRegistryEvent,
+	MediaRegistryRemovalReason,
 } from '../core/media-registry';
+import {
+	assertNotAborted,
+	ContentLifecycleError,
+	isContentLifecycleError,
+} from '../core/content-runtime-context';
 import type {
 	VideoEffectsController,
 	VideoEffectState,
 } from '../video/video-effects-controller';
 import { contentControlStrategy } from './content-control-policy';
 import {
+	assertNativeOperationCurrent,
+	clampNativeSeek,
+	clearNativeMediaAsyncState,
+	consumeOwnedSeek,
+	measureVideoFrameDuration,
+	seekNativeMedia,
+	stablePageReadback,
+	stableReadback,
+	writeWithStableEventAck,
+	type NativeMediaOperationOptions,
+} from './native-media-async';
+import {
+	probePageMediaCapability,
 	readPageMediaField,
 	writePageMediaField,
 } from './page-media-bridge';
@@ -47,12 +67,6 @@ interface PendingWrite {
 	expected: unknown;
 	tolerance: number;
 	timeoutId: ReturnType<typeof setTimeout>;
-}
-
-interface OwnedSeek {
-	expected: number;
-	tolerance: number;
-	expiresAt: number;
 }
 
 type RestorableMediaField = 'volumeBase' | 'mediaMuted' | 'speed' | 'preservePitch' | 'loop';
@@ -81,7 +95,16 @@ interface NativeMediaOwnershipStore {
 	byElement: WeakMap<HTMLMediaElement, Map<RestorableMediaField, OwnedMediaField>>;
 }
 
-type VideoEffectsControllerPort = Pick<VideoEffectsController, 'apply' | 'dispose' | 'release' | 'snapshot'>;
+type VideoEffectsControllerPort = Pick<VideoEffectsController,
+	'apply' | 'dispose' | 'release' | 'snapshot'> & {
+	retireSource?: VideoEffectsController['retireSource'];
+};
+
+interface VideoEffectApplyOptions {
+	signal?: AbortSignal;
+	deadlineMs?: number;
+	isCurrent?: () => boolean;
+}
 
 interface VideoEffectsRuntimeModule {
 	VideoEffectsController: new () => VideoEffectsControllerPort;
@@ -121,48 +144,6 @@ const ownershipScope = globalThis as typeof globalThis & {
 const nativeMediaOwnership = ownershipScope.__nexusSpectraNativeMediaOwnershipV3
 	?? { byElement: new WeakMap<HTMLMediaElement, Map<RestorableMediaField, OwnedMediaField>>() };
 ownershipScope.__nexusSpectraNativeMediaOwnershipV3 = nativeMediaOwnership;
-
-const ownedSeeks = new WeakMap<HTMLMediaElement, OwnedSeek[]>();
-const videoCadence = new WeakMap<HTMLVideoElement, {
-	sourceRevision: number;
-	frameDuration: number;
-}>();
-
-function markOwnedSeek(
-	element: HTMLMediaElement,
-	expected: number,
-	tolerance: number,
-): OwnedSeek {
-	const now = performance.now();
-	const active = (ownedSeeks.get(element) ?? [])
-		.filter((seek) => seek.expiresAt > now);
-	const owned = { expected, tolerance, expiresAt: now + 1_000 };
-	active.push(owned);
-	ownedSeeks.set(element, active);
-	return owned;
-}
-
-function releaseOwnedSeek(element: HTMLMediaElement, owned: OwnedSeek): void {
-	const active = (ownedSeeks.get(element) ?? []).filter((seek) => seek !== owned);
-	if (active.length > 0) ownedSeeks.set(element, active);
-	else ownedSeeks.delete(element);
-}
-
-function consumeOwnedSeek(element: HTMLMediaElement, actual: number): boolean {
-	const now = performance.now();
-	const active = (ownedSeeks.get(element) ?? [])
-		.filter((seek) => seek.expiresAt > now);
-	const index = active.findIndex((seek) => Math.abs(seek.expected - actual) <= seek.tolerance);
-	if (index < 0) {
-		if (active.length > 0) ownedSeeks.set(element, active);
-		else ownedSeeks.delete(element);
-		return false;
-	}
-	active.splice(index, 1);
-	if (active.length > 0) ownedSeeks.set(element, active);
-	else ownedSeeks.delete(element);
-	return true;
-}
 
 export interface AudioRuntimeControlDelegate {
 	apply(intent: ControlIntent, patch: ControlPatch): Promise<ControlFieldStates>;
@@ -209,159 +190,6 @@ function valuesMatch(expected: unknown, actual: unknown, tolerance: number): boo
 		return Math.abs(expected - actual) <= tolerance;
 	}
 	return JSON.stringify(expected) === JSON.stringify(actual);
-}
-
-const ANIMATION_BOUNDARY_FALLBACK_MS = 48;
-
-function nextAnimationBoundary(): Promise<void> {
-	if (typeof requestAnimationFrame !== 'function') return Promise.resolve();
-	return new Promise((resolve) => {
-		let settled = false;
-		let frameId: number | undefined;
-		const finish = (): void => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeoutId);
-			if (frameId !== undefined && typeof cancelAnimationFrame === 'function') {
-				cancelAnimationFrame(frameId);
-			}
-			resolve();
-		};
-		// Hidden/background tabs may suspend rAF indefinitely. A native control ACK
-		// must remain bounded for Popup and authenticated remote callers, so retain
-		// the animation-boundary read when available and fall back to a short clock.
-		const timeoutId = setTimeout(finish, ANIMATION_BOUNDARY_FALLBACK_MS);
-		frameId = requestAnimationFrame(finish);
-	});
-}
-
-async function stableReadback<T>(read: () => T): Promise<T> {
-	// Page players commonly reflect a standard setter synchronously and then
-	// normalize it in a microtask or animation callback. Two bounded frame
-	// boundaries catch that rollback without installing a standing observer.
-	await Promise.resolve();
-	await nextAnimationBoundary();
-	await nextAnimationBoundary();
-	return read();
-}
-
-const NATIVE_EVENT_QUIET_MS = 64;
-
-async function stablePageReadback<T>(read: () => T): Promise<T> {
-	// Page controller getters are the ACK boundary. Give the player the same
-	// short quiet window used by native event ACKs, then cross two render
-	// boundaries so delayed UI/state rollback cannot be committed as success.
-	await new Promise<void>((resolve) => setTimeout(resolve, NATIVE_EVENT_QUIET_MS));
-	return stableReadback(read);
-}
-
-async function writeWithStableEventAck<T>(
-	target: EventTarget,
-	type: string,
-	write: () => unknown | Promise<unknown>,
-	read: () => T,
-	expected: unknown,
-	tolerance: number,
-	timeoutMs = 750,
-): Promise<T> {
-	if (valuesMatch(expected, read(), tolerance)) {
-		// The native field already exposes the requested value. Re-read across
-		// the same stabilization boundary instead of causing an unnecessary
-		// setter side effect with no authoritative event to acknowledge it.
-		return stableReadback(read);
-	}
-	let finish!: (matched: boolean) => void;
-	let quietTimer: ReturnType<typeof setTimeout> | null = null;
-	let timeoutId: ReturnType<typeof setTimeout> | null = null;
-	const acknowledgement = new Promise<boolean>((resolve) => {
-		finish = resolve;
-	});
-	const onEvent = (): void => {
-		if (quietTimer !== null) clearTimeout(quietTimer);
-		quietTimer = null;
-		if (!valuesMatch(expected, read(), tolerance)) return;
-		// A page-player setter can acknowledge our value and restore its own value
-		// in a timer. Require one short event-quiet window before committing.
-		quietTimer = setTimeout(() => finish(true), NATIVE_EVENT_QUIET_MS);
-	};
-	target.addEventListener(type, onEvent);
-	timeoutId = setTimeout(() => finish(false), timeoutMs);
-	try {
-		await write();
-		if (!await acknowledgement) {
-			throw new Error(`Native ${type} event readback did not acknowledge the requested value`);
-		}
-		return await stableReadback(read);
-	} finally {
-		target.removeEventListener(type, onEvent);
-		if (quietTimer !== null) clearTimeout(quietTimer);
-		if (timeoutId !== null) clearTimeout(timeoutId);
-	}
-}
-
-async function measureVideoFrameDuration(
-	video: HTMLVideoElement,
-	sourceRevision: number,
-): Promise<number> {
-	const cached = videoCadence.get(video);
-	if (cached?.sourceRevision === sourceRevision) return cached.frameDuration;
-	if (video.paused || typeof video.requestVideoFrameCallback !== 'function') {
-		throw new Error('Frame cadence is unavailable until this source has rendered measurable frames');
-	}
-	const frameDuration = await new Promise<number>((resolve, reject) => {
-		let previousMediaTime: number | null = null;
-		let callbackId: number | null = null;
-		let samples = 0;
-		let settled = false;
-		const deltas: number[] = [];
-		const timeoutId = setTimeout(() => finish(null), 750);
-		const finish = (duration: number | null): void => {
-			if (settled) return;
-			settled = true;
-			clearTimeout(timeoutId);
-			if (callbackId !== null && typeof video.cancelVideoFrameCallback === 'function') {
-				video.cancelVideoFrameCallback(callbackId);
-			}
-			callbackId = null;
-			if (duration === null) reject(new Error('Frame cadence measurement timed out'));
-			else resolve(duration);
-		};
-		const sample: VideoFrameRequestCallback = (_now, metadata) => {
-			if (settled) return;
-			callbackId = null;
-			const mediaTime = metadata.mediaTime;
-			if (previousMediaTime !== null) {
-				const delta = mediaTime - previousMediaTime;
-				if (Number.isFinite(delta) && delta >= 1 / 240 && delta <= 1 / 5) {
-					deltas.push(delta);
-				}
-			}
-			previousMediaTime = mediaTime;
-			samples += 1;
-			if (deltas.length >= 5 || samples >= 8) {
-				if (deltas.length < 3) {
-					finish(null);
-					return;
-				}
-				const ordered = [...deltas].sort((left, right) => left - right);
-				const median = ordered.at(Math.floor(ordered.length / 2));
-				const first = ordered.at(0);
-				const last = ordered.at(-1);
-				if (median === undefined || first === undefined || last === undefined) {
-					finish(null);
-					return;
-				}
-				const stable = last - first <= median * 0.35;
-				if (stable || samples >= 8) finish(median);
-				else callbackId = video.requestVideoFrameCallback(sample);
-				return;
-			}
-			callbackId = video.requestVideoFrameCallback(sample);
-		};
-		callbackId = video.requestVideoFrameCallback(sample);
-	});
-	videoCadence.set(video, { sourceRevision, frameDuration });
-	return frameDuration;
 }
 
 function fullscreenOwnsMedia(element: HTMLMediaElement): boolean {
@@ -500,12 +328,12 @@ function writeRestorableMediaField(
 	}
 }
 
-// These primitives are the only standard-media property writers. Legacy call
-// sites use them during migration, then the coordinator/executor becomes their
-// sole caller. Keeping the setters here lets static checks reject a second
+// These remaining synchronous primitives are the only standard-media property
+// writers owned by this executor. The bounded seek writer lives in
+// native-media-async.ts, so static checks can still reject a second
 // playback/volume/seek owner immediately.
 export function writeNativeVolumeBase(element: HTMLMediaElement, volumeBase: number): number {
-	element.volume = Math.max(0, Math.min(1, volumeBase / 100));
+	element.volume = clampControlValue(volumeBase, 'volumeBase', 100) / 100;
 	return element.volume * 100;
 }
 
@@ -515,7 +343,7 @@ export function writeNativeMediaMuted(element: HTMLMediaElement, muted: boolean)
 }
 
 export function writeNativePlaybackRate(element: HTMLMediaElement, speed: number): number {
-	const next = Math.max(0.1, Math.min(16, speed));
+	const next = clampControlValue(speed, 'speed', 1);
 	// Keep the standard default/current pair coherent when the page has not
 	// deliberately separated them. Player UIs commonly project the default while
 	// playback itself reads the current rate.
@@ -533,11 +361,6 @@ export function writeNativePreservesPitch(element: HTMLMediaElement, preserve: b
 	return target.preservesPitch;
 }
 
-export function writeNativeCurrentTime(element: HTMLMediaElement, currentTime: number): number {
-	element.currentTime = currentTime;
-	return element.currentTime;
-}
-
 export function writeNativeLoop(element: HTMLMediaElement, loop: boolean): boolean {
 	element.loop = loop;
 	return element.loop;
@@ -549,7 +372,9 @@ async function writeRestorableMediaFieldWithStableAck(
 	desired: ControlValues[SpectraPageMediaField],
 	writer: RestorableMediaWriter,
 	tolerance: number,
+	options: NativeMediaOperationOptions = {},
 ): Promise<ControlValues[SpectraPageMediaField]> {
+	assertNativeOperationCurrent(options);
 	const read = (): ControlValues[SpectraPageMediaField] => (
 		writer === 'page-native'
 			? readRestorableMediaField(element, field, writer)
@@ -558,7 +383,7 @@ async function writeRestorableMediaFieldWithStableAck(
 	let actual: ControlValues[SpectraPageMediaField];
 	if (writer === 'page-native') {
 		writeRestorableMediaField(element, field, desired, writer);
-		actual = await stablePageReadback(read);
+		actual = await stablePageReadback(read, options);
 	} else {
 		actual = await writeWithStableEventAck(
 			element,
@@ -567,8 +392,11 @@ async function writeRestorableMediaFieldWithStableAck(
 			read,
 			desired,
 			tolerance,
+			750,
+			options,
 		);
 	}
+	assertNativeOperationCurrent(options);
 	if (!valuesMatch(desired, actual, tolerance)) {
 		throw new Error(`${field} readback mismatch after the stable boundary`);
 	}
@@ -581,6 +409,7 @@ async function pageCandidateRestoredBaseline(
 	baseline: ControlValues[SpectraPageMediaField],
 	error: unknown,
 	tolerance: number,
+	options: NativeMediaOperationOptions = {},
 ): Promise<boolean> {
 	// An explicitly unavailable request never called a page setter. Every other
 	// page failure may fall through only after the same candidate proves that its
@@ -593,78 +422,13 @@ async function pageCandidateRestoredBaseline(
 		}
 		const restored = await stablePageReadback(
 			() => readRestorableMediaField(element, field, 'page-native'),
+			options,
 		);
+		assertNativeOperationCurrent(options);
 		return valuesMatch(restored, baseline, tolerance);
 	} catch {
 		return false;
 	}
-}
-
-export function clampNativeSeek(element: HTMLMediaElement, desired: number): number {
-	const maximum = Number.isFinite(element.duration) ? element.duration : desired;
-	const value = Math.max(0, Math.min(maximum, desired));
-	if (element.seekable.length === 0) return value;
-	for (let index = 0; index < element.seekable.length; index += 1) {
-		const start = element.seekable.start(index);
-		const end = element.seekable.end(index);
-		if (value >= start && value <= end) return value;
-		if (value < start) return start;
-	}
-	return element.seekable.end(element.seekable.length - 1);
-}
-
-export async function seekNativeMedia(
-	element: HTMLMediaElement,
-	desired: number,
-	tolerance = 0.05,
-): Promise<number> {
-	const target = clampNativeSeek(element, desired);
-	const owned = markOwnedSeek(element, target, tolerance);
-	let acknowledged = false;
-	try {
-		writeNativeCurrentTime(element, target);
-		if (element.seeking || Math.abs(element.currentTime - target) > tolerance) {
-			await waitForNativeEvent(
-				element,
-				'seeked',
-				() => !element.seeking && Math.abs(element.currentTime - target) <= tolerance,
-				750,
-			);
-		}
-		if (element.seeking || Math.abs(element.currentTime - target) > tolerance) {
-			throw new Error('Seek readback did not reach the requested media time');
-		}
-		acknowledged = true;
-		return element.currentTime;
-	} finally {
-		// A standards-compliant `seeked` event may be queued after the synchronous
-		// getter already confirms the target. Keep the token until that event (or
-		// its one-second expiry) so marker/A-B/frame-step ACKs do not become a
-		// second page-originated snapshot revision.
-		if (!acknowledged) releaseOwnedSeek(element, owned);
-	}
-}
-
-function waitForNativeEvent(
-	target: EventTarget,
-	type: string,
-	readback: () => boolean,
-	timeoutMs: number,
-): Promise<void> {
-	if (readback()) return Promise.resolve();
-	return new Promise((resolve) => {
-		let settled = false;
-		const finish = (): void => {
-			if (settled) return;
-			settled = true;
-			target.removeEventListener(type, onEvent);
-			clearTimeout(timeoutId);
-			resolve();
-		};
-		const onEvent = (): void => { if (readback()) finish(); };
-		const timeoutId = setTimeout(finish, timeoutMs);
-		target.addEventListener(type, onEvent);
-	});
 }
 
 export class NativeMediaExecutor {
@@ -681,16 +445,19 @@ export class NativeMediaExecutor {
 	private effects: VideoEffectsControllerPort | null;
 	private readonly ownsEffects: boolean;
 	private readonly registry: MediaRegistry;
-	private readonly ownsRegistry: boolean;
 	private readonly unsubscribeRegistry: () => void;
 	private audioRuntimeDelegate: AudioRuntimeControlDelegate | null = null;
 	private tabId: number | null = null;
 	private desiredRevision = 0;
 	private disposed = false;
+	private readonly lifecycleController = new AbortController();
+	private readonly sourceOperationScopes = new Map<string, Set<AbortController>>();
 
-	constructor(registry?: MediaRegistry, effects?: VideoEffectsControllerPort) {
-		this.registry = registry ?? new MediaRegistry();
-		this.ownsRegistry = registry === undefined;
+	constructor(registry: MediaRegistry, effects?: VideoEffectsControllerPort) {
+		// MediaRegistry is a document-owned singleton.  Constructing a fallback
+		// registry here would create an empty second owner with a different source
+		// view and silently reintroduce the initial-identity race.
+		this.registry = registry;
 		this.effects = effects ?? null;
 		this.ownsEffects = effects === undefined;
 		this.unsubscribeRegistry = this.registry.subscribe(
@@ -705,10 +472,12 @@ export class NativeMediaExecutor {
 		}
 	}
 
-	private async ensureVideoEffects(): Promise<VideoEffectsControllerPort> {
+	private async ensureVideoEffects(signal: AbortSignal = this.lifecycleController.signal): Promise<VideoEffectsControllerPort> {
+		assertNotAborted(signal);
 		if (this.effects) return this.effects;
 		const { VideoEffectsController: Controller } = await loadVideoEffectsRuntime();
-		if (this.disposed) throw new Error('Native media executor is disposed');
+		assertNotAborted(signal);
+		if (this.disposed) throw new ContentLifecycleError('cancelled', 'Native media executor is disposed');
 		this.effects = new Controller();
 		return this.effects;
 	}
@@ -717,14 +486,96 @@ export class NativeMediaExecutor {
 		this.audioRuntimeDelegate = delegate;
 	}
 
+	private beginSourceOperation(target: MediaTarget): {
+		signal: AbortSignal;
+		close: () => void;
+	} {
+		const controller = new AbortController();
+		const key = this.targetKey(target);
+		const scopes = this.sourceOperationScopes.get(key) ?? new Set<AbortController>();
+		scopes.add(controller);
+		this.sourceOperationScopes.set(key, scopes);
+		// Source cancellation is a child of the document lifecycle. This keeps the
+		// operation's single signal sufficient for every bounded ACK/rAF/seek wait;
+		// disposing the document cannot leave a source-scoped await behind.
+		const onLifecycleAbort = (): void => {
+			controller.abort(this.lifecycleController.signal.reason);
+		};
+		this.lifecycleController.signal.addEventListener('abort', onLifecycleAbort, { once: true });
+		if (this.lifecycleController.signal.aborted) onLifecycleAbort();
+		return {
+			signal: controller.signal,
+			close: () => {
+				this.lifecycleController.signal.removeEventListener('abort', onLifecycleAbort);
+				const current = this.sourceOperationScopes.get(key);
+				current?.delete(controller);
+				if (current?.size === 0) this.sourceOperationScopes.delete(key);
+			},
+		};
+	}
+
+	private abortSourceOperations(target: MediaTarget): void {
+		const scopes = this.sourceOperationScopes.get(this.targetKey(target));
+		if (!scopes) return;
+		for (const scope of scopes) scope.abort(
+			new ContentLifecycleError('stale-media-source', 'Media source was retired'),
+		);
+		this.sourceOperationScopes.delete(this.targetKey(target));
+	}
+
+	private assertCurrentTarget(
+		target: MediaTarget,
+		element: HTMLMediaElement,
+		signal?: AbortSignal,
+	): void {
+		assertNotAborted(signal);
+		if (this.disposed || this.lifecycleController.signal.aborted) {
+			throw new ContentLifecycleError('cancelled', 'Native media executor lifecycle has ended');
+		}
+		const videoResolver = this.registry as MediaRegistry & {
+			resolveVideo?(target: MediaTarget | null): ReturnType<MediaRegistry['resolve']>;
+		};
+		const current = target.kind === 'video' && typeof videoResolver.resolveVideo === 'function'
+			? videoResolver.resolveVideo(target)
+			: this.registry.resolve(target);
+		if (!current || current.element !== element) {
+			throw new ContentLifecycleError(
+				'stale-media-source',
+				'The media target is no longer the registered source identity',
+			);
+		}
+	}
+
+	private isCurrentTarget(target: MediaTarget, element?: HTMLMediaElement): boolean {
+		if (this.disposed || this.lifecycleController.signal.aborted) return false;
+		const resolver = this.registry as MediaRegistry & {
+			resolveVideo?: MediaRegistry['resolveVideo'];
+		};
+		const current = target.kind === 'video' && typeof resolver.resolveVideo === 'function'
+			? resolver.resolveVideo(target)
+			: this.registry.resolve(target);
+		return !!current && (!element || current.element === element);
+	}
+
+	private operationSignal(signal?: AbortSignal): AbortSignal {
+		return signal ?? this.lifecycleController.signal;
+	}
+
 	bindRequestContext(tabId: number | undefined, documentId: string | undefined): void {
 		if (tabId !== undefined) this.tabId = tabId;
-		if (documentId) this.registry.setDocumentId(documentId);
+		// Document identity is bound when MediaRegistry is constructed.  A request
+		// may carry identity for validation, but it must never retag existing media
+		// after an asynchronous runtime has already acquired them.
+		if (documentId && this.registry.documentId !== documentId) {
+			throw new ContentLifecycleError(
+				'stale-document',
+				'Native request belongs to a different document runtime',
+			);
+		}
 	}
 
 	async execute(intent: ControlIntent): Promise<ControlApplyAck> {
 		if (this.disposed) throw new Error('Native media executor is disposed');
-		this.registry.setDocumentId(intent.documentId);
 		this.tabId = intent.tabId;
 		const fields: ControlFieldStates = {};
 		const runtimePatch: ControlPatch = {};
@@ -749,13 +600,16 @@ export class NativeMediaExecutor {
 		const resolved = onlyVideoFields && typeof videoResolver.resolveVideo === 'function'
 			? videoResolver.resolveVideo(intent.target)
 			: this.registry.resolve(intent.target);
+		const sourceScope = resolved ? this.beginSourceOperation(resolved.target) : null;
+		const operationSignal = this.operationSignal(sourceScope?.signal);
+		try {
 		if (intent.source === 'restore') {
 			for (const [field, value] of directEntries) {
 				if (isRestorableMediaField(field)) this.rememberDesired(field, value);
 			}
 		}
 		for (const [field, value] of directEntries) {
-			await this.applyField(intent, resolved, field, value, fields);
+			await this.applyField(intent, resolved, field, value, fields, operationSignal);
 			const state = fields[field];
 			if (isRestorableMediaField(field)
 				&& state?.phase === 'applied'
@@ -767,6 +621,7 @@ export class NativeMediaExecutor {
 		if (Object.keys(runtimePatch).length > 0) {
 			if (this.audioRuntimeDelegate) {
 				Object.assign(fields, await this.audioRuntimeDelegate.apply(intent, runtimePatch));
+				if (resolved) this.assertCurrentTarget(resolved.target, resolved.element, operationSignal);
 			} else {
 				for (const [rawField, rawValue] of Object.entries(runtimePatch)) {
 					this.putError(
@@ -786,6 +641,7 @@ export class NativeMediaExecutor {
 				.every(([field]) => fields[field]?.phase === 'applied');
 			if (restored) this.appliedDesiredRevision.set(this.targetKey(resolved.target), this.desiredRevision);
 		}
+		if (resolved) this.assertCurrentTarget(resolved.target, resolved.element, operationSignal);
 		return {
 			intentId: intent.intentId,
 			tabId: intent.tabId,
@@ -797,6 +653,9 @@ export class NativeMediaExecutor {
 			target: resolved?.target ?? null,
 			fields,
 		};
+		} finally {
+			sourceScope?.close();
+		}
 	}
 
 	async toggleTrustedActivation(
@@ -815,18 +674,26 @@ export class NativeMediaExecutor {
 			const acknowledgementTarget = owner instanceof EventTarget
 				? owner
 				: requested.element;
-			const actual = await writeWithStableEventAck(
-				acknowledgementTarget,
-				'leavepictureinpicture',
-				() => document.exitPictureInPicture(),
-				() => document.pictureInPictureElement !== null,
-				false,
-				0,
-			);
-			return {
-				target: registeredOwner?.target ?? requested.target,
-				actual,
-			};
+			const sourceScope = this.beginSourceOperation(requested.target);
+			try {
+				const actual = await writeWithStableEventAck(
+					acknowledgementTarget,
+					'leavepictureinpicture',
+					() => document.exitPictureInPicture(),
+					() => document.pictureInPictureElement !== null,
+					false,
+					0,
+					750,
+					{ signal: sourceScope.signal, isCurrent: () => this.isCurrentTarget(requested.target, requested.element) },
+				);
+				this.assertCurrentTarget(requested.target, requested.element, sourceScope.signal);
+				return {
+					target: registeredOwner?.target ?? requested.target,
+					actual,
+				};
+			} finally {
+				sourceScope.close();
+			}
 		}
 		const resolved = field === 'pip' && explicitTarget
 			? this.registry.resolveVideo(explicitTarget)
@@ -855,12 +722,18 @@ export class NativeMediaExecutor {
 			patch: { [field]: !current },
 		};
 		const fields: ControlFieldStates = {};
-		await this.applyField(intent, resolved, field, !current, fields);
+		const sourceScope = this.beginSourceOperation(target);
+		try {
+			await this.applyField(intent, resolved, field, !current, fields, sourceScope.signal);
+			this.assertCurrentTarget(target, element, sourceScope.signal);
 		const state = fields[field];
 		if (state?.phase !== 'applied' || typeof state.actual !== 'boolean') {
 			throw new Error(state?.lastError?.message ?? `Native ${field} toggle was not applied`);
 		}
 		return { target, actual: state.actual };
+		} finally {
+			sourceScope.close();
+		}
 	}
 
 	async stepFrame(
@@ -871,12 +744,25 @@ export class NativeMediaExecutor {
 			throw new Error('No active video target');
 		}
 		const video = resolved.element;
-		const frameDuration = await measureVideoFrameDuration(video, resolved.target.sourceRevision);
-		const currentTime = await seekNativeMedia(
-			video,
-			video.currentTime + intent.payload.direction * frameDuration,
-			frameDuration / 2,
-		);
+		const sourceScope = this.beginSourceOperation(resolved.target);
+		try {
+			const options: NativeMediaOperationOptions = {
+				signal: this.operationSignal(sourceScope.signal),
+				isCurrent: () => this.isCurrentTarget(resolved.target, video),
+			};
+			const frameDuration = await measureVideoFrameDuration(
+				video,
+				resolved.target.sourceRevision,
+				options,
+			);
+			this.assertCurrentTarget(resolved.target, video, options.signal);
+			const currentTime = await seekNativeMedia(
+				video,
+				video.currentTime + intent.payload.direction * frameDuration,
+				frameDuration / 2,
+				options,
+			);
+			this.assertCurrentTarget(resolved.target, video, options.signal);
 		const pseudoIntent: ControlIntent = {
 			intentId: intent.operationId,
 			tabId: intent.tabId,
@@ -895,6 +781,9 @@ export class NativeMediaExecutor {
 			result: { currentTime, frameDuration, approximate: true },
 			fields,
 		};
+		} finally {
+			sourceScope.close();
+		}
 	}
 
 	readMediaSummary(target: import('@nexus/contracts').MediaTarget | null): {
@@ -919,6 +808,7 @@ export class NativeMediaExecutor {
 		const fields: ControlFieldStates = {};
 		const released = new Set<ControlField>();
 		for (const { element, target } of this.registry.list()) {
+			this.assertCurrentTarget(target, element);
 			const key = this.targetKey(target);
 			const ownership = nativeMediaOwnership.byElement.get(element);
 			if (ownership) {
@@ -934,7 +824,12 @@ export class NativeMediaExecutor {
 					writeRestorableMediaField(element, field, owned.baseline, owned.writer);
 					const actual = await (owned.writer === 'page-native' ? stablePageReadback : stableReadback)(
 						() => readRestorableMediaField(element, field, owned.writer),
+						{
+							signal: this.lifecycleController.signal,
+							isCurrent: () => this.isCurrentTarget(target, element),
+						},
 					);
+					this.assertCurrentTarget(target, element);
 					if (!valuesMatch(actual, owned.baseline, tolerance)) {
 						throw new Error(`Page baseline readback failed for ${field}`);
 					}
@@ -1060,12 +955,16 @@ export class NativeMediaExecutor {
 		field: ControlField,
 		value: ControlValues[ControlField],
 		fields: ControlFieldStates,
+		signal: AbortSignal = this.lifecycleController.signal,
 	): Promise<void> {
 		if (!resolved) {
 			this.putError(fields, field, value, intent, 'capability-unavailable', 'No active media target');
 			return;
 		}
 		const { element, target } = resolved;
+		const isCurrent = (): boolean => this.isCurrentTarget(target, element);
+		const assertCurrent = (waitSignal = signal): void => this.assertCurrentTarget(target, element, waitSignal);
+		assertCurrent();
 		this.primeObserved(target.mediaId, element);
 		if (VIDEO_EFFECT_FIELDS.has(field)) {
 			if (!(element instanceof HTMLVideoElement)) {
@@ -1077,12 +976,25 @@ export class NativeMediaExecutor {
 				this.putError(fields, field, value, intent, 'capability-unavailable', 'No admitted video enhancement is available');
 				return;
 			}
-			const effects = await this.ensureVideoEffects();
-			const actual = await effects.apply(
+			const effects = await this.ensureVideoEffects(signal);
+			assertCurrent();
+			const applyEffects = effects.apply as unknown as (
+				video: HTMLVideoElement,
+				field: 'rotation' | 'mirrored' | 'fill' | 'filterEnabled' | 'filter' | 'dimEnabled' | 'dimOpacity',
+				value: unknown,
+				options?: VideoEffectApplyOptions,
+			) => Promise<unknown>;
+			const actual = await applyEffects(
 				element,
 				field as 'rotation' | 'mirrored' | 'fill' | 'filterEnabled' | 'filter' | 'dimEnabled' | 'dimOpacity',
 				value as never,
+				{
+					signal,
+					deadlineMs: 250,
+					isCurrent,
+				},
 			) as ControlValues[ControlField];
+			assertCurrent();
 			this.putState(fields, field, value, actual, intent, strategy);
 			return;
 		}
@@ -1132,6 +1044,24 @@ export class NativeMediaExecutor {
 		try {
 			if (field === 'volumeBase' || field === 'mediaMuted' || field === 'speed') {
 				if (baseline === undefined) throw new Error(`Missing ${field} baseline`);
+				// A standard element's volume physically clamps to the 0-100 scale, so
+				// a DOM-writer request above 100 can only end in the 750ms event-ack
+				// timeout. Reject it here — one cheap capability read has already
+				// happened — so the coordinator's amplified-volume probe fails in
+				// milliseconds and every routing-boundary crossing stays smooth.
+				if (field === 'volumeBase'
+					&& mediaWriter === 'dom-native'
+					&& (effectiveDesired as number) > CONTROL_VALUE_LIMITS.volumeBase.max) {
+					this.putError(
+						fields,
+						field,
+						effectiveDesired,
+						intent,
+						'capability-unavailable',
+						'Standard media volume cannot honor an above-100 scale',
+					);
+					return;
+				}
 				const pageWriterAlreadyOwned = nativeMediaOwnership.byElement.get(element)?.get(field)?.writer
 					=== 'page-native';
 				let actual: ControlValues[typeof field];
@@ -1142,9 +1072,20 @@ export class NativeMediaExecutor {
 						effectiveDesired as ControlValues[typeof field],
 						mediaWriter,
 						tolerance,
+						{ signal, isCurrent },
 					) as ControlValues[typeof field];
+					assertCurrent();
 				} catch (pageError) {
-					const mayFallThrough = mediaWriter === 'page-native'
+					assertCurrent();
+					// The DOM writer physically clamps volumeBase to the standard
+					// 0-100 scale, so an above-100 probe can never be honored there.
+					// Skipping the DOM attempt keeps the coordinator's rejected probe
+					// on one fast page-bridge readback instead of a guaranteed 750ms
+					// event-ack timeout on every routing-boundary crossing.
+					const domCannotScale = field === 'volumeBase'
+						&& (effectiveDesired as number) > CONTROL_VALUE_LIMITS.volumeBase.max;
+					const mayFallThrough = !domCannotScale
+						&& mediaWriter === 'page-native'
 						&& !pageWriterAlreadyOwned
 						&& await pageCandidateRestoredBaseline(
 							element,
@@ -1152,7 +1093,9 @@ export class NativeMediaExecutor {
 							baseline as ControlValues[typeof field],
 							pageError,
 							tolerance,
+							{ signal, isCurrent },
 						);
+					assertCurrent();
 					if (!mayFallThrough) throw pageError;
 					if (writerUpgrade) {
 						await writeRestorableMediaFieldWithStableAck(
@@ -1161,7 +1104,9 @@ export class NativeMediaExecutor {
 							writerUpgrade.lastApplied as ControlValues[typeof field],
 							'dom-native',
 							tolerance,
+							{ signal, isCurrent },
 						);
+						assertCurrent();
 						baseline = writerUpgrade.lastApplied;
 						writerUpgrade = undefined;
 					} else {
@@ -1174,7 +1119,9 @@ export class NativeMediaExecutor {
 						effectiveDesired as ControlValues[typeof field],
 						mediaWriter,
 						tolerance,
+						{ signal, isCurrent },
 					) as ControlValues[typeof field];
+					assertCurrent();
 				}
 				this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
 				this.observe(target.mediaId, field, actual);
@@ -1183,7 +1130,11 @@ export class NativeMediaExecutor {
 					writeNativePreservesPitch(element, value as boolean);
 					const actual = await stableReadback(() => (
 						element as HTMLMediaElement & { preservesPitch: boolean }
-					).preservesPitch);
+					).preservesPitch, {
+						signal,
+						isCurrent,
+					});
+					assertCurrent();
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Pitch-preservation readback mismatch after the stable boundary');
 					}
@@ -1197,9 +1148,12 @@ export class NativeMediaExecutor {
 						value ? 'playing' : 'pause',
 						() => value ? element.play() : element.pause(),
 						() => !element.paused,
-						effectiveDesired,
+						 effectiveDesired,
 						tolerance,
+						750,
+						{ signal, isCurrent },
 					);
+					assertCurrent();
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Playback readback mismatch after the stable boundary');
 					}
@@ -1208,8 +1162,16 @@ export class NativeMediaExecutor {
 					break;
 				}
 				case 'currentTime': {
-					await seekNativeMedia(element, effectiveDesired as number, tolerance);
-					const actual = await stableReadback(() => element.currentTime);
+					await seekNativeMedia(element, effectiveDesired as number, tolerance, {
+						signal,
+						isCurrent,
+					});
+					assertCurrent();
+					const actual = await stableReadback(() => element.currentTime, {
+						signal,
+						isCurrent,
+					});
+					assertCurrent();
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Seek readback mismatch after the stable boundary');
 					}
@@ -1219,7 +1181,11 @@ export class NativeMediaExecutor {
 				}
 				case 'loop': {
 					writeNativeLoop(element, value as boolean);
-					const actual = await stableReadback(() => element.loop);
+					const actual = await stableReadback(() => element.loop, {
+						signal,
+						isCurrent,
+					});
+					assertCurrent();
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Loop readback mismatch after the stable boundary');
 					}
@@ -1255,7 +1221,10 @@ export class NativeMediaExecutor {
 						() => document.pictureInPictureElement === element,
 						effectiveDesired,
 						tolerance,
+						750,
+						{ signal, isCurrent },
 					);
+					assertCurrent();
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Picture-in-Picture readback mismatch after the stable boundary');
 					}
@@ -1277,7 +1246,10 @@ export class NativeMediaExecutor {
 						() => fullscreenOwnsMedia(element),
 						effectiveDesired,
 						tolerance,
+						750,
+						{ signal, isCurrent },
 					);
+					assertCurrent();
 					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Fullscreen readback mismatch after the stable boundary');
 					}
@@ -1310,6 +1282,12 @@ export class NativeMediaExecutor {
 				);
 			}
 		} catch (error) {
+			if (isContentLifecycleError(error)) throw error;
+			try {
+				assertCurrent();
+			} catch (lifecycleError) {
+				if (isContentLifecycleError(lifecycleError)) throw lifecycleError;
+			}
 			if (isRestorableMediaField(field) && baseline !== undefined) {
 				await this.rollbackFailedRestorableWrite(
 					element,
@@ -1317,6 +1295,7 @@ export class NativeMediaExecutor {
 					baseline,
 					effectiveDesired,
 					mediaWriter,
+					signal,
 				)
 					.catch(() => undefined);
 			}
@@ -1372,13 +1351,16 @@ export class NativeMediaExecutor {
 		baseline: ControlValues[RestorableMediaField],
 		attempted: ControlValues[ControlField],
 		writer: RestorableMediaWriter,
+		signal?: AbortSignal,
 	): Promise<void> {
+		assertNativeOperationCurrent({ signal });
 		const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
 		const current = readRestorableMediaField(element, field, writer);
 		if (!valuesMatch(current, attempted, tolerance)) return;
 		writeRestorableMediaField(element, field, baseline, writer);
 		await (writer === 'page-native' ? stablePageReadback : stableReadback)(
 			() => readRestorableMediaField(element, field, writer),
+			{ signal },
 		);
 	}
 
@@ -1497,8 +1479,12 @@ export class NativeMediaExecutor {
 		element: HTMLMediaElement,
 		removalReason?: MediaRegistryRemovalReason,
 	): void {
-		if (this.disposed || this.tabId === null) return;
 		if (event === 'removed') {
+			// Source retirement is the cancellation boundary.  It applies equally to
+			// DOM detach and SPA source reuse; the element object alone is not an
+			// ownership identity.
+			this.abortSourceOperations(target);
+			if (this.disposed || this.tabId === null) return;
 			const key = this.targetKey(target);
 			const pending = this.pending.get(target.mediaId);
 			if (pending) {
@@ -1516,10 +1502,21 @@ export class NativeMediaExecutor {
 			}
 			if (removalReason === 'detached') {
 				void this.releaseDetachedOwnership(element);
-				if (element instanceof HTMLVideoElement) this.effects?.release(element);
+			} else {
+				// A reused element already points at the new resource when the
+				// mutation reaches us. Restoring the old baseline would therefore
+				// write stale values into the new source; discard the old source's
+				// native ownership synchronously instead.
+				nativeMediaOwnership.byElement.delete(element);
+			}
+			clearNativeMediaAsyncState(element);
+			if (element instanceof HTMLVideoElement) {
+				if (removalReason === 'source-change') this.effects?.retireSource?.(element);
+				else this.effects?.release(element);
 			}
 			return;
 		}
+		if (this.disposed || this.tabId === null) return;
 		if (event === 'selected') {
 			this.primeObserved(target.mediaId, element);
 			this.replayDesired(target, element, true);
@@ -1620,6 +1617,13 @@ export class NativeMediaExecutor {
 			observedStrategies.mediaMuted = candidateStrategies.mediaMuted;
 			this.observe(mediaId, 'volumeBase', candidates.volumeBase as number);
 			this.observe(mediaId, 'mediaMuted', candidates.mediaMuted as boolean);
+			if (candidateStrategies.volumeBase === 'page-native') {
+				// A controller that mounted after page entry upgrades the hostname's
+				// solidified volume-scale verdict.
+				void sendSpectraRequest('spectra.audio.page-scale.record', {
+					supported: true,
+				}).catch(() => undefined);
+			}
 		}
 		if (Object.keys(patch).length === 0) return;
 		this.audioRuntimeDelegate?.synchronizeNative(patch);
@@ -1660,6 +1664,7 @@ export class NativeMediaExecutor {
 				writeRestorableMediaField(element, field, owned.baseline, owned.writer);
 				await (owned.writer === 'page-native' ? stablePageReadback : stableReadback)(
 					() => readRestorableMediaField(element, field, owned.writer),
+					{ signal: this.lifecycleController.signal },
 				);
 			} catch {
 				// Detached page objects are best-effort release targets. Ownership is
@@ -1722,6 +1727,7 @@ export class NativeMediaExecutor {
 			target,
 			patch,
 		}).then((response) => {
+			if (!this.isCurrentTarget(target, element)) return;
 			if (!response.ok) return;
 			const applied = Object.values(response.data.fields)
 				.every((field) => field?.phase === 'applied');
@@ -1731,6 +1737,7 @@ export class NativeMediaExecutor {
 			}
 		}).catch(() => undefined).finally(() => {
 			this.replayPending.delete(key);
+			if (!this.isCurrentTarget(target, element)) return;
 			const requested = this.pageMaturationRequested.get(key);
 			if (!requested) return;
 			this.pageMaturationRequested.delete(key);
@@ -1738,10 +1745,28 @@ export class NativeMediaExecutor {
 		});
 	}
 
+	// post: read-only capability discovery for the page-entry volume-scale
+	// verdict. Probes every registered element without writing, so a hostname
+	// with any amplified controller is found while standard pages answer
+	// unsupported in milliseconds.
+	probePageScale(): { supported: boolean } {
+		for (const { element } of this.registry.list()) {
+			if (probePageMediaCapability(element, 'volumeBase')) return { supported: true };
+		}
+		return { supported: false };
+	}
+
 	private primeObserved(mediaId: string, element: HTMLMediaElement): void {
 		if (this.observed.has(mediaId)) return;
+		// The volume writer discovery below is the page-entry capability probe:
+		// it is a read-only bridge transaction whose writer verdict doubles as
+		// the amplified-controller answer for this hostname.
+		const volumeState = readRestorableMediaFieldWithWriter(element, 'volumeBase');
+		void sendSpectraRequest('spectra.audio.page-scale.record', {
+			supported: volumeState.writer === 'page-native',
+		}).catch(() => undefined);
 		const values: Partial<ControlValues> = {
-			volumeBase: readRestorableMediaFieldWithWriter(element, 'volumeBase').actual as number,
+			volumeBase: volumeState.actual as number,
 			mediaMuted: readRestorableMediaFieldWithWriter(element, 'mediaMuted').actual as boolean,
 			speed: readRestorableMediaFieldWithWriter(element, 'speed').actual as number,
 			playing: !element.paused,
@@ -1776,6 +1801,15 @@ export class NativeMediaExecutor {
 	dispose(): void {
 		if (this.disposed) return;
 		this.disposed = true;
+		this.lifecycleController.abort(
+			new ContentLifecycleError('cancelled', 'Native media executor disposed'),
+		);
+		for (const scopes of this.sourceOperationScopes.values()) {
+			for (const scope of scopes) scope.abort(
+				new ContentLifecycleError('cancelled', 'Native media executor disposed'),
+			);
+		}
+		this.sourceOperationScopes.clear();
 		for (const fields of this.pending.values()) {
 			for (const pending of fields.values()) clearTimeout(pending.timeoutId);
 		}
@@ -1786,7 +1820,6 @@ export class NativeMediaExecutor {
 		this.automaticPageMaturationRevision.clear();
 		this.pageMaturationRequested.clear();
 		this.unsubscribeRegistry();
-		if (this.ownsRegistry) this.registry.dispose();
 		if (this.ownsEffects) this.effects?.dispose();
 		this.effects = null;
 	}
@@ -1809,28 +1842,35 @@ export function registerNativeMediaExecutor(executor: NativeMediaExecutor): () =
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| (candidate.type !== 'spectra.control.intent.execute'
-				&& candidate.type !== 'spectra.control.actual.read')) return false;
+				&& candidate.type !== 'spectra.control.actual.read'
+				&& candidate.type !== 'spectra.control.page.scale.probe')) return false;
 		if (sender.id && sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Native control execution is extension-internal only'));
 			return false;
 		}
 		if (!isSpectraRequestEnvelope(message)
 			|| (message.type !== 'spectra.control.intent.execute'
-				&& message.type !== 'spectra.control.actual.read')) {
+				&& message.type !== 'spectra.control.actual.read'
+				&& message.type !== 'spectra.control.page.scale.probe')) {
 			sendResponse(rpcFailure('invalid_request', 'Malformed native control intent'));
 			return false;
 		}
 		executor.bindRequestContext(message.tabId, message.documentId);
 		const operation = message.type === 'spectra.control.actual.read'
 			? Promise.resolve().then(() => executor.read(message.payload))
-			: executor.execute(message.payload);
+			: message.type === 'spectra.control.page.scale.probe'
+				? Promise.resolve().then(() => executor.probePageScale())
+				: executor.execute(message.payload);
 		void operation.then(
 			(ack) => sendResponse(rpcSuccess(ack)),
-			(error) => sendResponse(rpcFailure(
-				'native_control_failed',
-				error instanceof Error ? error.message : String(error),
-				true,
-			)),
+			(error) => {
+				const lifecycle = isContentLifecycleError(error);
+				sendResponse(rpcFailure(
+					lifecycle ? error.code : 'native_control_failed',
+					 error instanceof Error ? error.message : String(error),
+					lifecycle ? error.retryable : true,
+				));
+			},
 		);
 		return true;
 	};

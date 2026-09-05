@@ -1,93 +1,118 @@
-// goal: revision-aware client for the background-owned settings repository
+// goal: full revision-aware settings client for Popup and other full-snapshot consumers
 
 import type {
 	RpcResult,
 	SettingsPatch,
 	SettingsPatchRequest,
 	SettingsSnapshot,
+	SpectraRequestEnvelope,
+	SpectraRequestPayload,
+	SpectraResponse,
 } from '@nexus/contracts';
-import { isSpectraSettingsUiEventEnvelope } from '@nexus/contracts/ui-settings-runtime';
-import { sendSettingsUiRequest } from './ui-settings-spectra-client';
+import {
+	isSpectraFullSettingsEventEnvelope,
+	isSpectraFullSettingsResponse,
+} from '@nexus/contracts/full-settings-runtime';
+import { SPECTRA_PROTOCOL_VERSION } from '@nexus/contracts/ui-settings-runtime';
+import {
+	applyRevisionedPatchWithRetry,
+	createRevisionedSettingsClient,
+	selectNewestRevisionedSnapshot,
+	type RevisionedSettingsTransport,
+} from './revisioned-settings-client';
 
-let cachedSnapshot: SettingsSnapshot | null = null;
-let patchQueue: Promise<void> = Promise.resolve();
+export type SettingsPatchRetryTransport = RevisionedSettingsTransport<SettingsSnapshot, SettingsPatch>;
 
-export interface SettingsPatchRetryTransport {
-	getSnapshot(forceRefresh?: boolean): Promise<SettingsSnapshot>;
-	sendPatch(request: SettingsPatchRequest): Promise<RpcResult<SettingsSnapshot>>;
+type FullSettingsRequestType =
+	| 'spectra.settings.get'
+	| 'spectra.settings.patch'
+	| 'spectra.settings.flush';
+
+function createRequestId(): string {
+	return typeof crypto.randomUUID === 'function'
+		? crypto.randomUUID()
+		: `${Date.now().toString(36)}-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`;
 }
 
-export async function getSettingsSnapshot(forceRefresh = false): Promise<SettingsSnapshot> {
-	if (cachedSnapshot && !forceRefresh) return cachedSnapshot;
-	const result = await sendSettingsUiRequest('spectra.settings.get', {});
-	if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
-	cachedSnapshot = result.data;
-	return result.data;
+async function sendFullSettingsRequest<T extends FullSettingsRequestType>(
+	type: T,
+	payload: SpectraRequestPayload<T>,
+): Promise<SpectraResponse<T>> {
+	const message: SpectraRequestEnvelope<T> = {
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		requestId: createRequestId(),
+		type,
+		payload,
+	};
+	const response: unknown = await chrome.runtime.sendMessage(message);
+	if (!isSpectraFullSettingsResponse(type, response)) {
+		throw new Error(
+			`Background returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} full-settings response for ${type}`,
+		);
+	}
+	return response;
 }
 
-// post: replays only merge-safe field or intent mutations against the latest revision.
-export async function applySettingsPatchWithRetry(
+const fullSettingsTransport: SettingsPatchRetryTransport = {
+	async getSnapshot(): Promise<SettingsSnapshot> {
+		const result = await sendFullSettingsRequest('spectra.settings.get', {});
+		if (!result.ok) throw new Error(`${result.error.code}: ${result.error.message}`);
+		return result.data;
+	},
+	async sendPatch(request: SettingsPatchRequest): Promise<RpcResult<SettingsSnapshot>> {
+		return sendFullSettingsRequest('spectra.settings.patch', request);
+	},
+};
+
+const fullSettingsClient = createRevisionedSettingsClient<SettingsSnapshot, SettingsPatch>(
+	fullSettingsTransport,
+);
+
+export const selectNewestSettingsSnapshot = selectNewestRevisionedSnapshot;
+
+export function applySettingsPatchWithRetry(
 	patch: SettingsPatch,
 	transport: SettingsPatchRetryTransport,
 ): Promise<SettingsSnapshot> {
-	let snapshot = await transport.getSnapshot();
-	const canReplayAfterConflict = patch.scope !== 'hotkey-site';
-	for (let attempt = 0; attempt < 2; attempt += 1) {
-		const response = await transport.sendPatch({ expectedRevision: snapshot.revision, patch });
-		if (response.ok) return response.data;
-		if (response.error.code !== 'revision_conflict' || attempt > 0 || !canReplayAfterConflict) {
-			throw new Error(`${response.error.code}: ${response.error.message}`);
-		}
-		snapshot = await transport.getSnapshot(true);
-	}
-	throw new Error('settings_unavailable: Settings patch retry exhausted');
+	return applyRevisionedPatchWithRetry(patch, transport);
 }
 
-// post: serializes same-page edits and retries one atomic intent after a cross-page revision conflict
+export function subscribeSettingsSnapshots(
+	listener: (snapshot: SettingsSnapshot) => void,
+): () => void {
+	return fullSettingsClient.subscribe(listener);
+}
+
+export function getSettingsSnapshot(forceRefresh = false): Promise<SettingsSnapshot> {
+	return fullSettingsClient.getSnapshot(forceRefresh);
+}
+
 export function patchSettings(patch: SettingsPatch): Promise<SettingsSnapshot> {
-	let resolveResult!: (snapshot: SettingsSnapshot) => void;
-	let rejectResult!: (error: unknown) => void;
-	const result = new Promise<SettingsSnapshot>((resolve, reject) => {
-		resolveResult = resolve;
-		rejectResult = reject;
-	});
-
-	patchQueue = patchQueue.then(async () => {
-		try {
-			const snapshot = await applySettingsPatchWithRetry(patch, {
-				getSnapshot: getSettingsSnapshot,
-				sendPatch: request => sendSettingsUiRequest('spectra.settings.patch', request),
-			});
-			cachedSnapshot = snapshot;
-			resolveResult(snapshot);
-		} catch (error) {
-			rejectResult(error);
-		}
-	}, rejectResult);
-
-	return result;
+	return fullSettingsClient.patch(patch);
 }
 
 export function clearSettingsSnapshotCache(): void {
-	cachedSnapshot = null;
+	fullSettingsClient.clearCache();
 }
 
 export async function flushSettings(): Promise<void> {
-	await patchQueue;
-	const response = await sendSettingsUiRequest('spectra.settings.flush', {});
+	await fullSettingsClient.waitForIdle();
+	const response = await sendFullSettingsRequest('spectra.settings.flush', {});
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 }
 
 if (typeof window !== 'undefined') {
 	const onSettingsChanged = (message: unknown): false => {
-		if (isSpectraSettingsUiEventEnvelope(message)) {
-			cachedSnapshot = message.payload;
+		if (isSpectraFullSettingsEventEnvelope(message)) {
+			fullSettingsClient.accept(message.payload);
 		}
 		return false;
 	};
 	chrome.runtime.onMessage.addListener(onSettingsChanged);
 	window.addEventListener('pagehide', () => {
 		chrome.runtime.onMessage.removeListener(onSettingsChanged);
-		void flushSettings().catch(() => undefined);
+		void flushSettings().catch((error: unknown) => {
+			console.error('[SPECTRA Settings] Unable to flush before pagehide:', error);
+		});
 	}, { once: true });
 }

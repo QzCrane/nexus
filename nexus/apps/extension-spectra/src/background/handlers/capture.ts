@@ -1,24 +1,23 @@
 // goal: serialize tab-capture transitions and publish only offscreen-acknowledged state
 
 import {
-	Actions,
+	audioConfigToProcessorConfig,
 	DEFAULT_AUDIO_CONFIG,
 	SPECTRA_PROTOCOL_VERSION,
 	isOffscreenHostEvent,
-	isSpectraRequestEnvelope,
 	resolveAudioVolume,
-	rpcFailure,
-	rpcSuccess,
 	type AudioCaptureState,
+	type AudioCaptureTransitionResult,
 	type AudioConfig,
 	type AudioProcessorConfig,
 	type AudioSessionSnapshot,
+	type CaptureAdmission,
 	type SpectraEventEnvelope,
 	type SpectraAudioMode,
 	type TabSessionIdentity,
 } from '@nexus/contracts';
 import { audioGraphSignature } from '@nexus/audio-engine';
-import { router, captureStates } from '../state';
+import { captureStates } from '../state';
 import {
 	acquireOffscreenLease,
 	reconcileOffscreenHost,
@@ -29,6 +28,11 @@ import {
 } from '../offscreen-coordinator';
 import { swLog } from '../../shared/logger';
 import {
+	isBackgroundRequestEnvelope,
+	rpcFailure,
+	rpcSuccess,
+} from '../background-rpc';
+import {
 	getAudioSession,
 	identityFromSender,
 	isAudioSessionIdentityInvalidated,
@@ -36,6 +40,12 @@ import {
 } from '../audio-session-store';
 import { updateBadgeFromSession } from './badge';
 import { forEachBounded } from '../bounded-fanout';
+import {
+	consumeCaptureAdmission,
+	isCaptureAdmissionFenceCurrent,
+	mintCaptureAdmission,
+	revokeCaptureAdmissionsForTab,
+} from '../capture-admission';
 
 interface CaptureRuntimeState {
 	generation: number;
@@ -45,6 +55,12 @@ interface CaptureRuntimeState {
 	lastError?: string;
 	actualConfig?: AudioConfig;
 	identity?: TabSessionIdentity;
+	controlDocumentEpoch?: number;
+}
+
+interface ConsumedCaptureStartAuthority {
+	admission: CaptureAdmission;
+	fenceEpoch: number;
 }
 
 function actualConfigFromProcessor(
@@ -150,8 +166,6 @@ function getMediaStreamId(tabId: number): Promise<string> {
 	});
 }
 
-// note: one-release adapter for extension pages and content contexts that were
-// already loaded with the v1 capture envelope during an extension update.
 function isExpectedMissingReceiver(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : String(error);
 	return message.includes('Receiving end does not exist') ||
@@ -163,37 +177,9 @@ function reportBroadcastFailure(scope: string, tabId: number, error: unknown): v
 	swLog.warn(`[Capture] ${scope} broadcast failed for tab ${tabId}`, error);
 }
 
-function broadcastLegacyCaptureStateForOneRelease(
-	tabId: number,
-	payload: Record<string, unknown>,
-	documentId?: string,
-): void {
-	if (documentId) {
-		chrome.tabs.sendMessage(
-			tabId,
-			{ action: Actions.CAPTURE_STATE_CHANGE, payload },
-			{ documentId },
-		).catch((error: unknown) => {
-			reportBroadcastFailure('legacy tab', tabId, error);
-		});
-	}
-	chrome.runtime.sendMessage({ action: Actions.CAPTURE_STATE_CHANGE, payload }).catch((error: unknown) => {
-		reportBroadcastFailure('legacy extension', tabId, error);
-	});
-}
-
 function publishCaptureState(tabId: number, state: CaptureRuntimeState): void {
 	captureStates.set(tabId, state.active);
-	const payload = {
-		tabId,
-		enabled: state.active,
-		actualMode: state.active ? 'capture' : 'bypass',
-		phase: state.phase,
-		generation: state.generation,
-		error: state.lastError,
-	};
 	const documentId = state.identity?.documentId;
-	broadcastLegacyCaptureStateForOneRelease(tabId, payload, documentId);
 	if (!documentId) return;
 	const event: SpectraEventEnvelope<'spectra.audio.capture.changed'> = {
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -249,8 +235,8 @@ async function commitCaptureSnapshot(
 	});
 }
 
-// post: the authoritative snapshot event is emitted before the compatibility
-// capture event, so UI consumers can never observe an ACK as a predicted mode.
+// post: the authoritative extension snapshot is committed before the
+// exact-document Capture lifecycle event reaches the content runtime.
 async function publishAcknowledgedCaptureState(
 	tabId: number,
 	state: CaptureRuntimeState,
@@ -296,14 +282,38 @@ async function cancelFailedStart(
 	}
 }
 
+function assertCaptureStartAuthority(
+	tabId: number,
+	identity: TabSessionIdentity,
+	authority: ConsumedCaptureStartAuthority,
+	requireUnexpired: boolean,
+): void {
+	const { admission, fenceEpoch } = authority;
+	if (admission.document.tabId !== tabId
+		|| admission.document.frameId !== 0
+		|| admission.document.documentId !== identity.documentId) {
+		throw new Error('Capture start authority belongs to another document');
+	}
+	if (isAudioSessionIdentityInvalidated(identity)
+		|| !isCaptureAdmissionFenceCurrent(tabId, fenceEpoch)) {
+		throw new Error('Capture start authority was invalidated by document lifecycle');
+	}
+	if (requireUnexpired && admission.expiresAtMonotonicMs <= performance.now()) {
+		throw new Error('Capture start authority expired before physical acquisition');
+	}
+}
+
 async function startCapture(
 	tabId: number,
 	config: AudioConfig,
-	requestedGeneration?: number,
-	identity?: TabSessionIdentity,
+	requestedGeneration: number | undefined,
+	identity: TabSessionIdentity,
+	authority: ConsumedCaptureStartAuthority,
 ) {
 	const state = getSession(tabId);
-	if (identity) state.identity = identity;
+	assertCaptureStartAuthority(tabId, identity, authority, true);
+	state.identity = identity;
+	state.controlDocumentEpoch = authority.admission.documentEpoch;
 	if (requestedGeneration !== undefined && requestedGeneration < state.generation) {
 		return {
 			status: 'processing' as const,
@@ -333,13 +343,15 @@ async function startCapture(
 	let acquiredLease = false;
 	try {
 		acquiredLease = await acquireOffscreenLease(`audio:${tabId}`);
+		assertCaptureStartAuthority(tabId, identity, authority, true);
 		const streamId = await getMediaStreamId(tabId);
+		assertCaptureStartAuthority(tabId, identity, authority, true);
 		const startHost = (startGeneration: number) => withTimeout(
 			sendOffscreenMessage({
 				type: 'OFFSCREEN_AUDIO_START',
 				tabId,
 				streamId,
-				config,
+				config: audioConfigToProcessorConfig(config),
 				generation: startGeneration,
 				controlRevision,
 			}),
@@ -356,8 +368,13 @@ async function startCapture(
 			// required to count up to an otherwise invisible tombstone.
 			generation = result.generation + 1;
 			state.generation = generation;
+			assertCaptureStartAuthority(tabId, identity, authority, true);
 			result = await startHost(generation);
 		}
+		// Once the physical host has accepted work, expiration no longer revokes
+		// the already-spent one-shot grant. Navigation/close still fences the
+		// delayed ACK and forces cancellation before any state can commit.
+		assertCaptureStartAuthority(tabId, identity, authority, false);
 
 		if (state.generation !== generation) {
 			return { status: 'processing' as const, phase: state.phase, generation: state.generation };
@@ -410,10 +427,15 @@ async function startCapture(
 		// explicit generation tombstone so delayed getUserMedia()/resume() work is
 		// disposed instead of committing after the lease is rolled back.
 		await cancelFailedStart(tabId, generation, !wasActive);
-		if (state.generation === generation) {
+		const authorityStillCurrent = isCaptureAdmissionFenceCurrent(
+			tabId,
+			authority.fenceEpoch,
+		) && !isAudioSessionIdentityInvalidated(identity);
+		const errorMessage = error instanceof Error ? error.message : String(error);
+		if (state.generation === generation && authorityStillCurrent) {
 			state.active = wasActive;
 			state.phase = 'error';
-			state.lastError = error instanceof Error ? error.message : String(error);
+			state.lastError = errorMessage;
 			await publishAcknowledgedCaptureState(tabId, state, {
 				actualMode: state.active ? 'capture' : undefined,
 				phase: 'error',
@@ -426,7 +448,7 @@ async function startCapture(
 			phase: 'error' as const,
 			active: state.active,
 			generation,
-			error: state.lastError,
+			error: state.lastError ?? errorMessage,
 		};
 	}
 }
@@ -561,7 +583,7 @@ async function updateCaptureConfig(
 				tabId,
 				generation: requestedGeneration,
 				controlRevision,
-				config,
+				config: audioConfigToProcessorConfig(config),
 			});
 			if (!result?.ok
 				|| result.phase !== 'active'
@@ -600,7 +622,7 @@ async function updateCaptureConfig(
 	});
 }
 
-function registerCaptureV2Listener(): void {
+function registerCaptureProtocolListener(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
@@ -611,31 +633,84 @@ function registerCaptureV2Listener(): void {
 			sendResponse(rpcFailure('forbidden', 'Capture RPC is extension-internal only'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)
-			|| (message.type !== 'spectra.audio.capture.set'
-				&& message.type !== 'spectra.audio.capture.config')) {
+		if (!isBackgroundRequestEnvelope(message)) {
 			sendResponse(rpcFailure('invalid_request', 'Malformed capture request'));
 			return false;
 		}
 		const senderTabId = sender.tab?.id;
-		const tabId = senderTabId ?? message.tabId;
-		if (!tabId || (senderTabId !== undefined && message.tabId !== undefined && message.tabId !== senderTabId)) {
-			sendResponse(rpcFailure('forbidden', 'Capture request requires a fixed target tab'));
+		if (typeof senderTabId !== 'number'
+			|| !Number.isInteger(senderTabId)
+			|| (message.tabId !== undefined && message.tabId !== senderTabId)) {
+			sendResponse(rpcFailure('forbidden', 'Capture request requires a current content sender'));
 			return false;
 		}
-		if ((senderTabId !== undefined && isStaleContentSender(sender)) || message.generation === undefined) {
+		if (isStaleContentSender(sender) || message.generation === undefined) {
 			sendResponse(rpcFailure('stale_document', 'Capture request belongs to a stale document', true));
 			return false;
 		}
 		const generation = message.generation;
-		const identity = senderTabId === undefined ? undefined : identityFromSender(sender) ?? undefined;
+		const tabId = senderTabId;
+		const identity = identityFromSender(sender) ?? undefined;
+		if (!identity) {
+			sendResponse(rpcFailure('stale_document', 'Capture sender has no current document identity', true));
+			return false;
+		}
+		const admission = message.type === 'spectra.audio.capture.set' && message.payload.enabled
+			? consumeCaptureAdmission(message.payload.admission, {
+				kind: message.payload.admission.kind,
+				tabId,
+				documentId: identity.documentId,
+			})
+			: null;
+		if (admission && !admission.ok) {
+			sendResponse(rpcFailure('capture_admission_denied', admission.reason));
+			return false;
+		}
 
-		const operation = async (): Promise<AudioCaptureState> => {
+		const operation = async (): Promise<AudioCaptureTransitionResult> => {
 			if (message.type === 'spectra.audio.capture.set') {
-				await serializeTransition(tabId, async () => message.payload.enabled
-					? startCapture(tabId, message.payload.config, generation, identity)
-					: stopCapture(tabId, generation, identity));
-				return toCaptureState(tabId);
+				return serializeTransition(tabId, async () => {
+					if (message.payload.enabled) {
+						if (!admission?.ok) throw new Error('Capture start has no consumed admission');
+						const started = await startCapture(
+							tabId,
+							message.payload.config,
+							generation,
+							identity,
+							admission,
+						);
+						if (started.status === 'error') {
+							throw new Error(started.error ?? 'Capture start failed');
+						}
+						return toCaptureState(tabId);
+					}
+
+					const state = getSession(tabId);
+					const wasActive = state.active;
+					const controlDocumentEpoch = state.controlDocumentEpoch;
+					await stopCapture(tabId, generation, identity);
+					const settled = toCaptureState(tabId);
+					if (!message.payload.requestContinuation) return settled;
+					if (!wasActive || settled.active || settled.phase !== 'idle'
+						|| controlDocumentEpoch === undefined) {
+						throw new Error('Capture continuation requires a successfully suspended current processor');
+					}
+					const continuationAdmission = mintCaptureAdmission({
+						kind: 'capture-resume',
+						operationId: `capture-continuation:${crypto.randomUUID()}`,
+						document: {
+							tabId,
+							frameId: 0,
+							documentId: identity.documentId,
+						},
+						documentEpoch: controlDocumentEpoch,
+						issuer: 'capture-session-authority',
+					});
+					return { ...settled, continuationAdmission };
+				});
+			}
+			if (message.type !== 'spectra.audio.capture.config') {
+				throw new Error('Unsupported capture request');
 			}
 			const result = await updateCaptureConfig(tabId, message.payload.config, generation, identity);
 			if (!result.ok) {
@@ -696,53 +771,8 @@ function registerOffscreenAudioLifecycleListener(): void {
 }
 
 export function registerCaptureHandlers(): void {
-	registerCaptureV2Listener();
+	registerCaptureProtocolListener();
 	registerOffscreenAudioLifecycleListener();
-	router.on(Actions.CAPTURE_TOGGLE, async (request, sender) => {
-		const tabId = request.tabId ?? sender.tab?.id;
-		if (!tabId) return { status: 'error' as const, error: 'No tab ID' };
-		if (isStaleContentSender(sender)) {
-			return { status: 'error' as const, phase: 'error' as const, active: false, error: 'Stale document' };
-		}
-		return serializeTransition(tabId, async () => {
-			const identity = identityFromSender(sender) ?? undefined;
-			if (request.enabled) {
-				return startCapture(
-					tabId,
-					request.config as AudioConfig,
-					'generation' in request ? Number(request.generation) : undefined,
-					identity,
-				);
-			}
-			return stopCapture(
-				tabId,
-				'generation' in request ? Number(request.generation) : undefined,
-				identity,
-			);
-		});
-	});
-
-	router.on(Actions.CAPTURE_GET_STATE, async (request, sender) => {
-		const tabId = request.tabId ?? sender.tab?.id;
-		return tabId ? getSession(tabId).active : false;
-	});
-
-	router.on(Actions.CAPTURE_UPDATE_CONFIG, async (request, sender) => {
-		const tabId = request.tabId ?? sender.tab?.id;
-		if (!tabId) return { ok: false, generation: 0, error: 'No tab ID' };
-		if (isStaleContentSender(sender)) {
-			return { ok: false, generation: 0, error: 'Stale document' };
-		}
-		const state = getSession(tabId);
-		const requestedGeneration = 'generation' in request ? Number(request.generation) : state.generation;
-		return updateCaptureConfig(
-			tabId,
-			request.config,
-			requestedGeneration,
-			identityFromSender(sender) ?? undefined,
-		);
-	});
-
 	beginCaptureReconciliation();
 }
 
@@ -858,6 +888,7 @@ export async function handleCaptureToggle(tabId: number, enabled: boolean): Prom
 // post: navigation/close cleanup is ordered in the same per-tab transition queue;
 // a new document cannot acquire capture and then be erased by late old-document cleanup.
 export function teardownCaptureState(tabId: number): Promise<boolean> {
+	revokeCaptureAdmissionsForTab(tabId);
 	return serializeTransition(tabId, async () => {
 		const result = await stopCapture(tabId);
 		if (result.status === 'error' && result.active) return false;
@@ -868,6 +899,7 @@ export function teardownCaptureState(tabId: number): Promise<boolean> {
 }
 
 export function cleanupCaptureState(tabId: number): void {
+	revokeCaptureAdmissionsForTab(tabId);
 	if (getSession(tabId).active) return;
 	sessions.delete(tabId);
 	transitions.delete(tabId);

@@ -111,32 +111,6 @@ body {
   -webkit-text-fill-color: transparent;
 }
 
-.nav {
-  display: flex;
-  gap: var(--space-xs);
-}
-
-.nav-btn {
-  background: transparent;
-  border: none;
-  padding: var(--space-sm) var(--space-md);
-  color: var(--text-secondary);
-  font-size: 0.875rem;
-  cursor: pointer;
-  border-radius: var(--radius-md);
-  transition: all 0.2s;
-}
-
-.nav-btn:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.nav-btn.active {
-  background: var(--accent);
-  color: white;
-}
-
 /* ========== Sections ========== */
 .section-header {
   display: flex;
@@ -148,12 +122,6 @@ body {
 .section-header h2 {
   font-size: 1.25rem;
   font-weight: 600;
-}
-
-.section-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
 }
 
 /* ========== Buttons ========== */
@@ -235,89 +203,11 @@ body {
   transform: translateX(18px);
 }
 
-/* ========== Hotkey list ========== */
-.hotkeys-list {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-sm);
-}
-
-.hotkey-item {
-  display: flex;
-  align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md);
-  background: var(--bg-secondary);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-  transition: border-color 0.2s;
-}
-
-.hotkey-item:hover {
-  border-color: var(--accent);
-}
-
-.hotkey-item.disabled {
-  opacity: 0.5;
-}
-
-.hotkey-enable {
-  flex-shrink: 0;
-}
-
-.hotkey-key {
-  min-width: 150px;
-  padding: var(--space-xs) var(--space-sm);
-  background: var(--bg-tertiary);
-  border-radius: var(--radius-sm);
-  font-family: "Consolas", monospace;
-  font-size: 0.875rem;
-  text-align: center;
-}
-
-.hotkey-action {
-  flex: 1;
-  color: var(--text-secondary);
-}
-
-.hotkey-actions {
-  display: flex;
-  gap: var(--space-xs);
-}
-
-.hotkey-actions button {
-  padding: var(--space-xs) var(--space-sm);
-  background: transparent;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  border-radius: var(--radius-sm);
-  transition: all 0.2s;
-}
-
-.hotkey-actions button:hover {
-  background: var(--bg-hover);
-  color: var(--text-primary);
-}
-
-.hotkey-actions .delete:hover {
-  color: var(--danger);
-}
-
 /* ========== Empty state ========== */
 .empty-state {
   text-align: center;
   padding: var(--space-xl);
   color: var(--text-muted);
-}
-
-/* ========== Tabs ========== */
-.tab-content {
-  display: block;
-}
-
-.tab-content.hidden {
-  display: none;
 }
 
 /* ========== Modal ========== */
@@ -539,6 +429,7 @@ body {
 
 .slot-action-select {
   flex: 1;
+  min-width: 0;
   padding: var(--space-xs) var(--space-sm);
   background: var(--bg-primary);
   border: 1px solid var(--border-color);

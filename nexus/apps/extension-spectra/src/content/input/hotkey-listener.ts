@@ -8,7 +8,6 @@ import type {
 } from '@nexus/contracts';
 import {
 	DEFAULT_HOTKEY_SETTINGS,
-	HOTKEY_ACTION_DESCRIPTORS,
 	findBestHostnameMatch,
 	isSpectraEventEnvelope,
 	normalizeHostname,
@@ -16,6 +15,8 @@ import {
 	resolveAudioVolumeState,
 	resolveSpectraHotkeyActualFeedback,
 	resolveSpectraDefaultHotkeyAction,
+	selectHotkeyFeedbackOwner,
+	selectHotkeyRepeatPolicy,
 } from '@nexus/contracts';
 import { createLogger } from '../../shared/logger';
 import { sendSpectraRequest } from '../../shared/spectra-client';
@@ -438,14 +439,13 @@ function resolveSiteHotkeyBinding(e: KeyboardEvent): HotkeyBinding | null {
 		e.metaKey,
 	));
 	if (!binding) return null;
-	const descriptor = HOTKEY_ACTION_DESCRIPTORS[binding.action];
-	if (e.repeat && (descriptor.repeatPolicy !== 'coalesce-20hz'
+	if (e.repeat && (selectHotkeyRepeatPolicy(binding.action) !== 'coalesce-20hz'
 		|| !activeBindingsByCode.has(e.code))) return null;
 	return binding;
 }
 
 function handleKeydown(e: KeyboardEvent, binding: HotkeyBinding): void {
-	const descriptor = HOTKEY_ACTION_DESCRIPTORS[binding.action];
+	const repeatPolicy = selectHotkeyRepeatPolicy(binding.action);
 	e.preventDefault();
 	if (!e.repeat) releaseSiteHotkeys({ code: e.code });
 	const active = e.repeat ? activeBindingsByCode.get(e.code) : undefined;
@@ -454,11 +454,11 @@ function handleKeydown(e: KeyboardEvent, binding: HotkeyBinding): void {
 		repeated: e.repeat || active?.repeated === true,
 		feedbackGesture: active?.feedbackGesture ?? nextFeedbackGesture(),
 	};
-	if (!e.repeat && descriptor.repeatPolicy === 'coalesce-20hz') {
+	if (!e.repeat && repeatPolicy === 'coalesce-20hz') {
 		advanceBindingFeedbackTarget(binding, held.feedbackGesture);
 	}
 	activeBindingsByCode.set(e.code, held);
-	if (descriptor.repeatPolicy !== 'coalesce-20hz' || !e.repeat) {
+	if (repeatPolicy !== 'coalesce-20hz' || !e.repeat) {
 		// First press (non-repeat) OR a non-coalesce action: execute immediately
 		// WITH the OSD toast. The toast is the once-per-press signal that the
 		// hotkey fired — it must not be re-shown on every keydown repeat, or the
@@ -536,7 +536,7 @@ function releaseSiteHotkeys(signal: PhysicalHotkeyReleaseSignal): void {
 
 async function executeWithOSD(b: HotkeyBinding, feedbackGesture: string): Promise<unknown> {
 	const action = b.action;
-	const feedbackOwner = HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner;
+	const feedbackOwner = selectHotkeyFeedbackOwner(action);
 	if (feedbackOwner === 'actual-osd') {
 		claimHotkeyActualOSDGesture(feedbackGesture);
 	}

@@ -3,12 +3,9 @@
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
-	isSpectraRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
 } from '@nexus/contracts';
-import { router } from '../state';
 import { swLog } from '../../shared/logger';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
 
 // eff: checks if userScripts API is available and enabled by user
 async function isUserScriptsAvailable(): Promise<boolean> {
@@ -100,8 +97,11 @@ export function registerUserScriptsHandler(): void {
 			sendResponse(rpcFailure('forbidden', 'User scripts require an extension content-script context'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed SPECTRA v2 user-script request'));
+		if (!isBackgroundRequestEnvelope(message)) {
+			sendResponse(rpcFailure(
+				'invalid_request',
+				`Malformed SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} user-script request`,
+			));
 			return false;
 		}
 		if (message.type !== 'spectra.user-script.execute') return false;
@@ -119,17 +119,6 @@ export function registerUserScriptsHandler(): void {
 				));
 			});
 		return true;
-	});
-
-	router.on('USER_SCRIPT_EXECUTE', async (req, sender) => {
-		const tabId = sender.tab?.id;
-		if (!tabId || !sender.documentId) {
-			return { success: false, error: 'No tab context' };
-		}
-		if (!isExecutableUserScript(req.script)) {
-			return { success: false, error: 'No script provided' };
-		}
-		return executeUserScriptInTab(tabId, sender.documentId, req.script);
 	});
 
 	swLog.debug('UserScripts handler registered');

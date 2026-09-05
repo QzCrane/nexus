@@ -6,5 +6,11 @@
 	"extDescription": {
 		"message": "800% 音量ブースト、EQ、動画操作、任意のスマホリモコン。利用可否はページと Chrome の対応状況によります。",
 		"description": "Extension description"
+	},
+	"popupStartupFailed": {
+		"message": "SPECTRA は一時的に利用できません。"
+	},
+	"popupRetry": {
+		"message": "再試行"
 	}
 }

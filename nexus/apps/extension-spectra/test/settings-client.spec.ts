@@ -8,7 +8,10 @@ import {
 	type SettingsPatchRequest,
 	type SettingsSnapshot,
 } from '@nexus/contracts';
-import { applySettingsPatchWithRetry } from '../src/shared/settings-client';
+import {
+	applySettingsPatchWithRetry,
+	selectNewestSettingsSnapshot,
+} from '../src/shared/settings-client';
 
 function snapshot(revision: number, bindingIds: string[] = []): SettingsSnapshot {
 	return {
@@ -41,6 +44,12 @@ function snapshot(revision: number, bindingIds: string[] = []): SettingsSnapshot
 }
 
 describe('revision-aware settings client', () => {
+	test('never lets an older event or delayed read replace a newer cached snapshot', () => {
+		const newest = snapshot(7, ['newest']);
+		expect(selectNewestSettingsSnapshot(newest, snapshot(6, ['stale']))).toBe(newest);
+		expect(selectNewestSettingsSnapshot(snapshot(6), newest)).toBe(newest);
+	});
+
 	test('replays one binding-level intent against the refreshed revision', async () => {
 		let current = snapshot(1);
 		const requests: SettingsPatchRequest[] = [];
@@ -78,48 +87,4 @@ describe('revision-aware settings client', () => {
 		]);
 	});
 
-	test('does not replay the one-release whole-site compatibility patch', async () => {
-		let sendCount = 0;
-		await expect(applySettingsPatchWithRetry({
-			scope: 'hotkey-site',
-			domain: 'example.com',
-			value: { enabled: true, bindings: [] },
-		}, {
-			async getSnapshot() {
-				return snapshot(4);
-			},
-			async sendPatch() {
-				sendCount += 1;
-				return rpcFailure('revision_conflict', 'Concurrent edit', true);
-			},
-		})).rejects.toThrow('revision_conflict');
-		expect(sendCount).toBe(1);
-	});
-
-	test('replays the legacy theme consume intent after a concurrent v2 preference wins', async () => {
-		let current = snapshot(1);
-		const revisions: number[] = [];
-		const result = await applySettingsPatchWithRetry({
-			scope: 'legacy-theme',
-			candidate: 'dark',
-		}, {
-			async getSnapshot(forceRefresh) {
-				if (forceRefresh) {
-					current = snapshot(2);
-					current.globalSettings.themeMode = 'light';
-				}
-				return current;
-			},
-			async sendPatch(request) {
-				revisions.push(request.expectedRevision);
-				if (request.expectedRevision === 1) {
-					return rpcFailure('revision_conflict', 'Modern preference was saved first', true);
-				}
-				return rpcSuccess(current);
-			},
-		});
-
-		expect(revisions).toEqual([1, 2]);
-		expect(result.globalSettings.themeMode).toBe('light');
-	});
 });

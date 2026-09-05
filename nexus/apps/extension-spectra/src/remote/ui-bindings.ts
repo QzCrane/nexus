@@ -5,12 +5,12 @@
  * Each tab uses independent session.
  */
 
-import { generateRemoteQR } from './qr-generator.js';
 import { renderRemoteModal, closeRemoteModal, isRemoteModalOpen, setRemoteI18n } from './modal-renderer.js';
 import type { I18NDict } from '../popup/types';
-import { isRemotePairing } from './protocol';
+import { isRemotePairing, type RemotePairing } from './protocol';
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
+import { showPopupToast } from '../popup/toast';
 
 let currentDict: I18NDict | null = null;
 let currentTabId: number | null = null;
@@ -75,10 +75,6 @@ export function updateRemoteI18n(dict: I18NDict): void {
 	if (btnRemote) setRemoteButtonLabel(btnRemote, isConnected);
 }
 
-export function isRemoteConnected(): boolean {
-	return isConnected;
-}
-
 async function refreshRemoteStatus(): Promise<void> {
 	const btnRemote = document.getElementById('btn-remote');
 	const tabId = currentTabId;
@@ -95,8 +91,11 @@ async function refreshRemoteStatus(): Promise<void> {
 		if (!response.ok) throw new Error(response.error.message);
 		currentSessionId = isRemotePairing(response.data.session) ? response.data.session.sessionId : null;
 		setConnected(response.data.connected);
-	} catch {
-		if (currentTabId === tabId && sessionRevision === revision) setConnected(false);
+	} catch (error: unknown) {
+		if (currentTabId === tabId && sessionRevision === revision) {
+			setConnected(false);
+			showPopupToast(error instanceof Error ? error.message : String(error), 'error');
+		}
 	}
 }
 
@@ -149,7 +148,7 @@ async function toggleRemoteModal(): Promise<void> {
 		if (isRemotePairing(existingSession?.session)) {
 			currentSessionId = existingSession.session.sessionId;
 			setConnected(existingSession.connected === true);
-			const qrDataUrl = await generateRemoteQR(existingSession.session);
+			const qrDataUrl = await generatePairingQr(existingSession.session);
 			if (currentTabId !== tabId || sessionRevision !== revision || currentSessionId !== existingSession.session.sessionId) return;
 			renderRemoteModal(qrDataUrl, existingSession.session, tabId, isConnected);
 			return;
@@ -162,23 +161,28 @@ async function toggleRemoteModal(): Promise<void> {
 		);
 		if (currentTabId !== tabId || sessionRevision !== revision) return;
 
-		if (!response.ok || !isRemotePairing(response.data)) {
-			console.error('[SPECTRA Remote] Create session failed:', response.ok ? 'invalid session' : response.error);
-			return;
-		}
+		if (!response.ok) throw new Error(response.error.message);
+		if (!isRemotePairing(response.data)) throw new Error('Remote session creation was not acknowledged');
 
 		const session = response.data;
 		currentSessionId = session.sessionId;
 		setConnected(false);
-		const qrDataUrl = await generateRemoteQR(session);
+		const qrDataUrl = await generatePairingQr(session);
 		if (currentTabId !== tabId || sessionRevision !== revision || currentSessionId !== session.sessionId) return;
 		renderRemoteModal(qrDataUrl, session, tabId, isConnected);
-	} catch (err) {
-		console.error('[SPECTRA Remote] Init failed:', err);
+	} catch (error: unknown) {
+		if (currentTabId === tabId && sessionRevision === revision) {
+			showPopupToast(error instanceof Error ? error.message : String(error), 'error');
+		}
 	} finally {
 		if (btnRemote) {
 			btnRemote.classList.remove('loading');
 			btnRemote.textContent = '📱';
 		}
 	}
+}
+
+async function generatePairingQr(pairing: RemotePairing): Promise<string> {
+	const { generateRemoteQR } = await import('./qr-generator.js');
+	return generateRemoteQR(pairing);
 }

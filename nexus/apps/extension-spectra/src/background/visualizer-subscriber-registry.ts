@@ -8,6 +8,7 @@ export const VISUALIZER_SUBSCRIBER_TOMBSTONE_TTL_MS = 30_000;
 export interface VisualizerSubscriberLease {
 	generation: number;
 	tabIds: Set<number>;
+	captureTabId: number | null;
 	expiresAt: number;
 	state: 'active' | 'tombstone';
 }
@@ -24,6 +25,7 @@ function tombstone(generation: number, now: number): VisualizerSubscriberLease {
 	return {
 		generation,
 		tabIds: new Set<number>(),
+		captureTabId: null,
 		expiresAt: now + VISUALIZER_SUBSCRIBER_TOMBSTONE_TTL_MS,
 		state: 'tombstone',
 	};
@@ -69,6 +71,7 @@ export function planVisualizerSubscriberLease(
 		: {
 			generation: payload.generation,
 			tabIds: new Set(payload.tabIds),
+			captureTabId: payload.captureTabId,
 			expiresAt: now + VISUALIZER_SUBSCRIBER_TTL_MS,
 			state: 'active',
 		});
@@ -89,7 +92,11 @@ export function removeVisualizerTab(
 		candidate ??= new Map(current);
 		const tabIds = new Set(lease.tabIds);
 		tabIds.delete(tabId);
-		candidate.set(subscriberId, { ...lease, tabIds });
+		candidate.set(subscriberId, {
+			...lease,
+			tabIds,
+			captureTabId: lease.captureTabId === tabId ? null : lease.captureTabId,
+		});
 	}
 	return candidate ?? current;
 }

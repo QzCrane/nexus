@@ -1,0 +1,429 @@
+// goal: own every bounded asynchronous native-media acknowledgement and seek
+
+import {
+	abortError,
+	assertNotAborted,
+	ContentLifecycleError,
+} from '../core/content-runtime-context';
+
+/**
+ * A native-media operation is valid only while its caller's signal and target
+ * fence are both current.  Callers must pass the same options through every
+ * await so a late event/readback cannot become a successful ACK.
+ */
+export interface NativeMediaOperationOptions {
+	signal?: AbortSignal;
+	isCurrent?: () => boolean;
+	timeoutMs?: number;
+}
+
+export function assertNativeOperationCurrent(options: NativeMediaOperationOptions): void {
+	assertNotAborted(options.signal);
+	if (options.isCurrent && !options.isCurrent()) {
+		throw new ContentLifecycleError(
+			'stale-media-source',
+			'The media source changed before the asynchronous native operation committed',
+		);
+	}
+}
+
+interface OwnedSeek {
+	expected: number;
+	tolerance: number;
+	expiresAt: number;
+}
+
+const ownedSeeks = new WeakMap<HTMLMediaElement, OwnedSeek[]>();
+const videoCadence = new WeakMap<HTMLVideoElement, {
+	sourceRevision: number;
+	frameDuration: number;
+}>();
+
+function markOwnedSeek(
+	element: HTMLMediaElement,
+	expected: number,
+	tolerance: number,
+): OwnedSeek {
+	const now = performance.now();
+	const active = (ownedSeeks.get(element) ?? [])
+		.filter((seek) => seek.expiresAt > now);
+	const owned = { expected, tolerance, expiresAt: now + 1_000 };
+	active.push(owned);
+	ownedSeeks.set(element, active);
+	return owned;
+}
+
+function releaseOwnedSeek(element: HTMLMediaElement, owned: OwnedSeek): void {
+	const active = (ownedSeeks.get(element) ?? []).filter((seek) => seek !== owned);
+	if (active.length > 0) ownedSeeks.set(element, active);
+	else ownedSeeks.delete(element);
+}
+
+/** Consume only a seek token owned by this module and this exact element. */
+export function consumeOwnedSeek(element: HTMLMediaElement, actual: number): boolean {
+	const now = performance.now();
+	const active = (ownedSeeks.get(element) ?? [])
+		.filter((seek) => seek.expiresAt > now);
+	const index = active.findIndex((seek) => Math.abs(seek.expected - actual) <= seek.tolerance);
+	if (index < 0) {
+		if (active.length > 0) ownedSeeks.set(element, active);
+		else ownedSeeks.delete(element);
+		return false;
+	}
+	active.splice(index, 1);
+	if (active.length > 0) ownedSeeks.set(element, active);
+	else ownedSeeks.delete(element);
+	return true;
+}
+
+/** Retire all async state when an element's media source identity ends. */
+export function clearNativeMediaAsyncState(element: HTMLMediaElement): void {
+	ownedSeeks.delete(element);
+	if (typeof HTMLVideoElement !== 'undefined' && element instanceof HTMLVideoElement) {
+		videoCadence.delete(element);
+	}
+}
+
+function valuesMatch(expected: unknown, actual: unknown, tolerance: number): boolean {
+	if (typeof expected === 'number' && typeof actual === 'number') {
+		return Math.abs(expected - actual) <= tolerance;
+	}
+	return JSON.stringify(expected) === JSON.stringify(actual);
+}
+
+const ANIMATION_BOUNDARY_FALLBACK_MS = 48;
+
+function nextAnimationBoundary(options: NativeMediaOperationOptions = {}): Promise<void> {
+	assertNativeOperationCurrent(options);
+	if (typeof requestAnimationFrame !== 'function') return Promise.resolve();
+	return new Promise((resolve, reject) => {
+		let settled = false;
+		let frameId: number | undefined;
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+		const finish = (error?: ContentLifecycleError): void => {
+			if (settled) return;
+			settled = true;
+			if (timeoutId !== null) clearTimeout(timeoutId);
+			options.signal?.removeEventListener('abort', onAbort);
+			if (frameId !== undefined && typeof cancelAnimationFrame === 'function') {
+				cancelAnimationFrame(frameId);
+			}
+			if (error) reject(error);
+			else resolve();
+		};
+		const onAbort = (): void => finish(abortError(options.signal));
+		// Hidden/background tabs may suspend rAF indefinitely. Preserve a bounded
+		// fallback, while an explicit lifecycle abort rejects immediately.
+		timeoutId = setTimeout(finish, options.timeoutMs ?? ANIMATION_BOUNDARY_FALLBACK_MS);
+		options.signal?.addEventListener('abort', onAbort, { once: true });
+		frameId = requestAnimationFrame(() => finish());
+	});
+}
+
+export async function stableReadback<T>(
+	read: () => T,
+	options: NativeMediaOperationOptions = {},
+): Promise<T> {
+	assertNativeOperationCurrent(options);
+	// Page players commonly reflect a standard setter synchronously and then
+	// normalize it in a microtask or animation callback. Two bounded frame
+	// boundaries catch that rollback without installing a standing observer.
+	await Promise.resolve();
+	assertNativeOperationCurrent(options);
+	await nextAnimationBoundary(options);
+	assertNativeOperationCurrent(options);
+	await nextAnimationBoundary(options);
+	assertNativeOperationCurrent(options);
+	return read();
+}
+
+const NATIVE_EVENT_QUIET_MS = 64;
+
+export async function stablePageReadback<T>(
+	read: () => T,
+	options: NativeMediaOperationOptions = {},
+): Promise<T> {
+	// Page controller getters are the ACK boundary. Give the player the same
+	// short quiet window used by native event ACKs, then cross two render
+	// boundaries so delayed UI/state rollback cannot be committed as success.
+	assertNativeOperationCurrent(options);
+	await waitWithNativeTimeout(NATIVE_EVENT_QUIET_MS, options);
+	return stableReadback(read, options);
+}
+
+function waitWithNativeTimeout(
+	timeoutMs: number,
+	options: NativeMediaOperationOptions = {},
+): Promise<void> {
+	assertNativeOperationCurrent(options);
+	return new Promise((resolve, reject) => {
+		let settled = false;
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+		const finish = (error?: ContentLifecycleError): void => {
+			if (settled) return;
+			settled = true;
+			if (timeoutId !== null) clearTimeout(timeoutId);
+			options.signal?.removeEventListener('abort', onAbort);
+			if (error) reject(error);
+			else resolve();
+		};
+		const onAbort = (): void => finish(abortError(options.signal));
+		timeoutId = setTimeout(finish, timeoutMs);
+		options.signal?.addEventListener('abort', onAbort, { once: true });
+	});
+}
+
+export async function writeWithStableEventAck<T>(
+	target: EventTarget,
+	type: string,
+	write: () => unknown | Promise<unknown>,
+	read: () => T,
+	expected: unknown,
+	tolerance: number,
+	timeoutMs = 750,
+	options: NativeMediaOperationOptions = {},
+): Promise<T> {
+	assertNativeOperationCurrent(options);
+	if (valuesMatch(expected, read(), tolerance)) {
+		// The native field already exposes the requested value. Re-read across
+		// the same stabilization boundary instead of causing an unnecessary
+		// setter side effect with no authoritative event to acknowledge it.
+		return stableReadback(read, options);
+	}
+	let finish!: (matched: boolean) => void;
+	let quietTimer: ReturnType<typeof setTimeout> | null = null;
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	let abortListener: (() => void) | null = null;
+	let cancellation: ContentLifecycleError | null = null;
+	const acknowledgement = new Promise<boolean>((resolve) => {
+		finish = resolve;
+	});
+	const onEvent = (): void => {
+		if (quietTimer !== null) clearTimeout(quietTimer);
+		quietTimer = null;
+		if (!valuesMatch(expected, read(), tolerance)) return;
+		// A page-player setter can acknowledge our value and restore its own value
+		// in a timer. Require one short event-quiet window before committing.
+		quietTimer = setTimeout(() => finish(true), NATIVE_EVENT_QUIET_MS);
+	};
+	target.addEventListener(type, onEvent);
+	if (options.signal) {
+		abortListener = () => {
+			cancellation = abortError(options.signal);
+			finish(false);
+		};
+		options.signal.addEventListener('abort', abortListener, { once: true });
+	}
+	timeoutId = setTimeout(() => finish(false), timeoutMs);
+	try {
+		await write();
+		assertNativeOperationCurrent(options);
+		if (cancellation) throw cancellation;
+		if (!await acknowledgement) {
+			if (cancellation) throw cancellation;
+			assertNativeOperationCurrent(options);
+			throw new Error(`Native ${type} event readback did not acknowledge the requested value`);
+		}
+		assertNativeOperationCurrent(options);
+		return await stableReadback(read, options);
+	} finally {
+		target.removeEventListener(type, onEvent);
+		if (quietTimer !== null) clearTimeout(quietTimer);
+		if (timeoutId !== null) clearTimeout(timeoutId);
+		if (options.signal && abortListener) options.signal.removeEventListener('abort', abortListener);
+	}
+}
+
+export async function measureVideoFrameDuration(
+	video: HTMLVideoElement,
+	sourceRevision: number,
+	options: NativeMediaOperationOptions = {},
+): Promise<number> {
+	assertNativeOperationCurrent(options);
+	const cached = videoCadence.get(video);
+	if (cached?.sourceRevision === sourceRevision) return cached.frameDuration;
+	if (video.paused || typeof video.requestVideoFrameCallback !== 'function') {
+		throw new Error('Frame cadence is unavailable until this source has rendered measurable frames');
+	}
+	const frameDuration = await new Promise<number>((resolve, reject) => {
+		let previousMediaTime: number | null = null;
+		let callbackId: number | null = null;
+		let samples = 0;
+		let settled = false;
+		const deltas: number[] = [];
+		const timeoutId = setTimeout(() => finish(null, 'deadline'), options.timeoutMs ?? 750);
+		const onAbort = (): void => finish(
+			null,
+			abortError(options.signal).code === 'stale-media-source' ? 'stale' : 'cancelled',
+		);
+		const finish = (
+			duration: number | null,
+			reason: 'cancelled' | 'stale' | 'deadline' | undefined = undefined,
+		): void => {
+			if (settled) return;
+			settled = true;
+			clearTimeout(timeoutId);
+			options.signal?.removeEventListener('abort', onAbort);
+			if (callbackId !== null && typeof video.cancelVideoFrameCallback === 'function') {
+				video.cancelVideoFrameCallback(callbackId);
+			}
+			callbackId = null;
+			if (duration === null) {
+				if (reason === 'cancelled') {
+					reject(new ContentLifecycleError('cancelled', 'Frame cadence measurement was cancelled'));
+				} else if (reason === 'stale') {
+					reject(new ContentLifecycleError('stale-media-source', 'Frame cadence source became stale'));
+				} else if (reason === 'deadline') {
+					reject(new ContentLifecycleError('deadline-exceeded', 'Frame cadence measurement timed out'));
+				} else {
+					reject(new Error('Frame cadence measurement timed out'));
+				}
+			} else resolve(duration);
+		};
+		const sample: VideoFrameRequestCallback = (_now, metadata) => {
+			if (settled) return;
+			if (options.signal?.aborted) {
+				finish(null, 'cancelled');
+				return;
+			}
+			if (options.isCurrent && !options.isCurrent()) {
+				finish(null, 'stale');
+				return;
+			}
+			callbackId = null;
+			const mediaTime = metadata.mediaTime;
+			if (previousMediaTime !== null) {
+				const delta = mediaTime - previousMediaTime;
+				if (Number.isFinite(delta) && delta >= 1 / 240 && delta <= 1 / 5) {
+					deltas.push(delta);
+				}
+			}
+			previousMediaTime = mediaTime;
+			samples += 1;
+			if (deltas.length >= 5 || samples >= 8) {
+				if (deltas.length < 3) {
+					finish(null);
+					return;
+				}
+				const ordered = [...deltas].sort((left, right) => left - right);
+				const median = ordered.at(Math.floor(ordered.length / 2));
+				const first = ordered.at(0);
+				const last = ordered.at(-1);
+				if (median === undefined || first === undefined || last === undefined) {
+					finish(null);
+					return;
+				}
+				const stable = last - first <= median * 0.35;
+				if (stable || samples >= 8) finish(median);
+				else callbackId = video.requestVideoFrameCallback(sample);
+				return;
+			}
+			callbackId = video.requestVideoFrameCallback(sample);
+		};
+		options.signal?.addEventListener('abort', onAbort, { once: true });
+		callbackId = video.requestVideoFrameCallback(sample);
+	});
+	assertNativeOperationCurrent(options);
+	videoCadence.set(video, { sourceRevision, frameDuration });
+	return frameDuration;
+}
+
+export function clampNativeSeek(element: HTMLMediaElement, desired: number): number {
+	const maximum = Number.isFinite(element.duration) ? element.duration : desired;
+	const value = Math.max(0, Math.min(maximum, desired));
+	if (element.seekable.length === 0) return value;
+	for (let index = 0; index < element.seekable.length; index += 1) {
+		const start = element.seekable.start(index);
+		const end = element.seekable.end(index);
+		if (value >= start && value <= end) return value;
+		if (value < start) return start;
+	}
+	return element.seekable.end(element.seekable.length - 1);
+}
+
+export function writeNativeCurrentTime(element: HTMLMediaElement, currentTime: number): number {
+	element.currentTime = currentTime;
+	return element.currentTime;
+}
+
+export async function seekNativeMedia(
+	element: HTMLMediaElement,
+	desired: number,
+	tolerance = 0.05,
+	options: NativeMediaOperationOptions = {},
+): Promise<number> {
+	assertNativeOperationCurrent(options);
+	const target = clampNativeSeek(element, desired);
+	const owned = markOwnedSeek(element, target, tolerance);
+	let acknowledged = false;
+	try {
+		assertNativeOperationCurrent(options);
+		writeNativeCurrentTime(element, target);
+		if (element.seeking || Math.abs(element.currentTime - target) > tolerance) {
+			await waitForNativeEvent(
+				element,
+				'seeked',
+				() => !element.seeking && Math.abs(element.currentTime - target) <= tolerance,
+				options.timeoutMs ?? 750,
+				options,
+			);
+		}
+		assertNativeOperationCurrent(options);
+		if (element.seeking || Math.abs(element.currentTime - target) > tolerance) {
+			throw new Error('Seek readback did not reach the requested media time');
+		}
+		acknowledged = true;
+		return element.currentTime;
+	} finally {
+		// A standards-compliant `seeked` event may be queued after the synchronous
+		// getter already confirms the target. Keep the token until that event (or
+		// its one-second expiry) so marker/A-B/frame-step ACKs do not become a
+		// second page-originated snapshot revision.
+		if (!acknowledged) releaseOwnedSeek(element, owned);
+	}
+}
+
+function waitForNativeEvent(
+	target: EventTarget,
+	type: string,
+	readback: () => boolean,
+	timeoutMs: number,
+	options: NativeMediaOperationOptions = {},
+): Promise<void> {
+	assertNativeOperationCurrent(options);
+	if (readback()) return Promise.resolve();
+	return new Promise((resolve, reject) => {
+		let settled = false;
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+		const finish = (): void => {
+			if (settled) return;
+			settled = true;
+			target.removeEventListener(type, onEvent);
+			if (timeoutId !== null) clearTimeout(timeoutId);
+			options.signal?.removeEventListener('abort', onAbort);
+			resolve();
+		};
+		const abort = (error: ContentLifecycleError): void => {
+			if (settled) return;
+			settled = true;
+			target.removeEventListener(type, onEvent);
+			if (timeoutId !== null) clearTimeout(timeoutId);
+			options.signal?.removeEventListener('abort', onAbort);
+			reject(error);
+		};
+		const onAbort = (): void => {
+			const error = abortError(options.signal);
+			abort(error);
+		};
+		const onEvent = (): void => {
+			if (options.isCurrent && !options.isCurrent()) {
+				abort(new ContentLifecycleError('stale-media-source', 'Native media source became stale'));
+				return;
+			}
+			if (readback()) finish();
+		};
+		timeoutId = setTimeout(finish, timeoutMs);
+		target.addEventListener(type, onEvent);
+		options.signal?.addEventListener('abort', onAbort, { once: true });
+	});
+}

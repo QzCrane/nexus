@@ -1,6 +1,6 @@
 // goal: synchronously cross the exact-element ISOLATED/MAIN boundary for page-owned media semantics
 
-import type { ControlValues } from '@nexus/contracts';
+import { isFiniteControlValue, type ControlValues } from '@nexus/contracts';
 import {
 	SPECTRA_PAGE_MEDIA_EVENT,
 	SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE,
@@ -15,10 +15,9 @@ function isActualValue<K extends SpectraPageMediaField>(
 	value: unknown,
 ): value is ControlValues[K] {
 	if (field === 'mediaMuted') return typeof value === 'boolean';
-	if (typeof value !== 'number' || !Number.isFinite(value)) return false;
 	return field === 'volumeBase'
-		? value >= 0 && value <= 100
-		: value >= 0.1 && value <= 16;
+		? isFiniteControlValue(value, 'nativeVolume')
+		: isFiniteControlValue(value, 'speed');
 }
 
 function decodeResult<K extends SpectraPageMediaField>(
@@ -57,6 +56,7 @@ function transact<K extends SpectraPageMediaField>(
 			request.field,
 		);
 		if (!result?.supported) return null;
+		if (request.operation === 'probe') return true as ControlValues[K];
 		if (result.error || result.actual === null) {
 			throw new Error(result.error ?? `Page-media ${request.field} returned no actual value`);
 		}
@@ -76,6 +76,24 @@ export function readPageMediaField<K extends SpectraPageMediaField>(
 		operation: 'read',
 		field,
 	});
+}
+
+// post: reports whether an amplified page volume controller exists for this
+// element WITHOUT any read or write — page-entry solidification depends on
+// this being side-effect-free.
+export function probePageMediaCapability(
+	element: HTMLMediaElement,
+	field: SpectraPageMediaField,
+): boolean {
+	try {
+		return transact(element, {
+			requestId: crypto.randomUUID(),
+			operation: 'probe',
+			field,
+		}) !== null;
+	} catch {
+		return false;
+	}
 }
 
 export function writePageMediaField(

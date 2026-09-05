@@ -62,7 +62,6 @@ describe('public repository source projection', () => {
 		const patterns = [...BASE_EXCLUDES, ...APP_CONFIGS.spectra.excludes];
 		expect(APP_CONFIGS.spectra.publicApplicationScriptFiles).toEqual([
 			'apps/extension-spectra/scripts/check-production-artifacts.ts',
-			'apps/extension-spectra/scripts/chrome120-webrtc-adapter.ts',
 			'apps/extension-spectra/scripts/i18n-assets.ts',
 			'apps/extension-spectra/scripts/minification-policy.ts',
 		]);

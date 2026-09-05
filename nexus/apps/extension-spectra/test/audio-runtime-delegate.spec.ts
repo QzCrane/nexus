@@ -4,18 +4,22 @@ import { createAudioRuntimeControlDelegate } from '../src/content/logic/audio-ru
 import type { PolicyExecutor } from '../src/content/logic/policy-executor';
 import type { PolicyExecutorState } from '../src/content/types';
 import { mergeControlFields } from '../src/popup/card/types';
+import { createCaptureAdmission } from './helpers/capture-admission';
 
 describe('audio runtime coverage boundary', () => {
 	test('forwards one intent-scoped Capture admission into policy application', async () => {
+		const captureAdmission = createCaptureAdmission({
+			document: { tabId: 7, frameId: 0, documentId: 'document:dsp' },
+			documentEpoch: 2,
+		});
 		const state: PolicyExecutorState = {
 			config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
 			appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
-			activeMode: 'NATIVE_LITE',
-			desiredMode: 'NATIVE_LITE',
+			activeMode: 'bypass',
+			desiredMode: 'bypass',
 			actualMode: 'bypass',
 			phase: 'idle',
 			generation: 2,
-			hasGesture: false,
 			userHasInteracted: false,
 			isPopupOpen: false,
 		};
@@ -32,13 +36,13 @@ describe('audio runtime coverage boundary', () => {
 			target: null,
 			actualContext: {},
 			patch: { boost: 2 },
-			captureAdmission: 'extension-invocation',
+			captureAdmission,
 		};
 
 		await delegate.apply(intent, intent.patch);
 
 		expect(updateConfig.mock.calls[0]?.[1]).toEqual({
-			captureAdmission: 'extension-invocation',
+			captureAdmission,
 		});
 	});
 
@@ -47,12 +51,11 @@ describe('audio runtime coverage boundary', () => {
 			const state: PolicyExecutorState = {
 				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
 				appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
-				activeMode: 'NATIVE_LITE',
-				desiredMode: 'NATIVE_LITE',
+				activeMode: 'bypass',
+				desiredMode: 'bypass',
 				actualMode: 'bypass',
 				phase: 'idle',
 				generation: 2,
-				hasGesture: true,
 				userHasInteracted: true,
 				isPopupOpen: false,
 			};
@@ -82,12 +85,11 @@ describe('audio runtime coverage boundary', () => {
 		const state: PolicyExecutorState = {
 			config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
 			appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
-			activeMode: 'NATIVE_LITE',
-			desiredMode: 'NATIVE_LITE',
+			activeMode: 'bypass',
+			desiredMode: 'bypass',
 			actualMode: 'bypass',
 			phase: 'idle',
 			generation: 2,
-			hasGesture: true,
 			userHasInteracted: true,
 			isPopupOpen: false,
 		};
@@ -127,12 +129,11 @@ describe('audio runtime coverage boundary', () => {
 		const state: PolicyExecutorState = {
 			config: { ...configured, eqValues: [...configured.eqValues] },
 			appliedConfig: { ...configured, eqValues: [...configured.eqValues] },
-			activeMode: 'NATIVE_WEBAUDIO',
-			desiredMode: 'NATIVE_WEBAUDIO',
-			actualMode: 'webaudio',
+			activeMode: 'capture',
+			desiredMode: 'capture',
+			actualMode: 'capture',
 			phase: 'active',
 			generation: 2,
-			hasGesture: true,
 			userHasInteracted: true,
 			isPopupOpen: false,
 		};
@@ -187,12 +188,11 @@ describe('audio runtime coverage boundary', () => {
 				eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
 			},
 			appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
-			activeMode: 'NATIVE_LITE',
-			desiredMode: 'NATIVE_WEBAUDIO',
+			activeMode: 'bypass',
+			desiredMode: 'capture',
 			actualMode: 'bypass',
 			phase: 'error',
 			generation: 2,
-			hasGesture: true,
 			userHasInteracted: true,
 			isPopupOpen: false,
 		};

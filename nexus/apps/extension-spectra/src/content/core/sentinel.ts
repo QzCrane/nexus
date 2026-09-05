@@ -5,7 +5,6 @@ import {
 	type AudioSessionPhase,
 	type SpectraAudioMode,
 } from '@nexus/contracts';
-import type { AudioModeType } from '@nexus/audio-engine';
 import { logger } from '../../shared/logger';
 import type { PolicyExecutorState } from '../types';
 
@@ -17,20 +16,13 @@ const SNAPSHOT_KEYS = new Set([
 	'config',
 	'appliedConfig',
 	'userHasInteracted',
-	'hasGesture',
 	'desiredMode',
 	'actualMode',
 	'phase',
 	'generation',
 	'timestamp',
 ]);
-const DESIRED_MODES = new Set<AudioModeType>([
-	'NATIVE_WEBAUDIO',
-	'NATIVE_LITE',
-	'CAPTURE',
-	'DISABLED',
-]);
-const ACTUAL_MODES = new Set<SpectraAudioMode>(['bypass', 'webaudio', 'capture']);
+const MODES = new Set<SpectraAudioMode>(['bypass', 'webaudio', 'capture']);
 const PHASES = new Set<AudioSessionPhase>(['idle', 'starting', 'active', 'stopping', 'error']);
 
 interface HandoffRecord {
@@ -48,8 +40,7 @@ interface SerializedState {
 	config: PolicyExecutorState['config'];
 	appliedConfig: PolicyExecutorState['appliedConfig'];
 	userHasInteracted: boolean;
-	hasGesture: boolean;
-	desiredMode: AudioModeType | null;
+	desiredMode: SpectraAudioMode | null;
 	actualMode: SpectraAudioMode;
 	phase: AudioSessionPhase;
 	generation: number;
@@ -66,7 +57,6 @@ export function createSnapshot(state: PolicyExecutorState): string {
 		config: { ...state.config, eqValues: [...state.config.eqValues] },
 		appliedConfig: { ...state.appliedConfig, eqValues: [...state.appliedConfig.eqValues] },
 		userHasInteracted: state.userHasInteracted,
-		hasGesture: state.hasGesture,
 		desiredMode: state.desiredMode,
 		actualMode: state.actualMode,
 		phase: state.phase,
@@ -99,9 +89,8 @@ function parseSnapshot(raw: string, createdAt: number): Partial<PolicyExecutorSt
 			|| !isAudioConfig(value.config)
 			|| !isAudioConfig(value.appliedConfig)
 			|| typeof value.userHasInteracted !== 'boolean'
-			|| typeof value.hasGesture !== 'boolean'
-			|| (value.desiredMode !== null && !DESIRED_MODES.has(value.desiredMode as AudioModeType))
-			|| !ACTUAL_MODES.has(value.actualMode as SpectraAudioMode)
+			|| (value.desiredMode !== null && !MODES.has(value.desiredMode as SpectraAudioMode))
+			|| !MODES.has(value.actualMode as SpectraAudioMode)
 			|| !PHASES.has(value.phase as AudioSessionPhase)
 			|| !Number.isInteger(value.generation) || Number(value.generation) < 0
 			|| typeof value.timestamp !== 'number' || !Number.isFinite(value.timestamp)) return null;
@@ -115,8 +104,7 @@ function parseSnapshot(raw: string, createdAt: number): Partial<PolicyExecutorSt
 			config: { ...value.config, eqValues: [...value.config.eqValues] },
 			appliedConfig: { ...value.appliedConfig, eqValues: [...value.appliedConfig.eqValues] },
 			userHasInteracted: value.userHasInteracted,
-			hasGesture: value.hasGesture,
-			desiredMode: value.desiredMode as AudioModeType | null,
+			desiredMode: value.desiredMode as SpectraAudioMode | null,
 			actualMode: value.actualMode as SpectraAudioMode,
 			phase: value.phase as AudioSessionPhase,
 			generation: Number(value.generation),

@@ -6,5 +6,11 @@
 	"extDescription": {
 		"message": "Boost 800 %, EQ, commandes vidéo et télécommande facultative. Disponibilité selon la page et Chrome.",
 		"description": "Extension description"
+	},
+	"popupStartupFailed": {
+		"message": "SPECTRA est temporairement indisponible."
+	},
+	"popupRetry": {
+		"message": "Réessayer"
 	}
 }

@@ -94,12 +94,12 @@
             <div class="sp-section">
               <div class="sp-section-title" data-i18n="spSpeed">⚡ Speed</div>
               <div class="sp-speed-row">
-                <span class="sp-label-side">0.25x</span>
+                <span class="sp-label-side">0.1x</span>
                 <input
                   type="range"
                   class="sp-slider sp-speed-slider"
                   aria-label="Playback speed"
-                  min="0.25"
+                  min="0.1"
                   max="16"
                   step="0.05"
                   value="1"
@@ -108,7 +108,7 @@
               </div>
               <div class="sp-speed-input-row">
                 <span class="sp-label" data-i18n="spValue">Value:</span>
-                <input type="number" class="sp-speed-input" value="1.0" min="0.25" max="16" step="0.05" aria-label="Playback speed value" />
+                <input type="number" class="sp-speed-input" value="1.0" min="0.1" max="16" step="0.05" aria-label="Playback speed value" />
                 <span>x</span>
               </div>
             </div>
@@ -486,7 +486,7 @@
                 <button type="button" class="sp-btn sp-btn-marker" data-action="mark-b">
                   B
                 </button>
-                <button type="button" class="sp-btn sp-btn-loop" data-action="ab-loop" aria-label="Toggle A/B loop">
+            <button type="button" class="sp-btn sp-btn-loop" data-action="ab-loop" data-i18n-aria="spAbClear" aria-label="Clear A/B loop">
                   🔁
                 </button>
               </div>
@@ -673,48 +673,40 @@
             </div>
           </div>
 
-          <!-- Group 3: Advanced (Registry) -->
+          <!-- Group 3: explicit site processing routes -->
           <div id="registry-group">
             <div id="registry-group-title" class="setting-group-title" data-i18n="grpAdvanced">
-              Advanced
+              Site Processing Routes
             </div>
-            <div class="setting-card" style="padding: 16px">
-              <!-- Search Box -->
-              <div class="registry-search">
-                <input
-                  type="text"
-                  id="registry-filter"
-                  class="registry-filter-input"
-                  placeholder="🔍 Filter..."
-                  data-i18n-placeholder="filterPlaceholder"
-                  data-i18n-aria="registryFilterAria"
-                  aria-label="Filter domains"
-                />
-              </div>
-
-              <!-- One media fingerprint route table -->
+            <div class="setting-card registry-card">
+              <input
+                type="search"
+                id="registry-filter"
+                class="registry-filter-input"
+                data-i18n-aria="registryFilterAria"
+                data-i18n-placeholder="registryFilterAria"
+                aria-label="Filter domains"
+                placeholder="Filter domains"
+              />
               <ul id="registry-list" class="registry-list" aria-labelledby="registry-group-title" aria-live="polite"></ul>
-
-              <!-- Add a site-level fallback route -->
               <div class="registry-add">
                 <input
                   type="text"
                   id="registry-new-domain"
                   class="registry-add-input"
-                  placeholder="example.com"
                   data-i18n-aria="registryNewDomainAria"
+                  data-i18n-placeholder="registryNewDomainAria"
                   aria-label="New domain"
+                  placeholder="example.com"
                 />
                 <select id="registry-new-route" class="registry-route-select" data-i18n-aria="registryRouteAria" aria-label="Processing route">
                   <option value="capture" data-i18n="tabRestricted">Capture when needed</option>
-                  <option value="direct" data-i18n="tabSafe">Direct</option>
+                  <option value="direct" data-i18n="tabSafe">Direct only</option>
                 </select>
-                <button type="button" id="btn-add-domain" class="btn-small" data-i18n-aria="registryAddDomainTitle" title="Add domain" aria-label="Add domain">+</button>
+                <button type="button" id="btn-add-domain" class="btn-small" data-i18n-title="registryAddDomainTitle" title="Add domain">＋</button>
               </div>
-
-              <!-- Hint Text -->
-              <div class="setting-sub registry-hint" data-i18n="registryHint">
-                One route is cached per media fingerprint. Capture starts only when processing needs it.
+              <div class="setting-desc registry-hint" data-i18n="registryHint">
+                One explicit route per site. Capture starts only after an authorized processing request.
               </div>
             </div>
           </div>

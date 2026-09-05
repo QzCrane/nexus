@@ -36,5 +36,5 @@ last_reviewed: 2026-07-30
   - [`03-ui-and-boundaries.md`](03-ui-and-boundaries.md) — UI / surface action normalization
   - [`05-control-state.md`](05-control-state.md) — FieldState, echo correlation, volume/mute
   - [`07-runtime-and-performance.md`](07-runtime-and-performance.md) — Implementation status ledger
-- **下级实现**: `packages/contracts/src/control.contracts.ts` · `src/background/control-coordinator.ts` · `src/content/logic/native-media-executor.ts`
+- **下级实现**: `packages/contracts/src/control.contracts.ts` · `src/background/control-coordinator.ts` · `src/background/control-coordinator-values.ts` · `src/content/logic/native-media-async.ts` · `src/content/logic/native-media-executor.ts`
 - **静态校验**: `scripts/verify/check-spectra-control.ts` (强制 44 invariants + 51 capabilities + 50 algorithms 全部存在)

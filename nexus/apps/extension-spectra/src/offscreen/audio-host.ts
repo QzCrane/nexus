@@ -2,11 +2,9 @@
 
 import {
 	AudioGraphRouter,
-	audioConfigToGraphConfig,
 	type AudioGraphSnapshot,
 } from '@nexus/audio-engine';
 import type {
-	AudioConfig,
 	AudioProcessorConfig,
 	OffscreenAudioEvent,
 	OffscreenAudioRequest,
@@ -40,39 +38,35 @@ interface AudioProcessor {
 	disposePromise: Promise<void> | null;
 }
 
-type AudioIntentKind = 'start' | 'update' | 'stop';
+type AudioIntentKind = 0 | 1 | 2;
+const INTENT_START: AudioIntentKind = 0;
+const INTENT_UPDATE: AudioIntentKind = 1;
+const INTENT_STOP: AudioIntentKind = 2;
 
-interface AudioIntent {
-	generation: number;
-	kind: AudioIntentKind;
-}
+type AudioIntent = [generation: number, kind: AudioIntentKind, controlRevision: number];
 
 export type AudioHostResult = OffscreenAudioResult;
 
 const processors = new Map<number, AudioProcessor>();
 const latestIntents = new Map<number, AudioIntent>();
-const lastControlRevisions = new Map<number, number>();
 const visualizerSubscriptions = new Set<number>();
+const EMPTY_VISUALIZER_FRAME: { buffer: number[] | null } = { buffer: null };
 const CAPTURE_GATE_SWITCH_LEAD_MS = 20;
 
 function recordIntent(tabId: number, generation: number, kind: AudioIntentKind): AudioIntent {
-	const current = latestIntents.get(tabId);
-	if (!current || generation > current.generation) {
-		const next = { generation, kind };
-		latestIntents.set(tabId, next);
-		return next;
-	}
-	if (generation === current.generation && kind === 'stop' && current.kind !== 'stop') {
-		const next = { generation, kind };
-		latestIntents.set(tabId, next);
-		return next;
+	let current = latestIntents.get(tabId);
+	if (!current || generation > current[0]) {
+		current = [generation, kind, current?.[2] ?? 0];
+		latestIntents.set(tabId, current);
+	} else if (generation === current[0] && kind === INTENT_STOP) {
+		current[1] = kind;
 	}
 	return current;
 }
 
-function isCurrentStartIntent(tabId: number, generation: number): boolean {
+function recordControlRevision(tabId: number, controlRevision: number): void {
 	const intent = latestIntents.get(tabId);
-	return intent?.generation === generation && intent.kind === 'start';
+	if (intent) intent[2] = controlRevision;
 }
 
 function setImmediate(param: AudioParam, value: number, time: number): void {
@@ -118,8 +112,9 @@ function activeResult(processor: AudioProcessor): AudioHostResult {
 function describeCurrentState(tabId: number, fallbackGeneration: number): AudioHostResult {
 	const processor = processors.get(tabId);
 	if (processor) return activeResult(processor);
-	const generation = Math.max(fallbackGeneration, latestIntents.get(tabId)?.generation ?? 0);
-	return idleResult(tabId, generation, lastControlRevisions.get(tabId) ?? 0);
+	const intent = latestIntents.get(tabId);
+	const generation = Math.max(fallbackGeneration, intent?.[0] ?? 0);
+	return idleResult(tabId, generation, intent?.[2] ?? 0);
 }
 
 function errorResult(
@@ -177,16 +172,20 @@ function setVisualizerSubscriptions(tabIds: number[]): { subscribedTabIds: numbe
 
 async function applyProcessorConfig(
 	processor: AudioProcessor,
-	config: AudioConfig,
+	config: AudioProcessorConfig,
 	controlRevision: number,
-): Promise<void> {
-	if (controlRevision < processor.controlRevision) return;
-	const snapshot = await processor.router.apply(audioConfigToGraphConfig(config), {
+	commit = true,
+): Promise<AudioGraphSnapshot> {
+	if (controlRevision < processor.controlRevision) return processor.snapshot;
+	const snapshot = await processor.router.apply(config, {
 		requireRunning: true,
 	});
-	processor.controlRevision = controlRevision;
-	processor.snapshot = snapshot;
-	lastControlRevisions.set(processor.tabId, controlRevision);
+	if (commit) {
+		processor.controlRevision = controlRevision;
+		processor.snapshot = snapshot;
+		recordControlRevision(processor.tabId, controlRevision);
+	}
+	return snapshot;
 }
 
 async function disposeProcessorResources(processor: AudioProcessor): Promise<void> {
@@ -272,11 +271,10 @@ function notifyProcessorEnded(processor: AudioProcessor): void {
 
 function observeTrackEnd(processor: AudioProcessor): void {
 	for (const track of processor.stream.getTracks()) {
-		if (typeof track.addEventListener !== 'function') continue;
 		const handleEnded = () => {
 			if (processor.disposePromise) return;
 			const wasCurrent = processors.get(processor.tabId) === processor;
-			recordIntent(processor.tabId, processor.generation, 'stop');
+			recordIntent(processor.tabId, processor.generation, INTENT_STOP);
 			void disposeProcessor(processor).catch((error: unknown) => {
 				console.error('[SPECTRA] Failed to dispose ended capture processor', error);
 			}).finally(() => {
@@ -291,16 +289,16 @@ function observeTrackEnd(processor: AudioProcessor): void {
 async function startCapture(
 	tabId: number,
 	streamId: string,
-	config: AudioConfig,
+	config: AudioProcessorConfig,
 	generation: number,
 	controlRevision: number,
 ): Promise<AudioHostResult> {
-	const intent = recordIntent(tabId, generation, 'start');
-	if (intent.generation !== generation || intent.kind !== 'start') {
+	const intent = recordIntent(tabId, generation, INTENT_START);
+	if (intent[0] !== generation || intent[1] !== INTENT_START) {
 		const current = processors.get(tabId);
 		return current
 			? activeResult(current)
-			: staleIntentResult(tabId, intent.generation, controlRevision);
+			: staleIntentResult(tabId, intent[0], controlRevision);
 	}
 	const existing = processors.get(tabId);
 	if (existing) {
@@ -322,7 +320,7 @@ async function startCapture(
 			video: false,
 		});
 		const audioTracks = stream.getAudioTracks();
-		if (audioTracks.length === 0 || audioTracks.every((track) => track.readyState === 'ended')) {
+		if (!audioTracks.some((track) => track.readyState !== 'ended')) {
 			throw new Error('Tab capture returned no live audio track');
 		}
 		ctx = new AudioContext();
@@ -334,7 +332,7 @@ async function startCapture(
 		graphRouter.connectSource(source);
 		if (ctx.state === 'suspended') await ctx.resume();
 		if (ctx.state !== 'running') throw new Error(`Capture AudioContext is ${ctx.state}`);
-		const snapshot = await graphRouter.apply(audioConfigToGraphConfig(config), {
+		const snapshot = await graphRouter.apply(config, {
 			requireRunning: true,
 		});
 		candidate = {
@@ -354,7 +352,8 @@ async function startCapture(
 			disposePromise: null,
 		};
 		observeTrackEnd(candidate);
-		if (!isCurrentStartIntent(tabId, generation)) {
+		const currentIntent = latestIntents.get(tabId);
+		if (currentIntent?.[0] !== generation || currentIntent[1] !== INTENT_START) {
 			await disposeProcessor(candidate);
 			return describeCurrentState(tabId, generation);
 		}
@@ -376,7 +375,6 @@ async function startCapture(
 		// processor before the candidate is ready.
 		if (current) {
 			const leadSeconds = CAPTURE_GATE_SWITCH_LEAD_MS / 1_000;
-			setImmediate(candidate.commitGate.gain, 0, candidate.ctx.currentTime);
 			candidate.commitGate.gain.setValueAtTime(1, candidate.ctx.currentTime + leadSeconds);
 			current.commitGate.gain.cancelScheduledValues(current.ctx.currentTime);
 			current.commitGate.gain.setValueAtTime(0, current.ctx.currentTime + leadSeconds);
@@ -384,7 +382,7 @@ async function startCapture(
 			setImmediate(candidate.commitGate.gain, 1, candidate.ctx.currentTime);
 		}
 		processors.set(tabId, candidate);
-		lastControlRevisions.set(tabId, controlRevision);
+		recordControlRevision(tabId, controlRevision);
 		ensureVisualizerSubscription(candidate);
 		if (current) {
 			await new Promise<void>((resolve) => setTimeout(
@@ -424,9 +422,9 @@ async function startCapture(
 }
 
 async function stopCapture(tabId: number, generation: number): Promise<AudioHostResult> {
-	const intent = recordIntent(tabId, generation, 'stop');
+	const intent = recordIntent(tabId, generation, INTENT_STOP);
 	const processor = processors.get(tabId);
-	if (!processor) return describeCurrentState(tabId, intent.generation);
+	if (!processor) return describeCurrentState(tabId, intent[0]);
 	if (processor.generation > generation) return activeResult(processor);
 	const controlRevision = processor.controlRevision;
 	await disposeProcessor(processor);
@@ -438,7 +436,7 @@ async function cancelPendingStart(
 	generation: number,
 	stopCommitted: boolean,
 ): Promise<AudioHostResult> {
-	recordIntent(tabId, generation, 'stop');
+	recordIntent(tabId, generation, INTENT_STOP);
 	const processor = processors.get(tabId);
 	if (stopCommitted && processor?.generation === generation) await disposeProcessor(processor);
 	return describeCurrentState(tabId, generation);
@@ -446,12 +444,19 @@ async function cancelPendingStart(
 
 function getVisualizerFrame(tabId: number): { buffer: number[] | null } {
 	const processor = processors.get(tabId);
-	if (!processor || !visualizerSubscriptions.has(tabId)) return { buffer: null };
-	ensureVisualizerSubscription(processor);
+	if (!processor || !visualizerSubscriptions.has(tabId)) return EMPTY_VISUALIZER_FRAME;
 	const now = performance.now();
 	if (!processor.lastVizFrame || now - processor.lastVizAt >= 1_000 / 15) {
 		const data = processor.router.getVisualizerData();
-		processor.lastVizFrame = data ? Array.from(data) : null;
+		if (!data) {
+			processor.lastVizFrame = null;
+		} else {
+			const frame = processor.lastVizFrame && processor.lastVizFrame.length === data.length
+				? processor.lastVizFrame
+				: new Array<number>(data.length);
+			for (let index = 0; index < data.length; index += 1) frame[index] = data[index] ?? 0;
+			processor.lastVizFrame = frame;
+		}
 		processor.lastVizAt = now;
 	}
 	return { buffer: processor.lastVizFrame };
@@ -463,10 +468,7 @@ export function describeAudioHost(): AudioHostDescription[] {
 		generation,
 		controlRevision,
 		graphSignature: snapshot.graphSignature,
-		normalizedActualConfig: {
-			...snapshot.normalizedActualConfig,
-			eqValues: [...snapshot.normalizedActualConfig.eqValues],
-		},
+		normalizedActualConfig: snapshot.normalizedActualConfig,
 	}));
 }
 
@@ -490,11 +492,8 @@ export async function handleAudioHostMessage(
 			const { tabId, generation, controlRevision: requestedControlRevision } = message;
 			const controlRevision = requestedControlRevision ?? 0;
 			const previousIntent = latestIntents.get(tabId);
-			if (previousIntent?.kind === 'stop' && generation <= previousIntent.generation) {
-				return staleIntentResult(tabId, previousIntent.generation, controlRevision);
-			}
-			if (!previousIntent || generation > previousIntent.generation) {
-				recordIntent(tabId, generation, 'update');
+			if (previousIntent?.[1] === INTENT_STOP && generation <= previousIntent[0]) {
+				return staleIntentResult(tabId, previousIntent[0], controlRevision);
 			}
 			const processor = processors.get(tabId);
 			if (!processor) {
@@ -509,12 +508,40 @@ export async function handleAudioHostMessage(
 			if (generation < processor.generation || controlRevision < processor.controlRevision) {
 				return activeResult(processor);
 			}
-			processor.generation = generation;
-			await applyProcessorConfig(processor, message.config, controlRevision);
-			return activeResult(processor);
+			try {
+				// The router ACK is the transaction prepare phase. Do not publish
+				// generation/revision/snapshot or the update intent until that ACK
+				// succeeds; a failed update must leave the previous STOP addressable.
+				const snapshot = await applyProcessorConfig(
+					processor,
+					message.config,
+					controlRevision,
+					false,
+				);
+				const currentIntent = latestIntents.get(tabId);
+				if (processors.get(tabId) !== processor
+					|| (currentIntent && currentIntent[0] > generation)
+					|| (currentIntent?.[1] === INTENT_STOP && currentIntent[0] === generation)
+					|| processor.generation > generation
+					|| processor.controlRevision > controlRevision) {
+					return describeCurrentState(tabId, generation);
+				}
+				processor.generation = generation;
+				processor.controlRevision = controlRevision;
+				processor.snapshot = snapshot;
+				recordControlRevision(tabId, controlRevision);
+				latestIntents.set(tabId, [generation, INTENT_UPDATE, controlRevision]);
+				return activeResult(processor);
+			} catch (error) {
+				return errorResult(
+					tabId,
+					processor.generation,
+					processor.controlRevision,
+					error,
+					'capture_update_failed',
+				);
+			}
 		}
-		case 'OFFSCREEN_AUDIO_GET_VIZ':
-			return getVisualizerFrame(message.tabId);
 		case 'OFFSCREEN_AUDIO_GET_VIZ_BATCH': {
 			const frames: Record<string, number[] | null> = {};
 			for (const tabId of message.tabIds) frames[String(tabId)] = getVisualizerFrame(tabId).buffer;
@@ -528,6 +555,5 @@ export async function handleAudioHostMessage(
 export async function destroyAudioHost(): Promise<void> {
 	await Promise.all([...processors.values()].map(disposeProcessor));
 	latestIntents.clear();
-	lastControlRevisions.clear();
 	visualizerSubscriptions.clear();
 }

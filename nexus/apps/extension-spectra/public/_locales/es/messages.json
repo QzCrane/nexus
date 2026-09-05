@@ -6,5 +6,11 @@
 	"extDescription": {
 		"message": "Refuerzo de 800%, EQ, controles de video y remoto opcional. La disponibilidad depende de la página y Chrome.",
 		"description": "Extension description"
+	},
+	"popupStartupFailed": {
+		"message": "SPECTRA no está disponible temporalmente."
+	},
+	"popupRetry": {
+		"message": "Reintentar"
 	}
 }

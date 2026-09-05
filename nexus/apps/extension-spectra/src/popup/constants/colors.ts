@@ -1,8 +1,8 @@
 // goal: centralizes visual theme tokens and canvas draw styles for the popup UI
 
-import { UIColors } from '@nexus/audio-engine';
+import { UI_COLORS } from '../../shared/ui-colors';
 
-export const COLORS = UIColors;
+export const COLORS = UI_COLORS;
 
 // EQ_GRADIENT: drawing parameters for the equalizer's frequency response curve canvas
 export const EQ_GRADIENT = {

@@ -13,12 +13,16 @@ export function createOffscreenRemoteRuntime(): OffscreenRemoteRuntime {
 	const peerRuntime = createPeerRuntimeLoader();
 	const controller = createRemoteHostController({
 		ensurePeerRuntime: peerRuntime.ensure,
+		createPeer: peerRuntime.createPeer,
 	});
 	return {
 		controller,
 		async destroy() {
-			peerRuntime.dispose();
 			await controller.destroy();
+			// Sessions own Peer instances; retire those transports before tearing
+			// down the shared vendor runtime so close/destroy callbacks still have a
+			// live PeerJS implementation to execute against.
+			peerRuntime.dispose();
 		},
 	};
 }

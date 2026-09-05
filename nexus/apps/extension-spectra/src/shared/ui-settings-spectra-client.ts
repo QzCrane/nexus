@@ -1,4 +1,4 @@
-// goal: send runtime-validated settings and registry requests without control-bundle code
+// goal: send runtime-validated settings UI requests without control-bundle code
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
@@ -29,7 +29,9 @@ export async function sendSettingsUiRequest<T extends SpectraSettingsUiRequestTy
 	} as SpectraRequestEnvelope<T>;
 	const response: unknown = await chrome.runtime.sendMessage(message);
 	if (!isSpectraSettingsUiResponse(type, response)) {
-		throw new Error('Peer returned an invalid SPECTRA settings UI response');
+		throw new Error(
+			`Background returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} settings UI response for ${type}`,
+		);
 	}
 	return response;
 }

@@ -1,71 +1,70 @@
 // goal: manages transitions between the main control view and the settings panel within the popup
 
 import { $, $required } from '../utils/dom';
-import { UI_SIZES } from '../constants';
 import { cardRenderCallbacks } from '../views/settings';
+import { showPopupToast } from '../toast';
 
 interface NavigationState {
-  viewMain: HTMLElement;
-  viewSettings: HTMLElement;
-  viewContainer: HTMLElement;
+	viewMain: HTMLElement;
+	viewSettings: HTMLElement;
+	viewContainer: HTMLElement;
 }
 
-// eff: initializes click handlers for view switching and manages container min-height during transitions
+// eff: initializes click handlers and selects the CSS-owned intrinsic/settings sizing mode
 export function initNavigation(): NavigationState {
-  const viewMain = $required<HTMLElement>('view-main');
-  const viewSettings = $required<HTMLElement>('view-settings');
-  const viewContainer = document.querySelector('.view-container') as HTMLElement;
+	const viewMain = $required<HTMLElement>('view-main');
+	const viewSettings = $required<HTMLElement>('view-settings');
+	const viewContainer = document.querySelector('.view-container') as HTMLElement;
 
-  const btnSettings = $<HTMLElement>('btn-settings');
-  const btnBack = $<HTMLElement>('btn-back');
-  const btnHotkeys = $<HTMLElement>('btn-hotkeys');
+	const btnSettings = $<HTMLElement>('btn-settings');
+	const btnBack = $<HTMLElement>('btn-back');
+	const btnHotkeys = $<HTMLElement>('btn-hotkeys');
 	const btnShortcuts = $<HTMLElement>('btn-shortcuts');
 
 	setViewActive(viewMain, true);
 	setViewActive(viewSettings, false);
+	viewContainer.classList.remove('settings-view-active');
 
-  if (btnHotkeys) {
-    btnHotkeys.onclick = () => {
-      chrome.runtime.openOptionsPage();
-    };
-  }
+	if (btnHotkeys) {
+		btnHotkeys.onclick = () => {
+			void chrome.runtime.openOptionsPage().catch((error: unknown) => {
+				showPopupToast(error instanceof Error ? error.message : String(error), 'error');
+			});
+		};
+	}
 
-  if (btnShortcuts) {
-    btnShortcuts.onclick = () => {
-      chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
-    };
-  }
+	if (btnShortcuts) {
+		btnShortcuts.onclick = () => {
+			void chrome.tabs.create({ url: 'chrome://extensions/shortcuts' }).catch((error: unknown) => {
+				showPopupToast(error instanceof Error ? error.message : String(error), 'error');
+			});
+		};
+	}
 
 	if (btnSettings) {
 		btnSettings.onclick = () => {
-      const mainHeight = viewMain.offsetHeight;
-
 			setViewActive(viewSettings, true);
+			viewContainer.classList.add('settings-view-active');
 			btnBack?.focus();
 			setViewActive(viewMain, false);
-
-      // rule: ensure the settings view has a minimum height to avoid layout collapse if the main view was very small
-      if (mainHeight < UI_SIZES.SETTINGS_MIN_HEIGHT) {
-        viewContainer.style.minHeight = `${UI_SIZES.SETTINGS_MIN_HEIGHT}px`;
-      }
-    };
-  }
+		};
+	}
 
 	if (btnBack) {
 		btnBack.onclick = () => {
 			setViewActive(viewMain, true);
+			viewContainer.classList.remove('settings-view-active');
 			btnSettings?.focus();
 			setViewActive(viewSettings, false);
-			viewContainer.style.minHeight = '';
 
-      // note: trigger rerender of all cards on return to main view to ensure UI state (sliders, toggles) is perfectly synced
-      requestAnimationFrame(() => {
-        cardRenderCallbacks.forEach((cb) => {
-          cb();
-        });
-      });
-    };
-  }
+			// note: trigger rerender of all cards on return to main view to ensure UI state (sliders, toggles) is perfectly synced
+			requestAnimationFrame(() => {
+				cardRenderCallbacks.forEach((cb) => {
+					cb();
+				});
+			});
+		};
+	}
 
 	return { viewMain, viewSettings: viewSettings, viewContainer };
 }
@@ -76,4 +75,3 @@ function setViewActive(view: HTMLElement, active: boolean): void {
 	view.setAttribute('aria-hidden', String(!active));
 	view.toggleAttribute('inert', !active);
 }
-

@@ -2,16 +2,22 @@
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import type { ControlFieldStates, ControlSnapshot } from '@nexus/contracts';
-import { DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
+import { DEFAULT_AUDIO_CONFIG } from '@nexus/contracts';
 import type {
   AudioSessionError,
   AudioSessionPhase,
   AudioVolumeState,
-  DomainEntry,
   SpectraAudioMode,
 } from '@nexus/contracts';
-import { resolveAudioVolume } from '@nexus/contracts';
+import {
+  resolveAudioVolume,
+} from '@nexus/contracts';
+import {
+	compileEffectiveVolume,
+	splitEffectiveVolume,
+} from '@nexus/contracts/ui-runtime';
 import type { CardUIElements, I18NDict } from '../types';
+import type { VizLoopController, VizLoopParams } from '../visualizer/loop';
 
 export interface CardInternalState {
   config: AudioConfig;
@@ -23,7 +29,6 @@ export interface CardInternalState {
     volumeState: AudioVolumeState;
   };
   userInteracted: boolean;
-  isRestrictedSite: boolean;
   actualMode: SpectraAudioMode;
   desiredMode: SpectraAudioMode;
   phase: AudioSessionPhase;
@@ -39,21 +44,21 @@ export interface CardInternalState {
   draggingField: 'volume' | null;
 }
 
-export type EqCurveDrawerFactory = (
-  canvas: HTMLCanvasElement,
-  sliderRow: HTMLElement,
-  getEqValues: () => number[]
-) => { draw: (color?: string) => void; updateMetrics: () => void };
+export type VizLoopFactory = (params: VizLoopParams) => VizLoopController;
+
+export interface PopupVisualizerFactories {
+  createVizLoop: VizLoopFactory;
+}
 
 export interface InitCardParams {
   container: HTMLElement;
   template: HTMLTemplateElement;
   tab: chrome.tabs.Tab;
   dict: I18NDict;
-  registryEntries: DomainEntry[];
   getGlobalSettings: () => GlobalSettings;
   isBackground?: boolean;
-  createEqCurveDrawer?: EqCurveDrawerFactory;
+  loadVisualizer?: () => Promise<PopupVisualizerFactories>;
+  registerCleanup?: (cleanup: () => void) => () => void;
 }
 
 // CardContext: unified handle passed to sub-modules (rendering, messaging, events) to access shared tab state and UI refs
@@ -82,21 +87,20 @@ export function cleanConfig(config: Partial<AudioConfig> | null): AudioConfig {
   return c;
 }
 
-// post: canonical volume fields and the one-release compatibility projection
-// are updated atomically so no UI surface can collapse 50% x 2 into 100% x 1.
+// post: the effective product projection and its physical pair are updated
+// atomically so no UI surface can collapse 50% x 2 into 100% x 1.
 export function mergeAudioConfig(
   current: AudioConfig,
   changes: Partial<AudioConfig>,
 ): AudioConfig {
   const merged = { ...current, ...changes };
-  const legacyVolume = changes.volume;
-  const legacyOnly = legacyVolume !== undefined
+  const effectiveVolume = changes.volume;
+  const effectiveOnly = effectiveVolume !== undefined
     && changes.volumeBase === undefined
     && changes.boost === undefined;
-  const volume = legacyOnly
-    ? resolveAudioVolume({ volume: legacyVolume ?? 100 })
+  const volume = effectiveOnly
+    ? splitEffectiveVolume(effectiveVolume ?? 100)
     : resolveAudioVolume({
-      volume: merged.volume,
       volumeBase: merged.volumeBase,
       boost: merged.boost,
     });
@@ -104,7 +108,7 @@ export function mergeAudioConfig(
     ...merged,
     volumeBase: volume.volumeBase,
     boost: volume.boost,
-    volume: volume.effectiveVolume,
+    volume: compileEffectiveVolume(volume.volumeBase, volume.boost),
   };
 }
 

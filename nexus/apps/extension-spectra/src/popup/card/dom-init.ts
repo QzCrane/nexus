@@ -27,13 +27,7 @@ export function prepareCardDom(params: {
 	const ui = getCardUIElements(cardEl);
 	const domain = getDomain(tab.url || '');
 
-	// note: apply static i18n dictionary values to text nodes that don't change during the tab lifecycle
-	if (ui.tComp) ui.tComp.innerText = dict.comp;
-	if (ui.tBass) ui.tBass.innerText = dict.bass;
-	if (ui.tMono) ui.tMono.innerText = dict.mono;
-	if (ui.tEq) ui.tEq.innerText = dict.eqTitle;
-
-	setButtonLabel(ui.btnSave, dict.saveTooltip, 'Save');
+  setButtonLabel(ui.btnSave, dict.saveTooltip, 'Save');
 	setButtonLabel(ui.btnReset, dict.resetTooltip, 'Reset');
 	setButtonLabel(ui.btnSaveGlobal, dict.btnSaveAsGlobal, 'Save as Global Preset');
 	ui.maskText.textContent = '';

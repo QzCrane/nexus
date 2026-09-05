@@ -1,8 +1,8 @@
 // goal: transient visual feedback (On-Screen Display) for adjustments
 
-import { UIColors } from '@nexus/audio-engine';
+import { UI_COLORS } from '../../shared/ui-colors';
 import {
-	crossesAudioVolumeProcessorBoundary,
+	crossesAudioVolumeRoutingBoundary,
 	type AudioVolumeState,
 	type SpectraHotkeyActualFeedback,
 } from '@nexus/contracts';
@@ -72,7 +72,7 @@ export function resolveHotkeyVolumeTarget(
 	previous: VolumeOSDPayload,
 	target: VolumeOSDPayload,
 ): VolumeOSDPayload {
-	return crossesAudioVolumeProcessorBoundary(previous.value, target.value)
+	return crossesAudioVolumeRoutingBoundary(previous.value, target.value)
 		? previous
 		: target;
 }
@@ -152,13 +152,13 @@ export function advanceHotkeyTargetOSD(
 	};
 	hotkey.target = target;
 	hotkey.pendingBoundary = previous !== null
-		&& crossesAudioVolumeProcessorBoundary(previous.value, target.value);
+		&& crossesAudioVolumeRoutingBoundary(previous.value, target.value);
 	const projection = resolveHotkeyVolumeTarget(previous ?? target, target);
 	renderOSD(
 		projection,
 		s,
 		{},
-		!crossesAudioVolumeProcessorBoundary(projection.value, target.value),
+		!crossesAudioVolumeRoutingBoundary(projection.value, target.value),
 	);
 }
 
@@ -212,7 +212,7 @@ function pendingVolumeBoundary(
 ): presentation is VolumeOSDPayload {
 	return hotkey.target.type === 'volume'
 		&& presentation?.type === 'volume'
-		&& crossesAudioVolumeProcessorBoundary(presentation.value, hotkey.target.value);
+		&& crossesAudioVolumeRoutingBoundary(presentation.value, hotkey.target.value);
 }
 
 function updateAcknowledgedVolumeState(
@@ -230,10 +230,10 @@ function paintOSDColor(root: ShadowRoot, payload: OSDPayload): void {
 	fill.style.backgroundColor = payload.type === 'speed'
 		? '#10b981'
 		: payload.volumeState === 'capture'
-			? UIColors.CAPTURE
+			? UI_COLORS.CAPTURE
 			: payload.volumeState === 'silent'
-				? UIColors.MUTED
-				: UIColors.NATIVE;
+				? UI_COLORS.MUTED
+				: UI_COLORS.NATIVE;
 }
 
 // eff: commits one gesture-bound aggregate ACK; a different target adds only

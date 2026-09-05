@@ -6,5 +6,11 @@
 	"extDescription": {
 		"message": "800% Verstärkung, EQ, Videosteuerung und optionale Fernbedienung. Verfügbarkeit hängt von Seite und Chrome ab.",
 		"description": "Extension description"
+	},
+	"popupStartupFailed": {
+		"message": "SPECTRA ist vorübergehend nicht verfügbar."
+	},
+	"popupRetry": {
+		"message": "Erneut versuchen"
 	}
 }

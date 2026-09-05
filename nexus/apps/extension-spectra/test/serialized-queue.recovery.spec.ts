@@ -7,7 +7,7 @@ import {
 // Regression guards for the serialized queue contract: a failed operation
 // must never poison subsequent operations, and per-key queues must release
 // idle memory once they drain. These behaviors are load-bearing for the
-// audio-session store and registry repository, which rely on the queue to
+// audio-session store and other acknowledged state owners rely on the queue to
 // serialize read-modify-write sequences without losing later ACKs.
 
 function tick(): Promise<void> {

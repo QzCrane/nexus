@@ -2,7 +2,6 @@
 
 import {
 	getOrCreateTabAudioState,
-	router,
 	tabAudioStates,
 	TAB_VISIBLE_THRESHOLD_MS,
 } from '../state';
@@ -10,10 +9,8 @@ import { injectContentScriptOnDemand } from '../upgrade-manager';
 import { swLog } from '../../shared/logger';
 import {
 	SPECTRA_PROTOCOL_VERSION,
-	isSpectraRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
 } from '@nexus/contracts';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
 
 export function recordMediaState(
 	tabId: number,
@@ -73,10 +70,7 @@ function registerTabStateV2Listener(): void {
 			sendResponse(rpcFailure('forbidden', 'Tab-state RPC is extension-internal only'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)
-			|| (message.type !== 'spectra.tab.media.report'
-				&& message.type !== 'spectra.tab.visible.list'
-				&& message.type !== 'spectra.content.inject')) {
+		if (!isBackgroundRequestEnvelope(message)) {
 			sendResponse(rpcFailure('invalid_request', 'Malformed tab-state request'));
 			return false;
 		}
@@ -106,25 +100,7 @@ function registerTabStateV2Listener(): void {
 	});
 }
 
-// eff: registers listeners for TAB_REPORT_MEDIA and TAB_GET_VISIBLE_TABS actions
+// eff: registers the validated SPECTRA tab-state protocol
 export function registerTabStateHandlers(): void {
 	registerTabStateV2Listener();
-	router.on('TAB_REPORT_MEDIA', async (req, sender) => {
-		const tabId = sender.tab?.id;
-		if (!tabId) return;
-		recordMediaState(tabId, {
-			hasMediaElement: req.hasMediaElement,
-			userInteracted: req.userInteracted === true,
-		});
-	});
-
-	// note: one-release v1 adapters delegate to the same implementations.
-	router.on('TAB_GET_VISIBLE_TABS', resolveVisibleTabs);
-
-	// eff: on-demand content script injection when popup detects unreachable tab
-	router.on('INJECT_CONTENT_SCRIPT', async (req: { tabId: number }) => {
-		if (!req.tabId) return { success: false };
-		const ok = await injectContentScriptOnDemand(req.tabId);
-		return { success: ok };
-	});
 }

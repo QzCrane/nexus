@@ -14,9 +14,9 @@ last_reviewed: 2026-07-26
 
 - Webpage, Popup, remote controller, and hotkeys are peers submitting intents to one coordinator.
 - Control fields are planned independently. No page-wide mode silently determines unrelated controls.
-- UI never asks users to choose native, WebAudio, MAIN, or Capture.
+- UI never asks users to choose native internals, MAIN-world bridges, or Capture.
 - `100%` volume and `1x` speed are literal values, not "release control". (Releasing uses restore-page-settings).
-- UI exposes one effective-volume (`0–800%`). Coordinator splits it into `volumeBase 0–100` and hidden `boost 1–8`.
+- UI exposes one effective-volume (`0–800%`). The coordinator first offers the exact value to an exact page controller. A controller-confirmed value keeps `boost=1` and needs no Capture; the portable fallback uses DOM `volumeBase 0–100` plus hidden `boost 1–8` only when the page cannot acknowledge the requested value. Once that fallback is acknowledged for the document, later above-100 adjustments stay on the existing Capture owner instead of stopping it to repeat a probe that already failed.
 - Successful responses describe read-back actual state, not storage acceptance or echoed intent.
 
 ## §2 Control flow and state ownership
@@ -57,18 +57,24 @@ Initialization chooses retained projection, then site preset, then global preset
 
 Color is actual state:
 - Gray = muted/zero
-- Blue = native/Media WebAudio, or starting/stopping/error Capture
+- Blue = native control, or starting/stopping/error Capture
 - Purple = active Capture (`actualMode:'capture'`, `phase:'active'`) for the same tab/document/origin.
 
 Concrete projection points:
 
 | Location | Ownership and purpose |
 | --- | --- |
-| `control-coordinator.ts` | serialize intents, commit actual snapshot |
-| `native-media-executor.ts` | sole standard-media writer; getter ACK/page observation |
+| `control-coordinator.ts` | serialize lifecycle and intents; persist, publish, compensate, and commit actual snapshots |
+| `control-coordinator-values.ts` | pure intent/default/mutation, target-scope, ACK, reset, and session projection values; no Chrome or storage authority |
+| `native-media-async.ts` | sole physical standard-media async setter/readback primitives, source-scoped cancellation, and frame-cadence cache |
+| `native-media-executor.ts` | registry/target orchestration, native ownership, page fallback, rollback, and page observation |
 | `media-registry.ts` | pure active-media/video selection, source revision |
 | `popup/card/types.ts` | initialize fields from neutral defaults + `ControlSnapshot` |
-| `popup/card/messaging.ts` | apply control revisions independently from audio generations |
+| `popup/ui-event-hub.ts` | one Popup runtime listener; tab routing, subscriber isolation, and final-listener teardown |
+| `popup/control-snapshot-order.ts` | generation-before-identity and revision-monotonic UI admission |
+| `popup/card/messaging.ts` | sole card audio/config projection; apply control revisions independently from audio generations |
 | `audio.contracts.ts::resolveAudioVolumeState` | constant-time gray/blue/purple truth table |
-| `side-panel/video-controls.ts` | route video operations to `activeVideo` |
-| `remote-commands.ts` / `remote-service.ts` | call coordinator inside Background, cache projection, push after HMAC |
+| `side-panel/video-controls.ts` | route every video/filter intent to `activeVideo` through one per-tab transport tail |
+| `settings-value-normalization.ts` / `settings-repository.ts` | pure canonical values followed by one revisioned durable storage transaction |
+| `remote/operation-queue.ts` | bounded keyed serialization without session or protocol authority |
+| `remote-commands.ts` / `remote-service.ts` | call coordinator inside Background, cache projection, push only after Remote V3 authority validation |

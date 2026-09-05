@@ -2,19 +2,14 @@ import { describe, expect, test } from 'bun:test';
 import { createPeerRuntimeLoader } from '../src/offscreen-remote/peerjs-loader';
 
 describe('offscreen PeerJS runtime loader', () => {
-	test('coalesces one local script load and keeps the ready runtime', async () => {
-		let peerReady = false;
-		let created = 0;
-		let onLoad!: () => void;
-		let removed = 0;
+	test('coalesces one local module load and keeps the loaded runtime', async () => {
+		let releaseLoad!: (module: { default: unknown }) => void;
+		let loadCalls = 0;
+		class FakePeer {}
 		const loader = createPeerRuntimeLoader({
-			hasPeer: () => peerReady,
-			resolveUrl: () => 'chrome-extension://spectra/peerjs-vendor.js',
-			createScript: (url, load) => {
-				expect(url).toBe('chrome-extension://spectra/peerjs-vendor.js');
-				created += 1;
-				onLoad = load;
-				return { remove: () => { removed += 1; } };
+			loadModule: () => {
+				loadCalls += 1;
+				return new Promise((resolve) => { releaseLoad = resolve; });
 			},
 			setTimer: () => 1,
 			clearTimer: () => undefined,
@@ -23,49 +18,40 @@ describe('offscreen PeerJS runtime loader', () => {
 		const first = loader.ensure();
 		const second = loader.ensure();
 		expect(second).toBe(first);
-		expect(created).toBe(1);
-		peerReady = true;
-		onLoad();
+		expect(loadCalls).toBe(1);
+		releaseLoad({ default: FakePeer });
 		await Promise.all([first, second]);
 		await expect(loader.ensure()).resolves.toBeUndefined();
-		expect(created).toBe(1);
-		expect(removed).toBe(1);
+		expect(loadCalls).toBe(1);
+		expect(loader.createPeer('spectra-test')).toBeInstanceOf(FakePeer);
 	});
 
-	test('rejects an invalid load and retries only when ensure is called again', async () => {
-		let peerReady = false;
-		let created = 0;
-		let onLoad!: () => void;
+	test('rejects an invalid module and retries only when ensure is called again', async () => {
+		let loadCalls = 0;
+		class FakePeer {}
 		const loader = createPeerRuntimeLoader({
-			hasPeer: () => peerReady,
-			resolveUrl: () => 'peerjs-vendor.js',
-			createScript: (_url, load) => {
-				created += 1;
-				onLoad = load;
-				return { remove: () => undefined };
+			loadModule: () => {
+				loadCalls += 1;
+				return Promise.resolve(loadCalls === 1 ? {} : { default: FakePeer });
 			},
 			setTimer: () => 1,
 			clearTimer: () => undefined,
 		});
 
 		const invalid = loader.ensure();
-		onLoad();
-		await expect(invalid).rejects.toThrow('without installing globalThis.Peer');
-		expect(created).toBe(1);
+		await expect(invalid).rejects.toThrow('without exporting Peer');
+		expect(loadCalls).toBe(1);
 
 		const retry = loader.ensure();
-		expect(created).toBe(2);
-		peerReady = true;
-		onLoad();
+		expect(loadCalls).toBe(2);
 		await expect(retry).resolves.toBeUndefined();
+		expect(loader.createPeer('spectra-retry')).toBeInstanceOf(FakePeer);
 	});
 
 	test('disposal aborts one in-flight load and forbids later work', async () => {
-		let removed = 0;
+		let releaseLoad!: (module: { default: unknown }) => void;
 		const loader = createPeerRuntimeLoader({
-			hasPeer: () => false,
-			resolveUrl: () => 'peerjs-vendor.js',
-			createScript: () => ({ remove: () => { removed += 1; } }),
+			loadModule: () => new Promise((resolve) => { releaseLoad = resolve; }),
 			setTimer: () => 1,
 			clearTimer: () => undefined,
 		});
@@ -74,6 +60,33 @@ describe('offscreen PeerJS runtime loader', () => {
 		loader.dispose();
 		await expect(pending).rejects.toThrow('disposed');
 		await expect(loader.ensure()).rejects.toThrow('disposed');
-		expect(removed).toBe(1);
+		releaseLoad({ default: class FakePeer {} });
+		await Promise.resolve();
+		expect(() => loader.createPeer('spectra-disposed')).toThrow('unavailable');
+	});
+
+	test('fences a timed-out dynamic import from satisfying a later attempt', async () => {
+		const releases: Array<(module: { default: unknown }) => void> = [];
+		const timers: Array<() => void> = [];
+		class OldPeer {}
+		class NewPeer {}
+		const loader = createPeerRuntimeLoader({
+			loadModule: () => new Promise((resolve) => { releases.push(resolve); }),
+			setTimer: (callback) => { timers.push(callback); return timers.length; },
+			clearTimer: () => undefined,
+		});
+
+		const first = loader.ensure();
+		expect(releases).toHaveLength(1);
+		timers[0]();
+		await expect(first).rejects.toThrow('timed out');
+
+		const second = loader.ensure();
+		expect(releases).toHaveLength(2);
+		releases[0]({ default: OldPeer });
+		await Promise.resolve();
+		releases[1]({ default: NewPeer });
+		await expect(second).resolves.toBeUndefined();
+		expect(loader.createPeer('spectra-current')).toBeInstanceOf(NewPeer);
 	});
 });

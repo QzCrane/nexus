@@ -28,4 +28,10 @@ describe('bounded background fan-out', () => {
 		expect(active).toBe(0);
 		expect(maxActive).toBeLessThanOrEqual(3);
 	});
+
+	test('preserves a rejection whose reason is undefined', async () => {
+		await expect(forEachBounded([0], 1, async () => {
+			return Promise.reject(undefined);
+		})).rejects.toBeUndefined();
+	});
 });

@@ -92,6 +92,29 @@ describe('MV3 warm update scheduling', () => {
 		]);
 	});
 
+	test('queries all tabs and includes user-enabled file URLs in warm update', async () => {
+		const executeScript = mock(async (details: chrome.scripting.ScriptInjection) => {
+			if ('func' in details) return [{ frameId: 0, result: false }];
+			return [{ frameId: 0 }];
+		});
+		const query = mock(async () => [
+			{ id: 31, active: true, url: 'file:///D:/media/demo.html' },
+			{ id: 32, active: false, url: 'chrome://settings/' },
+			{ id: 33, active: false, url: 'https://media.example/watch' },
+		]);
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: { scripting: { executeScript }, tabs: { query } },
+		});
+
+		await performWarmUpdate();
+
+		expect(query.mock.calls).toHaveLength(1);
+		expect(query.mock.calls[0]).toEqual([{}]);
+		expect(executeScript.mock.calls.map(([details]) => details.target.tabId))
+			.toEqual([31, 31, 31, 31, 33, 33, 33, 33]);
+	});
+
 	test('injects both versioned MAIN bridges on the popup on-demand recovery path', async () => {
 		const executeScript = mock(async () => [{ frameId: 0 }]);
 		installChrome(executeScript);
@@ -114,7 +137,7 @@ function installChrome(executeScript: ReturnType<typeof mock>): void {
 		value: {
 			scripting: { executeScript },
 			tabs: {
-				query: async () => [{ id: 7, active: true }],
+				query: async () => [{ id: 7, active: true, url: 'https://media.example/watch' }],
 			},
 		},
 	});

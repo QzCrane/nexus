@@ -8,6 +8,7 @@ import {
 	runChromeCommandSingleFlight,
 	runWithShortcutRuntime,
 	waitForPageGestureBurst,
+	shortcutTestApi,
 	type ShortcutRuntimePort,
 } from '../src/background/shortcuts';
 
@@ -118,6 +119,63 @@ describe('cold-document shortcuts', () => {
 		}, port)).rejects.toThrow('stale target document');
 		expect(executed).toBe(false);
 		expect(port.release).toHaveBeenCalledTimes(1);
+	});
+
+	test('uses a distinct runtime lease token for each concurrent feedback call', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const ensureTokens: string[] = [];
+		const releaseTokens: string[] = [];
+		const runtimePort: ShortcutRuntimePort = {
+			ensure: async (_tabId, documentId, capability) => {
+				ensureTokens.push(capability);
+				return { documentId };
+			},
+			release: (_tabId, _documentId, capability) => {
+				releaseTokens.push(capability);
+			},
+		};
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				webNavigation: {
+					getFrame: async () => ({ documentId: 'active-document' }),
+				},
+				tabs: {
+					sendMessage: async () => undefined,
+				},
+			},
+		});
+		try {
+			await Promise.all([
+				shortcutTestApi.notifyShortcutFeedback(
+					{ id: 1, title: 'Active' },
+					{ id: 2, title: 'Target' },
+					'volume_up',
+					'media.example',
+					undefined,
+					undefined,
+					'active-document',
+					runtimePort,
+				),
+				shortcutTestApi.notifyShortcutFeedback(
+					{ id: 1, title: 'Active' },
+					{ id: 2, title: 'Target' },
+					'volume_up',
+					'media.example',
+					undefined,
+					undefined,
+					'active-document',
+					runtimePort,
+				),
+			]);
+			expect(ensureTokens).toHaveLength(2);
+			expect(new Set(ensureTokens).size).toBe(2);
+			expect(releaseTokens).toEqual(expect.arrayContaining(ensureTokens));
+			expect(releaseTokens).toHaveLength(2);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
 	});
 
 	test('drops held-command repeats without retaining a trailing invocation', async () => {

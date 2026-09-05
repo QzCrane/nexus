@@ -2,38 +2,34 @@
 
 import {
 	audioSessionMatchesControlDocument,
-	CONTROL_ALGORITHM_POLICIES,
-	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS,
-	CONTROL_SESSION_FIELDS,
+	clampControlValue,
+	CONTROL_VALUE_LIMITS,
 	SPECTRA_PROTOCOL_VERSION,
 	isControlApplyAck,
 	isControlOperationAck,
 	isControlSnapshot,
-	isSpectraRequestEnvelope,
 	compileEffectiveVolume,
 	isActiveCaptureLifecycle,
+	normalizeHostname,
 	resolveAudioVolume,
 	resolveAcknowledgedAudioVolumeState,
 	resolveControlAudioVolume,
-	rpcFailure,
-	rpcSuccess,
 	splitEffectiveVolume,
 	type CaptureAdmission,
-	type ControlActualContext,
 	type ControlApplyAck,
 	type ControlCapability,
 	type ControlDirectField,
 	type ControlField,
 	type ControlFieldStates,
 	type ControlIntent,
-	type ControlMutation,
-	type ControlNativeObservationStrategies,
 	type ControlOperationAck,
 	type ControlOperationIntent,
 	type ControlOperationRequest,
 	type ControlOperationResult,
 	type ControlPatch,
 	type ControlSessionPatch,
+	type ControlStrategy,
+	type ControlCoverage,
 	type ControlSnapshot,
 	type ControlSubmitRequest,
 	type ControlValues,
@@ -41,11 +37,45 @@ import {
 	type SpectraEventEnvelope,
 } from '@nexus/contracts';
 import {
+	AUDIO_PROJECTION_FIELDS,
+	assertAppliedFields,
+	assertAppliedPatch,
+	assertReleasedPatch,
+	assertUnambiguousTargetScope,
+	controlSessionScopeForSource,
+	createIntent,
+	defaultControlValue,
+	applyMutation,
+	nativeObservationFields,
+	neutralBoostObservation,
+	PAGE_OBSERVABLE_FIELDS,
+	projectControlSessionPatch,
+	projectControlTarget,
+	RESET_AUDIO_PROCESSOR_PATCH,
+	RESET_AUDIO_TARGET_PATCH,
+	RESET_VIDEO_PATCH,
+	RESTORABLE_PROCESSOR_FIELDS,
+	RESTORABLE_TARGET_FIELDS,
+	sameMediaTarget,
+	snapshotActualPatch,
+	stageSnapshot,
+	operationIntent,
+	applyPageObservation,
+	assignFieldState,
+} from './control-coordinator-values';
+import {
+	mintCaptureAdmission,
+	revokeCaptureAdmission,
+	revokeCaptureAdmissionsForTab,
+	forgetCaptureAdmissionsForTab,
+} from './capture-admission';
+import {
 	createKeyedSerializedQueue,
 	type TabControlSessionIdentity,
 	type TabControlSessionScope,
 } from '@nexus/kernel';
 import { sendSpectraTabRequest } from './spectra-tab-client';
+import { settingsRepository } from './settings-repository';
 import { storage } from './state';
 import {
 	markBadgeUsedForTab,
@@ -53,7 +83,7 @@ import {
 	updateBadgeFromControlProjection,
 } from './handlers/badge';
 import { executeUserScriptInTab } from './handlers/user-scripts';
-import { getAudioSession } from './audio-session-store';
+import { fenceAudioSession, getAudioSession } from './audio-session-store';
 import {
 	ensureContentRuntime,
 	awaitDocumentInitialization,
@@ -62,12 +92,40 @@ import {
 	retainSourceRuntimeLease,
 } from './runtime-loader';
 import { swLog } from '../shared/logger';
+import {
+	isBackgroundRequestEnvelope,
+	rpcFailure,
+	rpcSuccess,
+	sendBackgroundTabRequestOnce,
+} from './background-rpc';
 
 const STORAGE_PREFIX = 'spectra.control.tab.';
 const GENERATION_PREFIX = 'spectra.control.generation.';
 const snapshots = new Map<number, ControlSnapshot>();
 const serialized = createKeyedSerializedQueue<number>();
-const invalidations = new Map<number, Promise<void>>();
+// Navigation is fenced synchronously before its durable transition enters the
+// per-tab queue. A queued invalidation alone is insufficient: a control
+// transaction may be awaiting Content/storage while Chrome has already moved
+// the tab to another document. The epoch lets every in-flight transaction
+// reject before it can publish its old generation.
+interface NavigationFence {
+	epoch: number;
+	generationFloor: number;
+	// A fence remains pending from the synchronous browser lifecycle callback
+	// until its serialized durable transition completes. In-flight control work
+	// must not synthesize/persist the next generation in that window.
+	pending: boolean;
+	beforeNavigate: boolean;
+	settled: boolean;
+	settlement?: Promise<void>;
+}
+
+const navigationFences = new Map<number, NavigationFence>();
+const snapshotFenceEpochs = new WeakMap<ControlSnapshot, number>();
+// A failed/stale storage write may be ambiguous even after the in-memory
+// snapshot is rolled back. Until a later successful publish replaces it, do
+// not use that durable value as the state to carry across navigation.
+const stalePersistedSnapshots = new Set<number>();
 let initialized = false;
 
 type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & {
@@ -91,96 +149,6 @@ export interface ExtensionInvocationContext {
 	origin: 'popup' | 'builtin-page' | 'site-page' | 'chrome-command';
 	foreground: ExtensionDocumentIdentity | null;
 	target: ExtensionDocumentIdentity;
-}
-
-const EXTENSION_INVOCATION_ADMISSION: CaptureAdmission = 'extension-invocation';
-
-// Page-originated messages are observations emitted by the trusted content
-// runtime after a native event/getter readback. They must update the shared
-// snapshot without routing the same value back to the DOM as a second write.
-const PAGE_OBSERVABLE_FIELDS = new Set<ControlField>([
-	'volumeBase',
-	'mediaMuted',
-	'speed',
-	'preservePitch',
-	'playing',
-	'currentTime',
-	'loop',
-	'pip',
-	'fullscreen',
-]);
-const BOOTSTRAP_PAGE_OBSERVABLE_FIELDS = new Set<ControlField>(
-	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS.flat(),
-);
-
-const AUDIO_PROJECTION_FIELDS = new Set<ControlField>([
-	'audioEnabled',
-	'volumeBase',
-	'boost',
-	'mediaMuted',
-	'speed',
-	'preservePitch',
-	'eqValues',
-	'bass',
-	'compressor',
-	'mono',
-	'pan',
-	'delay',
-]);
-
-interface ControlTargetProjection {
-	activeMedia: ControlSnapshot['activeMedia'];
-	activeVideo: ControlSnapshot['activeVideo'];
-}
-
-function controlTargetScopeFlags(capabilities: readonly ControlCapability[]): {
-	updatesMedia: boolean;
-	updatesVideo: boolean;
-} {
-	const scopes = capabilities.map((capability) => CONTROL_ALGORITHM_POLICIES[capability].scope);
-	return {
-		updatesMedia: scopes.some((scope) => scope === 'active-media'
-			|| scope === 'media-source'
-			|| scope === 'requested-audio-scope'),
-		updatesVideo: scopes.some((scope) => scope === 'active-video'),
-	};
-}
-
-function assertUnambiguousTargetScope(request: RoutedControlSubmitRequest): void {
-	const capabilities = [
-		...Object.keys(request.patch ?? {}),
-		...(request.mutations ?? []).map(({ field }) => field),
-	] as ControlCapability[];
-	const { updatesMedia, updatesVideo } = controlTargetScopeFlags(capabilities);
-	if (updatesVideo && request.target?.kind === 'audio') {
-		throw new Error('A video-scoped control cannot target an audio element');
-	}
-	if (updatesMedia && updatesVideo && request.target === null) {
-		throw new Error('Mixed media/video controls require one explicit video target');
-	}
-}
-
-// An ACK target identifies what executed; it is not permission to replace both
-// active identities. Contract scope is the executable owner of that projection:
-// video-only controls update only activeVideo, tab/document controls update
-// neither, and media/audio/source controls update activeMedia (plus activeVideo
-// when the resolved media itself is a video).
-function projectControlTarget(
-	baseline: Pick<ControlSnapshot, 'activeMedia' | 'activeVideo'>,
-	capabilities: readonly ControlCapability[],
-	target: MediaTarget | null,
-): ControlTargetProjection {
-	let activeMedia = baseline.activeMedia;
-	let activeVideo = baseline.activeVideo;
-	if (!target) return { activeMedia, activeVideo };
-
-	const { updatesMedia, updatesVideo } = controlTargetScopeFlags(capabilities);
-	if (updatesMedia) {
-		activeMedia = target;
-		if (target.kind === 'video') activeVideo = target;
-	}
-	if (updatesVideo && target.kind === 'video') activeVideo = target;
-	return { activeMedia, activeVideo };
 }
 
 const RUNTIME_OWNER_CAPABILITY = 'owned-control-state';
@@ -236,40 +204,6 @@ async function currentIdentity(tabId: number): Promise<TabControlSessionIdentity
 	return storage.tabSession.identity(tabId, frame.documentId, frame.url);
 }
 
-function sameMediaTarget(
-	left: import('@nexus/contracts').MediaTarget | null,
-	right: import('@nexus/contracts').MediaTarget | null,
-): boolean {
-	return left === right || Boolean(left && right
-		&& left.documentId === right.documentId
-		&& left.frameId === right.frameId
-		&& left.mediaId === right.mediaId
-		&& left.sourceRevision === right.sourceRevision
-		&& left.kind === right.kind);
-}
-
-function nativeObservationFields(
-	patch: ControlPatch,
-	revision: number,
-	observedStrategies: ControlNativeObservationStrategies = {},
-): ControlFieldStates {
-	const fields: ControlFieldStates = {};
-	for (const [rawField, actual] of Object.entries(patch)) {
-		const field = rawField as ControlDirectField;
-		(fields as Record<string, unknown>)[field] = {
-			desired: actual,
-			actual,
-			revision,
-			phase: 'applied',
-			strategy: observedStrategies[field] ?? 'dom-native',
-			coverage: 'active-target',
-			controlled: false,
-			lastError: null,
-		};
-	}
-	return fields;
-}
-
 async function readPersistedSnapshot(tabId: number): Promise<ControlSnapshot | null> {
 	const key = storageKey(tabId);
 	const stored = await chrome.storage.session.get(key)
@@ -291,36 +225,95 @@ async function persistGeneration(tabId: number, generation: number): Promise<voi
 		.catch((error) => swLog.warn('persistGeneration failed', error));
 }
 
-async function getSnapshot(tabId: number): Promise<ControlSnapshot | null> {
-	const invalidation = invalidations.get(tabId);
-	if (invalidation) {
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		try {
-			await Promise.race([
-				invalidation,
-				new Promise<void>((resolve) => {
-					timer = setTimeout(() => resolve(), 5_000);
-				}),
-			]);
-		} finally {
-			if (timer) clearTimeout(timer);
-		}
+function navigationEpoch(tabId: number): number {
+	return navigationFences.get(tabId)?.epoch ?? 0;
+}
+
+function rememberSnapshot(snapshot: ControlSnapshot): ControlSnapshot {
+	snapshotFenceEpochs.set(snapshot, navigationEpoch(snapshot.tabId));
+	return snapshot;
+}
+
+function assertNavigationFence(
+	tabId: number,
+	expectedEpoch: number,
+	snapshot?: Pick<ControlSnapshot, 'generation'>,
+): void {
+	const fence = navigationFences.get(tabId);
+	if (expectedEpoch !== navigationEpoch(tabId)
+		|| fence && snapshot && snapshot.generation < fence.generationFloor) {
+		throw new Error('Control transaction was invalidated by navigation');
 	}
-	const known = snapshots.get(tabId) ?? await readPersistedSnapshot(tabId);
+}
+
+/**
+ * Advance the in-memory lifecycle fence before any asynchronous navigation
+ * work is queued. This function intentionally performs no persistence or
+ * publication; those effects remain serialized with control mutations.
+ */
+function fenceNavigation(
+	tabId: number,
+	preserveDocumentState = false,
+	beforeNavigate = false,
+): number {
+	// Revoke before any asynchronous navigation work. A grant issued for the old
+	// document must not survive long enough to reach the physical Capture owner.
+	revokeCaptureAdmissionsForTab(tabId);
+	fenceAudioSession(tabId, preserveDocumentState);
+	const previous = navigationFences.get(tabId);
+	const knownGeneration = snapshots.get(tabId)?.generation ?? 0;
+	const fence: NavigationFence = {
+		epoch: (previous?.epoch ?? 0) + 1,
+		generationFloor: Math.max(previous?.generationFloor ?? 0, knownGeneration + 1),
+		pending: true,
+		beforeNavigate,
+		settled: false,
+	};
+	navigationFences.set(tabId, fence);
+	return fence.epoch;
+}
+
+function assertPassiveReadFence(
+	tabId: number,
+	expectedEpoch: number,
+	generation?: number,
+): void {
+	assertNavigationFence(
+		tabId,
+		expectedEpoch,
+		generation === undefined ? undefined : { generation },
+	);
+	if (navigationFences.get(tabId)?.pending || navigationFences.get(tabId)?.beforeNavigate) {
+		throw new Error('Control view read was invalidated by navigation');
+	}
+}
+
+async function getSnapshot(tabId: number): Promise<ControlSnapshot | null> {
+	const known = snapshots.get(tabId)
+		?? (stalePersistedSnapshots.has(tabId) ? null : await readPersistedSnapshot(tabId));
 	if (!known) return null;
+	const fence = navigationFences.get(tabId);
+	if (fence?.pending || fence?.beforeNavigate || fence && known.generation < fence.generationFloor) return null;
 	const identity = await currentIdentity(tabId).catch(() => null);
 	if (!identity
 		|| known.documentId !== identity.documentId
 		|| known.origin !== identity.origin) return null;
+	const currentFence = navigationFences.get(tabId);
+	if (currentFence?.pending || currentFence?.beforeNavigate
+		|| currentFence && known.generation < currentFence.generationFloor) return null;
 	snapshots.set(tabId, known);
-	return known;
+	return rememberSnapshot(known);
 }
 
 export async function getControlViewSnapshot(tabId: number): Promise<ControlSnapshot | null> {
+	const expectedEpoch = navigationEpoch(tabId);
 	const existing = await getSnapshot(tabId);
+	assertPassiveReadFence(tabId, expectedEpoch, existing?.generation);
 	const identity = await currentIdentity(tabId).catch(() => null);
 	if (!identity) return existing;
+	assertPassiveReadFence(tabId, expectedEpoch, existing?.generation);
 	const generation = existing?.generation ?? await readPersistedGeneration(tabId);
+	assertPassiveReadFence(tabId, expectedEpoch, generation);
 	const videoFields = ['pip', 'fullscreen'] as const satisfies readonly ControlDirectField[];
 	const mediaFields = [...PAGE_OBSERVABLE_FIELDS]
 		.filter((field): field is ControlDirectField => !videoFields.includes(field as typeof videoFields[number]));
@@ -334,6 +327,14 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 		read(mediaFields),
 		read(videoFields),
 	]);
+	assertPassiveReadFence(tabId, expectedEpoch, generation);
+	const postReadIdentity = await currentIdentity(tabId).catch(() => null);
+	if (!postReadIdentity
+		|| postReadIdentity.documentId !== identity.documentId
+		|| postReadIdentity.origin !== identity.origin) {
+		throw new Error('Control view read completed for a stale document');
+	}
+	assertPassiveReadFence(tabId, expectedEpoch, generation);
 	if (!mediaResponse?.ok && !videoResponse?.ok) return existing;
 	const base: ControlSnapshot = existing ?? {
 		tabId,
@@ -377,117 +378,43 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 }
 
 async function getOrCreateSnapshot(tabId: number): Promise<ControlSnapshot> {
+	if (navigationFences.get(tabId)?.pending || navigationFences.get(tabId)?.beforeNavigate) {
+		throw new Error('Control transaction was invalidated by navigation');
+	}
 	const existing = await getSnapshot(tabId);
 	if (existing) return existing;
 	const [identity, persisted, storedGeneration] = await Promise.all([
 		currentIdentity(tabId),
-		readPersistedSnapshot(tabId),
+		stalePersistedSnapshots.has(tabId)
+			? Promise.resolve(null)
+			: readPersistedSnapshot(tabId),
 		readPersistedGeneration(tabId),
 	]);
+	if (navigationFences.get(tabId)?.pending || navigationFences.get(tabId)?.beforeNavigate) {
+		throw new Error('Control transaction was invalidated by navigation');
+	}
 	const generation = persisted
 		&& (persisted.documentId !== identity.documentId || persisted.origin !== identity.origin)
 		? Math.max(storedGeneration, persisted.generation + 1)
 		: storedGeneration;
-	if (generation !== storedGeneration) await persistGeneration(tabId, generation);
-	return {
+	const fencedGeneration = Math.max(
+		generation,
+		navigationFences.get(tabId)?.generationFloor ?? 0,
+	);
+	if (fencedGeneration !== storedGeneration) await persistGeneration(tabId, fencedGeneration);
+	if (navigationFences.get(tabId)?.pending || navigationFences.get(tabId)?.beforeNavigate) {
+		throw new Error('Control transaction was invalidated by navigation');
+	}
+	return rememberSnapshot({
 		tabId,
 		documentId: identity.documentId,
 		origin: identity.origin,
-		generation,
+		generation: fencedGeneration,
 		revision: 0,
 		activeMedia: null,
 		activeVideo: null,
 		fields: {},
-	};
-}
-
-function createIntent(
-	snapshot: ControlSnapshot,
-	request: ResolvedControlSubmitRequest,
-): ControlIntent {
-	const actualContext: ControlActualContext = {};
-	for (const field of ['volumeBase', 'mediaMuted', 'speed', 'preservePitch'] as const) {
-		const state = snapshot.fields[field];
-		if (state?.phase === 'applied' && state.actual !== null) {
-			(actualContext as Record<string, unknown>)[field] = state.actual;
-		}
-		if (request.source === 'page' && request.patch[field] !== undefined) {
-			(actualContext as Record<string, unknown>)[field] = request.patch[field];
-		}
-	}
-	return {
-		intentId: crypto.randomUUID(),
-		tabId: request.tabId,
-		documentId: snapshot.documentId,
-		generation: snapshot.generation,
-		baseRevision: snapshot.revision,
-		source: request.source,
-		requestedCoverage: request.requestedCoverage,
-		// `null` is an explicit live-active selection. Content resolves it from
-		// the current document registry; Background must not silently replace it
-		// with a possibly stale snapshot target.
-		target: request.target,
-		actualContext,
-		patch: request.patch,
-		...(request.captureAdmission
-			? { captureAdmission: request.captureAdmission }
-			: {}),
-	};
-}
-
-function defaultControlValue(field: ControlField): ControlValues[ControlField] {
-	switch (field) {
-		case 'volumeBase': return 100;
-		case 'boost': return 1;
-		case 'speed': return 1;
-		case 'currentTime': return 0;
-		case 'rotation': return 0;
-		case 'dimOpacity': return 0.72;
-		case 'pan': return 0;
-		case 'delay': return 0;
-		case 'eqValues': return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-		case 'filter': return {
-			brightness: 100,
-			contrast: 100,
-			saturate: 100,
-			grayscale: false,
-			invert: false,
-		};
-		case 'abLoop': return { pointA: null, pointB: null, enabled: false };
-		default: return false;
-	}
-}
-
-function normalizeMutationValue(
-	field: ControlField,
-	value: ControlValues[ControlField],
-): ControlValues[ControlField] {
-	if (typeof value !== 'number') return value;
-	switch (field) {
-		case 'volumeBase': return Math.max(0, Math.min(100, value));
-		case 'boost': return Math.round(Math.max(1, Math.min(8, value)) * 10) / 10;
-		case 'speed': return Math.round(Math.max(0.1, Math.min(16, value)) * 100) / 100;
-		case 'currentTime': return Math.max(0, value);
-		case 'rotation': return ((Math.round(value / 90) * 90 % 360) + 360) % 360 as 0 | 90 | 180 | 270;
-		case 'dimOpacity': return Math.max(0, Math.min(1, value));
-		case 'pan': return Math.round(Math.max(-1, Math.min(1, value)) * 100) / 100;
-		case 'delay': return Math.round(Math.max(0, Math.min(500, value)));
-		default: return value;
-	}
-}
-
-function applyMutation(
-	current: ControlValues[ControlField],
-	mutation: ControlMutation,
-): ControlValues[ControlField] {
-	if (mutation.operation === 'set') {
-		return normalizeMutationValue(mutation.field, mutation.value as ControlValues[ControlField]);
-	}
-	if (mutation.operation === 'toggle') return !current;
-	return normalizeMutationValue(
-		mutation.field,
-		(Number(current) + Number(mutation.value)) as ControlValues[ControlField],
-	);
+	});
 }
 
 async function resolveSubmitRequest(
@@ -553,34 +480,6 @@ async function resolveSubmitRequest(
 	};
 }
 
-function assignFieldState<K extends ControlField>(
-	fields: ControlFieldStates,
-	field: K,
-	desired: ControlValues[K],
-	actual: ControlValues[K],
-	revision: number,
-	intentId: string,
-): void {
-	const matches = JSON.stringify(desired) === JSON.stringify(actual);
-	(fields as Record<string, unknown>)[field] = {
-		desired,
-		actual,
-		revision,
-		phase: matches ? 'applied' : 'error',
-		strategy: 'chrome-native',
-		coverage: 'full',
-		controlled: matches,
-		intentId,
-		lastError: matches
-			? null
-			: {
-				code: 'readback-mismatch',
-				message: 'Chrome state differs from the requested value',
-				retryable: true,
-			},
-	};
-}
-
 async function applyChromeFields(intent: ControlIntent): Promise<{
 	remaining: ControlPatch;
 	fields: ControlFieldStates;
@@ -606,47 +505,29 @@ async function applyChromeFields(intent: ControlIntent): Promise<{
 	return { remaining, fields };
 }
 
-function applyPageObservation(
-	intent: ControlIntent,
-	observedStrategies: ControlNativeObservationStrategies | undefined,
-): ControlFieldStates {
-	if (intent.requestedCoverage !== 'active-target') {
-		throw new Error('A page observation cannot claim full-output coverage');
-	}
-	if (!observedStrategies) throw new Error('A page observation requires native strategy provenance');
-	const patchKeys = Object.keys(intent.patch);
-	if (!intent.target
-		&& patchKeys.some((field) => !BOOTSTRAP_PAGE_OBSERVABLE_FIELDS.has(field as ControlField))) {
-		throw new Error('A targetless bootstrap observation contains a target-bound field');
-	}
-	const strategyKeys = Object.keys(observedStrategies);
-	if (patchKeys.length !== strategyKeys.length
-		|| patchKeys.some((field) => !Object.hasOwn(observedStrategies, field))) {
-		throw new Error('Page observation strategy provenance must match every patch field');
-	}
-	const fields: ControlFieldStates = {};
-	const revision = intent.baseRevision + 1;
-	for (const [rawField, rawValue] of Object.entries(intent.patch)) {
-		const field = rawField as ControlDirectField;
-		if (!PAGE_OBSERVABLE_FIELDS.has(field)) {
-			throw new Error(`Page observation is not admitted for ${field}`);
+async function rollbackSnapshotPersistence(
+	tabId: number,
+	previous: ControlSnapshot | undefined,
+	message: string,
+): Promise<void> {
+	try {
+		if (previous) {
+			await chrome.storage.session.set({ [storageKey(tabId)]: previous });
+		} else {
+			stalePersistedSnapshots.add(tabId);
+			await chrome.storage.session.remove([storageKey(tabId)]);
 		}
-		(fields as Record<string, unknown>)[field] = {
-			desired: rawValue,
-			actual: rawValue,
-			revision,
-			phase: 'applied',
-			strategy: observedStrategies[field],
-			coverage: 'active-target',
-			controlled: false,
-			intentId: intent.intentId,
-			lastError: null,
-		};
+	} catch (rollbackError) {
+		stalePersistedSnapshots.add(tabId);
+		swLog.warn(message, rollbackError);
 	}
-	return fields;
 }
 
-async function publishSnapshot(snapshot: ControlSnapshot): Promise<void> {
+async function publishSnapshot(
+	snapshot: ControlSnapshot,
+	expectedEpoch = navigationEpoch(snapshot.tabId),
+): Promise<void> {
+	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 	const previous = snapshots.get(snapshot.tabId);
 	snapshots.set(snapshot.tabId, snapshot);
 	try {
@@ -654,8 +535,29 @@ async function publishSnapshot(snapshot: ControlSnapshot): Promise<void> {
 	} catch (error) {
 		if (previous) snapshots.set(snapshot.tabId, previous);
 		else snapshots.delete(snapshot.tabId);
+		await rollbackSnapshotPersistence(
+			snapshot.tabId,
+			previous,
+			'Unable to roll back a failed control snapshot write',
+		);
 		throw error;
 	}
+	// A browser lifecycle event can arrive while storage.set is in flight. Do
+	// not broadcast or leave the new in-memory value visible after that fence.
+	try {
+		assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
+	} catch (error) {
+		if (previous) snapshots.set(snapshot.tabId, previous);
+		else snapshots.delete(snapshot.tabId);
+		await rollbackSnapshotPersistence(
+			snapshot.tabId,
+			previous,
+			'Unable to roll back a fenced control snapshot write',
+		);
+		throw error;
+	}
+	stalePersistedSnapshots.delete(snapshot.tabId);
+	rememberSnapshot(snapshot);
 	const event: SpectraEventEnvelope<'spectra.control.snapshot.changed'> = {
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
 		type: 'spectra.control.snapshot.changed',
@@ -665,24 +567,20 @@ async function publishSnapshot(snapshot: ControlSnapshot): Promise<void> {
 		generation: snapshot.generation,
 	};
 	await chrome.runtime.sendMessage(event).catch(() => undefined);
-}
-
-function projectControlSessionPatch(fields: ControlFieldStates): ControlSessionPatch {
-	const patch: ControlSessionPatch = {};
-	for (const field of CONTROL_SESSION_FIELDS) {
-		const state = fields[field];
-		if (state?.phase !== 'applied' || state.actual === null) continue;
-		(patch as Record<string, unknown>)[field] = structuredClone(state.actual);
+	// Keep the in-memory and durable owners aligned even if the lifecycle
+	// callback fires while the extension-page notification is in flight.
+	try {
+		assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
+	} catch (error) {
+		if (previous) snapshots.set(snapshot.tabId, previous);
+		else snapshots.delete(snapshot.tabId);
+		await rollbackSnapshotPersistence(
+			snapshot.tabId,
+			previous,
+			'Unable to roll back a control snapshot after notification fencing',
+		);
+		throw error;
 	}
-	return patch;
-}
-
-function controlSessionScopeForSource(
-	source: ControlIntent['source'],
-): TabControlSessionScope | 'none' {
-	if (source === 'restore') return 'none';
-	if (source === 'page' || source === 'system') return 'resource';
-	return 'origin';
 }
 
 async function persistControlProjection(
@@ -690,14 +588,17 @@ async function persistControlProjection(
 	changedFields: ControlFieldStates,
 	acknowledgedSessionPatch: ControlSessionPatch = {},
 	scope: TabControlSessionScope | 'none' = 'none',
+	expectedEpoch = navigationEpoch(snapshot.tabId),
 ): Promise<void> {
 	if (scope === 'none') return;
+	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 	const sessionPatch = {
 		...projectControlSessionPatch(changedFields),
 		...structuredClone(acknowledgedSessionPatch),
 	};
 	if (Object.keys(sessionPatch).length === 0) return;
 	const identity = await currentIdentity(snapshot.tabId);
+	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 	if (identity.documentId !== snapshot.documentId || identity.origin !== snapshot.origin) {
 		throw new Error('Control projection belongs to a stale document resource');
 	}
@@ -712,10 +613,12 @@ async function persistControlProjection(
 		scope,
 		currentResourcePatch,
 	);
+	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 	if (!Object.keys(sessionPatch).some((field) => AUDIO_PROJECTION_FIELDS.has(field as ControlField))) return;
 	const completeSession = await storage.tabSession.get(snapshot.tabId, identity)
 		.catch(() => null) ?? sessionPatch;
 	const session = await getAudioSession(snapshot.tabId).catch(() => null);
+	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 	const isCaptureActive = audioSessionMatchesControlDocument(session, snapshot)
 		&& isActiveCaptureLifecycle(session);
 	await updateBadgeFromControlProjection(
@@ -724,6 +627,7 @@ async function persistControlProjection(
 		isCaptureActive,
 		false,
 	);
+	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 }
 
 // Chrome clears a tab-scoped Action projection during full navigation. Rebuild
@@ -773,6 +677,7 @@ interface CommitControlProjection {
 async function prepareIntent(
 	request: RoutedControlSubmitRequest,
 	contextSnapshot?: ControlSnapshot,
+	intentId?: string,
 ): Promise<PreparedControlIntent> {
 	const snapshot = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
 	if (request.baseRevision !== undefined && request.baseRevision !== snapshot.revision) {
@@ -787,7 +692,7 @@ async function prepareIntent(
 	}
 
 	const resolvedRequest = await resolveSubmitRequest(snapshot, request);
-	const intent = createIntent(snapshot, resolvedRequest);
+	const intent = createIntent(snapshot, resolvedRequest, intentId ?? crypto.randomUUID());
 	const pageObservation = intent.source === 'page';
 	const chromeResult = pageObservation
 		? { remaining: {}, fields: applyPageObservation(intent, resolvedRequest.observedStrategies) }
@@ -841,11 +746,11 @@ async function prepareIntent(
 				fields = { ...fields, ...response.data.fields };
 			} else {
 				const existingStrategy = snapshot.fields.boost?.strategy;
-				const strategy = existingStrategy === 'capture' || existingStrategy === 'media-webaudio'
-					? existingStrategy
+				const strategy = existingStrategy === 'capture'
+					? 'capture'
 					: sessionMatches && session.actualMode === 'capture'
 						? 'capture'
-						: 'media-webaudio';
+						: 'unsupported';
 				fields.boost = {
 					desired: 1,
 					actual: currentBoost,
@@ -853,7 +758,7 @@ async function prepareIntent(
 					phase: 'error',
 					strategy,
 					coverage: 'full',
-					controlled: true,
+					controlled: strategy === 'capture',
 					intentId: intent.intentId,
 					lastError: {
 						code: 'strategy-runtime-failed',
@@ -919,12 +824,15 @@ async function commitControlFields(
 	activeMedia: ControlSnapshot['activeMedia'],
 	projection: CommitControlProjection = {},
 ): Promise<ControlSnapshot> {
+	const expectedEpoch = snapshotFenceEpochs.get(baseline) ?? navigationEpoch(baseline.tabId);
+	assertNavigationFence(baseline.tabId, expectedEpoch, baseline);
 	const current = await getOrCreateSnapshot(baseline.tabId);
 	if (current.documentId !== baseline.documentId
 		|| current.generation !== baseline.generation
 		|| current.revision !== baseline.revision) {
 		throw new Error('Control transaction lost its document or revision before commit');
 	}
+	assertNavigationFence(baseline.tabId, expectedEpoch, baseline);
 	const revision = baseline.revision + 1;
 	const activeVideo = Object.hasOwn(projection, 'activeVideo')
 		? projection.activeVideo ?? null
@@ -943,9 +851,12 @@ async function commitControlFields(
 		fields,
 		projection.acknowledgedSessionPatch,
 		projection.sessionScope,
+		expectedEpoch,
 	);
-	await publishSnapshot(committed);
+	await publishSnapshot(committed, expectedEpoch);
+	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
 	await reconcileRuntimeOwnership(committed);
+	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
 	return committed;
 }
 
@@ -983,9 +894,13 @@ function observeChromeTabState(
 	return serialized(tabId, () => applyChromeTabObservation(tabId, patch));
 }
 
-async function executeIntent(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
-	const current = await getOrCreateSnapshot(request.tabId);
-	const prepared = await prepareIntent(request, current);
+async function executeIntent(
+	request: RoutedControlSubmitRequest,
+	contextSnapshot?: ControlSnapshot,
+	intentId?: string,
+): Promise<ControlApplyAck> {
+	const current = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
+	const prepared = await prepareIntent(request, current, intentId);
 	const { intent, baseline, ackTarget, activeMedia, activeVideo, fields } = prepared;
 	const committed = await commitControlFields(
 		baseline,
@@ -1007,64 +922,6 @@ async function executeIntent(request: RoutedControlSubmitRequest): Promise<Contr
 		fields,
 		...(audioVolume ? { audioVolume } : {}),
 	};
-}
-
-const RESET_AUDIO_TARGET_PATCH: ControlPatch = {
-	volumeBase: 100,
-	mediaMuted: false,
-};
-
-const RESET_AUDIO_PROCESSOR_PATCH: ControlPatch = {
-	// rule: reset clears DSP parameters but keeps the audio enhancement enabled.
-	// Closing the master switch on reset discarded the user's enhancement preference
-	// and left the page silent until they re-toggled it.
-	audioEnabled: true,
-	boost: 1,
-	eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-	bass: false,
-	compressor: false,
-	mono: false,
-	pan: 0,
-	delay: 0,
-};
-
-const RESET_VIDEO_PATCH: ControlPatch = {
-	rotation: 0,
-	mirrored: false,
-	fill: false,
-	filterEnabled: false,
-	filter: {
-		brightness: 100,
-		contrast: 100,
-		saturate: 100,
-		grayscale: false,
-		invert: false,
-	},
-	dimEnabled: false,
-	dimOpacity: 0.72,
-};
-
-const RESTORABLE_TARGET_FIELDS = [
-	'volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'loop',
-	'rotation', 'mirrored', 'fill', 'filterEnabled', 'filter', 'dimEnabled', 'dimOpacity',
-] as const satisfies readonly ControlDirectField[];
-
-const RESTORABLE_PROCESSOR_FIELDS = [
-	'audioEnabled', 'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
-] as const satisfies readonly ControlDirectField[];
-
-function snapshotActualPatch(
-	snapshot: ControlSnapshot,
-	fields: readonly ControlDirectField[],
-	controlledOnly: boolean,
-): ControlPatch {
-	const patch: ControlPatch = {};
-	for (const field of fields) {
-		const state = snapshot.fields[field];
-		if (!state || state.actual === null || controlledOnly && !state.controlled) continue;
-		(patch as Record<string, unknown>)[field] = structuredClone(state.actual);
-	}
-	return patch;
 }
 
 async function captureActualPatch(
@@ -1102,7 +959,6 @@ async function compensateControlPatch(
 	targetPatch: ControlPatch,
 	processorPatch: ControlPatch,
 	order: readonly ('target' | 'processor')[] = ['target', 'processor'],
-	captureAdmission?: CaptureAdmission,
 ): Promise<CompensationResult> {
 	const fields: ControlFieldStates = {};
 	const failures: string[] = [];
@@ -1121,7 +977,6 @@ async function compensateControlPatch(
 				requestedCoverage,
 				target,
 				patch,
-				...(captureAdmission ? { captureAdmission } : {}),
 			}, baseline);
 			Object.assign(fields, prepared.fields);
 			assertAppliedPatch(prepared.fields, patch, 'Compensating rollback');
@@ -1169,84 +1024,10 @@ async function commitCompensationFailure(
 	await commitControlFields(baseline, fields, target);
 }
 
-function operationIntent(
-	snapshot: ControlSnapshot,
-	request: RoutedControlOperationRequest,
-	operationId: string,
-): ControlOperationIntent {
-	return {
-		operationId,
-		tabId: request.tabId,
-		documentId: snapshot.documentId,
-		generation: snapshot.generation,
-		baseRevision: snapshot.revision,
-		source: request.source,
-		// Preserve the same nullable live-active semantic used by field intents.
-		target: request.target,
-		operation: request.operation,
-		payload: request.payload,
-	} as ControlOperationIntent;
-}
-
 interface PreparedContentOperation {
 	intent: ControlOperationIntent;
 	baseline: ControlSnapshot;
 	acknowledgement: ControlOperationAck;
-}
-
-function stageSnapshot(
-	baseline: ControlSnapshot,
-	fields: ControlFieldStates,
-	activeMedia: ControlSnapshot['activeMedia'],
-): ControlSnapshot {
-	return {
-		...baseline,
-		activeMedia: activeMedia ?? baseline.activeMedia,
-		activeVideo: activeMedia?.kind === 'video' ? activeMedia : baseline.activeVideo,
-		fields: { ...baseline.fields, ...fields },
-	};
-}
-
-function assertAppliedPatch(
-	fields: ControlFieldStates,
-	patch: ControlPatch,
-	label: string,
-): void {
-	assertAppliedFields(fields, Object.keys(patch) as ControlField[], label);
-}
-
-function assertReleasedPatch(
-	fields: ControlFieldStates,
-	patch: ControlPatch,
-	label: string,
-): void {
-	for (const field of Object.keys(patch) as ControlField[]) {
-		const state = fields[field];
-		if (state?.phase === 'applied'
-			|| (state?.phase === 'idle'
-				&& JSON.stringify(state.actual) === JSON.stringify(patch[field as keyof ControlPatch]))) {
-			continue;
-		}
-		const detail = state?.lastError
-			? `${state.lastError.code}: ${state.lastError.message}`
-			: 'missing released field acknowledgement';
-		throw new Error(`${label} failed for ${field}: ${detail}`);
-	}
-}
-
-function assertAppliedFields(
-	fields: ControlFieldStates,
-	requiredFields: readonly ControlField[],
-	label: string,
-): void {
-	for (const field of requiredFields) {
-		const state = fields[field];
-		if (state?.phase === 'applied') continue;
-		const detail = state?.lastError
-			? `${state.lastError.code}: ${state.lastError.message}`
-			: 'missing actual field acknowledgement';
-		throw new Error(`${label} failed for ${field}: ${detail}`);
-	}
 }
 
 async function prepareContentOperation(
@@ -1423,9 +1204,11 @@ async function commitBackgroundOperation<O extends Extract<
 	if (current.documentId !== expected.documentId || current.generation !== expected.generation) {
 		throw new Error('Background operation completed after its target document changed');
 	}
+	const expectedEpoch = snapshotFenceEpochs.get(current) ?? navigationEpoch(request.tabId);
+	assertNavigationFence(request.tabId, expectedEpoch, current);
 	const revision = current.revision + 1;
 	const committed = { ...current, revision };
-	await publishSnapshot(committed);
+	await publishSnapshot(committed, expectedEpoch);
 	const acknowledgement: ControlOperationAck<O> = {
 		operationId,
 		tabId: request.tabId,
@@ -1467,6 +1250,37 @@ function normalizeHttpUrl(value: string): string {
 		throw new Error('Only HTTP(S) URLs may be opened');
 	}
 	return url.href;
+}
+
+function createFieldOperationAck<
+	O extends Extract<
+		ControlOperationRequest['operation'],
+		'playback-toggle' | 'seek-relative' | 'video-effects-toggle' | 'video-effects-reset'
+	>,
+	F extends ControlDirectField,
+>(
+	operationId: string,
+	operation: O,
+	fieldAck: ControlApplyAck,
+	field: F,
+	result: ControlOperationResult<O>,
+	strategy?: ControlStrategy,
+	coverage?: ControlCoverage,
+): ControlOperationAck<O> {
+	const state = fieldAck.fields[field];
+	return {
+		operationId,
+		tabId: fieldAck.tabId,
+		documentId: fieldAck.documentId,
+		generation: fieldAck.generation,
+		revision: fieldAck.revision,
+		target: fieldAck.target,
+		operation,
+		strategy: strategy ?? state?.strategy ?? 'unsupported',
+		coverage: coverage ?? state?.coverage ?? 'partial',
+		fields: fieldAck.fields,
+		result,
+	} as ControlOperationAck<O>;
 }
 
 async function executeFieldOperation(
@@ -1527,12 +1341,18 @@ async function executeFieldOperation(
 				? knownMuted
 				: null;
 		const currentEffective = compileEffectiveVolume(current.volumeBase, current.boost);
-		const desiredEffective = Math.max(0, Math.min(800,
+		const desiredEffective = clampControlValue(
 			request.payload.operation === 'delta'
 				? currentEffective + request.payload.value
 				: request.payload.value,
-		));
-		const desired = splitEffectiveVolume(desiredEffective);
+			'volume',
+			currentEffective,
+		);
+		let desired = desiredEffective > CONTROL_VALUE_LIMITS.volumeBase.max
+			&& current.boost === 1
+			&& current.volumeBase > CONTROL_VALUE_LIMITS.volumeBase.max
+			? { volumeBase: desiredEffective, boost: 1 }
+			: splitEffectiveVolume(desiredEffective);
 		let target = readback?.ok ? readback.data.target : request.target ?? baseline.activeMedia;
 		const targetPatch: ControlPatch = current.volumeBase === desired.volumeBase
 			? {}
@@ -1586,18 +1406,23 @@ async function executeFieldOperation(
 				if (actual !== undefined) Object.assign(nativeReadbackPatch, { [field]: actual });
 			}
 		}
-		let fields: ControlFieldStates = readback?.ok
+		const observedFields: ControlFieldStates = readback?.ok
 			? nativeObservationFields(
 				nativeReadbackPatch,
 				baseline.revision + 1,
 				readback.data.observedStrategies,
 			)
 			: {};
+		let fields: ControlFieldStates = { ...observedFields };
 		try {
 			let staged = baseline;
-			for (const stage of stageOrder) {
-				const patch = stage === 'target' ? targetPatch : processorPatch;
-				if (Object.keys(patch).length === 0) continue;
+			let physicalVolumeBase = current.volumeBase;
+			let physicalBoost = current.boost;
+			const runStage = async (
+				stage: 'target' | 'processor',
+				patch: ControlPatch,
+				assertion: 'apply' | 'release' | 'probe',
+			): Promise<PreparedControlIntent> => {
 				const prepared = await prepareIntent({
 					...common,
 					target,
@@ -1605,15 +1430,105 @@ async function executeFieldOperation(
 					patch,
 				}, staged);
 				fields = { ...fields, ...prepared.fields };
-				if (stage === 'target') {
-					assertAppliedPatch(prepared.fields, patch, 'Effective volume native stage');
-				} else if (desired.boost === 1) {
+				if (assertion === 'apply') {
+					assertAppliedPatch(
+						prepared.fields,
+						patch,
+						stage === 'target'
+							? 'Effective volume native stage'
+							: 'Effective volume processor stage',
+					);
+				} else if (assertion === 'release') {
 					assertReleasedPatch(prepared.fields, patch, 'Effective volume processor release');
-				} else {
-					assertAppliedPatch(prepared.fields, patch, 'Effective volume processor stage');
 				}
 				target = prepared.ackTarget ?? target;
 				staged = stageSnapshot(baseline, fields, target);
+				return prepared;
+			};
+
+			if (desiredEffective > CONTROL_VALUE_LIMITS.volumeBase.max && physicalBoost === 1) {
+				// A page controller can expose its own amplified scale. The verdict is
+				// probed ONCE when the content runtime detects media on a page entry
+				// (read-only bridge capability discovery) and solidified per hostname,
+				// so a volume crossing here is verdict-driven instead of paying a
+				// write probe on every boundary crossing. Standard pages never touch
+				// the page writer at all; supported pages use it directly. A stale
+				// `supported` verdict (the site changed its player) fails the write
+				// exactly like the old probe and falls back to the split scale.
+				// Once Boost is already non-neutral, this document has crossed the
+				// native-probe boundary and a read-back processor owns the scale.
+				// Keep later increments on that acknowledged owner: releasing it
+				// merely to repeat the rejected probe would interrupt visualizer/DSP and
+				// may require a fresh user-activation admission if the owner is Capture.
+				const verdictDomain = normalizeHostname(baseline.origin) ?? '';
+				let scaleSupported = verdictDomain
+					? await settingsRepository.getPageNativeScale(verdictDomain)
+					: null;
+				if (scaleSupported === null && verdictDomain) {
+					const probeResponse = await sendSpectraTabRequest(
+						request.tabId,
+						'spectra.control.page.scale.probe',
+						{},
+						{ documentId: baseline.documentId, generation: baseline.generation },
+					).catch(() => null);
+					scaleSupported = probeResponse?.ok === true
+						? probeResponse.data.supported
+						: null;
+					if (scaleSupported !== null) {
+						await settingsRepository.recordPageNativeScale(verdictDomain, scaleSupported);
+					}
+				}
+				let pageNativeApplied = false;
+				if (scaleSupported !== false) {
+					const nativePrepared = physicalVolumeBase === desiredEffective
+						? null
+						: await runStage('target', { volumeBase: desiredEffective }, 'probe');
+					const nativeState = nativePrepared?.fields.volumeBase;
+					pageNativeApplied = nativePrepared === null
+						? physicalVolumeBase === desiredEffective
+						: nativeState?.phase === 'applied'
+							&& nativeState.strategy === 'page-native'
+							&& nativeState.actual === desiredEffective;
+					if (!pageNativeApplied && nativePrepared !== null && scaleSupported === true && verdictDomain) {
+						// The solidified verdict is stale; drop it so the next page
+						// entry probes the changed player again.
+						await settingsRepository.clearPageNativeScale(verdictDomain).catch(() => undefined);
+					}
+				}
+				if (pageNativeApplied) {
+					physicalVolumeBase = desiredEffective;
+					desired = { volumeBase: desiredEffective, boost: 1 };
+					if (knownBoost === null && physicalBoost === 1) {
+						// The Content read proved a neutral Boost and the exact page writer
+						// acknowledged the full scalar. Record that released observation
+						// directly; invoking the processor owner here would wake Offscreen
+						// merely to confirm that no Capture graph is needed.
+						fields.boost = neutralBoostObservation(baseline.revision + 1, operationId);
+					}
+				} else {
+					if (observedFields.volumeBase) fields.volumeBase = observedFields.volumeBase;
+					else Reflect.deleteProperty(fields, 'volumeBase');
+					staged = stageSnapshot(baseline, fields, target);
+					desired = splitEffectiveVolume(desiredEffective);
+					if (physicalVolumeBase !== desired.volumeBase) {
+						await runStage('target', { volumeBase: desired.volumeBase }, 'apply');
+						physicalVolumeBase = desired.volumeBase;
+					}
+					if (physicalBoost !== desired.boost || knownBoost === null) {
+						await runStage('processor', { boost: desired.boost }, 'apply');
+						physicalBoost = desired.boost;
+					}
+				}
+			} else {
+				for (const stage of stageOrder) {
+					const patch = stage === 'target' ? targetPatch : processorPatch;
+					if (Object.keys(patch).length === 0) continue;
+					await runStage(
+						stage,
+						patch,
+						stage === 'processor' && desired.boost === 1 ? 'release' : 'apply',
+					);
+				}
 			}
 			const actualVolumeBase = typeof fields.volumeBase?.actual === 'number'
 				? fields.volumeBase.actual
@@ -1654,7 +1569,7 @@ async function executeFieldOperation(
 				target,
 				operation: request.operation,
 				strategy: 'extension-state',
-				coverage: Object.keys(processorPatch).length > 0 ? 'full' : 'active-target',
+				coverage: actualBoost === 1 ? 'active-target' : 'full',
 				fields,
 				...(audioVolume ? { audioVolume } : {}),
 				result: { effectiveVolume, volumeBase: actualVolumeBase, boost: actualBoost },
@@ -1666,7 +1581,6 @@ async function executeFieldOperation(
 				targetPatch.volumeBase === undefined ? {} : { volumeBase: current.volumeBase },
 				processorPatch.boost === undefined ? {} : { boost: current.boost },
 				[...stageOrder].reverse(),
-				request.captureAdmission,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -1680,52 +1594,28 @@ async function executeFieldOperation(
 			throw error;
 		}
 	}
-	if (request.operation === 'playback-toggle') {
-		const fieldAck = await executeIntent({
-			...common,
-			requestedCoverage: 'active-target',
-			mutations: [{ field: 'playing', operation: 'toggle' }],
-		});
-		assertAppliedFields(fieldAck.fields, ['playing'], 'Playback toggle');
-		const playing = fieldAck.fields.playing?.actual;
-		if (typeof playing !== 'boolean') throw new Error('Playback toggle did not return actual state');
-		return {
-			operationId,
-			tabId: request.tabId,
-			documentId: fieldAck.documentId,
-			generation: fieldAck.generation,
-			revision: fieldAck.revision,
-			target: fieldAck.target,
-			operation: request.operation,
-			strategy: fieldAck.fields.playing?.strategy ?? 'unsupported',
-			coverage: fieldAck.fields.playing?.coverage ?? 'partial',
-			fields: fieldAck.fields,
-			result: { playing },
-		};
-	}
-	if (request.operation === 'seek-relative') {
-		const fieldAck = await executeIntent({
-			...common,
-			requestedCoverage: 'active-target',
+		if (request.operation === 'playback-toggle') {
+			const fieldAck = await executeIntent({
+				...common,
+				requestedCoverage: 'active-target',
+				mutations: [{ field: 'playing', operation: 'toggle' }],
+			});
+			assertAppliedFields(fieldAck.fields, ['playing'], 'Playback toggle');
+			const playing = fieldAck.fields.playing?.actual;
+			if (typeof playing !== 'boolean') throw new Error('Playback toggle did not return actual state');
+			return createFieldOperationAck(operationId, request.operation, fieldAck, 'playing', { playing });
+		}
+		if (request.operation === 'seek-relative') {
+			const fieldAck = await executeIntent({
+				...common,
+				requestedCoverage: 'active-target',
 			mutations: [{ field: 'currentTime', operation: 'delta', value: request.payload.delta }],
-		});
-		assertAppliedFields(fieldAck.fields, ['currentTime'], 'Relative seek');
-		const currentTime = fieldAck.fields.currentTime?.actual;
-		if (typeof currentTime !== 'number') throw new Error('Relative seek did not return actual state');
-		return {
-			operationId,
-			tabId: request.tabId,
-			documentId: fieldAck.documentId,
-			generation: fieldAck.generation,
-			revision: fieldAck.revision,
-			target: fieldAck.target,
-			operation: request.operation,
-			strategy: fieldAck.fields.currentTime?.strategy ?? 'unsupported',
-			coverage: fieldAck.fields.currentTime?.coverage ?? 'partial',
-			fields: fieldAck.fields,
-			result: { currentTime },
-		};
-	}
+			});
+			assertAppliedFields(fieldAck.fields, ['currentTime'], 'Relative seek');
+			const currentTime = fieldAck.fields.currentTime?.actual;
+			if (typeof currentTime !== 'number') throw new Error('Relative seek did not return actual state');
+			return createFieldOperationAck(operationId, request.operation, fieldAck, 'currentTime', { currentTime });
+		}
 	if (request.operation === 'audio-reset') {
 		const baseline = await getOrCreateSnapshot(request.tabId);
 		let target = request.target ?? baseline.activeMedia;
@@ -1825,8 +1715,6 @@ async function executeFieldOperation(
 				target,
 				targetRollback,
 				processorRollback,
-				undefined,
-				request.captureAdmission,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -1840,64 +1728,49 @@ async function executeFieldOperation(
 			throw error;
 		}
 	}
-	if (request.operation === 'video-effects-toggle') {
-		const fieldAck = await executeIntent({
-			...common,
-			requestedCoverage: 'active-target',
-			mutations: [{ field: 'filterEnabled', operation: 'toggle' }],
-		});
-		assertAppliedFields(fieldAck.fields, ['filterEnabled'], 'Video effects toggle');
-		const enabled = fieldAck.fields.filterEnabled?.actual;
-		if (typeof enabled !== 'boolean') throw new Error('Video effects toggle did not return actual state');
-		return {
-			operationId,
-			tabId: request.tabId,
-			documentId: fieldAck.documentId,
-			generation: fieldAck.generation,
-			revision: fieldAck.revision,
-			target: fieldAck.target,
-			operation: request.operation,
-			strategy: fieldAck.fields.filterEnabled?.strategy ?? 'unsupported',
-			coverage: fieldAck.fields.filterEnabled?.coverage ?? 'partial',
-			fields: fieldAck.fields,
-			result: { enabled },
-		};
-	}
+		if (request.operation === 'video-effects-toggle') {
+			const fieldAck = await executeIntent({
+				...common,
+				requestedCoverage: 'active-target',
+				mutations: [{ field: 'filterEnabled', operation: 'toggle' }],
+			});
+			assertAppliedFields(fieldAck.fields, ['filterEnabled'], 'Video effects toggle');
+			const enabled = fieldAck.fields.filterEnabled?.actual;
+			if (typeof enabled !== 'boolean') throw new Error('Video effects toggle did not return actual state');
+			return createFieldOperationAck(operationId, request.operation, fieldAck, 'filterEnabled', { enabled });
+		}
 	if (request.operation === 'video-effects-reset') {
 		const fieldAck = await executeIntent({
 			...common,
 			requestedCoverage: 'active-target',
 			patch: RESET_VIDEO_PATCH,
-		});
-		assertAppliedPatch(fieldAck.fields, RESET_VIDEO_PATCH, 'Video effects reset');
-		return {
-			operationId,
-			tabId: request.tabId,
-			documentId: fieldAck.documentId,
-			generation: fieldAck.generation,
-			revision: fieldAck.revision,
-			target: fieldAck.target,
-			operation: request.operation,
-			strategy: 'extension-state',
-			coverage: 'active-target',
-			fields: fieldAck.fields,
-			result: { reset: true },
-		};
-	}
+			});
+			assertAppliedPatch(fieldAck.fields, RESET_VIDEO_PATCH, 'Video effects reset');
+			return createFieldOperationAck(
+				operationId,
+				request.operation,
+				fieldAck,
+				'filterEnabled',
+				{ reset: true },
+				'extension-state',
+				'active-target',
+			);
+		}
 	throw new Error(`Operation ${request.operation} is not a field operation`);
 }
 
 async function executeControlOperation(
 	request: RoutedControlOperationRequest,
+	operationId = crypto.randomUUID(),
+	contextSnapshot?: ControlSnapshot,
 ): Promise<ControlOperationAck> {
-	const snapshot = await getOrCreateSnapshot(request.tabId);
+	const snapshot = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
 	if (request.baseRevision !== undefined && request.baseRevision !== snapshot.revision) {
 		throw new Error(`Stale control revision: expected ${snapshot.revision}`);
 	}
 	if (request.target && request.target.documentId !== snapshot.documentId) {
 		throw new Error('The selected media target belongs to a stale document');
 	}
-	const operationId = crypto.randomUUID();
 	if (request.operation === 'playback-toggle'
 		|| request.operation === 'effective-volume'
 		|| request.operation === 'seek-relative'
@@ -2000,8 +1873,6 @@ async function executeControlOperation(
 				target,
 				targetRollback,
 				processorRollback,
-				undefined,
-				request.captureAdmission,
 			);
 			if (!compensation.ok) {
 				await commitCompensationFailure(
@@ -2041,6 +1912,8 @@ async function assertInvocationTargetCurrent(
 async function captureAdmissionForInvocation(
 	tabId: number,
 	invocation: ExtensionInvocationContext,
+	snapshot: ControlSnapshot,
+	operationId: string,
 ): Promise<CaptureAdmission | undefined> {
 	// Eligibility is frozen at physical invocation time. An alternate target
 	// cannot gain Capture merely because focus moves while its writer is queued.
@@ -2048,7 +1921,20 @@ async function captureAdmissionForInvocation(
 	const tabs = await chrome.tabs.query({ active: true, currentWindow: true }).catch(() => []);
 	if (tabs[0]?.id !== tabId) return undefined;
 	await assertInvocationTargetCurrent(tabId, invocation);
-	return EXTENSION_INVOCATION_ADMISSION;
+	if (snapshot.documentId !== invocation.target.documentId) {
+		throw new Error('Capture admission target does not match the current control document');
+	}
+	return mintCaptureAdmission({
+		kind: 'capture-start',
+		operationId,
+		document: {
+			tabId,
+			frameId: 0,
+			documentId: snapshot.documentId,
+		},
+		documentEpoch: snapshot.generation,
+		issuer: 'control-authority',
+	});
 }
 
 async function recordSuccessfulExtensionUse(
@@ -2075,18 +1961,24 @@ function submitSerialized(
 		if (invocation) await assertInvocationTargetCurrent(request.tabId, invocation);
 		const unadmittedRequest = { ...request };
 		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
+		const snapshot = await getOrCreateSnapshot(request.tabId);
+		const intentId = crypto.randomUUID();
 		const captureAdmission = invocation
-			? await captureAdmissionForInvocation(request.tabId, invocation)
+			? await captureAdmissionForInvocation(request.tabId, invocation, snapshot, intentId)
 			: undefined;
-		const acknowledgement = await executeIntent({
-			...unadmittedRequest,
-			...(captureAdmission ? { captureAdmission } : {}),
-		});
-		if (!isControlApplyAck(acknowledgement)) {
-			throw new Error('Control executor returned a strategy outside the capability policy');
+		try {
+			const acknowledgement = await executeIntent({
+				...unadmittedRequest,
+				...(captureAdmission ? { captureAdmission } : {}),
+			}, snapshot, intentId);
+			if (!isControlApplyAck(acknowledgement)) {
+				throw new Error('Control executor returned a strategy outside the capability policy');
+			}
+			await recordSuccessfulExtensionUse(request.tabId, request.source);
+			return acknowledgement;
+		} finally {
+			revokeCaptureAdmission(captureAdmission);
 		}
-		await recordSuccessfulExtensionUse(request.tabId, request.source);
-		return acknowledgement;
 	}));
 }
 
@@ -2101,18 +1993,24 @@ function submitOperationSerialized(
 		if (invocation) await assertInvocationTargetCurrent(request.tabId, invocation);
 		const unadmittedRequest = { ...request };
 		Reflect.deleteProperty(unadmittedRequest, 'captureAdmission');
+		const snapshot = await getOrCreateSnapshot(request.tabId);
+		const operationId = crypto.randomUUID();
 		const captureAdmission = invocation
-			? await captureAdmissionForInvocation(request.tabId, invocation)
+			? await captureAdmissionForInvocation(request.tabId, invocation, snapshot, operationId)
 			: undefined;
-		const acknowledgement = await executeControlOperation({
-			...unadmittedRequest,
-			...(captureAdmission ? { captureAdmission } : {}),
-		});
-		if (!isControlOperationAck(acknowledgement)) {
-			throw new Error('Control operation returned a strategy outside the capability policy');
+		try {
+			const acknowledgement = await executeControlOperation({
+				...unadmittedRequest,
+				...(captureAdmission ? { captureAdmission } : {}),
+			}, operationId, snapshot);
+			if (!isControlOperationAck(acknowledgement)) {
+				throw new Error('Control operation returned a strategy outside the capability policy');
+			}
+			await recordSuccessfulExtensionUse(request.tabId, request.source);
+			return acknowledgement;
+		} finally {
+			revokeCaptureAdmission(captureAdmission);
 		}
-		await recordSuccessfulExtensionUse(request.tabId, request.source);
-		return acknowledgement;
 	}));
 }
 
@@ -2140,7 +2038,7 @@ export function submitExtensionInvokedControlOperation(
 	return submitOperationSerialized(request, invocation);
 }
 
-function isExtensionPopupSender(sender: chrome.runtime.MessageSender): boolean {
+export function isExtensionPopupSender(sender: chrome.runtime.MessageSender): boolean {
 	return sender.tab === undefined
 		&& sender.url === chrome.runtime.getURL('popup.html');
 }
@@ -2177,28 +2075,222 @@ async function popupInvocation(tabId: number): Promise<ExtensionInvocationContex
 	};
 }
 
-async function removeTab(tabId: number): Promise<void> {
-	snapshots.delete(tabId);
-	invalidations.delete(tabId);
-	await chrome.storage.session.remove([
-		storageKey(tabId),
-		generationKey(tabId),
-	]).catch(() => undefined);
+export interface PopupVisualizerSourceLease {
+	tabId: number;
+	documentId: string;
+	generation: number;
+	runtimeRevision: string;
+	capability: string;
+	subscriberId: string;
+	actualMode: 'webaudio' | 'capture' | null;
 }
 
-function invalidateNavigation(tabId: number, preserveDocumentState = false): Promise<void> {
-	const previous = invalidations.get(tabId) ?? Promise.resolve();
-	const operation = previous.then(async () => {
+export interface PopupVisualizerSourceAcquisition {
+	lease: PopupVisualizerSourceLease;
+	active: boolean;
+	errorMessage: string | null;
+}
+
+// post: a visible Popup subscriber receives one exact-document analyser source;
+// safe media stays in the page WebAudio owner, while unsafe media may consume
+// the one-shot Capture admission carried by the same retained runtime lease.
+export async function acquirePopupVisualizerSource(
+	tabId: number,
+	subscriberId: string,
+): Promise<PopupVisualizerSourceAcquisition> {
+	const invocation = await popupInvocation(tabId);
+	await awaitDocumentInitialization(tabId, invocation.target.documentId);
+	return serialized(tabId, async () => {
+		await assertInvocationTargetCurrent(tabId, invocation);
+		const snapshot = await getOrCreateSnapshot(tabId);
+		const admission = await captureAdmissionForInvocation(
+			tabId,
+			invocation,
+			snapshot,
+			`visualizer:${crypto.randomUUID()}`,
+		);
+		if (!admission) throw new Error('Visualizer Capture requires the current foreground Popup tab');
+		const capability = `visualizer:${crypto.randomUUID()}`;
+		let runtime: Awaited<ReturnType<typeof ensureContentRuntime>> | null = null;
+		try {
+			runtime = await ensureContentRuntime(
+				tabId,
+				snapshot.documentId,
+				'visualizer',
+				capability,
+			);
+			if (runtime.documentId !== snapshot.documentId) {
+				throw new Error('Visualizer runtime lease belongs to a stale document');
+			}
+			const pendingLease: PopupVisualizerSourceLease = {
+				tabId,
+				documentId: snapshot.documentId,
+				generation: snapshot.generation,
+				runtimeRevision: runtime.runtimeRevision,
+				capability,
+				subscriberId,
+				actualMode: null,
+			};
+			try {
+				const response = await sendBackgroundTabRequestOnce(
+					tabId,
+					'spectra.audio.visualizer.demand.set',
+					{ subscriberId, enabled: true, admission },
+					{ documentId: snapshot.documentId, generation: snapshot.generation },
+				);
+				if (!response.ok) {
+					return {
+						lease: pendingLease,
+						active: false,
+						errorMessage: `${response.error.code}: ${response.error.message}`,
+					};
+				}
+				if ((response.data.actualMode !== 'webaudio'
+					&& response.data.actualMode !== 'capture')
+					|| response.data.phase !== 'active') {
+					return {
+						lease: pendingLease,
+						active: false,
+						errorMessage: response.data.lastError?.message
+							?? 'Visualizer demand did not acknowledge an active analyser source',
+					};
+				}
+				return {
+					lease: {
+						...pendingLease,
+						generation: response.data.generation,
+						actualMode: response.data.actualMode,
+					},
+					active: true,
+					errorMessage: null,
+				};
+			} catch (error) {
+				// Once the runtime lease exists, delivery becomes an ambiguous commit:
+				// Content may have installed the subscriber even when its ACK is lost.
+				// Return the pending owner so Background can retry an idempotent release.
+				return {
+					lease: pendingLease,
+					active: false,
+					errorMessage: error instanceof Error ? error.message : String(error),
+				};
+			}
+		} catch (error) {
+			if (runtime) {
+				releaseContentRuntimeLease(tabId, runtime.documentId, 'visualizer', capability);
+			}
+			throw error;
+		} finally {
+			revokeCaptureAdmission(admission);
+		}
+	});
+}
+
+// post: returns false only when the current document still needs a retry; stale
+// documents are already retired by the browser navigation fence.
+export function releasePopupVisualizerSource(
+	lease: PopupVisualizerSourceLease,
+): Promise<boolean> {
+	return serialized(lease.tabId, async () => {
+		let frame: { documentId?: string } | null | undefined;
+		try {
+			frame = await chrome.webNavigation.getFrame({
+				tabId: lease.tabId,
+				frameId: 0,
+			});
+		} catch {
+			// A transient browser-query failure is not proof that the document was
+			// replaced. Retain the owner so the bounded reconciler can try again.
+			return false;
+		}
+		if (!frame) return false;
+		if (frame?.documentId !== lease.documentId) {
+			releaseContentRuntimeLease(
+				lease.tabId,
+				lease.documentId,
+				'visualizer',
+				lease.capability,
+			);
+			return true;
+		}
+		try {
+			const response = await sendBackgroundTabRequestOnce(
+				lease.tabId,
+				'spectra.audio.visualizer.demand.set',
+				{ subscriberId: lease.subscriberId, enabled: false },
+				{ documentId: lease.documentId, generation: lease.generation },
+			);
+			if (!response.ok) return false;
+			if (response.data.actualMode === 'capture' && response.data.phase === 'error') return false;
+			releaseContentRuntimeLease(
+				lease.tabId,
+				lease.documentId,
+				'visualizer',
+				lease.capability,
+			);
+			return true;
+		} catch {
+			return false;
+		}
+	});
+}
+
+export function abandonPopupVisualizerSource(lease: PopupVisualizerSourceLease): void {
+	releaseContentRuntimeLease(
+		lease.tabId,
+		lease.documentId,
+		'visualizer',
+		lease.capability,
+	);
+}
+
+async function removeTab(tabId: number): Promise<void> {
+	const expectedEpoch = fenceNavigation(tabId);
+	try {
+		await serialized(tabId, async () => {
+			snapshots.delete(tabId);
+			await chrome.storage.session.remove([
+				storageKey(tabId),
+				generationKey(tabId),
+			]).catch(() => undefined);
+		});
+	} finally {
+		forgetCaptureAdmissionsForTab(tabId);
+		if (navigationEpoch(tabId) === expectedEpoch) navigationFences.delete(tabId);
+		stalePersistedSnapshots.delete(tabId);
+	}
+}
+
+function queueNavigationInvalidation(
+	tabId: number,
+	preserveDocumentState: boolean,
+	expectedEpoch: number,
+): Promise<void> {
+	const fence = navigationFences.get(tabId);
+	if (!fence || fence.epoch !== expectedEpoch) {
+		return Promise.reject(new Error('Control navigation fence was superseded'));
+	}
+	if (fence.settlement) return fence.settlement;
+	const operation = serialized(tabId, async () => {
+		assertNavigationFence(tabId, expectedEpoch);
 		const [memory, persisted, storedGeneration] = await Promise.all([
 			Promise.resolve(snapshots.get(tabId) ?? null),
-			readPersistedSnapshot(tabId),
+			stalePersistedSnapshots.has(tabId)
+				? Promise.resolve(null)
+				: readPersistedSnapshot(tabId),
 			readPersistedGeneration(tabId),
 		]);
-		const generation = Math.max(
+		assertNavigationFence(tabId, expectedEpoch);
+		const previousGeneration = Math.max(
 			storedGeneration,
 			memory?.generation ?? 0,
 			persisted?.generation ?? 0,
-		) + 1;
+		);
+		const generation = Math.max(
+			navigationFences.get(tabId)?.generationFloor ?? 0,
+			previousGeneration + 1,
+		);
+		const currentFence = navigationFences.get(tabId);
+		if (currentFence && generation > currentFence.generationFloor) currentFence.generationFloor = generation;
 		const previousSnapshot = memory ?? persisted;
 		if (preserveDocumentState && previousSnapshot) {
 			const revision = previousSnapshot.revision + 1;
@@ -2212,8 +2304,9 @@ function invalidateNavigation(tabId: number, preserveDocumentState = false): Pro
 				])) as ControlFieldStates,
 			};
 			await persistGeneration(tabId, generation);
-			await publishSnapshot(carried);
+			await publishSnapshot(carried, expectedEpoch);
 			await reconcileRuntimeOwnership(carried);
+			assertNavigationFence(tabId, expectedEpoch, carried);
 			return;
 		}
 		snapshots.delete(tabId);
@@ -2223,11 +2316,47 @@ function invalidateNavigation(tabId: number, preserveDocumentState = false): Pro
 				storageKey(tabId),
 			]),
 		]);
-	}).finally(() => {
-		if (invalidations.get(tabId) === operation) invalidations.delete(tabId);
+		stalePersistedSnapshots.delete(tabId);
 	});
-	invalidations.set(tabId, operation);
+	fence.pending = true;
+	fence.settled = false;
+	fence.settlement = operation;
+	void operation.then(
+		() => {
+			if (navigationFences.get(tabId) !== fence) return;
+			fence.pending = false;
+			fence.settled = true;
+			fence.settlement = undefined;
+		},
+		() => {
+			if (navigationFences.get(tabId) !== fence) return;
+			fence.pending = false;
+			fence.settled = false;
+			fence.settlement = undefined;
+		},
+	);
 	return operation;
+}
+
+function invalidateNavigation(
+	tabId: number,
+	preserveDocumentState = false,
+	reuseBeforeNavigation = false,
+): Promise<void> {
+	const existing = navigationFences.get(tabId);
+	if (reuseBeforeNavigation && existing?.beforeNavigate) {
+		existing.beforeNavigate = false;
+		if (existing.settled) return Promise.resolve();
+		return queueNavigationInvalidation(tabId, preserveDocumentState, existing.epoch);
+	}
+	const expectedEpoch = fenceNavigation(tabId, preserveDocumentState);
+	return queueNavigationInvalidation(tabId, preserveDocumentState, expectedEpoch);
+}
+
+/** Synchronously fences old work, then starts the durable full-navigation transition. */
+export function beginDocumentNavigation(tabId: number): Promise<void> {
+	const expectedEpoch = fenceNavigation(tabId, false, true);
+	return queueNavigationInvalidation(tabId, false, expectedEpoch);
 }
 
 export function initializeControlCoordinator(): void {
@@ -2246,7 +2375,7 @@ export function initializeControlCoordinator(): void {
 			sendResponse(rpcFailure('forbidden', 'Control coordinator RPC is extension-internal only'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)
+		if (!isBackgroundRequestEnvelope(message)
 			|| (message.type !== 'spectra.control.snapshot.get'
 				&& message.type !== 'spectra.control.intent.submit'
 				&& message.type !== 'spectra.control.operation.submit'
@@ -2403,7 +2532,7 @@ export function initializeControlCoordinator(): void {
 	});
 	chrome.webNavigation.onCommitted.addListener((details) => {
 		if (details.frameId === 0) {
-			void invalidateNavigation(details.tabId).catch((error: unknown) => {
+			void invalidateNavigation(details.tabId, false, true).catch((error: unknown) => {
 				swLog.debug(`[Control] Navigation invalidation settled at browser boundary: ${String(error)}`);
 			});
 		}
@@ -2444,20 +2573,21 @@ export const controlCoordinatorTestApi = {
 	popupInvocation,
 	getSnapshot,
 	getViewSnapshot: getControlViewSnapshot,
+	beginDocumentNavigation,
 	targetChanged: handleTargetChanged,
 	sourceReleased: handleSourceReleased,
 	observeChromeTabState,
 	invalidateNavigation,
 	reprojectBadgeForCurrentDocument,
 	async reset(): Promise<void> {
-		await Promise.allSettled([...invalidations.values()]);
 		await serialized.drain();
 		// Drain the repository's trailing debounce while the test/background
 		// Chrome storage owner still exists. Otherwise a late timer can outlive
 		// the service-worker harness and write through a deleted global.
 		await storage.tabSession.flush().catch(() => undefined);
 		snapshots.clear();
-		invalidations.clear();
+		navigationFences.clear();
+		stalePersistedSnapshots.clear();
 		initialized = false;
 	},
 };

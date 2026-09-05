@@ -12,6 +12,10 @@ import type {
 } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 import { showPopupToast } from '../toast';
+import {
+	classifyControlSnapshot,
+	type ControlSnapshotAdmission,
+} from '../control-snapshot-order';
 
 let currentTabId: number | null = null;
 let currentSnapshot: ControlSnapshot | null = null;
@@ -20,14 +24,61 @@ let filterTimer: ReturnType<typeof setTimeout> | null = null;
 let filterInFlight = false;
 let lastFilterSentAt = 0;
 const FILTER_SEND_INTERVAL_MS = 50;
+let boundPanel: HTMLElement | null = null;
+let pagehideListener: (() => void) | null = null;
+let selectionEpoch = 0;
 
-async function restoreAuthoritativeSnapshot(): Promise<void> {
+interface TabControlTail {
+	selectionEpoch: number;
+	settled: Promise<void>;
+}
+
+const tabControlTails = new Map<number, TabControlTail>();
+
+interface ControlTargetFence {
+	selectionEpoch: number;
+	tabId: number | null;
+	documentId: string | null;
+	origin: string | null;
+	generation: number | null;
+	frameId: number | null;
+	mediaId: string | null;
+	sourceRevision: number | null;
+}
+
+function captureTargetFence(): ControlTargetFence {
+	const video = currentSnapshot?.activeVideo;
+	return {
+		selectionEpoch,
+		tabId: currentTabId,
+		documentId: currentSnapshot?.documentId ?? null,
+		origin: currentSnapshot?.origin ?? null,
+		generation: currentSnapshot?.generation ?? null,
+		frameId: video?.frameId ?? null,
+		mediaId: video?.mediaId ?? null,
+		sourceRevision: video?.sourceRevision ?? null,
+	};
+}
+
+function isCurrentTarget(fence: ControlTargetFence): boolean {
+	if (selectionEpoch !== fence.selectionEpoch || currentTabId !== fence.tabId) return false;
+	const video = currentSnapshot?.activeVideo;
+	return (currentSnapshot?.documentId ?? null) === fence.documentId
+		&& (currentSnapshot?.origin ?? null) === fence.origin
+		&& (currentSnapshot?.generation ?? null) === fence.generation
+		&& (video?.frameId ?? null) === fence.frameId
+		&& (video?.mediaId ?? null) === fence.mediaId
+		&& (video?.sourceRevision ?? null) === fence.sourceRevision;
+}
+
+async function restoreAuthoritativeSnapshot(fence: ControlTargetFence): Promise<void> {
+	if (!isCurrentTarget(fence)) return;
 	if (filterTimer) clearTimeout(filterTimer);
 	filterTimer = null;
 	pendingFilter = null;
-	const tabId = currentTabId;
+	const tabId = fence.tabId;
 	if (currentSnapshot) renderVideoControlSnapshot(currentSnapshot, true);
-	if (!tabId) return;
+	if (tabId === null) return;
 	try {
 		const response = await sendSpectraRequest(
 			'spectra.control.snapshot.get',
@@ -35,28 +86,88 @@ async function restoreAuthoritativeSnapshot(): Promise<void> {
 			{ tabId },
 		);
 		if (!response.ok) throw new Error(response.error.message);
-		if (response.data && currentTabId === tabId) {
+		if (response.data && isCurrentTarget(fence)) {
 			syncVideoControlSnapshot(response.data);
-			if (currentSnapshot) renderVideoControlSnapshot(currentSnapshot, true);
+			if (isCurrentTarget(fence) && currentSnapshot) renderVideoControlSnapshot(currentSnapshot, true);
 		}
 	} catch (error) {
 		console.warn('[SPECTRA] Unable to refresh video controls after a rejected action', error);
 	}
 }
 
-async function presentControlFailure(error: unknown): Promise<void> {
+async function presentControlFailure(error: unknown, fence: ControlTargetFence): Promise<void> {
+	if (!isCurrentTarget(fence)) return;
 	showPopupToast(
 		error instanceof Error ? error.message : 'The video control could not be applied',
 		'error',
 	);
-	await restoreAuthoritativeSnapshot();
+	await restoreAuthoritativeSnapshot(fence);
 }
 
-async function runControlAction(action: () => Promise<void>): Promise<void> {
-	try {
-		await action();
-	} catch (error) {
-		await presentControlFailure(error);
+async function refreshActionAuthority(fence: ControlTargetFence): Promise<void> {
+	if (!isCurrentTarget(fence) || fence.tabId === null) return;
+	const response = await sendSpectraRequest(
+		'spectra.control.snapshot.get',
+		{ tabId: fence.tabId },
+		{ tabId: fence.tabId },
+	);
+	if (!response.ok) throw new Error(response.error.message);
+	if (!response.data) throw new Error('The active video target is unavailable');
+	const admission = syncVideoControlSnapshot(response.data);
+	if (admission !== 'accepted' && admission !== 'stale') {
+		throw new Error('The active video target is unavailable');
+	}
+	if (!isCurrentTarget(fence)) throw new Error('The active video target changed');
+}
+
+function enqueueControlAction<T>(
+	fence: ControlTargetFence,
+	action: (fence: ControlTargetFence) => Promise<T>,
+): Promise<T | undefined> {
+	const tabId = fence.tabId;
+	if (tabId === null) return Promise.resolve(undefined);
+	const previous = tabControlTails.get(tabId);
+	const queued = (previous?.settled ?? Promise.resolve()).then(async () => {
+		if (!isCurrentTarget(fence)) return undefined;
+		if (previous && previous.selectionEpoch !== fence.selectionEpoch) {
+			await refreshActionAuthority(fence);
+		}
+		if (!isCurrentTarget(fence)) return undefined;
+		return action(fence);
+	});
+	const handled = queued.catch(async (error: unknown) => {
+		if (!isCurrentTarget(fence)) return undefined;
+		try {
+			await presentControlFailure(error, fence);
+		} catch (recoveryError: unknown) {
+			console.warn('[SPECTRA] Video-control failure recovery failed', recoveryError);
+		}
+		return undefined;
+	});
+	const entry: TabControlTail = {
+		selectionEpoch: fence.selectionEpoch,
+		settled: handled.then(() => undefined),
+	};
+	tabControlTails.set(tabId, entry);
+	void entry.settled.then(() => {
+		if (tabControlTails.get(tabId) === entry) tabControlTails.delete(tabId);
+	});
+	return handled;
+}
+
+function runControlAction(action: (fence: ControlTargetFence) => Promise<void>): void {
+	const fence = captureTargetFence();
+	void enqueueControlAction(fence, action);
+}
+
+// A reopened panel must not observe a snapshot from before an older session's
+// still-running write. The caller keeps controls disabled while this drains.
+export async function waitForPendingVideoControlActions(tabId: number): Promise<void> {
+	while (true) {
+		const pending = tabControlTails.get(tabId);
+		if (!pending) return;
+		await pending.settled;
+		if (tabControlTails.get(tabId) === pending) return;
 	}
 }
 
@@ -65,9 +176,12 @@ type ControlAckLike = Pick<
 	'tabId' | 'documentId' | 'generation' | 'revision' | 'fields'
 > & { target: ControlSnapshot['activeMedia'] };
 
-function updateSnapshotFromAck(ack: ControlAckLike | null): void {
-	if (!ack || !currentSnapshot || ack.tabId !== currentSnapshot.tabId
-		|| ack.documentId !== currentSnapshot.documentId) return;
+function updateSnapshotFromAck(ack: ControlAckLike | null, fence: ControlTargetFence): boolean {
+	if (!ack || !currentSnapshot || !isCurrentTarget(fence)
+		|| ack.tabId !== currentSnapshot.tabId
+		|| ack.documentId !== currentSnapshot.documentId
+		|| ack.generation < currentSnapshot.generation
+		|| ack.generation === currentSnapshot.generation && ack.revision < currentSnapshot.revision) return false;
 	currentSnapshot = {
 		...currentSnapshot,
 		generation: ack.generation,
@@ -78,67 +192,78 @@ function updateSnapshotFromAck(ack: ControlAckLike | null): void {
 			: currentSnapshot.activeVideo,
 		fields: { ...currentSnapshot.fields, ...ack.fields },
 	};
+	return true;
 }
 
-async function submitMutation(mutation: ControlMutation) {
-	if (!currentTabId) return null;
+async function submitMutation(mutation: ControlMutation, fence: ControlTargetFence) {
+	if (!isCurrentTarget(fence) || currentTabId === null || !currentSnapshot) {
+		throw new Error('The active video target is unavailable');
+	}
+	const tabId = currentTabId;
+	const snapshot = currentSnapshot;
 	const response = await sendSpectraRequest(
 		'spectra.control.intent.submit',
 		{
-			tabId: currentTabId,
+			tabId,
 			source: 'popup',
 			requestedCoverage: 'active-target',
-			target: currentSnapshot?.activeVideo ?? null,
-			...(currentSnapshot ? { baseRevision: currentSnapshot.revision } : {}),
+			target: snapshot.activeVideo,
+			baseRevision: snapshot.revision,
 			mutations: [mutation],
 		},
-		{ tabId: currentTabId },
+		{ tabId },
 	);
 	if (!response.ok) throw new Error(response.error.message);
-	updateSnapshotFromAck(response.data);
-	return response.data;
+	return updateSnapshotFromAck(response.data, fence) ? response.data : null;
 }
 
-async function submitPatch(patch: ControlPatch) {
-	if (!currentTabId) return null;
+async function submitPatch(patch: ControlPatch, fence: ControlTargetFence) {
+	if (!isCurrentTarget(fence) || currentTabId === null || !currentSnapshot) {
+		throw new Error('The active video target is unavailable');
+	}
+	const tabId = currentTabId;
+	const snapshot = currentSnapshot;
 	const response = await sendSpectraRequest(
 		'spectra.control.intent.submit',
 		{
-			tabId: currentTabId,
+			tabId,
 			source: 'popup',
 			requestedCoverage: 'active-target',
-			target: currentSnapshot?.activeVideo ?? null,
-			...(currentSnapshot ? { baseRevision: currentSnapshot.revision } : {}),
+			target: snapshot.activeVideo,
+			baseRevision: snapshot.revision,
 			patch,
 		},
-		{ tabId: currentTabId },
+		{ tabId },
 	);
 	if (!response.ok) throw new Error(response.error.message);
-	updateSnapshotFromAck(response.data);
-	return response.data;
+	return updateSnapshotFromAck(response.data, fence) ? response.data : null;
 }
 
 async function submitOperation<O extends ControlOperation>(
 	operation: O,
 	payload: ControlOperationPayload<O>,
+	fence: ControlTargetFence,
 ): Promise<ControlOperationAck<O> | null> {
-	if (!currentTabId) return null;
+	if (!isCurrentTarget(fence) || currentTabId === null || !currentSnapshot) {
+		throw new Error('The active video target is unavailable');
+	}
+	const tabId = currentTabId;
+	const snapshot = currentSnapshot;
 	const response = await sendSpectraRequest(
 		'spectra.control.operation.submit',
 		{
-			tabId: currentTabId,
+			tabId,
 			source: 'popup',
-			target: currentSnapshot?.activeVideo ?? null,
-			...(currentSnapshot ? { baseRevision: currentSnapshot.revision } : {}),
+			target: snapshot.activeVideo,
+			baseRevision: snapshot.revision,
 			operation,
 			payload,
 		} as unknown as ControlOperationRequest,
-		{ tabId: currentTabId },
+		{ tabId },
 	);
 	if (!response.ok) throw new Error(response.error.message);
 	const acknowledgement = response.data as ControlOperationAck<O>;
-	updateSnapshotFromAck(acknowledgement);
-	return acknowledgement;
+	return updateSnapshotFromAck(acknowledgement, fence) ? acknowledgement : null;
 }
 
 function readFilter(panel: HTMLElement): VideoFilterState {
@@ -152,8 +277,9 @@ function readFilter(panel: HTMLElement): VideoFilterState {
 }
 
 // eff: sets the target tab for all subsequent video control commands
-export function setVideoControlTabId(tabId: number): void {
+export function setVideoControlTabId(tabId: number | null): void {
 	if (currentTabId !== tabId) {
+		selectionEpoch += 1;
 		if (filterTimer) clearTimeout(filterTimer);
 		filterTimer = null;
 		pendingFilter = null;
@@ -166,16 +292,61 @@ export function setVideoControlTabId(tabId: number): void {
 export function bindVideoControls(): void {
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;
+	if (boundPanel === panel) return;
+	if (boundPanel && pagehideListener) window.removeEventListener('pagehide', pagehideListener);
+	boundPanel = panel;
 
 	bindButtons(panel);
 	bindFilterSliders(panel);
 	bindFilterSwitches(panel);
 	bindSeekButtons(panel);
-	window.addEventListener('pagehide', () => {
-		void flushFilter().catch((error) => {
-			console.warn('[SPECTRA] Final video filter commit failed while Popup closed', error);
+	pagehideListener = () => {
+		const fence = captureTargetFence();
+		void flushFilter(fence);
+	};
+	window.addEventListener('pagehide', pagehideListener, { once: true });
+}
+
+export function disposeVideoControls(): void {
+	selectionEpoch += 1;
+	currentTabId = null;
+	currentSnapshot = null;
+	pendingFilter = null;
+	filterInFlight = false;
+	if (filterTimer) clearTimeout(filterTimer);
+	filterTimer = null;
+	if (pagehideListener) window.removeEventListener('pagehide', pagehideListener);
+	pagehideListener = null;
+	if (boundPanel) {
+		boundPanel.querySelectorAll<HTMLElement>('button, input').forEach((element) => {
+			if (element instanceof HTMLButtonElement) element.onclick = null;
+			if (element instanceof HTMLInputElement) {
+				element.oninput = null;
+				element.onchange = null;
+				element.onwheel = null;
+			}
 		});
-	}, { once: true });
+	}
+	boundPanel = null;
+	tabControlTails.clear();
+}
+
+export function setVideoControlAvailability(available: boolean, hasVideo = available): void {
+	const panel = document.getElementById('side-panel');
+	if (!panel) return;
+	panel.querySelectorAll<HTMLButtonElement>(
+		'.sp-btn[data-action], .sp-btn-small[data-action], .sp-btn-reset, .sp-btn-save',
+	)
+		.forEach((button) => {
+			button.disabled = !available || button.matches('[data-action]') && !hasVideo;
+		});
+	panel.querySelectorAll<HTMLInputElement>(
+		'.sp-speed-slider, .sp-speed-input, .sp-pan, .sp-delay, .sp-eq-input, '
+		+ '.sp-brightness, .sp-contrast, .sp-saturate, .sp-sw-grayscale, .sp-sw-invert',
+	).forEach((input) => {
+		const isVideoInput = input.matches('.sp-brightness, .sp-contrast, .sp-saturate, .sp-sw-grayscale, .sp-sw-invert');
+		input.disabled = !available || isVideoInput && !hasVideo;
+	});
 }
 
 // note: handles discrete action buttons like rotation, mirroring, and A/B marker placement via a centralized switch
@@ -189,56 +360,64 @@ function bindButtons(panel: HTMLElement): void {
 			btn.setAttribute('aria-pressed', String(btn.classList.contains('active')));
 		}
 
-		btn.onclick = () => runControlAction(async () => {
-			if (!currentTabId) return;
+		btn.onclick = () => runControlAction(async (fence) => {
+			if (currentTabId === null || !currentSnapshot) throw new Error('The active video target is unavailable');
 
 			switch (action) {
 			case 'rotate': {
-					const ack = await submitMutation({ field: 'rotation', operation: 'delta', value: 90 });
+					const ack = await submitMutation({ field: 'rotation', operation: 'delta', value: 90 }, fence);
+					if (!isCurrentTarget(fence)) return;
 					const rotation = ack?.fields.rotation?.actual;
 					if (typeof rotation === 'number') btn.title = `Rotation: ${rotation}°`;
 					break;
 				}
 				case 'mirror': {
-					const ack = await submitMutation({ field: 'mirrored', operation: 'toggle' });
+					const ack = await submitMutation({ field: 'mirrored', operation: 'toggle' }, fence);
+					if (!isCurrentTarget(fence)) return;
 					const mirrored = ack?.fields.mirrored?.actual;
 					if (typeof mirrored === 'boolean') setPressed(btn, mirrored);
 					break;
 				}
 				case 'screenshot': {
-					await submitOperation('screenshot', {});
+					await submitOperation('screenshot', {}, fence);
 					break;
 				}
 				case 'crop': {
-					const ack = await submitMutation({ field: 'fill', operation: 'toggle' });
+					const ack = await submitMutation({ field: 'fill', operation: 'toggle' }, fence);
+					if (!isCurrentTarget(fence)) return;
 					const fill = ack?.fields.fill?.actual;
 					if (typeof fill === 'boolean') setPressed(btn, fill);
 					break;
 				}
 				case 'fullscreen': {
-					const ack = await submitMutation({ field: 'fullscreen', operation: 'toggle' });
+					const ack = await submitMutation({ field: 'fullscreen', operation: 'toggle' }, fence);
+					if (!isCurrentTarget(fence)) return;
 					const active = ack?.fields.fullscreen?.actual;
 					if (typeof active === 'boolean') setPressed(btn, active);
 					break;
 				}
 				case 'dim': {
-					const ack = await submitMutation({ field: 'dimEnabled', operation: 'toggle' });
+					const ack = await submitMutation({ field: 'dimEnabled', operation: 'toggle' }, fence);
+					if (!isCurrentTarget(fence)) return;
 					const active = ack?.fields.dimEnabled?.actual;
 					if (typeof active === 'boolean') setPressed(btn, active);
 					break;
 				}
 				case 'mark-a': {
-					const ack = await submitOperation('ab-set-a', {});
-					setPressed(btn, ack?.result.abLoop.pointA !== null);
+					const ack = await submitOperation('ab-set-a', {}, fence);
+					if (!isCurrentTarget(fence) || !ack) return;
+					setPressed(btn, ack.result.abLoop.pointA !== null);
 					break;
 				}
 				case 'mark-b': {
-					const ack = await submitOperation('ab-set-b', {});
-					setPressed(btn, ack?.result.abLoop.pointB !== null);
+					const ack = await submitOperation('ab-set-b', {}, fence);
+					if (!isCurrentTarget(fence) || !ack) return;
+					setPressed(btn, ack.result.abLoop.pointB !== null);
 					break;
 				}
 				case 'ab-loop': {
-					await submitOperation('ab-clear', {});
+					const ack = await submitOperation('ab-clear', {}, fence);
+					if (!isCurrentTarget(fence) || !ack) return;
 					for (const marker of panel.querySelectorAll<HTMLElement>('.sp-btn-marker[data-action="mark-a"], .sp-btn-marker[data-action="mark-b"]')) {
 						setPressed(marker, false);
 					}
@@ -249,13 +428,20 @@ function bindButtons(panel: HTMLElement): void {
 	});
 }
 
-export function syncVideoControlSnapshot(snapshot: ControlSnapshot): void {
-	if (snapshot.tabId !== currentTabId) return;
-	if (currentSnapshot && (snapshot.generation < currentSnapshot.generation
-		|| snapshot.generation === currentSnapshot.generation
-			&& snapshot.revision < currentSnapshot.revision)) return;
+export function syncVideoControlSnapshot(snapshot: ControlSnapshot): ControlSnapshotAdmission {
+	if (snapshot.tabId !== currentTabId) return 'tab-conflict';
+	const admission = classifyControlSnapshot(currentSnapshot, snapshot);
+	if (admission !== 'accepted') return admission;
+	if (currentSnapshot && (snapshot.documentId !== currentSnapshot.documentId
+		|| snapshot.origin !== currentSnapshot.origin)) {
+		if (filterTimer) clearTimeout(filterTimer);
+		filterTimer = null;
+		pendingFilter = null;
+	}
 	currentSnapshot = snapshot;
 	renderVideoControlSnapshot(snapshot);
+	setVideoControlAvailability(true, snapshot.activeVideo !== null);
+	return 'accepted';
 }
 
 function renderVideoControlSnapshot(snapshot: ControlSnapshot, force = false): void {
@@ -291,12 +477,25 @@ function renderVideoControlSnapshot(snapshot: ControlSnapshot, force = false): v
 		const invert = panel.querySelector<HTMLInputElement>('.sp-sw-invert');
 		if (grayscale) grayscale.checked = filter.grayscale;
 		if (invert) invert.checked = filter.invert;
+	} else if (snapshot.activeVideo === null) {
+		for (const selector of ['.sp-brightness', '.sp-contrast', '.sp-saturate']) {
+			const input = panel.querySelector<HTMLInputElement>(selector);
+			if (input) input.value = '100';
+		}
+		const grayscale = panel.querySelector<HTMLInputElement>('.sp-sw-grayscale');
+		const invert = panel.querySelector<HTMLInputElement>('.sp-sw-invert');
+		if (grayscale) grayscale.checked = false;
+		if (invert) invert.checked = false;
 	}
 	const abLoop = actual<import('@nexus/contracts').ABLoopState>('abLoop');
 	if (abLoop) {
 		pressed('mark-a', abLoop.pointA !== null);
 		pressed('mark-b', abLoop.pointB !== null);
 		pressed('ab-loop', abLoop.enabled);
+	} else if (snapshot.activeVideo === null) {
+		pressed('mark-a', false);
+		pressed('mark-b', false);
+		pressed('ab-loop', false);
 	}
 }
 
@@ -343,11 +542,12 @@ function bindFilterSwitches(panel: HTMLElement): void {
 }
 
 function queueFilter(panel: HTMLElement, flushNow = false): void {
+	const fence = captureTargetFence();
 	pendingFilter = readFilter(panel);
 	if (filterTimer) clearTimeout(filterTimer);
 	if (flushNow) {
 		filterTimer = null;
-		void flushFilter().catch((error) => presentControlFailure(error));
+		void flushFilter(fence);
 		return;
 	}
 	const delay = flushNow
@@ -355,18 +555,22 @@ function queueFilter(panel: HTMLElement, flushNow = false): void {
 		: Math.max(0, FILTER_SEND_INTERVAL_MS - (performance.now() - lastFilterSentAt));
 	filterTimer = setTimeout(() => {
 		filterTimer = null;
-		void flushFilter().catch((error) => presentControlFailure(error));
+		void flushFilter(fence);
 	}, delay);
 }
 
-async function flushFilter(): Promise<void> {
+async function flushFilter(fence: ControlTargetFence = captureTargetFence()): Promise<void> {
 	if (filterInFlight || !pendingFilter) return;
+	if (!isCurrentTarget(fence)) return;
 	const filter = pendingFilter;
 	pendingFilter = null;
 	filterInFlight = true;
 	lastFilterSentAt = performance.now();
 	try {
-		await submitPatch({ filter, filterEnabled: true });
+		await enqueueControlAction(
+			fence,
+			(currentFence) => submitPatch({ filter, filterEnabled: true }, currentFence),
+		);
 	} finally {
 		filterInFlight = false;
 		if (pendingFilter) {
@@ -381,10 +585,12 @@ function bindSeekButtons(panel: HTMLElement): void {
 	const seekBtns = panel.querySelectorAll<HTMLButtonElement>('.sp-btn-small[data-action="seek"]');
 
 	seekBtns.forEach(btn => {
-		btn.onclick = () => runControlAction(async () => {
-			if (!currentTabId) return;
+		btn.onclick = () => runControlAction(async (fence) => {
+			if (currentTabId === null || !currentSnapshot) {
+				throw new Error('The active video target is unavailable');
+			}
 			const delta = parseFloat(btn.dataset.delta ?? '0');
-			if (delta !== 0) await submitOperation('seek-relative', { delta });
+			if (delta !== 0) await submitOperation('seek-relative', { delta }, fence);
 		});
 	});
 }

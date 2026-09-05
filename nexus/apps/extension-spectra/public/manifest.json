@@ -11,6 +11,7 @@
     "webNavigation",
     "storage",
 	"downloads",
+    "activeTab",
     "tabCapture",
     "offscreen",
     "userScripts",

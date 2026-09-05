@@ -24,9 +24,6 @@ export function getSettingsUIElements(): SettingsUIElements {
     swOsd: $<HTMLInputElement>('set-osd'),
     swViz: $<HTMLInputElement>('set-viz'),
     selLang: $<HTMLSelectElement>('set-lang'),
-    txtRegistry: $<HTMLTextAreaElement>('set-registry'),
-    groupRegistry: $<HTMLElement>('registry-group'),
-    btnSaveReg: $<HTMLElement>('btn-save-registry'),
   };
 }
 
@@ -85,4 +82,3 @@ export function isRestrictedUrl(url: string | undefined): boolean {
   if (!url) return true;
   return RESTRICTED_URL_PREFIXES.some(prefix => url.startsWith(prefix));
 }
-

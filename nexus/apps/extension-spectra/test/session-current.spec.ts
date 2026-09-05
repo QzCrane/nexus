@@ -2,13 +2,13 @@ import { describe, expect, test } from 'bun:test';
 import {
 	DEFAULT_AUDIO_CONFIG,
 	SPECTRA_PROTOCOL_VERSION,
+	compileEffectiveVolume,
 	isSpectraRequestEnvelope,
 	isSpectraResponse,
-	resolveAudioVolume,
+	splitEffectiveVolume,
 	type AudioConfig,
 	type AudioSessionSnapshot,
 } from '@nexus/contracts';
-import { AudioMode } from '@nexus/audio-engine';
 import { registerAudioV2Listener } from '../src/background/handlers/audio';
 import {
 	assembleInitialState,
@@ -22,17 +22,15 @@ function config(patch: Partial<AudioConfig> = {}): AudioConfig {
 		...patch,
 		eqValues: patch.eqValues ? [...patch.eqValues] : [...DEFAULT_AUDIO_CONFIG.eqValues],
 	};
-	const legacyEffectiveOnly = patch.volume !== undefined
+	const projection = patch.volume !== undefined
 		&& patch.volumeBase === undefined
-		&& patch.boost === undefined;
-	const volume = legacyEffectiveOnly
-		? resolveAudioVolume({ volume: patch.volume })
-		: resolveAudioVolume(merged);
+		&& patch.boost === undefined
+		? splitEffectiveVolume(patch.volume)
+		: { volumeBase: merged.volumeBase, boost: merged.boost };
 	return {
 		...merged,
-		volume: volume.effectiveVolume,
-		volumeBase: volume.volumeBase,
-		boost: volume.boost,
+		...projection,
+		volume: compileEffectiveVolume(projection.volumeBase, projection.boost),
 	};
 }
 
@@ -82,6 +80,24 @@ describe('spectra.audio.session.current contract', () => {
 			{ ok: true, data: null },
 		)).toBe(true);
 	});
+
+	test('accepts canonical WebAudio and rejects retired enum-style mode tokens', () => {
+		expect(isSpectraResponse(
+			'spectra.audio.session.current',
+			{ ok: true, data: { ...snapshot(42), desiredMode: 'webaudio', actualMode: 'webaudio' } },
+		)).toBe(true);
+		for (const retiredMode of ['NATIVE_WEBAUDIO']) {
+			const data = {
+				...snapshot(42),
+				desiredMode: retiredMode,
+				actualMode: retiredMode,
+			};
+			expect(isSpectraResponse(
+				'spectra.audio.session.current',
+				{ ok: true, data },
+			), retiredMode).toBe(false);
+		}
+	});
 });
 
 describe('current audio session background boundary', () => {
@@ -123,12 +139,11 @@ describe('content session restore', () => {
 		const handoff: Partial<PolicyExecutorState> = {
 			config: config({ volume: 180 }),
 			appliedConfig: config({ volume: 170 }),
-			activeMode: AudioMode.NATIVE_WEBAUDIO,
-			desiredMode: AudioMode.NATIVE_WEBAUDIO,
-			actualMode: 'webaudio',
+			activeMode: 'capture',
+			desiredMode: 'capture',
+			actualMode: 'capture',
 			phase: 'active',
 			generation: 4,
-			hasGesture: true,
 			userHasInteracted: true,
 		};
 		const current = snapshot(42, {
@@ -149,13 +164,12 @@ describe('content session restore', () => {
 		expect(restored.state).toMatchObject({
 			config: expect.objectContaining({ volume: 180 }),
 			appliedConfig: expect.objectContaining({ volume: 175 }),
-			activeMode: AudioMode.CAPTURE,
-			desiredMode: AudioMode.CAPTURE,
+			activeMode: 'capture',
+			desiredMode: 'capture',
 			actualMode: 'capture',
 			phase: 'error',
 			generation: 37,
 			lastError: 'retry capture',
-			hasGesture: true,
 			userHasInteracted: true,
 		});
 	});
@@ -171,7 +185,7 @@ describe('content session restore', () => {
 			}),
 			config: config(),
 		});
-		expect(disabled.state.desiredMode).toBe(AudioMode.DISABLED);
+		expect(disabled.state.desiredMode).toBe('bypass');
 		expect(disabled.state.generation).toBe(12);
 
 		const lite = assembleInitialState({
@@ -184,10 +198,31 @@ describe('content session restore', () => {
 			}),
 			config: config({ volume: 80, volumeBase: 80 }),
 		});
-		expect(lite.state.desiredMode).toBe(AudioMode.NATIVE_LITE);
+		expect(lite.state.desiredMode).toBe('bypass');
 	});
 
-	test('hydrates recovered Capture ownership without turning observation into a mode intent', () => {
+	test('lets an explicit direct route retire a restored Capture session', () => {
+		const restored = assembleInitialState({
+			handoff: null,
+			session: snapshot(65, {
+				desiredMode: 'capture',
+				actualMode: 'capture',
+				phase: 'active',
+				actualConfig: config({ volume: 180, volumeBase: 100, boost: 1.8 }),
+			}),
+			config: config({ volume: 180, volumeBase: 100, boost: 1.8 }),
+			mediaRoute: 'direct',
+		});
+
+		expect(restored.state).toMatchObject({
+			mediaRoute: 'direct',
+			desiredMode: 'webaudio',
+			actualMode: 'capture',
+		});
+		expect(shouldApplyInitialPolicy(restored.state, restored.source)).toBe(true);
+	});
+
+	test('retires recovered Capture that has neither DSP nor a re-admitted transient subscriber', () => {
 		for (const phase of ['active', 'error'] as const) {
 			const capture = assembleInitialState({
 				handoff: null,
@@ -199,7 +234,8 @@ describe('content session restore', () => {
 				config: config(),
 			});
 			expect(capture.source).toBe('session');
-			expect(shouldApplyInitialPolicy(capture.state, capture.source)).toBe(false);
+			expect(capture.state.visualizerSubscribers.size).toBe(0);
+			expect(shouldApplyInitialPolicy(capture.state, capture.source)).toBe(true);
 		}
 
 		const bypass = assembleInitialState({
@@ -216,14 +252,13 @@ describe('content session restore', () => {
 	});
 
 	test('hydrates every same-document handoff without replaying its audio policy', () => {
-		for (const actualMode of ['bypass', 'webaudio', 'capture'] as const) {
+		for (const actualMode of ['bypass', 'capture'] as const) {
 			const handoff = assembleInitialState({
 				handoff: {
 					config: config({ volume: 180 }),
 					appliedConfig: config({ volume: 180 }),
 					actualMode,
 					phase: actualMode === 'bypass' ? 'idle' : 'active',
-					hasGesture: true,
 					userHasInteracted: true,
 				},
 				session: null,

@@ -4,13 +4,54 @@ import { $, isRestrictedUrl } from './utils';
 import { initNavigation } from './views/navigation';
 import { initSettings, type SettingsState } from './views/settings';
 import { initCard } from './card';
-import { isSpectraUiEventEnvelope } from '@nexus/contracts/ui-runtime';
 import { enableSmoothScroll } from '../shared/smooth-scroll';
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
-import type { EqCurveDrawerFactory } from './card/types';
+import { clearPopupStartupError, showPopupStartupError } from './startup-error';
+import { runBoundedCardBootstrap } from './bounded-card-bootstrap';
+
+type PopupVisualizerModule = typeof import('./visualizer/loop');
+
+let visualizerLoad: Promise<PopupVisualizerModule> | null = null;
+const popupAttemptDisposers = new Set<() => void>();
+
+async function loadPopupVisualizer(): Promise<PopupVisualizerModule> {
+  const pending = visualizerLoad ?? import('./visualizer/loop');
+  visualizerLoad = pending;
+  try {
+    return await pending;
+  } catch (error) {
+    if (visualizerLoad === pending) visualizerLoad = null;
+    throw error;
+  }
+}
+
+function registerPopupAttemptDisposer(dispose: () => void): () => void {
+  popupAttemptDisposers.add(dispose);
+  return () => popupAttemptDisposers.delete(dispose);
+}
+
+function disposePopupAttempt(): void {
+  for (const dispose of popupAttemptDisposers) {
+    try {
+      dispose();
+    } catch (error) {
+      console.warn('[SPECTRA Popup] Startup cleanup failed:', error);
+    }
+  }
+  popupAttemptDisposers.clear();
+}
+
+async function reloadPopup(): Promise<void> {
+  // A failed run may already own card listeners, visualizer subscriptions and
+  // module-level registries. A document reload is the only complete retry
+  // boundary; re-entering main() in the same realm would duplicate owners.
+  window.location.reload();
+}
 
 // eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
 async function main(): Promise<void> {
+  disposePopupAttempt();
+  clearPopupStartupError();
   enableSmoothScroll();
 
   let activeTab: chrome.tabs.Tab | null = null;
@@ -28,47 +69,32 @@ async function main(): Promise<void> {
     console.error('[SPECTRA Popup] initNavigation failed:', error);
   }
 
-  let settings: SettingsState;
-  try {
-    settings = await initSettings();
-  } catch (error) {
-    console.error('[SPECTRA Popup] initSettings failed:', error);
-    return;
-  }
-  const { gSettings, registryEntries, dict } = settings;
+  const settings: SettingsState = await initSettings();
+  registerPopupAttemptDisposer(settings.dispose);
 
   // eff: lazy load side panel only when needed
   try {
     const { initSidePanel } = await import('./side-panel');
-    initSidePanel();
+    registerPopupAttemptDisposer(initSidePanel());
   } catch (error) {
     console.error('[SPECTRA Popup] initSidePanel failed:', error);
   }
 
   if (activeTab?.id) {
     try {
-      const { bindRemoteUI } = await import('../remote');
-      const disposeRemoteUI = bindRemoteUI(activeTab.id, dict);
-      window.addEventListener('pagehide', disposeRemoteUI, { once: true });
+      const { bindRemoteUI, updateRemoteI18n } = await import('../remote');
+      const disposeRemoteUI = bindRemoteUI(activeTab.id, settings.dict);
+      registerPopupAttemptDisposer(disposeRemoteUI);
+      registerPopupAttemptDisposer(settings.onDictionaryChange(updateRemoteI18n));
     } catch (error) {
       console.error('[SPECTRA Popup] bindRemoteUI failed:', error);
     }
   }
 
-  let currentSettings = gSettings;
-  const getGlobalSettings = () => currentSettings;
-
-  // goal: consume only the repository's normalized, revisioned settings view
-  const onSettingsChanged = (message: unknown): false => {
-    if (isSpectraUiEventEnvelope(message) && message.type === 'spectra.settings.changed') {
-      currentSettings = message.payload.globalSettings;
-    }
-    return false;
-  };
-  chrome.runtime.onMessage.addListener(onSettingsChanged);
-  window.addEventListener('pagehide', () => {
-    chrome.runtime.onMessage.removeListener(onSettingsChanged);
-  }, { once: true });
+  // SettingsState is a live projection owned by views/settings. Cards read it
+  // at render time so external revisions cannot strand Popup on an old theme,
+  // language, or visualizer setting.
+  const getGlobalSettings = () => settings.gSettings;
 
   const mainStage = $<HTMLElement>('main-stage');
   const bgStack = $<HTMLElement>('bg-stack');
@@ -78,8 +104,7 @@ async function main(): Promise<void> {
   const emptyState = $<HTMLElement>('empty-state');
 
   if (!mainStage || !bgStack || !template || !emptyState) {
-    console.error('[SPECTRA Popup] DOM Elements missing');
-    return;
+    throw new Error('Required Popup DOM elements are missing');
   }
 
   // rule: main-stage is reserved for the current active tab only
@@ -88,6 +113,7 @@ async function main(): Promise<void> {
     try {
       // eff: establish a persistent port to the active tab's content script to keep the session alive
       const port = chrome.tabs.connect(activeTabId, { name: 'popup-connection' });
+      registerPopupAttemptDisposer(() => port.disconnect());
       port.onDisconnect.addListener(() => {
         void chrome.runtime.lastError;
       });
@@ -96,17 +122,14 @@ async function main(): Promise<void> {
       console.debug('[SPECTRA Popup] Active-tab connection unavailable:', error);
     }
 
-    // eff: lazy load visualizer only when needed
-    const { createEqCurveDrawer } = await import('./visualizer');
-
     const mainCardSuccess = await initCard({
       container: mainStage,
       template,
       tab: activeTab,
-      dict,
-      registryEntries,
+      dict: settings.dict,
       getGlobalSettings,
-      createEqCurveDrawer,
+      loadVisualizer: loadPopupVisualizer,
+      registerCleanup: registerPopupAttemptDisposer,
     });
 
     if (mainCardSuccess) {
@@ -116,9 +139,6 @@ async function main(): Promise<void> {
 
   let hasBgAudio = false;
 
-  // eff: lazy load visualizer for background cards
-  let bgEqDrawer: EqCurveDrawerFactory | undefined;
-
   try {
     // goal: render cards for other tabs that were recently audibly active to allow multi-tab management
     const result = await sendSpectraRequest('spectra.tab.visible.list', {});
@@ -127,31 +147,30 @@ async function main(): Promise<void> {
     const allTabs = await chrome.tabs.query({});
     const tabMap = new Map(allTabs.map(t => [t.id, t]));
 
-    for (const tabId of visibleTabIds) {
-      if (activeTab && tabId === activeTab.id) continue;
+    const activeTabIdForBackground = activeTab?.id;
+    const backgroundTabs = visibleTabIds
+      .filter((tabId) => tabId !== activeTabIdForBackground)
+      .map((tabId) => tabMap.get(tabId))
+      .filter((tab): tab is chrome.tabs.Tab => tab !== undefined && !isRestrictedUrl(tab.url));
 
-      const tab = tabMap.get(tabId);
-      if (!tab || isRestrictedUrl(tab.url)) continue;
-
-      if (!bgEqDrawer) {
-        const { createEqCurveDrawer } = await import('./visualizer');
-        bgEqDrawer = createEqCurveDrawer;
-      }
-
-      const success = await initCard({
+    if (backgroundTabs.length > 0) {
+      // Bound card bootstrap work so a large visible-tab list cannot serialize
+      // dozens of status probes or create an unbounded burst of DOM/visualizer
+      // work. Every item settles before badge/empty-state reconciliation.
+      const summary = await runBoundedCardBootstrap(backgroundTabs, 4, async (tab) => initCard({
         container: bgStack,
         template,
         tab,
-        dict,
-        registryEntries,
+        dict: settings.dict,
         getGlobalSettings,
-        createEqCurveDrawer: bgEqDrawer,
+        loadVisualizer: loadPopupVisualizer,
+        registerCleanup: registerPopupAttemptDisposer,
         isBackground: true,
-      });
-
-      if (success) {
-        bgHeader?.classList.remove('hidden');
-        hasBgAudio = true;
+      }));
+      hasBgAudio = summary.succeeded > 0;
+      if (hasBgAudio) bgHeader?.classList.remove('hidden');
+      if (summary.failures.length > 0) {
+        console.warn(`[SPECTRA Popup] ${summary.failures.length} background card(s) failed to initialize.`);
       }
     }
   } catch (error) {
@@ -173,7 +192,20 @@ async function main(): Promise<void> {
   }
 
   const { updateCardsI18n } = await import('./views/i18n-apply');
-  updateCardsI18n(dict, gSettings.visualizerEnabled);
+  updateCardsI18n(settings.dict, settings.gSettings.visualizerEnabled);
 }
 
-document.addEventListener('DOMContentLoaded', main);
+function startPopup(): void {
+  void main().catch((error: unknown) => {
+    console.error('[SPECTRA Popup] Startup failed:', error);
+    disposePopupAttempt();
+    try {
+      showPopupStartupError(error, reloadPopup);
+    } catch (surfaceError: unknown) {
+      console.error('[SPECTRA Popup] Unable to present startup failure:', surfaceError);
+    }
+  });
+}
+
+window.addEventListener('pagehide', disposePopupAttempt, { once: true });
+document.addEventListener('DOMContentLoaded', startPopup);

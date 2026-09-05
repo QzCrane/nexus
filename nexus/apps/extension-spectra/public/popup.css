@@ -106,7 +106,183 @@ body {
 .view-container {
   position: relative;
   width: 100%;
-  min-height: 600px; /* ensure settings page has enough height */
+}
+
+/* The settings overlay needs a stable scroll viewport, while the main action
+ * popup must keep its intrinsic content height. Navigation owns only this mode
+ * class; CSS remains the single sizing authority. */
+.view-container.settings-view-active {
+  min-height: 600px;
+}
+
+/* ========== Registry UI ========== */
+/* Compound selector: .setting-card later in this file resets padding to 0,
+ * and the route card must keep the same 16px inner spacing as the presets card. */
+.setting-card.registry-card {
+  padding: 16px;
+}
+
+.registry-filter-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--g1);
+  background: var(--g0);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--text);
+  outline: none;
+  box-sizing: border-box;
+}
+
+.registry-filter-input:focus {
+  border-color: var(--primary);
+  background: var(--w);
+}
+
+.registry-list {
+  max-height: 200px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  padding: 0;
+  border: 1px solid var(--g1);
+  border-radius: 8px;
+  background: var(--g0);
+  list-style: none;
+}
+
+.registry-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--g1);
+  font-size: 12px;
+  font-family: "Menlo", "Monaco", "Courier New", monospace;
+}
+
+.registry-item:last-child {
+  border-bottom: none;
+}
+
+.registry-item-domain {
+  color: var(--text);
+  word-break: break-all;
+}
+
+.registry-item-identity {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.registry-item-route {
+  max-width: 112px;
+  margin-left: 8px;
+  overflow: hidden;
+  padding: 3px 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.registry-item-route-capture {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--warning);
+}
+
+.registry-item-route-direct {
+  background: color-mix(in srgb, var(--primary) 16%, transparent);
+  color: var(--primary);
+}
+
+.registry-item-source {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  margin-left: 8px;
+  padding: 2px 6px;
+  background: var(--w);
+  border-radius: 4px;
+}
+
+.registry-item-delete {
+  background: none;
+  border: none;
+  color: var(--danger);
+  cursor: pointer;
+  padding: 4px 8px;
+  margin-left: 8px;
+  opacity: 0.6;
+  transition: 0.2s;
+  font-size: 14px;
+}
+
+.registry-item-delete:hover {
+  opacity: 1;
+}
+
+.registry-empty {
+  padding: 24px;
+  text-align: center;
+  color: var(--g2);
+  font-size: 11px;
+}
+
+.registry-add {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.registry-add-input {
+  flex: 1;
+  padding: 8px 12px;
+  border: 1px solid var(--g1);
+  background: var(--g0);
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--text);
+  outline: none;
+}
+
+.registry-add-input:focus {
+  border-color: var(--primary);
+  background: var(--w);
+}
+
+.registry-route-select {
+  max-width: 112px;
+  padding: 8px;
+  border: 1px solid var(--g1);
+  background: var(--g0);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 10px;
+}
+
+.btn-small {
+  padding: 8px 14px;
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.btn-small:hover {
+  opacity: 0.9;
+}
+
+.registry-hint {
+  text-align: center;
+  margin-top: 4px;
 }
 
 /* Main UI: fill fixed-width parent container */
@@ -293,51 +469,6 @@ body {
 .setting-select:hover {
   background-color: var(--w);
   border-color: var(--primary);
-}
-
-.nice-textarea {
-  width: 100%;
-  min-height: 100px;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid var(--g1);
-  background: var(--g0);
-  font-family: "Menlo", "Monaco", "Courier New", monospace;
-  font-size: 11px;
-  color: var(--text);
-  resize: vertical;
-  outline: none;
-  box-sizing: border-box;
-  line-height: 1.6;
-  margin-top: 10px;
-}
-
-.nice-textarea:focus {
-  border-color: var(--primary);
-  background: var(--w);
-}
-
-.setting-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 10px;
-}
-
-.btn-primary {
-  background: var(--primary);
-  color: #fff;
-  border: none;
-  padding: 6px 14px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
-  transform: translateY(-1px);
 }
 
 .version-info {
@@ -745,176 +876,6 @@ input:checked + .slider-round:before {
   color: var(--g2);
 }
 
-.chips-row {
-  display: flex;
-  gap: 4px;
-}
-
-.chip {
-  flex: 1;
-}
-
-.chip input {
-  display: none;
-}
-
-.chip-body {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 32px;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--g2);
-  background: transparent;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.chip:hover .chip-body {
-  background: rgba(0, 0, 0, 0.03);
-}
-
-.chip input:checked + .chip-body {
-  background: var(--primary);
-  color: #fff;
-}
-
-.eq-island {
-  background: var(--g0);
-  border-radius: 12px;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  position: relative;
-}
-
-.eq-trigger {
-  padding: 10px 16px;
-  display: flex;
-  justify-content: space-between;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--g2);
-  cursor: pointer;
-}
-
-.eq-drawer {
-  max-height: 0;
-  transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  overflow: hidden;
-  background: var(--w);
-}
-
-.eq-drawer.open {
-  max-height: 180px;
-  border-top: 1px solid var(--g1);
-}
-
-.eq-container {
-  position: relative;
-  padding: 10px;
-  height: 160px;
-  box-sizing: border-box;
-}
-
-.eq-curve-canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  z-index: 0;
-  opacity: 0.5;
-}
-
-.eq-sliders-row {
-  display: grid;
-  grid-template-columns: repeat(10, 1fr);
-  position: relative;
-  z-index: 10;
-  height: 120px;
-  margin-top: 20px;
-}
-
-.eq-col {
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  position: relative;
-  height: 100%;
-  justify-content: space-between;
-}
-
-.eq-val-display {
-  font-size: 9px;
-  color: var(--primary);
-  font-weight: 700;
-  height: 12px;
-}
-
-.eq-hz {
-  font-size: 9px;
-  color: var(--g2);
-  height: 12px;
-}
-
-.eq-track-line {
-  position: absolute;
-  top: 20px;
-  bottom: 20px;
-  width: 2px;
-  background: var(--g1);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 0;
-}
-
-.eq-zero-dot {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 8px;
-  height: 2px;
-  background: var(--switch-bg);
-  z-index: 0;
-}
-
-.eq-col input {
-  -webkit-appearance: none;
-  width: 100px;
-  height: 30px;
-  background: transparent;
-  transform: rotate(-90deg);
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  margin-top: -15px;
-  margin-left: -50px;
-  cursor: pointer;
-  z-index: 10;
-}
-
-.eq-col input::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 10px;
-  height: 10px;
-  background: var(--w);
-  border: 2px solid var(--g2);
-  border-radius: 50%;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-  cursor: pointer;
-}
-
-.eq-col input:hover::-webkit-slider-thumb {
-  background: var(--primary);
-  border-color: var(--primary);
-  transform: scale(1.2);
-}
-
 .stack-header {
   padding: 12px 4px;
   font-size: 11px;
@@ -941,181 +902,6 @@ input:checked + .slider-round:before {
   background: #e5e7eb;
   border-radius: 50%;
   margin: 0 auto 10px;
-}
-
-/* ========== Registry UI ========== */
-.registry-search {
-  margin-bottom: 8px;
-}
-
-.registry-filter-input {
-  width: 100%;
-  padding: 8px 12px;
-  border: 1px solid var(--g1);
-  background: var(--g0);
-  border-radius: 8px;
-  font-size: 11px;
-  color: var(--text);
-  outline: none;
-  box-sizing: border-box;
-}
-
-.registry-filter-input:focus {
-  border-color: var(--primary);
-  background: var(--w);
-}
-
-.registry-list {
-  max-height: 200px;
-  overflow-y: auto;
-  margin-bottom: 12px;
-  padding: 0;
-  border: 1px solid var(--g1);
-  border-radius: 8px;
-  background: var(--g0);
-  list-style: none;
-}
-
-.registry-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--g1);
-  font-size: 12px;
-  font-family: "Menlo", "Monaco", "Courier New", monospace;
-}
-
-.registry-item:last-child {
-  border-bottom: none;
-}
-
-.registry-item-domain {
-  color: var(--text);
-  word-break: break-all;
-}
-
-.registry-item-identity {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.registry-item-fingerprint {
-  overflow: hidden;
-  color: var(--g2);
-  font-size: 9px;
-  text-overflow: ellipsis;
-}
-
-.registry-item-route {
-  max-width: 112px;
-  margin-left: 8px;
-  overflow: hidden;
-  padding: 3px 7px;
-  border-radius: 4px;
-  font-size: 11px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.registry-item-route-capture {
-  background: color-mix(in srgb, var(--warning) 16%, transparent);
-  color: var(--warning);
-}
-
-.registry-item-route-direct {
-  background: color-mix(in srgb, var(--primary) 16%, transparent);
-  color: var(--primary);
-}
-
-.registry-item-source {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text);
-  margin-left: 8px;
-  padding: 2px 6px;
-  background: var(--w);
-  border-radius: 4px;
-}
-
-.registry-item-delete {
-  background: none;
-  border: none;
-  color: var(--danger);
-  cursor: pointer;
-  padding: 4px 8px;
-  margin-left: 8px;
-  opacity: 0.6;
-  transition: 0.2s;
-  font-size: 14px;
-}
-
-.registry-item-delete:hover {
-  opacity: 1;
-}
-
-.registry-empty {
-  padding: 24px;
-  text-align: center;
-  color: var(--g2);
-  font-size: 11px;
-}
-
-.registry-add {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.registry-add-input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--g1);
-  background: var(--g0);
-  border-radius: 8px;
-  font-size: 11px;
-  color: var(--text);
-  outline: none;
-}
-
-.registry-add-input:focus {
-  border-color: var(--primary);
-  background: var(--w);
-}
-
-.registry-route-select {
-  max-width: 112px;
-  padding: 8px;
-  border: 1px solid var(--g1);
-  background: var(--g0);
-  border-radius: 8px;
-  color: var(--text);
-  font-size: 10px;
-}
-
-.btn-small {
-  padding: 8px 14px;
-  border: none;
-  background: var(--primary);
-  color: #fff;
-  border-radius: 8px;
-  font-size: 14px;
-  font-weight: 700;
-  cursor: pointer;
-  transition: 0.2s;
-}
-
-.btn-small:hover {
-  opacity: 0.9;
-}
-
-.registry-hint {
-  text-align: center;
-  margin-top: 4px;
 }
 
 /* ========== Speed Control + Media Buttons ========== */
@@ -1376,30 +1162,6 @@ input:checked + .slider-round:before {
   margin-bottom: 6px;
   text-transform: uppercase;
   letter-spacing: 0.3px;
-}
-
-/* Radio group */
-.sp-radio-group {
-  display: flex;
-  gap: 8px;
-}
-
-.sp-radio {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  cursor: pointer;
-}
-
-.sp-radio input {
-  width: 10px;
-  height: 10px;
-  accent-color: var(--primary);
-}
-
-.sp-radio span {
-  font-size: 9px;
-  color: var(--text);
 }
 
 /* Chips row */
@@ -2057,6 +1819,31 @@ input:checked + .slider-round:before {
   background: var(--danger);
 }
 
+.popup-startup-status {
+  display: grid;
+  gap: 12px;
+  margin: 16px;
+  padding: 16px;
+  border: 1px solid var(--danger);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 12%, var(--card-bg));
+  color: var(--text);
+}
+
+.popup-startup-status p {
+  margin: 0;
+}
+
+.popup-startup-status button {
+  justify-self: start;
+  padding: 7px 14px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--primary);
+  color: white;
+  cursor: pointer;
+}
+
 @keyframes slideUp {
   from {
     transform: translateX(-50%) translateY(20px);
@@ -2066,23 +1853,6 @@ input:checked + .slider-round:before {
     transform: translateX(-50%) translateY(0);
     opacity: 1;
   }
-}
-
-.btn-preset-delete {
-  width: 20px;
-  height: 20px;
-  border: none;
-  background: transparent;
-  color: var(--g2);
-  cursor: pointer;
-  border-radius: 4px;
-  transition: 0.15s;
-  font-size: 12px;
-}
-
-.btn-preset-delete:hover {
-  background: var(--danger);
-  color: #fff;
 }
 
 .presets-hint {

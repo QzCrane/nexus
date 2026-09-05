@@ -39,7 +39,7 @@ These totals mirror executable contracts and gates. A count changes only with co
 - [Runtime topology](../architecture/runtime.md)
 - [Cross-context protocols](../reference/protocols.md)
 - [Remote security](../security/remote-control.md)
-- [Media WebAudio source admission](../architecture/media-source-admission.md)
+- [Capture source admission](../architecture/media-source-admission.md)
 - [Roadmap](../roadmap.md)
 - [SPECTRA documentation map](../README.md)
 - [Repository documentation map](../../../../docs/README.md)
@@ -47,8 +47,10 @@ These totals mirror executable contracts and gates. A count changes only with co
 ## Implementation and verification
 
 - contracts: `packages/contracts/src/control.contracts.ts`
-- coordinator: `src/background/control-coordinator.ts`
-- native writer: `src/content/logic/native-media-executor.ts`
+- control authority: `src/background/control-coordinator.ts`
+- pure control values: `src/background/control-coordinator-values.ts`
+- physical native async writer/readback: `src/content/logic/native-media-async.ts`
+- native target/ownership/rollback orchestration: `src/content/logic/native-media-executor.ts`
 - static verification: `scripts/verify/check-spectra-control.ts`
 
 ## Historical evidence

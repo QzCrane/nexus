@@ -109,6 +109,51 @@ afterEach(() => {
 	restore('cancelAnimationFrame', originalCancelAnimationFrame);
 });
 
+function installEffectDom(
+	computedStyle: (video: FakeVideo) => Record<string, string>,
+): FakeDomElement {
+	Object.defineProperty(globalThis, 'HTMLVideoElement', {
+		configurable: true,
+		value: FakeVideo,
+	});
+	Object.defineProperty(globalThis, 'ResizeObserver', {
+		configurable: true,
+		value: class {
+			observe(): void { }
+			unobserve(): void { }
+			disconnect(): void { }
+		},
+	});
+	Object.defineProperty(globalThis, 'window', {
+		configurable: true,
+		value: {
+			visualViewport: undefined,
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined,
+		},
+	});
+	const root = new FakeDomElement();
+	root.isConnected = true;
+	Object.defineProperty(globalThis, 'document', {
+		configurable: true,
+		value: {
+			head: root,
+			documentElement: root,
+			fullscreenElement: null,
+			createElement: (tag: string) => tag === 'style'
+				? new FakeStyleElement()
+				: new FakeDomElement(),
+			addEventListener: () => undefined,
+			removeEventListener: () => undefined,
+		},
+	});
+	Object.defineProperty(globalThis, 'getComputedStyle', {
+		configurable: true,
+		value: (video: FakeVideo) => computedStyle(video),
+	});
+	return root;
+}
+
 describe('extension-owned video effect release', () => {
 	test('leaves page-authored owner names untouched for a never-owned neutral write', async () => {
 		Object.defineProperty(globalThis, 'HTMLVideoElement', {
@@ -290,6 +335,58 @@ describe('extension-owned video effect release', () => {
 			expect(first.hasAttribute('data-spectra-video-effects-owner')).toBe(true);
 			expect(first.style.getPropertyValue('--spectra-rotate')).toBe('90deg');
 			expect(controller.snapshot(second).dimEnabled).toBe(true);
+		} finally {
+			controller.dispose();
+		}
+	});
+
+	test('retires source ownership without restoring the previous source baseline', async () => {
+		installEffectDom((video) => ({
+			objectFit: video.hasAttribute('data-spectra-fill') ? 'cover' : 'contain',
+			rotate: video.hasAttribute('data-spectra-rotate')
+				? video.style.getPropertyValue('--spectra-rotate')
+				: 'none',
+			scale: video.hasAttribute('data-spectra-scale')
+				? `${video.style.getPropertyValue('--spectra-scale-x')} ${video.style.getPropertyValue('--spectra-scale-y')}`
+				: 'none',
+			filter: 'none',
+		}));
+		const controller = new VideoEffectsController();
+		const video = new FakeVideo() as unknown as HTMLVideoElement;
+		try {
+			await controller.apply(video, 'rotation', 90);
+			// The player has already authored source-B presentation while reusing the
+			// same element. Source retirement must not restore source-A's 90deg value.
+			video.style.setProperty('--spectra-rotate', '13deg', 'important');
+			controller.retireSource(video);
+			expect(video.style.getPropertyValue('--spectra-rotate')).toBe('13deg');
+			expect(video.style.getPropertyPriority('--spectra-rotate')).toBe('important');
+			expect(video.hasAttribute('data-spectra-video-effects-owner')).toBe(false);
+			expect(controller.snapshot(video).rotation).toBe(0);
+		} finally {
+			controller.dispose();
+		}
+	});
+
+	test('rolls back DOM ownership when CSS readback fails before apply commits', async () => {
+		installEffectDom(() => ({
+			objectFit: 'contain',
+			rotate: 'none',
+			scale: 'none',
+			filter: 'none',
+		}));
+		const controller = new VideoEffectsController();
+		const video = new FakeVideo() as unknown as HTMLVideoElement;
+		try {
+			await expect(controller.apply(video, 'rotation', 90)).rejects.toThrow(
+				'Video transform computed-style readback failed',
+			);
+			expect(video.hasAttribute('data-spectra-video-effects-owner')).toBe(false);
+			expect(video.hasAttribute('data-spectra-rotate')).toBe(false);
+			expect(video.hasAttribute('data-spectra-scale')).toBe(false);
+			expect(video.style.getPropertyValue('--spectra-rotate')).toBe('');
+			expect(video.style.getPropertyValue('--spectra-scale-x')).toBe('');
+			expect(controller.snapshot(video).rotation).toBe(0);
 		} finally {
 			controller.dispose();
 		}

@@ -3,9 +3,9 @@ import type { ControlIntent, MediaTarget } from '@nexus/contracts';
 import type { MediaRegistry, MediaRegistryEvent } from '../src/content/core/media-registry';
 import {
 	NativeMediaExecutor,
-	seekNativeMedia,
 	writeNativePlaybackRate,
 } from '../src/content/logic/native-media-executor';
+import { seekNativeMedia } from '../src/content/logic/native-media-async';
 import { writePageMediaField } from '../src/content/logic/page-media-bridge';
 import type { VideoEffectsController } from '../src/content/video/video-effects-controller';
 import {
@@ -88,12 +88,12 @@ class FakeRegistry {
 		this.element = element;
 	}
 
+	get documentId(): string { return this.target.documentId; }
+
 	subscribe(listener: RegistryListener): () => void {
 		this.listener = listener;
 		return () => { this.listener = null; };
 	}
-
-	setDocumentId(): void { }
 
 	resolve(): { element: HTMLMediaElement; target: MediaTarget } {
 		return {
@@ -457,7 +457,12 @@ describe('native media single-writer correlation', () => {
 			value: {
 				runtime: {
 					id: 'spectra-test',
-					sendMessage: async (message: unknown) => { sent.push(message); },
+					sendMessage: async (message: unknown) => {
+						if ((message as { type?: string }).type === 'spectra.audio.page-scale.record') {
+							return { ok: true, data: { recorded: true } };
+						}
+						sent.push(message);
+					},
 				},
 			},
 		});
@@ -550,7 +555,7 @@ describe('native media single-writer correlation', () => {
 				listener = next;
 				return () => { listener = null; };
 			},
-			setDocumentId: () => undefined,
+			documentId: target.documentId,
 			resolve: () => available
 				? { element: element as unknown as HTMLMediaElement, target }
 				: null,
@@ -597,7 +602,12 @@ describe('native media single-writer correlation', () => {
 			value: {
 				runtime: {
 					id: 'spectra-test',
-					sendMessage: async (message: unknown) => { sent.push(message); },
+					sendMessage: async (message: unknown) => {
+						if ((message as { type?: string }).type === 'spectra.audio.page-scale.record') {
+							return { ok: true, data: { recorded: true } };
+						}
+						sent.push(message);
+					},
 				},
 			},
 		});
@@ -769,7 +779,7 @@ describe('native media single-writer correlation', () => {
 		Object.defineProperty(globalThis, 'document', { configurable: true, value: documentState });
 		const registry = {
 			subscribe: () => () => undefined,
-			setDocumentId: () => undefined,
+			documentId: activeTarget.documentId,
 			resolve: () => ({ element: active as unknown as HTMLMediaElement, target: activeTarget }),
 			resolveVideo: (target: MediaTarget | null) => target?.mediaId === ownerTarget.mediaId
 				? { element: owner as unknown as HTMLVideoElement, target: ownerTarget }
@@ -905,7 +915,7 @@ describe('native media single-writer correlation', () => {
 		};
 		const registry = {
 			subscribe: () => () => undefined,
-			setDocumentId: () => undefined,
+			documentId: target.documentId,
 			resolve: () => ({ element: video as unknown as HTMLMediaElement, target }),
 			resolveVideo: (requested: MediaTarget | null) => requested?.mediaId === target.mediaId
 				? { element: video as unknown as HTMLVideoElement, target }
@@ -974,7 +984,7 @@ describe('native media single-writer correlation', () => {
 		};
 		const registry = {
 			subscribe: () => () => undefined,
-			setDocumentId: () => undefined,
+			documentId: target.documentId,
 			resolve: () => ({ element: video as unknown as HTMLMediaElement, target }),
 			resolveVideo: (requested: MediaTarget | null) => requested?.mediaId === target.mediaId
 				? { element: video as unknown as HTMLVideoElement, target }
@@ -1138,7 +1148,7 @@ describe('native media single-writer correlation', () => {
 				requestedCoverage: 'active-target',
 				target: registry.target,
 				actualContext: {},
-				patch: { volumeBase: 40, speed: 1.5 },
+				patch: { volumeBase: 140, speed: 1.5 },
 			});
 			const hotkey = await executor.execute({
 				intentId: 'intent:page-media:hotkey',
@@ -1153,10 +1163,10 @@ describe('native media single-writer correlation', () => {
 				patch: { mediaMuted: true },
 			});
 
-			expect(popup.fields.volumeBase).toMatchObject({ phase: 'applied', strategy: 'page-native', actual: 40 });
+			expect(popup.fields.volumeBase).toMatchObject({ phase: 'applied', strategy: 'page-native', actual: 140 });
 			expect(popup.fields.speed).toMatchObject({ phase: 'applied', strategy: 'page-native', actual: 1.5 });
 			expect(hotkey.fields.mediaMuted).toMatchObject({ phase: 'applied', strategy: 'page-native', actual: true });
-			expect(state).toEqual({ volumeBase: 40, mediaMuted: true, speed: 1.5 });
+			expect(state).toEqual({ volumeBase: 140, mediaMuted: true, speed: 1.5 });
 
 			const released = await executor.releasePageSettings({
 				operationId: 'operation:page-media:restore',
@@ -1394,6 +1404,10 @@ describe('native media single-writer correlation', () => {
 			value: {
 				runtime: {
 					sendMessage: async (message: unknown) => {
+						// Page-entry solidification reports are not element observations.
+						if ((message as { type?: string }).type === 'spectra.audio.page-scale.record') {
+							return { ok: true, data: { recorded: true } };
+						}
 						observations.push(message);
 						return undefined;
 					},
@@ -1469,6 +1483,10 @@ describe('native media single-writer correlation', () => {
 			value: {
 				runtime: {
 					sendMessage: async (message: unknown) => {
+						// Page-entry solidification reports are not element observations.
+						if ((message as { type?: string }).type === 'spectra.audio.page-scale.record') {
+							return { ok: true, data: { recorded: true } };
+						}
 						observations.push(message);
 						return undefined;
 					},

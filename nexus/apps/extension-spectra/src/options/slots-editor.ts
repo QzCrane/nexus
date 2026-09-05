@@ -1,9 +1,17 @@
 // goal: manages the mapping between Chrome command 'slots' (from manifest.json) and SPECTRA hotkey actions
 
 import type { HotkeySettings, HotkeyAction } from '@nexus/contracts';
-import { HOTKEY_ACTIONS, DEFAULT_HOTKEY_SETTINGS } from '@nexus/contracts';
+import {
+	DEFAULT_HOTKEY_SETTINGS,
+	HOTKEY_ACTIONS,
+	type SettingsUiSnapshot,
+} from '@nexus/contracts/ui-settings-runtime';
 import { t, tf, getActionName, getCurrentLang, onLangChange } from './i18n';
-import { getSettingsSnapshot, patchSettings } from '../shared/settings-client';
+import {
+	getOptionsSettingsSnapshot,
+	patchOptionsSettings,
+} from '../shared/options-settings-client';
+import { LatestKeyedIntentRegistry } from './latest-keyed-intent';
 import { isSlotHotkeyAction } from './supported-hotkey-actions';
 import { clearOptionsError, showOptionsError } from './status';
 
@@ -19,11 +27,13 @@ function cloneHotkeySettings(source: HotkeySettings): HotkeySettings {
 let settings: HotkeySettings = cloneHotkeySettings(DEFAULT_HOTKEY_SETTINGS);
 let presetCommands: string[] = [];
 let slotCommands: string[] = [];
+const pendingSlotMutations = new LatestKeyedIntentRegistry<string, HotkeyAction | null>();
 
 // eff: initializes the slots editor by loading persistence state and establishing an i18n re-render listener
-export async function initSlotsEditor(): Promise<void> {
+export async function initSlotsEditor(initialSnapshot?: SettingsUiSnapshot): Promise<void> {
 	loadCommandRegistry();
-	await loadSettings();
+	if (initialSnapshot) acceptSettingsSnapshot(initialSnapshot);
+	else await loadSettings();
 	renderSlots();
 	onLangChange(renderSlots);
 }
@@ -37,10 +47,22 @@ function loadCommandRegistry(): void {
 	slotCommands = names.filter((name) => name.startsWith('slot_'));
 }
 
-async function loadSettings(): Promise<void> {
-	const snapshot = await getSettingsSnapshot();
+function acceptSettingsSnapshot(snapshot: SettingsUiSnapshot): void {
 	settings = cloneHotkeySettings(snapshot.hotkeySettings);
+	for (const [command, pending] of pendingSlotMutations.entries()) {
+		if (pending.value === null) delete settings.slots[command];
+		else settings.slots[command] = pending.value;
+	}
+}
+
+async function loadSettings(forceRefresh = false): Promise<void> {
+	acceptSettingsSnapshot(await getOptionsSettingsSnapshot(forceRefresh));
 	clearOptionsError();
+}
+
+export function projectSlotsEditor(snapshot: SettingsUiSnapshot): void {
+	acceptSettingsSnapshot(snapshot);
+	renderSlots();
 }
 
 // eff: generates the UI list for both preset and generic command slots, populating them with localized action names
@@ -106,17 +128,23 @@ function createSlotRow(command: string, action: HotkeyAction, readonly: boolean)
 	}
 
 	select.addEventListener('change', async () => {
-		const previous = settings.slots[command] ?? 'none';
-		const action = select.value as HotkeyAction;
-		settings.slots[command] = action;
-		try {
-			const snapshot = await patchSettings({ scope: 'hotkey-slots', changes: { [command]: action } });
-			settings = cloneHotkeySettings(snapshot.hotkeySettings);
-		} catch (error) {
-			settings.slots[command] = previous;
-			select.value = previous;
-			showOptionsError(error);
-		}
+		const selectedAction = select.value as HotkeyAction;
+		// The visible `none` option is a UI sentinel; the wire contract uses null
+		// so the repository removes the command instead of persisting an invalid action.
+		const action = selectedAction === 'none' ? null : selectedAction;
+		const token = pendingSlotMutations.begin(command, action);
+		if (action === null) delete settings.slots[command];
+		else settings.slots[command] = action;
+		await pendingSlotMutations.settle(
+			command,
+			token,
+			patchOptionsSettings({ scope: 'hotkey-slots', changes: { [command]: action } }),
+			{
+				project: projectSlotsEditor,
+				recover: () => getOptionsSettingsSnapshot(true),
+				onError: showOptionsError,
+			},
+		);
 	});
 
 	row.appendChild(select);

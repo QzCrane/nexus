@@ -5,12 +5,12 @@ import {
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
 	resolveAudioVolumeState,
-	crossesAudioVolumeProcessorBoundary,
-	resolveAcknowledgedProcessorLifecycle,
+	crossesAudioVolumeRoutingBoundary,
 	type ControlOperationAck,
 	type ControlFieldStates,
 	type ControlPatch,
 } from '@nexus/contracts';
+import { resolveAcknowledgedProcessorLifecycle } from '@nexus/contracts/ui-runtime';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 
@@ -19,8 +19,13 @@ export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	runControl: <T>(command: () => Promise<T>) => Promise<T>;
 };
 
+export type ConfigErrorHandler = (
+	error: unknown,
+	state: CardInternalState,
+) => void;
+
 // Processor field ACKs prove the lifecycle that produced their readback.
-// Project active Capture/Media WebAudio and neutral release symmetrically so
+// Project active Capture and neutral release symmetrically so
 // Popup rendering cannot lag behind the compound ACK's actual result.
 export function projectAcknowledgedProcessorLifecycle(
 	state: CardInternalState,
@@ -46,10 +51,11 @@ export function createGetCapturing(
 // post: returns an async update function that applies changes optimistically and routes commands based on the active capture mode
 export function createUpdateFn(
   state: CardInternalState,
-  tabId: number,
-  _getCapturing: () => boolean,
-  render: () => void,
-  _getGlobalSettings: () => GlobalSettings
+	tabId: number,
+	_getCapturing: () => boolean,
+	render: () => void,
+	_getGlobalSettings: () => GlobalSettings,
+	onError: ConfigErrorHandler = () => undefined,
 ): ConfigUpdateFn {
 	const minSendIntervalMs = 50;
 	let pending = false;
@@ -109,9 +115,9 @@ export function createUpdateFn(
 	const scheduleFlush = () => {
 		if (timer || inFlight) return;
 		const delay = Math.max(0, minSendIntervalMs - (performance.now() - lastSentAt));
-		timer = setTimeout(() => {
+	timer = setTimeout(() => {
 			timer = null;
-			void flush().catch(() => undefined);
+			void flush().catch((error: unknown) => onError(error, state));
 		}, delay);
 	};
 
@@ -125,37 +131,56 @@ export function createUpdateFn(
 		const effectiveVolume = pendingEffectiveVolume;
 		pendingPatch = {};
 		pendingEffectiveVolume = null;
+		const requeuePatch = (remaining: ControlPatch): void => {
+			if (Object.keys(remaining).length === 0) return;
+			// A failed stage must not consume an independent field intent.  Preserve
+			// newer values already queued while putting the unsent fields back at the
+			// front of the next flush.
+			pendingPatch = { ...remaining, ...pendingPatch };
+			pending = true;
+		};
 
 		inFlight = serializeControl(async () => {
 			if (effectiveVolume !== null) {
-				const response = await sendSpectraRequest(
-					'spectra.control.operation.submit',
-					{
-						tabId,
-						source: 'popup',
-						target: state.controlSnapshot?.activeMedia ?? null,
-						baseRevision: state.controlRevision,
-						operation: 'effective-volume',
-						payload: { operation: 'set', value: effectiveVolume },
-					},
-					{ tabId },
-				);
-				if (!response.ok) {
-					state.lastError = response.error;
-					throw new Error(response.error.message);
+				try {
+					const response = await sendSpectraRequest(
+						'spectra.control.operation.submit',
+						{
+							tabId,
+							source: 'popup',
+							target: state.controlSnapshot?.activeMedia ?? null,
+							baseRevision: state.controlRevision,
+							operation: 'effective-volume',
+							payload: { operation: 'set', value: effectiveVolume },
+						},
+						{ tabId },
+					);
+					if (!response.ok) {
+						state.lastError = response.error;
+						throw new Error(response.error.message);
+					}
+					const acknowledgement = response.data as ControlOperationAck<'effective-volume'>;
+					state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
+					state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
+					state.stableConfig = mergeControlFields(state.stableConfig, acknowledgement.fields);
+					projectAcknowledgedProcessorLifecycle(state, acknowledgement.fields);
+					state.stableConfig = mergeAudioConfig(state.stableConfig, {
+						volume: acknowledgement.result.effectiveVolume,
+						volumeBase: acknowledgement.result.volumeBase,
+						boost: acknowledgement.result.boost,
+					});
+				} catch (error) {
+					// Volume and ordinary DSP are independent intents.  Requeue the
+					// latter when the compound volume operation fails.
+					requeuePatch(patch);
+					throw error;
 				}
-				const acknowledgement = response.data as ControlOperationAck<'effective-volume'>;
-				state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
-				state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
-				state.stableConfig = mergeControlFields(state.stableConfig, acknowledgement.fields);
-				projectAcknowledgedProcessorLifecycle(state, acknowledgement.fields);
-				state.stableConfig = mergeAudioConfig(state.stableConfig, {
-					volume: acknowledgement.result.effectiveVolume,
-					volumeBase: acknowledgement.result.volumeBase,
-					boost: acknowledgement.result.boost,
-				});
 			}
-			for (const group of splitByCoverage(patch)) {
+			const groups = splitByCoverage(patch);
+			for (let groupIndex = 0; groupIndex < groups.length; groupIndex += 1) {
+				const group = groups[groupIndex];
+				if (!group) continue;
+				try {
 				const response = await sendSpectraRequest(
 					'spectra.control.intent.submit',
 					{
@@ -185,6 +210,15 @@ export function createUpdateFn(
 				}
 				state.stableConfig = mergeControlFields(state.stableConfig, response.data.fields);
 				projectAcknowledgedProcessorLifecycle(state, response.data.fields);
+				} catch (error) {
+					const unsent: ControlPatch = {};
+					for (const next of groups.slice(groupIndex)) Object.assign(unsent, next.patch);
+					// Preserve the rejected group as well as later groups. The ACK-driven
+					// state has rolled back this intent, so a later explicit update must
+					// not silently erase the user's failed DSP fields.
+					requeuePatch(unsent);
+					throw error;
+				}
 			}
 			// A response for an earlier drag sample must not overwrite a newer
 			// optimistic value that is waiting to be coalesced and sent.
@@ -196,7 +230,7 @@ export function createUpdateFn(
 				state.volumeTransitionPresentation = undefined;
 			}
 			state.lastError = null;
-		}).catch((error) => {
+		}).catch((error: unknown) => {
 			if (localRevision === sentRevision) {
 				state.config = mergeAudioConfig(state.stableConfig, {
 					eqValues: [...state.stableConfig.eqValues],
@@ -208,7 +242,9 @@ export function createUpdateFn(
 		}).finally(() => {
 			inFlight = null;
 			render();
-			if (pending) scheduleFlush();
+			// A failed intent is requeued for an explicit subsequent user update;
+			// do not spin an automatic retry loop on a persistent coordinator error.
+			if (pending && localRevision !== sentRevision) scheduleFlush();
 		});
 		return inFlight;
 	};
@@ -262,13 +298,13 @@ export function createUpdateFn(
 		if (!volumeChanged && Object.keys(patch).length === 0) return;
 		state.userInteracted = true;
 
-		// A boundary crossing keeps the last complete acknowledged presentation
-		// until the compound operation ACK can commit value and processor mode in
-		// one frame. Same-region drags remain optimistic.
+		// A boundary crossing keeps only the last acknowledged processor colour.
+		// The public value remains optimistic, otherwise a responsive native 100→110
+		// page controller appears frozen while the route ACK is being stabilized.
 		const stableVolume = resolveAudioVolume(state.stableConfig).effectiveVolume;
-		const crossesProcessorBoundary = volumeChanged
-			&& crossesAudioVolumeProcessorBoundary(stableVolume, nextVolume);
-		if (crossesProcessorBoundary && !state.volumeTransitionPresentation) {
+		const crossesRoutingBoundary = volumeChanged
+			&& crossesAudioVolumeRoutingBoundary(stableVolume, nextVolume);
+		if (crossesRoutingBoundary && !state.volumeTransitionPresentation) {
 			const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
 			state.volumeTransitionPresentation = {
 				effectiveVolume,
@@ -292,4 +328,3 @@ export function createUpdateFn(
 	update.runControl = runControl;
 	return update;
 }
-

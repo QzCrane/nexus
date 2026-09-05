@@ -1,6 +1,16 @@
 // goal: manages video playback speed controls in the side panel with cross-card synchronization
 
 import type { AudioConfig } from '@nexus/kernel';
+import { CONTROL_VALUE_LIMITS, clampControlValue } from '@nexus/contracts/ui-runtime';
+import { getCurrentPanelTabId } from './panel-session';
+import { parseFiniteControlInput } from '../utils/control-input';
+
+const SPEED_MIN = CONTROL_VALUE_LIMITS.speed.min;
+const SPEED_MAX = CONTROL_VALUE_LIMITS.speed.max;
+
+function clampSpeed(value: number): number {
+	return clampControlValue(value, 'speed', 1);
+}
 
 interface SpeedControls {
 	speedSlider: HTMLInputElement | null;
@@ -30,15 +40,15 @@ export function addWheelSupport(
 // note: speed now uses same update flow as volume - through updateFn instead of direct MEDIA_SET_SPEED
 export function bindSpeedControls(c: SpeedControls, updateFn: (changes: Partial<AudioConfig>) => void, initialSpeed: number = 1): void {
 	const updateSpeed = (speed: number) => {
-		const clampedSpeed = Math.max(0.25, Math.min(16, speed));
+		const clampedSpeed = clampSpeed(speed);
 		if (c.speedSlider) c.speedSlider.value = String(clampedSpeed);
 		if (c.speedInput) c.speedInput.value = clampedSpeed.toFixed(2);
-		syncCardSpeedInput(clampedSpeed);
 		updateFn({ speed: clampedSpeed });
 	};
+	const normalizedInitialSpeed = clampSpeed(initialSpeed);
 
 	if (c.speedSlider) {
-		c.speedSlider.value = String(initialSpeed);
+		c.speedSlider.value = String(normalizedInitialSpeed);
 		c.speedSlider.oninput = (e) => {
 			const speed = parseFloat((e.target as HTMLInputElement).value);
 			if (c.speedInput) c.speedInput.value = speed.toFixed(2);
@@ -47,21 +57,20 @@ export function bindSpeedControls(c: SpeedControls, updateFn: (changes: Partial<
 			const speed = parseFloat((e.target as HTMLInputElement).value);
 			updateSpeed(speed);
 		};
-		addWheelSupport(c.speedSlider, 0.05, 0.25, 16, updateSpeed);
+		addWheelSupport(c.speedSlider, 0.05, SPEED_MIN, SPEED_MAX, updateSpeed);
 	}
 
 	const speedInput = c.speedInput;
 	if (speedInput) {
-		speedInput.value = initialSpeed.toFixed(2);
+		speedInput.value = normalizedInitialSpeed.toFixed(2);
 		speedInput.onchange = (e) => {
-			const speed = parseFloat((e.target as HTMLInputElement).value) || 1;
-			updateSpeed(speed);
+			updateSpeed(parseFiniteControlInput((e.target as HTMLInputElement).value, 1));
 		};
 		speedInput.onwheel = (e) => {
 			e.preventDefault();
-			const current = parseFloat(speedInput.value) || 1;
+			const current = parseFiniteControlInput(speedInput.value, 1);
 			const delta = e.deltaY < 0 ? 0.1 : -0.1;
-			const newSpeed = Math.max(0.25, Math.min(16, current + delta));
+			const newSpeed = clampSpeed(current + delta);
 			speedInput.value = newSpeed.toFixed(2);
 			if (c.speedSlider) c.speedSlider.value = String(newSpeed);
 			updateSpeed(newSpeed);
@@ -69,20 +78,14 @@ export function bindSpeedControls(c: SpeedControls, updateFn: (changes: Partial<
 	}
 }
 
-// note: propagates speed changes from the advanced panel back to the main card UI for visual consistency
-function syncCardSpeedInput(speed: number): void {
-	const cardInputs = document.querySelectorAll('.speed-input') as NodeListOf<HTMLInputElement>;
-	cardInputs.forEach((input) => {
-		input.value = speed.toFixed(2);
-	});
-}
-
 // eff: updates the side panel speed UI elements when the value is changed elsewhere (e.g. from the main card or content script sync)
-export function syncSidePanelSpeed(speed: number): void {
+export function syncSidePanelSpeed(tabId: number, speed: number): void {
+	if (getCurrentPanelTabId() !== tabId) return;
 	const panel = document.getElementById('side-panel');
 	if (!panel) return;
+	const normalizedSpeed = clampSpeed(speed);
 	const slider = panel.querySelector('.sp-speed-slider') as HTMLInputElement | null;
 	const input = panel.querySelector('.sp-speed-input') as HTMLInputElement | null;
-	if (slider) slider.value = String(speed);
-	if (input) input.value = speed.toFixed(2);
+	if (slider && document.activeElement !== slider) slider.value = String(normalizedSpeed);
+	if (input && document.activeElement !== input) input.value = normalizedSpeed.toFixed(2);
 }

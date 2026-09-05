@@ -7,8 +7,8 @@ const CONFIG = {
 	eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
 };
 
-describe('SPECTRA v2 client boundaries', () => {
-	test('builds routed envelopes and rejects malformed peer responses', async () => {
+describe('SPECTRA extension RPC client boundaries', () => {
+	test('builds routed envelopes and identifies malformed Background responses', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const runtimeSend = mock(async () => rpcSuccess({ saved: true as const }));
 		const tabSend = mock(async () => rpcSuccess({
@@ -52,7 +52,9 @@ describe('SPECTRA v2 client boundaries', () => {
 
 			runtimeSend.mockImplementationOnce(async () => ({ ok: true, data: { saved: 'yes' } }));
 			await expect(sendSpectraRequest('spectra.audio.config.set', { config: CONFIG }))
-				.rejects.toThrow('invalid SPECTRA v2 response');
+				.rejects.toThrow(
+					'Background returned an invalid SPECTRA extension RPC v2 response for spectra.audio.config.set',
+				);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 			else Reflect.deleteProperty(globalThis, 'chrome');

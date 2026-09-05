@@ -2,7 +2,13 @@
 // ban: direct state mutation of the global config outside this module
 
 import type { AudioConfig } from '@nexus/kernel';
-import { resolveAudioVolume, rpcFailure, type SpectraResponse } from '@nexus/contracts';
+import {
+	compileEffectiveVolume,
+	resolveAudioVolume,
+	rpcFailure,
+	splitEffectiveVolume,
+	type SpectraResponse,
+} from '@nexus/contracts';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import type { InternalState } from './types';
 import type { PolicyApplicationOptions, PolicyUpdateOptions } from './types';
@@ -25,20 +31,19 @@ export function updateConfig(
 	}
 
 	const newConfig = { ...state.config, ...changes };
-	const legacyVolume = changes.volume;
-	const legacyVolumeOnly = legacyVolume !== undefined
+	const effectiveVolume = changes.volume;
+	const effectiveVolumeOnly = effectiveVolume !== undefined
 		&& changes.volumeBase === undefined
 		&& changes.boost === undefined;
-	const volume = legacyVolumeOnly
-		? resolveAudioVolume({ volume: legacyVolume ?? 100 })
+	const volume = effectiveVolumeOnly
+		? splitEffectiveVolume(effectiveVolume ?? 100)
 		: resolveAudioVolume({
-			volume: newConfig.volume,
 			volumeBase: newConfig.volumeBase,
 			boost: newConfig.boost,
 		});
 	newConfig.volumeBase = volume.volumeBase;
 	newConfig.boost = volume.boost;
-	newConfig.volume = volume.effectiveVolume;
+	newConfig.volume = compileEffectiveVolume(volume.volumeBase, volume.boost);
 
 	// inv: remove transient delta fields before state consolidation
 	Reflect.deleteProperty(newConfig, 'volumeDelta');

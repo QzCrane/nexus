@@ -27,10 +27,10 @@ describe('Options failure presentation', () => {
 		const siteEditor = readFileSync(new URL('../src/options/site-editor.ts', import.meta.url), 'utf8');
 		const slotsEditor = readFileSync(new URL('../src/options/slots-editor.ts', import.meta.url), 'utf8');
 		const entry = readFileSync(new URL('../src/options/index.ts', import.meta.url), 'utf8');
-		expect(siteEditor).toContain('await getSettingsSnapshot(forceRefresh)');
-		expect(siteEditor).not.toMatch(/getSettingsSnapshot\([^)]*\)\.catch\([^)]*DEFAULT/u);
-		expect(slotsEditor).toContain('await getSettingsSnapshot()');
-		expect(slotsEditor).not.toMatch(/getSettingsSnapshot\([^)]*\)\.catch\([^)]*DEFAULT/u);
+		expect(siteEditor).toContain('await getOptionsSettingsSnapshot(forceRefresh)');
+		expect(siteEditor).not.toMatch(/getOptionsSettingsSnapshot\([^)]*\)\.catch\([^)]*DEFAULT/u);
+		expect(slotsEditor).toContain('await getOptionsSettingsSnapshot(forceRefresh)');
+		expect(slotsEditor).not.toMatch(/getOptionsSettingsSnapshot\([^)]*\)\.catch\([^)]*DEFAULT/u);
 		expect(entry).toContain('init().catch(showOptionsError)');
 	});
 

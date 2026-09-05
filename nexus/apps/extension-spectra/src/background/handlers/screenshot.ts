@@ -2,13 +2,11 @@
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
-	isSpectraRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
 	type ScreenshotCapturePayload,
 	type ScreenshotResult,
 } from '@nexus/contracts';
 import { sendSpectraTabRequest } from '../spectra-tab-client';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
 
 function toPngDataUrl(blob: Blob): Promise<string> {
 	return blob.arrayBuffer().then((buffer) => {
@@ -127,11 +125,11 @@ export function registerScreenshotHandler(): void {
 			sendResponse(rpcFailure('forbidden', 'Screenshot capture is extension-internal only'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)
-			|| message.type !== 'spectra.screenshot.capture-visible') {
+		if (!isBackgroundRequestEnvelope(message)) {
 			sendResponse(rpcFailure('invalid_request', 'Screenshot capture requires a valid sender tab'));
 			return false;
 		}
+		if (message.type !== 'spectra.screenshot.capture-visible') return false;
 		const tab = sender.tab;
 		const tabId = tab?.id;
 		const documentId = message.documentId;

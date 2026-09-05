@@ -1,12 +1,15 @@
 // goal: project durable settings revisions without turning delivery failures into false commit failures
 
 import {
-	Actions,
 	SPECTRA_PROTOCOL_VERSION,
+	normalizeHostname,
+	selectMediaProcessingRoute,
+	type MediaRouteSettings,
 	type SettingsPatch,
 	type SettingsSnapshot,
 	type SpectraEventEnvelope,
 } from '@nexus/contracts';
+import { toSettingsUiSnapshot } from '@nexus/contracts/ui-settings-runtime';
 import { withContentOSDMessages } from '../shared/i18n/content-osd';
 import { swLog } from '../shared/logger';
 import { updateShortcutSettings } from './shortcuts';
@@ -22,11 +25,13 @@ const PROJECTION_RETRY_ALARM = 'spectra-settings-projection-retry';
 export const SETTINGS_PROJECTION_TAB_CONCURRENCY = 8;
 
 type SnapshotProvider = () => Promise<SettingsSnapshot>;
+type MediaRouteProvider = () => Promise<MediaRouteSettings>;
 let snapshotProvider: SnapshotProvider | null = null;
+let mediaRouteProvider: MediaRouteProvider | null = null;
 let initialized = false;
 
 function isHotkeyScope(scope: SettingsPatch['scope']): boolean {
-	return scope === 'hotkey-slots' || scope === 'hotkey-site' || scope === 'hotkey-site-mutation';
+	return scope === 'hotkey-slots' || scope === 'hotkey-site-mutation';
 }
 
 // A non-resident or already-destroyed Content runtime will pull the latest
@@ -55,26 +60,45 @@ async function deliverContentMessage(
 	}
 }
 
-async function broadcastLegacyGlobalSettingsForOneRelease(
-	tabId: number,
-	settings: ReturnType<typeof withContentOSDMessages>,
-): Promise<void> {
-	await chrome.tabs.sendMessage(tabId, {
-		action: Actions.GLOBAL_SETTINGS_UPDATE,
-		settings,
-	}).catch((error: unknown) => {
-		if (!isExpectedAbsentContentReceiver(error)) throw error;
-	});
-}
-
 async function projectSettings(work: SettingsProjectionWork<SettingsSnapshot>): Promise<void> {
 	const event: SpectraEventEnvelope<'spectra.settings.changed'> = {
 		protocolVersion: SPECTRA_PROTOCOL_VERSION,
 		type: 'spectra.settings.changed',
 		payload: work.snapshot,
 	};
-	const extensionBroadcast = chrome.runtime.sendMessage(event).catch(() => undefined);
-	const tabs = work.global || work.hotkeys ? await chrome.tabs.query({}) : [];
+	const uiEvent: SpectraEventEnvelope<'spectra.settings.ui.changed'> = {
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		type: 'spectra.settings.ui.changed',
+		payload: toSettingsUiSnapshot(work.snapshot),
+	};
+	const extensionBroadcast = Promise.all([
+		chrome.runtime.sendMessage(event).catch(() => undefined),
+		chrome.runtime.sendMessage(uiEvent).catch(() => undefined),
+	]);
+	const tabs = work.global || work.hotkeys || work.mediaRoutesAll || work.mediaRouteDomains.length > 0
+		? await chrome.tabs.query({})
+		: [];
+
+	if (work.mediaRoutesAll || work.mediaRouteDomains.length > 0) {
+		if (!mediaRouteProvider) throw new Error('Media route projection provider is unavailable');
+		const mediaRoutes = await mediaRouteProvider();
+		await forEachBounded(tabs, SETTINGS_PROJECTION_TAB_CONCURRENCY, async (tab) => {
+			if (tab.id === undefined || !tab.url) return;
+			const hostname = normalizeHostname(tab.url);
+			if (!hostname || !work.mediaRoutesAll && !work.mediaRouteDomains.some((domain) => (
+				hostname === domain || hostname.endsWith(`.${domain}`)
+			))) return;
+			const routeEvent: SpectraEventEnvelope<'spectra.audio.route.changed'> = {
+				protocolVersion: SPECTRA_PROTOCOL_VERSION,
+				type: 'spectra.audio.route.changed',
+				payload: {
+					domain: hostname,
+					mediaRoute: selectMediaProcessingRoute(hostname, mediaRoutes),
+				},
+			};
+			await deliverContentMessage(tab.id, routeEvent);
+		});
+	}
 
 	if (work.hotkeys) {
 		updateShortcutSettings(work.snapshot.hotkeySettings);
@@ -101,10 +125,7 @@ async function projectSettings(work: SettingsProjectionWork<SettingsSnapshot>): 
 		};
 		await forEachBounded(tabs, SETTINGS_PROJECTION_TAB_CONCURRENCY, async (tab) => {
 			if (tab.id === undefined) return;
-			await Promise.all([
-				deliverContentMessage(tab.id, contentEvent),
-				broadcastLegacyGlobalSettingsForOneRelease(tab.id, settings),
-			]);
+			await deliverContentMessage(tab.id, contentEvent);
 		});
 	}
 
@@ -126,12 +147,39 @@ const projectionQueue = new SettingsProjectionQueue<SettingsSnapshot>({
 
 export function scheduleSettingsProjection(
 	snapshot: SettingsSnapshot,
-	scope: SettingsPatch['scope'],
+	patch: SettingsPatch,
 ): void {
 	projectionQueue.enqueue({
 		snapshot,
-		global: scope === 'global',
-		hotkeys: isHotkeyScope(scope),
+		global: patch.scope === 'global',
+		hotkeys: isHotkeyScope(patch.scope),
+		mediaRouteDomains: [],
+		mediaRoutesAll: false,
+	});
+}
+
+export function scheduleMediaRouteProjection(
+	snapshot: SettingsSnapshot,
+	domain: string,
+): void {
+	const normalized = normalizeHostname(domain);
+	if (!normalized) return;
+	projectionQueue.enqueue({
+		snapshot,
+		global: false,
+		hotkeys: false,
+		mediaRouteDomains: [normalized],
+		mediaRoutesAll: false,
+	});
+}
+
+export function scheduleAllMediaRouteProjection(snapshot: SettingsSnapshot): void {
+	projectionQueue.enqueue({
+		snapshot,
+		global: false,
+		hotkeys: false,
+		mediaRouteDomains: [],
+		mediaRoutesAll: true,
 	});
 }
 
@@ -143,11 +191,21 @@ async function recoverSettingsProjection(): Promise<void> {
 	]);
 	const projectedRevision = stored[PROJECTION_REVISION_KEY];
 	if (typeof projectedRevision === 'number' && projectedRevision >= snapshot.revision) return;
-	projectionQueue.enqueue({ snapshot, global: true, hotkeys: true });
+	projectionQueue.enqueue({
+		snapshot,
+		global: true,
+		hotkeys: true,
+		mediaRouteDomains: [],
+		mediaRoutesAll: true,
+	});
 }
 
-export function initializeSettingsProjection(provider: SnapshotProvider): void {
+export function initializeSettingsProjection(
+	provider: SnapshotProvider,
+	routes: MediaRouteProvider,
+): void {
 	snapshotProvider = provider;
+	mediaRouteProvider = routes;
 	if (initialized) return;
 	initialized = true;
 	chrome.alarms.onAlarm.addListener((alarm) => {

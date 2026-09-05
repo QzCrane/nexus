@@ -1,15 +1,21 @@
 import { describe, expect, test } from 'bun:test';
-import { SPECTRA_SETTINGS_SCHEMA_VERSION } from '@nexus/contracts';
+import {
+	isSettingsSnapshot,
+	MAX_SETTINGS_SNAPSHOT_ENTRIES,
+	SPECTRA_SETTINGS_SCHEMA_VERSION,
+} from '@nexus/contracts';
 import type { SettingsStorageArea } from '../src/background/settings-repository';
 import {
 	InvalidSettingsPatchError,
 	SettingsRepository,
+	SettingsCapacityError,
 	SettingsRevisionConflictError,
 } from '../src/background/settings-repository';
 
 class FakeStorageArea implements SettingsStorageArea {
 	readonly values: Record<string, unknown>;
 	readonly writes: Array<Record<string, unknown>> = [];
+	readonly removals: string[][] = [];
 	setFailuresRemaining = 0;
 
 	constructor(initial: Record<string, unknown> = {}) {
@@ -32,6 +38,12 @@ class FakeStorageArea implements SettingsStorageArea {
 			throw new Error('local storage unavailable');
 		}
 		Object.assign(this.values, copy);
+	}
+
+	async remove(keys: string | string[]): Promise<void> {
+		const list = Array.isArray(keys) ? [...keys] : [keys];
+		this.removals.push(list);
+		for (const key of list) delete this.values[key];
 	}
 }
 
@@ -93,7 +105,6 @@ describe('background settings repository', () => {
 		expect(storage.writes[0]?.spectraSettingsMeta).toBeUndefined();
 		expect(Object.keys(storage.writes[1] ?? {})).toEqual(['spectraSettingsMeta']);
 		expect((storage.values.globalSettings as Record<string, unknown>).extensionOwned).toBe('keep-me');
-		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(true);
 		expect((storage.values.hotkeySettings as Record<string, unknown>).futureField).toEqual({ retained: true });
 		expect((storage.values.hotkeySettings as Record<string, unknown>).slots).toEqual({});
 		expect((storage.values.siteSettings as Record<string, Record<string, unknown>>)['example.com']?.delay).toBe(0);
@@ -108,6 +119,84 @@ describe('background settings repository', () => {
 		expect((presets.Zulu as Record<string, Record<string, unknown>>).meta?.futureMetaField).toBe('zulu');
 		expect((presets.Zulu as Record<string, Record<string, unknown>>).config?.futureConfigField).toBe('zulu');
 		expect(presets.opaqueFutureEntry).toEqual({ futureShape: 'keep-me' });
+	});
+
+	test('migrates the authoritative legacy route list once and keeps user precedence inside it', async () => {
+		const storage = new FakeStorageArea({
+			mediaRouteRegistry: [
+				{
+					domain: 'VIDEO.EXAMPLE.COM.',
+					fingerprint: 'media:v1:0123456789abcdef',
+					route: 'capture',
+					source: 'auto',
+					updatedAt: 20,
+				},
+				{
+					domain: 'video.example.com',
+					fingerprint: 'site:video.example.com',
+					route: 'direct',
+					source: 'user',
+					updatedAt: 10,
+				},
+			],
+			// A stale fallback key cannot override the first authoritative legacy key.
+			restrictedRegistry: ['stale.example.com'],
+		});
+		const repository = new SettingsRepository(storage);
+
+		const migrated = await repository.initialize();
+		const routes = await repository.getMediaRouteSnapshot();
+
+		expect(migrated).not.toHaveProperty('mediaRoutes');
+		expect(routes.entries).toEqual([{
+			domain: 'video.example.com',
+			fingerprint: 'site:video.example.com',
+			route: 'direct',
+			source: 'user',
+			updatedAt: 10,
+		}]);
+		expect(await repository.resolveMediaRoute('media.video.example.com')).toBe('direct');
+		expect(await repository.resolveMediaRoute('stale.example.com')).toBe('auto');
+		expect(storage.values.siteProcessingRoutes).toEqual({
+			'video.example.com': { route: 'direct', source: 'user', updatedAt: 10 },
+		});
+		expect(storage.removals).toEqual([[
+			'mediaRouteRegistry',
+			'restrictedRegistry',
+			'userRegistry',
+		]]);
+		for (const key of ['mediaRouteRegistry', 'restrictedRegistry', 'userRegistry']) {
+			expect(storage.values[key]).toBeUndefined();
+		}
+	});
+
+	test('serializes the stable registry projection through the shared settings revision owner', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea());
+		const initial = await repository.initialize();
+		const captured = await repository.addMediaRoute('Media.Example.com.', 'user', 'capture');
+		expect(captured.entry).toMatchObject({
+			domain: 'media.example.com',
+			route: 'capture',
+			source: 'user',
+		});
+		expect((await repository.getSnapshot()).revision).toBe(initial.revision + 1);
+		expect(await repository.resolveMediaRoute('deep.media.example.com')).toBe('capture');
+		expect(await repository.resolveMediaRouteDecision('deep.media.example.com')).toEqual({
+			mediaRoute: 'capture',
+			source: 'user',
+		});
+		const ignoredAuto = await repository.markMediaRouteProbed('media.example.com', 'direct');
+		expect(ignoredAuto.entry).toMatchObject({ route: 'capture', source: 'user' });
+		const direct = await repository.addMediaRoute('media.example.com', 'user', 'direct');
+		expect(direct.entry.route).toBe('direct');
+		expect(await repository.resolveMediaRoute('deep.media.example.com')).toBe('direct');
+		const removed = await repository.removeMediaRoute('site:media.example.com');
+		expect(removed).toMatchObject({ entries: [], removed: true });
+		expect(await repository.resolveMediaRoute('deep.media.example.com')).toBe('auto');
+		expect(await repository.resolveMediaRouteDecision('deep.media.example.com')).toEqual({
+			mediaRoute: 'auto',
+			source: null,
+		});
 	});
 
 	test('merges legacy site keys that collide after hostname normalization', async () => {
@@ -163,78 +252,6 @@ describe('background settings repository', () => {
 			firstFutureField: true,
 			secondFutureField: true,
 		});
-	});
-
-	test('atomically consumes a legacy theme candidate exactly once', async () => {
-		const storage = new FakeStorageArea({
-			globalSettings: { osdEnabled: true, futureGlobalField: 'keep-me' },
-		});
-		const repository = new SettingsRepository(storage);
-		const initial = await repository.initialize();
-
-		expect(initial.globalSettings.themeMode).toBe('system');
-		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(true);
-		const first = await repository.applyPatch(
-			{ scope: 'legacy-theme', candidate: 'dark' },
-			initial.revision,
-		);
-		await expect(repository.applyPatch(
-			{ scope: 'legacy-theme', candidate: 'light' },
-			initial.revision,
-		)).rejects.toBeInstanceOf(SettingsRevisionConflictError);
-		const second = await repository.applyPatch(
-			{ scope: 'legacy-theme', candidate: 'light' },
-			first.revision,
-		);
-
-		expect(first.globalSettings.themeMode).toBe('dark');
-		expect(first.revision).toBe(1);
-		expect(second.globalSettings.themeMode).toBe('dark');
-		expect(second.revision).toBe(1);
-		await repository.flush();
-		expect((storage.values.globalSettings as Record<string, unknown>).themeMode).toBe('dark');
-		expect((storage.values.globalSettings as Record<string, unknown>).futureGlobalField).toBe('keep-me');
-		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(false);
-	});
-
-	test('consumes a missing legacy theme without changing the public revision', async () => {
-		const storage = new FakeStorageArea();
-		const repository = new SettingsRepository(storage);
-		const initial = await repository.initialize();
-
-		const result = await repository.applyPatch(
-			{ scope: 'legacy-theme', candidate: null },
-			initial.revision,
-		);
-		expect(result.revision).toBe(initial.revision);
-		await repository.flush();
-		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(false);
-	});
-
-	test('never lets a late legacy candidate overwrite a v2 theme patch', async () => {
-		const storage = new FakeStorageArea();
-		const repository = new SettingsRepository(storage);
-		const initial = await repository.initialize();
-
-		const modern = await repository.applyPatch(
-			{ scope: 'global', changes: { themeMode: 'light' } },
-			initial.revision,
-		);
-		await expect(repository.applyPatch(
-			{ scope: 'legacy-theme', candidate: 'dark' },
-			initial.revision,
-		)).rejects.toBeInstanceOf(SettingsRevisionConflictError);
-		const legacy = await repository.applyPatch(
-			{ scope: 'legacy-theme', candidate: 'dark' },
-			modern.revision,
-		);
-
-		expect(modern.globalSettings.themeMode).toBe('light');
-		expect(legacy.globalSettings.themeMode).toBe('light');
-		expect(legacy.revision).toBe(modern.revision);
-		await repository.flush();
-		expect((storage.values.globalSettings as Record<string, unknown>).themeMode).toBe('light');
-		expect((storage.values.spectraSettingsMeta as Record<string, unknown>).legacyThemeModeMissing).toBe(false);
 	});
 
 	test('retains legacy global aliases for one release without updating them', async () => {
@@ -368,6 +385,80 @@ describe('background settings repository', () => {
 			volumeBase: 80,
 			boost: 1.5,
 		});
+		await expect(repository.applyPatch({
+			scope: 'audio-site',
+			domain: 'example.com',
+			mode: 'merge',
+			value: { volume: 120, volumeBase: 80 },
+		}, boostChanged.revision)).rejects.toBeInstanceOf(InvalidSettingsPatchError);
+		await expect(repository.applyPatch({
+			scope: 'audio-site',
+			domain: 'example.com',
+			mode: 'merge',
+			value: { volume: 120, volumeBase: 80, boost: 2 },
+		}, boostChanged.revision)).rejects.toBeInstanceOf(InvalidSettingsPatchError);
+	});
+
+	test('canonicalizes a sparse legacy volume before a pair-only merge', async () => {
+		const storage = new FakeStorageArea({
+			siteSettings: { 'legacy.example.com': { volume: 80 } },
+			spectraSettingsMeta: validMeta(0),
+		});
+		const repository = new SettingsRepository(storage);
+		const initial = await repository.initialize();
+		const updated = await repository.applyPatch({
+			scope: 'audio-site',
+			domain: 'legacy.example.com',
+			mode: 'merge',
+			value: { boost: 2 },
+		}, initial.revision);
+
+		expect(updated.audioSites['legacy.example.com']).toMatchObject({
+			volume: 160,
+			volumeBase: 80,
+			boost: 2,
+		});
+		expect((storage.values.siteSettings as Record<string, Record<string, unknown>>)
+			['legacy.example.com']).toMatchObject({
+				volume: 160,
+				volumeBase: 80,
+				boost: 2,
+			});
+	});
+
+	test('rejects settings snapshot capacity overflow before the durable write', async () => {
+		const atLimitSites = Object.fromEntries(
+			Array.from({ length: MAX_SETTINGS_SNAPSHOT_ENTRIES }, (_, index) => [
+				`site-${index}.example.com`,
+				{ volume: 100 },
+			]),
+		);
+		const repository = new SettingsRepository(new FakeStorageArea());
+		const baseline = await repository.initialize();
+		const atLimit = { ...baseline, audioSites: atLimitSites };
+		const overLimit = {
+			...atLimit,
+			audioPresets: { Overflow: presetEntry('Overflow', 1, { volume: 100 }) },
+		};
+		expect(isSettingsSnapshot(atLimit)).toBe(true);
+		expect(isSettingsSnapshot(overLimit)).toBe(false);
+
+		const storage = new FakeStorageArea({
+			siteSettings: atLimitSites,
+			spectraSettingsMeta: validMeta(0),
+		});
+		const limitedRepository = new SettingsRepository(storage);
+		const limitedBaseline = await limitedRepository.initialize();
+		const writesBefore = storage.writes.length;
+		await expect(limitedRepository.applyPatch({
+			scope: 'audio-site',
+			domain: 'overflow.example.com',
+			mode: 'merge',
+			value: { volume: 100 },
+		}, limitedBaseline.revision)).rejects.toBeInstanceOf(SettingsCapacityError);
+		expect(storage.writes).toHaveLength(writesBefore);
+		expect((storage.values.siteSettings as Record<string, unknown>)['overflow.example.com'])
+			.toBeUndefined();
 	});
 
 	test('preserves unknown audio fields and deterministically falls back when deleting the default preset', async () => {
@@ -552,12 +643,12 @@ describe('background settings repository', () => {
 		);
 
 		await expect(repository.applyPatch(
-			{ scope: 'hotkey-site', domain: 'music.example.com', value: { enabled: true, bindings: [] } },
+			{ scope: 'hotkey-site-mutation', domain: 'music.example.com', mutation: { type: 'ensure-site', enabled: true } },
 			initial.revision,
 		)).rejects.toBeInstanceOf(SettingsRevisionConflictError);
 
 		const site = await repository.applyPatch(
-			{ scope: 'hotkey-site', domain: 'music.example.com', value: { enabled: true, bindings: [] } },
+			{ scope: 'hotkey-site-mutation', domain: 'music.example.com', mutation: { type: 'ensure-site', enabled: true } },
 			slots.revision,
 		);
 		expect(site.hotkeySettings.slots.slot_01).toBe('play_pause');
@@ -658,7 +749,8 @@ describe('background settings repository', () => {
 				],
 				futureField: 'keep-hotkey',
 			},
-			spectraSettingsMeta: validMeta(4),
+			siteProcessingRoutes: {},
+			spectraSettingsMeta: { ...validMeta(4), schemaVersion: 3 },
 		});
 		const repository = new SettingsRepository(storage);
 

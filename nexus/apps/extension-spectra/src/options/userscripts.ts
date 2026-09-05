@@ -1,6 +1,9 @@
 // goal: manages the userScripts API availability check and UI updates on options page
 
 import { t } from './i18n';
+import { showOptionsError } from './status';
+
+let focusListener: (() => void) | null = null;
 
 // eff: checks if userScripts API is available and enabled
 async function checkUserScriptsAvailable(): Promise<boolean> {
@@ -32,7 +35,7 @@ async function updateStatusBadge(): Promise<void> {
 function openExtensionSettings(): void {
 	const extensionId = chrome.runtime.id;
 	// note: Chrome 138+ uses Allow User Scripts toggle on extension details page
-	chrome.tabs.create({ url: `chrome://extensions/?id=${extensionId}` });
+	void chrome.tabs.create({ url: `chrome://extensions/?id=${extensionId}` }).catch(showOptionsError);
 }
 
 // eff: initializes the userScripts section with event listeners and status check
@@ -40,10 +43,15 @@ export async function initUserScriptsSection(): Promise<void> {
 	await updateStatusBadge();
 
 	const enableBtn = document.getElementById('userscripts-enable-btn');
-	enableBtn?.addEventListener('click', openExtensionSettings);
+	if (enableBtn instanceof HTMLElement) enableBtn.onclick = openExtensionSettings;
 
 	// note: re-check status when window regains focus (user may have enabled it)
-	window.addEventListener('focus', () => {
-		updateStatusBadge();
-	});
+	focusListener = () => {
+		void updateStatusBadge().catch(showOptionsError);
+	};
+	window.addEventListener('focus', focusListener);
+	window.addEventListener('pagehide', () => {
+		if (focusListener) window.removeEventListener('focus', focusListener);
+		focusListener = null;
+	}, { once: true });
 }

@@ -1,8 +1,6 @@
 // goal: synchronizes internal audio state with browser badge and popup UI
 // rule: badge ONLY appears if user explicitly interacted with UI or capture is active (sticky display)
 
-import { AudioMode } from '@nexus/audio-engine';
-import type { SpectraAudioMode } from '@nexus/contracts';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import type { InternalState } from './types';
 import { sendSpectraRequest } from '../../../shared/spectra-client';
@@ -12,7 +10,7 @@ export function isEffectivelyCapturing(
 	state: PolicyExecutorState,
 	captureManager: PolicyExecutorDeps['captureManager']
 ): boolean {
-	return state.activeMode === AudioMode.CAPTURE && captureManager.isActive();
+	return state.activeMode === 'capture' && captureManager.isActive();
 }
 
 // eff: updates the extension icon badge text/color based on volume boosts and capture state
@@ -22,12 +20,6 @@ export function updateBadge(
 	internalState: InternalState
 ): void {
 	publishSession(deps, state, internalState);
-}
-
-function normalizeMode(value: unknown): SpectraAudioMode {
-	if (value === 'capture' || value === 'CAPTURE') return 'capture';
-	if (value === 'webaudio' || value === 'NATIVE_WEBAUDIO') return 'webaudio';
-	return 'bypass';
 }
 
 function publishSession(
@@ -45,7 +37,7 @@ function publishSession(
 		'spectra.audio.session.publish',
 		{
 			config: state.appliedConfig,
-			desiredMode: normalizeMode(state.desiredMode),
+			desiredMode: state.desiredMode ?? 'bypass',
 			actualMode,
 			phase: state.phase,
 			lastError: state.lastError ?? null,

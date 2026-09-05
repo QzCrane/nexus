@@ -129,7 +129,7 @@ describe('Popup latest-value config transport', () => {
 		expect(commandRevision).toBe(3);
 	});
 
-	test('maps an above-100 single-slider value to Boost without rewriting native volume or mute', async () => {
+	test('sends one above-100 effective-volume intent without rewriting mute', async () => {
 		const harness = installHarness();
 		const state = createState();
 		state.config.muted = true;
@@ -149,7 +149,7 @@ describe('Popup latest-value config transport', () => {
 		expect(harness.requests).toHaveLength(1);
 	});
 
-	test('changes both hidden fields only once when the single slider crosses 100', async () => {
+	test('keeps one compound operation when the slider crosses the routing boundary', async () => {
 		const harness = installHarness();
 		const state = createState();
 		state.config = { ...state.config, volume: 40, volumeBase: 40, boost: 1 };
@@ -205,6 +205,40 @@ describe('Popup latest-value config transport', () => {
 		))).toBe(true);
 	});
 
+	test('keeps one frozen presentation across a rapid 100→110→100 reversal while serializing physical ACKs', async () => {
+		const harness = installHarness();
+		const state = createState();
+		const frames: number[] = [];
+		const update = createUpdateFn(state, 18, () => false, () => {
+			frames.push(resolveVolumePresentation(state).effectiveVolume);
+		}, () => DEFAULT_GLOBAL_SETTINGS);
+
+		update({ volume: 110 });
+		const firstDrain = update.flush();
+		await waitFor(() => harness.requests.length === 1);
+		// The boundary crossing freezes the complete last-acknowledged value/color
+		// pair until the physical route ACK lands; the optimistic 110 never shows.
+		expect(frames.at(-1)).toBe(100);
+
+		update({ volume: 100 });
+		const finalDrain = update.flush();
+		expect(frames.at(-1)).toBe(100);
+		// The second physical write waits for the first ACK while the frozen
+		// presentation stays on the acknowledged pair.
+		expect(harness.requests).toHaveLength(1);
+
+		harness.resolveRequest(0, runtimeResponse(110, 1, 'capture'));
+		await waitFor(() => harness.requests.length === 2);
+		expect(requestVolume(harness.requests[1]?.message)).toBe(100);
+		expect(frames.at(-1)).toBe(100);
+
+		harness.resolveRequest(1, runtimeResponse(100, 2, 'observe'));
+		await Promise.all([firstDrain, finalDrain]);
+		expect(state.config.volume).toBe(100);
+		expect(state.stableConfig.volume).toBe(100);
+		expect(frames.at(-1)).toBe(100);
+	});
+
 	test('commits an above-100 Media WebAudio ACK directly as blue', async () => {
 		const harness = installHarness();
 		const state = createState();
@@ -227,7 +261,86 @@ describe('Popup latest-value config transport', () => {
 		expect(frames.at(-1)).toEqual({ volume: 110, color: COLORS.NATIVE });
 		expect(frames).not.toContainEqual({ volume: 110, color: COLORS.CAPTURE });
 	});
+
+	test('requeues DSP fields when the compound volume operation is rejected', async () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdateFn(state, 17, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		const eqValues = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+		update({ volume: 200 });
+		update({ eqValues });
+		const rejected = update.flush();
+		await waitFor(() => harness.requests.length === 1);
+		harness.resolveRequest(0, {
+			ok: false,
+			error: { code: 'control_failed', message: 'volume unavailable', retryable: true },
+		});
+		await expect(rejected).rejects.toThrow('volume unavailable');
+
+		// A newer explicit update retries the preserved DSP intent; it was not
+		// consumed together with the failed independent volume operation.
+		update({ bass: true });
+		const retry = update.flush();
+		await waitFor(() => harness.requests.length === 2);
+		const payload = requestPayload(harness.requests[1]?.message);
+		expect(payload.patch).toMatchObject({ eqValues, bass: true });
+		harness.resolveRequest(1, intentResponse(1, eqValues));
+		await retry;
+	});
+
+	test('preserves the rejected ordinary DSP group for the next explicit flush', async () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdateFn(state, 18, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		const eqValues = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+		update({ eqValues, compressor: true });
+		const rejected = update.flush();
+		await waitFor(() => harness.requests.length === 1);
+		harness.resolveRequest(0, {
+			ok: false,
+			error: { code: 'control_failed', message: 'DSP unavailable', retryable: true },
+		});
+		await expect(rejected).rejects.toThrow('DSP unavailable');
+
+		update({ pan: 0.5 });
+		const retry = update.flush();
+		await waitFor(() => harness.requests.length === 2);
+		const payload = requestPayload(harness.requests[1]?.message);
+		expect(payload.patch).toMatchObject({ eqValues, compressor: true, pan: 0.5 });
+		harness.resolveRequest(1, intentResponse(2, eqValues));
+		await retry;
+	});
 });
+
+function intentResponse(revision: number, eqValues: number[]): Record<string, unknown> {
+	return {
+		ok: true,
+		data: {
+			intentId: `intent-${revision}`,
+			tabId: 1,
+			documentId: 'document-popup',
+			generation: revision,
+			revision,
+			target: null,
+			fields: {
+				eqValues: {
+					desired: eqValues,
+					actual: eqValues,
+					revision,
+					phase: 'applied',
+					strategy: 'capture',
+					coverage: 'full',
+					controlled: true,
+					intentId: `intent-${revision}`,
+					lastError: null,
+				},
+			},
+			audioVolume: undefined,
+		},
+	};
+}
 
 function createState(): CardInternalState {
 	return {
@@ -236,7 +349,6 @@ function createState(): CardInternalState {
 		controlSnapshot: null,
 		isCaptureActive: false,
 		userInteracted: false,
-		isRestrictedSite: false,
 		actualMode: 'bypass',
 		desiredMode: 'bypass',
 		phase: 'idle',
@@ -255,10 +367,11 @@ function createState(): CardInternalState {
 function runtimeResponse(
 	effectiveVolume: number,
 	generation: number,
-	strategy?: 'capture' | 'media-webaudio' | 'observe',
+	strategy?: 'capture' | 'media-webaudio' | 'observe' | 'page-native',
 ): Record<string, unknown> {
-	const volumeBase = effectiveVolume <= 100 ? effectiveVolume : 100;
-	const boost = effectiveVolume <= 100 ? 1 : effectiveVolume / 100;
+	const pageNative = strategy === 'page-native';
+	const volumeBase = pageNative ? effectiveVolume : effectiveVolume <= 100 ? effectiveVolume : 100;
+	const boost = pageNative || effectiveVolume <= 100 ? 1 : effectiveVolume / 100;
 	return {
 		ok: true,
 		data: {
@@ -272,13 +385,13 @@ function runtimeResponse(
 			strategy: 'extension-state',
 			coverage: boost > 1 ? 'full' : 'active-target',
 			fields: strategy ? {
-				boost: {
-					desired: boost,
-					actual: boost,
+				[pageNative ? 'volumeBase' : 'boost']: {
+					desired: pageNative ? volumeBase : boost,
+					actual: pageNative ? volumeBase : boost,
 					revision: generation,
 					phase: 'applied',
 					strategy,
-					coverage: 'full',
+					coverage: pageNative ? 'active-target' : 'full',
 					controlled: strategy !== 'observe',
 					intentId: `intent-${generation}`,
 					lastError: null,

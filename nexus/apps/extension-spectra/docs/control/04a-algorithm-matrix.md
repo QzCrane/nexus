@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-08-08
+last_reviewed: 2026-08-28
 ---
 
 # 04a. Algorithm Matrix (§8 Complete control algorithm matrix)
@@ -19,8 +19,8 @@ Exhaustive matrix for fields and operations in `control.contracts.ts`. Adding fe
 | Capability | Required scope | Selection order | Acknowledgement and fallback |
 | --- | --- | --- | --- |
 | Audio enabled | document | coordinator state expansion | Expands to per-field intents; never page-wide processing mode. |
-| Internal native `volumeBase 0–100` | target/all media | exact page controller, then `HTMLMediaElement.volume` | Requires paired getter/setter and stable getter ACK; otherwise DOM `volumechange` + getter. Neutralizes hidden Boost in same commit. |
-| Internal processor `boost 1–8x` | explicit full audio | safe shared Media WebAudio -> Capture | Gain-node readback. Native volume never >100%. No independent UI; target-only requests fail. |
+| Internal native `volumeBase 0–800` | target/all media | exact page controller, then `HTMLMediaElement.volume` (`0–100` portable subrange) | Requires paired getter/setter and stable getter ACK. A page-confirmed value above 100 remains page-native with Boost at unity; standard DOM rejects it and permits the coordinator's portable fallback. |
+| Internal processor `boost 1–8x` | explicit full audio | proven MediaElement WebAudio, then admitted full-tab Capture | Graph-signature/readback ACK. Used for effective volume above 100 only when the exact page controller cannot acknowledge the value; no independent UI and target-only requests fail. |
 | Media mute | target/all media | exact page controller, then `HTMLMediaElement.muted` | Requires paired getter/setter and stable getter ACK; otherwise DOM `volumechange` + getter. Preserves numeric volume. |
 | Tab mute | tab | `chrome.tabs.update({muted})` | `tabs.onUpdated`/`tabs.get` readback; never aliases media mute. |
 | Playback speed | active target | exact page controller, then `playbackRate` | Controller must prove baseline restoration before DOM fallback. DOM uses `ratechange` + stable getter. |
@@ -37,15 +37,15 @@ Exhaustive matrix for fields and operations in `control.contracts.ts`. Adding fe
 | Dim enabled/opacity | active video | extension closed-shadow 4-region overlay | Overlay readback; never rewrites video `position`/`z-index`. Target switch preserves prior effects. |
 | A/B state | `mediaId + sourceRevision` | extension state + native seek executor | Validates `0 <= A < B`; updates same target only. |
 | Tab pinned | tab | `chrome.tabs.update({pinned})` | `tabs.onUpdated`/`tabs.get` readback. |
-| EQ/Bass/Compressor/Mono/Pan/Delay | explicit full audio | safe shared Media WebAudio -> Capture | Processor readback; Capture is only opaque fallback. |
-| Visualizer subscription | existing processor | analyser tap on active processor | Per-Popup `subscriberId + generation` lease; 5s heartbeat. Last subscriber releases analyser; cannot create context/lease. |
+| EQ/Bass/Compressor/Mono/Pan/Delay | explicit full audio | proven MediaElement WebAudio, then admitted full-tab Capture | Processor readback; page binding is allowed only with complete exact source coverage, otherwise Capture owns the full mix. |
+| Visualizer subscription | visible foreground Popup + current top-level document | analyser tap on acknowledged MediaElement WebAudio; fall back to one-shot admitted Capture only when complete safe page coverage is unavailable | Per-Popup `subscriberId + generation + sourceTabId` lease; 5s heartbeat. Background cards remain passive. Final release removes analyser demand and stops transient Capture unless independent DSP/subscriber demand remains. |
 
 ### §8.2 Momentary and compound operations
 
 | Operation | Native-first algorithm | Controlled augmentation or result |
 | --- | --- | --- |
 | Restore page settings | coordinator releases owned fields | Restores captured baselines; doesn't translate 100%/1x to release. |
-| Effective volume `0–800` | page-native/DOM volume first, compile current, split | `0–100`: Boost unity, write native base. `100–800`: write hidden Boost. Identical values do 0 IPC. |
+| Effective volume `0–800` | exact page controller first; standard DOM second | Page ACK: write the exact value with Boost unity and no audio runtime. If the page/DOM path cannot acknowledge a value above 100, use portable base 100 plus hidden Boost in proven MediaElement WebAudio, falling back to Capture only for incomplete/unsafe page coverage. Identical values do 0 IPC. |
 | Play/pause toggle | read actual state, execute `playing` plan | Commits only resulting event. |
 | Relative seek | resolve target/seekable, execute `currentTime` | Structured unavailable result. |
 | Frame step | source-scoped cadence -> standard DOM seek | Uses recent `requestVideoFrameCallback` or bounded median. Always `approximate:true`. |
@@ -56,7 +56,7 @@ Exhaustive matrix for fields and operations in `control.contracts.ts`. Adding fe
 | Audio reset | atomic per-field patch | Effective volume 100%, neutralizes owned DSP/mute, releases Boost. |
 | Video effects toggle/reset| atomic patch for extension-owned video fields | Never touches native state or site CSS. |
 | Show info | snapshot read | Side-effect-free OSD projection. |
-| Open Popup/Options | Chrome extension UI APIs | Opens browser UI. Popup acquires observation-only lease; no MAIN/AudioContext. |
+| Open Popup/Options | Chrome extension UI APIs | Opens browser UI. A visible Popup may acquire an observation-only analyser lease; it creates no processor while hidden and never uses MAIN-world graph ownership. |
 | Run user script | explicit `userScripts` permission/sandbox | Not media strategy; no MAIN access. |
 | Open URL | browser navigation, `http/https` allowlist | Fails closed on invalid schemes. |
 
@@ -72,25 +72,26 @@ UI labels and protocol commands alias the 51 canonical capabilities. `HOTKEY_ACT
 | Remote command family | Canonical capability and transform |
 | --- | --- |
 | `volume_*` | `effective-volume`: clamped `0–800` |
-| legacy `boost_*` | aliases `effective-volume`; retained 1 release |
 | `mute` | `mediaMuted`: toggle |
 | `play_pause` | `playback-toggle` |
 | `seek_*` | `seek-relative`: signed delta |
 | `speed_*` | `speed`: `+0.1/-0.1/set 1` |
 | `fullscreen`, `pip` | native toggle |
 
-Surfaces must submit canonical intents. Audio enabled and DSP fields require `requestedCoverage:'full'`, checked in runtime to prevent unauthorized whole-tab Capture.
+Surfaces must submit canonical intents. Audio enabled and DSP fields require `requestedCoverage:'full'`, checked in runtime to prevent unauthorized whole-tab Capture. Visualizer has a separate foreground-subscription admission: only the trusted Popup may name its currently active top-level tab, and the demand is never persisted as DSP configuration.
 
 ### §8.5 Per-capability native and augmentation ledger
 
 One row per capability in `CONTROL_ALGORITHM_ADJUDICATIONS`. 17 native-only, 6 hybrid, 26 augmentation-only, 2 observation-only. Changing families requires updating adjudication, anchors, mirror, and tests.
 
+`WebAudioController` and `offscreen/audio-host.ts` are the two processor owners behind one three-state policy: `bypass -> webaudio -> capture`. MediaElement WebAudio is admitted only when every current source has exact same-origin/blob/data or preload-CORS evidence; Capture is the fallback for incomplete/unsafe coverage. An active processor is publishable only after matching document/generation/revision, running context, graph signature, normalized actual config, and exact source-count readback. Visualizer is a read-only lease over whichever acknowledged processor is active; synthetic spectrum is forbidden.
+
 | Contract capability | Native adjudication | Controlled augmentation admission | Success proof and performance boundary |
 | --- | --- | --- | --- |
 | `audioEnabled` | augmentation-only | coordinator session gate only | gate ACK + expanded actual state; disable releases all work |
-| `volumeBase` | native-only: exact-element page, then DOM | none | page getter readback or DOM `volumechange`; 0-100 needs no audio runtime |
-| `boost` | augmentation-only | safe shared media graph, or Capture | normalized processor gain readback; exists only while non-neutral |
-| `effective-volume` | hybrid-extension-native | hidden Boost only above 100 via WebAudio/Capture | compound ACK returns actuals; identical values skip IPC |
+| `volumeBase` | native-only: exact-element page (`0–800`), then DOM (`0–100`) | none | page getter readback or DOM `volumechange`; every acknowledged page/DOM value needs no audio runtime |
+| `boost` | augmentation-only | proven MediaElement WebAudio, then admitted Capture | normalized processor gain readback; exists only while non-neutral |
+| `effective-volume` | hybrid-extension-native | MediaElement WebAudio after an above-100 page-native probe fails; Capture only if exact page coverage is unavailable | compound ACK returns exact page-native or portable base/Boost actuals; identical values skip IPC |
 | `mediaMuted` | native-only: exact-element page, then DOM | none | page getter readback or DOM `volumechange`; numeric volume unchanged |
 | `tabMuted` | native-only via Chrome tab | none | `tabs.get`/tab event readback |
 | `speed` | native-only: exact-element page, then DOM | none | page getter readback or DOM `ratechange` |
@@ -107,8 +108,8 @@ One row per capability in `CONTROL_ALGORITHM_ADJUDICATIONS`. 17 native-only, 6 h
 | `dimEnabled`/`dimOpacity`| augmentation-only | closed-shadow 4-region overlay | overlay geometry readback; handoff preserves independent effects |
 | `abLoop` | augmentation-only metadata | media/source-keyed state | coordinator state + native seek ACK; 1 scheduler while enabled |
 | `tabPinned` | native-only via Chrome tab | none | `tabs.get`/tab event readback |
-| `eqValues`/`bass`/`compressor`/`mono`/`pan`/`delay` | augmentation-only | safe shared media graph or Capture | processor topology/parameter readback; disabled nodes absent |
-| `visualizer` | observation-only | explicit subscription to active processor | subscription state; never creates graph/Capture/Popup IPC |
+| `eqValues`/`bass`/`compressor`/`mono`/`pan`/`delay` | augmentation-only | proven MediaElement WebAudio, then admitted Capture | processor topology/parameter/source-count readback; disabled nodes absent |
+| `visualizer` | observation-only | trusted visible-foreground subscription uses proven MediaElement WebAudio first and transient Capture only as fallback; background cards are passive | exact subscriber/document/processor ACK; max 15 Hz; hide, close, navigation, expiry, disconnect, or final release retires transient work |
 | `restore-page-settings` | augmentation-only | release extension-owned fields; native restores baseline | final per-field ACK releases leases |
 | `playback-toggle` | native-only: observe `playing`, execute plan | none | native play/pause event |
 | `seek-relative` | native-only: compute against time/ranges | none | same native seek ACK |
@@ -131,7 +132,7 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | --- | --- | --- | --- | --- | --- | --- |
 | `audioEnabled` | `augmentation-only` | `extension-owned-capability` | `extension-state` | `forbidden` | `coordinator-snapshot` | `none` |
 | `volumeBase` | `native-only` | `none` | `page-native -> dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter` | `none` |
-| `boost` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
+| `boost` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
 | `mediaMuted` | `native-only` | `none` | `page-native -> dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter` | `none` |
 | `tabMuted` | `native-only` | `none` | `chrome-native` | `forbidden` | `chrome-event-getter` | `none` |
 | `speed` | `native-only` | `none` | `page-native -> dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter` | `none` |
@@ -150,15 +151,15 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | `dimOpacity` | `augmentation-only` | `extension-owned-capability` | `extension-overlay` | `forbidden` | `overlay-readback` | `while-owned` |
 | `abLoop` | `augmentation-only` | `extension-owned-capability` | `extension-state` | `forbidden` | `coordinator-snapshot + dom-event-getter` | `while-owned` |
 | `tabPinned` | `native-only` | `none` | `chrome-native` | `forbidden` | `chrome-event-getter` | `none` |
-| `eqValues` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
-| `bass` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
-| `compressor` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
-| `mono` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
-| `pan` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
-| `delay` | `augmentation-only` | `proven-safe-source-or-explicit-full-output` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `page-lifetime-after-media-binding` |
-| `visualizer` | `observation-only` | `existing-processor-only` | `observe` | `forbidden` | `subscription-state` | `while-subscribed` |
+| `eqValues` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
+| `bass` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
+| `compressor` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
+| `mono` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
+| `pan` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
+| `delay` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
+| `visualizer` | `observation-only` | `explicit-foreground-subscription` | `media-webaudio -> capture-observe` | `forbidden` | `subscription-state` | `while-subscribed` |
 | `restore-page-settings` | `augmentation-only` | `extension-owned-capability` | `extension-state` | `forbidden` | `coordinator-snapshot` | `none` |
-| `effective-volume` | `hybrid-extension-native` | `proven-safe-source-or-explicit-full-output` | `page-native -> dom-native -> extension-state -> media-webaudio -> capture` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter + processor-readback` | `none` |
+| `effective-volume` | `hybrid-extension-native` | `explicit-full-output-only` | `page-native -> dom-native -> extension-state -> media-webaudio -> capture` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter + processor-readback` | `none` |
 | `playback-toggle` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
 | `seek-relative` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
 | `frame-step` | `hybrid-extension-native` | `extension-owned-capability` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
@@ -188,8 +189,8 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | Capability family | Native completeness test | Controlled augmentation admission | Forbidden hijack/fallback |
 | --- | --- | --- | --- |
 | Audio enable/restore/reset | N/A | `extension-state` only | page-wide mode flags, optimistic UI |
-| Effective vol / media mute | `0-800` uses native base, Boost above 100 | safe Media WebAudio/Capture | simultaneous native writers, mute via numeric vol |
-| EQ/Bass/Comp/Mono/Pan/Delay| N/A | safe Media WebAudio/Capture | CORS probe, generic MAIN DSP |
+| Effective vol / media mute | exact page controller may acknowledge `0–800`; standard DOM covers `0–100` | proven MediaElement WebAudio Boost is the first fallback; Capture only covers incomplete/unsafe page media; native mute remains native | simultaneous native writers, processor before page rejection, mute via numeric vol |
+| EQ/Bass/Comp/Mono/Pan/Delay| N/A | proven MediaElement WebAudio, then admitted Capture | partial page binding, mutation-based CORS guessing, generic MAIN DSP |
 | Tab mute and pin | Chrome API | none | DOM emulation |
 | Vol/mute/speed page-native | paired page getter/setter | none | resident page-UI sync, prototype patch |
 | Pitch preservation | DOM `preservesPitch` | none | echoing pitch, treating as pitch shift |
@@ -198,7 +199,7 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | Rotate/mirror/fill/filters | N/A | CSS `rotate`/`scale`/`object-fit` | inline-style replacement, MAIN style |
 | Dim background | N/A | 4-region closed-shadow overlay | mutating `z-index` |
 | A/B and markers | N/A | state keyed by `mediaId+sourceRevision` | document-global state |
-| Visualizer | observe processor | analyser tap | per-card IPC |
+| Visualizer | observe an acknowledged processor | one trusted visible-foreground subscriber uses exact-coverage MediaElement WebAudio first and may transiently admit Capture only as fallback; all background cards are passive | partial source binding, synthetic bars, all-tab acquisition, unbounded retry, or persistence of analysis demand |
 | Screenshot | `captureVisibleTab` | none | canvas CORS probing |
 | Actions/URL | Chrome API | none | content emulation |
 | User script | N/A | `userScripts` sandbox | sharing MAIN authority |
@@ -211,7 +212,7 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | Location and symbol | Owned decision | Purpose / drift prevented |
 | --- | --- | --- |
 | `CONTROL_DIRECT_FIELDS` | Direct patch/read/mutation | Keeps A/B operations and Visualizer out of generic fields |
-| `CapabilityPlanner.ts::plan` | Strategy and admission | Requires full coverage for shared WebAudio |
+| `audio.contracts.ts::requiresAudioProcessor/resolveDesiredAudioMode` | Processor predicate and mode | Keeps neutral hidden work on bypass and selects proven MediaElement WebAudio before Capture |
 | `page-media-bridge.ts::findCapability/transact` | Exact-element discovery | Prevents outer controller from becoming 2nd writer |
 | `audio-runtime-control-delegate.ts` | DSP intent compile | Defines `audioEnabled` as session gate |
 | `control-coordinator.ts::applyChromeTabObservation` | Browser tab observation | Absorbs reflected events |

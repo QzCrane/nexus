@@ -1,17 +1,11 @@
 import { describe, expect, mock, test } from 'bun:test';
 import { requireValue } from './helpers/require-value';
-import { AudioMode, type WebAudioController } from '@nexus/audio-engine';
 import type { MediaTarget } from '@nexus/contracts';
-import type { PolicyExecutor } from '../src/content/logic/policy-executor';
-import type { PolicyExecutorState } from '../src/content/types';
-import {
-	createMediaObserver,
-	hasMediaElements,
-} from '../src/content/core/lifecycle/media-observer';
 import {
 	MediaRegistry,
 	setActiveMediaRegistry,
 } from '../src/content/core/media-registry';
+import { DocumentRuntimeContext } from '../src/content/core/content-runtime-context';
 import { isAnyMediaPlaying } from '../src/content/audio/media-detection';
 import {
 	abLoopTestApi,
@@ -56,6 +50,9 @@ class FakeElement extends EventTarget {
 
 class FakeMediaElement extends FakeElement {
 	currentTime = 0;
+	duration = 120;
+	seeking = false;
+	seekable = { length: 0 } as TimeRanges;
 	paused = true;
 	ended = false;
 	volume: number;
@@ -186,8 +183,10 @@ describe('event-driven media registry', () => {
 		const events: Array<{ target: MediaTarget; event: string }> = [];
 		let registry: MediaRegistry | null = null;
 		try {
-			registry = new MediaRegistry((target, event) => events.push({ target, event }));
-			registry.setDocumentId('document:initial-visibility');
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:initial-visibility', frameId: 0 }),
+				(target, event) => events.push({ target, event }),
+			);
 			const modalTarget = registry.list().find(({ element }) => element === modal)?.target;
 			expect(modalTarget).toBeDefined();
 			expect(registry.resolve(null)?.target).toEqual(modalTarget);
@@ -227,10 +226,12 @@ describe('event-driven media registry', () => {
 		const events: Array<{ target: MediaTarget; event: string }> = [];
 		let registry: MediaRegistry | null = null;
 		try {
-			registry = new MediaRegistry((eventTarget, event) => {
-				events.push({ target: eventTarget, event });
-			});
-			registry.setDocumentId('document:registry');
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:registry', frameId: 0 }),
+				(eventTarget, event) => {
+					events.push({ target: eventTarget, event });
+				},
+			);
 			const audioTarget = requireValue(
 				registry.list().find(({ element }) => element === audio)?.target,
 				'Expected the registry to assign an identity to the audio fixture',
@@ -298,9 +299,8 @@ describe('event-driven media registry', () => {
 		}
 	});
 
-	test('projects graph ownership without writing native media fields and disposes removed media', async () => {
+	test('preserves native media fields while tracking source-scoped video ownership', async () => {
 		const descriptors = captureGlobalDescriptors([
-			'chrome',
 			'document',
 			'window',
 			'Node',
@@ -309,19 +309,14 @@ describe('event-driven media registry', () => {
 			'HTMLVideoElement',
 			'MutationObserver',
 			'IntersectionObserver',
-			'setTimeout',
-			'clearTimeout',
 		]);
 		const document = new FakeDocument();
-		const window = new EventTarget();
+		const window = { innerWidth: 1_280, innerHeight: 720 };
 		const first = new FakeMediaElement(0.7);
 		const second = new FakeMediaElement(0.9);
 		second.currentSrc = 'https://media.example/one.mp4';
 		document.documentElement.descendants.push(first);
-		const timers = new Map<number, { callback: () => void; delay: number }>();
-		let nextTimerId = 0;
 
-		installGlobal('chrome', { runtime: { id: 'spectra-test' } });
 		installGlobal('document', document);
 		installGlobal('window', window);
 		installGlobal('Node', EventTarget);
@@ -330,40 +325,7 @@ describe('event-driven media registry', () => {
 		installGlobal('HTMLVideoElement', FakeVideoElement);
 		installGlobal('MutationObserver', FakeMutationObserver);
 		installGlobal('IntersectionObserver', FakeIntersectionObserver);
-		installGlobal('setTimeout', (callback: () => void, delay: number) => {
-			const timerId = ++nextTimerId;
-			timers.set(timerId, { callback, delay });
-			return timerId;
-		});
-		installGlobal('clearTimeout', (timerId: number) => timers.delete(timerId));
 
-		const attachNode = mock((_media: HTMLMediaElement) => true);
-		const detachNode = mock((_media: HTMLMediaElement) => undefined);
-		const audioController = { attachNode, detachNode } as unknown as WebAudioController;
-		const state: PolicyExecutorState = {
-			config: {
-				enabled: true,
-				volume: 60,
-				muted: false,
-				compressor: false,
-				mono: false,
-				bass: false,
-				eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-				pan: 0,
-				delay: 0,
-				speed: 1.5,
-			},
-			activeMode: AudioMode.NATIVE_WEBAUDIO,
-			desiredMode: AudioMode.NATIVE_WEBAUDIO,
-			actualMode: 'webaudio',
-			phase: 'active',
-			generation: 1,
-			hasGesture: true,
-			userHasInteracted: true,
-			isPopupOpen: false,
-		};
-
-		let dispose = () => undefined;
 		let disposeActiveRegistry = () => undefined;
 		let disposeABSourceObserver = () => undefined;
 		let disposeMarkerSourceObserver = () => undefined;
@@ -371,34 +333,27 @@ describe('event-driven media registry', () => {
 		const registryEvents: Array<{ target: MediaTarget; event: string }> = [];
 		let mediaRegistry: MediaRegistry | null = null;
 		try {
-			mediaRegistry = new MediaRegistry((target, event) => {
-				registryEvents.push({ target, event });
-			});
+			mediaRegistry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:observer', frameId: 0 }),
+				(target, event) => {
+					registryEvents.push({ target, event });
+				},
+			);
 			disposeActiveRegistry = setActiveMediaRegistry(mediaRegistry);
 			disposeABSourceObserver = observeABLoopSources(
 				mediaRegistry,
 				(target) => releasedABTargets.push(target),
 			);
 			disposeMarkerSourceObserver = observeMarkerSources(mediaRegistry);
-			dispose = createMediaObserver(
-				state,
-				audioController,
-				{} as PolicyExecutor,
-			);
-			expect(hasMediaElements()).toBe(true);
-			const playListenersBeforeStatusRead = first.listenerCount('play');
+			expect(mediaRegistry.size).toBe(1);
 			expect(isAnyMediaPlaying()).toBe(false);
-			expect(isAnyMediaPlaying()).toBe(false);
-			expect(first.listenerCount('play')).toBe(playListenersBeforeStatusRead);
 			expect(first.volume).toBe(0.7);
 			expect(first.playbackRate).toBe(1);
-			expect(attachNode).toHaveBeenCalledWith(first);
 
 			FakeMutationObserver.latest?.emit([second]);
 			expect(second.volume).toBe(0.9);
 			expect(second.playbackRate).toBe(1);
-			expect(attachNode).toHaveBeenCalledWith(second);
-			expect(attachNode).toHaveBeenCalledTimes(2);
+			expect(mediaRegistry.size).toBe(2);
 			const secondTarget = mediaRegistry.list().find(({ element }) => element === second)?.target;
 			expect(secondTarget).toBeDefined();
 			mediaRegistry.select(secondTarget ?? null);
@@ -406,6 +361,8 @@ describe('event-driven media registry', () => {
 				target: secondTarget,
 				event: 'selected',
 			}]);
+			second.paused = false;
+			expect(isAnyMediaPlaying()).toBe(true);
 			expect(setPointA()).toBe(0);
 			second.currentTime = 1;
 			expect(setPointB()).toEqual({ pointB: 1, looping: true });
@@ -413,6 +370,9 @@ describe('event-driven media registry', () => {
 			expect(abLoopTestApi.sourceCount()).toBe(1);
 			expect(timeMarkerTestApi.sourceCount()).toBe(1);
 
+			// Let the initial boundary seek settle before retiring the source so the
+			// test observes the registry disposal path, not an in-flight seek failure.
+			await Promise.resolve();
 			second.currentSrc = 'https://media.example/two.mp4';
 			FakeMutationObserver.latest?.emitAttribute(second, 'src');
 			const replacedTarget = mediaRegistry.list().find(({ element }) => element === second)?.target;
@@ -426,37 +386,30 @@ describe('event-driven media registry', () => {
 			expect(timeMarkerTestApi.sourceCount()).toBe(0);
 			expect(releasedABTargets).toEqual([]);
 			expect(second.listenerCount('play')).toBe(1);
-			expect(detachNode).toHaveBeenCalledWith(second);
-			expect(attachNode).toHaveBeenCalledTimes(3);
 
 			second.volume = 0.2;
 			second.playbackRate = 1;
 			second.dispatchEvent(new Event('loadedmetadata'));
 			expect(second.volume).toBe(0.2);
 			expect(second.playbackRate).toBe(1);
-			expect(attachNode).toHaveBeenCalledTimes(4);
 
-			const detachCallsBeforeReparent = detachNode.mock.calls.length;
 			FakeMutationObserver.latest?.emit([], [second]);
 			await Promise.resolve();
 			expect(mediaRegistry.list().some(({ element }) => element === second)).toBe(true);
-			expect(detachNode.mock.calls).toHaveLength(detachCallsBeforeReparent);
 
 			second.isConnected = false;
 			FakeMutationObserver.latest?.emit([], [second]);
 			await Promise.resolve();
-			expect(hasMediaElements()).toBe(true);
+			expect(mediaRegistry.list().some(({ element }) => element === second)).toBe(false);
 			expect(second.volume).toBe(0.2);
 			expect(second.playbackRate).toBe(1);
-			expect(detachNode).toHaveBeenCalledWith(second);
 
 			second.isConnected = true;
 			FakeMutationObserver.latest?.emit([second]);
+			expect(mediaRegistry.list().some(({ element }) => element === second)).toBe(true);
 			expect(second.volume).toBe(0.2);
 			expect(second.playbackRate).toBe(1);
-			expect(attachNode).toHaveBeenCalledTimes(5);
 		} finally {
-			dispose();
 			disposeABSourceObserver();
 			disposeMarkerSourceObserver();
 			disposeABLoops();

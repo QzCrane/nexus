@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import type { TabSessionIdentity } from '@nexus/contracts';
+import { DEFAULT_AUDIO_CONFIG, type TabSessionIdentity } from '@nexus/contracts';
 import {
+	audioSessionTestApi,
+	bindAudioSessionDocument,
+	fenceAudioSession,
 	flushAudioSessions,
 	forgetAudioSession,
 	getAudioSession,
@@ -43,7 +46,7 @@ describe('acknowledged audio session store', () => {
 		try {
 			const first = updateAudioSession(identity, {
 				generation: 1,
-				actualMode: 'webaudio',
+				actualMode: 'capture',
 				phase: 'starting',
 				config: { volume: 125 },
 			});
@@ -55,7 +58,7 @@ describe('acknowledged audio session store', () => {
 			});
 			const [firstSnapshot, secondSnapshot] = await Promise.all([first, second]);
 			expect(firstSnapshot.generation).toBe(1);
-			expect(firstSnapshot.actualMode).toBe('webaudio');
+			expect(firstSnapshot.actualMode).toBe('capture');
 			expect(secondSnapshot.generation).toBe(2);
 			expect(secondSnapshot.actualMode).toBe('capture');
 			expect(secondSnapshot.actualConfig.volume).toBe(180);
@@ -67,6 +70,84 @@ describe('acknowledged audio session store', () => {
 			expect(storage.values.spectra_audio_session_8101).toEqual(secondSnapshot);
 		} finally {
 			await removeAudioSession(identity.tabId);
+			restoreChrome(originalChrome);
+		}
+	});
+
+	test('persists canonical WebAudio while downgrading the retired enum token', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const storage = new FakeSessionStorage();
+		installChrome(storage, []);
+		let tabId = 8_107;
+		try {
+			for (const [mode, expected] of [
+				['webaudio', 'webaudio'],
+				['NATIVE_WEBAUDIO', 'bypass'],
+			] as const) {
+				const identity = identityFor(tabId, `document-retired-${tabId}`);
+				tabId += 1;
+				const snapshot = await updateAudioSession(identity, {
+					generation: 1,
+					desiredMode: mode,
+					actualMode: mode,
+					phase: 'idle',
+				});
+				expect(snapshot.desiredMode).toBe(expected);
+				expect(snapshot.actualMode).toBe(expected);
+				expect(snapshot.phase).toBe('idle');
+				expect((await getAudioSession(identity.tabId))?.actualMode).toBe(expected);
+				await removeAudioSession(identity.tabId);
+			}
+		} finally {
+			restoreChrome(originalChrome);
+		}
+	});
+
+	test('migrates a persisted legacy snapshot before applying strict AudioConfig validation', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const storage = new FakeSessionStorage();
+		installChrome(storage, []);
+		const tabId = 8_109;
+		const legacyConfig: Record<string, unknown> = { ...DEFAULT_AUDIO_CONFIG };
+		Reflect.deleteProperty(legacyConfig, 'volumeBase');
+		Reflect.deleteProperty(legacyConfig, 'boost');
+		storage.values.spectra_audio_session_8109 = {
+			tabId,
+			documentId: 'document-legacy',
+			origin: 'https://media.example',
+			generation: 3,
+			desiredMode: 'webaudio',
+			actualMode: 'webaudio',
+			phase: 'active',
+			configRevision: 4,
+			actualConfig: {
+				...legacyConfig,
+				volume: 275,
+				muted: true,
+			},
+			lastError: null,
+		};
+
+		try {
+			const restored = await getAudioSession(tabId);
+			expect(restored).toMatchObject({
+				tabId,
+				desiredMode: 'webaudio',
+				actualMode: 'webaudio',
+				phase: 'idle',
+				actualConfig: {
+					volume: 275,
+					volumeBase: 100,
+					boost: 2.75,
+					muted: true,
+				},
+			});
+			expect(storage.setCalls).toHaveLength(1);
+		expect(storage.values.spectra_audio_session_8109).toMatchObject({
+				actualConfig: { volume: 275, volumeBase: 100, boost: 2.75 },
+			});
+		} finally {
+			await removeAudioSession(tabId);
 			restoreChrome(originalChrome);
 		}
 	});
@@ -237,6 +318,8 @@ describe('acknowledged audio session store', () => {
 			});
 			await removeAudioSession(oldDocument.tabId);
 			expect(isAudioSessionIdentityInvalidated(oldDocument)).toBe(true);
+			expect(isAudioSessionIdentityInvalidated(newDocument)).toBe(true);
+			bindAudioSessionDocument(newDocument.tabId, newDocument.documentId);
 			expect(isAudioSessionIdentityInvalidated(newDocument)).toBe(false);
 
 			await expect(updateAudioSession(oldDocument, {
@@ -247,7 +330,7 @@ describe('acknowledged audio session store', () => {
 
 			const current = await updateAudioSession(newDocument, {
 				generation: 1,
-				actualMode: 'webaudio',
+				actualMode: 'capture',
 				phase: 'active',
 			});
 			expect(current.documentId).toBe(newDocument.documentId);
@@ -264,30 +347,77 @@ describe('acknowledged audio session store', () => {
 		}
 	});
 
-	test('retains every invalidated document until the tab is closed', async () => {
+	test('rejects a storage continuation that crosses the document fence', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const storage = new FakeSessionStorage();
+		const broadcasts: unknown[] = [];
+		installChrome(storage, broadcasts);
+		const identity = identityFor(8_111, 'document-in-flight');
+		const originalSet = storage.set;
+		let releaseWrite!: () => void;
+		let signalWriteStarted!: () => void;
+		const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
+		const writeStarted = new Promise<void>((resolve) => { signalWriteStarted = resolve; });
+		storage.set = async (items) => {
+			signalWriteStarted();
+			await writeGate;
+			return originalSet.call(storage, items);
+		};
+		let pending: Promise<unknown> | undefined;
+		try {
+			pending = updateAudioSession(identity, {
+				generation: 1,
+				actualMode: 'capture',
+				phase: 'active',
+			});
+			await writeStarted;
+			const previousEpoch = audioSessionTestApi.lifecycleEpoch(identity.tabId);
+			fenceAudioSession(identity.tabId);
+			expect(audioSessionTestApi.lifecycleEpoch(identity.tabId)).toBe(previousEpoch + 1);
+			releaseWrite();
+			await expect(pending).rejects.toBeInstanceOf(StaleAudioSessionError);
+			expect(broadcasts).toHaveLength(0);
+			await removeAudioSession(identity.tabId, { alreadyFenced: true });
+			expect(storage.values.spectra_audio_session_8111).toBeUndefined();
+		} finally {
+			releaseWrite();
+			await pending?.catch(() => undefined);
+			storage.set = originalSet;
+			await forgetAudioSession(identity.tabId).catch(() => undefined);
+			restoreChrome(originalChrome);
+		}
+	});
+
+	test('keeps document tombstones bounded to the current identity and epoch', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const storage = new FakeSessionStorage();
 		installChrome(storage, []);
 
 		const tabId = 8_104;
 		const firstDocument = identityFor(tabId, 'document-0');
+		const lifecycleCountBefore = audioSessionTestApi.lifecycleCount();
 		try {
-			for (let index = 0; index < 24; index += 1) {
-				await updateAudioSession(identityFor(tabId, `document-${index}`), {
-					generation: 1,
-					actualMode: 'webaudio',
-					phase: 'active',
-				});
-				await removeAudioSession(tabId);
-			}
-
-			await expect(updateAudioSession(firstDocument, {
-				generation: 99,
+			await updateAudioSession(firstDocument, {
+				generation: 1,
 				actualMode: 'capture',
 				phase: 'active',
-			})).rejects.toBeInstanceOf(StaleAudioSessionError);
+			});
+			for (let index = 1; index < 24; index += 1) {
+				await removeAudioSession(tabId);
+				bindAudioSessionDocument(tabId, `document-${index}`);
+				await updateAudioSession(identityFor(tabId, `document-${index}`), {
+					generation: 1,
+					actualMode: 'capture',
+					phase: 'active',
+				});
+			}
+
+			expect(audioSessionTestApi.lifecycleCount()).toBe(lifecycleCountBefore + 1);
+			expect(isAudioSessionIdentityInvalidated(firstDocument)).toBe(true);
+			expect(isAudioSessionIdentityInvalidated(identityFor(tabId, 'document-23'))).toBe(false);
 
 			await forgetAudioSession(tabId);
+			expect(audioSessionTestApi.lifecycleCount()).toBe(lifecycleCountBefore);
 			const reused = await updateAudioSession(identityFor(tabId, 'new-tab-document'), {
 				generation: 1,
 				actualMode: 'bypass',

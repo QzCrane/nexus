@@ -3,13 +3,11 @@
 import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
-	CONTROL_ALGORITHM_POLICIES,
+	controlCapabilityUsesStrategy,
+	selectControlCapabilityScope,
 	hasExtensionOnlyContribution,
 	isDefaultAudioConfig,
 	resolveAudioVolume,
-	isSpectraRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
 	type ContentRuntimeLeaseReason,
 	type ContentRuntimeReadyResult,
 	type ContentRuntimeSourceOwnership,
@@ -20,7 +18,6 @@ import {
 	type HotkeySettings,
 	type AudioConfig,
 } from '@nexus/contracts';
-import { sendSpectraTabRequest } from '../shared/spectra-client';
 import { swLog } from '../shared/logger';
 import { injectMainBridges } from './main-runtime-manager';
 import { settingsRepository } from './settings-repository';
@@ -33,6 +30,14 @@ import {
 	resetDocumentSiteHotkeysForTests,
 } from './site-hotkey-loader-adapter';
 import { forEachBounded } from './bounded-fanout';
+import { isContentDocumentUrl } from './content-document-url';
+import { submitControlRequest } from './control-coordinator';
+import {
+	isBackgroundRequestEnvelope,
+	rpcFailure,
+	rpcSuccess,
+	sendBackgroundTabRequestOnce,
+} from './background-rpc';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
 // and discovering media before the runtime publishes READY. Keep the handshake
@@ -104,15 +109,6 @@ export async function reconcileAllHotkeyRuntimeLeases(
 	});
 }
 
-function isContentDocumentUrl(url: string): boolean {
-	try {
-		const protocol = new URL(url).protocol;
-		return protocol === 'http:' || protocol === 'https:' || protocol === 'file:';
-	} catch {
-		return false;
-	}
-}
-
 function sourceLeaseCapability(kind: 'marker' | 'ab', target: MediaTarget): string {
 	return `owner:${kind}:${target.mediaId.slice(0, 64)}:${target.sourceRevision}`;
 }
@@ -175,7 +171,7 @@ async function disposeDocumentRuntime(
 	if ((leases.get(key)?.size ?? 0) > 0) return;
 	const ready = readyDocuments.get(key);
 	if (!ready) return;
-	const response = await sendSpectraTabRequest(
+	const response = await sendBackgroundTabRequestOnce(
 		tabId,
 		'spectra.content.runtime.release',
 		{ runtimeRevision: ready.runtimeRevision },
@@ -231,7 +227,7 @@ export function releaseContentRuntimeLease(
 
 function senderIdentity(sender: chrome.runtime.MessageSender): { tabId: number; documentId: string } | null {
 	const tabId = sender.tab?.id;
-	if (!tabId || !sender.documentId) return null;
+	if (!tabId || sender.frameId !== 0 || !sender.documentId?.trim()) return null;
 	return { tabId, documentId: sender.documentId };
 }
 
@@ -293,7 +289,7 @@ export async function awaitDocumentInitialization(
 }
 
 async function probeRuntime(tabId: number, documentId: string): Promise<ContentRuntimeReadyResult | null> {
-	const response = await sendSpectraTabRequest(
+	const response = await sendBackgroundTabRequestOnce(
 		tabId,
 		'spectra.content.runtime.status',
 		{},
@@ -471,7 +467,6 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 	await ensureContentRuntime(tabId, documentId, 'restore', capability);
 	let retained = false;
 	try {
-		const { submitControlRequest } = await import('./control-coordinator');
 		for (const group of splitDocumentRestorePatch(restore.patch)) {
 			await submitControlRequest({
 				tabId,
@@ -503,21 +498,49 @@ export function initializeContentRuntimeLoader(): void {
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		const isRuntimeMessage = candidate.type === 'spectra.content.bootstrap.hello'
+			|| candidate.type === 'spectra.content.runtime.identity'
 			|| candidate.type === 'spectra.content.runtime.ensure'
 			|| candidate.type === 'spectra.content.runtime.ready'
 			|| candidate.type === 'spectra.content.runtime.release';
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || !isRuntimeMessage) return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Content runtime RPC is extension-internal only'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)
+		if (!isBackgroundRequestEnvelope(message)
 			|| (message.type !== 'spectra.content.bootstrap.hello'
+				&& message.type !== 'spectra.content.runtime.identity'
 				&& message.type !== 'spectra.content.runtime.ensure'
 				&& message.type !== 'spectra.content.runtime.ready'
 				&& message.type !== 'spectra.content.runtime.release')) {
 			sendResponse(rpcFailure('invalid_request', 'Malformed content runtime request'));
 			return false;
+		}
+
+		if (message.type === 'spectra.content.runtime.identity') {
+			const identity = senderIdentity(sender);
+			if (!identity) {
+				sendResponse(rpcFailure(
+					'forbidden',
+					'Content runtime identity requires a top-level document sender',
+				));
+				return false;
+			}
+			// Chrome's MessageSender is the only identity authority. Content cannot
+			// supply, cache, or retag this value across a navigation. The sender tuple
+			// is still checked against the current top document before it can create a
+			// DocumentRuntimeContext; READY is intentionally a second fence.
+			void currentTopDocumentId(identity.tabId).then(
+				(currentDocumentId) => sendResponse(currentDocumentId === identity.documentId
+					? rpcSuccess({ documentId: identity.documentId, frameId: 0 as const })
+					: rpcFailure('stale_document', 'Content identity belongs to a stale document')),
+				(error) => sendResponse(rpcFailure(
+					'runtime_identity_unavailable',
+					error instanceof Error ? error.message : String(error),
+					true,
+				)),
+			);
+			return true;
 		}
 
 		if (message.type === 'spectra.content.bootstrap.hello') {
@@ -710,13 +733,11 @@ function splitDocumentRestorePatch(patch: ControlSessionPatch): Array<{
 	const full: ControlPatch = {};
 	for (const [rawField, value] of Object.entries(patch)) {
 		const field = rawField as ControlField;
-		const policy = CONTROL_ALGORITHM_POLICIES[field];
-		const target = policy.scope === 'active-video'
+		const scope = selectControlCapabilityScope(field);
+		const target = scope === 'active-video'
 			? video
-			: policy.scope === 'document'
-				|| policy.orderedStrategies.some((strategy) => (
-					strategy === 'media-webaudio' || strategy === 'capture'
-				))
+			: scope === 'document'
+				|| controlCapabilityUsesStrategy(field, 'capture')
 				? full
 				: media;
 		(target as Record<string, unknown>)[field] = structuredClone(value);

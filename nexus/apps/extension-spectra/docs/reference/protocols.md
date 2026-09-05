@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-runtime-protocol
-last_reviewed: 2026-08-12
+last_reviewed: 2026-08-29
 ---
 
 # SPECTRA runtime protocols
@@ -51,14 +51,45 @@ Reads do not acquire WebAudio/Capture/MAIN/offscreen. Page-media reads may synch
 
 Configured-site lean hotkeys do **not** self-assert control routing. They send the existing default-hotkey trigger with `disposition:'site-page'`; Background validates the content sender, binds foreground/target to that exact top-level `tabId+documentId`, then executes through the same shortcut/control coordinator used by other trusted hotkeys.
 
-## Registry v2
+## Site processing routes
 
-UI uses Background registry: `spectra.registry.get/add/remove/query/mark-probed`.
-Identity is `site:*`. Legacy `media:v1:*` collapses into site record. Route is `direct | capture`. Snapshot updates UI projection but never activates Capture.
+The stable `spectra.settings.get/patch` v2 ABI does not contain site-route
+fields. Adding `mediaRoutes` under the same protocol version breaks resident
+Popup/Options contexts when an MV3 worker is replaced. Site processing routes
+therefore use the independent, additive `spectra.registry.get/add/remove/query/
+mark-probed` v2 family. These routes are one wire projection, not a second
+persistence owner: `SettingsRepository` alone owns normalization, the shared
+settings revision, migration, capacity, and the `siteProcessingRoutes` storage
+key.
+
+Each normalized domain has at most one `direct | capture` record; absence means
+`auto`. Content records only acknowledged active page-WebAudio or Capture
+ownership, while a user entry wins until current runtime evidence disproves an
+impossible `direct` route. Popup renders and edits the same projection. Route
+state never grants Capture; the one-shot current-document admission remains
+mandatory.
+
+An automatic record is durable history and a list projection, not a hard route
+pin: current-document `SAFE | RESTRICTED | PENDING` evidence selects the live
+candidate. Only a user-sourced `direct | capture` entry overrides that evidence.
+
+Popup owns the full Registry CRUD projection. Content uses only the additive,
+sender-bound `spectra.audio.route.get/record` capability: Background derives the
+domain from the current document sender, returns `{ mediaRoute, source }`, and
+delegates automatic evidence to the same `SettingsRepository`. Content cannot
+name, inspect, or mutate another site and does not carry Popup list DTOs.
+
+`spectra.audio.config.get` keeps its original v2 ABI and returns `AudioConfig`.
+New Content runtimes use the additive `spectra.audio.policy.get` route to receive
+`{ config, mediaRoute }`. Existing route response shapes must not be changed
+under the same protocol version: this additive split permits old resident
+Content and a newly restarted Background worker to coexist during an extension
+update. The extension-internal envelope remains v2; authenticated Remote wire is
+a separate v3 protocol with its own epoch/command contracts.
 
 ## Processor lifecycle
 
-Only Boost/EQ/Bass/Compressor/Mono/Pan/Delay can request processor (full-output intent). `boostGain: 1–8` is the sole admitted range; no 0-gain substitution or implicit limiting.
+Only Boost/EQ/Bass/Compressor/Mono/Pan/Delay can request processor (full-output intent). `boostGain: 1–8` is the sole admitted range; no 0-gain substitution or implicit limiting. The exact-target stream-ID call additionally requires the manifest's temporary `activeTab` authority, granted only by the user's action or registered Chrome command for that page; `tabCapture` alone does not authorize a named target.
 Transition binds document identity, generation, and revision:
 1. ACK stable old route at unity.
 2. Build candidate behind closed gate.
@@ -199,7 +230,7 @@ If status proves no heavy runtime survived, recovery does not create one solely 
 
 ## Performance boundaries
 
-Default pages have no extension AudioContext, offscreen document, analyser, or periodic work. Continuous UI values coalesce; visualizers use generation-aware leases and bounded sampling from active processors.
+Default pages have no extension AudioContext, offscreen document, analyser, or periodic work. Continuous UI values coalesce. A visible foreground Popup visualizer may explicitly declare one `captureTabId`; Background validates the Popup/current-document boundary, mints a one-shot Capture admission, and Content owns an idempotent subscriber token. Frames are generation-aware and bounded to 15 Hz; empty batches, disconnect, expiry, blur/pagehide, navigation, and tab close release transient demand, while background cards cannot acquire processing.
 
 A lean configured site may inject the small exact host, but it must not retain the heavy Content Runtime merely because the site has bindings. An admitted action or another independent consumer may transiently load the heavy runtime; this is distinct from document-lifetime hotkey ownership. Production build enforces the lean host's physical artifact ceiling independently.
 

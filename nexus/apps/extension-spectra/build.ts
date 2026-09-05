@@ -18,7 +18,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import sharp from 'sharp';
 import { minify } from 'terser';
-import { checkProductionArtifacts } from './scripts/check-production-artifacts.ts';
+import {
+	analyzeProductionArtifacts,
+	assertProductionArtifactReport,
+} from './scripts/check-production-artifacts.ts';
 import { writeI18nAssets } from './scripts/i18n-assets.ts';
 import { productionMangleOptions } from './scripts/minification-policy.ts';
 
@@ -28,10 +31,6 @@ const publicDir = resolve(projectDir, 'public');
 const contentContractsRuntime = resolve(
 	projectDir,
 	'../../packages/contracts/src/spectra.content-runtime.ts',
-);
-const contentAudioEngineRuntime = resolve(
-	projectDir,
-	'../../packages/features/audio-engine/src/content-runtime.ts',
 );
 const contentKernelRuntime = resolve(
 	projectDir,
@@ -93,7 +92,7 @@ const vendorEntries = [
 	{
 		entry: 'src/offscreen-remote/peerjs-vendor.ts',
 		out: 'peerjs-vendor.js',
-		format: 'iife',
+		format: 'esm',
 		sharingDomain: 'offscreen-vendor',
 	},
 ];
@@ -390,13 +389,11 @@ const common = {
 		'@nexus/contracts/bootstrap': resolve(projectDir, '../../packages/contracts/src/spectra.bootstrap.ts'),
 		'@nexus/contracts/ui-runtime': resolve(projectDir, '../../packages/contracts/src/spectra.ui-runtime.ts'),
 		'@nexus/contracts/ui-settings-runtime': resolve(projectDir, '../../packages/contracts/src/spectra.ui-settings-runtime.ts'),
+		'@nexus/contracts/full-settings-runtime': resolve(projectDir, '../../packages/contracts/src/spectra.full-settings-runtime.ts'),
+		'@nexus/contracts/registry-runtime': resolve(projectDir, '../../packages/contracts/src/spectra.registry-runtime.ts'),
 		'@nexus/contracts': resolve(projectDir, '../../packages/contracts/src/index.ts'),
 		'@nexus/kernel': resolve(projectDir, '../../packages/nexus-kernel/src/index.ts'),
 		'@nexus/audio-engine': resolve(projectDir, '../../packages/features/audio-engine/src/index.ts'),
-		// PeerJS pulls every Firefox/Safari/legacy-Chrome compatibility shim from
-		// webrtc-adapter. SPECTRA is compiled for Chrome 120+, whose native WebRTC
-		// surface needs only the browserDetails object PeerJS reads at runtime.
-		'webrtc-adapter': resolve(projectDir, 'scripts/chrome120-webrtc-adapter.ts'),
 	},
 	logLevel: 'warning',
 };
@@ -442,7 +439,6 @@ if (isWatch) {
 				? {
 					...common.alias,
 					'@nexus/contracts': contentContractsRuntime,
-					'@nexus/audio-engine': contentAudioEngineRuntime,
 					'@nexus/kernel': contentKernelRuntime,
 				}
 				: common.alias,
@@ -499,21 +495,16 @@ if (isWatch) {
 	}
 
 	await minifyProductionJavaScript();
-	assertProductionJavaScript();
-	if (!isDev) checkProductionArtifacts({ distDir, metafiles });
-	if (isAnalyze) {
-		const report = metafiles.map(({ name, sharingDomain, metafile }) => ({
-			name,
-			sharingDomain,
-			outputs: Object.fromEntries(Object.entries(metafile.outputs)
-				.map(([output, detail]) => [
-					output.replaceAll('\\', '/'),
-					{ bytes: detail.bytes, inputs: detail.inputs },
-				])
-				.sort(([left], [right]) => left.localeCompare(right))),
-		}));
-		writeFileSync(resolve(distDir, 'build-analysis.json'), `${JSON.stringify(report, null, 2)}\n`);
+	const report = isAnalyze || !isDev
+		? analyzeProductionArtifacts({ distDir, metafiles })
+		: undefined;
+	if (isAnalyze && report) {
+		const analysisPath = resolve(projectDir, '../../../artifacts/spectra-build-analysis.json');
+		mkdirSync(dirname(analysisPath), { recursive: true });
+		writeFileSync(analysisPath, `${JSON.stringify(report, null, 2)}\n`);
 	}
+	assertProductionJavaScript();
+	if (!isDev && report) assertProductionArtifactReport(report);
 
 	console.log(`✓ ${summary.map((out) => (
 		`${out}:${Math.ceil(statSync(resolve(distDir, out)).size / 1024)}KiB`

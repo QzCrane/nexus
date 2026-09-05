@@ -3,12 +3,12 @@ type: reference
 status: stable
 audience: user
 owner: spectra-privacy
-last_reviewed: 2026-07-20
+last_reviewed: 2026-08-29
 ---
 
 # Privacy Policy for SPECTRA
 
-**Last updated: July 20, 2026**
+**Last updated: August 29, 2026**
 
 ## Overview
 
@@ -21,6 +21,8 @@ The optional mobile remote is a separate, user-started network capability. It ne
 Volume, equalizer, playback, appearance, hotkey, and per-site preferences are stored in Chrome extension storage. SPECTRA does not upload these settings to the developer.
 
 Audio and video content is processed locally. SPECTRA does not record or upload media content.
+
+Chrome grants SPECTRA temporary `activeTab` access only after the user invokes the extension action or a registered browser command. SPECTRA uses that temporary authority with `tabCapture` only to start local audio processing for the same active page, including volume above 100%, audio effects, or an enabled foreground spectrum. The grant is not persisted, and captured audio is not recorded or transmitted.
 
 ## Optional mobile remote
 

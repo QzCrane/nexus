@@ -20,16 +20,20 @@ export interface I18NDict {
 	save: string;
 	resetTooltip: string;
 	saveTooltip: string;
-	captureListLabel: string;
-	captureListSub: string;
 	grpInterface: string;
 	grpGeneral: string;
 	grpAdvanced: string;
 	tabRestricted: string;
 	tabSafe: string;
-	filterPlaceholder: string;
 	registryHint: string;
-	autoAddedToast: (domain: string) => string;
+	registryEmptyRestricted: string;
+	registrySourceAuto: string;
+	registrySourceUser: string;
+	registryFilterAria: string;
+	registryNewDomainAria: string;
+	registryRouteAria: string;
+	registryAddDomainTitle: string;
+	registryInvalidDomain: string;
 	themeLabel: string;
 	themeSub: string;
 	themeLight: string;
@@ -82,6 +86,7 @@ export interface I18NDict {
 	spFullscreen: string;
 	spDim: string;
 	spSeek: string;
+	spAbClear: string;
 	spSaturate: string;
 	spGrayscale: string;
 	spInvert: string;
@@ -96,6 +101,7 @@ export interface I18NDict {
 	presetDefaultBadge: string;
 	presetCurrentBadge: string;
 	presetApplyTooltip: string;
+	presetNoTarget: string;
 	presetPreviewTooltip: string;
 	presetSetDefaultTooltip: string;
 	presetRemoveDefaultTooltip: string;
@@ -134,17 +140,6 @@ export interface I18NDict {
 	remoteOpenLinkTitle: string;
 	remoteConnectedTooltip: string;
 
-	// note: empty states for tab registry filtering
-	registryEmptyRestricted: string;
-	registryEmptySafe: string;
-	// note: registry list item source labels and the static aria-labels/titles
-	// on the registry add-domain row. Previously hardcoded English strings.
-	registrySourceAuto: string;
-	registrySourceUser: string;
-	registryFilterAria: string;
-	registryNewDomainAria: string;
-	registryRouteAria: string;
-	registryAddDomainTitle: string;
 	// note: preset search aria-label for the static presets-group input.
 	presetSearchAria: string;
 

@@ -12,12 +12,28 @@ import {
 	storage,
 } from './state';
 import { teardownCaptureState } from './handlers/capture';
-import { flushAudioSessions, forgetAudioSession, removeAudioSession } from './audio-session-store';
+import {
+	bindAudioSessionDocument,
+	flushAudioSessions,
+	forgetAudioSession,
+	removeAudioSession,
+} from './audio-session-store';
+import { beginDocumentNavigation } from './control-coordinator';
 import { settingsRepository } from './settings-repository';
 import { clearBadgeUsage } from './badge-usage';
 import { swLog } from '../shared/logger';
+import {
+	handleVisualizerTabRemoved,
+	invalidateVisualizerDocument,
+} from './handlers/audio';
 
 async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<void> {
+	const visualizerCleanup = tabClosed
+		? handleVisualizerTabRemoved(tabId)
+		: invalidateVisualizerDocument(tabId);
+	const boundedVisualizerCleanup = visualizerCleanup.catch((error: unknown) => {
+		swLog.warn(`[Lifecycle] Visualizer cleanup failed for tab ${tabId}`, error);
+	});
 	// Queue capture teardown before awaiting storage. Otherwise a newly loaded
 	// document can start capture during the storage await and then be torn down by
 	// cleanup that belonged to the previous document.
@@ -32,10 +48,13 @@ async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<
 		},
 	);
 	await Promise.all([
+		boundedVisualizerCleanup,
 		captureTeardown,
 		(tabClosed ? storage.tabSession.remove(tabId) : storage.tabSession.flush(tabId))
 			.catch(() => undefined),
-		(tabClosed ? forgetAudioSession(tabId) : removeAudioSession(tabId)).catch(() => undefined),
+		(tabClosed
+			? forgetAudioSession(tabId, { alreadyFenced: true })
+			: removeAudioSession(tabId, { alreadyFenced: true })).catch(() => undefined),
 		...(tabClosed ? [clearBadgeUsage(tabId)] : []),
 	]);
 }
@@ -84,10 +103,16 @@ export function setupLifecycleListeners(): void {
 	});
 
 	chrome.webNavigation.onBeforeNavigate.addListener((details) => {
-		if (isTopLevelDocumentNavigation(details)) void clearTabDocumentState(details.tabId);
+		if (isTopLevelDocumentNavigation(details)) {
+			void beginDocumentNavigation(details.tabId).catch((error: unknown) => {
+				swLog.debug(`[Lifecycle] Navigation invalidation settled at browser boundary: ${String(error)}`);
+			});
+			void clearTabDocumentState(details.tabId);
+		}
 	});
 	chrome.webNavigation.onCommitted.addListener((details) => {
 		if (!isTopLevelDocumentNavigation(details) || !details.documentId) return;
+		bindAudioSessionDocument(details.tabId, details.documentId);
 		let identity: ReturnType<typeof storage.tabSession.identity>;
 		try {
 			identity = storage.tabSession.identity(details.tabId, details.documentId, details.url);

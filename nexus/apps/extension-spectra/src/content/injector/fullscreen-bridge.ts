@@ -7,6 +7,7 @@ import {
 	SPECTRA_FULLSCREEN_READY_EVENT,
 	SPECTRA_FULLSCREEN_REQUEST_ATTRIBUTE,
 	SPECTRA_FULLSCREEN_RESULT_ATTRIBUTE,
+	isSpectraFullscreenRequestId,
 	type SpectraFullscreenBridgeMessage,
 } from '../../shared/fullscreen-bridge';
 
@@ -25,7 +26,7 @@ function decodeMessage(attribute: string): SpectraFullscreenBridgeMessage | null
 	if (!encoded) return null;
 	try {
 		const value = JSON.parse(encoded) as Partial<SpectraFullscreenBridgeMessage>;
-		return typeof value.requestId === 'string' && value.requestId.length > 0
+		return isSpectraFullscreenRequestId(value.requestId)
 			? { requestId: value.requestId }
 			: null;
 	} catch {

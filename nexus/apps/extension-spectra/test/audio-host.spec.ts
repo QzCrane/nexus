@@ -1,23 +1,22 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import type { AudioConfig } from '@nexus/contracts';
+import {
+	audioConfigToProcessorConfig,
+	compileEffectiveVolume,
+	DEFAULT_AUDIO_CONFIG,
+	splitEffectiveVolume,
+	type AudioConfig,
+} from '@nexus/contracts';
 import {
 	describeAudioHost,
 	destroyAudioHost,
 	handleAudioHostMessage,
 } from '../src/offscreen/audio-host';
+import { AudioGraphRouter } from '@nexus/audio-engine';
 import { requireValue } from './helpers/require-value';
 
 const DEFAULT_CONFIG: AudioConfig = {
-	enabled: true,
-	volume: 100,
-	muted: false,
-	compressor: false,
-	mono: false,
-	bass: false,
-	eqValues: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-	pan: 0,
-	delay: 0,
-	speed: 1,
+	...DEFAULT_AUDIO_CONFIG,
+	eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
 };
 
 let audioHarness: AudioHarness;
@@ -79,7 +78,7 @@ describe('offscreen audio host', () => {
 			tabId: 7,
 			generation: 3,
 			controlRevision: 1,
-			config: config({ volume: 700 }),
+			config: audioConfigToProcessorConfig(config({ volume: 700 })),
 		});
 		expectActive(staleUpdate, 7, 4, 2);
 		expect(firstContext.gains).toHaveLength(gainCreationsBeforeStaleUpdate);
@@ -213,7 +212,7 @@ describe('offscreen audio host', () => {
 			tabId: 14,
 			generation: 3,
 			controlRevision: 2,
-			config: config({ volume: 160 }),
+			config: audioConfigToProcessorConfig(config({ volume: 160 })),
 		});
 
 		expectActive(updated, 14, 3, 2);
@@ -224,6 +223,62 @@ describe('offscreen audio host', () => {
 			generation: 2,
 		});
 		expectActive(staleStop, 14, 3, 2);
+	});
+
+	test('does not let an older concurrent UPDATE regress a newer committed generation', async () => {
+		await start(23, 1, DEFAULT_CONFIG);
+		const newer = handleAudioHostMessage({
+			type: 'OFFSCREEN_AUDIO_UPDATE',
+			tabId: 23,
+			generation: 3,
+			controlRevision: 3,
+			config: audioConfigToProcessorConfig(config({ volume: 160 })),
+		});
+		const older = handleAudioHostMessage({
+			type: 'OFFSCREEN_AUDIO_UPDATE',
+			tabId: 23,
+			generation: 2,
+			controlRevision: 2,
+			config: audioConfigToProcessorConfig(config({ volume: 140 })),
+		});
+
+		const [newerResult, olderResult] = await Promise.all([newer, older]);
+		expectActive(newerResult, 23, 3, 3);
+		expectActive(olderResult, 23, 3, 3);
+		expectHost(23, 3, 3, { boostGain: 1.6 });
+	});
+
+	test('keeps the committed generation and accepts its STOP when UPDATE graph apply fails', async () => {
+		await start(24, 10, DEFAULT_CONFIG);
+		const apply = spyOn(AudioGraphRouter.prototype, 'apply')
+			.mockImplementation(() => Promise.reject(new Error('synthetic update graph failure')));
+		try {
+			const failed = await handleAudioHostMessage({
+				type: 'OFFSCREEN_AUDIO_UPDATE',
+				tabId: 24,
+				generation: 11,
+				controlRevision: 2,
+				config: audioConfigToProcessorConfig(config({ volume: 180 })),
+			});
+			expect(failed).toMatchObject({
+				ok: false,
+				tabId: 24,
+				generation: 10,
+				controlRevision: 1,
+				error: { code: 'capture_update_failed' },
+			});
+			expectHost(24, 10, 1, { boostGain: 1 });
+
+			const stopped = await handleAudioHostMessage({
+				type: 'OFFSCREEN_AUDIO_STOP',
+				tabId: 24,
+				generation: 10,
+			});
+			expectIdle(stopped, 24, 10, 1);
+			expect(describeAudioHost()).toEqual([]);
+		} finally {
+			apply.mockRestore();
+		}
 	});
 
 	test('keeps a higher-generation stop tombstone while getUserMedia is pending', async () => {
@@ -284,7 +339,7 @@ describe('offscreen audio host', () => {
 			tabId: 18,
 			generation: 6,
 			controlRevision: 1,
-			config: config({ volume: 700 }),
+			config: audioConfigToProcessorConfig(config({ volume: 700 })),
 		})).toEqual({
 			ok: false,
 			tabId: 18,
@@ -414,10 +469,6 @@ describe('offscreen audio host', () => {
 			type: 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS',
 			tabIds: [],
 		});
-		expect(await handleAudioHostMessage({
-			type: 'OFFSCREEN_AUDIO_GET_VIZ',
-			tabId: 21,
-		})).toEqual({ buffer: null });
 	});
 });
 
@@ -432,16 +483,28 @@ function start(
 		tabId,
 		generation,
 		streamId: `stream-${tabId}-${generation}`,
-		config: audioConfig,
+		config: audioConfigToProcessorConfig(audioConfig),
 		controlRevision,
 	});
 }
 
 function config(overrides: Partial<AudioConfig>): AudioConfig {
-	return {
+	const next = {
 		...DEFAULT_CONFIG,
 		eqValues: [...DEFAULT_CONFIG.eqValues],
 		...overrides,
+	};
+	const volume = overrides.volumeBase === undefined && overrides.boost === undefined && overrides.volume !== undefined
+		? splitEffectiveVolume(overrides.volume)
+		: {
+			volumeBase: next.volumeBase,
+			boost: next.boost,
+		};
+	return {
+		...next,
+		volumeBase: volume.volumeBase,
+		boost: volume.boost,
+		volume: compileEffectiveVolume(volume.volumeBase, volume.boost),
 	};
 }
 

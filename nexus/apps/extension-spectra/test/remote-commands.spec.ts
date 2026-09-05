@@ -17,8 +17,10 @@ import {
 const TAB_ID = 9_301;
 
 function deferred<T>() {
-	let resolve!: (value: T) => void;
-	const promise = new Promise<T>((done) => { resolve = done; });
+	let resolve!: (value?: T) => void;
+	const promise = new Promise<T>((done) => {
+		resolve = (value?: T) => done(value as T);
+	});
 	return { promise, resolve };
 }
 
@@ -69,16 +71,148 @@ describe('remote acknowledged audio state', () => {
 		}
 	});
 
+	test('rejects a command before admission when its cancellation signal is stale', async () => {
+		const abortController = new AbortController();
+		abortController.abort('REMOTE_COMMAND_TIMEOUT');
+		const submitOperation = mock(async () => operationAck({ volumeBase: field(90) }, 90));
+
+		await expect(executeCommand(
+			'volume_down',
+			TAB_ID,
+			gateway({ submitOperation }),
+			abortController.signal,
+		)).rejects.toThrow('REMOTE_COMMAND_CANCELLED');
+		expect(submitOperation).not.toHaveBeenCalled();
+	});
+
+	test('fences a command when cancellation races the control acknowledgement', async () => {
+		const abortController = new AbortController();
+		const acknowledgement = deferred<ControlOperationAck<'effective-volume'>>();
+		let receivedSignal: AbortSignal | undefined;
+		const operation = executeCommand(
+			'volume_down',
+			TAB_ID,
+			gateway({
+				submitOperation: async (_request, signal) => {
+					receivedSignal = signal;
+					return acknowledgement.promise;
+				},
+			}),
+			abortController.signal,
+		);
+		await waitFor(() => receivedSignal !== undefined);
+		abortController.abort('REMOTE_COMMAND_TIMEOUT');
+		acknowledgement.resolve(operationAck({ volumeBase: field(90) }, 90));
+
+		await expect(operation).rejects.toThrow('REMOTE_COMMAND_CANCELLED');
+		expect(receivedSignal?.aborted).toBe(true);
+	});
+
+	test('coalesces a blocked state publication to the newest pending snapshot', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const releaseFirst = deferred<void>();
+		const firstStarted = deferred<void>();
+		const published: number[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: { id: 'spectra-test', onMessage: { addListener: () => undefined } },
+				tabs: { get: async () => ({ id: TAB_ID, title: 'Remote', url: 'https://media.example' }) },
+			},
+		});
+		try {
+			setStateCallback(async (_tabId, state) => {
+				published.push(state.revision);
+				if (state.revision === 1) {
+					firstStarted.resolve();
+					await releaseFirst.promise;
+				}
+			});
+			const snapshots: ControlSnapshot[] = [1, 2, 3].map((revision) => ({
+				tabId: TAB_ID,
+				documentId: 'document-publication-queue',
+				origin: 'https://media.example',
+				generation: 51,
+				revision,
+				activeMedia: null,
+				activeVideo: null,
+				fields: { volumeBase: field(70 + revision), boost: field(1) },
+			}));
+			let snapshotsRead = 0;
+			const control = gateway({
+				getSnapshot: async () => {
+					snapshotsRead += 1;
+					return snapshots.shift() ?? null;
+				},
+			});
+			const first = syncState(TAB_ID, control);
+			await firstStarted.promise;
+			const second = syncState(TAB_ID, control);
+			const third = syncState(TAB_ID, control);
+			await waitFor(() => snapshotsRead === 3);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			releaseFirst.resolve();
+			await Promise.all([first, second, third]);
+			expect(published).toEqual([1, 3]);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('does not let an obsolete sync failure clear a reused tab projection', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		let rejectFirst!: (error: unknown) => void;
+		let reads = 0;
+		const first = new Promise<ControlSnapshot | null>((_resolve, reject) => {
+			rejectFirst = reject;
+		});
+		const published: number[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: { id: 'spectra-test', onMessage: { addListener: () => undefined } },
+				tabs: { get: async () => ({ id: TAB_ID, title: 'Remote', url: 'https://media.example' }) },
+			},
+		});
+		try {
+			setStateCallback((_tabId, state) => published.push(state.revision));
+			const control = gateway({
+				getSnapshot: async () => {
+					reads += 1;
+					if (reads === 1) return first;
+					return {
+						tabId: TAB_ID,
+						documentId: 'reused-document',
+						origin: 'https://media.example',
+						generation: 1,
+						revision: 1,
+						activeMedia: null,
+						activeVideo: null,
+						fields: { volumeBase: field(80), boost: field(1) },
+					};
+				},
+			});
+			const obsolete = syncState(TAB_ID, control);
+			await waitFor(() => reads === 1);
+			invalidateRemoteTab(TAB_ID);
+			await syncState(TAB_ID, control);
+			rejectFirst(new Error('old document closed'));
+			await obsolete;
+			expect(published).toEqual([1]);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
 	test('maps every remote button to one canonical control algorithm and transform', () => {
 		expect(Object.keys(REMOTE_COMMAND_DESCRIPTORS).sort()).toEqual([...REMOTE_COMMANDS].sort());
 		expect(REMOTE_COMMAND_DESCRIPTORS.volume_up).toEqual({
-			capability: 'effective-volume', operation: 'delta', value: 10, legacyAlias: false,
-		});
-		expect(REMOTE_COMMAND_DESCRIPTORS.boost_up).toEqual({
-			capability: 'effective-volume', operation: 'delta', value: 10, legacyAlias: true,
+			capability: 'effective-volume', operation: 'delta', value: 10,
 		});
 		expect(REMOTE_COMMAND_DESCRIPTORS.volume_max).toEqual({
-			capability: 'effective-volume', operation: 'set', value: 800, legacyAlias: false,
+			capability: 'effective-volume', operation: 'set', value: 800,
 		});
 	});
 
@@ -94,7 +228,7 @@ describe('remote acknowledged audio state', () => {
 			activeVideo: null,
 			fields: {
 				volumeBase: field(100),
-				boost: field(1, 'media-webaudio', 'full'),
+				boost: field(1, 'capture', 'full'),
 				mediaMuted: field(false),
 				playing: field(true),
 				speed: field(1.5),
@@ -239,7 +373,7 @@ describe('remote acknowledged audio state', () => {
 				tabId: TAB_ID, documentId: 'document-stable', origin: 'https://media.example',
 				generation: 21, revision: 7, activeMedia: null, activeVideo: null,
 				fields: {
-					volumeBase: field(72), boost: field(1.5, 'media-webaudio', 'full'),
+					volumeBase: field(72), boost: field(1.5, 'capture', 'full'),
 					mediaMuted: field(true), playing: field(true), speed: field(1.25),
 				},
 			},
@@ -370,7 +504,7 @@ function operationAck(
 
 function field<T>(
 	actual: T,
-	strategy: 'dom-native' | 'media-webaudio' = 'dom-native',
+	strategy: 'dom-native' | 'capture' = 'dom-native',
 	coverage: 'active-target' | 'full' = 'active-target',
 ) {
 	return {
@@ -384,4 +518,13 @@ function field<T>(
 		intentId: 'remote-state',
 		lastError: null,
 	};
+}
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1_000): Promise<void> {
+	const deadline = Date.now() + timeoutMs;
+	while (!predicate()) {
+		if (Date.now() >= deadline) throw new Error('Timed out waiting for remote command admission');
+		await Promise.resolve();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+	}
 }

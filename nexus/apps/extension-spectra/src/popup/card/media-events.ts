@@ -1,13 +1,20 @@
 // goal: binds secondary media control UI elements to content script commands for playback and focus management
 
 import type { CardUIElements } from '../types';
-import type { ControlMutation, ControlOperationAck, MediaTarget } from '@nexus/contracts';
+import type {
+	ControlFieldStates,
+	ControlMutation,
+	ControlOperationAck,
+	MediaTarget,
+} from '@nexus/contracts';
+import { clampControlValue } from '@nexus/contracts/ui-runtime';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 import { syncSidePanelSpeed } from '../side-panel/controls';
-import { getHotkeyTarget, setHotkeyTarget } from '../../shared/registry-client';
-import type { CardInternalState } from './types';
-import type { ConfigUpdateFn } from './state';
+import { getHotkeyTarget, setHotkeyTarget } from '../../shared/hotkey-target-client';
+import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
+import type { ConfigErrorHandler, ConfigUpdateFn } from './state';
 import { showPopupToast } from '../toast';
+import { parseFiniteControlInput } from '../utils/control-input';
 import { getCurrentDict } from '../views/i18n-apply';
 import {
 	SPECTRA_TRUSTED_PIP_EVENT,
@@ -167,10 +174,48 @@ function asControlUiFailure(error: unknown): ControlUiFailure {
 	};
 }
 
+type AcknowledgedControl = {
+	tabId: number;
+	documentId: string;
+	generation: number;
+	revision: number;
+	target: MediaTarget | null;
+	fields: ControlFieldStates;
+};
+
+function projectAcknowledgedControl(state: CardInternalState, ack: AcknowledgedControl): void {
+	const current = state.controlSnapshot;
+	if (current && (current.tabId !== ack.tabId || current.documentId !== ack.documentId
+		|| ack.generation < current.generation
+		|| ack.generation === current.generation && ack.revision < current.revision)) return;
+
+	state.controlRevision = Math.max(state.controlRevision, ack.revision);
+	state.controlGeneration = Math.max(state.controlGeneration, ack.generation);
+	state.stableConfig = mergeControlFields(state.stableConfig, ack.fields);
+	state.config = mergeAudioConfig(state.stableConfig, {
+		eqValues: [...state.stableConfig.eqValues],
+	});
+
+	if (current && current.tabId === ack.tabId && current.documentId === ack.documentId) {
+		state.controlSnapshot = {
+			...current,
+			generation: ack.generation,
+			revision: ack.revision,
+			activeVideo: ack.target?.kind === 'video' ? ack.target : current.activeVideo,
+			fields: { ...current.fields, ...ack.fields },
+		};
+	}
+}
+
 async function reportControlFailure(
 	error: unknown,
 	state: CardInternalState,
+	onError?: ConfigErrorHandler,
 ): Promise<void> {
+	if (onError) {
+		onError(error, state);
+		return;
+	}
 	const failure = asControlUiFailure(error);
 	state.lastError = failure;
 	showPopupToast(failure.message, 'error');
@@ -190,8 +235,6 @@ async function submitMutation(tabId: number, state: CardInternalState, mutation:
 		{ tabId },
 	);
 	if (!response.ok) throw new ControlUiError(response.error);
-	state.controlRevision = Math.max(state.controlRevision, response.data.revision);
-	state.controlGeneration = Math.max(state.controlGeneration, response.data.generation);
 	const field = response.data.fields[mutation.field];
 	if (field?.phase !== 'applied') {
 		throw new ControlUiError(field?.lastError ?? {
@@ -200,6 +243,7 @@ async function submitMutation(tabId: number, state: CardInternalState, mutation:
 			retryable: true,
 		});
 	}
+	projectAcknowledgedControl(state, response.data);
 	return response.data;
 }
 
@@ -209,6 +253,7 @@ export function bindMediaControls(
 	tabId: number,
 	state: CardInternalState,
 	update: ConfigUpdateFn,
+	onError?: ConfigErrorHandler,
 ): void {
 	if (ui.btnPause) {
 		ui.btnPause.onclick = () => {
@@ -226,11 +271,10 @@ export function bindMediaControls(
 			)).then((response) => {
 				if (!response.ok) throw new ControlUiError(response.error);
 				const acknowledgement = response.data as ControlOperationAck<'playback-toggle'>;
-				state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
-				state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
+				projectAcknowledgedControl(state, acknowledgement);
 				const playing = acknowledgement.result.playing;
 				if (typeof playing === 'boolean' && ui.btnPause) renderPlaybackButton(ui.btnPause, playing);
-			}).catch((error: unknown) => reportControlFailure(error, state));
+			}).catch((error: unknown) => reportControlFailure(error, state, onError));
 		};
 	}
 
@@ -240,7 +284,7 @@ export function bindMediaControls(
 			const target = snapshot?.activeVideo
 				?? (snapshot?.activeMedia?.kind === 'video' ? snapshot.activeMedia : null);
 			if (!snapshot?.documentId || !target) {
-				void reportControlFailure(new Error('No active video target'), state);
+				void reportControlFailure(new Error('No active video target'), state, onError);
 				return;
 			}
 			ui.btnPip?.setAttribute('aria-busy', 'true');
@@ -253,7 +297,7 @@ export function bindMediaControls(
 					ui.btnPip.classList.toggle('active', result.active);
 					ui.btnPip.setAttribute('aria-pressed', String(result.active));
 				})
-				.catch((error: unknown) => reportControlFailure(error, state))
+				.catch((error: unknown) => reportControlFailure(error, state, onError))
 				.finally(() => {
 					pipToggleByTab.delete(tabId);
 					ui.btnPip?.removeAttribute('aria-busy');
@@ -268,10 +312,10 @@ export function bindMediaControls(
 			.then((ack) => {
 				const actual = ack.fields.speed?.actual;
 				if (typeof actual !== 'number') return;
-				if (ui.speedInput) ui.speedInput.value = actual.toFixed(2);
-				syncSidePanelSpeed(actual);
+				if (ui.speedInput && document.activeElement !== ui.speedInput) ui.speedInput.value = actual.toFixed(2);
+				syncSidePanelSpeed(tabId, actual);
 			})
-			.catch((error: unknown) => reportControlFailure(error, state));
+			.catch((error: unknown) => reportControlFailure(error, state, onError));
 	};
 
 	ui.speedBtns.forEach(btn => {
@@ -284,18 +328,17 @@ export function bindMediaControls(
 	const speedInput = ui.speedInput;
 	if (speedInput) {
 		const submitClampedSpeed = (speed: number) => {
-			const clampedSpeed = Math.max(0.1, Math.min(16, speed));
+			const clampedSpeed = clampControlValue(speed, 'speed', 1);
 			submitSpeed('set', clampedSpeed);
 		};
 
 		speedInput.onchange = (e) => {
-			const speed = parseFloat((e.target as HTMLInputElement).value) || 1;
-			submitClampedSpeed(speed);
+			submitClampedSpeed(parseFiniteControlInput((e.target as HTMLInputElement).value, 1));
 		};
 
 		speedInput.onwheel = (e) => {
 			e.preventDefault();
-			const current = parseFloat(speedInput.value) || 1;
+			const current = parseFiniteControlInput(speedInput.value, 1);
 			const delta = e.deltaY < 0 ? 0.1 : -0.1;
 			submitClampedSpeed(current + delta);
 		};
@@ -310,7 +353,7 @@ export function bindMediaControls(
 				btn.classList.add('active');
 				btn.setAttribute('aria-pressed', 'true');
 			}
-		}).catch(() => undefined);
+		}).catch((error: unknown) => reportControlFailure(error, state, onError));
 
 		btn.onclick = () => {
 			const clearing = btn.classList.contains('active');
@@ -324,13 +367,14 @@ export function bindMediaControls(
 					btn.classList.add('active');
 					btn.setAttribute('aria-pressed', 'true');
 				}
-			}).catch(() => undefined);
+			}).catch((error: unknown) => reportControlFailure(error, state, onError));
 		};
 	}
 
 	if (ui.btnGotoTab) {
 		ui.btnGotoTab.onclick = () => {
-			chrome.tabs.update(tabId, { active: true });
+			void chrome.tabs.update(tabId, { active: true })
+				.catch((error: unknown) => reportControlFailure(error, state, onError));
 		};
 	}
 }

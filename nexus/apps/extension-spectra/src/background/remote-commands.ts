@@ -12,7 +12,6 @@ import type {
 import {
 	REMOTE_COMMAND_DESCRIPTORS,
 	audioSessionMatchesControlDocument,
-	isSpectraEventEnvelope,
 	resolveAudioVolume,
 	resolveAudioVolumeState,
 } from '@nexus/contracts';
@@ -23,6 +22,7 @@ import {
 	submitControlRequest,
 } from './control-coordinator';
 import { getAudioSession } from './audio-session-store';
+import { isBackgroundEventEnvelope } from './background-rpc';
 
 type StateCallback = (tabId: number, state: RemoteState) => void | Promise<void>;
 
@@ -39,8 +39,23 @@ interface StableRemoteProjection {
 }
 
 const stableRemoteStates = new Map<number, StableRemoteProjection>();
-const remotePublishTails = new Map<number, Promise<void>>();
 const remotePublicationTokens = new Map<number, object>();
+
+interface RemotePublicationRequest {
+	snapshot: ControlSnapshot;
+	knownSession?: AudioSessionSnapshot | null;
+	publicationToken: object;
+	resolve: () => void;
+	reject: (error: unknown) => void;
+}
+
+interface RemotePublicationQueue {
+	running: boolean;
+	current: RemotePublicationRequest | null;
+	pending: RemotePublicationRequest | null;
+}
+
+const remotePublicationQueues = new Map<number, RemotePublicationQueue>();
 
 function remotePublicationToken(tabId: number): object {
 	const current = remotePublicationTokens.get(tabId);
@@ -52,6 +67,10 @@ function remotePublicationToken(tabId: number): object {
 
 export function invalidateRemoteTab(tabId: number): void {
 	stableRemoteStates.delete(tabId);
+	const queue = remotePublicationQueues.get(tabId);
+	queue?.pending?.resolve();
+	if (queue) queue.pending = null;
+	remotePublicationQueues.delete(tabId);
 	// Deleting the exact token invalidates publishers captured before removal.
 	// A reused Chrome tab id receives a fresh token without retaining tombstones.
 	remotePublicationTokens.delete(tabId);
@@ -61,8 +80,8 @@ type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & { tabId:
 type RoutedControlOperationRequest = ControlOperationRequest & { tabId: number };
 
 export interface RemoteControlGateway {
-	submit(request: RoutedControlSubmitRequest): Promise<ControlApplyAck>;
-	submitOperation(request: RoutedControlOperationRequest): Promise<ControlOperationAck>;
+	submit(request: RoutedControlSubmitRequest, signal?: AbortSignal): Promise<ControlApplyAck>;
+	submitOperation(request: RoutedControlOperationRequest, signal?: AbortSignal): Promise<ControlOperationAck>;
 	getSnapshot(tabId: number): Promise<ControlSnapshot | null>;
 }
 
@@ -78,7 +97,7 @@ export function setStateCallback(callback: StateCallback | null): void {
 	stateCallback = callback;
 	if (!callback) {
 		stableRemoteStates.clear();
-		remotePublishTails.clear();
+		remotePublicationQueues.clear();
 		remotePublicationTokens.clear();
 	}
 	// Tests and MV3 teardown may clear the callback after the Chrome global has
@@ -87,7 +106,7 @@ export function setStateCallback(callback: StateCallback | null): void {
 	if (!callback || snapshotListenerInstalled || typeof chrome === 'undefined') return;
 	snapshotListenerInstalled = true;
 	chrome.runtime.onMessage.addListener((message: unknown) => {
-		if (!isSpectraEventEnvelope(message)) return false;
+		if (!isBackgroundEventEnvelope(message)) return false;
 		if (message.type === 'spectra.control.snapshot.changed') {
 			void publishRemoteState(message.payload).catch(() => undefined);
 		} else if (message.type === 'spectra.audio.session.changed') {
@@ -107,8 +126,10 @@ export async function executeCommand(
 	command: unknown,
 	tabId: number,
 	gateway: RemoteControlGateway = coordinatorGateway,
+	signal?: AbortSignal,
 ): Promise<boolean> {
 	if (!isRemoteCommand(command) || !Number.isInteger(tabId) || tabId <= 0) return false;
+	throwIfRemoteCommandAborted(signal);
 
 	const descriptor = REMOTE_COMMAND_DESCRIPTORS[command];
 	if (descriptor.capability === 'effective-volume'
@@ -124,14 +145,19 @@ export async function executeCommand(
 					: descriptor.capability === 'seek-relative'
 						? { delta: descriptor.value ?? 0 }
 						: {},
-			} as RoutedControlOperationRequest);
+			} as RoutedControlOperationRequest, signal);
+		throwIfRemoteCommandAborted(signal);
 		const failure = Object.values(acknowledgement.fields)
 			.find((fieldState) => fieldState?.phase !== 'applied');
 		if (failure) throw new Error(failure.lastError?.message ?? 'Remote control was not applied');
 		return true;
 	}
 	const field = descriptor.capability;
-	if (!['volumeBase', 'boost', 'mediaMuted', 'playing', 'currentTime', 'speed', 'fullscreen', 'pip'].includes(field)) {
+	if (field !== 'volumeBase'
+		&& field !== 'boost'
+		&& field !== 'mediaMuted'
+		&& field !== 'playing'
+		&& field !== 'speed') {
 		throw new Error(`Remote capability is not executable: ${descriptor.capability}`);
 	}
 	const mutation: ControlMutation = {
@@ -145,11 +171,16 @@ export async function executeCommand(
 			requestedCoverage: descriptor.capability === 'boost' ? 'full' : 'active-target',
 			target: null,
 			mutations: [mutation],
-		});
+		}, signal);
+	throwIfRemoteCommandAborted(signal);
 	const failure = Object.values(ack.fields)
 		.find((fieldState) => fieldState?.phase !== 'applied');
 	if (failure) throw new Error(failure.lastError?.message ?? 'Remote control was not applied');
 	return true;
+}
+
+function throwIfRemoteCommandAborted(signal?: AbortSignal): void {
+	if (signal?.aborted) throw new Error('REMOTE_COMMAND_CANCELLED');
 }
 
 export async function syncState(
@@ -168,7 +199,9 @@ export async function syncState(
 		}
 	} catch {
 		// The tab may have navigated or closed between authentication and sync.
-		stableRemoteStates.delete(tabId);
+		if (remotePublicationTokens.get(tabId) === publicationToken) {
+			stableRemoteStates.delete(tabId);
+		}
 	}
 }
 
@@ -185,21 +218,84 @@ function isOlderRemoteProjection(
 	));
 }
 
+function isRemoteSnapshotAtOrAfter(
+	previous: ControlSnapshot | undefined,
+	snapshot: ControlSnapshot,
+): boolean {
+	return Boolean(previous && (
+		previous.generation > snapshot.generation
+		|| (previous.generation === snapshot.generation
+			&& previous.documentId === snapshot.documentId
+			&& previous.origin === snapshot.origin
+			&& previous.revision >= snapshot.revision)
+	));
+}
+
 function publishRemoteState(
 	snapshot: ControlSnapshot,
 	knownSession?: AudioSessionSnapshot | null,
 	publicationToken = remotePublicationToken(snapshot.tabId),
 ): Promise<void> {
-	const previousTail = remotePublishTails.get(snapshot.tabId) ?? Promise.resolve();
-	const operation = previousTail
-		.catch(() => undefined)
-		.then(() => publishRemoteStateNow(snapshot, knownSession, publicationToken));
-	remotePublishTails.set(snapshot.tabId, operation);
-	return operation.finally(() => {
-		if (remotePublishTails.get(snapshot.tabId) === operation) {
-			remotePublishTails.delete(snapshot.tabId);
-		}
+	if (isRemoteSnapshotAtOrAfter(stableRemoteStates.get(snapshot.tabId)?.snapshot, snapshot)) {
+		return Promise.resolve();
+	}
+	let resolveRequest!: () => void;
+	let rejectRequest!: (error: unknown) => void;
+	const result = new Promise<void>((resolve, reject) => {
+		resolveRequest = resolve;
+		rejectRequest = reject;
 	});
+	const request: RemotePublicationRequest = {
+		snapshot,
+		knownSession,
+		publicationToken,
+		resolve: resolveRequest,
+		reject: rejectRequest,
+	};
+	const queue = remotePublicationQueues.get(snapshot.tabId) ?? {
+		running: false,
+		current: null,
+		pending: null,
+	};
+	remotePublicationQueues.set(snapshot.tabId, queue);
+	if (!queue.running) {
+		queue.running = true;
+		queue.current = request;
+		void drainRemotePublication(snapshot.tabId, queue);
+		return result;
+	}
+	if (queue.pending && isRemoteSnapshotAtOrAfter(queue.pending.snapshot, snapshot)) {
+		// A newer pending snapshot already supersedes this request. Its caller is
+		// told that no additional delivery is required rather than growing a
+		// waiter list behind the in-flight publication.
+		resolveRequest();
+		return result;
+	}
+	if (queue.pending) queue.pending.resolve();
+	queue.pending = request;
+	return result;
+}
+
+async function drainRemotePublication(tabId: number, queue: RemotePublicationQueue): Promise<void> {
+	while (queue.current) {
+		const request = queue.current;
+		queue.current = null;
+		try {
+			await publishRemoteStateNow(
+				request.snapshot,
+				request.knownSession,
+				request.publicationToken,
+			);
+			request.resolve();
+		} catch (error) {
+			request.reject(error);
+		}
+		if (!queue.pending) break;
+		queue.current = queue.pending;
+		queue.pending = null;
+	}
+	queue.running = false;
+	if (remotePublicationQueues.get(tabId) === queue) remotePublicationQueues.delete(tabId);
 }
 
 async function publishRemoteStateNow(
@@ -249,7 +345,7 @@ async function publishRemoteStateNow(
 	};
 	const volumeBase = actual('volumeBase', baseline.volumeBase ?? baseline.volume);
 	const boost = actual('boost', baseline.boost ?? 1);
-	const volume = resolveAudioVolume({ volume: volumeBase * boost, volumeBase, boost });
+	const volume = resolveAudioVolume({ volumeBase, boost });
 	const session = knownSession === undefined
 		? await getAudioSession(snapshot.tabId).catch(() => null)
 		: knownSession;
@@ -259,21 +355,30 @@ async function publishRemoteStateNow(
 		|| remotePublicationTokens.get(snapshot.tabId) !== publicationToken
 		|| isOlderRemoteProjection(stableRemoteStates.get(snapshot.tabId), snapshot)) return;
 	const sessionMatches = audioSessionMatchesControlDocument(session, snapshot);
+	const actualMode = sessionMatches && session ? session.actualMode : baseline.actualMode;
+	const phase = sessionMatches && session ? session.phase : baseline.phase;
+	const muted = actual('mediaMuted', baseline.muted);
+	const volumeState = resolveAudioVolumeState({
+		volume: volume.effectiveVolume,
+		muted,
+		actualMode,
+		phase,
+	});
 	const state: RemoteState = {
 		generation: snapshot.generation,
 		revision: snapshot.revision,
 		volume: volume.effectiveVolume,
 		volumeBase: volume.volumeBase,
 		boost: volume.boost,
-		actualMode: sessionMatches && session ? session.actualMode : baseline.actualMode,
-		phase: sessionMatches && session ? session.phase : baseline.phase,
-		muted: actual('mediaMuted', baseline.muted),
+		actualMode,
+		phase,
+		volumeState,
+		muted,
 		playing: actual('playing', baseline.playing),
 		speed: actual('speed', baseline.speed),
 		tabTitle: tab ? (tab.title ?? '').slice(0, 512) : baseline.tabTitle ?? '',
 		tabDomain: tab ? tabDomain : baseline.tabDomain ?? '',
 	};
-	state.volumeState = resolveAudioVolumeState(state);
 	const projection: StableRemoteProjection = {
 		documentId: snapshot.documentId,
 		origin: snapshot.origin,

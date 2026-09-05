@@ -185,7 +185,7 @@ describe('lean site-hotkey host lifecycle', () => {
 	test('uses website-first arbitration and Background-owned bounded repeat bursts', () => {
 		expect(hostSource).toContain('createWebsiteFirstKeyboardArbiter');
 		expect(hostSource).toContain('resolveSpectraDefaultHotkeyAction(event) !== null');
-		expect(hostSource).toContain('isSpectraRepeatableDefaultHotkeyAction');
+		expect(hostSource).toContain('SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS.includes');
 		expect(hostSource).toContain("phase: 'press' | 'release'");
 		expect(shortcutSource).toContain('MAX_REPEAT_BURST_PULSES = 160');
 		expect(shortcutSource).toContain('releasePageGestureBurst');

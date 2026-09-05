@@ -1,8 +1,12 @@
 // goal: centralizes type definitions for the PolicyExecutor submodule to prevent circular dependencies
 
-import type { AudioConfig } from '@nexus/kernel';
-import type { CaptureAdmission, SpectraResponse } from '@nexus/contracts';
-import type { UrlInfo } from '@nexus/audio-engine';
+import type {
+	AudioConfig,
+	CaptureAdmission,
+	MediaProcessingRoute,
+	SpectraAudioMode,
+	SpectraResponse,
+} from '@nexus/contracts';
 
 export interface PolicyApplicationOptions {
 	navigation?: boolean;
@@ -26,18 +30,13 @@ export interface PolicyExecutor {
 		changes: Partial<AudioConfig>,
 		options?: PolicyUpdateOptions,
 	): Promise<SpectraResponse<'spectra.audio.config.set'>>;
-	hasUserGesture(): boolean;
 	markUserInteracted(): void;
-	getActiveMode(): string | null;
-	getUrlInfo(): UrlInfo;
+	refreshMediaRoute(): Promise<MediaProcessingRoute | 'auto'>;
+	getActiveMode(): SpectraAudioMode | null;
 }
-
-// CorsStatus: current resource-level MediaElementSource admission summary.
-export type CorsStatus = 'PENDING' | 'SAFE' | 'RESTRICTED';
 
 // InternalState: shared volatile state bundle for submodule coordination
 export interface InternalState {
-	corsStatus: CorsStatus;
 	// lastBadgeHash: deduplication key for repetitive badge update messages
 	lastBadgeHash: string;
 	// lastSyncHash: deduplication key for popup UI broadcasting

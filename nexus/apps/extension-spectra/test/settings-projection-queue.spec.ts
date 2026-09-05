@@ -20,12 +20,24 @@ describe('settings projection queue', () => {
 	});
 
 	test('coalesces later revisions and preserves every required projection lane', async () => {
-		const runs: Array<{ revision: number; global: boolean; hotkeys: boolean }> = [];
+		const runs: Array<{
+			revision: number;
+			global: boolean;
+			hotkeys: boolean;
+			mediaRouteDomains: string[];
+			mediaRoutesAll: boolean;
+		}> = [];
 		let releaseFirst!: () => void;
 		const firstBlocked = new Promise<void>((resolve) => { releaseFirst = resolve; });
 		const queue = new SettingsProjectionQueue<Snapshot>({
 			project: async (work) => {
-				runs.push({ revision: work.snapshot.revision, global: work.global, hotkeys: work.hotkeys });
+				runs.push({
+					revision: work.snapshot.revision,
+					global: work.global,
+					hotkeys: work.hotkeys,
+					mediaRouteDomains: work.mediaRouteDomains,
+					mediaRoutesAll: work.mediaRoutesAll,
+				});
 				if (work.snapshot.revision === 1) await firstBlocked;
 			},
 			onSuccess: () => undefined,
@@ -33,16 +45,46 @@ describe('settings projection queue', () => {
 			delay: async () => undefined,
 		});
 
-		queue.enqueue({ snapshot: { revision: 1 }, global: true, hotkeys: false });
+		queue.enqueue({
+			snapshot: { revision: 1 },
+			global: true,
+			hotkeys: false,
+			mediaRouteDomains: ['video.example.com'],
+			mediaRoutesAll: false,
+		});
 		await Promise.resolve();
-		queue.enqueue({ snapshot: { revision: 2 }, global: false, hotkeys: true });
-		queue.enqueue({ snapshot: { revision: 3 }, global: true, hotkeys: false });
+		queue.enqueue({
+			snapshot: { revision: 2 },
+			global: false,
+			hotkeys: true,
+			mediaRouteDomains: ['audio.example.com'],
+			mediaRoutesAll: false,
+		});
+		queue.enqueue({
+			snapshot: { revision: 3 },
+			global: true,
+			hotkeys: false,
+			mediaRouteDomains: [],
+			mediaRoutesAll: true,
+		});
 		releaseFirst();
 		await queue.whenIdle();
 
 		expect(runs).toEqual([
-			{ revision: 1, global: true, hotkeys: false },
-			{ revision: 3, global: true, hotkeys: true },
+			{
+				revision: 1,
+				global: true,
+				hotkeys: false,
+				mediaRouteDomains: ['video.example.com'],
+				mediaRoutesAll: false,
+			},
+			{
+				revision: 3,
+				global: true,
+				hotkeys: true,
+				mediaRouteDomains: ['audio.example.com'],
+				mediaRoutesAll: true,
+			},
 		]);
 	});
 
@@ -61,7 +103,13 @@ describe('settings projection queue', () => {
 			retryDelaysMs: [1, 2],
 		});
 
-		queue.enqueue({ snapshot: { revision: 4 }, global: true, hotkeys: true });
+		queue.enqueue({
+			snapshot: { revision: 4 },
+			global: true,
+			hotkeys: true,
+			mediaRouteDomains: [],
+			mediaRoutesAll: true,
+		});
 		await queue.whenIdle();
 		expect(attempts).toBe(3);
 		expect(deferredRevision).toBe(4);

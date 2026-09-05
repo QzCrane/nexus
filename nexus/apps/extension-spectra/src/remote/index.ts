@@ -1,9 +1,9 @@
 /**
  * SPECTRA Remote - Remote Module (Popup)
  * 
- * Exports QR generation and remote UI binding.
+ * Exports the lightweight remote UI binding. QR encoding is loaded only when
+ * the user opens a pairing surface.
  * PeerJS connection is managed in background.
  */
 
-export { generateRemoteQR } from './qr-generator.js';
 export { bindRemoteUI, updateRemoteI18n } from './ui-bindings.js';

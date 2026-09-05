@@ -5,14 +5,22 @@ import { gzipSync } from 'node:zlib';
 import { formatKeyCombo, parseParams } from '../src/options/formatters';
 import { EDITABLE_HOTKEY_ACTIONS, LEGACY_UNSUPPORTED_ACTIONS } from '../src/options/supported-hotkey-actions';
 import {
+	clearLocaleCatalogCache,
 	getActionName as getLoadedActionName,
 	getOptionsDictionary,
 	getPopupDictionary,
-	loadLocaleCatalog,
 	SUPPORTED_SPECTRA_LANGUAGES,
 } from '../src/shared/i18n/catalog';
-import { createLocaleAssetCatalogs, createLocaleCatalogs } from '../scripts/i18n-assets';
+import { loadOptionsLocaleCatalog } from '../src/shared/i18n/options-catalog';
+import { loadPopupLocaleCatalog } from '../src/shared/i18n/popup-catalog';
+import {
+	createLocaleAssetCatalogs,
+	createLocaleCatalogs,
+	createLocaleSurfaceAssetCatalogs,
+} from '../scripts/i18n-assets';
 import { getContentOSDMessages } from '../src/shared/i18n/content-osd';
+import { withAlpha } from '../src/popup/visualizer/draw-eq-curve';
+import { CONTROL_VALUE_LIMITS } from '@nexus/contracts';
 
 describe('hotkey editor contract', () => {
 	test('only exposes actions with runtime handlers', () => {
@@ -29,6 +37,8 @@ describe('hotkey editor contract', () => {
 		expect(parseParams('open_url', 'https://example.com/a')).toEqual({ url: 'https://example.com/a' });
 		expect(parseParams('speed_set', '17')).toBeUndefined();
 		expect(parseParams('volume_set', '-1')).toBeUndefined();
+		expect(parseParams('volume_set', '')).toBeUndefined();
+		expect(parseParams('volume_set', '   ')).toBeUndefined();
 		expect(parseParams('volume_set', '0')).toEqual({ volume: 0 });
 		expect(parseParams('volume_set', '800')).toEqual({ volume: 800 });
 		expect(parseParams('volume_set', '801')).toBeUndefined();
@@ -86,8 +96,18 @@ describe('hotkey editor contract', () => {
 		);
 		expect(source).toContain('disabledLegacyBindings: [...(source.disabledLegacyBindings ?? [])]');
 		expect(source.match(/settings = cloneHotkeySettings\(snapshot\.hotkeySettings\);/gu))
-			.toHaveLength(2);
+			.toHaveLength(1);
+		expect(source).toContain('for (const [command, pending] of pendingSlotMutations.entries())');
+		expect(source).toContain('settings.slots[command] = pending.value;');
 		expect(source).not.toContain('settings = snapshot.hotkeySettings;');
+	});
+});
+
+describe('popup visualizer color contract', () => {
+	test('applies alpha to canonical hex and rgb theme colors', () => {
+		expect(withAlpha('#2563eb', 0.25)).toBe('rgba(37, 99, 235, 0.250)');
+		expect(withAlpha('rgb(37, 99, 235)', 0.5)).toBe('rgba(37, 99, 235, 0.500)');
+		expect(withAlpha('#12345678', 0.5)).toBe('rgba(18, 52, 86, 0.235)');
 	});
 });
 
@@ -175,23 +195,27 @@ describe('options translations', () => {
 	});
 
 	test('keeps the requested locale readable when its asset falls back to English', async () => {
-		const assets = createLocaleAssetCatalogs();
+		clearLocaleCatalogCache();
+		const assets = createLocaleSurfaceAssetCatalogs();
 		const english = createLocaleCatalogs()['en-US'];
-		const englishAsset = assets['en-US'];
-		if (!english || !englishAsset) throw new Error('English locale catalog is missing');
+		if (!english) throw new Error('English locale catalog is missing');
 		const originalChrome = globalThis.chrome;
 		const originalFetch = globalThis.fetch;
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
 			value: { runtime: { getURL: (path: string) => `https://spectra.invalid/${path}` } },
 		});
-		globalThis.fetch = (async (input: string | URL | Request) => (
-			String(input).endsWith('/en-US.json.gz')
-				? new Response(gzipSync(JSON.stringify(englishAsset), { level: 9, mtime: 0 }))
-				: new Response('Not found', { status: 404 })
-		)) as typeof fetch;
+		globalThis.fetch = (async (input: string | URL | Request) => {
+			const match = /\/(popup|options|actions)\/en-US\.json\.gz$/u.exec(String(input));
+			const surface = match?.[1] as keyof typeof assets | undefined;
+			const asset = surface ? assets[surface]['en-US'] : undefined;
+			return asset
+				? new Response(gzipSync(JSON.stringify(asset), { level: 9, mtime: 0 }))
+				: new Response('Not found', { status: 404 });
+		}) as typeof fetch;
 		try {
-			await loadLocaleCatalog('fr-FR');
+			await loadOptionsLocaleCatalog('fr-FR');
+			await loadPopupLocaleCatalog('fr-FR');
 			expect(getPopupDictionary('fr-FR').settingsTitle).toBe(english.popup.settingsTitle);
 			expect(getOptionsDictionary('fr-FR').modal_save).toBe(english.options.modal_save);
 			expect(getLoadedActionName('gain_up', 'fr-FR')).toBe(english.actions.gain_up);
@@ -208,7 +232,8 @@ describe('options translations', () => {
 	});
 
 	test('validates, expands, and hydrates generated locale assets at runtime', async () => {
-		const assets = createLocaleAssetCatalogs();
+		clearLocaleCatalogCache();
+		const assets = createLocaleSurfaceAssetCatalogs();
 		const complete = createLocaleCatalogs();
 		const originalChrome = globalThis.chrome;
 		const originalFetch = globalThis.fetch;
@@ -217,15 +242,20 @@ describe('options translations', () => {
 			value: { runtime: { getURL: (path: string) => `https://spectra.invalid/${path}` } },
 		});
 		globalThis.fetch = (async (input: string | URL | Request) => {
-			const language = /\/([^/]+)\.json\.gz$/u.exec(String(input))?.[1];
-			const asset = language ? assets[language] : undefined;
+			const match = /\/(popup|options|actions)\/([^/]+)\.json\.gz$/u.exec(String(input));
+			const surface = match?.[1] as keyof typeof assets | undefined;
+			const language = match?.[2];
+			const asset = surface && language ? assets[surface][language] : undefined;
 			return asset
 				? new Response(gzipSync(JSON.stringify(asset), { level: 9, mtime: 0 }))
 				: new Response('Not found', { status: 404 });
 		}) as typeof fetch;
 		try {
 			for (const locale of SUPPORTED_SPECTRA_LANGUAGES) {
-				await loadLocaleCatalog(locale);
+				await Promise.all([
+					loadOptionsLocaleCatalog(locale),
+					loadPopupLocaleCatalog(locale),
+				]);
 				expect(getPopupDictionary(locale).settingsTitle, `${locale} popup`).toBe(
 					complete[locale]?.popup.settingsTitle,
 				);
@@ -290,32 +320,53 @@ describe('options translations', () => {
 });
 
 describe('extension-page DOM and idle contracts', () => {
-	test('keeps the one-release theme adapter read-only and background-owned', () => {
+	test('uses only the background settings snapshot as the Options theme owner', () => {
 		const theme = readFileSync(resolve(import.meta.dir, '../src/options/theme.ts'), 'utf8');
-		expect(theme).toContain("scope: 'legacy-theme'");
-		expect(theme).toContain('readLegacyThemeCandidateForOneRelease');
+		expect(theme).not.toContain("scope: 'legacy-theme'");
+		expect(theme).not.toContain('localStorage');
+		expect(theme).toContain('getOptionsSettingsSnapshot');
+		expect(theme).toContain("from '../shared/options-settings-client'");
+		expect(theme).not.toContain("from '../shared/settings-client'");
 		expect(theme).not.toContain('chrome.storage');
 		expect(theme).not.toContain('spectraSettingsMeta');
-		expect(theme).not.toContain('localStorage.setItem');
-		expect(theme).not.toContain('spectra-theme-v2-migrated');
 	});
 
-	test('exposes stateful controls and one media route list to assistive technology', () => {
+	test('keeps site routes on an independent registry wire without changing full Settings v2', () => {
 		const popup = readFileSync(resolve(import.meta.dir, '../public/popup.html'), 'utf8');
-		expect(popup).toContain('<ul id="registry-list" class="registry-list"');
+		expect(popup).toContain('id="registry-group"');
+		expect(popup).toContain('id="registry-list"');
 		expect(popup).toContain('id="registry-new-route"');
-		expect(popup).not.toContain('id="tab-restricted"');
-		expect(popup).not.toContain('id="tab-safe"');
+		expect(popup).toContain('data-i18n="grpAdvanced"');
 		expect(popup).toContain('aria-pressed="false"');
-		const registry = readFileSync(resolve(import.meta.dir, '../src/popup/views/registry-ui.ts'), 'utf8');
-		expect(registry).toContain('changes.mediaRouteRegistry');
-		// The UI relies on the storage-layer normalization contract: every entry
-		// arrives with a site:* fingerprint (normalizeRegistryEntries rewrites
-		// legacy media:v1:* records on read), so the UI labels source via the
-		// DomainEntry.source field rather than re-deriving it from the fingerprint
-		// prefix. Verifying the storage-side normalization is the responsibility of
-		// registry-v2.spec.ts.
-		expect(registry).toContain('entry.source === \'auto\'');
+		const settings = readFileSync(resolve(import.meta.dir, '../src/popup/views/settings.ts'), 'utf8');
+		const routeUI = readFileSync(resolve(import.meta.dir, '../src/popup/views/media-route-ui.ts'), 'utf8');
+		const popupIndex = readFileSync(resolve(import.meta.dir, '../src/popup/index.ts'), 'utf8');
+		const hotkeyTargetClient = readFileSync(
+			resolve(import.meta.dir, '../src/shared/hotkey-target-client.ts'),
+			'utf8',
+		);
+		expect(settings).not.toContain('getRegistrySnapshot');
+		expect(settings).not.toContain('registryEntries');
+		expect(settings).toContain("import('./media-route-ui')");
+		expect(routeUI).toContain('getRegistrySnapshot');
+		expect(routeUI).toContain('addRegistryDomain');
+		expect(routeUI).toContain('removeRegistryDomain');
+		expect(routeUI).not.toContain("scope: 'media-route'");
+		expect(routeUI).toContain('subscribeSettingsSnapshots');
+		expect(popupIndex).not.toContain('registryEntries');
+		expect(hotkeyTargetClient).not.toContain('spectra.registry.');
+		expect(hotkeyTargetClient).toContain('spectra.hotkey-target.get');
+		expect(hotkeyTargetClient).toContain('spectra.hotkey-target.set');
+		const sidePanel = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/index.ts'), 'utf8');
+		const cardRegistry = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/registry.ts'), 'utf8');
+		const presets = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
+		const remote = readFileSync(resolve(import.meta.dir, '../src/remote/ui-bindings.ts'), 'utf8');
+		expect(sidePanel).not.toContain('updateCardConfig');
+		expect(sidePanel).not.toContain('isSidePanelOpen');
+		expect(cardRegistry).not.toContain('config: AudioConfig;');
+		expect(cardRegistry).not.toContain('getRegisteredConfig');
+		expect(presets).not.toContain('getDefaultPreset');
+		expect(remote).not.toContain('isRemoteConnected');
 
 		for (const path of [
 			'../src/popup/card/media-events.ts',
@@ -373,10 +424,21 @@ describe('extension-page DOM and idle contracts', () => {
 		}
 	});
 
+	test('keeps side-panel speed bounds aligned with the shared control range owner', () => {
+		const speedControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/speed-controls.ts'), 'utf8');
+		const popup = readFileSync(resolve(import.meta.dir, '../public/popup.html'), 'utf8');
+
+		expect(CONTROL_VALUE_LIMITS.speed).toEqual({ min: 0.1, max: 16 });
+		expect(speedControls).toContain('CONTROL_VALUE_LIMITS.speed.min');
+		expect(speedControls).toContain('CONTROL_VALUE_LIMITS.speed.max');
+		expect(popup).toMatch(/class="sp-label-side">0\.1x<\/span>/u);
+		expect(popup).toMatch(/class="[^"]*sp-speed-slider[^"]*"[\s\S]*?min="0\.1"[\s\S]*?max="16"/u);
+		expect(popup).toMatch(/class="sp-speed-input"[^>]*\bmin="0\.1"[^>]*\bmax="16"/u);
+	});
+
 	test('renders dynamic UI without HTML string sinks', () => {
 		const files = [
 			'../src/popup/views/i18n-apply.ts',
-			'../src/popup/views/registry-ui.ts',
 			'../src/popup/views/presets-ui.ts',
 			'../src/popup/card/media-events.ts',
 			'../src/popup/card/render.ts',
@@ -390,18 +452,17 @@ describe('extension-page DOM and idle contracts', () => {
 		}
 	});
 
-	test('injects the selected locale before registry and preset first render', () => {
+	test('injects the selected locale before preset first render', () => {
 		const settings = readFileSync(resolve(import.meta.dir, '../src/popup/views/settings.ts'), 'utf8');
-		const registry = readFileSync(resolve(import.meta.dir, '../src/popup/views/registry-ui.ts'), 'utf8');
 		const presets = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
 		const normalizedPresets = presets.replaceAll('\r\n', '\n');
 
-		expect(settings).toContain('initRegistryUI(registryEntries, dict)');
-		expect(settings).toContain('initPresetsUI(dict)');
-		expect(registry).toContain('export function initRegistryUI(entries: DomainEntry[], dict: I18NDict)');
-		expect(registry).not.toContain('currentDict: I18NDict | null');
-		expect(registry).not.toMatch(/currentDict\?\.|Capture when needed|No cached site routes|AUTO|USER/u);
-		expect(normalizedPresets).toContain('export function initPresetsUI(\n\tdict: I18NDict,');
+		expect(settings).not.toContain('initRegistryUI');
+		expect(settings).not.toContain('getRegistrySnapshot');
+		expect(settings).toContain('module.initPresetsUI(state.dict)');
+		expect(settings).toContain("import('./presets-ui')");
+		expect(settings).not.toContain("from './presets-ui'");
+		expect(normalizedPresets).toContain('export function initPresetsUI(dict: I18NDict):');
 		expect(presets).toContain('const refreshRevision = ++latestRefreshRevision');
 		expect(presets).not.toContain('currentDict: I18NDict | null');
 	});
@@ -419,6 +480,31 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(mediaControls).not.toContain("mutation.field === 'pip'");
 		expect(videoControls).toContain('activeMedia: currentSnapshot.activeMedia');
 		expect(videoControls).not.toContain('activeMedia: ack.target ?? currentSnapshot.activeMedia');
+	});
+
+	test('keeps v1 UI_SYNC outside the Popup state projection', () => {
+		const messaging = readFileSync(resolve(import.meta.dir, '../src/popup/card/messaging.ts'), 'utf8');
+		expect(messaging).not.toContain('legacy-message-adapter');
+		expect(messaging).not.toContain('UI_SYNC');
+	});
+
+	test('requires a live card target before applying a preset and bounds background bootstrap', () => {
+		const presets = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
+		const popup = readFileSync(resolve(import.meta.dir, '../src/popup/index.ts'), 'utf8');
+		const boundedBootstrap = readFileSync(
+			resolve(import.meta.dir, '../src/popup/bounded-card-bootstrap.ts'),
+			'utf8',
+		);
+		const card = readFileSync(resolve(import.meta.dir, '../src/popup/card/init.ts'), 'utf8');
+		expect(presets).toContain('applyBtn.disabled = !canApply');
+		expect(presets).toContain('await target.apply(config)');
+		expect(popup).toContain('runBoundedCardBootstrap(backgroundTabs, 4');
+		expect(boundedBootstrap).toContain(
+			'const workerCount = Math.min(Math.max(1, Math.floor(concurrency)), items.length);',
+		);
+		expect(boundedBootstrap).toContain('await Promise.all(Array.from({ length: workerCount }, () => worker()));');
+		expect(card).toContain('params.isBackground');
+		expect(card).toContain('? Promise.resolve(null)');
 	});
 
 	test('keeps Popup PiP single-click, native-only, and lifecycle-bound', () => {
@@ -478,6 +564,7 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(domUtils).toContain("chrome.runtime.getURL('_favicon/')");
 		expect(domUtils).not.toContain('if (!faviconUrl) return fallback');
 		expect(JSON.parse(manifest).permissions).toContain('favicon');
+		expect(JSON.parse(manifest).permissions).toContain('activeTab');
 		expect(JSON.parse(manifest).permissions).not.toContain('_favicon');
 		expect(i18n).toContain("setInteractiveLabel(btnPause, dict.btnPause, 'Pause/Play')");
 		expect(remote).toContain("button.setAttribute('aria-label', label)");
@@ -499,6 +586,10 @@ describe('extension-page DOM and idle contracts', () => {
 		const toast = readFileSync(resolve(import.meta.dir, '../src/content/ui/toast.ts'), 'utf8');
 		const contentRuntime = readFileSync(
 			resolve(import.meta.dir, '../src/content/core/index.ts'),
+			'utf8',
+		);
+		const contentRuntimeLifecycle = readFileSync(
+			resolve(import.meta.dir, '../src/content/core/content-runtime-lifecycle.ts'),
 			'utf8',
 		);
 		const feedbackSurface = readFileSync(
@@ -590,7 +681,16 @@ describe('extension-page DOM and idle contracts', () => {
 		);
 		expect(runtimeDispose.indexOf('disposeFeedbackUI();')).toBeGreaterThanOrEqual(0);
 		expect(runtimeDispose.indexOf('disposeFeedbackUI();')).toBeLessThan(
-			runtimeDispose.indexOf('await runtime.release?.();'),
+			runtimeDispose.indexOf('registry.dispose();'),
+		);
+		expect(contentRuntimeLifecycle.indexOf('disposal.context?.dispose();')).toBeLessThan(
+			contentRuntimeLifecycle.indexOf('disposal.disposeSynchronous();'),
+		);
+		expect(contentRuntimeLifecycle.indexOf('disposal.disposeSynchronous();')).toBeLessThan(
+			contentRuntimeLifecycle.indexOf('await disposal.release?.();'),
+		);
+		expect(contentRuntimeLifecycle.indexOf('await disposal.release?.();')).toBeLessThan(
+			contentRuntimeLifecycle.indexOf('disposal.finalize();'),
 		);
 		expect(contentRuntime).toContain('contentRuntime.registry.track(disposeFeedbackUI)');
 		expect(osd).toContain('if (state.disposed) return;');
@@ -600,8 +700,8 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(osd).toContain("state.hotkey.phase = 'settled'");
 		expect(osd).not.toContain('export function showOSD(');
 		expect(osd).not.toContain('export function showSpeedOSD(');
-		expect(osd).toContain('UIColors.CAPTURE');
-		expect(osd).toContain('UIColors.NATIVE');
+		expect(osd).toContain('UI_COLORS.CAPTURE');
+		expect(osd).toContain('UI_COLORS.NATIVE');
 		expect(osd).not.toContain('#3b82f6');
 		expect(osd).not.toContain('#8b5cf6');
 		expect(osd).not.toContain('payload.capture');

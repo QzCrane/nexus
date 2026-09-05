@@ -1,6 +1,11 @@
 // goal: provides utility functions for formatting and parsing UI-facing hotkey strings and action parameters
 
-import type { KeyCombo, HotkeyAction, HotkeyBinding } from '@nexus/contracts';
+import {
+	isFiniteControlValue,
+	type KeyCombo,
+	type HotkeyAction,
+	type HotkeyBinding,
+} from '@nexus/contracts';
 
 // eff: converts a KeyCombo object into a standardized, human-readable string (e.g., 'Ctrl + Alt + K')
 export function formatKeyCombo(key: KeyCombo): string {
@@ -42,19 +47,22 @@ export function formatParams(action: HotkeyAction, params: NonNullable<HotkeyBin
 
 // eff: converts raw user input strings back into structured parameters appropriate for the selected HotkeyAction
 export function parseParams(action: HotkeyAction, value: string): HotkeyBinding['params'] {
+	const normalizedValue = value.trim();
 	switch (action) {
 		case 'speed_set': {
-			const speed = Number(value);
-			return Number.isFinite(speed) && speed >= 0.1 && speed <= 16 ? { speed } : undefined;
+			if (!normalizedValue) return undefined;
+			const speed = Number(normalizedValue);
+			return isFiniteControlValue(speed, 'speed') ? { speed } : undefined;
 		}
 		case 'volume_set': {
-			const volume = Number(value);
-			return Number.isFinite(volume) && volume >= 0 && volume <= 800 ? { volume } : undefined;
+			if (!normalizedValue) return undefined;
+			const volume = Number(normalizedValue);
+			return isFiniteControlValue(volume, 'volume') ? { volume } : undefined;
 		}
-		case 'run_js': return value.trim() ? { script: value } : undefined;
+		case 'run_js': return normalizedValue ? { script: value } : undefined;
 		case 'open_url': {
 			try {
-				const url = new URL(value.trim());
+				const url = new URL(normalizedValue);
 				return url.protocol === 'http:' || url.protocol === 'https:' ? { url: url.href } : undefined;
 			} catch {
 				return undefined;

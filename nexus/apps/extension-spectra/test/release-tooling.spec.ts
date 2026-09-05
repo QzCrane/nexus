@@ -11,7 +11,7 @@ import {
 	writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { resolve } from 'node:path';
+import { relative, resolve } from 'node:path';
 import { createRelease, createStoredArchive } from '../scripts/create-release.ts';
 import {
 	consumePromotionReceipt,
@@ -24,14 +24,20 @@ import {
 import {
 	assertReleaseRuntime,
 	computeReleaseSourceDigest,
+	type createCandidateReceipt,
+	createCandidateReceiptDocument,
+	currentCandidateFacts,
 	createReleaseReceiptDocument,
 	EXPECTED_BUN_VERSION,
 	PRODUCTION_REMOTE_SITE_BASE_URL,
+	readReleaseTreeIdentity,
+	validateCandidateReceipt,
 	RELEASE_RECEIPT_CAPABILITY_ENV,
 	RELEASE_RECEIPT_PATH_ENV,
 	RELEASE_REQUIRED_GATE_LABELS,
 	RELEASE_SOURCE_DIGEST_ENV,
 	RELEASE_STEPS,
+	SPECTRA_RELEASE_PATHS,
 	runRelease,
 } from '../../../scripts/release-spectra.ts';
 import {
@@ -45,10 +51,14 @@ import {
 } from '../../../scripts/check-spectra-remote-live.ts';
 import {
 	analyzeProductionArtifacts,
+	assertProductionArtifactReport,
 	artifactClosure,
 	bundleFootprint,
 	checkProductionArtifacts,
+	productionHeadroomAdvisories,
 	productionBudgetFailures,
+	PRODUCTION_HEADROOM_ADVISORY_RATIO,
+	PRODUCTION_HEADROOM_CRITICAL_RATIO,
 	SPECTRA_PRODUCTION_BUDGETS,
 } from '../scripts/check-production-artifacts.ts';
 import { productionMangleOptions } from '../scripts/minification-policy.ts';
@@ -103,15 +113,15 @@ describe('release ZIP tooling', () => {
 		const cases = [
 			['serviceWorkerWake', 'service-worker wake', (report, value) => { report.serviceWorkerWake.scriptBytes = value; }],
 			['documentStart', 'document_start', (report, value) => { report.documentStart.scriptBytes = value; }],
-			['contentBootstrap', 'content-bootstrap.js static closure', (report, value) => { report.entrypoints[0].staticBytes = value; }],
-			['contentSiteHotkeys', 'content-site-hotkeys.js static closure', (report, value) => { report.entrypoints[1].staticBytes = value; }],
+			['contentBootstrap', 'content-bootstrap.js static script closure', (report, value) => { report.entrypoints[0].static.scriptBytes = value; }],
+			['contentSiteHotkeys', 'content-site-hotkeys.js static script closure', (report, value) => { report.entrypoints[1].static.scriptBytes = value; }],
 			['offscreenCapture', 'offscreen Capture-only closure', (report, value) => { report.offscreenAudioOnly.scriptBytes = value; }],
-			['offscreenRemote', 'offscreen Remote eventual closure', (report, value) => { report.offscreenRemote.scriptBytes = value; }],
-			['popupStatic', 'popup.js static closure', (report, value) => { report.entrypoints[2].staticBytes = value; }],
-			['popupEventual', 'popup.js eventual closure', (report, value) => { report.entrypoints[2].eventualBytes = value; }],
-			['contentRuntimeEventual', 'content-runtime.js eventual closure', (report, value) => { report.entrypoints[3].eventualBytes = value; }],
-			['contentVideoEffectsEventual', 'content-video-effects.js eventual closure', (report, value) => { report.entrypoints[4].eventualBytes = value; }],
-			['optionsEventual', 'options.js eventual closure', (report, value) => { report.entrypoints[5].eventualBytes = value; }],
+			['offscreenRemote', 'offscreen Remote possible script closure', (report, value) => { report.offscreenRemote.scriptBytes = value; }],
+			['popupStatic', 'popup.js static script closure', (report, value) => { report.entrypoints[2].static.scriptBytes = value; }],
+			['popupPossibleScript', 'popup.js possible script closure', (report, value) => { report.entrypoints[2].possible.scriptBytes = value; }],
+			['contentRuntimePossibleScript', 'content-runtime.js possible script closure', (report, value) => { report.entrypoints[3].possible.scriptBytes = value; }],
+			['contentVideoEffectsPossibleScript', 'content-video-effects.js possible script closure', (report, value) => { report.entrypoints[4].possible.scriptBytes = value; }],
+			['optionsPossibleScript', 'options.js possible script closure', (report, value) => { report.entrypoints[5].possible.scriptBytes = value; }],
 			['javascriptTotal', 'total production JavaScript', (report, value) => { report.javascript = value; }],
 			['distTotal', 'total production artifact', (report, value) => { report.total = value; }],
 		] as const;
@@ -124,12 +134,12 @@ describe('release ZIP tooling', () => {
 				javascript: 0,
 				total: 0,
 				entrypoints: [
-					{ name: 'content-bootstrap.js', staticBytes: 0, eventualBytes: 0 },
-					{ name: 'content-site-hotkeys.js', staticBytes: 0, eventualBytes: 0 },
-					{ name: 'popup.js', staticBytes: 0, eventualBytes: 0 },
-					{ name: 'content-runtime.js', staticBytes: 0, eventualBytes: 0 },
-					{ name: 'content-video-effects.js', staticBytes: 0, eventualBytes: 0 },
-					{ name: 'options.js', staticBytes: 0, eventualBytes: 0 },
+					{ name: 'content-bootstrap.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
+					{ name: 'content-site-hotkeys.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
+					{ name: 'popup.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
+					{ name: 'content-runtime.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
+					{ name: 'content-video-effects.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
+					{ name: 'options.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
 				],
 			};
 			const ceiling = SPECTRA_PRODUCTION_BUDGETS[key];
@@ -138,8 +148,44 @@ describe('release ZIP tooling', () => {
 				`${label}: ${ceiling + 1} bytes exceeds production budget ${ceiling}`,
 			]);
 			setValue(report, ceiling);
-			expect(productionBudgetFailures(report)).toEqual([]);
+		expect(productionBudgetFailures(report)).toEqual([]);
 		}
+	});
+	test('reports 15% headroom as advice without adding a release blocker', () => {
+		const ceiling = SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake;
+		const reportFor = (actual: number) => ({
+			serviceWorkerWake: { scriptBytes: actual },
+			documentStart: { scriptBytes: 0 },
+			offscreenAudioOnly: { scriptBytes: 0 },
+			offscreenRemote: { scriptBytes: 0 },
+			javascript: 0,
+			total: 0,
+			entrypoints: [],
+		});
+		const cases = [
+			['84.9%', Math.floor(ceiling * 0.849), undefined],
+			['85%', Math.floor(ceiling * (1 - PRODUCTION_HEADROOM_ADVISORY_RATIO)), undefined],
+			['85.1%', Math.ceil(ceiling * 0.851), 'headroom-low'],
+			['94.9%', Math.ceil(ceiling * 0.949), 'headroom-low'],
+			['95%', Math.ceil(ceiling * (1 - PRODUCTION_HEADROOM_CRITICAL_RATIO)), 'headroom-critical'],
+			['100%', ceiling, 'headroom-critical'],
+		] as const;
+		for (const [label, actual, expectedCode] of cases) {
+			const finding = productionHeadroomAdvisories(reportFor(actual))
+				.find((candidate) => candidate.label === 'service-worker wake');
+			if (expectedCode === undefined) {
+				expect(finding, label).toBeUndefined();
+				continue;
+			}
+			expect(finding?.code, label).toBe(expectedCode);
+			expect(finding?.targetMaxBytes, label).toBe(
+				Math.floor(ceiling * (1 - PRODUCTION_HEADROOM_ADVISORY_RATIO)),
+			);
+			expect(finding?.message, label).toContain('release remains governed by the absolute production ceiling');
+		}
+		const release = readFileSync(new URL('../../../scripts/release-spectra.ts', import.meta.url), 'utf8');
+		expect(release).not.toContain('capacityBlockers');
+		expect(release).not.toContain('typed capacity freeze');
 	});
 	test('forbids publishing an unvalidated ZIP directly', () => {
 		expect(() => createRelease({ stage: false })).toThrow('Direct final release writes are disabled');
@@ -222,15 +268,119 @@ describe('production artifact integrity', () => {
 		writeFileSync(resolve(directory, 'background.js'), 'export const background = true;\n');
 		writeFileSync(
 			resolve(directory, 'popup.html'),
-			'<a href="chrome://extensions/shortcuts">Shortcuts</a><script type="module" src="popup.js"></script>\n',
+			'<link rel="stylesheet" href="styles.css"><a href="chrome://extensions/shortcuts">Shortcuts</a><script type="module" src="popup.js"></script>\n',
 		);
+		writeFileSync(resolve(directory, 'styles.css'), 'body{display:block}\n');
 		writeFileSync(resolve(directory, 'popup.js'), 'export const popup = true;\n');
 
 		const report = analyzeProductionArtifacts({ distDir: directory });
 		expect(report.failures).toEqual([]);
 		expect(report.reachable).toBe(report.files);
 		expect(report.duplicates).toEqual([]);
+		expect(report.outputAttribution).toEqual({
+			outputClosures: [],
+			sharedInputs: [],
+			status: 'not-measured',
+		});
+		expect(() => assertProductionArtifactReport(report)).not.toThrow();
 		expect(() => checkProductionArtifacts({ distDir: directory })).not.toThrow();
+	});
+
+	test('budgets Popup and Options scripts without hiding reachable locale payloads', () => {
+		const directory = temporaryDirectory();
+		mkdirSync(resolve(directory, 'i18n/popup'), { recursive: true });
+		mkdirSync(resolve(directory, 'i18n/options'), { recursive: true });
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js' },
+			action: { default_popup: 'popup.html' },
+			options_page: 'options.html',
+		}));
+		writeFileSync(resolve(directory, 'background.js'), 'globalThis.Background = true;\n');
+		writeFileSync(resolve(directory, 'popup.html'), '<script type="module" src="popup.js"></script>\n');
+		writeFileSync(resolve(directory, 'options.html'), '<script type="module" src="options.js"></script>\n');
+		writeFileSync(
+			resolve(directory, 'popup.js'),
+			'void fetch(chrome.runtime.getURL("i18n/popup/en-US.json.gz"));\n',
+		);
+		writeFileSync(
+			resolve(directory, 'options.js'),
+			'void fetch(chrome.runtime.getURL("i18n/options/en-US.json.gz"));\n',
+		);
+		writeFileSync(resolve(directory, 'i18n/popup/en-US.json.gz'), 'p'.repeat(160 * 1024));
+		writeFileSync(resolve(directory, 'i18n/options/en-US.json.gz'), 'o'.repeat(48 * 1024));
+
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		const entries = new Map(report.entrypoints.map((entry) => [entry.name, entry]));
+		const popup = entries.get('popup.js');
+		const options = entries.get('options.js');
+		expect(popup?.possible.bytes).toBeGreaterThan(SPECTRA_PRODUCTION_BUDGETS.popupPossibleScript);
+		expect(options?.possible.bytes).toBeGreaterThan(SPECTRA_PRODUCTION_BUDGETS.optionsPossibleScript);
+		expect(popup?.possible.scriptBytes).toBeLessThan(SPECTRA_PRODUCTION_BUDGETS.popupPossibleScript);
+		expect(options?.possible.scriptBytes).toBeLessThan(SPECTRA_PRODUCTION_BUDGETS.optionsPossibleScript);
+		expect(popup?.possible.names).toContain('i18n/popup/en-US.json.gz');
+		expect(options?.possible.names).toContain('i18n/options/en-US.json.gz');
+		expect(productionBudgetFailures(report)).toEqual([]);
+	});
+
+	test('reports a typed failure when a metafile output is absent from dist', () => {
+		const directory = temporaryDirectory();
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js' },
+		}));
+		writeFileSync(resolve(directory, 'background.js'), 'globalThis.Background = true;\n');
+		const report = analyzeProductionArtifacts({
+			distDir: directory,
+			metafiles: [{
+				name: 'extension',
+				sharingDomain: 'extension-pages',
+				metafile: {
+					outputs: {
+						'dist/missing.js': {
+							entryPoint: 'src/missing.ts',
+							inputs: { 'src/missing.ts': { bytesInOutput: 1 } },
+						},
+					},
+				},
+			}],
+		});
+		expect(report.outputAttribution.status).toBe('measured');
+		expect(report.failures).toContain('dist/missing.js: metafile output is missing from dist');
+		expect(() => assertProductionArtifactReport(report)).toThrow(
+			'dist/missing.js: metafile output is missing from dist',
+		);
+	});
+
+	test('writes analysis outside dist before production gates, including a failing gate', () => {
+		const build = readFileSync(new URL('../build.ts', import.meta.url), 'utf8');
+		const analysisPath = "resolve(projectDir, '../../../artifacts/spectra-build-analysis.json')";
+		const reportCreation = build.indexOf('const report = isAnalyze || !isDev');
+		const reportWrite = build.indexOf('writeFileSync(analysisPath');
+		const assertionGate = build.indexOf('assertProductionJavaScript();');
+		const artifactGate = build.indexOf('assertProductionArtifactReport(report);');
+
+		expect(build).toContain(analysisPath);
+		expect(build).not.toContain("resolve(distDir, 'build-analysis.json')");
+		const appDirectory = resolve(import.meta.dir, '..');
+		const analysisOutput = resolve(appDirectory, '../../../artifacts/spectra-build-analysis.json');
+		expect(relative(resolve(appDirectory, 'dist'), analysisOutput)).toMatch(/^\.\./u);
+		expect(reportCreation).toBeGreaterThan(-1);
+		expect(build.match(/analyzeProductionArtifacts\(\{ distDir, metafiles \}\)/gu)).toHaveLength(1);
+		expect(reportWrite).toBeGreaterThan(reportCreation);
+		expect(reportWrite).toBeLessThan(assertionGate);
+		expect(reportWrite).toBeLessThan(artifactGate);
+
+		const directory = temporaryDirectory();
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js' },
+		}));
+		writeFileSync(resolve(directory, 'background.js'), 'globalThis.SPECTRA_TEST_BACKGROUND = true;\n');
+		writeFileSync(resolve(directory, 'build-analysis.json'), '{}\n');
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		expect(report.failures).toContain('build-analysis.json: development or source artifact is forbidden');
+		expect(() => checkProductionArtifacts({ distDir: directory })).toThrow('build-analysis.json: development or source artifact is forbidden');
 	});
 
 	test('charges shared ESM chunks to every entrypoint that loads them', () => {
@@ -262,7 +412,7 @@ describe('production artifact integrity', () => {
 			+ 'void import(chrome.runtime.getURL("runtime-module.js"));'
 			+ 'sender.url===chrome.runtime.getURL("background.js");\n',
 		);
-		writeFileSync(resolve(directory, 'peerjs-vendor.js'), 'globalThis.Peer = class Peer {};\n');
+		writeFileSync(resolve(directory, 'peerjs-vendor.js'), 'const Peer = class Peer {}; export { Peer as default };\n');
 		writeFileSync(resolve(directory, 'runtime-module.js'), 'globalThis.RuntimeModule = true;\n');
 		writeFileSync(resolve(directory, 'background.js'), 'globalThis.Background = true;\n');
 
@@ -307,9 +457,9 @@ describe('production artifact integrity', () => {
 		);
 		writeFileSync(
 			resolve(directory, 'chunks/remote.js'),
-			'chrome.runtime.getURL("peerjs-vendor.js");\n',
+			'void import(chrome.runtime.getURL("peerjs-vendor.js"));\n',
 		);
-		writeFileSync(resolve(directory, 'peerjs-vendor.js'), 'globalThis.Peer = class Peer {};\n');
+		writeFileSync(resolve(directory, 'peerjs-vendor.js'), 'const Peer = class Peer {}; export { Peer as default };\n');
 
 		const report = analyzeProductionArtifacts({ distDir: directory });
 		expect(report.failures).toEqual([]);
@@ -327,6 +477,38 @@ describe('production artifact integrity', () => {
 		]);
 	});
 
+	test('rejects a global Peer vendor or a non-module Remote loader', () => {
+		const directory = temporaryDirectory();
+		mkdirSync(resolve(directory, 'chunks'));
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js', type: 'module' },
+		}));
+		writeFileSync(
+			resolve(directory, 'background.js'),
+			'chrome.offscreen.createDocument({url:"offscreen.html"});\n',
+		);
+		writeFileSync(
+			resolve(directory, 'offscreen.html'),
+			'<script type="module" src="offscreen.js"></script>\n',
+		);
+		writeFileSync(resolve(directory, 'offscreen.js'), 'void import("./chunks/remote.js");\n');
+		writeFileSync(
+			resolve(directory, 'chunks/remote.js'),
+			'chrome.runtime.getURL("peerjs-vendor.js");\n',
+		);
+		writeFileSync(resolve(directory, 'peerjs-vendor.js'), 'globalThis.Peer = class Peer {};\n');
+
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		expect(report.failures).toContain(
+			'peerjs-vendor.js: exactly one Remote ESM runtime-module owner is required',
+		);
+		expect(report.failures).toContain(
+			'peerjs-vendor.js: ESM runtime module must expose one default export',
+		);
+		expect(report.failures).toContain('peerjs-vendor.js: global Peer assignment is forbidden');
+	});
+
 	test('does not infer runtime loading from a compressed URL-only string binding', () => {
 		const directory = temporaryDirectory();
 		writeFileSync(
@@ -340,6 +522,20 @@ describe('production artifact integrity', () => {
 			includeRuntimeAssets: true,
 		});
 		expect(eventual.names).toEqual(['entry.js']);
+	});
+
+	test('does not mark an artifact reachable from an inert JavaScript string', () => {
+		const directory = temporaryDirectory();
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js' },
+		}));
+		writeFileSync(resolve(directory, 'background.js'), 'const diagnostic = "orphan.js"; void diagnostic;\n');
+		writeFileSync(resolve(directory, 'orphan.js'), 'export const orphan = true;\n');
+
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		expect(report.failures).toContain('orphan.js: unreachable production artifact');
+		expect(report.reachable).toBe(2);
 	});
 
 	test('rejects an MV3 service worker that depends on a separately initialized chunk', () => {
@@ -396,6 +592,88 @@ describe('production artifact integrity', () => {
 		expect(report.failures.join('\n')).toContain(
 			'shared-runtime.ts: repeated in shareable build domain (popup, offscreen)',
 		);
+	});
+
+	test('uses metafiles for deterministic output closures and shared source attribution', () => {
+		const directory = temporaryDirectory();
+		const distDirectory = resolve(directory, 'dist');
+		mkdirSync(resolve(distDirectory, 'chunks'), { recursive: true });
+		writeFileSync(resolve(distDirectory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js' },
+			content_scripts: [{ matches: ['<all_urls>'], js: ['entry-a.js', 'entry-b.js'] }],
+		}));
+		writeFileSync(resolve(distDirectory, 'background.js'), 'globalThis.SPECTRA_TEST_BACKGROUND = true;\n');
+		writeFileSync(resolve(distDirectory, 'entry-a.js'), 'import "./shared.js"; void import("./chunks/lazy.js");\n');
+		writeFileSync(resolve(distDirectory, 'entry-b.js'), 'import "./shared.js"; globalThis.EntryB = true;\n');
+		writeFileSync(resolve(distDirectory, 'shared.js'), 'globalThis.Shared = true;\n');
+		writeFileSync(resolve(distDirectory, 'chunks/lazy.js'), 'globalThis.Lazy = true;\n');
+
+		const outputs = {
+			'dist/entry-a.js': {
+				entryPoint: 'src/entry-a.ts',
+				imports: [
+					{ path: 'dist/shared.js', kind: 'import-statement' },
+					{ path: 'dist/chunks/lazy.js', kind: 'dynamic-import' },
+				],
+				inputs: { 'src/entry-a.ts': { bytesInOutput: 10 } },
+			},
+			'dist/entry-b.js': {
+				entryPoint: 'src/entry-b.ts',
+				imports: [{ path: 'dist/shared.js', kind: 'import-statement' }],
+				inputs: { 'src/entry-b.ts': { bytesInOutput: 11 } },
+			},
+			'dist/shared.js': {
+				inputs: { 'src/shared.ts': { bytesInOutput: 7 } },
+			},
+			'dist/chunks/lazy.js': {
+				inputs: { 'src/lazy.ts': { bytesInOutput: 5 } },
+			},
+		};
+		const metafiles = [{ name: 'extension', sharingDomain: 'extension-pages', metafile: { outputs } }];
+		const first = analyzeProductionArtifacts({ distDir: distDirectory, metafiles });
+		expect(first.failures).toEqual([]);
+		expect(first.outputAttribution.status).toBe('measured');
+		expect(first.outputAttribution.outputClosures).toEqual([
+			expect.objectContaining({
+				name: 'entry-a.js',
+				entryPoint: 'src/entry-a.ts',
+				staticOutputClosure: expect.objectContaining({ names: ['entry-a.js', 'shared.js'] }),
+				possibleOutputClosure: expect.objectContaining({ names: ['chunks/lazy.js', 'entry-a.js', 'shared.js'] }),
+				topStaticContributors: [
+					{ path: 'src/entry-a.ts', bytes: 10 },
+					{ path: 'src/shared.ts', bytes: 7 },
+				],
+				topPossibleInputContributors: [
+					{ path: 'src/entry-a.ts', bytes: 10 },
+					{ path: 'src/shared.ts', bytes: 7 },
+					{ path: 'src/lazy.ts', bytes: 5 },
+				],
+			}),
+			expect.objectContaining({
+				name: 'entry-b.js',
+				entryPoint: 'src/entry-b.ts',
+				staticOutputClosure: expect.objectContaining({ names: ['entry-b.js', 'shared.js'] }),
+				possibleOutputClosure: expect.objectContaining({ names: ['entry-b.js', 'shared.js'] }),
+			}),
+		]);
+		expect(first.outputAttribution.sharedInputs).toEqual([{
+			input: 'src/shared.ts',
+			entries: [
+				{ build: 'extension', entry: 'entry-a.js', sharingDomain: 'extension-pages', staticBytes: 7, possibleBytes: 7 },
+				{ build: 'extension', entry: 'entry-b.js', sharingDomain: 'extension-pages', staticBytes: 7, possibleBytes: 7 },
+			],
+			totalStaticBytes: 14,
+			totalPossibleAttributionBytes: 14,
+		}]);
+
+		const reversedOutputs = Object.fromEntries(Object.entries(outputs).reverse());
+		const second = analyzeProductionArtifacts({
+			distDir: distDirectory,
+			metafiles: [{ name: 'extension', sharingDomain: 'extension-pages', metafile: { outputs: reversedOutputs } }],
+		});
+		expect(second.outputAttribution).toEqual(first.outputAttribution);
+		expect(second.artifactSha256).toBe(first.artifactSha256);
 	});
 });
 
@@ -481,6 +759,8 @@ describe('one-time release receipt', () => {
 			archiveSha256: '1'.repeat(64),
 			checksumSha256: '2'.repeat(64),
 			lockfileSha256: '3'.repeat(64),
+			commitOid: '7'.repeat(40),
+			treeOid: '8'.repeat(40),
 			sourceSha256: '4'.repeat(64),
 		};
 		const receipt = createReleaseReceiptDocument(facts, capability, {
@@ -502,6 +782,52 @@ describe('one-time release receipt', () => {
 		expect(existsSync(consumed.consumedPath)).toBe(true);
 		expect(() => consumePromotionReceipt({ receiptPath, capability, expectedFacts: facts, now }))
 			.toThrow('already consumed');
+	});
+
+	test('binds production Chrome smoke to the exact source tree and dist bytes', () => {
+		const directory = temporaryCandidateReceiptDirectory();
+		const distDirectory = resolve(directory, 'dist');
+		mkdirSync(distDirectory);
+		const packageVersion = JSON.parse(readFileSync(
+			resolve(import.meta.dir, '../package.json'),
+			'utf8',
+		)).version as string;
+		writeFileSync(resolve(distDirectory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			version: packageVersion,
+			background: { service_worker: 'background.js' },
+			action: { default_popup: 'popup.html' },
+		}));
+		writeFileSync(resolve(distDirectory, 'background.js'), 'globalThis.SPECTRA_TEST_BACKGROUND = true;\n');
+		writeFileSync(resolve(distDirectory, 'popup.html'), `v${packageVersion} • Prod\n`);
+		const identity = {
+			commitOid: '9'.repeat(40),
+			treeOid: 'a'.repeat(40),
+			sourceSha256: 'b'.repeat(64),
+		};
+		const facts = currentCandidateFacts(identity, distDirectory);
+		const capability = 'c'.repeat(64);
+		const now = 1_750_000_000_000;
+		const receipt = createCandidateReceiptDocument(facts, capability, {
+			now,
+			nonce: 'd'.repeat(32),
+		});
+		const receiptPath = resolve(directory, 'receipt.json');
+		writeFileSync(receiptPath, `${JSON.stringify(receipt)}\n`);
+
+		expect(validateCandidateReceipt({
+			receiptPath,
+			capability,
+			expectedFacts: facts,
+			now,
+		})).toEqual(receipt);
+		writeFileSync(resolve(distDirectory, 'popup.html'), `v${packageVersion} • Prod\nchanged\n`);
+		expect(() => validateCandidateReceipt({
+			receiptPath,
+			capability,
+			expectedFacts: currentCandidateFacts(identity, distDirectory),
+			now,
+		})).toThrow('bound to different inputs');
 	});
 
 	test('binds every scoped source root, including the remote site', () => {
@@ -527,13 +853,50 @@ describe('one-time release receipt', () => {
 		writeFileSync(sourcePath, 'export const version = 2;\n');
 		expect(computeReleaseSourceDigest(source)).not.toBe(beforeBuild);
 	});
+
+	test('freezes only the SPECTRA source closure for release cleanliness', () => {
+		expect(SPECTRA_RELEASE_PATHS).toContain('nexus/packages/contracts');
+		expect(SPECTRA_RELEASE_PATHS).not.toContain('nexus/apps/extension-halo');
+		const calls: string[][] = [];
+		const gitIdentity = (dirtyPath: string) => readReleaseTreeIdentity({
+			runGit(args: string[]) {
+				calls.push(args);
+				if (args[0] === 'status') {
+					const inScope = SPECTRA_RELEASE_PATHS.some((scope) => (
+						dirtyPath === scope || dirtyPath.startsWith(`${scope}/`)
+					));
+					return inScope ? ` M ${dirtyPath}` : '';
+				}
+				return args[1] === 'HEAD' ? 'a'.repeat(40) : 'b'.repeat(40);
+			},
+			readDigest: () => 'c'.repeat(64),
+		});
+		const clean = readReleaseTreeIdentity({
+			runGit(args: string[]) {
+				calls.push(args);
+				if (args[0] === 'status') return '';
+				return args[1] === 'HEAD' ? 'a'.repeat(40) : 'b'.repeat(40);
+			},
+			readDigest: () => 'c'.repeat(64),
+		});
+		expect(clean).toEqual({
+			commitOid: 'a'.repeat(40),
+			treeOid: 'b'.repeat(40),
+			sourceSha256: 'c'.repeat(64),
+		});
+		const statusArgs = calls[0] ?? [];
+		expect(statusArgs).toContain('nexus/packages/contracts');
+		expect(statusArgs).not.toContain('nexus/apps/extension-halo');
+		expect(gitIdentity('nexus/apps/extension-halo/src/index.ts').commitOid).toBe('a'.repeat(40));
+		expect(() => gitIdentity('nexus/packages/contracts/src/index.ts')).toThrow('dirty paths');
+	});
 });
 
 describe('release gate orchestration', () => {
 	test('pins Bun and promotes only after every preceding gate', () => {
-		expect(EXPECTED_BUN_VERSION).toBe('1.3.14');
+		expect(EXPECTED_BUN_VERSION).toBe('1.4.0');
 		expect(PRODUCTION_REMOTE_SITE_BASE_URL).toBe('https://nexus-remote.pages.dev/');
-		expect(() => assertReleaseRuntime('1.3.6')).toThrow('requires Bun 1.3.14');
+		expect(() => assertReleaseRuntime('1.3.6')).toThrow('requires Bun 1.4.0');
 		expect(RELEASE_STEPS.map((step) => step.label)).toEqual([
 			'architecture verify',
 			'documentation architecture',
@@ -568,8 +931,10 @@ describe('release gate orchestration', () => {
 
 		const packageJson = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8'));
 		expect(packageJson.scripts.test).toBe('bun run test:unit && bun run test:chrome');
-		expect(packageJson.scripts['test:chrome']).toBe('bun run build:dev && bun run test:chrome:dist');
-		expect(packageJson.scripts['test:chrome:dist']).toBe('bun run test:smoke');
+		expect(packageJson.scripts['test:chrome']).toBe('bun run build:dev && bun run test:smoke');
+		expect(packageJson.scripts['test:chrome:dist']).toBe('bun scripts/test-chrome-dist.ts');
+		expect(packageJson.scripts['test:smoke:en-US']).toBe('bun scripts/run-smoke-locale.ts en-US');
+		expect(packageJson.scripts['test:smoke:zh-CN']).toBe('bun scripts/run-smoke-locale.ts zh-CN');
 		expect(RELEASE_STEPS.find((step) => step.label === 'unit and contract tests')?.args).toEqual([
 			'run',
 			'--cwd',
@@ -611,6 +976,8 @@ describe('release gate orchestration', () => {
 			expect(() => runRelease({
 				runtimeVersion: EXPECTED_BUN_VERSION,
 				readSourceDigest: () => 'a'.repeat(64),
+				readTreeIdentity: () => fakeReleaseTreeIdentity('a'.repeat(64)),
+				createCandidate: () => fakeCandidateReceipt(),
 				spawnProcess(_executable: string, args: string[], options: { env?: NodeJS.ProcessEnv }) {
 					invoked.push(args);
 					if (args[0] === 'scripts/check-spectra-remote-live.ts') remoteEnvironment = options.env;
@@ -645,6 +1012,8 @@ describe('release gate orchestration', () => {
 				return { status: args.includes('package:stage') ? 1 : 0 };
 			},
 			readSourceDigest: () => 'a'.repeat(64),
+			readTreeIdentity: () => fakeReleaseTreeIdentity('a'.repeat(64)),
+			createCandidate: () => fakeCandidateReceipt(),
 			cleanupStaging() {
 				cleanupCalls += 1;
 			},
@@ -657,8 +1026,8 @@ describe('release gate orchestration', () => {
 		const invoked: string[][] = [];
 		let digestReadCount = 0;
 		let cleanupCalls = 0;
-		expect(() => runRelease({
-			runtimeVersion: EXPECTED_BUN_VERSION,
+			expect(() => runRelease({
+				runtimeVersion: EXPECTED_BUN_VERSION,
 			spawnProcess(_executable: string, args: string[]) {
 				invoked.push(args);
 				return { status: 0 };
@@ -667,10 +1036,14 @@ describe('release gate orchestration', () => {
 				digestReadCount += 1;
 				return digestReadCount === 1 ? 'frozen-source' : 'changed-source';
 			},
+			readTreeIdentity() {
+				return fakeReleaseTreeIdentity(digestReadCount === 0 ? 'frozen-source' : 'changed-source');
+			},
+			createCandidate: () => fakeCandidateReceipt(),
 			cleanupStaging() {
 				cleanupCalls += 1;
 			},
-		})).toThrow('source changed during architecture verify');
+		})).toThrow('exact tree changed during architecture verify');
 		expect(invoked).toEqual([['run', 'verify:v']]);
 		expect(cleanupCalls).toBe(2);
 	});
@@ -844,6 +1217,31 @@ function temporaryReceiptDirectory(): string {
 	const directory = mkdtempSync(resolve(tmpdir(), 'spectra-release-receipt-'));
 	temporaryDirectories.push(directory);
 	return directory;
+}
+
+function temporaryCandidateReceiptDirectory(): string {
+	const directory = mkdtempSync(resolve(tmpdir(), 'spectra-candidate-receipt-'));
+	temporaryDirectories.push(directory);
+	return directory;
+}
+
+function fakeReleaseTreeIdentity(sourceSha256: string) {
+	return {
+		commitOid: 'e'.repeat(40),
+		treeOid: 'f'.repeat(40),
+		sourceSha256,
+	};
+}
+
+function fakeCandidateReceipt(): ReturnType<typeof createCandidateReceipt> {
+	const directory = temporaryDirectory();
+	return {
+		directory,
+		receiptPath: resolve(directory, 'candidate.json'),
+		capability: '1'.repeat(64),
+		facts: {} as ReturnType<typeof createCandidateReceipt>['facts'],
+		receipt: {} as ReturnType<typeof createCandidateReceipt>['receipt'],
+	};
 }
 
 function temporaryDirectory(): string {

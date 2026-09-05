@@ -1,4 +1,4 @@
-// goal: send runtime-validated SPECTRA v2 requests from extension contexts
+// goal: send runtime-validated SPECTRA extension RPC requests from extension contexts
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
@@ -41,7 +41,9 @@ function validateResponse<T extends SpectraRequestType>(
 	response: unknown,
 ): SpectraResponse<T> {
 	if (!isSpectraResponse(type, response)) {
-		throw new Error('Peer returned an invalid SPECTRA v2 response');
+		throw new Error(
+			`Background returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${type}`,
+		);
 	}
 	return response;
 }

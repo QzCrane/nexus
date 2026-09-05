@@ -13,8 +13,13 @@ import {
 	type ControlOperationIntent,
 	type ControlOperationResult,
 	type ControlStrategy,
+	type MediaTarget,
 } from '@nexus/contracts';
-import { getActiveMediaRegistry } from '../core/media-registry';
+import { getActiveMediaRegistry, type MediaRegistry } from '../core/media-registry';
+import {
+	ContentLifecycleError,
+	isContentLifecycleError,
+} from '../core/content-runtime-context';
 import { showToast } from '../ui/toast';
 import { clearABLoop, getABState, setPointA, setPointB, skipABLoop } from '../video/ab-loop';
 import { takeScreenshot, verifyScreenshotTarget } from '../video/video-transform';
@@ -76,31 +81,66 @@ function ack<O extends ControlOperation>(
 	} as ControlOperationAck<O>;
 }
 
+type ResolvedOperationTarget = NonNullable<ReturnType<MediaRegistry['resolve']>>;
+
+function assertOperationTargetCurrent(
+	registry: ReturnType<typeof getActiveMediaRegistry>,
+	resolved: ResolvedOperationTarget | null,
+	videoScoped: boolean,
+): ResolvedOperationTarget | null {
+	if (!resolved || !registry) return resolved;
+	const current = videoScoped
+		? registry.resolveVideo(resolved.target)
+		: registry.resolve(resolved.target);
+	if (!current || current.element !== resolved.element) {
+		throw new ContentLifecycleError(
+			'stale-media-source',
+			'The operation target changed before its asynchronous result committed',
+		);
+	}
+	return current;
+}
+
 export async function executeControlOperation(
 	originalIntent: ControlOperationIntent,
 	nativeExecutor: NativeMediaExecutor,
 ): Promise<ControlOperationAck> {
 	const registry = getActiveMediaRegistry();
 	const videoScoped = isContentActiveVideoOperation(originalIntent.operation);
-	const resolvedTarget = (videoScoped
+	const resolved = (videoScoped
 		? registry?.resolveVideo(originalIntent.target)
 		: registry?.resolve(originalIntent.target))?.target
-		?? (originalIntent.operation === 'ab-clear' ? originalIntent.target : null);
-	const intent = { ...originalIntent, target: resolvedTarget } as ControlOperationIntent;
+		?? null;
+	const resolvedElement = resolved
+		? (videoScoped ? registry?.resolveVideo(resolved)?.element : registry?.resolve(resolved)?.element)
+			?? null
+		: null;
+	// Source retirement is a hard operation boundary.  Keep the exact element and
+	// target captured at admission, then validate both after every awaited media
+	// operation before producing an ACK.
+	const operationTarget = resolved ?? (originalIntent.operation === 'ab-clear' ? originalIntent.target : null);
+	const operationResolved = resolved && resolvedElement
+		? { target: resolved, element: resolvedElement }
+		: null;
+	const intent = { ...originalIntent, target: operationTarget } as ControlOperationIntent;
+	const currentTarget = (): MediaTarget | null => {
+		const current = assertOperationTargetCurrent(registry, operationResolved, videoScoped);
+		return current?.target ?? operationTarget;
+	};
 	switch (intent.operation) {
 		case 'restore-page-settings': {
 			const released = await nativeExecutor.releasePageSettings(intent);
 			return ack(intent, 'extension-state', {
 				releasedFields: released.releasedFields,
-			}, released.fields);
+			}, released.fields, currentTarget());
 		}
 		case 'frame-step': {
 			const stepped = await nativeExecutor.stepFrame(intent);
-			return ack(intent, 'dom-native', stepped.result, stepped.fields);
+			return ack(intent, 'dom-native', stepped.result, stepped.fields, currentTarget());
 		}
 		case 'screenshot': {
 			const result = await takeScreenshot(intent.target, intent.generation);
-			return ack(intent, 'chrome-native', result);
+			return ack(intent, 'chrome-native', result, {}, currentTarget());
 		}
 		case 'marker-add': {
 			const added = addMarker(intent.payload.label, intent.target);
@@ -108,7 +148,7 @@ export async function executeControlOperation(
 			return ack(intent, 'extension-state', {
 				marker: added.marker,
 				remaining: added.remaining,
-			});
+			}, {}, currentTarget());
 		}
 		case 'marker-remove': {
 			const removed = removeMarker(intent.payload.id, intent.target);
@@ -118,7 +158,7 @@ export async function executeControlOperation(
 			return ack(intent, 'extension-state', {
 				removed: true,
 				remaining: removed.remaining,
-			});
+			}, {}, currentTarget());
 		}
 		case 'marker-jump': {
 			const result = await jumpToMarker(intent.payload.id, intent.target);
@@ -126,7 +166,7 @@ export async function executeControlOperation(
 			const fields = result.jumped
 				? operationField(intent, 'currentTime', result.time, 'dom-native')
 				: {};
-			return ack(intent, 'dom-native', result, fields);
+			return ack(intent, 'dom-native', result, fields, currentTarget());
 		}
 		case 'marker-jump-previous':
 		case 'marker-jump-next': {
@@ -140,7 +180,7 @@ export async function executeControlOperation(
 				jumped: true,
 				actualTime: currentTime,
 				marker: adjacent.marker,
-			}, fields);
+			}, fields, currentTarget());
 		}
 		case 'ab-set-a': {
 			const pointA = setPointA(intent.target);
@@ -148,7 +188,7 @@ export async function executeControlOperation(
 			const abLoop = abLoopState(intent.target);
 			return ack(intent, 'extension-state', { abLoop }, operationField(
 				intent, 'abLoop', abLoop, 'extension-state', true,
-			));
+			), currentTarget());
 		}
 		case 'ab-set-b': {
 			const result = setPointB(intent.target);
@@ -158,14 +198,14 @@ export async function executeControlOperation(
 			const abLoop = abLoopState(intent.target);
 			return ack(intent, 'extension-state', { abLoop }, operationField(
 				intent, 'abLoop', abLoop, 'extension-state', true,
-			));
+			), currentTarget());
 		}
 		case 'ab-clear': {
 			const cleared = clearABLoop(intent.target);
 			const abLoop = abLoopState(intent.target);
 			return ack(intent, 'extension-state', { abLoop, cleared }, operationField(
 				intent, 'abLoop', abLoop, 'extension-state', false,
-			));
+			), currentTarget());
 		}
 		case 'ab-skip': {
 			const currentTime = await skipABLoop(intent.target);
@@ -177,7 +217,7 @@ export async function executeControlOperation(
 				abLoop: abLoopState(intent.target),
 				skipped: true,
 				currentTime,
-			}, fields);
+			}, fields, currentTarget());
 		}
 		case 'show-info': {
 			const media = nativeExecutor.readMediaSummary(intent.target);
@@ -232,11 +272,14 @@ export function registerControlOperationExecutor(nativeExecutor: NativeMediaExec
 		}
 		void executeControlOperation(message.payload, nativeExecutor).then(
 			(result) => sendResponse(rpcSuccess(result)),
-			(error) => sendResponse(rpcFailure(
-				'control_operation_failed',
-				error instanceof Error ? error.message : String(error),
-				true,
-			)),
+			(error) => {
+				const lifecycle = isContentLifecycleError(error);
+				sendResponse(rpcFailure(
+					lifecycle ? error.code : 'control_operation_failed',
+					error instanceof Error ? error.message : String(error),
+					lifecycle ? error.retryable : true,
+				));
+			},
 		);
 		return true;
 	};

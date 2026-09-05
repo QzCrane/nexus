@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	DEFAULT_AUDIO_CONFIG,
 	DEFAULT_GLOBAL_SETTINGS,
+	compileEffectiveVolume,
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
@@ -17,6 +18,7 @@ import {
 	isSpectraResponse,
 	rpcFailure,
 	rpcSuccess,
+	splitEffectiveVolume,
 	type AudioConfig,
 	type AudioRuntimeStatus,
 	type AudioSessionSnapshot,
@@ -25,18 +27,29 @@ import {
 	type SpectraEventEnvelope,
 	type SpectraRequestEnvelope,
 } from '@nexus/contracts';
+import { createCaptureAdmission } from './helpers/capture-admission';
 
 function createAudioConfig(overrides: Partial<AudioConfig> = {}): AudioConfig {
-	return {
+	const merged = {
 		...DEFAULT_AUDIO_CONFIG,
 		eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
 		...overrides,
+	};
+	const pair = overrides.volume !== undefined
+		&& overrides.volumeBase === undefined
+		&& overrides.boost === undefined
+		? splitEffectiveVolume(overrides.volume)
+		: { volumeBase: merged.volumeBase, boost: merged.boost };
+	return {
+		...merged,
+		...pair,
+		volume: compileEffectiveVolume(pair.volumeBase, pair.boost),
 	};
 }
 
 function createRemoteSession(): RemotePublicSession {
 	return {
-		protocolVersion: 2,
+		protocolVersion: 3,
 		sessionId: 'A'.repeat(22),
 		peerId: `spectra-${'b'.repeat(32)}`,
 		secret: 'C'.repeat(22),
@@ -68,8 +81,8 @@ function createRuntimeStatus(overrides: Partial<AudioRuntimeStatus> = {}): Audio
 		config: createAudioConfig({ volume: 125 }),
 		hasAudio: true,
 		isPlaying: true,
-		desiredMode: 'webaudio',
-		actualMode: 'webaudio',
+		desiredMode: 'capture',
+		actualMode: 'capture',
 		phase: 'active',
 		generation: 3,
 		userInteracted: true,
@@ -123,6 +136,7 @@ describe('SPECTRA audio runtime guards', () => {
 		expect(isAudioConfig(createAudioConfig({ delay: -1 }))).toBe(false);
 		expect(isAudioConfig(createAudioConfig({ speed: Number.NaN }))).toBe(false);
 		expect(isAudioConfig(createAudioConfig({ eqValues: [0, 0] }))).toBe(false);
+		expect(isAudioConfig({ ...createAudioConfig(), volume: 200 })).toBe(false);
 		expect(isAudioConfig({ ...createAudioConfig(), transientCommand: true })).toBe(false);
 	});
 
@@ -229,16 +243,16 @@ describe('SPECTRA settings runtime guards', () => {
 				domain: 'EXAMPLE.com.',
 				value: { enabled: true, bindings: [] },
 			},
-		})).toBe(true);
+		})).toBe(false);
 
 		expect(isSettingsPatchRequest({
 			expectedRevision: 7,
 			patch: {
-				scope: 'hotkey-site',
+				scope: 'hotkey-site-mutation',
 				domain: 'example.com',
-				value: {
-					enabled: true,
-					bindings: [{
+				mutation: {
+					type: 'upsert-binding',
+					binding: {
 						id: 'unsafe-url',
 						enabled: true,
 						key: {
@@ -247,7 +261,7 @@ describe('SPECTRA settings runtime guards', () => {
 						},
 						action: 'open_url',
 						params: { url: 'javascript:alert(1)' },
-					}],
+					},
 				},
 			},
 		})).toBe(false);
@@ -426,6 +440,73 @@ describe('SPECTRA settings runtime guards', () => {
 			patch: { scope: 'default-preset', value: 'x'.repeat(129) },
 		})).toBe(false);
 	});
+
+	test('keeps the strict full-settings v2 ABI independent from site routes', () => {
+		const snapshot = createSettingsSnapshot();
+		expect(isSettingsSnapshot(snapshot)).toBe(true);
+		expect(isSettingsSnapshot({
+			...snapshot,
+			mediaRoutes: {
+				'example.com': { route: 'direct', source: 'user', updatedAt: 8 },
+			},
+		})).toBe(false);
+		expect(isSettingsPatchRequest({
+			expectedRevision: snapshot.revision,
+			patch: { scope: 'media-route', domain: 'example.com', value: 'direct' },
+		})).toBe(false);
+
+		const entry = {
+			domain: 'example.com',
+			fingerprint: 'site:example.com',
+			route: 'direct' as const,
+			source: 'auto' as const,
+			updatedAt: 8,
+		};
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'registry-get',
+			type: 'spectra.registry.get',
+			payload: {},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'registry-probe',
+			type: 'spectra.registry.mark-probed',
+			payload: { domain: 'Example.com.', fingerprint: 'site:example.com', route: 'direct' },
+		})).toBe(true);
+		expect(isSpectraResponse('spectra.registry.get', rpcSuccess({ entries: [entry] }))).toBe(true);
+		expect(isSpectraResponse('spectra.registry.mark-probed', rpcSuccess({
+			entries: [entry],
+			entry,
+			created: true,
+		}))).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'content-route-get',
+			type: 'spectra.audio.route.get',
+			payload: {},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'content-route-record',
+			type: 'spectra.audio.route.record',
+			payload: { route: 'capture', force: true },
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'content-route-spoof',
+			type: 'spectra.audio.route.record',
+			payload: { domain: 'other.example', route: 'capture' },
+		})).toBe(false);
+		expect(isSpectraResponse(
+			'spectra.audio.route.get',
+			rpcSuccess({ mediaRoute: 'direct', source: 'user' }),
+		)).toBe(true);
+		expect(isSpectraResponse(
+			'spectra.audio.route.record',
+			rpcSuccess({ mediaRoute: 'auto', source: 'auto' }),
+		)).toBe(false);
+	});
 });
 
 describe('SPECTRA mapped v2 envelopes', () => {
@@ -529,8 +610,24 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'visualizer-batch',
 			type: 'spectra.audio.visualizer.batch',
-			payload: { subscriberId: 'popup-1', generation: 1, tabIds: [7, 42] },
+			payload: {
+				subscriberId: 'popup-1',
+				generation: 1,
+				tabIds: [7, 42],
+				captureTabId: 7,
+			},
 		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'visualizer-cross-tab-capture',
+			type: 'spectra.audio.visualizer.batch',
+			payload: {
+				subscriberId: 'popup-1',
+				generation: 1,
+				tabIds: [7],
+				captureTabId: 42,
+			},
+		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'screenshot-capture',
@@ -577,27 +674,50 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		})).toBe(true);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			requestId: 'legacy-theme',
+			requestId: 'retired-legacy-theme',
 			type: 'spectra.settings.patch',
 			payload: {
 				expectedRevision: 0,
 				patch: { scope: 'legacy-theme', candidate: 'dark' },
-			},
-		})).toBe(true);
-		expect(isSpectraRequestEnvelope({
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			requestId: 'invalid-legacy-theme',
-			type: 'spectra.settings.patch',
-			payload: {
-				expectedRevision: 0,
-				patch: { scope: 'legacy-theme', candidate: 'auto' },
 			},
 		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'visualizer-duplicate',
 			type: 'spectra.audio.visualizer.batch',
-			payload: { subscriberId: 'popup-1', generation: 1, tabIds: [7, 7] },
+			payload: {
+				subscriberId: 'popup-1',
+				generation: 1,
+				tabIds: [7, 7],
+				captureTabId: null,
+			},
+		})).toBe(false);
+		const visualizerAdmission = createCaptureAdmission();
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'visualizer-demand',
+			tabId: 42,
+			documentId: 'document-42',
+			generation: 3,
+			type: 'spectra.audio.visualizer.demand.set',
+			payload: {
+				subscriberId: 'popup-1',
+				enabled: true,
+				admission: visualizerAdmission,
+			},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'visualizer-demand-forged-document',
+			tabId: 42,
+			documentId: 'document-forged',
+			generation: 3,
+			type: 'spectra.audio.visualizer.demand.set',
+			payload: {
+				subscriberId: 'popup-1',
+				enabled: true,
+				admission: visualizerAdmission,
+			},
 		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -685,7 +805,25 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			requestId: 'capture-set',
 			type: 'spectra.audio.capture.set',
 			generation: 4,
+			payload: {
+				enabled: true,
+				config: createAudioConfig(),
+				admission: createCaptureAdmission(),
+			},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'capture-set-without-admission',
+			type: 'spectra.audio.capture.set',
+			generation: 4,
 			payload: { enabled: true, config: createAudioConfig() },
+		})).toBe(false);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'capture-stop',
+			type: 'spectra.audio.capture.set',
+			generation: 5,
+			payload: { enabled: false, config: createAudioConfig(), requestContinuation: true },
 		})).toBe(true);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -696,6 +834,20 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'publish-session',
+			type: 'spectra.audio.session.publish',
+			generation: 4,
+			payload: {
+				config: createAudioConfig(),
+				desiredMode: 'capture',
+				actualMode: 'capture',
+				phase: 'starting',
+				lastError: null,
+				userInteracted: true,
+			},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'publish-session-webaudio',
 			type: 'spectra.audio.session.publish',
 			generation: 4,
 			payload: {
@@ -865,6 +1017,17 @@ describe('SPECTRA mapped v2 envelopes', () => {
 
 	test('validates request-specific success data and the shared error shape', () => {
 		const settings = createSettingsSnapshot();
+		const config = createAudioConfig({ volume: 150 });
+		expect(isSpectraResponse('spectra.audio.config.get', rpcSuccess(config))).toBe(true);
+		expect(isSpectraResponse('spectra.audio.config.get', rpcSuccess({
+			config,
+			mediaRoute: 'direct',
+		}))).toBe(false);
+		expect(isSpectraResponse('spectra.audio.policy.get', rpcSuccess({
+			config,
+			mediaRoute: 'direct',
+		}))).toBe(true);
+		expect(isSpectraResponse('spectra.audio.policy.get', rpcSuccess(config))).toBe(false);
 		expect(isSpectraResponse('spectra.settings.get', rpcSuccess(settings))).toBe(true);
 		expect(isSpectraResponse('spectra.settings.patch', rpcSuccess(settings))).toBe(true);
 		expect(isSpectraResponse('spectra.settings.flush', rpcSuccess({ flushed: true }))).toBe(true);
@@ -899,6 +1062,42 @@ describe('SPECTRA mapped v2 envelopes', () => {
 				abActive: true,
 			}],
 		}))).toBe(true);
+		expect(isSpectraResponse('spectra.content.runtime.identity', rpcSuccess({
+			documentId: 'document-42',
+			frameId: 0,
+		}))).toBe(true);
+		expect(isSpectraResponse('spectra.content.runtime.identity', rpcSuccess({
+			documentId: 'document-42',
+			frameId: 1,
+		}))).toBe(false);
+		expect(isSpectraResponse('spectra.content.runtime.identity', rpcSuccess({
+			documentId: 'document-42',
+			frameId: 0,
+			retag: true,
+		}))).toBe(false);
+		for (const invalidIdentity of [
+			{ documentId: '', frameId: 0 },
+			{ documentId: '   ', frameId: 0 },
+			{ documentId: 'document-42' },
+			{ frameId: 0 },
+		]) {
+			expect(isSpectraResponse(
+				'spectra.content.runtime.identity',
+				rpcSuccess(invalidIdentity),
+			)).toBe(false);
+		}
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'runtime-identity-empty',
+			type: 'spectra.content.runtime.identity',
+			payload: {},
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'runtime-identity-surplus',
+			type: 'spectra.content.runtime.identity',
+			payload: { documentId: 'forged' },
+		})).toBe(false);
 		expect(isSpectraResponse('spectra.audio.runtime.get', rpcSuccess({
 			...createRuntimeStatus(),
 			mode: 'CAPTURE',

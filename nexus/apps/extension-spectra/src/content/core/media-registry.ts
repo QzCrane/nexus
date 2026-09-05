@@ -2,6 +2,7 @@
 
 import type { MediaTarget } from '@nexus/contracts';
 import type { MediaSourceEligibilityEvidence } from '@nexus/audio-engine';
+import type { DocumentRuntimeContext } from './content-runtime-context';
 
 export type MediaRegistryEvent =
 	| 'registered'
@@ -95,12 +96,12 @@ export function getActiveMediaRegistry(): MediaRegistry | null {
 }
 
 export class MediaRegistry {
+	readonly runtimeContext: DocumentRuntimeContext;
 	private readonly byElement = new Map<HTMLMediaElement, MediaRecord>();
 	private readonly byId = new Map<string, MediaRecord>();
 	private readonly mutationObserver: MutationObserver;
 	private readonly mediaAttributeObserver: MutationObserver;
 	private readonly intersectionObserver: IntersectionObserver;
-	private documentId = '';
 	private nextMediaId = 1;
 	private order = 1;
 	private activeMediaId: string | null = null;
@@ -113,7 +114,9 @@ export class MediaRegistry {
 	private readonly fullscreenListener: EventListener;
 	private readonly listeners = new Set<MediaRegistryListener>();
 
-	constructor(onEvent?: MediaRegistryListener) {
+	constructor(runtimeContext: DocumentRuntimeContext, onEvent?: MediaRegistryListener) {
+		this.runtimeContext = runtimeContext;
+		this.runtimeContext.assertOpen();
 		if (onEvent) this.listeners.add(onEvent);
 		this.fullscreenListener = () => {
 			const fullscreenElement = document.fullscreenElement;
@@ -171,6 +174,10 @@ export class MediaRegistry {
 		document.addEventListener('fullscreenchange', this.fullscreenListener);
 	}
 
+	get documentId(): string {
+		return this.runtimeContext.identity.documentId;
+	}
+
 	subscribe(listener: MediaRegistryListener): () => void {
 		if (this.disposed) throw new Error('Media registry is disposed');
 		this.listeners.add(listener);
@@ -186,15 +193,6 @@ export class MediaRegistry {
 		for (const listener of this.listeners) {
 			listener({ ...target }, event, element, removalReason);
 		}
-	}
-
-	setDocumentId(documentId: string): void {
-		if (this.documentId && this.documentId !== documentId) {
-			throw new Error('Media registry cannot cross a document boundary');
-		}
-		if (this.documentId === documentId) return;
-		this.documentId = documentId;
-		for (const record of this.byElement.values()) record.target.documentId = documentId;
 	}
 
 	private discover(node: Node): void {
@@ -229,9 +227,7 @@ export class MediaRegistry {
 			if (!(element instanceof HTMLMediaElement)) continue;
 			const record = this.byElement.get(element);
 			if (!record) continue;
-			if (mutation.attributeName === 'src' || mutation.attributeName === 'crossorigin') {
-				this.refreshSource(element, false);
-			}
+			if (mutation.attributeName === 'src') this.refreshSource(element, false);
 			if (mutation.attributeName === 'loop') {
 				this.emit(record.target, 'loopchange', element);
 			}
@@ -241,7 +237,7 @@ export class MediaRegistry {
 	private observeMediaAttributes(element: HTMLMediaElement): void {
 		this.mediaAttributeObserver.observe(element, {
 			attributes: true,
-			attributeFilter: ['src', 'crossorigin', 'loop'],
+			attributeFilter: ['src', 'loop'],
 		});
 	}
 
@@ -262,7 +258,7 @@ export class MediaRegistry {
 		const record: MediaRecord = {
 			element,
 			target: {
-				frameId: 0,
+				frameId: this.runtimeContext.identity.frameId,
 				documentId: this.documentId,
 				mediaId,
 				sourceRevision: 0,
@@ -353,7 +349,10 @@ export class MediaRegistry {
 		this.rebuildMediaAttributeObservation();
 	}
 
-	private refreshSource(element: HTMLMediaElement, lifecycleBoundary: boolean): void {
+	private refreshSource(
+		element: HTMLMediaElement,
+		lifecycleBoundary: boolean,
+	): void {
 		const record = this.byElement.get(element);
 		if (!record) return;
 		const source = sourceIdentity(element);
@@ -367,8 +366,7 @@ export class MediaRegistry {
 		// logical removal before incrementing the revision so every source-scoped
 		// owner can dispose baselines, CSS/overlay state and graph routing without
 		// polling or command-time scans, then re-register the same element under
-		// its new identity. Page-lifetime MediaElementSource ownership is reused by
-		// the WebAudio controller rather than rebound.
+		// its new identity.
 		this.emit(record.target, 'removed', element, 'source-change');
 		record.source = source;
 		record.sourceTransitionOpen = true;
@@ -489,9 +487,7 @@ export class MediaRegistry {
 	getEligibilityEvidence(
 		element: HTMLMediaElement,
 	): MediaSourceEligibilityEvidence | undefined {
-		const record = this.byElement.get(element);
-		if (!record) return undefined;
-		const evidence = record.eligibilityEvidence;
+		const evidence = this.byElement.get(element)?.eligibilityEvidence;
 		return evidence ? { ...evidence } : undefined;
 	}
 

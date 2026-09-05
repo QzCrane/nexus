@@ -5,25 +5,26 @@ audience: developer
 last_reviewed: 2026-07-26
 ---
 
-# 02. Strategy order & Routes (Capability order, registry, runtime, bridges)
+# 02. Strategy order & Runtime (Capability order, runtime, bridges)
 
-> 主题 owner 段: §3 Strategy order · §4 Site route registry · §5 Runtime ownership · §6 Exact-element page media, PiP & fullscreen
+> 主题 owner 段: §3 Strategy order · §4 Capture admission · §5 Runtime ownership · §6 Exact-element page media, PiP & fullscreen
 > 完整目录: [README.md](README.md)
 >
-> **TL;DR**: planner 按 `observe -> native -> controlled-augmentation -> unsupported` 顺序选策略；site route 为路由提示而非强制激活；五组内置快捷键在 `document_start` 独占；Capture 仅在 invocation-bound admission 下激活。
+> **TL;DR**: canonical policy 按 `observe -> native -> controlled-augmentation -> unsupported` 顺序选策略；处理器增强优先使用已证明完整覆盖的页面 WebAudio，必要时才使用有一次性 admission 的 Capture；五组内置快捷键在 `document_start` 独占。
 
 ## §3 Strategy order
 
-Planner 过滤无法覆盖请求范围或无法读回 actual 的候选者，随后遵循特定能力固有顺序:
+`CONTROL_ALGORITHM_POLICIES` 过滤无法覆盖请求范围或无法读回 actual 的候选者，随后遵循特定能力固有顺序:
 
 ```text
-OBSERVE -> CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE) -> CONTROLLED AUGMENTATION (EXTENSION_STATE / CSS / OVERLAY / SAFE_MEDIA_WEBAUDIO / CAPTURE) -> UNSUPPORTED
+OBSERVE -> CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE) -> CONTROLLED AUGMENTATION (EXTENSION_STATE / CSS / OVERLAY / CAPTURE) -> UNSUPPORTED
 ```
 
 ### §3.1 Forbidden generic MAIN behavior
 
 生产代码严禁重定义或覆盖以下全局对象:
 - `window.AudioContext` / `webkitAudioContext` / `AudioContext.prototype.destination` / `close`
+- `MediaElementAudioSourceNode` / `createMediaElementSource()` / `HTMLMediaElement` 的音频输出链路
 - `window.Audio` / `document.createElement` / `createElementNS` / `HTMLMediaElement.prototype` / `History` API
 
 MAIN 执行严格限定于 manifest `document_start` 注入的两个闭合 bridge:
@@ -36,32 +37,53 @@ MAIN 执行严格限定于 manifest `document_start` 注入的两个闭合 bridg
 | --- | --- | --- |
 | observe | `observe` | 只读事件与 getter，无控制权。 |
 | native | `page-native`, `dom-native`, `chrome-native` | 精确读回的原生 API/属性。`page-native` 仅通过 V2 bridge 准入。 |
-| controlled augmentation | `extension-state`, `extension-css`, `extension-overlay`, `media-webaudio`, `capture` | 原生控制不可用时添加的可逆扩展能力（必须有明确 owner、readback、disposer 与 restore 规则）。 |
+| controlled augmentation | `extension-state`, `extension-css`, `extension-overlay`, `media-webaudio`, `capture` | 原生控制不可用时添加的可逆扩展能力（必须有明确 owner、readback、disposer 与 restore 规则）。处理器增强先使用完整可证明的页面图，否则才进入 Capture admission。 |
 | unsupported | `unsupported` | 保持页面原状并返回结构化能力错误。 |
 
-## §4 Site route registry and eligibility cache
+## §4 Capture admission and target identity
 
-Background 仓库持久化每个规范化网站的路由记录 (`SiteRouteRecord`)，内存策略决策按文档隔离:
+Capture 不是站点路由或状态探针，而是一次绑定当前顶层文档的扩展调用。Background 的 `CaptureAdmission` 是唯一激活凭据，内存状态按文档隔离:
 
 ```ts
-type SiteRouteRecord = {
-  domain: string;
-  fingerprint: `site:${string}`;
-  route: 'direct' | 'capture';
-  source: 'user' | 'auto';
-  updatedAt: number;
+type CaptureAdmission = {
+  kind: 'capture-start' | 'capture-resume';
+  document: { tabId: number; frameId: 0; documentId: string };
+  documentEpoch: number;
+  workerEpoch: string;
+  expiresAtMonotonicMs: number;
+  oneShot: true;
 };
 ```
 
-- **路由仲裁**: 用户固定路由 > 最新自动观察路由 > 默认原生 `direct` 路由。
-- **降级与提升**: 旧版本 `media:v1:*` 自动折叠迁移。Popup/Options 与 Background 共享同一 `registry-v2` 列表。
-- **Capture 激活门禁**: 缓存 `capture` 仅为路由提示，不提前开启 Offscreen/Processor/Purple Badge。仅当原生能力不足、显式需要全输出 DSP 且带有扩展调用的 `captureAdmission: 'extension-invocation'` 时方惰性激活。
+- **调用边界**: Popup 或经过校验的当前文档快捷键调用才可请求 `capture-start`；继续已有 Capture 只可使用其一次性 `capture-resume`。
+- **消费边界**: admission 在 Content 请求到达 Background 时消费，错误、重放、过期、跨文档或导航 fence 均 fail-closed。
+- **处理器边界**: Content 只提交 Capture intent；offscreen host 才能创建处理器，且仅在候选实际运行并返回归一化配置后发布 active。
+- **目标边界**: `tabId + documentId + frameId: 0` 是处理器和快照身份；独立的 `hotkey-target-repository.ts` 只维护全局快捷键目标，不参与音频模式选择。
 
-### §4.1 Last-resort Capture fallback
+### §4.1 Three-owner processor admission
 
-当用户固定 `direct` 路由但遇到跨域媒体且配置显式要求 DSP (`volume > 100` 或非零 EQ/Bass/Compressor/Mono/Pan/Delay) 时，executor 将升轨至 Capture 避开 CORS 阻塞。
-- 门禁词 `captureAdmission: 'extension-invocation'` 仅为当前激活标签页的 Popup 事务或校验通过的快捷键颁发（`ControlSubmitRequest` 拒收此字段）。
-- ACK `active` 后，`recordActual` 以 `force: true` 覆盖更新注册表 (`markRegistryDomainProbed` → `spectra.registry.mark-probed` → `RegistryRepository.markProbed` → `addOrUpdateDomain`)，将条目更新为 `capture/auto`，以便后续文档直接以 `RESTRICTED` 路由加载。
+显式全音频 DSP 或前台 Visualizer 需要处理器时，`resolveDesiredAudioMode()` 在完整精确媒体覆盖下选择 `webaudio`，否则才选择 `capture`；中性且无观察需求时保持 `bypass`。`SettingsRepository` 持久化、`spectra.registry.*` v2 独立 Popup 投影的站点路由只改变候选选择：`direct` 禁止降级 Capture，`capture` 跳过页面图但仍必须携带一次性 admission，`auto` 使用上述最低成本顺序。严格的 `spectra.settings.*` v2 响应不含路由字段；Content 只经 sender-bound `spectra.audio.route.get/record` 查询或记录当前文档证据，不能命名其他站点，也不直接读写持久状态。
+- MediaElement WebAudio 必须在首次不可逆绑定前证明所有当前 source 的同源/blob/data 或精确 preload-CORS 证据，并在 ACK 中返回 running context、graph signature、normalized actual config 与 source count。
+- `captureAdmission` 只能随已验证的 extension-invocation intent 进入内部 coordinator，普通 `ControlSubmitRequest` 不能伪造该字段。
+- host `active` ACK 必须同时证明 `tabId`、`generation`、`controlRevision`、`phase:'active'`、`contextState:'running'`、`graphSignature` 与 `normalizedActualConfig`；签名不匹配即拒收。
+- Capture 停止必须收到 `phase:'idle'`、`contextState:'closed'`、`graphSignature:'none'` 和 `normalizedActualConfig:null`，否则保留错误状态与现有 owner，不得乐观释放。
+
+### §4.2 SPECTRA extension envelope owner and V1 retirement
+
+Content runtime 只有一个 SPECTRA envelope owner：`@nexus/contracts` 的
+`SpectraRequestEnvelope` / `SpectraEventEnvelope` 类型与 runtime validators 定义
+唯一 schema，`shared/spectra-client.ts` 定义通用 request transport。Popup、Options
+等 focused client 只能携带这个 typed envelope，不能恢复另一套 action/router 协议；
+document-start bootstrap 的最小请求边界也必须继续使用同一个
+`SPECTRA_PROTOCOL_VERSION`，不能引入兼容分叉。
+
+顶层 `action:` envelope 属于已退役的 V1 runtime，生产发送端禁止出现。快捷键
+领域值 `payload.action` 是合法的 typed payload，不是 V1 envelope。`createRouter`、
+`router.on`、`router.listen` 与 `GLOBAL_SETTINGS_UPDATE` 同样属于禁止的旧 runtime
+路径；每个 listener 只接受其明确的 request/event type allowlist。扩展内部
+envelope 当前为 v2；Remote 的 v3 是独立、带 session epoch 的外部线协议，二者
+不能用同一个“v3”名称混淆。既有 v2 route 只允许保持 ABI 或新增 route，不允许
+在同一 type 下替换 response shape。
 
 ## §5 Runtime, shortcut and feedback ownership
 

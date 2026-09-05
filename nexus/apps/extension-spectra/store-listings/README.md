@@ -10,6 +10,14 @@ last_reviewed: 2026-07-20
 
 The locale files in this directory are public projections of one verified product. They may translate tone and sentence structure, but they must preserve the same capability set, limitations, privacy disclosure, and units.
 
+The executable `nexus/scripts/spectra-public-projections.ts` derives the
+ProjectionModel used by `check:public-projections`. It requires a matching
+store listing and `_locales` description for every locale, checks the manifest
+permission owner, and verifies Cloudflare Pages, PeerJS, STUN, and TURN
+disclosure in the privacy policy, store justification, and every translated
+listing. A release must use this model rather than sampling only English and
+Chinese copy.
+
 ## Sources of truth
 
 - capability semantics: [`../docs/control/README.md`](../docs/control/README.md)

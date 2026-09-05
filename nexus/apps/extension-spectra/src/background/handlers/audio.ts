@@ -1,24 +1,19 @@
 // goal: handles messages for retrieving and updating audio configurations with session/preset separation
-// rule: AUDIO_SET_CONFIG syncs to tab session only; domain presets must be saved explicitly via btnSave
 
 import {
-	Actions,
 	SPECTRA_PROTOCOL_VERSION,
-	isSpectraRequestEnvelope,
 	normalizeHostname,
-	rpcFailure,
-	rpcSuccess,
 	type AudioConfig,
+	type AudioSitePolicy,
 	type AudioSessionSnapshot,
 	type TabSessionIdentity,
 	type VisualizerBatchPayload,
 } from '@nexus/contracts';
 import {
-	audioConfigPatchToControlSessionPatch,
 	audioConfigToControlSessionPatch,
 	controlSessionPatchToAudioConfig,
 } from '@nexus/kernel';
-import { router, storage, captureStates } from '../state';
+import { storage, captureStates } from '../state';
 import {
 	flushAudioSessions,
 	getAudioSession,
@@ -27,9 +22,16 @@ import {
 } from '../audio-session-store';
 import { sendOffscreenMessageIfPresent } from '../offscreen-coordinator';
 import { settingsRepository } from '../settings-repository';
+import { scheduleMediaRouteProjection } from '../settings-projection';
 import { updateBadgeFromSession } from './badge';
-import { sendSpectraTabRequest } from '../spectra-tab-client';
 import { swLog } from '../../shared/logger';
+import { sendSpectraTabRequest } from '../spectra-tab-client';
+import { forEachBounded } from '../bounded-fanout';
+import {
+	isBackgroundRequestEnvelope,
+	rpcFailure,
+	rpcSuccess,
+} from '../background-rpc';
 import {
 	advanceVisualizerSubscriberLeases,
 	nextVisualizerSubscriberExpiry,
@@ -38,7 +40,13 @@ import {
 	visualizerSubscriberUnion,
 	type VisualizerSubscriberLeases,
 } from '../visualizer-subscriber-registry';
-import { forEachBounded } from '../bounded-fanout';
+import {
+	abandonPopupVisualizerSource,
+	acquirePopupVisualizerSource,
+	isExtensionPopupSender,
+	releasePopupVisualizerSource,
+	type PopupVisualizerSourceLease,
+} from '../control-coordinator';
 
 const sessionIdentityFromSender = identityFromSender;
 
@@ -53,7 +61,7 @@ function controlSessionIdentityFromSender(sender: chrome.runtime.MessageSender) 
 	}
 }
 
-async function resolveAudioConfigForSender(sender: chrome.runtime.MessageSender): Promise<AudioConfig> {
+async function resolveAudioPolicyForSender(sender: chrome.runtime.MessageSender): Promise<AudioSitePolicy> {
 	const tabId = sender.tab?.id;
 	const identity = controlSessionIdentityFromSender(sender);
 	const domain = normalizeHostname(sender.url ?? sender.tab?.url ?? '') ?? '';
@@ -66,7 +74,17 @@ async function resolveAudioConfigForSender(sender: chrome.runtime.MessageSender)
 			swLog.warn(`[Audio] Failed to restore tab ${tabId} session config; using settings fallback`, error);
 		}
 	}
-	return config ?? settingsRepository.resolveAudioConfig(domain);
+	const [fallbackConfig, mediaRoute] = await Promise.all([
+		config ? Promise.resolve(config) : settingsRepository.resolveAudioConfig(domain),
+		settingsRepository.resolveMediaRoute(domain),
+	]);
+	return { config: fallbackConfig, mediaRoute };
+}
+
+function requireSenderHostname(sender: chrome.runtime.MessageSender): string {
+	const hostname = normalizeHostname(sender.url ?? sender.tab?.url ?? '');
+	if (!hostname) throw new Error('Audio route requires a valid content-document hostname');
+	return hostname;
 }
 
 function senderMatchesEnvelope(
@@ -108,70 +126,27 @@ function normalizeVisualizerFrame(value: unknown): number[] | null {
 	return value as number[];
 }
 
-let subscribedPageTabs = new Set<number>();
 let subscribedCaptureKey: string | null = null;
 const visualizerSubscribers: VisualizerSubscriberLeases = new Map();
+const visualizerSourceOwners = new Map<string, PopupVisualizerSourceLease>();
 let visualizerExpiryTimer: ReturnType<typeof setTimeout> | null = null;
 let visualizerExpiryAt: number | null = null;
 let visualizerQueue: Promise<void> = Promise.resolve();
+let visualizerSourceRetryTimer: ReturnType<typeof setTimeout> | null = null;
+let visualizerSourceRetryDelay = 500;
+
+function enqueueVisualizerOperation<T>(operation: () => Promise<T>): Promise<T> {
+	const result = visualizerQueue.then(operation, operation);
+	// The queue itself is a tail, not the result observed by a caller. Keeping
+	// the tail fulfilled means one failed reconciliation cannot poison every
+	// later popup heartbeat or tab lifecycle transition.
+	visualizerQueue = result.then(() => undefined, () => undefined);
+	return result;
+}
 
 async function updateVisualizerSubscriptions(
-	pageTabIds: number[],
 	captureTabIds: number[],
 ): Promise<void> {
-	// Content retains analyser intent across a WebAudio -> Capture handoff so it
-	// can reattach if the existing processor returns to the page. That intent is
-	// observational only: it never creates, keeps alive, or tears down a processor.
-	const nextContentTabs = new Set(pageTabIds);
-	for (const tabId of captureTabIds) {
-		// A processor already captured before Popup opened is sampled entirely
-		// offscreen and needs no new content analyser intent.
-		if (subscribedPageTabs.has(tabId)) nextContentTabs.add(tabId);
-	}
-	const removedPageTabs = [...subscribedPageTabs].filter((tabId) => !nextContentTabs.has(tabId));
-	const addedPageTabs = [...nextContentTabs].filter((tabId) => !subscribedPageTabs.has(tabId));
-	const pageResults: Array<{ tabId: number; action: 'add' | 'remove'; accepted: boolean }> = [];
-	const pageChanges = [
-		...removedPageTabs.map((tabId) => ({ tabId, action: 'remove' as const })),
-		...addedPageTabs.map((tabId) => ({ tabId, action: 'add' as const })),
-	];
-	await forEachBounded(pageChanges, 8, async ({ tabId, action }) => {
-		if (action === 'remove') {
-			const response = await sendSpectraTabRequest(
-				tabId,
-				'spectra.audio.visualizer.subscription.set',
-				{ subscribed: false },
-			).catch(() => null);
-			pageResults.push({
-				tabId,
-				action,
-				accepted: response === null || (response.ok === true && response.data.subscribed === false),
-			});
-			return;
-		}
-		const response = await sendSpectraTabRequest(
-			tabId,
-			'spectra.audio.visualizer.subscription.set',
-			{ subscribed: true },
-		).catch(() => null);
-		pageResults.push({
-			tabId,
-			action,
-			accepted: response?.ok === true && response.data.subscribed === true,
-		});
-	});
-	// Page subscriptions are independent observation targets. One restricted,
-	// navigating, or not-yet-ready tab must not suppress frames from every other
-	// card in the same Popup batch. Track only acknowledgements so failed adds or
-	// removals are retried on the next heartbeat without rolling back healthy tabs.
-	const reconciledPageTabs = new Set(subscribedPageTabs);
-	for (const result of pageResults) {
-		if (!result.accepted) continue;
-		if (result.action === 'add') reconciledPageTabs.add(result.tabId);
-		else reconciledPageTabs.delete(result.tabId);
-	}
-	subscribedPageTabs = reconciledPageTabs;
-
 	const captureKey = [...captureTabIds].sort((left, right) => left - right).join(',');
 	if (captureKey !== subscribedCaptureKey) {
 		const response = await sendOffscreenMessageIfPresent({
@@ -181,33 +156,11 @@ async function updateVisualizerSubscriptions(
 		if (captureTabIds.length > 0 && (!response
 			|| [...response.subscribedTabIds].sort((left, right) => left - right).join(',') !== captureKey)) {
 			// Preserve the last acknowledged key so the next heartbeat retries the
-			// offscreen reconciliation. Page-backed frames remain independently usable.
+			// offscreen reconciliation.
 			return;
 		}
 		subscribedCaptureKey = captureKey;
 	}
-}
-
-// note: one-release adapter for old popup contexts. Current content publishes
-// acknowledged v2 session snapshots and current popup contexts consume them.
-function isExpectedMissingLegacyReceiver(error: unknown): boolean {
-	const message = error instanceof Error ? error.message : String(error);
-	return message.includes('Receiving end does not exist')
-		|| message.includes('message port closed before a response was received');
-}
-
-function broadcastLegacyUiSyncForOneRelease(
-	tabId: number,
-	payload: Record<string, unknown>,
-): void {
-	chrome.runtime.sendMessage({
-		action: Actions.UI_SYNC,
-		payload: { ...payload, tabId },
-	}).catch((error: unknown) => {
-		if (!isExpectedMissingLegacyReceiver(error)) {
-			swLog.warn(`[Audio] Legacy UI sync broadcast failed for tab ${tabId}`, error);
-		}
-	});
 }
 
 function replaceVisualizerSubscribers(candidate: VisualizerSubscriberLeases): void {
@@ -215,6 +168,67 @@ function replaceVisualizerSubscribers(candidate: VisualizerSubscriberLeases): vo
 	for (const [subscriberId, subscriber] of candidate) {
 		visualizerSubscribers.set(subscriberId, subscriber);
 	}
+}
+
+async function reconcileVisualizerSourceOwners(
+	candidate: VisualizerSubscriberLeases,
+): Promise<void> {
+	const desired = new Map<string, number>();
+	for (const [subscriberId, lease] of candidate) {
+		if (lease.state === 'active' && lease.captureTabId !== null) {
+			desired.set(subscriberId, lease.captureTabId);
+		}
+	}
+
+	for (const [subscriberId, owner] of [...visualizerSourceOwners]) {
+		const desiredTabId = desired.get(subscriberId);
+		if (desiredTabId === owner.tabId && owner.actualMode !== null) continue;
+		if (!await releasePopupVisualizerSource(owner)) continue;
+		visualizerSourceOwners.delete(subscriberId);
+	}
+
+	for (const [subscriberId, tabId] of desired) {
+		if (visualizerSourceOwners.has(subscriberId)) continue;
+		const acquisition = await acquirePopupVisualizerSource(tabId, subscriberId);
+		visualizerSourceOwners.set(subscriberId, acquisition.lease);
+		if (!acquisition.active) {
+			// The enable request may have committed before an ACK was lost. Keep the
+			// pending owner reachable and schedule an idempotent release before the
+			// Popup's backoff admits another acquisition.
+			scheduleVisualizerSourceOwnerRetry();
+			throw new Error(acquisition.errorMessage ?? 'Visualizer Capture is unavailable');
+		}
+	}
+}
+
+function visualizerSourceOwnerNeedsRetry(): boolean {
+	for (const [subscriberId, owner] of visualizerSourceOwners) {
+		const subscriber = visualizerSubscribers.get(subscriberId);
+		if (subscriber?.state !== 'active'
+			|| subscriber.captureTabId !== owner.tabId
+			|| owner.actualMode === null) return true;
+	}
+	return false;
+}
+
+function scheduleVisualizerSourceOwnerRetry(): void {
+	if (!visualizerSourceOwnerNeedsRetry()) {
+		if (visualizerSourceRetryTimer) clearTimeout(visualizerSourceRetryTimer);
+		visualizerSourceRetryTimer = null;
+		visualizerSourceRetryDelay = 500;
+		return;
+	}
+	if (visualizerSourceRetryTimer) return;
+	const delay = visualizerSourceRetryDelay;
+	visualizerSourceRetryDelay = Math.min(5_000, delay * 2);
+	visualizerSourceRetryTimer = setTimeout(() => {
+		visualizerSourceRetryTimer = null;
+		void enqueueVisualizerOperation(
+			() => reconcileVisualizerSourceOwners(visualizerSubscribers),
+		).catch((error: unknown) => {
+			swLog.warn('[Audio] Visualizer source reconciliation retry failed', error);
+		}).finally(scheduleVisualizerSourceOwnerRetry);
+	}, delay);
 }
 
 function scheduleVisualizerLeaseExpiry(): void {
@@ -233,25 +247,26 @@ function scheduleVisualizerLeaseExpiry(): void {
 	visualizerExpiryTimer = setTimeout(() => {
 		visualizerExpiryTimer = null;
 		visualizerExpiryAt = null;
-		const operation = visualizerQueue.then(async () => {
+		void enqueueVisualizerOperation(async () => {
 			const candidate = advanceVisualizerSubscriberLeases(visualizerSubscribers, Date.now());
 			if (candidate === visualizerSubscribers) {
 				scheduleVisualizerLeaseExpiry();
-				return;
+				return undefined;
 			}
+			await reconcileVisualizerSourceOwners(candidate);
 			const union = visualizerSubscriberUnion(candidate);
 			await updateVisualizerSubscriptions(
-				union.filter((tabId) => captureStates.get(tabId) !== true),
 				union.filter((tabId) => captureStates.get(tabId) === true),
 			);
 			replaceVisualizerSubscribers(candidate);
+			scheduleVisualizerSourceOwnerRetry();
 			scheduleVisualizerLeaseExpiry();
-		});
-		visualizerQueue = operation.then(() => undefined, () => {
+		}).catch(() => {
 			// A failed release does not revive the consumer. The next real request
 			// reconciles the desired union, while the bounded tombstone remains.
 			const candidate = advanceVisualizerSubscriberLeases(visualizerSubscribers, Date.now());
 			replaceVisualizerSubscribers(candidate);
+			scheduleVisualizerSourceOwnerRetry();
 			scheduleVisualizerLeaseExpiry();
 		});
 	}, Math.max(0, next - Date.now()));
@@ -271,11 +286,12 @@ async function getVisualizerBatchNow(payload: VisualizerBatchPayload): Promise<{
 		};
 	}
 	const candidateSubscribers = plan.candidate;
+	await reconcileVisualizerSourceOwners(candidateSubscribers);
 	const unionTabIds = visualizerSubscriberUnion(candidateSubscribers);
 	const unionCaptureTabIds = unionTabIds.filter((tabId) => captureStates.get(tabId) === true);
-	const unionPageTabIds = unionTabIds.filter((tabId) => captureStates.get(tabId) !== true);
-	await updateVisualizerSubscriptions(unionPageTabIds, unionCaptureTabIds);
+	await updateVisualizerSubscriptions(unionCaptureTabIds);
 	replaceVisualizerSubscribers(candidateSubscribers);
+	scheduleVisualizerSourceOwnerRetry();
 	scheduleVisualizerLeaseExpiry();
 	if (!plan.accepted) {
 		return {
@@ -300,15 +316,15 @@ async function getVisualizerBatchNow(payload: VisualizerBatchPayload): Promise<{
 			frames[String(tabId)] = normalizeVisualizerFrame(result?.frames?.[String(tabId)]);
 		}
 	}
-
 	await forEachBounded(pageTabIds, 8, async (tabId) => {
 		const response = await sendSpectraTabRequest(
 			tabId,
 			'spectra.audio.visualizer.get',
 			{},
 		).catch(() => null);
-		const buffer = response?.ok ? response.data.buffer : null;
-		frames[String(tabId)] = normalizeVisualizerFrame(buffer);
+		frames[String(tabId)] = normalizeVisualizerFrame(
+			response?.ok ? response.data.buffer : null,
+		);
 	});
 
 	return { subscriberId: payload.subscriberId, generation: payload.generation, frames };
@@ -319,13 +335,11 @@ function getVisualizerBatch(payload: VisualizerBatchPayload): Promise<{
 	generation: number;
 	frames: Record<string, number[] | null>;
 }> {
-	const result = visualizerQueue.then(() => getVisualizerBatchNow(payload));
-	visualizerQueue = result.then(() => undefined, () => undefined);
-	return result;
+	return enqueueVisualizerOperation(() => getVisualizerBatchNow(payload));
 }
 
 function releaseDisconnectedVisualizerSubscriber(subscriberId: string): void {
-	const operation = visualizerQueue.then(async () => {
+	void enqueueVisualizerOperation(async () => {
 		// Each Popup uses a random page-lifetime id. A maximal tombstone makes a
 		// delayed unload batch unable to resurrect a disconnected subscriber even
 		// if the Port closed before its first request reached the worker.
@@ -333,17 +347,49 @@ function releaseDisconnectedVisualizerSubscriber(subscriberId: string): void {
 			subscriberId,
 			generation: Number.MAX_SAFE_INTEGER,
 			tabIds: [],
+			captureTabId: null,
 		}, Date.now());
 		const candidate = plan.candidate;
+		await reconcileVisualizerSourceOwners(candidate);
 		const union = visualizerSubscriberUnion(candidate);
 		await updateVisualizerSubscriptions(
-			union.filter((tabId) => captureStates.get(tabId) !== true),
 			union.filter((tabId) => captureStates.get(tabId) === true),
 		).catch(() => false);
 		replaceVisualizerSubscribers(candidate);
+		scheduleVisualizerSourceOwnerRetry();
+		scheduleVisualizerLeaseExpiry();
+	}).catch((error: unknown) => {
+		swLog.warn('[Audio] Visualizer subscriber disconnect reconciliation failed', error);
+	});
+}
+
+export function handleVisualizerTabRemoved(tabId: number): Promise<void> {
+	return enqueueVisualizerOperation(async () => {
+		const candidate = removeVisualizerTab(visualizerSubscribers, tabId);
+		for (const [subscriberId, owner] of [...visualizerSourceOwners]) {
+			if (owner.tabId !== tabId) continue;
+			abandonPopupVisualizerSource(owner);
+			visualizerSourceOwners.delete(subscriberId);
+		}
+		if (candidate === visualizerSubscribers) return;
+		replaceVisualizerSubscribers(candidate);
+		scheduleVisualizerSourceOwnerRetry();
+		const union = visualizerSubscriberUnion(candidate);
+		await updateVisualizerSubscriptions(
+			union.filter((candidateTabId) => captureStates.get(candidateTabId) === true),
+		);
 		scheduleVisualizerLeaseExpiry();
 	});
-	visualizerQueue = operation.then(() => undefined, () => undefined);
+}
+
+export function invalidateVisualizerDocument(tabId: number): Promise<void> {
+	return enqueueVisualizerOperation(async () => {
+		for (const [subscriberId, owner] of [...visualizerSourceOwners]) {
+			if (owner.tabId !== tabId) continue;
+			abandonPopupVisualizerSource(owner);
+			visualizerSourceOwners.delete(subscriberId);
+		}
+	});
 }
 
 export function registerAudioV2Listener(): void {
@@ -351,6 +397,10 @@ export function registerAudioV2Listener(): void {
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		const isBackgroundAudioType = candidate.type === 'spectra.audio.config.get'
+			|| candidate.type === 'spectra.audio.policy.get'
+			|| candidate.type === 'spectra.audio.route.get'
+			|| candidate.type === 'spectra.audio.route.record'
+			|| candidate.type === 'spectra.audio.page-scale.record'
 			|| candidate.type === 'spectra.audio.config.set'
 			|| candidate.type === 'spectra.audio.session.get'
 			|| candidate.type === 'spectra.audio.session.current'
@@ -360,18 +410,11 @@ export function registerAudioV2Listener(): void {
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| typeof candidate.type !== 'string'
 			|| !isBackgroundAudioType) return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Audio session RPC is extension-internal only'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)
-			|| (message.type !== 'spectra.audio.config.get'
-				&& message.type !== 'spectra.audio.config.set'
-				&& message.type !== 'spectra.audio.session.get'
-				&& message.type !== 'spectra.audio.session.current'
-				&& message.type !== 'spectra.audio.session.publish'
-				&& message.type !== 'spectra.audio.session.flush'
-				&& message.type !== 'spectra.audio.visualizer.batch')) {
+		if (!isBackgroundRequestEnvelope(message)) {
 			sendResponse(rpcFailure('invalid_request', 'Malformed audio session request'));
 			return false;
 		}
@@ -393,7 +436,45 @@ export function registerAudioV2Listener(): void {
 			if (message.type === 'spectra.audio.config.get') {
 				const identity = sessionIdentityFromSender(sender);
 				if (!identity) throw new Error('Audio configuration requires a document identity');
-				return resolveAudioConfigForSender(sender);
+				return (await resolveAudioPolicyForSender(sender)).config;
+			}
+			if (message.type === 'spectra.audio.policy.get') {
+				const identity = sessionIdentityFromSender(sender);
+				if (!identity) throw new Error('Audio policy requires a document identity');
+				return resolveAudioPolicyForSender(sender);
+			}
+			if (message.type === 'spectra.audio.route.get') {
+				if (!sessionIdentityFromSender(sender)) {
+					throw new Error('Audio route requires a document identity');
+				}
+				return settingsRepository.resolveMediaRouteDecision(requireSenderHostname(sender));
+			}
+			if (message.type === 'spectra.audio.route.record') {
+				if (!sessionIdentityFromSender(sender)) {
+					throw new Error('Audio route evidence requires a document identity');
+				}
+				const hostname = requireSenderHostname(sender);
+				const result = await settingsRepository.markMediaRouteProbed(
+					hostname,
+					message.payload.route,
+					{ force: message.payload.force === true },
+				);
+				const snapshot = await settingsRepository.getSnapshot();
+				scheduleMediaRouteProjection(snapshot, hostname);
+				return {
+					mediaRoute: result.entry.route,
+					source: result.entry.source,
+				};
+			}
+			if (message.type === 'spectra.audio.page-scale.record') {
+				if (!sessionIdentityFromSender(sender)) {
+					throw new Error('Page-scale evidence requires a document identity');
+				}
+				await settingsRepository.recordPageNativeScale(
+					requireSenderHostname(sender),
+					message.payload.supported,
+				);
+				return { recorded: true as const };
 			}
 			if (message.type === 'spectra.audio.config.set') {
 				const identity = controlSessionIdentityFromSender(sender);
@@ -440,6 +521,12 @@ export function registerAudioV2Listener(): void {
 				]);
 				return { flushed: true as const };
 			}
+			if (message.type !== 'spectra.audio.visualizer.batch') {
+				throw new Error('Unsupported audio session request');
+			}
+			if (message.payload.captureTabId !== null && !isExtensionPopupSender(sender)) {
+				throw new Error('Visualizer Capture demand requires the extension Popup');
+			}
 			return getVisualizerBatch(message.payload);
 		};
 		void operation()
@@ -453,12 +540,13 @@ export function registerAudioV2Listener(): void {
 	});
 }
 
-// eff: registers listeners for AUDIO_GET_STATUS, AUDIO_SET_CONFIG, and UI_SYNC actions
+// eff: registers the validated SPECTRA audio protocol and lifecycle listeners
 export function registerAudioHandlers(): void {
 	registerAudioV2Listener();
 	chrome.runtime.onConnect.addListener((port) => {
 		const prefix = 'spectra-visualizer:';
-		if ((port.sender?.id && port.sender.id !== chrome.runtime.id)
+		if (port.sender?.id !== chrome.runtime.id
+			|| port.sender.url !== chrome.runtime.getURL('popup.html')
 			|| !port.name.startsWith(prefix)) return;
 		const subscriberId = port.name.slice(prefix.length);
 		if (!/^popup-[a-z0-9-]{1,100}$/iu.test(subscriberId)) return;
@@ -466,95 +554,43 @@ export function registerAudioHandlers(): void {
 			releaseDisconnectedVisualizerSubscriber(subscriberId);
 		});
 	});
-	chrome.webNavigation.onCommitted.addListener((details) => {
-		if (details.frameId !== 0) return;
-		// A top-level navigation replaces the content document while preserving
-		// tabId. Serialize invalidation behind any active batch so the next popup
-		// heartbeat replays the analyser lease into the new document.
-		const invalidation = visualizerQueue.then(
-			() => { subscribedPageTabs.delete(details.tabId); },
-			() => { subscribedPageTabs.delete(details.tabId); },
-		);
-		visualizerQueue = invalidation.then(() => undefined, () => undefined);
-	});
-	chrome.tabs.onRemoved.addListener((tabId) => {
-		const candidate = removeVisualizerTab(visualizerSubscribers, tabId);
-		if (candidate === visualizerSubscribers) return;
-		replaceVisualizerSubscribers(candidate);
-		const union = visualizerSubscriberUnion(visualizerSubscribers);
-		void updateVisualizerSubscriptions(
-			union.filter((candidate) => captureStates.get(candidate) !== true),
-			union.filter((candidate) => captureStates.get(candidate) === true),
-		);
-		scheduleVisualizerLeaseExpiry();
-	});
-	router.on(Actions.AUDIO_GET_STATUS, async (_, sender) => {
-		const tabId = sender.tab?.id;
-		const config = await resolveAudioConfigForSender(sender);
-
-		const isCapture = tabId ? (captureStates.get(tabId) ?? false) : false;
-
-		// post: returns baseline configuration; runtime playback state is refined by the content script
-		return { config, hasAudio: true, isPlaying: false, mode: isCapture ? 'CAPTURE' : 'NATIVE_WEBAUDIO', userInteracted: false };
-	});
-
-	// eff: syncs config to tab session only (not domain preset)
-	router.on(Actions.AUDIO_SET_CONFIG, async (req, sender) => {
-		const tabId = sender.tab?.id;
-		const identity = controlSessionIdentityFromSender(sender);
-		if (!tabId || !identity) return { success: false };
-
-		if (req.config) {
-			type RuntimeAudioPatch = Partial<AudioConfig> & { toggleMute?: boolean; volumeDelta?: number; isNativeSync?: boolean };
-			const {
-				toggleMute: _toggleMute,
-				volumeDelta: _volumeDelta,
-				isNativeSync: _isNativeSync,
-				...persistentConfig
-			} = req.config as RuntimeAudioPatch;
-			// rule: log storage write failure — the previous empty catch silently swallowed
-			// quota/unavailable errors while the handler returned success:true, so the user's
-			// audio config silently reverted to the prior value on next content script load.
-			try {
-				await storage.tabSession.merge(
-					tabId,
-					audioConfigPatchToControlSessionPatch(persistentConfig),
-					identity,
-				);
-			} catch (error) {
-				swLog.warn('audio: tabSession.merge failed; config not persisted', {
-					tabId,
-					error: error instanceof Error ? error.message : String(error),
-				});
-				return { success: false };
-			}
-		}
-		return { success: true };
-	});
-
-	// eff: forwards UI_SYNC from Content Script to all extension pages (Popup)
-	// rule: this is critical for real-time UI sync when volume changes from native controls, hotkeys, etc.
-	router.on(Actions.UI_SYNC, async (req, sender) => {
-		const tabId = sender.tab?.id;
-		if (!tabId) return;
-		const identity = sessionIdentityFromSender(sender);
-		const runtime = req as typeof req & {
-			desiredMode?: unknown;
-			phase?: unknown;
-			generation?: number;
-			lastError?: string;
-		};
-		if (identity) {
-			await updateAudioSession(identity, {
-				config: req.config,
-				desiredMode: runtime.desiredMode,
-				actualMode: req.mode,
-				phase: runtime.phase,
-				generation: runtime.generation,
-				error: runtime.lastError ?? null,
-			});
-		}
-
-		broadcastLegacyUiSyncForOneRelease(tabId, req);
-	});
 }
+
+export const audioHandlerTestApi = {
+	seedVisualizerSubscriber(
+		subscriberId: string,
+		generation: number,
+		tabIds: number[],
+	): void {
+		const plan = planVisualizerSubscriberLease(visualizerSubscribers, {
+			subscriberId,
+			generation,
+			tabIds,
+			captureTabId: null,
+		}, Date.now());
+		replaceVisualizerSubscribers(plan.candidate);
+		scheduleVisualizerLeaseExpiry();
+	},
+	reconcileVisualizerSubscriptions(
+		captureTabIds: number[],
+	): Promise<void> {
+		return enqueueVisualizerOperation(() => updateVisualizerSubscriptions(captureTabIds));
+	},
+	handleVisualizerTabRemoved,
+	async reset(): Promise<void> {
+		await visualizerQueue.catch(() => undefined);
+		if (visualizerExpiryTimer) clearTimeout(visualizerExpiryTimer);
+		visualizerExpiryTimer = null;
+		visualizerExpiryAt = null;
+		if (visualizerSourceRetryTimer) clearTimeout(visualizerSourceRetryTimer);
+		visualizerSourceRetryTimer = null;
+		visualizerSourceRetryDelay = 500;
+		subscribedCaptureKey = null;
+		visualizerSubscribers.clear();
+		for (const owner of visualizerSourceOwners.values()) {
+			abandonPopupVisualizerSource(owner);
+		}
+		visualizerSourceOwners.clear();
+		visualizerQueue = Promise.resolve();
+	},
+};

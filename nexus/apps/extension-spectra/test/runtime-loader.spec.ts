@@ -30,6 +30,8 @@ class ChromeEvent {
 }
 
 interface RuntimeHarness {
+	currentDocumentId: string;
+	getFrameError: Error | null;
 	executeCount: number;
 	leanExecuteCount: number;
 	leanConfigureCount: number;
@@ -66,6 +68,8 @@ function installChromeHarness(
 	const navigationCommitted = new ChromeEvent();
 	const navigationDOMContentLoaded = new ChromeEvent();
 	const harness = {
+		currentDocumentId: 'document-7',
+		getFrameError: null,
 		executeCount: 0,
 		leanExecuteCount: 0,
 		leanConfigureCount: 0,
@@ -110,7 +114,13 @@ function installChromeHarness(
 			onChanged: storageChanged,
 		},
 		webNavigation: {
-			getFrame: async () => ({ documentId, url: 'https://media.example/watch' }),
+			getFrame: async () => {
+				if (harness.getFrameError) throw harness.getFrameError;
+				return {
+					documentId: harness.currentDocumentId,
+					url: 'https://media.example/watch',
+				};
+			},
 			onCommitted: navigationCommitted,
 			onDOMContentLoaded: navigationDOMContentLoaded,
 			onHistoryStateUpdated: historyUpdated,
@@ -194,6 +204,7 @@ function installChromeHarness(
 							id: 'spectra-test',
 							tab: { id: 7 } as chrome.tabs.Tab,
 							documentId,
+							frameId: 0,
 							url: 'https://media.example/watch',
 						}, () => undefined);
 					}
@@ -216,6 +227,82 @@ afterEach(() => {
 });
 
 describe('document-scoped content runtime loader', () => {
+	test('derives immutable runtime identity only from the current top-level Chrome sender', async () => {
+		const harness = installChromeHarness(false);
+		const dispatch = async (
+			sender: Partial<chrome.runtime.MessageSender>,
+			payload: Record<string, unknown> = {},
+		): Promise<{ response: unknown; listenerResult: unknown }> => {
+			let settle: ((value: unknown) => void) | undefined;
+			const response = new Promise<unknown>((resolve) => { settle = resolve; });
+			let listenerResult: unknown;
+			for (const listener of harness.runtimeMessages.listeners) {
+				listenerResult = (listener as (
+					message: unknown,
+					sender: chrome.runtime.MessageSender,
+					sendResponse: (value: unknown) => void,
+				) => unknown)({
+					protocolVersion: SPECTRA_PROTOCOL_VERSION,
+					requestId: `runtime-identity-${String(sender.frameId)}`,
+					type: 'spectra.content.runtime.identity',
+					payload,
+				}, {
+					id: 'spectra-test',
+					tab: { id: 7 } as chrome.tabs.Tab,
+					documentId: 'document-7',
+					frameId: 0,
+					url: 'https://media.example/watch',
+					...sender,
+				}, (value) => { settle?.(value); });
+			}
+			return { response: await response, listenerResult };
+		};
+
+		const accepted = await dispatch({});
+		expect(accepted.listenerResult).toBe(true);
+		expect(accepted.response).toEqual({
+			ok: true,
+			data: { documentId: 'document-7', frameId: 0 },
+		});
+		expect((await dispatch({ frameId: 1 })).response).toMatchObject({
+			ok: false,
+			error: { code: 'forbidden' },
+		});
+		expect((await dispatch({ frameId: undefined })).response).toMatchObject({
+			ok: false,
+			error: { code: 'forbidden' },
+		});
+		expect((await dispatch({ id: undefined })).response).toMatchObject({
+			ok: false,
+			error: { code: 'forbidden' },
+		});
+		expect((await dispatch({ id: 'foreign-extension' })).response).toMatchObject({
+			ok: false,
+			error: { code: 'forbidden' },
+		});
+		expect((await dispatch({ documentId: '   ' })).response).toMatchObject({
+			ok: false,
+			error: { code: 'forbidden' },
+		});
+
+		harness.currentDocumentId = 'document-8';
+		expect((await dispatch({})).response).toMatchObject({
+			ok: false,
+			error: { code: 'stale_document' },
+		});
+		harness.currentDocumentId = 'document-7';
+		harness.getFrameError = new Error('frame lookup unavailable');
+		expect((await dispatch({})).response).toMatchObject({
+			ok: false,
+			error: { code: 'runtime_identity_unavailable', retryable: true },
+		});
+		harness.getFrameError = null;
+		expect((await dispatch({}, { surplus: true })).response).toMatchObject({
+			ok: false,
+			error: { code: 'invalid_request' },
+		});
+	});
+
 	test('limits bulk hotkey projection to content-script URL schemes', () => {
 		expect(runtimeLoaderTestApi.isContentDocumentUrl('https://media.example/watch')).toBe(true);
 		expect(runtimeLoaderTestApi.isContentDocumentUrl('http://localhost:3000/')).toBe(true);
@@ -358,6 +445,7 @@ describe('document-scoped content runtime loader', () => {
 				id: 'spectra-test',
 				tab: { id: 7, url: 'https://media.example/watch' } as chrome.tabs.Tab,
 				documentId: 'document-7',
+				frameId: 0,
 				url: 'https://media.example/watch',
 			}, (response) => { helloResponse = response; });
 		}
@@ -613,6 +701,7 @@ describe('document-scoped content runtime loader', () => {
 				id: 'spectra-test',
 				tab: { id: 7, url: 'https://media.example/watch' } as chrome.tabs.Tab,
 				documentId: 'document-7',
+				frameId: 0,
 			}, () => undefined);
 		}
 		for (let attempt = 0; attempt < 20 && harness.executeCount === 0; attempt += 1) {

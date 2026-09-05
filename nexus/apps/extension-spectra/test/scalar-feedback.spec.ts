@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { crossesAudioVolumeProcessorBoundary } from '@nexus/contracts';
+import { crossesAudioVolumeRoutingBoundary } from '@nexus/contracts';
 import {
 	resolveHotkeyVolumeBaseline,
 	resolveHotkeyVolumeTarget,
@@ -31,8 +31,8 @@ describe('scalar feedback bars', () => {
 		expect(firstSpeedDelta).toBeCloseTo(secondSpeedDelta, 10);
 		expect(scalarFeedbackProgress('speed', 0.1)).toBe(0);
 		expect(scalarFeedbackProgress('speed', 16)).toBe(100);
-		expect(crossesAudioVolumeProcessorBoundary(100, 110)).toBe(true);
-		expect(crossesAudioVolumeProcessorBoundary(110, 120)).toBe(false);
+		expect(crossesAudioVolumeRoutingBoundary(100, 110)).toBe(true);
+		expect(crossesAudioVolumeRoutingBoundary(110, 120)).toBe(false);
 	});
 
 	test('owns the semantic markers for both scalar kinds', () => {

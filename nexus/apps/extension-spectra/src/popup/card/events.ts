@@ -1,8 +1,8 @@
-// goal: binds native DOM events (clicks, inputs, wheel, touch) to audio configuration updates and registry persistence
+// goal: binds native DOM events (clicks, inputs, wheel, touch) to acknowledged control updates
 
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
-import type { ConfigUpdateFn } from './state';
+import type { ConfigErrorHandler, ConfigUpdateFn } from './state';
 import type { ControlOperationAck } from '@nexus/contracts';
 import { AUDIO_UI, TIMING } from '../constants';
 import { getDomain } from '../utils/dom';
@@ -19,8 +19,8 @@ export interface EventsParams {
   tabUrl: string;
   update: ConfigUpdateFn;
   getCapturing: () => boolean;
-  onMetricsUpdate: () => void;
   render: () => void;
+  onError?: ConfigErrorHandler;
 }
 
 // eff: transiently swaps a save button's icon for a localized success/failure
@@ -44,7 +44,7 @@ function showSaveFeedback(button: HTMLElement, success: boolean, dict: { saveSuc
 
 // eff: attaches event listeners to the card UI components, managing the lifecycle of user interactions
 export function bindCardEvents(params: EventsParams): void {
-  const { ui, state, tabId, tabUrl, update, onMetricsUpdate, render } = params;
+  const { ui, state, tabId, tabUrl, update, render, onError } = params;
   const domain = getDomain(tabUrl);
 
 	const readActualSpeed = async (): Promise<number | null> => {
@@ -53,9 +53,10 @@ export function bindCardEvents(params: EventsParams): void {
 			{ tabId },
 			{ tabId },
 		);
-		if (!response.ok) return null;
+		if (!response.ok) throw new Error(response.error.message);
 		const speed = response.data?.fields.speed?.actual;
-		return typeof speed === 'number' ? speed : null;
+		if (typeof speed !== 'number') throw new Error('The current playback speed is unavailable');
+		return speed;
 	};
 
   ui.enable.onchange = (e) => {
@@ -126,7 +127,7 @@ export function bindCardEvents(params: EventsParams): void {
   // note: manage dragging state across various input modalities to prevent "flicker" during external UI sync
   ui.slider.onchange = () => {
     setDragging(null);
-    void update.flush().catch(() => undefined);
+    void update.flush().catch((error: unknown) => onError?.(error, state));
   };
   ui.slider.onmouseup = () => setDragging(null);
   ui.slider.ontouchend = () => setDragging(null);
@@ -153,78 +154,37 @@ export function bindCardEvents(params: EventsParams): void {
     if (wheelTimer) clearTimeout(wheelTimer);
     wheelTimer = setTimeout(() => {
       setDragging(null);
-      void update.flush().catch(() => undefined);
+      void update.flush().catch((error: unknown) => onError?.(error, state));
     }, 300);
   }, { passive: false });
 
   ui.mute.onclick = () => {
-	void submitToggle('mediaMuted').catch(() => render());
+    void submitToggle('mediaMuted').catch((error: unknown) => {
+      onError?.(error, state);
+      render();
+    });
   };
 
-  if (ui.comp) ui.comp.onchange = (e) => update({ compressor: (e.target as HTMLInputElement).checked });
-  if (ui.bass) ui.bass.onchange = (e) => update({ bass: (e.target as HTMLInputElement).checked });
-  if (ui.mono) ui.mono.onchange = (e) => update({ mono: (e.target as HTMLInputElement).checked });
+	ui.btnSave.onclick = async () => {
+		try {
+			// Persist only the last acknowledged card state. A click can arrive
+			// while a debounced EQ/volume mutation is still optimistic; drain it
+			// before reading the speed and writing the site preset.
+			await update.flush();
+			const speed = await readActualSpeed();
+      if (speed !== null) state.config = mergeAudioConfig(state.config, { speed });
 
-  if (ui.eqTrigger && ui.eqDrawer) {
-    ui.eqTrigger.onclick = () => {
-      ui.eqDrawer.classList.toggle('open');
-      const arrow = ui.eqTrigger.querySelector('.eq-arrow');
-      if (arrow) {
-        arrow.textContent = ui.eqDrawer.classList.contains('open') ? '▲' : '▼';
-      }
-      // note: trigger metric recalculation after the CSS transition finishes to align the curve spline
-      setTimeout(onMetricsUpdate, TIMING.EQ_DRAWER_DELAY);
-    };
-  }
-
-  if (ui.eqInputs && ui.eqInputs.length > 0) {
-    ui.eqInputs.forEach((inp, i) => {
-      inp.oninput = (e) => {
-        const arr = [...state.config.eqValues];
-        arr[i] = parseFloat((e.target as HTMLInputElement).value);
-        update({ eqValues: arr });
-      };
-      inp.onchange = () => {
-        void update.flush().catch(() => undefined);
-      };
-
-      inp.parentElement?.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        let v = parseFloat(inp.value);
-        v = e.deltaY < 0
-          ? Math.min(v + AUDIO_UI.EQ_STEP, AUDIO_UI.EQ_MAX)
-          : Math.max(v - AUDIO_UI.EQ_STEP, AUDIO_UI.EQ_MIN);
-        v = Math.round(v * 10) / 10;
-
-        const arr = [...state.config.eqValues];
-        arr[i] = v;
-        update({ eqValues: arr });
-      }, { passive: false });
-    });
-  }
-
-  ui.btnSave.onclick = async () => {
-    // eff: capture current playback speed to include in the preset
-    try {
-      const speed = await readActualSpeed();
-	  if (speed !== null) {
-		state.config.speed = speed;
-	  }
-    } catch (e) {
-      console.warn('Failed to get speed for preset save', e);
-    }
-
-    const { getCurrentDict } = await import('../views/i18n-apply');
-    const dict = getCurrentDict();
-    try {
+      const { getCurrentDict } = await import('../views/i18n-apply');
+      const dict = getCurrentDict();
       await patchSettings({ scope: 'audio-site', domain, value: state.config, mode: 'replace' });
       // feedback: shared i18n success indicator on the save button
       if (dict) showSaveFeedback(ui.btnSave, true, dict);
-    } catch (error) {
-      console.error('Failed to save config:', error);
+    } catch (error: unknown) {
+      const { getCurrentDict } = await import('../views/i18n-apply');
+      const dict = getCurrentDict();
       // feedback: shared i18n failure indicator on the save button
       if (dict) showSaveFeedback(ui.btnSave, false, dict);
+      showPopupToast(error instanceof Error ? error.message : String(error), 'error');
     }
   };
 
@@ -232,29 +192,24 @@ export function bindCardEvents(params: EventsParams): void {
   // auto-generated inside saveGlobalPreset so the user is never prompted.
   const saveGlobalButton = ui.btnSaveGlobal;
   if (saveGlobalButton) {
-    saveGlobalButton.onclick = async () => {
-      // eff: capture current playback speed
-      try {
-        const speed = await readActualSpeed();
-		if (speed !== null) {
-		  state.config.speed = speed;
-        }
-      } catch (e) {
-        console.warn('Failed to get speed for global preset save', e);
-      }
+		saveGlobalButton.onclick = async () => {
+		try {
+			await update.flush();
+			const speed = await readActualSpeed();
+        if (speed !== null) state.config = mergeAudioConfig(state.config, { speed });
 
-      const { getCurrentDict } = await import('../views/i18n-apply');
-      const dict = getCurrentDict();
-      try {
+        const { getCurrentDict } = await import('../views/i18n-apply');
+        const dict = getCurrentDict();
         const { saveGlobalPreset } = await import('../views/presets-ui');
-        await saveGlobalPreset(state.config);
+        await saveGlobalPreset(state.config, dict ?? undefined);
         // feedback: shared i18n success indicator — same style as btnSave
         if (dict) showSaveFeedback(saveGlobalButton, true, dict);
-      } catch (error) {
-        console.error('Failed to save global preset:', error);
-        // feedback: previously btnSaveGlobal had no failure feedback at all;
-        // share the same failure indicator as btnSave for consistency.
-        if (dict) showSaveFeedback(saveGlobalButton, false, dict);
+      } catch (error: unknown) {
+		const { getCurrentDict } = await import('../views/i18n-apply');
+		const dict = getCurrentDict();
+		// feedback: share the same failure indicator as btnSave for consistency.
+		if (dict) showSaveFeedback(saveGlobalButton, false, dict);
+		showPopupToast(error instanceof Error ? error.message : String(error), 'error');
       }
     };
   }
@@ -266,7 +221,7 @@ export function bindCardEvents(params: EventsParams): void {
 		// Drain local slider/EQ mutations first so reset cannot race a trailing
 		// debounce that would immediately re-apply the pre-reset values. A failed
 		// stale mutation must not cancel the explicit reset that follows it.
-		await update.flush().catch(() => undefined);
+		await update.flush().catch((error: unknown) => onError?.(error, state));
 		const response = await sendSpectraRequest(
 			'spectra.control.operation.submit',
 			{
@@ -305,9 +260,12 @@ export function bindCardEvents(params: EventsParams): void {
 		});
 		state.lastError = null;
 	})().catch((error: unknown) => {
-		const message = error instanceof Error ? error.message : String(error);
-		state.lastError = { code: 'audio_reset_failed', message, retryable: true };
-		showPopupToast(message, 'error');
+		onError?.(error, state);
+		if (!onError) {
+			const message = error instanceof Error ? error.message : String(error);
+			state.lastError = { code: 'audio_reset_failed', message, retryable: true };
+			showPopupToast(message, 'error');
+		}
 	}).finally(() => {
 		ui.btnReset.removeAttribute('disabled');
 		ui.btnReset.removeAttribute('aria-busy');
@@ -315,5 +273,5 @@ export function bindCardEvents(params: EventsParams): void {
 	});
   };
 
-  bindMediaControls(ui, tabId, state, update);
+  bindMediaControls(ui, tabId, state, update, onError);
 }

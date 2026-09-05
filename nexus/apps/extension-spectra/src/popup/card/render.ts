@@ -11,14 +11,13 @@ import { renderPlaybackButton } from './media-events';
 export interface RenderParams {
   ui: CardUIElements;
   state: CardInternalState;
-  drawEqCurve: (color: string) => void;
   getVizEnabled: () => boolean;
   getGlobalSettings: () => GlobalSettings;
 }
 
 // post: returns a sync-render function that updates HTML elements, CSS variables, and canvas overlays based on current state
 export function createRenderFn(params: RenderParams): () => void {
-  const { ui, state, drawEqCurve, getVizEnabled } = params;
+  const { ui, state, getVizEnabled } = params;
   let volumeTransitionWasPending = false;
 
   return () => {
@@ -71,10 +70,6 @@ export function createRenderFn(params: RenderParams): () => void {
 
     renderVolumeIcon(ui.mute, muted, newSliderValue);
 
-    if (ui.comp) ui.comp.checked = config.compressor;
-    if (ui.bass) ui.bass.checked = config.bass;
-    if (ui.mono) ui.mono.checked = config.mono;
-
     if (ui.speedInput) {
       // rule: only update speed input if not focused to avoid interfering with user typing
       if (document.activeElement !== ui.speedInput) {
@@ -89,21 +84,6 @@ export function createRenderFn(params: RenderParams): () => void {
 			ui.btnPip.classList.toggle('active', pip);
 			ui.btnPip.setAttribute('aria-pressed', String(pip));
 		}
-
-    ui.eqInputs.forEach((inp, i) => {
-      // rule: skip input value updates if the element is focused to prevent "cursor jumping" during user interaction
-      if (document.activeElement !== inp) {
-        inp.value = String(config.eqValues?.[i] ?? 0);
-      }
-      const v = config.eqValues?.[i] ?? 0;
-      const display = ui.eqVals?.[i];
-      if (display) {
-        display.innerText = (v > 0 ? '+' : '') + v.toFixed(1);
-        display.style.color = v === 0 ? COLORS.MUTED : fillColor;
-      }
-    });
-
-    drawEqCurve(fillColor);
 
     if (ui.vizIsland) {
 		const vizHidden = !getVizEnabled();
@@ -137,6 +117,7 @@ function renderVolumeIcon(
 export function resolveVolumePresentation(
   state: CardInternalState,
 ): { effectiveVolume: number; color: string } {
+  const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
   const transition = state.volumeTransitionPresentation;
   if (transition) {
     return {
@@ -148,7 +129,6 @@ export function resolveVolumePresentation(
           : COLORS.NATIVE,
     };
   }
-  const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
   return {
     effectiveVolume,
     color: actualVolumeColor(

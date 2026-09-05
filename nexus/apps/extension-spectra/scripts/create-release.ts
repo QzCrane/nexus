@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BUN_VERSION } from '../../../scripts/toolchain-versions.ts';
 import { checkProductionArtifacts } from './check-production-artifacts.ts';
 
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -111,7 +112,7 @@ function createArchive(files) {
 
 export function createRelease({ stage = true } = {}) {
 	if (!stage) throw new Error('Direct final release writes are disabled; validate and promote a staged ZIP instead');
-	if (Bun.version !== '1.3.14') throw new Error(`Release staging requires Bun 1.3.14, found ${Bun.version}`);
+	if (Bun.version !== BUN_VERSION) throw new Error(`Release staging requires Bun ${BUN_VERSION}, found ${Bun.version}`);
 	if (!existsSync(resolve(distDir, 'manifest.json'))) {
 		throw new Error('Production dist is missing; run bun run build:prod first');
 	}

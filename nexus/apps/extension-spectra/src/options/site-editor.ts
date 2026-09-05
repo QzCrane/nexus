@@ -1,18 +1,31 @@
 // goal: handles the per-site hotkey configuration interface, allowing domain-specific overrides for global shortcuts
 
-import type { HotkeyBinding, HotkeySettings, HotkeySiteMutation } from '@nexus/contracts';
-import { DEFAULT_HOTKEY_SETTINGS, type DEFAULT_MODIFIERS, normalizeHostname } from '@nexus/contracts';
+import type {
+	HotkeyBinding,
+	HotkeySettings,
+	HotkeySiteMutation,
+} from '@nexus/contracts';
+import {
+	DEFAULT_HOTKEY_SETTINGS,
+	normalizeHostname,
+	type SettingsUiSnapshot,
+} from '@nexus/contracts/ui-settings-runtime';
 import { openModal } from './modal';
-import { getSettingsSnapshot, patchSettings } from '../shared/settings-client';
+import {
+	getOptionsSettingsSnapshot,
+	patchOptionsSettings,
+} from '../shared/options-settings-client';
 import { getActionName, getCurrentLang, onLangChange, t, tf } from './i18n';
 import { clearOptionsError, showOptionsError } from './status';
+import { formatKeyCombo } from './formatters';
 
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 let selectedSite: string | null = null;
 
 // eff: initializes the site editor by loading saved configurations and populating the domain selector
-export async function initSiteEditor(): Promise<void> {
-	await loadSettings();
+export async function initSiteEditor(initialSnapshot?: SettingsUiSnapshot): Promise<void> {
+	if (initialSnapshot) acceptSettingsSnapshot(initialSnapshot);
+	else await loadSettings();
 	renderLegacyWarning();
 	renderSiteSelector();
 	bindEvents();
@@ -33,22 +46,38 @@ function renderLegacyWarning(): void {
 }
 
 async function loadSettings(forceRefresh = false): Promise<void> {
-	const snapshot = await getSettingsSnapshot(forceRefresh);
+	acceptSettingsSnapshot(await getOptionsSettingsSnapshot(forceRefresh));
+	clearOptionsError();
+}
+
+function acceptSettingsSnapshot(snapshot: SettingsUiSnapshot): void {
 	settings = {
 		...snapshot.hotkeySettings,
 		slots: { ...snapshot.hotkeySettings.slots },
 		sites: { ...snapshot.hotkeySettings.sites },
 	};
-	clearOptionsError();
+}
+
+export function projectSiteEditor(snapshot: SettingsUiSnapshot): void {
+	acceptSettingsSnapshot(snapshot);
+	renderLegacyWarning();
+	renderSiteSelector();
+	if (selectedSite && settings.sites[selectedSite]) selectSite(selectedSite);
+	else hideSiteConfig();
 }
 
 async function mutateSite(domain: string, mutation: HotkeySiteMutation): Promise<void> {
-	const snapshot = await patchSettings({
+	const snapshot = await patchOptionsSettings({
 		scope: 'hotkey-site-mutation',
 		domain,
 		mutation,
 	});
-	settings = snapshot.hotkeySettings;
+	settings = {
+		...snapshot.hotkeySettings,
+		slots: { ...snapshot.hotkeySettings.slots },
+		sites: { ...snapshot.hotkeySettings.sites },
+		disabledLegacyBindings: [...(snapshot.hotkeySettings.disabledLegacyBindings ?? [])],
+	};
 }
 
 async function recoverEditorState(): Promise<void> {
@@ -254,14 +283,4 @@ function createBindingRow(domain: string, binding: HotkeyBinding): HTMLElement {
 	row.appendChild(delBtn);
 
 	return row;
-}
-
-function formatKeyCombo(key: { code: string; modifiers: typeof DEFAULT_MODIFIERS }): string {
-	const parts: string[] = [];
-	if (key.modifiers.ctrl) parts.push('Ctrl');
-	if (key.modifiers.alt) parts.push('Alt');
-	if (key.modifiers.shift) parts.push('Shift');
-	if (key.modifiers.meta) parts.push('Meta');
-	parts.push(key.code.replace('Key', '').replace('Digit', ''));
-	return parts.join('+');
 }

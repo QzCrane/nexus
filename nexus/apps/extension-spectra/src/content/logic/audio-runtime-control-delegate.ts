@@ -2,6 +2,7 @@
 
 import {
 	resolveAudioVolume,
+	requiresAudioProcessor,
 	type ControlActualContext,
 	type ControlDirectField,
 	type ControlField,
@@ -27,22 +28,18 @@ const AUDIO_RUNTIME_CONTROL_FIELDS = new Set<ControlDirectField>([
 	'delay',
 ]);
 
-function hasRequestedProcessor(config: PolicyExecutorState['config']): boolean {
-	const volume = resolveAudioVolume(config);
-	return volume.boost !== 1
-		|| config.eqValues.some((value) => value !== 0)
-		|| config.bass
-		|| config.compressor
-		|| config.mono
-		|| config.pan !== 0
-		|| config.delay !== 0;
-}
-
 function actualAudioEnabled(state: PolicyExecutorState): boolean {
 	if (!state.config.enabled) return false;
-	return !hasRequestedProcessor(state.config)
-		|| state.actualMode === 'webaudio'
-		|| state.actualMode === 'capture';
+	if (!requiresAudioProcessor(state.config)) return true;
+	return (state.actualMode === 'webaudio' || state.actualMode === 'capture')
+		&& state.phase === 'active'
+		&& resolveAudioVolume(state.config).boost === resolveAudioVolume(state.appliedConfig).boost
+		&& state.config.eqValues.every((value, index) => value === state.appliedConfig.eqValues[index])
+		&& state.config.bass === state.appliedConfig.bass
+		&& state.config.compressor === state.appliedConfig.compressor
+		&& state.config.mono === state.appliedConfig.mono
+		&& state.config.pan === state.appliedConfig.pan
+		&& state.config.delay === state.appliedConfig.delay;
 }
 
 export function createAudioRuntimeControlDelegate(

@@ -8,11 +8,11 @@ import {
 	isBootstrapHelloResponse,
 	isBootstrapInboundRequest,
 	resolveSpectraDefaultHotkeyAction,
+	type BootstrapInboundRequest,
 	type SpectraDefaultHotkeyAction,
 } from '@nexus/contracts/bootstrap';
 import {
 	getContentBootstrapState,
-	requiresContentRuntime,
 	setContentBootstrapState,
 	type ContentBootstrapState,
 } from '../../shared/content-runtime';
@@ -32,6 +32,31 @@ import {
 	subscribeDocumentStartPhysicalHotkeyRelease,
 } from '../input/hotkey-event';
 
+type BootstrapReadRequest = Extract<BootstrapInboundRequest, {
+	type: 'spectra.control.actual.read';
+}>;
+type BootstrapReleaseRequest = Extract<BootstrapInboundRequest, {
+	type: 'spectra.content.runtime.release';
+}>;
+
+function claimHotkeyEvent(event: KeyboardEvent): void {
+	event.preventDefault();
+	event.stopImmediatePropagation();
+}
+
+function readPageActual(
+	element: HTMLMediaElement,
+	field: 'volumeBase' | 'mediaMuted' | 'speed',
+): number | boolean | null {
+	try { return readPageMediaField(element, field); }
+	catch { return null; }
+}
+
+const PASSIVE_FIELDS = new Set([
+	'volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing',
+	'currentTime', 'loop', 'pip', 'fullscreen',
+]);
+
 const previous = getContentBootstrapState();
 if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous?.dispose();
 
@@ -49,6 +74,20 @@ if (!getContentBootstrapState()) {
 		observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies;
 	};
 	let pendingObservation: BootstrapNativeObservation | null = null;
+	// Page-entry solidification: the bootstrap is the only owner present before
+	// the deferred runtime loads, so the first media volume event probes the
+	// page controller read-only and records a positive amplified-scale verdict.
+	// Negative verdicts stay unrecorded here — the bridge injection may still be
+	// racing this event — and are solidified later by the runtime's media
+	// registration probe or the coordinator's one-shot fallback probe.
+	let pageScaleConfirmed = false;
+	const reportPageScale = (element: HTMLMediaElement): void => {
+		if (pageScaleConfirmed || disposed) return;
+		if (readPageActual(element, 'volumeBase') === null) return;
+		pageScaleConfirmed = true;
+		void sendBootstrapRequest('spectra.audio.page-scale.record', { supported: true }, state.dispose)
+			.catch(() => undefined);
+	};
 
 	const defaultHotkeyAction = (event: KeyboardEvent): SpectraDefaultHotkeyAction | null => {
 		if (!event.isTrusted || event.defaultPrevented) return null;
@@ -77,8 +116,7 @@ if (!getContentBootstrapState()) {
 		action: SpectraDefaultHotkeyAction,
 	): void => {
 		if (disposed) return;
-		event.preventDefault();
-		event.stopImmediatePropagation();
+		claimHotkeyEvent(event);
 		let active = activeDefaultScalarKeys.get(event.code);
 		if (!active) {
 			active = {
@@ -116,15 +154,13 @@ if (!getContentBootstrapState()) {
 	): void => {
 		const active = activeDefaultScalarKeys.get(event.code);
 		if (active) {
-			event.preventDefault();
-			event.stopImmediatePropagation();
+			claimHotkeyEvent(event);
 			activeDefaultScalarKeys.delete(event.code);
 			releaseDefaultScalarGesture(active);
 			return;
 		}
 		if (!event.code.startsWith('Alt') || activeDefaultScalarKeys.size === 0) return;
-		event.preventDefault();
-		event.stopImmediatePropagation();
+		claimHotkeyEvent(event);
 		releaseDefaultScalarKeys();
 	};
 
@@ -148,13 +184,9 @@ if (!getContentBootstrapState()) {
 		element: HTMLMediaElement,
 		eventType: 'volumechange' | 'ratechange',
 	): BootstrapNativeObservation | null => {
-		const pageActual = (field: 'volumeBase' | 'mediaMuted' | 'speed'): number | boolean | null => {
-			try { return readPageMediaField(element, field); }
-			catch { return null; }
-		};
 		if (eventType === 'volumechange') {
-			const pageVolume = pageActual('volumeBase');
-			const pageMuted = pageActual('mediaMuted');
+			const pageVolume = readPageActual(element, 'volumeBase');
+			const pageMuted = readPageActual(element, 'mediaMuted');
 			return {
 				patch: {
 					volumeBase: typeof pageVolume === 'number'
@@ -169,7 +201,7 @@ if (!getContentBootstrapState()) {
 			};
 		}
 		if (!('preservesPitch' in element)) return null;
-		const pageSpeed = pageActual('speed');
+		const pageSpeed = readPageActual(element, 'speed');
 		return {
 			patch: {
 				speed: typeof pageSpeed === 'number' ? pageSpeed : element.playbackRate,
@@ -198,27 +230,23 @@ if (!getContentBootstrapState()) {
 		if (!element) return null;
 		const patch: import('@nexus/contracts').ControlPatch = {};
 		const observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies = {};
-		const pageActual = (field: 'volumeBase' | 'mediaMuted' | 'speed'): number | boolean | null => {
-			try { return readPageMediaField(element, field); }
-			catch { return null; }
-		};
 		for (const field of request.fields) {
 			let actual: unknown;
 			switch (field) {
 				case 'volumeBase': {
-					const pageValue = pageActual(field);
+					const pageValue = readPageActual(element, field);
 					actual = pageValue ?? Math.round(element.volume * 10_000) / 100;
 					observedStrategies.volumeBase = pageValue === null ? 'dom-native' : 'page-native';
 					break;
 				}
 				case 'mediaMuted': {
-					const pageValue = pageActual(field);
+					const pageValue = readPageActual(element, field);
 					actual = pageValue ?? element.muted;
 					observedStrategies.mediaMuted = pageValue === null ? 'dom-native' : 'page-native';
 					break;
 				}
 				case 'speed': {
-					const pageValue = pageActual(field);
+					const pageValue = readPageActual(element, field);
 					actual = pageValue ?? element.playbackRate;
 					observedStrategies.speed = pageValue === null ? 'dom-native' : 'page-native';
 					break;
@@ -296,13 +324,19 @@ if (!getContentBootstrapState()) {
 	};
 
 	const onNativeMediaChange = (event: Event): void => {
-		if (disposed || !observationsReady || state.ready || state.disposeRuntime) return;
+		if (disposed || state.disposeRuntime) return;
 		const element = event.composedPath().find(
 			(candidate): candidate is HTMLMediaElement => candidate instanceof HTMLMediaElement,
 		);
-		if (!element?.isConnected
-			|| (event.type !== 'volumechange' && event.type !== 'ratechange')) return;
-		const observation = readBootstrapObservation(element, event.type);
+		if (!element?.isConnected) return;
+		// The first media volume event is the page-entry audio detection moment;
+		// solidify the amplified-controller verdict before the runtime loads.
+		if (event.type === 'volumechange') reportPageScale(element);
+		if (!observationsReady || state.ready) return;
+		const observation = readBootstrapObservation(
+			element,
+			event.type as 'volumechange' | 'ratechange',
+		);
 		if (!observation) return;
 		pendingObservation = pendingObservation
 			? {
@@ -337,7 +371,7 @@ if (!getContentBootstrapState()) {
 			return false;
 		}
 		if (candidate.type === 'spectra.content.runtime.status') {
-			if (!isBootstrapInboundRequest(message) || message.type !== 'spectra.content.runtime.status') {
+			if (!isBootstrapInboundRequest(message)) {
 				sendResponse(bootstrapRpcFailure('invalid_request', 'Malformed content runtime status request'));
 				return false;
 			}
@@ -350,16 +384,13 @@ if (!getContentBootstrapState()) {
 			return false;
 		}
 		if (candidate.type === 'spectra.control.actual.read' && !state.ready) {
-			if (!isBootstrapInboundRequest(message) || message.type !== 'spectra.control.actual.read') {
+			if (!isBootstrapInboundRequest(message)) {
 				sendResponse(bootstrapRpcFailure('invalid_request', 'Malformed native observation request'));
 				return false;
 			}
-			const passiveFields = new Set([
-				'volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing',
-				'currentTime', 'loop', 'pip', 'fullscreen',
-			]);
-			if (message.payload.target !== null
-				|| !message.payload.fields.every((field) => passiveFields.has(field))) {
+			const request = message as BootstrapReadRequest;
+			if (request.payload.target !== null
+				|| !request.payload.fields.every((field) => PASSIVE_FIELDS.has(field))) {
 				sendResponse(bootstrapRpcFailure(
 					'content_runtime_not_loaded',
 					'The document runtime is required for a target-bound or augmented read',
@@ -367,7 +398,7 @@ if (!getContentBootstrapState()) {
 				));
 				return false;
 			}
-			const result = readNativeActual(message.payload);
+			const result = readNativeActual(request.payload);
 			if (!result) {
 				sendResponse(bootstrapRpcFailure('capability-unavailable', 'No observable native media state'));
 				return false;
@@ -376,11 +407,12 @@ if (!getContentBootstrapState()) {
 			return false;
 		}
 		if (candidate.type === 'spectra.content.runtime.release' && state.ready) {
-			if (!isBootstrapInboundRequest(message) || message.type !== 'spectra.content.runtime.release') {
+			if (!isBootstrapInboundRequest(message)) {
 				sendResponse(bootstrapRpcFailure('invalid_request', 'Malformed content runtime release'));
 				return false;
 			}
-			if (message.payload.runtimeRevision !== state.runtimeRevision) {
+			const request = message as BootstrapReleaseRequest;
+			if (request.payload.runtimeRevision !== state.runtimeRevision) {
 				sendResponse(bootstrapRpcFailure('runtime_revision_mismatch', 'Content runtime release revision is stale'));
 				return false;
 			}
@@ -394,16 +426,6 @@ if (!getContentBootstrapState()) {
 				true,
 			)));
 			return true;
-		}
-		if (isBootstrapInboundRequest(message)
-			&& requiresContentRuntime(message.type)
-			&& !state.ready) {
-			sendResponse(bootstrapRpcFailure(
-				'content_runtime_not_loaded',
-				'The document runtime has not been acquired for this control',
-				true,
-			));
-			return false;
 		}
 		return false;
 	};
@@ -450,7 +472,8 @@ function sendBootstrapRequest(
 	type: 'spectra.content.bootstrap.hello'
 		| 'spectra.content.runtime.release'
 		| 'spectra.content.default-hotkey.trigger'
-		| 'spectra.control.intent.submit',
+		| 'spectra.control.intent.submit'
+		| 'spectra.audio.page-scale.record',
 	payload: { bootstrapRevision: string }
 		| { runtimeRevision: string }
 		| {
@@ -459,6 +482,7 @@ function sendBootstrapRequest(
 			gesture: string;
 			repeated: boolean;
 		}
+		| { supported: boolean }
 		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {

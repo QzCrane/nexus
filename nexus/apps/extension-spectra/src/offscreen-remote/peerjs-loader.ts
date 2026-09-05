@@ -1,126 +1,109 @@
 // goal: load the local opaque PeerJS runtime only for an explicit Remote create
-// rule: one offscreen-local single flight; no network fallback, polling or retry timer
+// rule: one offscreen-local single flight; no network fallback or polling
+
+import type Peer from '../../../../../remote-site/vendor/peerjs.min.js';
+
+export type { default as Peer } from '../../../../../remote-site/vendor/peerjs.min.js';
+export type { DataConnection } from '../../../../../remote-site/vendor/peerjs.min.js';
 
 const PEER_VENDOR_LOAD_TIMEOUT_MS = 10_000;
 
-interface PeerScriptHandle {
-	remove(): void;
-}
+interface PeerRuntimeModule { default?: unknown; }
 
 export interface PeerRuntimeLoaderDependencies {
-	hasPeer?: () => boolean;
-	resolveUrl?: () => string;
-	createScript?: (
-		url: string,
-		onLoad: () => void,
-		onError: () => void,
-	) => PeerScriptHandle;
+	loadModule?: () => Promise<PeerRuntimeModule>;
 	setTimer?: (callback: () => void, delayMs: number) => number;
 	clearTimer?: (timerId: number) => void;
 }
 
 export interface PeerRuntimeLoader {
 	ensure(): Promise<void>;
+	createPeer(peerId: string): Peer;
 	dispose(): void;
 }
 
-function defaultHasPeer(): boolean {
-	return typeof (globalThis as typeof globalThis & { Peer?: unknown }).Peer === 'function';
-}
-
-function defaultCreateScript(
-	url: string,
-	onLoad: () => void,
-	onError: () => void,
-): PeerScriptHandle {
-	const script = document.createElement('script');
-	script.src = url;
-	script.async = true;
-	script.addEventListener('load', onLoad, { once: true });
-	script.addEventListener('error', onError, { once: true });
-	document.head.appendChild(script);
-	return {
-		remove() {
-			script.removeEventListener('load', onLoad);
-			script.removeEventListener('error', onError);
-			script.remove();
-		},
-	};
+function defaultLoadModule(): Promise<PeerRuntimeModule> {
+	return import(chrome.runtime.getURL('peerjs-vendor.js')) as Promise<PeerRuntimeModule>;
 }
 
 export function createPeerRuntimeLoader(
 	dependencies: PeerRuntimeLoaderDependencies = {},
 ): PeerRuntimeLoader {
-	const hasPeer = dependencies.hasPeer ?? defaultHasPeer;
-	const resolveUrl = dependencies.resolveUrl
-		?? (() => chrome.runtime.getURL('peerjs-vendor.js'));
-	const createScript = dependencies.createScript ?? defaultCreateScript;
+	const loadModule = dependencies.loadModule ?? defaultLoadModule;
 	const setTimer = dependencies.setTimer
 		?? ((callback, delayMs) => window.setTimeout(callback, delayMs));
 	const clearTimer = dependencies.clearTimer ?? ((timerId) => window.clearTimeout(timerId));
-	let state: 'idle' | 'loading' | 'ready' | 'disposed' = hasPeer() ? 'ready' : 'idle';
+	let disposed = false;
 	let pending: Promise<void> | null = null;
-	let script: PeerScriptHandle | null = null;
+	let peerConstructor: typeof Peer | null = null;
 	let timer: number | null = null;
 	let rejectPending: ((error: Error) => void) | null = null;
 
 	const resetLoadingState = (): void => {
 		if (timer !== null) clearTimer(timer);
 		timer = null;
-		script?.remove();
-		script = null;
 		pending = null;
 		rejectPending = null;
 	};
 
 	const ensure = (): Promise<void> => {
-		if (state === 'disposed') return Promise.reject(new Error('PeerJS runtime loader is disposed'));
-		if (hasPeer()) {
-			state = 'ready';
-			return Promise.resolve();
-		}
-		if (state === 'loading' && pending) return pending;
-		state = 'loading';
-		pending = new Promise<void>((resolve, reject) => {
-			rejectPending = reject;
-			const fail = (message: string): void => {
-				if (state !== 'loading') return;
-				state = 'idle';
-				resetLoadingState();
-				reject(new Error(message));
-			};
-			const complete = (): void => {
-				if (state !== 'loading') return;
-				if (!hasPeer()) {
-					fail('Local PeerJS vendor loaded without installing globalThis.Peer');
-					return;
-				}
-				state = 'ready';
-				resetLoadingState();
-				resolve();
-			};
-			timer = setTimer(
-				() => fail('Local PeerJS vendor load timed out'),
-				PEER_VENDOR_LOAD_TIMEOUT_MS,
-			);
-			try {
-				script = createScript(
-					resolveUrl(),
-					complete,
-					() => fail('Local PeerJS vendor failed to load'),
-				);
-			} catch (error) {
-				fail(error instanceof Error ? error.message : String(error));
-			}
+		if (disposed) return Promise.reject(new Error('PeerJS runtime loader is disposed'));
+		if (peerConstructor) return Promise.resolve();
+		if (pending) return pending;
+		let resolvePending!: () => void;
+		let rejectCurrent!: (error: Error) => void;
+		const request = new Promise<void>((resolve, reject) => {
+			resolvePending = resolve;
+			rejectCurrent = reject;
 		});
-		return pending;
+		pending = request;
+		rejectPending = rejectCurrent;
+		const isCurrentAttempt = (): boolean => pending === request;
+		const fail = (message: string): void => {
+			if (!isCurrentAttempt()) return;
+			resetLoadingState();
+			rejectCurrent(new Error(message));
+		};
+		const complete = (module: PeerRuntimeModule): void => {
+			if (!isCurrentAttempt()) return;
+			if (typeof module.default !== 'function') {
+				fail('Local PeerJS vendor loaded without exporting Peer');
+				return;
+			}
+			peerConstructor = module.default as typeof Peer;
+			resetLoadingState();
+			resolvePending();
+		};
+		timer = setTimer(
+			() => fail('Local PeerJS vendor load timed out'),
+			PEER_VENDOR_LOAD_TIMEOUT_MS,
+		);
+		let loaded: Promise<PeerRuntimeModule>;
+		try {
+			loaded = loadModule();
+		} catch (error) {
+			fail(error instanceof Error ? error.message : String(error));
+			return request;
+		}
+		void loaded
+			.then(complete)
+			.catch((error: unknown) => fail(error instanceof Error ? error.message : String(error)));
+		return request;
 	};
 
 	return {
 		ensure,
+		createPeer(peerId) {
+			if (!peerConstructor) throw new Error('Local PeerJS vendor runtime is unavailable');
+			return new peerConstructor(peerId, {
+				debug: 0,
+				referrerPolicy: 'no-referrer',
+			});
+		},
 		dispose() {
-			if (state === 'disposed') return;
-			state = 'disposed';
+			if (disposed) return;
+			disposed = true;
+			peerConstructor = null;
 			const reject = rejectPending;
 			resetLoadingState();
 			reject?.(new Error('PeerJS runtime loader was disposed'));

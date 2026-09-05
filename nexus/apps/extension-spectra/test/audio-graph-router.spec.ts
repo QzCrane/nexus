@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { DEFAULT_AUDIO_CONFIG, isAudioProcessorConfig } from '@nexus/contracts';
+import {
+	audioConfigToProcessorConfig,
+	DEFAULT_AUDIO_CONFIG,
+	isAudioProcessorConfig,
+	resolveDesiredAudioMode,
+} from '@nexus/contracts';
 import {
 	AUDIO_GRAPH_CROSSFADE_MS,
 	AudioGraphRouter,
@@ -8,13 +13,22 @@ import {
 	CompressorOn,
 	DEFAULT_AUDIO_GRAPH_CONFIG,
 	audioGraphSignature,
-	audioConfigToGraphConfig,
 } from '@nexus/audio-engine';
+import { DEFAULT_AUDIO_CONFIG as KERNEL_DEFAULT_AUDIO_CONFIG } from '@nexus/kernel';
 import { requireValue } from './helpers/require-value';
 
 describe('shared sparse audio graph router', () => {
+	test('selects native, Media WebAudio, and Capture from one explicit demand policy', () => {
+		const neutral = { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] };
+		const boosted = { ...neutral, volume: 200, volumeBase: 100, boost: 2 };
+		expect(resolveDesiredAudioMode(neutral, { visualizer: false, mediaWebAudio: true })).toBe('bypass');
+		expect(resolveDesiredAudioMode(neutral, { visualizer: true, mediaWebAudio: true })).toBe('webaudio');
+		expect(resolveDesiredAudioMode(neutral, { visualizer: true, mediaWebAudio: false })).toBe('capture');
+		expect(resolveDesiredAudioMode(boosted, { visualizer: false, mediaWebAudio: true })).toBe('webaudio');
+		expect(resolveDesiredAudioMode(boosted, { visualizer: false, mediaWebAudio: false })).toBe('capture');
+	});
 	test('keeps page volume and media mute out of processor graphs', () => {
-		const processor = audioConfigToGraphConfig({
+		const processor = audioConfigToProcessorConfig({
 			...DEFAULT_AUDIO_CONFIG,
 			eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
 			muted: true,
@@ -24,6 +38,10 @@ describe('shared sparse audio graph router', () => {
 		expect(isAudioProcessorConfig(processor)).toBe(true);
 		expect(isAudioProcessorConfig({ ...processor, boostGain: 0 })).toBe(false);
 		expect(isAudioProcessorConfig({ ...processor, muted: true })).toBe(false);
+	});
+
+	test('uses the contracts default as the kernel default owner', () => {
+		expect(KERNEL_DEFAULT_AUDIO_CONFIG).toBe(DEFAULT_AUDIO_CONFIG);
 	});
 
 	test('keeps canonical DSP parameters mirrored in the architecture owner', () => {
@@ -54,9 +72,7 @@ describe('shared sparse audio graph router', () => {
 
 		const snapshot = await router.apply(DEFAULT_AUDIO_GRAPH_CONFIG, { requireRunning: true });
 		expect(snapshot).toMatchObject({
-			contextState: 'running',
 			graphSignature: 'bass:0|eq:-|compressor:0|mono:0|pan:0|delay:0',
-			sourceCount: 1,
 		});
 		expect(context.created.biquad).toBe(0);
 		expect(context.created.compressor).toBe(0);
@@ -126,12 +142,11 @@ describe('shared sparse audio graph router', () => {
 		const router = new AudioGraphRouter(context as unknown as AudioContext, undefined, {
 			crossfadeMs: 0,
 		});
-		await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 50 });
-		const firstSignature = router.getSnapshot()?.graphSignature;
-		await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 75 });
-		expect(router.getSnapshot()?.graphSignature).toBe(firstSignature);
+		const firstSnapshot = await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 50 });
+		const secondSnapshot = await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, delay: 75 });
+		expect(secondSnapshot.graphSignature).toBe(firstSnapshot.graphSignature);
 		expect(context.created.delay).toBe(1);
-		expect(router.getSnapshot()?.normalizedActualConfig.delay).toBe(75);
+		expect(secondSnapshot.normalizedActualConfig.delay).toBe(75);
 		expect(context.created.analyser).toBe(0);
 
 		const unsubscribe = router.subscribeVisualizer();

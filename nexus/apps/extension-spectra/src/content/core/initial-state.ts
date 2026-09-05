@@ -2,17 +2,19 @@
 
 import {
 	DEFAULT_AUDIO_CONFIG,
-	isDefaultAudioConfig,
+	requiresAudioProcessor,
+	resolveDesiredAudioMode,
 	type AudioConfig,
+	type MediaProcessingRoute,
 	type AudioSessionSnapshot,
 } from '@nexus/contracts';
-import { AudioMode, type AudioModeType } from '@nexus/audio-engine';
 import type { PolicyExecutorState } from '../types';
 
 export interface InitialStateSources {
 	handoff: Partial<PolicyExecutorState> | null;
 	session: AudioSessionSnapshot | null;
 	config: AudioConfig | null;
+	mediaRoute?: MediaProcessingRoute | 'auto';
 }
 
 export type InitialStateSource = 'handoff' | 'session' | 'fresh';
@@ -22,14 +24,16 @@ export type InitialStateSource = 'handoff' | 'session' | 'fresh';
 // be hydrated first; a later explicit control, configuration or navigation
 // event may ask PolicyExecutor to transition it.
 export function shouldApplyInitialPolicy(
-	state: Pick<PolicyExecutorState, 'actualMode'>,
+	state: Pick<PolicyExecutorState, 'actualMode' | 'desiredMode'>,
 	source: InitialStateSource,
 ): boolean {
-	// Same-document handoff preserves the native DOM, page-lifetime WebAudio
-	// controller and Background/offscreen Capture owner. Re-running policy before
+	// Same-document handoff preserves the native DOM and Background/offscreen
+	// Capture owner. Re-running policy before
 	// READY would turn hydration into a new control intent. A sender-bound session
 	// still needs policy reconstruction unless Capture already owns the processor.
-	return source === 'fresh' || (source === 'session' && state.actualMode !== 'capture');
+	return source === 'fresh'
+		|| source === 'session'
+			&& (state.actualMode !== 'capture' || state.desiredMode !== 'capture');
 }
 
 function cloneConfig(config: AudioConfig): AudioConfig {
@@ -39,12 +43,14 @@ function cloneConfig(config: AudioConfig): AudioConfig {
 function restorePolicyMode(
 	session: AudioSessionSnapshot,
 	config: AudioConfig,
-): AudioModeType {
-	if (session.desiredMode === 'capture') return AudioMode.CAPTURE;
-	if (session.desiredMode === 'webaudio') return AudioMode.NATIVE_WEBAUDIO;
-	return !config.enabled || isDefaultAudioConfig(config)
-		? AudioMode.DISABLED
-		: AudioMode.NATIVE_LITE;
+	mediaRoute: MediaProcessingRoute | 'auto',
+): PolicyExecutorState['desiredMode'] {
+	if (requiresAudioProcessor(config) && mediaRoute === 'direct') return 'webaudio';
+	if (requiresAudioProcessor(config) && mediaRoute === 'capture') return 'capture';
+	if (session.desiredMode === 'webaudio' && requiresAudioProcessor(config)) return 'webaudio';
+	return session.desiredMode === 'capture' && requiresAudioProcessor(config)
+		? 'capture'
+		: resolveDesiredAudioMode(config);
 }
 
 // Background metadata wins because it represents the last acknowledged owner
@@ -65,7 +71,8 @@ export function assembleInitialState(
 			?? session?.actualConfig
 			?? DEFAULT_AUDIO_CONFIG,
 	);
-	const sessionMode = session ? restorePolicyMode(session, config) : null;
+	const mediaRoute = handoff?.mediaRoute ?? sources.mediaRoute ?? 'auto';
+	const sessionMode = session ? restorePolicyMode(session, config, mediaRoute) : null;
 	const desiredMode = sessionMode ?? handoff?.desiredMode ?? null;
 	const appliedConfig = cloneConfig(
 		session?.actualConfig
@@ -77,6 +84,7 @@ export function assembleInitialState(
 		source,
 		state: {
 			config,
+			mediaRoute,
 			appliedConfig,
 			activeMode: desiredMode,
 			desiredMode,
@@ -84,10 +92,9 @@ export function assembleInitialState(
 			phase: session?.phase ?? handoff?.phase ?? 'idle',
 			generation: session?.generation ?? handoff?.generation ?? 0,
 			lastError: session?.lastError?.message ?? handoff?.lastError,
-			hasGesture: handoff?.hasGesture ?? false,
-			userHasInteracted: handoff?.userHasInteracted ?? false,
-			isPopupOpen: false,
-			visualizerSubscribed: false,
+				userHasInteracted: handoff?.userHasInteracted ?? false,
+				isPopupOpen: false,
+				visualizerSubscribers: new Set<string>(),
 		},
 	};
 }

@@ -1,4 +1,4 @@
-// goal: send runtime-validated SPECTRA v2 requests from unprivileged UI surfaces
+// goal: send runtime-validated SPECTRA extension RPC requests from unprivileged UI surfaces
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
@@ -38,7 +38,9 @@ export async function sendSpectraRequest<T extends SpectraUiRequestType>(
 	} as SpectraRequestEnvelope<T>;
 	const response: unknown = await chrome.runtime.sendMessage(message);
 	if (!isSpectraUiResponse(type, response)) {
-		throw new Error('Peer returned an invalid SPECTRA v2 UI response');
+		throw new Error(
+			`Background returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} UI response for ${type}`,
+		);
 	}
 	return response;
 }
@@ -62,7 +64,9 @@ export async function sendSpectraTabRequest<T extends SpectraUiRequestType>(
 			? await chrome.tabs.sendMessage(tabId, message, { documentId })
 			: await chrome.tabs.sendMessage(tabId, message);
 		if (!isSpectraUiResponse(type, response)) {
-			throw new Error('Content host returned an invalid SPECTRA v2 UI response');
+			throw new Error(
+				`Content host returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} UI response for ${type}`,
+			);
 		}
 		return response;
 	};

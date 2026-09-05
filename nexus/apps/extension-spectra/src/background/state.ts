@@ -1,7 +1,7 @@
 // goal: centralized in-memory state management for the Background Service Worker lifecycle
 
-import { createRouter, StorageRepository } from '@nexus/kernel';
-import { UIColors } from '@nexus/audio-engine';
+import { StorageRepository } from '@nexus/kernel';
+import { UI_COLORS } from '../shared/ui-colors';
 
 export interface BadgeInfo {
 	volume: number;
@@ -16,9 +16,8 @@ export interface BadgeInfo {
 	generation: number | null;
 }
 
-export const BADGE_COLORS = UIColors;
+export const BADGE_COLORS = UI_COLORS;
 
-export const router = createRouter();
 export const storage = new StorageRepository();
 
 // tabId -> isCaptureActive

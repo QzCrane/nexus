@@ -17,9 +17,12 @@ interface ContentBootstrapWindow extends Window {
 
 const runtimeRequiredTypes: ReadonlySet<SpectraRequestType> = new Set([
 	'spectra.audio.runtime.configure',
+	'spectra.audio.visualizer.demand.set',
+	'spectra.audio.visualizer.get',
 	'spectra.control.intent.execute',
 	'spectra.control.operation.execute',
 	'spectra.control.actual.read',
+	'spectra.control.page.scale.probe',
 	'spectra.hotkey.trigger',
 	'spectra.media.play.toggle',
 	'spectra.media.pip.toggle',

@@ -16,3 +16,13 @@ export const SPECTRA_FULLSCREEN_FINISH_EVENT =
 export interface SpectraFullscreenBridgeMessage {
 	requestId: string;
 }
+
+const SPECTRA_FULLSCREEN_REQUEST_ID =
+	/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
+
+/** Only ids minted by the MAIN bridge are valid across the page-visible boundary. */
+export function isSpectraFullscreenRequestId(value: unknown): value is string {
+	return typeof value === 'string'
+		&& value.length === 36
+		&& SPECTRA_FULLSCREEN_REQUEST_ID.test(value);
+}

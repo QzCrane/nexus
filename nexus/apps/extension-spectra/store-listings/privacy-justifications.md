@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: contributor
 owner: spectra-store-copy
-last_reviewed: 2026-07-20
+last_reviewed: 2026-08-29
 ---
 
 # SPECTRA Chrome Web Store privacy declarations
@@ -48,10 +48,16 @@ Required for bounded lifecycle work that must survive Manifest V3 service-worker
 Required only to save user-initiated screenshot captures of the current visible tab as PNG files in the user's Downloads directory under a spectra/ subfolder. SPECTRA listens for the download completion event solely to acknowledge the screenshot operation; it does not read, upload, or modify any other downloaded file, history, or path.
 ```
 
+### `activeTab`
+
+```text
+Required because Chrome permits an exact-target tabCapture stream ID only for the active page on which the user invoked the extension action or a registered browser command. The grant is temporary, is not persisted, and cannot be created by page activity, restore, Remote, or a background tab. SPECTRA retains the explicit target-tab check so an asynchronous operation cannot capture a different tab after focus changes.
+```
+
 ### `tabCapture`
 
 ```text
-Required only when an admitted full-output audio feature needs to process the current active tab locally. A new Capture can start only from a Popup or browser command invocation for that same active tab; page activity, restore, remote control, warm update, and alternate background-tab shortcuts cannot start it. SPECTRA does not record or upload captured audio.
+Required only when an admitted full-output audio feature or enabled foreground spectrum needs to process the current active tab locally. A new Capture can start only from a Popup or browser command invocation for that same active tab; page activity, restore, remote control, warm update, and alternate background-tab shortcuts cannot start it. SPECTRA does not record or upload captured audio.
 ```
 
 ### `offscreen`

@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'bun:test';
-import { DEFAULT_AUDIO_CONFIG } from '@nexus/contracts';
+import {
+	DEFAULT_AUDIO_CONFIG,
+	splitEffectiveVolume,
+	type AudioConfig,
+} from '@nexus/contracts';
 import { consumeStub, createSnapshot, mountStub } from '../src/content/core/sentinel';
 import type { PolicyExecutorState } from '../src/content/types';
 
@@ -8,27 +12,25 @@ describe('authenticated content runtime handoff', () => {
 		const environment = installDom();
 		try {
 			const state: PolicyExecutorState = {
-				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues], volume: 180 },
-				appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues], volume: 180 },
-				activeMode: 'NATIVE_WEBAUDIO',
-				desiredMode: 'NATIVE_WEBAUDIO',
-				actualMode: 'webaudio',
+				config: audioConfig(180),
+				appliedConfig: audioConfig(180),
+				activeMode: 'capture',
+				desiredMode: 'capture',
+				actualMode: 'capture',
 				phase: 'active',
 				generation: 27,
-				hasGesture: true,
 				userHasInteracted: true,
 				isPopupOpen: false,
 			};
 
 			mountStub(createSnapshot(state));
-				expect(consumeStub()).toMatchObject({
+			expect(consumeStub()).toMatchObject({
 				config: expect.objectContaining({ volume: 180 }),
 				appliedConfig: expect.objectContaining({ volume: 180 }),
-				desiredMode: 'NATIVE_WEBAUDIO',
-				actualMode: 'webaudio',
+				desiredMode: 'capture',
+				actualMode: 'capture',
 				phase: 'active',
 				generation: 27,
-				hasGesture: true,
 				userHasInteracted: true,
 			});
 
@@ -45,12 +47,11 @@ describe('authenticated content runtime handoff', () => {
 			const state: PolicyExecutorState = {
 				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
 				appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
-				activeMode: 'DISABLED',
-				desiredMode: 'DISABLED',
+				activeMode: 'bypass',
+				desiredMode: 'bypass',
 				actualMode: 'bypass',
 				phase: 'idle',
 				generation: 4,
-				hasGesture: false,
 				userHasInteracted: false,
 				isPopupOpen: false,
 			};
@@ -66,6 +67,35 @@ describe('authenticated content runtime handoff', () => {
 		}
 	});
 
+	test('rejects retired WebAudio mode tokens instead of hydrating compatibility state', () => {
+		const environment = installDom();
+		try {
+			const state: PolicyExecutorState = {
+				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+				appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+				activeMode: 'bypass',
+				desiredMode: 'bypass',
+				actualMode: 'bypass',
+				phase: 'idle',
+				generation: 5,
+				userHasInteracted: false,
+				isPopupOpen: false,
+			};
+			mountStub(createSnapshot(state));
+			const handoff = (window as Window & {
+				__SPECTRA_ISOLATED_HANDOFF__?: { token: string; snapshot: string; createdAt: number };
+			}).__SPECTRA_ISOLATED_HANDOFF__;
+			if (!handoff) throw new Error('Expected isolated handoff');
+			const retired = JSON.parse(handoff.snapshot) as Record<string, unknown>;
+			retired.desiredMode = 'webaudio';
+			retired.actualMode = 'NATIVE_WEBAUDIO';
+			handoff.snapshot = JSON.stringify(retired);
+			expect(consumeStub()).toBeNull();
+		} finally {
+			environment.restore();
+		}
+	});
+
 	test('ignores legacy DOM-only state without touching page-owned DOM', () => {
 		const environment = installDom();
 		try {
@@ -75,7 +105,6 @@ describe('authenticated content runtime handoff', () => {
 				version: '1.3.4',
 				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues], volume: 180 },
 				userHasInteracted: true,
-				hasGesture: true,
 				timestamp: Date.now(),
 			}));
 			environment.document.documentElement.appendChild(legacy);
@@ -87,6 +116,17 @@ describe('authenticated content runtime handoff', () => {
 		}
 	});
 });
+
+function audioConfig(volume = DEFAULT_AUDIO_CONFIG.volume): AudioConfig {
+	const { volumeBase, boost } = splitEffectiveVolume(volume);
+	return {
+		...DEFAULT_AUDIO_CONFIG,
+		eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+		volume,
+		volumeBase,
+		boost,
+	};
+}
 
 class FakeElement {
 	id = '';

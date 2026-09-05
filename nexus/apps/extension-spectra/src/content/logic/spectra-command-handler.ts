@@ -6,7 +6,6 @@ import {
 	type SpectraRequestEnvelope,
 	type SpectraRequestType,
 } from '@nexus/contracts';
-import type { PolicyExecutor, PolicyExecutorState } from './policy-executor';
 import { executeHotkeyAction } from '../input/hotkey-actions';
 import { getActiveMediaRegistry } from '../core/media-registry';
 import { getABState } from '../video/ab-loop';
@@ -14,24 +13,13 @@ import { listMarkers } from '../video/time-marker';
 
 type ContentCommandType = Extract<
 	SpectraRequestType,
-	| 'spectra.audio.visualizer.get'
-	| 'spectra.audio.visualizer.subscription.set'
 	| 'spectra.hotkey.trigger'
 	| `spectra.media.${string}`
 	| `spectra.video.${string}`
 >;
 
-export interface SpectraCommandHandlerDeps {
-	state: PolicyExecutorState;
-	policyExecutor?: PolicyExecutor;
-	getVisualizerData: () => Uint8Array | null;
-	setVisualizerSubscribed: (subscribed: boolean) => Promise<boolean>;
-}
-
 export function isContentCommandType(type: SpectraRequestType): type is ContentCommandType {
-	return type === 'spectra.audio.visualizer.get'
-		|| type === 'spectra.audio.visualizer.subscription.set'
-		|| type === 'spectra.hotkey.trigger'
+	return type === 'spectra.hotkey.trigger'
 		|| type.startsWith('spectra.media.')
 		|| type.startsWith('spectra.video.');
 }
@@ -64,23 +52,10 @@ function activeMediaState(): {
 // post: returns true when an asynchronous response keeps the message port open
 export function handleSpectraContentCommand(
 	message: SpectraRequestEnvelope,
-	deps: SpectraCommandHandlerDeps,
 	sendResponse: (response?: unknown) => void,
 ): boolean {
 	try {
 		switch (message.type) {
-		case 'spectra.audio.visualizer.get': {
-				const data = deps.getVisualizerData();
-				sendResponse(rpcSuccess({ buffer: data ? Array.from(data) : null }));
-				return false;
-			}
-			case 'spectra.audio.visualizer.subscription.set': {
-				void deps.setVisualizerSubscribed(message.payload.subscribed).then(
-					(subscribed) => sendResponse(rpcSuccess({ subscribed })),
-					(error) => respondWithFailure(sendResponse, error),
-				);
-				return true;
-			}
 			case 'spectra.hotkey.trigger':
 				void executeHotkeyAction(message.payload.action).then(
 					() => sendResponse(rpcSuccess({ handled: true as const })),

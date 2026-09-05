@@ -1,5 +1,7 @@
 // goal: one linear value-to-visual contract for every scalar feedback bar
 
+import { CONTROL_VALUE_LIMITS } from '@nexus/contracts';
+
 export type ScalarFeedbackKind = 'volume' | 'speed';
 
 export interface ScalarFeedbackMarker {
@@ -17,16 +19,16 @@ interface ScalarFeedbackScale {
 
 const SCALAR_FEEDBACK_SCALES = {
 	volume: {
-		min: 0,
-		max: 800,
+		min: CONTROL_VALUE_LIMITS.volume.min,
+		max: CONTROL_VALUE_LIMITS.volume.max,
 		step: 10,
 		markers: [
 			{ value: 100, label: '100%', lane: 'lower' },
 		],
 	},
 	speed: {
-		min: 0.1,
-		max: 16,
+		min: CONTROL_VALUE_LIMITS.speed.min,
+		max: CONTROL_VALUE_LIMITS.speed.max,
 		step: 0.1,
 		markers: [
 			{ value: 1, label: '1×', lane: 'lower' },

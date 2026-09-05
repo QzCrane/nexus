@@ -12,6 +12,7 @@ export interface VizLoopParams {
   getConfig: () => { enabled: boolean; muted: boolean };
   getCapturing: () => boolean;
   isProcessorActive: () => boolean;
+  allowCaptureAcquisition: boolean;
   getGlobalSettings: () => GlobalSettings;
 }
 
@@ -30,6 +31,8 @@ let frameId = 0;
 let announcedTabIds = '';
 let batchInFlight = false;
 let subscriberGeneration = 0;
+let batchFailureCount = 0;
+let batchRetryAt = 0;
 const subscriberId = typeof crypto.randomUUID === 'function'
   ? `popup-${crypto.randomUUID()}`
   : `popup-${Array.from(crypto.getRandomValues(new Uint32Array(2))).join('-')}`;
@@ -84,14 +87,14 @@ function stopScheduledFrame(): void {
 function isRunnable(subscription: VizSubscription): boolean {
 	if (!subscription.active || !subscription.visible) return false;
 	const config = subscription.params.getConfig();
-	// AudioSessionSnapshot is the processor-lifecycle authority. A matching
-	// active lifecycle wakes this scheduler through VISUALIZER_STATE_CHANGED_EVENT;
-	// an idle, stale or unmatched lifecycle stays flat without polling Background
-	// at 15 Hz merely to rediscover that no analyser exists.
+	// Background cards observe only an existing processor. The visible foreground
+	// card may announce one explicit transient Capture demand through this same
+	// subscriber heartbeat, allowing native-volume pages to obtain a real analyser.
 	return config.enabled
 		&& !config.muted
 		&& subscription.params.getGlobalSettings().visualizerEnabled !== false
-		&& subscription.params.isProcessorActive();
+		&& (subscription.params.isProcessorActive()
+			|| subscription.params.allowCaptureAcquisition);
 }
 
 function hasRunnableSubscriptions(): boolean {
@@ -133,10 +136,11 @@ function reconcileScheduler(): void {
 
 function scheduleFrame(): void {
   if (document.hidden || frameTimer || frameId || !hasRunnableSubscriptions()) return;
+	const delay = Math.max(TIMING.VIZ_FRAME_INTERVAL, batchRetryAt - Date.now());
   frameTimer = setTimeout(() => {
     frameTimer = null;
     frameId = requestAnimationFrame(runFrame);
-  }, TIMING.VIZ_FRAME_INTERVAL);
+  }, delay);
 }
 
 function runFrame(): void {
@@ -164,6 +168,9 @@ function runFrame(): void {
 
 async function sampleBatch(ready: VizSubscription[]): Promise<void> {
   const tabIds = [...new Set(ready.map((subscription) => subscription.params.tabId))];
+  const captureTabId = ready.find(
+	(subscription) => subscription.params.allowCaptureAcquisition,
+  )?.params.tabId ?? null;
   announcedTabIds = [...tabIds].sort((left, right) => left - right).join(',');
   const generation = ++subscriberGeneration;
   batchInFlight = true;
@@ -172,10 +179,13 @@ async function sampleBatch(ready: VizSubscription[]): Promise<void> {
       subscriberId,
       generation,
       tabIds,
+		captureTabId,
     });
+		if (!response.ok) throw new Error(response.error.message);
+		batchFailureCount = 0;
+		batchRetryAt = 0;
     for (const subscription of ready) {
-      const frame = response.ok
-        && response.data.subscriberId === subscriberId
+		const frame = response.data.subscriberId === subscriberId
         && response.data.generation === generation
         && subscriberGeneration === generation
         && subscription.active
@@ -191,6 +201,8 @@ async function sampleBatch(ready: VizSubscription[]): Promise<void> {
       );
     }
   } catch {
+		batchFailureCount += 1;
+		batchRetryAt = Date.now() + Math.min(5_000, 500 * (2 ** Math.min(batchFailureCount - 1, 4)));
     for (const subscription of ready) {
       drawViz(subscription.params.canvas, null, true, subscription.params.getCapturing());
     }
@@ -209,6 +221,7 @@ function releaseSubscriptions(): void {
     subscriberId,
     generation,
     tabIds: [],
+		captureTabId: null,
   }).catch(() => undefined);
 }
 
@@ -243,15 +256,29 @@ function register(params: VizLoopParams): () => void {
   };
 }
 
-// post: returns an idempotent start function; all cards share the same 15 Hz scheduler
-export function createVizLoop(params: VizLoopParams): () => void {
+export interface VizLoopController {
+  start: () => void;
+  dispose: () => void;
+}
+
+// post: returns an idempotent lifecycle controller; all cards share the same 15 Hz scheduler
+export function createVizLoop(params: VizLoopParams): VizLoopController {
   let cleanup: (() => void) | null = null;
+  let pagehideBound = true;
 
   const start = () => {
     if (cleanup) return;
     cleanup = register(params);
-    window.addEventListener('pagehide', () => cleanup?.(), { once: true });
   };
 
-  return start;
+  const dispose = () => {
+    if (pagehideBound) {
+      window.removeEventListener('pagehide', dispose);
+      pagehideBound = false;
+    }
+    cleanup?.();
+    cleanup = null;
+  };
+  window.addEventListener('pagehide', dispose, { once: true });
+  return { start, dispose };
 }

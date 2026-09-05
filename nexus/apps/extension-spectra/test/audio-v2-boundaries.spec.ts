@@ -7,6 +7,8 @@ import {
 	type SpectraResponse,
 } from '@nexus/contracts';
 import { createMessageHandler, type MessageHandlerDeps } from '../src/content/logic/message-handler';
+import { DocumentRuntimeContext } from '../src/content/core/content-runtime-context';
+import { createCaptureAdmission } from './helpers/capture-admission';
 
 const CONFIG = {
 	...DEFAULT_AUDIO_CONFIG,
@@ -32,46 +34,134 @@ function deferred<T>() {
 }
 
 describe('content audio v2 boundary', () => {
-	test('keeps visualizer reads side-effect free and changes analyser ownership only through subscription intents', async () => {
+	test('returns only an acknowledged page WebAudio analyser frame for the current document', () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
 			value: { runtime: { id: 'spectra-test' } },
 		});
 		try {
-			const setVisualizerSubscribed = mock(async () => true);
+			const state = {
+				config: CONFIG,
+				actualMode: 'webaudio',
+				phase: 'active',
+				visualizerSubscribers: new Set(['popup-visualizer-a']),
+			} as MessageHandlerDeps['state'];
+			const getVisualizerData = mock(() => new Uint8Array([0, 64, 255]));
 			const handler = createMessageHandler({
-				state: { config: CONFIG },
+				state,
+				runtimeContext: new DocumentRuntimeContext({ documentId: 'document-42', frameId: 0 }),
 				captureManager: { handleMessage: mock(() => false) },
+				audioController: { getVisualizerData },
 				settingsManager: {},
-				getVisualizerData: () => new Uint8Array([1, 2, 3]),
-				setVisualizerSubscribed,
 			} as unknown as MessageHandlerDeps);
 			let response: unknown;
 			expect(handler(
-				envelope('spectra.audio.visualizer.get', {}),
+				{ ...envelope('spectra.audio.visualizer.get', {}), documentId: 'document-42' },
 				{ id: 'spectra-test' },
 				(value) => { response = value; },
 			)).toBe(false);
-			expect(response).toEqual(rpcSuccess({ buffer: [1, 2, 3] }));
-			expect(setVisualizerSubscribed).not.toHaveBeenCalled();
-
-			expect(handler(
-				envelope('spectra.audio.visualizer.subscription.set', { subscribed: true }),
-				{ id: 'spectra-test' },
-				(value) => { response = value; },
-			)).toBe(true);
-			await Promise.resolve();
-			expect(setVisualizerSubscribed).toHaveBeenCalledTimes(1);
-			expect(setVisualizerSubscribed).toHaveBeenCalledWith(true);
-			expect(response).toEqual(rpcSuccess({ subscribed: true }));
+			expect(response).toEqual(rpcSuccess({ buffer: [0, 64, 255] }));
+			expect(getVisualizerData).toHaveBeenCalledTimes(1);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 			else Reflect.deleteProperty(globalThis, 'chrome');
 		}
 	});
 
-	test('does not regress stable runtime state on same-generation capture intents', () => {
+	test('owns foreground visualizer demand by subscriber and exact document', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: { runtime: { id: 'spectra-test' } },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { getElementsByTagName: () => [] },
+		});
+		try {
+			const state = {
+				config: CONFIG,
+				appliedConfig: CONFIG,
+				activeMode: 'bypass',
+				desiredMode: 'bypass',
+				actualMode: 'bypass',
+				phase: 'idle',
+				generation: 3,
+				userHasInteracted: false,
+				isPopupOpen: false,
+				visualizerSubscribers: new Set<string>(),
+			} as MessageHandlerDeps['state'];
+			const applyState = mock(async (options?: { captureAdmission?: unknown }) => {
+				if (state.visualizerSubscribers.size > 0) {
+					expect(options?.captureAdmission).toBeDefined();
+					state.activeMode = 'capture';
+					state.desiredMode = 'capture';
+					state.actualMode = 'capture';
+					state.phase = 'active';
+					state.generation += 1;
+				} else {
+					state.activeMode = 'bypass';
+					state.desiredMode = 'bypass';
+					state.actualMode = 'bypass';
+					state.phase = 'idle';
+				}
+			});
+			const handler = createMessageHandler({
+				state,
+				runtimeContext: new DocumentRuntimeContext({ documentId: 'document-42', frameId: 0 }),
+				policyExecutor: { applyState } as unknown as MessageHandlerDeps['policyExecutor'],
+				captureManager: { handleMessage: () => false } as unknown as MessageHandlerDeps['captureManager'],
+				audioController: {} as MessageHandlerDeps['audioController'],
+				settingsManager: {} as MessageHandlerDeps['settingsManager'],
+			});
+			let response: unknown;
+			const request = {
+				protocolVersion: 2,
+				requestId: 'visualizer-demand',
+				tabId: 42,
+				documentId: 'document-42',
+				generation: 3,
+				type: 'spectra.audio.visualizer.demand.set',
+				payload: {
+					subscriberId: 'popup-visualizer-a',
+					enabled: true,
+					admission: createCaptureAdmission(),
+				},
+			} as const;
+			expect(handler(request, { id: 'spectra-test' }, (value) => { response = value; })).toBe(true);
+			await Promise.resolve();
+			expect(state.visualizerSubscribers).toEqual(new Set(['popup-visualizer-a']));
+			expect(isSpectraResponse('spectra.audio.visualizer.demand.set', response)).toBe(true);
+
+			response = undefined;
+			expect(handler({
+				...request,
+				requestId: 'visualizer-release',
+				generation: 4,
+				payload: { subscriberId: 'popup-visualizer-a', enabled: false },
+			}, { id: 'spectra-test' }, (value) => { response = value; })).toBe(true);
+			await Promise.resolve();
+			expect(state.visualizerSubscribers.size).toBe(0);
+			expect(state.actualMode).toBe('bypass');
+			expect(isSpectraResponse('spectra.audio.visualizer.demand.set', response)).toBe(true);
+
+			response = undefined;
+			expect(handler({ ...request, documentId: 'document-old' }, { id: 'spectra-test' }, (value) => {
+				response = value;
+			})).toBe(false);
+			expect(response).toMatchObject({ ok: false, error: { code: 'invalid_request' } });
+			expect(state.visualizerSubscribers.size).toBe(0);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+			if (originalDocument) Object.defineProperty(globalThis, 'document', originalDocument);
+			else Reflect.deleteProperty(globalThis, 'document');
+		}
+	});
+
+		test('does not regress stable runtime state on same-generation capture intents', () => {
 		const state = {
 			config: CONFIG,
 			appliedConfig: CONFIG,
@@ -80,21 +170,19 @@ describe('content audio v2 boundary', () => {
 			actualMode: 'capture',
 			phase: 'active',
 			generation: 9,
-			hasGesture: false,
 			userHasInteracted: false,
 			isPopupOpen: false,
 		} as MessageHandlerDeps['state'];
 		const handleMessage = mock(() => true);
 		const handler = createMessageHandler({
 			state,
+			runtimeContext: new DocumentRuntimeContext({ documentId: 'document-42', frameId: 0 }),
 			captureManager: {
 				handleMessage,
 				isPending: () => false,
 				hasLocalRequest: () => false,
 			} as MessageHandlerDeps['captureManager'],
 			settingsManager: {} as MessageHandlerDeps['settingsManager'],
-			getVisualizerData: () => null,
-			setVisualizerSubscribed: () => false,
 		});
 		const event = (generation: number, phase: 'starting' | 'active' | 'stopping' | 'idle' | 'error') => ({
 			protocolVersion: 2,
@@ -133,22 +221,85 @@ describe('content audio v2 boundary', () => {
 		expect(handleMessage).toHaveBeenCalledTimes(7);
 	});
 
-	test('restores desired WebAudio only after an external Capture stop ACK', async () => {
+	test('drops a valid capture event from a different document before touching local state', () => {
 		const state = {
 			config: CONFIG,
 			appliedConfig: CONFIG,
-			activeMode: 'NATIVE_WEBAUDIO',
-			desiredMode: 'NATIVE_WEBAUDIO',
+			activeMode: 'bypass',
+			desiredMode: 'bypass',
+			actualMode: 'bypass',
+			phase: 'idle',
+			generation: 4,
+			userHasInteracted: false,
+			isPopupOpen: false,
+		} as MessageHandlerDeps['state'];
+		const handleMessage = mock(() => true);
+		const handler = createMessageHandler({
+			state,
+			runtimeContext: new DocumentRuntimeContext({ documentId: 'document-current', frameId: 0 }),
+			captureManager: {
+				handleMessage,
+				hasLocalRequest: () => false,
+			} as MessageHandlerDeps['captureManager'],
+			settingsManager: {} as MessageHandlerDeps['settingsManager'],
+		});
+
+		handler({
+			protocolVersion: 2,
+			type: 'spectra.audio.capture.changed',
+			tabId: 42,
+			documentId: 'document-old',
+			generation: 5,
+			payload: {
+				tabId: 42,
+				generation: 5,
+				phase: 'active',
+				active: true,
+				actualMode: 'capture',
+				lastError: null,
+			},
+		}, {}, () => undefined);
+
+		expect(handleMessage).not.toHaveBeenCalled();
+		expect(state.generation).toBe(4);
+		expect(state.actualMode).toBe('bypass');
+		expect(state.phase).toBe('idle');
+
+		handler({
+			protocolVersion: 2,
+			type: 'spectra.audio.capture.changed',
+			tabId: 42,
+			documentId: 'document-current',
+			generation: 6,
+			payload: {
+				tabId: 42,
+				generation: 6,
+				phase: 'active',
+				active: true,
+				actualMode: 'capture',
+				lastError: null,
+			},
+		}, { tab: { id: 99 } } as chrome.runtime.MessageSender, () => undefined);
+		expect(handleMessage).not.toHaveBeenCalled();
+		expect(state.generation).toBe(4);
+	});
+
+	test('does not auto-restart Capture after an external stop consumes its authority', async () => {
+		const state = {
+			config: CONFIG,
+			appliedConfig: CONFIG,
+			activeMode: 'capture',
+			desiredMode: 'capture',
 			actualMode: 'capture',
 			phase: 'active',
 			generation: 4,
-			hasGesture: true,
 			userHasInteracted: true,
 			isPopupOpen: false,
 		} as MessageHandlerDeps['state'];
 		const applyState = mock(async () => undefined);
 		const handler = createMessageHandler({
 			state,
+			runtimeContext: new DocumentRuntimeContext({ documentId: 'document-42', frameId: 0 }),
 			policyExecutor: { applyState } as unknown as MessageHandlerDeps['policyExecutor'],
 			captureManager: {
 				handleMessage: () => true,
@@ -156,8 +307,6 @@ describe('content audio v2 boundary', () => {
 				hasLocalRequest: () => false,
 			} as MessageHandlerDeps['captureManager'],
 			settingsManager: {} as MessageHandlerDeps['settingsManager'],
-			getVisualizerData: () => null,
-			setVisualizerSubscribed: () => false,
 		});
 
 		handler({
@@ -178,7 +327,9 @@ describe('content audio v2 boundary', () => {
 		await Promise.resolve();
 
 		expect(state.actualMode).toBe('bypass');
-		expect(applyState).toHaveBeenCalledWith({ modeIntent: true });
+		expect(applyState).not.toHaveBeenCalled();
+		expect(state.phase).toBe('error');
+		expect(state.lastError).toContain('Capture stopped');
 	});
 
 	test('applies presentation settings without re-running audio policy', () => {
@@ -189,8 +340,6 @@ describe('content audio v2 boundary', () => {
 			policyExecutor: { applyState } as unknown as MessageHandlerDeps['policyExecutor'],
 			captureManager: { handleMessage: () => false } as unknown as MessageHandlerDeps['captureManager'],
 			settingsManager: { handleMessage } as unknown as MessageHandlerDeps['settingsManager'],
-			getVisualizerData: () => null,
-			setVisualizerSubscribed: () => false,
 		});
 
 		handler({
@@ -237,15 +386,12 @@ describe('content audio v2 boundary', () => {
 					actualMode: 'bypass',
 					phase: 'idle',
 					generation: 0,
-					hasGesture: false,
 					userHasInteracted: false,
 					isPopupOpen: false,
 				},
 				policyExecutor: { updateConfig },
 				captureManager: { handleMessage: mock(() => false) },
 				settingsManager: {},
-				getVisualizerData: () => null,
-				setVisualizerSubscribed: () => false,
 			} as unknown as MessageHandlerDeps;
 			const handler = createMessageHandler(deps);
 			let response: unknown;
@@ -306,22 +452,19 @@ describe('content audio v2 boundary', () => {
 					actualMode: 'bypass',
 					phase: 'idle',
 					generation: 0,
-					hasGesture: false,
 					userHasInteracted: false,
 					isPopupOpen: false,
 				},
 				policyExecutor: { updateConfig },
 				captureManager: { handleMessage: mock(() => false) },
 				settingsManager: {},
-				getVisualizerData: () => null,
-				setVisualizerSubscribed: () => false,
 			} as unknown as MessageHandlerDeps;
 			const handler = createMessageHandler(deps);
 			let response: unknown;
 
 			const keepChannelOpen = handler(
 				envelope('spectra.audio.runtime.configure', {
-					config: { ...CONFIG, volume: 125 },
+					config: { ...CONFIG, volume: 125, volumeBase: 100, boost: 1.25 },
 				}),
 				{ id: 'spectra-test' },
 				(value) => { response = value; },
@@ -361,8 +504,6 @@ describe('content audio v2 boundary', () => {
 				policyExecutor: { updateConfig },
 				captureManager: { handleMessage: mock(() => false) },
 				settingsManager: {},
-				getVisualizerData: () => null,
-				setVisualizerSubscribed: () => false,
 			} as unknown as MessageHandlerDeps;
 			const handler = createMessageHandler(deps);
 			let response: unknown;
@@ -385,6 +526,57 @@ describe('content audio v2 boundary', () => {
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('applies a current-site direct route but never manufactures Capture admission', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: { runtime: { id: 'spectra-test' } },
+		});
+		Object.defineProperty(globalThis, 'location', {
+			configurable: true,
+			value: { hostname: 'media.example.com' },
+		});
+		try {
+			const applyState = mock(async () => undefined);
+			const state = { mediaRoute: 'auto' } as MessageHandlerDeps['state'];
+			const refreshMediaRoute = mock(async () => state.mediaRoute);
+			const handler = createMessageHandler({
+				state,
+				policyExecutor: { applyState, refreshMediaRoute },
+				captureManager: { handleMessage: mock(() => false) },
+				settingsManager: {},
+			} as unknown as MessageHandlerDeps);
+			const event = (mediaRoute: 'auto' | 'direct' | 'capture') => ({
+				protocolVersion: 2,
+				type: 'spectra.audio.route.changed',
+				payload: { domain: 'media.example.com', mediaRoute },
+			});
+
+			expect(handler(event('direct'), { id: 'spectra-test' }, () => undefined)).toBe(false);
+			await Promise.resolve();
+			expect(state.mediaRoute).toBe('direct');
+			expect(applyState).toHaveBeenCalledWith({ modeIntent: true });
+
+			applyState.mockClear();
+			expect(handler(event('capture'), { id: 'spectra-test' }, () => undefined)).toBe(false);
+			await Promise.resolve();
+			expect(state.mediaRoute).toBe('capture');
+			expect(applyState).not.toHaveBeenCalled();
+
+			expect(handler({
+				...event('direct'),
+				payload: { domain: 'other.example.com', mediaRoute: 'direct' },
+			}, { id: 'spectra-test' }, () => undefined)).toBe(false);
+			expect(state.mediaRoute).toBe('capture');
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+			if (originalLocation) Object.defineProperty(globalThis, 'location', originalLocation);
+			else Reflect.deleteProperty(globalThis, 'location');
 		}
 	});
 });

@@ -2,13 +2,14 @@
 
 import {
 	HOTKEY_ACTIONS,
-	HOTKEY_ACTION_DESCRIPTORS,
 	isSlotHotkeyAction as isContractSlotHotkeyAction,
+	selectHotkeyAvailability,
+	selectHotkeyParameterKind,
 	type HotkeyAction,
-} from '@nexus/contracts';
+} from '@nexus/contracts/ui-settings-runtime';
 
 export const LEGACY_UNSUPPORTED_ACTIONS = new Set<HotkeyAction>(
-	HOTKEY_ACTIONS.filter((action) => HOTKEY_ACTION_DESCRIPTORS[action].availability === 'disabled-legacy'),
+	HOTKEY_ACTIONS.filter((action) => selectHotkeyAvailability(action) === 'disabled-legacy'),
 );
 
 const HOTKEY_GROUPS: ReadonlyArray<readonly [string, readonly HotkeyAction[]]> = [
@@ -26,7 +27,7 @@ const HOTKEY_GROUPS: ReadonlyArray<readonly [string, readonly HotkeyAction[]]> =
 export const EDITABLE_HOTKEY_GROUPS: ReadonlyArray<readonly [string, readonly HotkeyAction[]]> =
 	HOTKEY_GROUPS.map(([label, actions]) => [
 		label,
-		actions.filter((action) => HOTKEY_ACTION_DESCRIPTORS[action].availability !== 'disabled-legacy'),
+		actions.filter((action) => selectHotkeyAvailability(action) !== 'disabled-legacy'),
 	] as const);
 
 export const EDITABLE_HOTKEY_ACTIONS = new Set<HotkeyAction>(
@@ -36,7 +37,7 @@ export const EDITABLE_HOTKEY_ACTIONS = new Set<HotkeyAction>(
 // Chrome command slots persist only an action name, so actions that require a
 // parameter would otherwise be displayed as selectable but execute as no-ops.
 export const PARAMETER_REQUIRED_HOTKEY_ACTIONS = new Set<HotkeyAction>(
-	HOTKEY_ACTIONS.filter((action) => HOTKEY_ACTION_DESCRIPTORS[action].parameter !== 'none'),
+	HOTKEY_ACTIONS.filter((action) => selectHotkeyParameterKind(action) !== 'none'),
 );
 
 export const SLOT_HOTKEY_ACTIONS = new Set<HotkeyAction>(

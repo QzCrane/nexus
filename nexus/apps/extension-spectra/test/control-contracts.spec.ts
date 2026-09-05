@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
 	compileEffectiveVolume,
+	CONTROL_VALUE_LIMITS,
 	CONTROL_ALGORITHM_ADJUDICATIONS,
 	CONTROL_ALGORITHM_POLICIES,
 	CONTROL_CAPABILITIES,
@@ -15,7 +16,10 @@ import {
 	CONTROL_TERMINAL_STRATEGY_FAILURES,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	classifyControlStrategy,
+	controlCapabilityUsesAcknowledgement,
+	controlCapabilityUsesStrategy,
 	isControlIntent,
+	isCaptureAdmission,
 	isControlOperationAck,
 	isControlPatch,
 	isControlReadResult,
@@ -24,12 +28,17 @@ import {
 	isSpectraRequestEnvelope,
 	resolveAcknowledgedProcessorLifecycle,
 	resolveControlAudioVolume,
+	selectControlAlgorithmAdjudication,
+	selectControlAlgorithmPolicy,
+	selectControlCapabilityScope,
+	selectControlStrategyRule,
 	shouldTryNextControlStrategy,
 	splitEffectiveVolume,
 	type ControlField,
 	type ControlFieldStates,
 	type ControlFieldState,
 } from '@nexus/contracts';
+import { createCaptureAdmission } from './helpers/capture-admission';
 import {
 	CONTENT_ACTIVE_VIDEO_OPERATIONS,
 	CONTENT_DOM_NATIVE_FIELDS,
@@ -68,6 +77,19 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(splitEffectiveVolume(250)).toEqual({ volumeBase: 100, boost: 2.5 });
 	});
 
+	test('owns numeric ranges and strict one-shot Capture grant shape in contracts', () => {
+		expect(CONTROL_VALUE_LIMITS.speed).toEqual({ min: 0.1, max: 16 });
+		expect(isControlPatch({ speed: CONTROL_VALUE_LIMITS.speed.min })).toBe(true);
+		expect(isControlPatch({ speed: CONTROL_VALUE_LIMITS.speed.max })).toBe(true);
+		expect(isControlPatch({ speed: CONTROL_VALUE_LIMITS.speed.min - 0.01 })).toBe(false);
+		expect(isControlPatch({ speed: CONTROL_VALUE_LIMITS.speed.max + 0.01 })).toBe(false);
+		const admission = createCaptureAdmission();
+		expect(isCaptureAdmission(admission)).toBe(true);
+		expect(isCaptureAdmission({ ...admission, oneShot: false })).toBe(false);
+		expect(isCaptureAdmission({ ...admission, issuer: 'capture-session-authority' })).toBe(false);
+		expect(isCaptureAdmission({ ...admission, surplus: true })).toBe(false);
+	});
+
 	test('accepts a routed, revisioned intent and rejects empty or out-of-range patches', () => {
 		const intent = {
 			intentId: 'intent-4',
@@ -87,8 +109,10 @@ describe('per-field SPECTRA control contracts', () => {
 			actualContext: {},
 			patch: { volumeBase: 50, boost: 2, speed: 1 },
 		} as const;
+		const admission = createCaptureAdmission();
 		expect(isControlIntent(intent)).toBe(true);
-		expect(isControlIntent({ ...intent, captureAdmission: 'extension-invocation' })).toBe(true);
+		expect(isControlIntent({ ...intent, captureAdmission: admission })).toBe(true);
+		expect(isControlIntent({ ...intent, captureAdmission: 'extension-invocation' })).toBe(false);
 		expect(isControlIntent({ ...intent, captureAdmission: 'page-gesture' })).toBe(false);
 		const admittedEnvelope = {
 			protocolVersion: 2,
@@ -97,7 +121,7 @@ describe('per-field SPECTRA control contracts', () => {
 			documentId: intent.documentId,
 			generation: intent.generation,
 			type: 'spectra.control.intent.execute',
-			payload: { ...intent, captureAdmission: 'extension-invocation' },
+			payload: { ...intent, captureAdmission: admission },
 		} as const;
 		expect(CONTENT_FACADE_RUNTIME_REVISION).toBe(SPECTRA_CONTENT_RUNTIME_REVISION);
 		expect(isSpectraRequestEnvelope(admittedEnvelope)).toBe(true);
@@ -107,7 +131,8 @@ describe('per-field SPECTRA control contracts', () => {
 			payload: { ...intent, captureAdmission: 'page-gesture' },
 		})).toBe(false);
 		expect(isControlIntent({ ...intent, patch: {} })).toBe(false);
-		expect(isControlIntent({ ...intent, patch: { volumeBase: 101 } })).toBe(false);
+		expect(isControlIntent({ ...intent, patch: { volumeBase: 101 } })).toBe(true);
+		expect(isControlIntent({ ...intent, patch: { volumeBase: 801 } })).toBe(false);
 		expect(isControlIntent({ ...intent, generation: -1 })).toBe(false);
 		expect(isControlIntent({ ...intent, requestedCoverage: 'opaque' })).toBe(false);
 	});
@@ -212,7 +237,7 @@ describe('per-field SPECTRA control contracts', () => {
 				speed: field(1),
 				boost: {
 					...field(1),
-					strategy: 'media-webaudio',
+					strategy: 'capture',
 					coverage: 'full',
 				},
 			},
@@ -327,8 +352,9 @@ describe('per-field SPECTRA control contracts', () => {
 		);
 		expect(classifyControlStrategy('page-native')).toBe('native');
 		expect(classifyControlStrategy('dom-native')).toBe('native');
+		expect(classifyControlStrategy('capture-observe')).toBe('observe');
 		expect(classifyControlStrategy('extension-css')).toBe('augmentation');
-		expect(classifyControlStrategy('media-webaudio')).toBe('augmentation');
+		expect(classifyControlStrategy('capture')).toBe('augmentation');
 		expect(classifyControlStrategy('unsupported')).toBe('unsupported');
 	});
 
@@ -341,9 +367,9 @@ describe('per-field SPECTRA control contracts', () => {
 			if (rule.class === 'native' || rule.class === 'augmentation') {
 				expect(rule.requiresActualReadback).toBe(true);
 			}
-			if (rule.interception === 'irreversible-media-source-binding') {
-				expect(rule.admissionEvidence).toBe('proven-media-source-eligibility');
-				expect(strategy).toBe('media-webaudio');
+			if (rule.interception === 'authorized-tab-stream') {
+				expect(rule.admissionEvidence).toBe('authorized-capture-readback');
+				expect(['capture', 'capture-observe']).toContain(strategy);
 			}
 			if (rule.mainWorld === 'exact-element-page-bridge') {
 				expect(strategy).toBe('page-native');
@@ -356,12 +382,52 @@ describe('per-field SPECTRA control contracts', () => {
 			audioRuntimeCost: 'none',
 		});
 		expect(CONTROL_STRATEGY_RULES['dom-native'].audioRuntimeCost).toBe('none');
-		expect(CONTROL_STRATEGY_RULES['media-webaudio'].audioRuntimeCost).toBe('lazy-audio-context');
 		expect(CONTROL_STRATEGY_RULES.capture.audioRuntimeCost).toBe('lazy-offscreen-capture');
 		expect(CONTROL_STRATEGY_RULES.capture.interception).toBe('authorized-tab-stream');
+		expect(CONTROL_STRATEGY_RULES['capture-observe']).toMatchObject({
+			class: 'observe',
+			writerOwner: 'capture-processor',
+			interception: 'authorized-tab-stream',
+			audioRuntimeCost: 'lazy-offscreen-capture',
+		});
 		expect(CONTROL_STRATEGY_RULES['extension-css'].interception).toBe(
 			'reversible-extension-layer',
 		);
+	});
+
+	test('derives complete audit projections from the typed compact dimension owner', () => {
+		for (const strategy of CONTROL_STRATEGIES) {
+			expect(selectControlStrategyRule(strategy)).toEqual(CONTROL_STRATEGY_RULES[strategy]);
+		}
+		for (const capability of CONTROL_CAPABILITIES) {
+			const policy = selectControlAlgorithmPolicy(capability);
+			expect(policy).toEqual(CONTROL_ALGORITHM_POLICIES[capability]);
+			expect(selectControlAlgorithmAdjudication(capability)).toEqual(
+				CONTROL_ALGORITHM_ADJUDICATIONS[capability],
+			);
+			expect(selectControlCapabilityScope(capability)).toBe(policy.scope);
+			for (const strategy of CONTROL_STRATEGIES) {
+				expect(controlCapabilityUsesStrategy(capability, strategy)).toBe(
+					policy.orderedStrategies.includes(strategy as never),
+				);
+			}
+			for (const acknowledgement of [
+				'coordinator-snapshot',
+				'page-controller-getter',
+				'dom-event-getter',
+				'dom-stable-getter',
+				'chrome-event-getter',
+				'processor-readback',
+				'computed-style',
+				'overlay-readback',
+				'subscription-state',
+				'operation-result',
+			] as const) {
+				expect(controlCapabilityUsesAcknowledgement(capability, acknowledgement)).toBe(
+					policy.acknowledgements.includes(acknowledgement),
+				);
+			}
+		}
 	});
 
 	test('falls through only for capability incompleteness and stops at browser boundaries', () => {
@@ -485,16 +551,16 @@ describe('per-field SPECTRA control contracts', () => {
 			.filter(([, policy]) => policy.recurringWork !== 'none')
 			.map(([capability, policy]) => [capability, policy.recurringWork]);
 		expect(recurring).toEqual([
-			['boost', 'page-lifetime-after-media-binding'],
+			['boost', 'while-owned'],
 			['dimEnabled', 'while-owned'],
 			['dimOpacity', 'while-owned'],
 			['abLoop', 'while-owned'],
-			['eqValues', 'page-lifetime-after-media-binding'],
-			['bass', 'page-lifetime-after-media-binding'],
-			['compressor', 'page-lifetime-after-media-binding'],
-			['mono', 'page-lifetime-after-media-binding'],
-			['pan', 'page-lifetime-after-media-binding'],
-			['delay', 'page-lifetime-after-media-binding'],
+			['eqValues', 'while-owned'],
+			['bass', 'while-owned'],
+			['compressor', 'while-owned'],
+			['mono', 'while-owned'],
+			['pan', 'while-owned'],
+			['delay', 'while-owned'],
 			['visualizer', 'while-subscribed'],
 		]);
 	});
@@ -506,9 +572,6 @@ describe('per-field SPECTRA control contracts', () => {
 					(candidate) => candidate === strategy,
 				));
 
-		expect(capabilitiesFor('media-webaudio')).toEqual([
-			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay', 'effective-volume',
-		]);
 		expect(capabilitiesFor('capture')).toEqual([
 			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay', 'effective-volume',
 		]);
@@ -522,7 +585,6 @@ describe('per-field SPECTRA control contracts', () => {
 
 		for (const activationBound of ['playing', 'pip', 'fullscreen'] as const) {
 			const strategies = CONTROL_ALGORITHM_POLICIES[activationBound].orderedStrategies;
-			expect(strategies).not.toContain('media-webaudio');
 			expect(strategies).not.toContain('capture');
 		}
 	});
@@ -537,6 +599,14 @@ describe('per-field SPECTRA control contracts', () => {
 			abLoop: { pointA: 2, pointB: 4, enabled: true },
 		})).toBe(false);
 		expect(isControlPatch({ visualizer: true })).toBe(false);
+		expect(CONTROL_ALGORITHM_POLICIES.visualizer.orderedStrategies).toEqual([
+			'media-webaudio',
+			'capture-observe',
+		]);
+		expect(CONTROL_ALGORITHM_ADJUDICATIONS.visualizer).toEqual({
+			nativePreference: 'observation-only',
+			augmentationAdmission: 'explicit-foreground-subscription',
+		});
 	});
 
 	test('release-gates the narrow Content strategy projection against the canonical policy', () => {
@@ -627,6 +697,23 @@ describe('per-field SPECTRA control contracts', () => {
 		});
 		const captured = resolveControlAudioVolume(captureFields);
 		expect(captured).toEqual({ effectiveVolume: 110, volumeState: 'capture' });
+
+		const pageWebAudioFields: ControlFieldStates = {
+			...captureFields,
+			boost: {
+				...field(1.1),
+				strategy: 'media-webaudio',
+				coverage: 'full',
+			},
+		};
+		expect(resolveAcknowledgedProcessorLifecycle(pageWebAudioFields)).toEqual({
+			actualMode: 'webaudio',
+			phase: 'active',
+		});
+		expect(resolveControlAudioVolume(pageWebAudioFields)).toEqual({
+			effectiveVolume: 110,
+			volumeState: 'native',
+		});
 
 		const newerRelease: ControlFieldStates = {
 			...captureFields,

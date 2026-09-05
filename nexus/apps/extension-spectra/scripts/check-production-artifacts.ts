@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -11,34 +11,87 @@ export const SPECTRA_PRODUCTION_BUDGETS = Object.freeze({
 	offscreenCapture: 28 * 1024,
 	offscreenRemote: 72 * 1024,
 	popupStatic: 144 * 1024,
-	popupEventual: 152 * 1024,
-	contentRuntimeEventual: 176 * 1024,
-	contentVideoEffectsEventual: 12 * 1024,
-	optionsEventual: 40 * 1024,
+	popupPossibleScript: 152 * 1024,
+	contentRuntimePossibleScript: 177 * 1024,
+	contentVideoEffectsPossibleScript: 12 * 1024,
+	optionsPossibleScript: 40 * 1024,
 	javascriptTotal: 680 * 1024,
 	distTotal: 780 * 1024,
 });
 
+export const PRODUCTION_HEADROOM_CRITICAL_RATIO = 0.05;
+export const PRODUCTION_HEADROOM_ADVISORY_RATIO = 0.15;
+
+function productionBudgetMeasurements(report) {
+	const entries = new Map(report.entrypoints.map((entry) => [entry.name, entry]));
+	return [
+		['service-worker wake', report.serviceWorkerWake?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake],
+		['document_start', report.documentStart?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.documentStart],
+		['content-bootstrap.js static script closure', entries.get('content-bootstrap.js')?.static.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentBootstrap],
+		['content-site-hotkeys.js static script closure', entries.get('content-site-hotkeys.js')?.static.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentSiteHotkeys],
+		['offscreen Capture-only closure', report.offscreenAudioOnly?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenCapture],
+		['offscreen Remote possible script closure', report.offscreenRemote?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenRemote],
+		['popup.js static script closure', entries.get('popup.js')?.static.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupStatic],
+		['popup.js possible script closure', entries.get('popup.js')?.possible.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupPossibleScript],
+		['content-runtime.js possible script closure', entries.get('content-runtime.js')?.possible.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentRuntimePossibleScript],
+		['content-video-effects.js possible script closure', entries.get('content-video-effects.js')?.possible.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentVideoEffectsPossibleScript],
+		['options.js possible script closure', entries.get('options.js')?.possible.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.optionsPossibleScript],
+		['total production JavaScript', report.javascript ?? 0, SPECTRA_PRODUCTION_BUDGETS.javascriptTotal],
+		['total production artifact', report.total ?? 0, SPECTRA_PRODUCTION_BUDGETS.distTotal],
+	] as const;
+}
+
 export function productionBudgetFailures(report) {
 	const failures = [];
-	const check = (label, actual, ceiling) => {
+	for (const [label, actual, ceiling] of productionBudgetMeasurements(report)) {
 		if (actual > ceiling) failures.push(`${label}: ${actual} bytes exceeds production budget ${ceiling}`);
-	};
-	const entries = new Map(report.entrypoints.map((entry) => [entry.name, entry]));
-	check('service-worker wake', report.serviceWorkerWake.scriptBytes, SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake);
-	check('document_start', report.documentStart.scriptBytes, SPECTRA_PRODUCTION_BUDGETS.documentStart);
-	check('content-bootstrap.js static closure', entries.get('content-bootstrap.js')?.staticBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentBootstrap);
-	check('content-site-hotkeys.js static closure', entries.get('content-site-hotkeys.js')?.staticBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentSiteHotkeys);
-	check('offscreen Capture-only closure', report.offscreenAudioOnly?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenCapture);
-	check('offscreen Remote eventual closure', report.offscreenRemote?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenRemote);
-	check('popup.js static closure', entries.get('popup.js')?.staticBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupStatic);
-	check('popup.js eventual closure', entries.get('popup.js')?.eventualBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupEventual);
-	check('content-runtime.js eventual closure', entries.get('content-runtime.js')?.eventualBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentRuntimeEventual);
-	check('content-video-effects.js eventual closure', entries.get('content-video-effects.js')?.eventualBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentVideoEffectsEventual);
-	check('options.js eventual closure', entries.get('options.js')?.eventualBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.optionsEventual);
-	check('total production JavaScript', report.javascript ?? 0, SPECTRA_PRODUCTION_BUDGETS.javascriptTotal);
-	check('total production artifact', report.total ?? 0, SPECTRA_PRODUCTION_BUDGETS.distTotal);
+	}
 	return failures;
+}
+
+export interface ProductionHeadroomAdvisory {
+	code: 'headroom-low' | 'headroom-critical';
+	label: string;
+	actualBytes: number;
+	ceilingBytes: number;
+	utilization: number;
+	targetMaxBytes: number;
+	deficitBytes: number;
+	message: string;
+}
+
+/**
+ * Headroom is planning evidence only. Release integrity remains governed by
+ * the absolute ceilings in SPECTRA_PRODUCTION_BUDGETS; an advisory is never a
+ * promotion blocker and is deliberately absent from signed candidate facts.
+ */
+export function productionHeadroomAdvisories(report): ProductionHeadroomAdvisory[] {
+	return productionBudgetMeasurements(report)
+		.filter(([, actual, ceiling]) => actual > ceiling * (1 - PRODUCTION_HEADROOM_ADVISORY_RATIO))
+		.map(([label, actual, ceiling]) => {
+			const targetMaxBytes = Math.floor(ceiling * (1 - PRODUCTION_HEADROOM_ADVISORY_RATIO));
+			const deficitBytes = Math.max(0, actual - targetMaxBytes);
+			const utilization = actual / ceiling;
+			const code = utilization >= 1 - PRODUCTION_HEADROOM_CRITICAL_RATIO
+				? 'headroom-critical'
+				: 'headroom-low';
+			const disposition = code === 'headroom-critical'
+				? 'HEADROOM_CRITICAL'
+				: 'HEADROOM_LOW';
+			const message = `${disposition}/${label}: ${actual}/${ceiling} bytes (${(utilization * 100).toFixed(1)}%); `
+				+ `optimization target ${targetMaxBytes} bytes (15% headroom), deficit ${deficitBytes} bytes; `
+				+ 'release remains governed by the absolute production ceiling';
+			return {
+				code,
+				label,
+				actualBytes: actual,
+				ceilingBytes: ceiling,
+				utilization,
+				targetMaxBytes,
+				deficitBytes,
+				message,
+			};
+		});
 }
 
 const KiB = 1024;
@@ -47,11 +100,16 @@ const IMPORT_PATTERN = /(?:\bimport\s*(?:[^"'()]*?from\s*)?|\bimport\s*\()\s*["'
 const STATIC_MODULE_REFERENCE_PATTERN = /\b(?:import\s*(?:[^"'()]*?\bfrom\s*)?|export\s+(?:[^"']*?\bfrom\s*))["']([^"']+)["']/gu;
 const DYNAMIC_IMPORT_PATTERN = /\bimport\s*\(\s*["']([^"']+)["']\s*\)/gu;
 const RUNTIME_MODULE_IMPORT_PATTERN = /\bimport\s*\(\s*chrome\.runtime\.getURL\(\s*["']([^"']+)["']\s*\)\s*\)/gu;
-const HTML_SCRIPT_PATTERN = /<script\b[^>]*\bsrc\s*=\s*["']([^"']+)["'][^>]*>/giu;
+const SCRIPTING_FILES_PATTERN = /\bchrome\.scripting\.executeScript\(\s*\{[\s\S]*?\bfiles\s*:\s*\[\s*["']([^"']+)["']/gu;
+const SCRIPTING_BOUND_FILES_PATTERN = /\bchrome\.scripting\.executeScript\(\s*\{[\s\S]*?\bfiles\s*:\s*\[\s*([A-Za-z_$][A-Za-z0-9_$]*)/gu;
+const STATIC_STRING_BINDING_PATTERN = /\b(?:const|let|var)\s+([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*["']([^"']+)["']/gu;
+const STATIC_STRING_ASSIGNMENT_PATTERN = /(?:^|[;,])\s*([A-Za-z_$][A-Za-z0-9_$]*)\s*=\s*["']([^"']+)["']/gu;
+const HTML_TAG_PATTERN = /<(script|link|img|source|video|audio)\b[^>]*>/giu;
 const RUNTIME_ASSET_PATTERN = /\bchrome\.runtime\.getURL\(\s*["']([^"']+)["']\s*\)/gu;
-const HTML_REFERENCE_PATTERN = /\b(?:href|poster|src)\s*=\s*["']([^"']+)["']/giu;
+const RUNTIME_FETCH_ASSET_PATTERN = /\bfetch\s*\(\s*chrome\.runtime\.getURL\(\s*(["'`])((?:\\.|(?!\1)[\s\S])*)\1\s*\)\s*\)/gu;
+const OFFSCREEN_DOCUMENT_URL_PATTERN = /\bchrome\.offscreen\.createDocument\(\s*\{[^}]*\burl\s*:\s*["']([^"']+)["']/gu;
+const OFFSCREEN_DOCUMENT_URL_BINDING_PATTERN = /\bchrome\.offscreen\.createDocument\(\s*\{[^}]*\burl\s*:\s*([A-Za-z_$][A-Za-z0-9_$]*)/gu;
 const CSS_REFERENCE_PATTERN = /(?:@import\s+(?:url\()?|url\()\s*["']?([^"')\s]+)["']?\s*\)?/giu;
-const STRING_LITERAL_PATTERN = /(["'`])((?:\\.|(?!\1)[\s\S])*)\1/gu;
 const SOURCE_MAP_REFERENCE_PATTERN = /[#@]\s*sourceMappingURL=/u;
 const DIAGNOSTIC_CALL_PATTERN = /\bconsole\.(?:debug|info|log)\s*\(/u;
 const URL_SCHEME_PATTERN = /^(?:blob:|chrome:|data:|https?:|javascript:|mailto:)/iu;
@@ -184,21 +242,49 @@ function fileReferences(name, source, index) {
 	};
 	const extension = extname(name).toLowerCase();
 	if (extension === '.html') {
-		for (const match of source.matchAll(HTML_REFERENCE_PATTERN)) add(match[1], true);
+		for (const reference of htmlLoadingReferences(name, source, index)) references.push(reference.target);
 	} else if (extension === '.css') {
 		for (const match of source.matchAll(CSS_REFERENCE_PATTERN)) add(match[1], true);
 	} else if (extension === '.js') {
-		for (const match of source.matchAll(IMPORT_PATTERN)) {
-			const specifier = match[1];
-			if (!specifier || URL_SCHEME_PATTERN.test(specifier)) continue;
-			if (!specifier.startsWith('.') && !specifier.startsWith('/')) {
-				throw new Error(`${name}: bare production import is forbidden (${specifier})`);
-			}
-			add(specifier, true);
-		}
-		for (const match of source.matchAll(STRING_LITERAL_PATTERN)) add(match[2]);
+		for (const reference of loadingReferences(name, source, index)) references.push(reference.target);
 	}
 	return [...new Set(references)];
+}
+
+function htmlAttribute(tag: string, attribute: string): string | undefined {
+	const match = new RegExp(`\\b${attribute}\\s*=\\s*["']([^"']+)["']`, 'iu').exec(tag);
+	return match?.[1];
+}
+
+function htmlLoadingReferences(name: string, source: string, index: Map<string, string>) {
+	const references: Array<{ kind: string; target: string }> = [];
+	for (const match of source.matchAll(HTML_TAG_PATTERN)) {
+		const tag = match[0];
+		const tagName = match[1]?.toLowerCase();
+		const resource = tagName === 'script'
+			? htmlAttribute(tag, 'src')
+			: tagName === 'link' && /\brel\s*=\s*["']stylesheet["']/iu.test(tag)
+				? htmlAttribute(tag, 'href')
+				: tagName === 'img' || tagName === 'source' || tagName === 'audio'
+					? htmlAttribute(tag, 'src')
+					: tagName === 'video' ? htmlAttribute(tag, 'poster') : undefined;
+		if (!resource) continue;
+		for (const target of resolveReference(index, name, resource, { required: true })) {
+			references.push({ kind: tagName === 'script' ? 'html-script' : 'html-resource', target });
+		}
+	}
+	return references;
+}
+
+function staticStringBindings(source: string): Map<string, string> {
+	const bindings = new Map<string, string>();
+	for (const match of source.matchAll(STATIC_STRING_BINDING_PATTERN)) {
+		if (match[1] && match[2]) bindings.set(match[1], match[2]);
+	}
+	for (const match of source.matchAll(STATIC_STRING_ASSIGNMENT_PATTERN)) {
+		if (match[1] && match[2]) bindings.set(match[1], match[2]);
+	}
+	return bindings;
 }
 
 function loadingReferences(name, source, index) {
@@ -210,17 +296,47 @@ function loadingReferences(name, source, index) {
 	};
 	const extension = extname(name).toLowerCase();
 	if (extension === '.html') {
-		for (const match of source.matchAll(HTML_SCRIPT_PATTERN)) add(match[1], 'html-script');
+		references.push(...htmlLoadingReferences(name, source, index));
 	} else if (extension === '.js') {
+		const bindings = staticStringBindings(source);
+		const runtimeModules = new Set<string>();
+		for (const match of source.matchAll(IMPORT_PATTERN)) {
+			const specifier = match[1];
+			if (!specifier || URL_SCHEME_PATTERN.test(specifier)) continue;
+			if (!specifier.startsWith('.') && !specifier.startsWith('/')) {
+				throw new Error(`${name}: bare production import is forbidden (${specifier})`);
+			}
+		}
 		for (const match of source.matchAll(STATIC_MODULE_REFERENCE_PATTERN)) {
 			add(match[1], 'js-static');
 		}
 		for (const match of source.matchAll(DYNAMIC_IMPORT_PATTERN)) add(match[1], 'js-deferred');
 		for (const match of source.matchAll(RUNTIME_MODULE_IMPORT_PATTERN)) {
-			add(match[1], 'js-deferred');
+			if (!match[1]) continue;
+			runtimeModules.add(match[1]);
+			add(match[1], 'runtime-module');
 		}
 		for (const match of source.matchAll(RUNTIME_ASSET_PATTERN)) {
-			if (match[1] === REMOTE_RUNTIME_ASSET) add(match[1], 'runtime-asset');
+			if (match[1] === REMOTE_RUNTIME_ASSET && !runtimeModules.has(match[1])) {
+				add(match[1], 'runtime-asset');
+			}
+		}
+		for (const match of source.matchAll(RUNTIME_FETCH_ASSET_PATTERN)) {
+			add(match[2], 'runtime-asset');
+		}
+		for (const match of source.matchAll(OFFSCREEN_DOCUMENT_URL_PATTERN)) {
+			add(match[1], 'extension-page');
+		}
+		for (const match of source.matchAll(OFFSCREEN_DOCUMENT_URL_BINDING_PATTERN)) {
+			const documentUrl = bindings.get(match[1]);
+			if (documentUrl) add(documentUrl, 'extension-page');
+		}
+		for (const match of source.matchAll(SCRIPTING_FILES_PATTERN)) {
+			add(match[1], 'chrome-script');
+		}
+		for (const match of source.matchAll(SCRIPTING_BOUND_FILES_PATTERN)) {
+			const scriptName = bindings.get(match[1]);
+			if (scriptName) add(scriptName, 'chrome-script');
 		}
 	}
 	return references;
@@ -242,6 +358,7 @@ function artifactClosureFromIndex(index, roots, options) {
 			const admitted = reference.kind === 'html-script'
 				|| reference.kind === 'js-static'
 				|| reference.kind === 'js-deferred' && options.includeDeferred
+				|| reference.kind === 'runtime-module' && options.includeDeferred
 				|| reference.kind === 'runtime-asset' && options.includeRuntimeAssets;
 			if (admitted && !names.has(reference.target)) queue.push(reference.target);
 		}
@@ -315,13 +432,188 @@ function duplicateArtifacts(files, root) {
 	return [...hashes.values()].filter((names) => names.length > 1);
 }
 
-function metafileEvidence(metafiles) {
-	const owners = new Map();
-	const contributors = new Map();
+function artifactSetDigest(files, root) {
+	const hash = createHash('sha256');
+	for (const path of files) {
+		const name = artifactName(root, path);
+		const data = readFileSync(path);
+		hash.update(`${Buffer.byteLength(name, 'utf8')}:`);
+		hash.update(name);
+		hash.update(`:${data.length}:`);
+		hash.update(data);
+	}
+	return hash.digest('hex');
+}
+
+function compareMetafileNames(left, right) {
+	return left < right ? -1 : left > right ? 1 : 0;
+}
+
+function normalizeMetafileOutputName(root, rawPath) {
+	const value = String(rawPath).replaceAll('\\', '/');
+	const rootName = resolve(root).replaceAll('\\', '/');
+	if (value === rootName) return '';
+	if (value.startsWith(`${rootName}/`)) return value.slice(rootName.length + 1);
+	const normalized = posix.normalize(value).replace(/^\.\//u, '');
+	const distMarker = `/${posix.basename(rootName)}/`;
+	const markerIndex = normalized.lastIndexOf(distMarker);
+	if (markerIndex >= 0) return normalized.slice(markerIndex + distMarker.length);
+	const distPrefix = `${posix.basename(rootName)}/`;
+	return normalized.startsWith(distPrefix) ? normalized.slice(distPrefix.length) : normalized;
+}
+
+function resolveMetafileOutputName(root, fromName, specifier, outputs) {
+	const cleaned = String(specifier).replaceAll('\\', '/');
+	const candidates = [
+		normalizeMetafileOutputName(root, cleaned),
+		posix.normalize(posix.join(posix.dirname(fromName), cleaned)).replace(/^\.\//u, ''),
+	];
+	return candidates.find((candidate) => outputs.has(candidate));
+}
+
+function metafileOutputRecords(root, metafiles) {
+	const outputs = new Map();
 	for (const build of metafiles) {
 		if (!build?.metafile || typeof build.sharingDomain !== 'string') {
 			throw new Error('Every production metafile requires one explicit sharingDomain');
 		}
+		for (const [rawPath, detail] of Object.entries(build.metafile.outputs ?? {})) {
+			const name = normalizeMetafileOutputName(root, rawPath);
+			if (!name) continue;
+			if (outputs.has(name)) throw new Error(`Metafile output is attributed more than once (${name})`);
+			outputs.set(name, {
+				build: typeof build.name === 'string' ? build.name : build.sharingDomain,
+				detail,
+				name,
+				sharingDomain: build.sharingDomain,
+			});
+		}
+	}
+	return outputs;
+}
+
+function metafileOutputBytes(root, record) {
+	const path = resolve(root, record.name);
+	if (!existsSync(path)) throw new Error(`${record.name}: metafile output is missing from dist`);
+	return statSync(path).size;
+}
+
+function metafileClosure(root, outputs, rootName, includeDeferred) {
+	const names = new Set();
+	const queue = [rootName];
+	while (queue.length > 0) {
+		const name = queue.shift();
+		if (!name || names.has(name)) continue;
+		const record = outputs.get(name);
+		if (!record) throw new Error(`${name}: metafile loading root is missing`);
+		names.add(name);
+		for (const imported of record.detail.imports ?? []) {
+			if (!imported || imported.external === true || typeof imported.path !== 'string') continue;
+			const kind = typeof imported.kind === 'string' ? imported.kind : '';
+			const deferred = kind === 'dynamic-import' || kind === 'import-call' || /dynamic/iu.test(kind);
+			if (deferred && !includeDeferred) continue;
+			const target = resolveMetafileOutputName(root, name, imported.path, outputs);
+			if (!target) throw new Error(`${name}: metafile import is missing (${imported.path})`);
+			if (!names.has(target)) queue.push(target);
+		}
+	}
+	const sortedNames = [...names].sort();
+	const bytes = sortedNames.reduce((sum, name) => sum + metafileOutputBytes(root, outputs.get(name)), 0);
+	const scriptNames = sortedNames.filter((name) => extname(name).toLowerCase() === '.js');
+	const scriptBytes = scriptNames.reduce((sum, name) => sum + metafileOutputBytes(root, outputs.get(name)), 0);
+	return { bytes, names: sortedNames, scriptBytes, scriptNames };
+}
+
+function metafileInputBytes(outputs, names) {
+	const contributions = new Map();
+	for (const name of names) {
+		const record = outputs.get(name);
+		for (const [input, info] of Object.entries(record?.detail.inputs ?? {})) {
+			const normalized = input.replaceAll('\\', '/');
+			const bytes = typeof info?.bytesInOutput === 'number' ? info.bytesInOutput : 0;
+			contributions.set(normalized, (contributions.get(normalized) ?? 0) + bytes);
+		}
+	}
+	return contributions;
+}
+
+function topInputContributors(contributions, limit = 24) {
+	return [...contributions]
+		.map(([path, bytes]) => ({ path, bytes }))
+		.filter(({ bytes }) => bytes > 0)
+		.sort((left, right) => right.bytes - left.bytes || compareMetafileNames(left.path, right.path))
+		.slice(0, limit);
+}
+
+function metafileClosureSummary(closure) {
+	return {
+		bytes: closure.bytes,
+		names: closure.names,
+		scriptBytes: closure.scriptBytes,
+		scriptNames: closure.scriptNames,
+	};
+}
+
+function metafileEntrypointEvidence(root, outputs) {
+	const entries = [...outputs.values()]
+		.filter((record) => typeof record.detail.entryPoint === 'string')
+		.sort((left, right) => compareMetafileNames(left.name, right.name))
+		.map((record) => {
+			const staticClosure = metafileClosure(root, outputs, record.name, false);
+			const possibleClosure = metafileClosure(root, outputs, record.name, true);
+			return {
+				build: record.build,
+				entryPoint: record.detail.entryPoint,
+				name: record.name,
+				possibleOutputClosure: metafileClosureSummary(possibleClosure),
+				sharingDomain: record.sharingDomain,
+				staticOutputClosure: metafileClosureSummary(staticClosure),
+				staticInputs: metafileInputBytes(outputs, staticClosure.names),
+				possibleInputs: metafileInputBytes(outputs, possibleClosure.names),
+			};
+		});
+	const inputOwners = new Map();
+	for (const entry of entries) {
+		const allInputs = new Set([
+			...entry.staticInputs.keys(),
+			...entry.possibleInputs.keys(),
+		]);
+		for (const input of allInputs) {
+			const owners = inputOwners.get(input) ?? [];
+			owners.push({
+				build: entry.build,
+				entry: entry.name,
+				sharingDomain: entry.sharingDomain,
+				staticBytes: entry.staticInputs.get(input) ?? 0,
+				possibleBytes: entry.possibleInputs.get(input) ?? 0,
+			});
+			inputOwners.set(input, owners);
+		}
+	}
+	const sharedInputs = [...inputOwners.entries()]
+		.filter(([, owners]) => owners.length > 1)
+		.sort(([left], [right]) => compareMetafileNames(left, right))
+		.map(([input, owners]) => ({
+			entries: owners.sort((left, right) => compareMetafileNames(left.entry, right.entry)),
+			input,
+			totalPossibleAttributionBytes: owners.reduce((sum, owner) => sum + owner.possibleBytes, 0),
+			totalStaticBytes: owners.reduce((sum, owner) => sum + owner.staticBytes, 0),
+		}));
+	return {
+		outputClosures: entries.map(({ staticInputs, possibleInputs, ...entry }) => ({
+			...entry,
+			topPossibleInputContributors: topInputContributors(possibleInputs),
+			topStaticContributors: topInputContributors(staticInputs),
+		})),
+		sharedInputs,
+	};
+}
+
+function metafileEvidence(metafiles, root) {
+	const owners = new Map();
+	const contributors = new Map();
+	const outputs = metafileOutputRecords(root, metafiles);
+	for (const build of metafiles) {
 		const inputs = new Set();
 		for (const output of Object.values(build.metafile.outputs ?? {})) {
 			for (const [path, info] of Object.entries(output.inputs ?? {})) {
@@ -346,9 +638,16 @@ function metafileEvidence(metafiles) {
 	}
 	const topContributors = [...contributors]
 		.map(([path, bytes]) => ({ path, bytes }))
-		.sort((left, right) => right.bytes - left.bytes || left.path.localeCompare(right.path))
+		.sort((left, right) => right.bytes - left.bytes || compareMetafileNames(left.path, right.path))
 		.slice(0, 8);
-	return { boundaryReplications, redundantModules, topContributors };
+	const entrypointEvidence = metafileEntrypointEvidence(root, outputs);
+	return {
+		boundaryReplications,
+		outputClosures: entrypointEvidence.outputClosures,
+		redundantModules,
+		sharedInputs: entrypointEvidence.sharedInputs,
+		topContributors,
+	};
 }
 
 export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
@@ -426,14 +725,23 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 				for (const [name, path] of index) {
 					if (extname(name).toLowerCase() !== '.js') continue;
 					for (const reference of loadingReferences(name, readFileSync(path, 'utf8'), index)) {
-						if (reference.kind === 'runtime-asset'
+						if (reference.kind === 'runtime-module'
 							&& reference.target === REMOTE_RUNTIME_ASSET) peerParents.push(name);
 					}
 				}
 				if (peerParents.length !== 1) {
-					failures.push('peerjs-vendor.js: exactly one Remote runtime-asset owner is required');
+					failures.push('peerjs-vendor.js: exactly one Remote ESM runtime-module owner is required');
 				} else if (offscreenAudioOnly.names.includes(peerParents[0])) {
-					failures.push('peerjs-vendor.js: runtime loader must stay outside the Capture-only closure');
+					failures.push('peerjs-vendor.js: ESM runtime loader must stay outside the Capture-only closure');
+				}
+				const peerVendorSource = readFileSync(index.get(REMOTE_RUNTIME_ASSET), 'utf8');
+				const hasDefaultExport = /\bexport\s+default\b/u.test(peerVendorSource)
+					|| /\bexport\s*\{[^}]*\bas\s+default\b[^}]*\}/u.test(peerVendorSource);
+				if (!hasDefaultExport) {
+					failures.push('peerjs-vendor.js: ESM runtime module must expose one default export');
+				}
+				if (/\bglobalThis\.Peer\s*=/u.test(peerVendorSource)) {
+					failures.push('peerjs-vendor.js: global Peer assignment is forbidden');
 				}
 			}
 		} catch (error) {
@@ -447,9 +755,15 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 	const duplicates = duplicateArtifacts(files, root);
 	for (const names of duplicates) failures.push(`byte-identical production artifacts: ${names.join(', ')}`);
 
-	let evidence = { boundaryReplications: [], redundantModules: [], topContributors: [] };
+	let evidence = {
+		boundaryReplications: [],
+		outputClosures: [],
+		redundantModules: [],
+		sharedInputs: [],
+		topContributors: [],
+	};
 	try {
-		evidence = metafileEvidence(metafiles);
+		evidence = metafileEvidence(metafiles, root);
 		for (const item of evidence.redundantModules) {
 			failures.push(`${item.input}: repeated in shareable build domain (${item.builds.map((build) => build.name).join(', ')})`);
 		}
@@ -464,16 +778,25 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 		.filter((name) => extname(name) === '.js' && !name.includes('/'))
 		.map((name) => {
 			const staticClosure = artifactClosureFromIndex(index, [name], staticOptions);
-			const eventualClosure = artifactClosureFromIndex(index, [name], eventualOptions);
+			const possibleClosure = artifactClosureFromIndex(index, [name], eventualOptions);
 			return {
 				name,
-				eventualBytes: eventualClosure.bytes,
-				staticBytes: staticClosure.bytes,
+				possible: {
+					bytes: possibleClosure.bytes,
+					names: possibleClosure.names,
+					scriptBytes: possibleClosure.scriptBytes,
+				},
+				static: {
+					bytes: staticClosure.bytes,
+					names: staticClosure.names,
+					scriptBytes: staticClosure.scriptBytes,
+				},
 			};
 		})
 		.sort((left, right) => left.name.localeCompare(right.name));
 
 	const report = {
+		artifactSha256: artifactSetDigest(files, root),
 		boundaryReplications: evidence.boundaryReplications,
 		documentStart,
 		duplicates,
@@ -481,20 +804,26 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 		failures: [...new Set(failures)].sort(),
 		files: files.length,
 		javascript,
+		outputAttribution: {
+			outputClosures: evidence.outputClosures,
+			sharedInputs: evidence.sharedInputs,
+			status: metafiles.length > 0 ? 'measured' : 'not-measured',
+		},
 		offscreenAudioOnly,
 		offscreenRemote,
 		reachable: graph.reachable.size,
+		schemaVersion: 1,
 		serviceWorkerWake,
 		topContributors: evidence.topContributors,
 		total,
 	};
+	report.headroomAdvisories = productionHeadroomAdvisories(report);
 	report.failures.push(...productionBudgetFailures(report));
 	report.failures = [...new Set(report.failures)].sort();
 	return report;
 }
 
-export function checkProductionArtifacts(options) {
-	const report = analyzeProductionArtifacts(options);
+export function assertProductionArtifactReport(report) {
 	if (report.failures.length > 0) {
 		throw new Error(`Production artifact integrity failed:\n${report.failures.join('\n')}`);
 	}
@@ -504,15 +833,31 @@ export function checkProductionArtifacts(options) {
 		+ `document_start ${format(report.documentStart.scriptBytes)}, `
 		+ `JS ${format(report.javascript)}, dist ${format(report.total)}`,
 	);
+	if (report.headroomAdvisories.length > 0) {
+		console.warn(`⚠ Production headroom advisory (non-blocking):\n${report.headroomAdvisories
+			.map((finding) => `  ${finding.message}`)
+			.join('\n')}`);
+	}
 	if (report.offscreenAudioOnly && report.offscreenRemote) {
 		console.log(
 			`✓ Offscreen closures: Capture-only ${format(report.offscreenAudioOnly.scriptBytes)}`
 			+ ` | Remote eventual ${format(report.offscreenRemote.scriptBytes)}`,
 		);
 	}
-	console.log(`✓ Entrypoint closures: ${report.entrypoints
-		.map((item) => `${item.name}:${format(item.staticBytes)}→${format(item.eventualBytes)}`)
+	console.log(`✓ Entrypoint script closures: ${report.entrypoints
+		.map((item) => `${item.name}:${format(item.static.scriptBytes)}→${format(item.possible.scriptBytes)}`)
 		.join(' | ')}`);
+	const runtimePayloads = report.entrypoints
+		.map((item) => ({
+			bytes: item.possible.bytes - item.possible.scriptBytes,
+			name: item.name,
+		}))
+		.filter((item) => item.bytes > 0);
+	if (runtimePayloads.length > 0) {
+		console.log(`✓ Possible non-script payloads: ${runtimePayloads
+			.map((item) => `${item.name}:${format(item.bytes)}`)
+			.join(' | ')}`);
+	}
 	if (report.topContributors.length > 0) {
 		console.log(`✓ Largest module contributions: ${report.topContributors
 			.map((item) => `${item.path}:${format(item.bytes)}`)
@@ -522,6 +867,10 @@ export function checkProductionArtifacts(options) {
 		console.log(`✓ ${report.boundaryReplications.length} shared source modules are isolated only across non-shareable Chrome runtime domains`);
 	}
 	return report;
+}
+
+export function checkProductionArtifacts(options) {
+	return assertProductionArtifactReport(analyzeProductionArtifacts(options));
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

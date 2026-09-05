@@ -1,16 +1,11 @@
-// goal: render the authenticated pairing URL with a small, zero-dependency SVG QR encoder
+// goal: render the authenticated pairing URL with the local QR encoder
 
-import { renderSVG } from 'uqr';
 import { getRemoteUrl } from './constants.js';
+import { renderQrSvg } from './qr-encoder';
 import type { RemotePairing } from './protocol';
 
 export async function generateRemoteQR(pairing: RemotePairing, baseUrl?: string): Promise<string> {
 	const url = getRemoteUrl(pairing, baseUrl);
-	const svg = renderSVG(url, {
-		ecc: 'M',
-		border: 2,
-		blackColor: '#1a1a2e',
-		whiteColor: '#ffffff',
-	});
+	const svg = renderQrSvg(url);
 	return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }

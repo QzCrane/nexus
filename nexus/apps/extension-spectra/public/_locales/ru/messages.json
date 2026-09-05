@@ -6,5 +6,11 @@
 	"extDescription": {
 		"message": "Усиление до 800%, EQ, управление видео и дополнительный пульт. Доступность зависит от страницы и Chrome.",
 		"description": "Extension description"
+	},
+	"popupStartupFailed": {
+		"message": "SPECTRA временно недоступна."
+	},
+	"popupRetry": {
+		"message": "Повторить"
 	}
 }

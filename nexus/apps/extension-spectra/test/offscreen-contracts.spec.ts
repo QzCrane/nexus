@@ -2,7 +2,6 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
-	DEFAULT_AUDIO_CONFIG,
 	isOffscreenHostEvent,
 	isOffscreenHostRequest,
 	isOffscreenHostResponse,
@@ -12,7 +11,7 @@ import {
 const sessionId = 'A'.repeat(22);
 const capability = 'B'.repeat(22);
 const remoteSession = {
-	protocolVersion: 2 as const,
+	protocolVersion: 3 as const,
 	sessionId,
 	peerId: `spectra-${'c'.repeat(32)}`,
 	secret: 'D'.repeat(22),
@@ -23,13 +22,18 @@ const remoteSession = {
 	capability,
 	reconnectUntil: null,
 	generation: 4,
+	sessionEpoch: 1,
+	lastSequence: 3,
 };
 const remoteState = {
 	generation: 4,
 	revision: 2,
 	volume: 125,
+	volumeBase: 100,
+	boost: 1.25,
 	actualMode: 'bypass' as const,
 	phase: 'idle' as const,
+	volumeState: 'native' as const,
 	muted: false,
 	playing: true,
 	speed: 1.25,
@@ -68,7 +72,7 @@ describe('offscreen host request contract', () => {
 				type: 'OFFSCREEN_AUDIO_START',
 				tabId: 17,
 				streamId: 'stream-token',
-				config: DEFAULT_AUDIO_CONFIG,
+				config: processorConfig,
 				generation: 1,
 				controlRevision: 1,
 			},
@@ -86,9 +90,8 @@ describe('offscreen host request contract', () => {
 				tabId: 17,
 				generation: 3,
 				controlRevision: 2,
-				config: DEFAULT_AUDIO_CONFIG,
+				config: processorConfig,
 			},
-			{ target: 'offscreen', type: 'OFFSCREEN_AUDIO_GET_VIZ', tabId: 17 },
 			{ target: 'offscreen', type: 'OFFSCREEN_AUDIO_GET_VIZ_BATCH', tabIds: [17, 18] },
 			{ target: 'offscreen', type: 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS', tabIds: [17, 18] },
 			{ target: 'offscreen', type: 'REMOTE_HOST_CREATE_SESSION', tabId: 17 },
@@ -108,7 +111,7 @@ describe('offscreen host request contract', () => {
 			type: 'OFFSCREEN_AUDIO_START',
 			tabId: 17,
 			streamId: 'stream-token',
-			config: DEFAULT_AUDIO_CONFIG,
+			config: processorConfig,
 			generation: 1,
 			controlRevision: 1,
 		};
@@ -124,7 +127,11 @@ describe('offscreen host request contract', () => {
 		expect(isOffscreenHostRequest({ ...validStart, generation: -1 })).toBe(false);
 		expect(isOffscreenHostRequest({
 			...validStart,
-			config: { ...DEFAULT_AUDIO_CONFIG, delay: -1 },
+			config: { ...processorConfig, delay: -1 },
+		})).toBe(false);
+		expect(isOffscreenHostRequest({
+			...validStart,
+			config: { ...processorConfig, volumeBase: 40 },
 		})).toBe(false);
 		expect(isOffscreenHostRequest({ ...validStart, unexpected: true })).toBe(false);
 		expect(isOffscreenHostRequest({
@@ -136,6 +143,22 @@ describe('offscreen host request contract', () => {
 		expect(isOffscreenHostRequest({
 			...validState,
 			state: { ...remoteState, volume: 801 },
+		})).toBe(false);
+		expect(isOffscreenHostRequest({
+			...validState,
+			state: { ...remoteState, volume: 124 },
+		})).toBe(false);
+		expect(isOffscreenHostRequest({
+			...validState,
+			state: { ...remoteState, actualMode: 'webaudio' },
+		})).toBe(true);
+		expect(isOffscreenHostRequest({
+			...validState,
+			state: { ...remoteState, actualMode: 'NATIVE_WEBAUDIO' },
+		})).toBe(false);
+		expect(isOffscreenHostRequest({
+			...validState,
+			state: { ...remoteState, volumeState: undefined },
 		})).toBe(false);
 	});
 });
@@ -184,7 +207,6 @@ describe('offscreen host response and event contract', () => {
 				graphSignature: 'bass:0|eq:-|compressor:0|mono:0|pan:0|delay:0',
 				normalizedActualConfig: processorConfig,
 			}],
-			['OFFSCREEN_AUDIO_GET_VIZ', { buffer: [0, 127, 255] }],
 			['OFFSCREEN_AUDIO_GET_VIZ_BATCH', { frames: { 17: [0, 127, 255], 18: null } }],
 			['OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS', { subscribedTabIds: [17, 18] }],
 			['REMOTE_HOST_CREATE_SESSION', { success: true, session: remoteSession }],
@@ -211,7 +233,16 @@ describe('offscreen host response and event contract', () => {
 			generation: -1,
 			phase: 'active',
 		})).toBe(false);
-		expect(isOffscreenHostResponse('OFFSCREEN_AUDIO_GET_VIZ', { buffer: [256] })).toBe(false);
+		expect(isOffscreenHostResponse('OFFSCREEN_AUDIO_START', {
+			ok: true,
+			tabId: 17,
+			generation: 1,
+			controlRevision: 1,
+			phase: 'active',
+			contextState: 'running',
+			graphSignature: 'bass:0|eq:-|compressor:0|mono:0|pan:0|delay:0',
+			normalizedActualConfig: { ...processorConfig, volumeBase: 40 },
+		})).toBe(false);
 		expect(isOffscreenHostResponse('REMOTE_HOST_GET_STATUS', {
 			session: { ...remoteSession, capability: 'weak-token' },
 		})).toBe(false);
@@ -225,17 +256,20 @@ describe('offscreen host response and event contract', () => {
 				tabId: 17,
 				sessionId,
 				capability,
+				sessionEpoch: 1,
+				commandId: 'E'.repeat(22),
 				sequence: 1,
 				generation: 4,
 				command: 'play_pause',
 			},
-			{ type: 'REMOTE_HOST_REQUEST_SYNC', tabId: 17, sessionId, capability },
-			{ type: 'REMOTE_HOST_STATUS_CHANGE', tabId: 17, sessionId, capability, connected: true },
+			{ type: 'REMOTE_HOST_REQUEST_SYNC', tabId: 17, sessionId, capability, sessionEpoch: 1 },
+			{ type: 'REMOTE_HOST_STATUS_CHANGE', tabId: 17, sessionId, capability, sessionEpoch: 1, connected: true },
 			{
 				type: 'REMOTE_HOST_STATUS_CHANGE',
 				tabId: 17,
 				sessionId,
 				capability,
+				sessionEpoch: 1,
 				connected: false,
 				reconnectUntil: 120_000,
 			},

@@ -2,7 +2,7 @@
 
 import { isExtensionContextValid, safeSend } from '../context-guard';
 import type { PolicyExecutorState } from '../../types';
-import { hasMediaElements } from './media-observer';
+import { hasMediaElements } from '../../audio/media-detection';
 import { debounce, createCleanupManager, createEventListener } from '../../utils/timing';
 import { sendSpectraRequest } from '../../../shared/spectra-client';
 import { getActiveMediaRegistry } from '../media-registry';
@@ -24,7 +24,7 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 	if (!isExtensionContextValid()) return;
 
 	const hasMedia = hasMediaElements();
-	const interacted = state ? (state.userHasInteracted || state.hasGesture) : false;
+	const interacted = state?.userHasInteracted ?? false;
 
 	safeSend(() => sendSpectraRequest('spectra.tab.media.report', {
 		hasMediaElement: hasMedia,

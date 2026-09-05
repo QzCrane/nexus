@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { Actions, DEFAULT_AUDIO_CONFIG } from '@nexus/contracts';
-import { setupCardMessaging } from '../src/popup/card/messaging';
+import { DEFAULT_AUDIO_CONFIG } from '@nexus/contracts';
+import { applyControlSnapshot, setupCardMessaging } from '../src/popup/card/messaging';
 import { initialControlConfig, type CardInternalState } from '../src/popup/card/types';
 
 type RuntimeListener = (
@@ -58,9 +58,10 @@ describe('Popup audio-session authority', () => {
 		});
 		const state = createState();
 		let renders = 0;
+		let cleanup = () => undefined;
 
 		try {
-			setupCardMessaging({ tabId: 17, state, render: () => { renders += 1; } });
+			cleanup = setupCardMessaging({ tabId: 17, state, render: () => { renders += 1; } });
 			listener?.({
 				protocolVersion: 2,
 				type: 'spectra.audio.capture.changed',
@@ -77,7 +78,7 @@ describe('Popup audio-session authority', () => {
 				},
 			}, {});
 			listener?.({
-				action: Actions.CAPTURE_STATE_CHANGE,
+				action: 'CAPTURE_STATE_CHANGE',
 				payload: { tabId: 17, enabled: true },
 			}, {});
 			expect(state.actualMode).toBe('bypass');
@@ -116,6 +117,7 @@ describe('Popup audio-session authority', () => {
 			expect(state.config.volume).toBe(100);
 			expect(renders).toBe(1);
 		} finally {
+			cleanup();
 			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
 			else Reflect.deleteProperty(globalThis, 'chrome');
 		}
@@ -142,9 +144,10 @@ describe('Popup audio-session authority', () => {
 		state.stableConfig.volumeBase = 50;
 		state.stableConfig.boost = 2;
 		state.stableConfig.volume = 100;
+		let cleanup = () => undefined;
 
 		try {
-			setupCardMessaging({ tabId: 17, state, render: () => undefined });
+			cleanup = setupCardMessaging({ tabId: 17, state, render: () => undefined });
 			listener?.({
 				protocolVersion: 2,
 				type: 'spectra.control.snapshot.changed',
@@ -180,6 +183,7 @@ describe('Popup audio-session authority', () => {
 			expect(state.config.volume).toBe(80);
 			expect(state.controlGeneration).toBe(6);
 		} finally {
+			cleanup();
 			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
 			else Reflect.deleteProperty(globalThis, 'chrome');
 		}
@@ -200,9 +204,10 @@ describe('Popup audio-session authority', () => {
 			},
 		});
 		const state = createState();
+		let cleanup = () => undefined;
 
 		try {
-			setupCardMessaging({ tabId: 17, state, render: () => undefined });
+			cleanup = setupCardMessaging({ tabId: 17, state, render: () => undefined });
 			listener?.({
 				protocolVersion: 2,
 				type: 'spectra.audio.session.changed',
@@ -259,6 +264,7 @@ describe('Popup audio-session authority', () => {
 			expect(state.audioGeneration).toBe(6);
 			expect(state.controlGeneration).toBe(5);
 		} finally {
+			cleanup();
 			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
 			else Reflect.deleteProperty(globalThis, 'chrome');
 		}
@@ -285,9 +291,10 @@ describe('Popup audio-session authority', () => {
 		state.isCaptureActive = true;
 		state.audioDocumentId = 'document-17';
 		state.audioOrigin = 'https://media.example';
+		let cleanup = () => undefined;
 
 		try {
-			setupCardMessaging({ tabId: 17, state, render: () => undefined });
+			cleanup = setupCardMessaging({ tabId: 17, state, render: () => undefined });
 			listener?.({
 				protocolVersion: 2,
 				type: 'spectra.control.snapshot.changed',
@@ -331,9 +338,41 @@ describe('Popup audio-session authority', () => {
 			}, {});
 			expect(state).toMatchObject({ actualMode: 'bypass', phase: 'idle', isCaptureActive: false });
 		} finally {
+			cleanup();
 			if (chromeDescriptor) Object.defineProperty(globalThis, 'chrome', chromeDescriptor);
 			else Reflect.deleteProperty(globalThis, 'chrome');
 		}
+	});
+
+	test('accepts a newer navigation generation and rejects a delayed old document', () => {
+		const state = createState();
+		state.controlGeneration = 5;
+		state.controlRevision = 42;
+
+		expect(applyControlSnapshot(state, {
+			tabId: 17,
+			documentId: 'document-18',
+			origin: 'https://next.example',
+			generation: 6,
+			revision: 2,
+			activeMedia: null,
+			activeVideo: null,
+			fields: {},
+		}, () => undefined)).toBe(true);
+
+		expect(state.controlGeneration).toBe(6);
+		expect(state.controlRevision).toBe(2);
+		expect(applyControlSnapshot(state, {
+			tabId: 17,
+			documentId: 'document-17',
+			origin: 'https://media.example',
+			generation: 5,
+			revision: 99,
+			activeMedia: null,
+			activeVideo: null,
+			fields: {},
+		}, () => undefined)).toBe(false);
+		expect(state.controlSnapshot?.documentId).toBe('document-18');
 	});
 });
 
@@ -353,7 +392,6 @@ function createState(): CardInternalState {
 		},
 		isCaptureActive: false,
 		userInteracted: false,
-		isRestrictedSite: false,
 		actualMode: 'bypass',
 		desiredMode: 'bypass',
 		phase: 'idle',

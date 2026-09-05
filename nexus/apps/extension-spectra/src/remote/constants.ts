@@ -1,7 +1,8 @@
 // Remote-site URL builder. Pairing credentials live exclusively in the URL
 // fragment, which browsers do not send to Cloudflare Pages.
 
-import { REMOTE_PROTOCOL_VERSION, type RemotePairing } from './protocol';
+import type { RemotePairing } from './protocol-core';
+import { REMOTE_PROTOCOL_VERSION } from './protocol-version';
 
 export const REMOTE_HOST = 'https://nexus-remote.pages.dev';
 

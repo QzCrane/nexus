@@ -13,7 +13,7 @@ export const SPECTRA_PAGE_MEDIA_FIELDS = [
 ] as const;
 
 export type SpectraPageMediaField = (typeof SPECTRA_PAGE_MEDIA_FIELDS)[number];
-export type SpectraPageMediaOperation = 'read' | 'write';
+export type SpectraPageMediaOperation = 'read' | 'write' | 'probe';
 export type SpectraPageMediaValue = number | boolean;
 
 export interface SpectraPageMediaRequest {

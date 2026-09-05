@@ -2,7 +2,7 @@
 
 import type { I18NDict } from '../types';
 import { $$ } from '../utils/dom';
-import { getPopupDictionary } from '../../shared/i18n/catalog';
+import { getPopupDictionary } from '../../shared/i18n/popup-catalog';
 
 // perf: cache current dictionary for access from other modules
 let currentDictCache: I18NDict | null = null;
@@ -42,7 +42,7 @@ export function applyLang(lang: string): I18NDict {
 
 	// eff: apply localized aria-label / title for elements that carry an
 	// explicit data-i18n-aria attribute. Static markup previously hard-coded
-	// English aria-labels (registry inputs, preset search, etc.) which broke
+	// English aria-labels (preset search and related controls) which broke
 	// screen-reader output under non-English locales.
 	$$<HTMLElement>('[data-i18n-aria]').forEach((el) => {
 		const key = el.dataset.i18nAria as keyof I18NDict;

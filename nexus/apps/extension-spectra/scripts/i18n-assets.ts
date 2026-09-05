@@ -8,7 +8,7 @@ import { I18N } from '../src/popup/constants/i18n';
 import type { I18NDict } from '../src/popup/types';
 import { DICT } from '../src/options/i18n-dict';
 import { getActionName } from '../src/options/i18n-actions';
-import { SUPPORTED_SPECTRA_LANGUAGES, sourceLanguage } from '../src/shared/i18n/catalog';
+import { SUPPORTED_SPECTRA_LANGUAGES, sourceLanguage } from '../src/shared/i18n/locale-sections';
 
 const VALUE_MARKER = '__SPECTRA_I18N_VALUE__';
 
@@ -19,6 +19,8 @@ export interface EncodedLocaleCatalog {
 }
 
 export type EncodedLocaleSectionAsset = Record<string, string> | string[];
+
+export type LocaleSurface = 'popup' | 'options' | 'actions';
 
 export interface EncodedLocaleAssetCatalog {
 	popup: EncodedLocaleSectionAsset;
@@ -71,6 +73,27 @@ export function createLocaleAssetCatalogs(): Record<string, EncodedLocaleAssetCa
 	}));
 }
 
+/**
+ * Keep each extension page's asset closure limited to the sections it can
+ * render.  The complete catalogs above remain the semantic source used by
+ * tests; these assets are only an English baseline plus one section delta.
+ */
+export function createLocaleSurfaceAssetCatalogs(): Record<LocaleSurface, Record<string, EncodedLocaleSectionAsset>> {
+	const catalogs = createLocaleCatalogs();
+	const english = catalogs['en-US'];
+	if (!english) throw new Error('English locale catalog is missing');
+	const surfaces = ['popup', 'options', 'actions'] as const;
+	return Object.fromEntries(surfaces.map((surface) => [
+		surface,
+		Object.fromEntries(Object.entries(catalogs).map(([language, catalog]) => [
+			language,
+			language === 'en-US'
+				? catalog[surface]
+				: encodeLocaleSection(catalog[surface], english[surface]),
+		])),
+	])) as Record<LocaleSurface, Record<string, EncodedLocaleSectionAsset>>;
+}
+
 function encodeLocaleSection(
 	localized: Record<string, string>,
 	english: Record<string, string>,
@@ -87,11 +110,15 @@ function encodeLocaleSection(
 
 export function writeI18nAssets(distDir: string): void {
 	const outputDir = resolve(distDir, 'i18n');
-	mkdirSync(outputDir, { recursive: true });
-	for (const [language, catalog] of Object.entries(createLocaleAssetCatalogs())) {
-		const json = JSON.stringify(catalog);
-		const compressed = gzipSync(json, { level: 9, mtime: 0 });
-		writeFileSync(resolve(outputDir, `${language}.json.gz`), compressed);
+	const assets = createLocaleSurfaceAssetCatalogs();
+	for (const surface of ['popup', 'options', 'actions'] as const) {
+		const surfaceDir = resolve(outputDir, surface);
+		mkdirSync(surfaceDir, { recursive: true });
+		for (const [language, catalog] of Object.entries(assets[surface])) {
+			const json = JSON.stringify(catalog);
+			const compressed = gzipSync(json, { level: 9, mtime: 0 });
+			writeFileSync(resolve(surfaceDir, `${language}.json.gz`), compressed);
+		}
 	}
 }
 

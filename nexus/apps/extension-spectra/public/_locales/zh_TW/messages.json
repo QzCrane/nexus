@@ -6,5 +6,11 @@
 	"extDescription": {
 		"message": "最高 800% 音量增強、均衡器、影片控制和可選手機遙控。可用性取決於頁面與 Chrome 支援。",
 		"description": "Extension description"
+	},
+	"popupStartupFailed": {
+		"message": "SPECTRA 暫時無法使用。"
+	},
+	"popupRetry": {
+		"message": "重試"
 	}
 }

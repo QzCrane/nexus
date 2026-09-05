@@ -3,8 +3,8 @@
 
 import {
 	SPECTRA_PROTOCOL_VERSION,
+	SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS,
 	isSpectraLeanSiteHotkeyConfigureMessage,
-	isSpectraRepeatableDefaultHotkeyAction,
 	resolveSpectraDefaultHotkeyAction,
 	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts/bootstrap';
@@ -146,27 +146,24 @@ function releaseHeld(active: ActiveBinding): void {
 }
 
 function releaseCode(code: string): void {
-	const released: ActiveBinding[] = [];
 	const direct = activeByCode.get(code);
 	if (direct) {
 		activeByCode.delete(code);
-		released.push(direct);
+		releaseHeld(direct);
 	}
 	const modifier = modifierForCode(code);
 	if (modifier) {
 		for (const [heldCode, held] of activeByCode) {
 			if (!held.binding.modifiers[modifier]) continue;
 			activeByCode.delete(heldCode);
-			released.push(held);
+			releaseHeld(held);
 		}
 	}
-	for (const held of released) releaseHeld(held);
 }
 
 function releaseAll(): void {
-	const released = [...activeByCode.values()];
+	for (const held of activeByCode.values()) releaseHeld(held);
 	activeByCode.clear();
-	for (const held of released) releaseHeld(held);
 }
 
 function resolveCandidate(event: KeyboardEvent): SpectraLeanSiteHotkeyBinding | null {
@@ -177,7 +174,7 @@ function resolveCandidate(event: KeyboardEvent): SpectraLeanSiteHotkeyBinding | 
 
 	if (event.repeat) {
 		const active = activeByCode.get(event.code);
-		if (!active || !isSpectraRepeatableDefaultHotkeyAction(active.binding.action)) return null;
+		if (!active || !SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS.includes(active.binding.action)) return null;
 		return bindingChord(active.binding) === eventChord(event) ? active.binding : null;
 	}
 	return bindingByChord.get(eventChord(event)) ?? null;
@@ -227,10 +224,7 @@ function applyConfiguration(
 ): void {
 	if (disposed) return;
 	if (configurationEpoch === epoch && generation <= configurationGeneration) return;
-	if (configurationEpoch !== epoch) {
-		configurationEpoch = epoch;
-		configurationGeneration = -1;
-	}
+	configurationEpoch = epoch;
 	configurationGeneration = generation;
 	releaseAll();
 	bindingByChord = new Map(bindings.map((binding) => [bindingChord(binding), binding]));
@@ -296,5 +290,3 @@ if (existing?.revision !== 2) {
 	window.addEventListener('pagehide', onPageHide);
 	document.addEventListener('visibilitychange', onVisibilityChange);
 }
-
-export const leanSiteHotkeyHostTestApi = { triggerRequest, responseError };

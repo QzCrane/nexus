@@ -12,6 +12,13 @@ import {
 	isSpectraDefaultHotkeyKeyCombo,
 	isSlotHotkeyAction,
 	resolveSpectraDefaultHotkeyAction,
+	selectHotkeyActionDescriptor,
+	selectHotkeyAvailability,
+	selectHotkeyCapability,
+	selectHotkeyFeedbackOwner,
+	selectHotkeyParameterKind,
+	selectHotkeyRepeatPolicy,
+	hotkeyActionRequiresUserActivation,
 } from '@nexus/contracts';
 import { HOTKEY_ACTION_HANDLERS } from '../src/content/input/hotkey-actions';
 import { isTrustedHotkeyEvent } from '../src/content/input/hotkey-event';
@@ -34,6 +41,14 @@ describe('editable hotkey action contract', () => {
 		expect(HOTKEY_ACTIONS).toEqual(Object.keys(HOTKEY_ACTION_DESCRIPTORS));
 		for (const action of HOTKEY_ACTIONS) {
 			const descriptor = HOTKEY_ACTION_DESCRIPTORS[action];
+			expect(selectHotkeyActionDescriptor(action), action).toEqual(descriptor);
+			expect(selectHotkeyCapability(action), action).toBe(descriptor.capability);
+			expect(selectHotkeyAvailability(action), action).toBe(descriptor.availability);
+			expect(selectHotkeyRepeatPolicy(action), action).toBe(descriptor.repeatPolicy);
+			expect(selectHotkeyParameterKind(action), action).toBe(descriptor.parameter);
+			expect(selectHotkeyFeedbackOwner(action), action).toBe(descriptor.feedbackOwner);
+			expect(hotkeyActionRequiresUserActivation(action), action)
+				.toBe(descriptor.requiresUserActivation);
 			if (descriptor.availability === 'enabled') expect(descriptor.capability, action).not.toBeNull();
 			if (descriptor.availability === 'disabled-legacy') expect(descriptor.capability, action).toBeNull();
 			expect(['actual-osd', 'handler-result', 'listener-label', 'none']).toContain(

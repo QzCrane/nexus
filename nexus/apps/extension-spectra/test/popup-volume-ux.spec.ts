@@ -30,7 +30,7 @@ describe('Popup single effective-volume control', () => {
 	});
 
 	test('derives color only from acknowledged capture state, never from volume threshold', () => {
-		expect(actualVolumeColor(false, 350, 'webaudio', 'active')).toBe(COLORS.NATIVE);
+		expect(actualVolumeColor(false, 350, 'bypass', 'active')).toBe(COLORS.NATIVE);
 		expect(actualVolumeColor(false, 350, 'capture', 'starting')).toBe(COLORS.NATIVE);
 		expect(actualVolumeColor(false, 80, 'capture', 'active')).toBe(COLORS.CAPTURE);
 		expect(actualVolumeColor(false, 350, 'capture', 'active')).toBe(COLORS.CAPTURE);
@@ -43,7 +43,7 @@ describe('Popup single effective-volume control', () => {
 			volume: 80, muted: false, actualMode: 'capture', phase: 'active',
 		})).toBe('capture');
 		expect(resolveAudioVolumeState({
-			volume: 350, muted: false, actualMode: 'webaudio', phase: 'active',
+			volume: 350, muted: false, actualMode: 'bypass', phase: 'active',
 		})).toBe('native');
 		expect(resolveAudioVolumeState({
 			volume: 350, muted: false, actualMode: 'capture', phase: 'error',

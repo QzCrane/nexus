@@ -1,15 +1,13 @@
-// goal: exposes the background-owned registry and hotkey target through validated v2 RPC
+// goal: preserve the stable v2 site-route RPC while SettingsRepository remains
+// the only persistence, revision and migration owner
 
+import { SPECTRA_PROTOCOL_VERSION } from '@nexus/contracts';
+import { settingsRepository } from '../settings-repository';
 import {
-	SPECTRA_PROTOCOL_VERSION,
-	createSiteRouteFingerprint,
-	isSpectraRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
-} from '@nexus/contracts';
-import { hotkeyTargetRepository } from '../hotkey-target-repository';
-import { registryRepository } from '../registry-repository';
-import { router } from '../state';
+	scheduleAllMediaRouteProjection,
+	scheduleMediaRouteProjection,
+} from '../settings-projection';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
 
 const REGISTRY_REQUEST_TYPES = new Set([
 	'spectra.registry.get',
@@ -17,11 +15,9 @@ const REGISTRY_REQUEST_TYPES = new Set([
 	'spectra.registry.remove',
 	'spectra.registry.query',
 	'spectra.registry.mark-probed',
-	'spectra.hotkey-target.get',
-	'spectra.hotkey-target.set',
 ]);
 
-function isAttemptedRegistryV2Message(message: unknown): boolean {
+function isAttemptedRegistryMessage(message: unknown): boolean {
 	if (!message || typeof message !== 'object') return false;
 	const candidate = message as { protocolVersion?: unknown; type?: unknown };
 	return candidate.protocolVersion === SPECTRA_PROTOCOL_VERSION
@@ -29,115 +25,70 @@ function isAttemptedRegistryV2Message(message: unknown): boolean {
 		&& REGISTRY_REQUEST_TYPES.has(candidate.type);
 }
 
-function registerV2RegistryListener(): void {
+async function projectRouteMutation(domain?: string): Promise<void> {
+	const snapshot = await settingsRepository.getSnapshot();
+	if (domain) scheduleMediaRouteProjection(snapshot, domain);
+	else scheduleAllMediaRouteProjection(snapshot);
+}
+
+export function registerRegistryHandlers(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
-		if (!isAttemptedRegistryV2Message(message)) return false;
+		if (!isAttemptedRegistryMessage(message)) return false;
 		if (sender.id && sender.id !== chrome.runtime.id) {
-			sendResponse(rpcFailure('forbidden', 'Registry RPC is extension-internal only'));
+			sendResponse(rpcFailure('forbidden', 'Site route RPC is extension-internal only'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)
-			|| !REGISTRY_REQUEST_TYPES.has(message.type)) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed SPECTRA v2 registry request'));
+		if (!isBackgroundRequestEnvelope(message) || !REGISTRY_REQUEST_TYPES.has(message.type)) {
+			sendResponse(rpcFailure(
+				'invalid_request',
+				`Malformed SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} site route request`,
+			));
 			return false;
 		}
 
 		const operation = async () => {
 			if (message.type === 'spectra.registry.get') {
-				return rpcSuccess(await registryRepository.getSnapshot());
+				return rpcSuccess(await settingsRepository.getMediaRouteSnapshot());
 			}
 			if (message.type === 'spectra.registry.add') {
-				return rpcSuccess(await registryRepository.add(
+				const result = await settingsRepository.addMediaRoute(
 					message.payload.domain,
 					'user',
 					message.payload.route,
 					{ force: message.payload.force === true },
-				));
+				);
+				await projectRouteMutation(message.payload.domain);
+				return rpcSuccess(result);
 			}
 			if (message.type === 'spectra.registry.remove') {
-				return rpcSuccess(await registryRepository.remove(message.payload.fingerprint));
+				const before = await settingsRepository.getMediaRouteSnapshot();
+				const domain = before.entries.find((entry) => (
+					entry.fingerprint === message.payload.fingerprint
+				))?.domain;
+				const result = await settingsRepository.removeMediaRoute(message.payload.fingerprint);
+				if (result.removed) await projectRouteMutation(domain);
+				return rpcSuccess(result);
 			}
 			if (message.type === 'spectra.registry.query') {
-				return rpcSuccess(await registryRepository.query(
-					message.payload.domain,
-					message.payload.fingerprint,
-				));
+				return rpcSuccess(await settingsRepository.queryMediaRoute(message.payload.domain));
 			}
 			if (message.type === 'spectra.registry.mark-probed') {
-				return rpcSuccess(await registryRepository.markProbed(
+				const result = await settingsRepository.markMediaRouteProbed(
 					message.payload.domain,
-					message.payload.fingerprint,
 					message.payload.route,
 					{ force: message.payload.force === true },
-				));
+				);
+				await projectRouteMutation(message.payload.domain);
+				return rpcSuccess(result);
 			}
-			if (message.type === 'spectra.hotkey-target.get') {
-				return rpcSuccess(await hotkeyTargetRepository.get());
-			}
-			if (message.type === 'spectra.hotkey-target.set') {
-				return rpcSuccess(await hotkeyTargetRepository.set(message.payload.tabId));
-			}
-			return rpcFailure('unsupported_request', 'No registry handler for this request');
+			return rpcFailure('unsupported_request', 'No site route handler for this request');
 		};
 
-		void operation()
-			.then(sendResponse)
-			.catch((error) => sendResponse(rpcFailure(
-				'registry_unavailable',
-				error instanceof Error ? error.message : String(error),
-				true,
-			)));
+		void operation().then(sendResponse).catch((error) => sendResponse(rpcFailure(
+			'registry_unavailable',
+			error instanceof Error ? error.message : String(error),
+			true,
+		)));
 		return true;
-	});
-}
-
-// eff: keeps one-cycle v1 adapters while routing every mutation through the same queue as v2
-export function registerRegistryHandlers(): void {
-	registerV2RegistryListener();
-
-	router.on('REGISTRY_ADD_DOMAIN', async (req) => {
-		try {
-			const result = await registryRepository.add(req.domain, 'auto', 'capture');
-			return { success: true, reason: result.created ? undefined : 'updated' };
-		} catch (error) {
-			return { success: false, reason: error instanceof Error ? error.message : String(error) };
-		}
-	});
-
-	router.on('REGISTRY_REMOVE_DOMAIN', async (req) => {
-		try {
-			const fingerprint = createSiteRouteFingerprint(req.domain);
-			if (!fingerprint) return { success: false };
-			const result = await registryRepository.remove(fingerprint);
-			return { success: result.removed };
-		} catch {
-			return { success: false };
-		}
-	});
-
-	router.on('REGISTRY_QUERY_DOMAIN', async (req) => {
-		try {
-			const fingerprint = createSiteRouteFingerprint(req.domain);
-			return fingerprint
-				? await registryRepository.query(req.domain, fingerprint)
-				: { entry: null };
-		} catch {
-			return { entry: null };
-		}
-	});
-
-	router.on('REGISTRY_MARK_PROBED', async (req) => {
-		try {
-			const fingerprint = createSiteRouteFingerprint(req.domain);
-			if (!fingerprint) return { success: false, reason: 'invalid_domain' };
-			const result = await registryRepository.markProbed(
-				req.domain,
-				fingerprint,
-				req.restricted ? 'capture' : 'direct',
-			);
-			return { success: true, reason: result.created ? undefined : 'updated' };
-		} catch (error) {
-			return { success: false, reason: error instanceof Error ? error.message : String(error) };
-		}
 	});
 }

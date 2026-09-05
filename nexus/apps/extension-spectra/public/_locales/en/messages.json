@@ -6,5 +6,11 @@
 	"extDescription": {
 		"message": "800% volume boost, EQ, video controls, and an optional mobile remote. Availability depends on the page and Chrome support.",
 		"description": "Extension description"
+	},
+	"popupStartupFailed": {
+		"message": "SPECTRA is temporarily unavailable."
+	},
+	"popupRetry": {
+		"message": "Retry"
 	}
 }

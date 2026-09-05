@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-08-13
+last_reviewed: 2026-08-29
 ---
 
 # SPECTRA runtime architecture
@@ -15,12 +15,30 @@ SPECTRA is a Chrome MV3 extension with explicit ownership across runtime context
 | Context | Owns | Does not own |
 | --- | --- | --- |
 | Popup / Options | intent, local render, interaction | actual audio mode, direct storage, executor choice |
-| Content, isolated | document identity, media registry, DOM/CSS writers, admitted WebAudio, exact configured-site lean host when injected | Capture-active claims before host ACK, cross-tab hotkey target selection |
+| Content, isolated | document identity, media registry, DOM/CSS writers, exact configured-site lean host, proven MediaElement WebAudio graph, Capture intent/readback projection | Capture construction, processor-active claims before physical readback, cross-tab hotkey target selection |
 | MAIN bridges | fullscreen audio handoff, exact-element page-media getter/setter readback | generic dispatch, domain tables, cross-tab state |
 | Background worker | routing, settings, snapshots, badge projection, runtime leases, per-document lean/full hotkey ownership and restart recovery | WebAudio nodes, optimistic UI |
 | Unified offscreen host | actual Capture processors, authenticated remote sessions | direct document creation/closure |
 
 `ControlSnapshot` owns actual media/video/DSP fields. `AudioSessionSnapshot` (keyed by document) owns processor mode/phase/config/error. Projections preserve this separation.
+
+```mermaid
+flowchart LR
+  User["User / shortcut / Remote page"] --> Intent["Typed intent"]
+  Intent --> BG["Background ControlAuthority<br/>one actor per tab"]
+  BG -->|"exact document + revision"| Content["Content DocumentRuntime"]
+  Content --> PageAudio["Proven MediaElement WebAudio"]
+  BG -->|"one-shot Capture admission"| Offscreen["Unified offscreen host"]
+  Offscreen --> Audio["Capture AudioGraph"]
+  Offscreen --> Remote["RemoteSessionAuthority V3"]
+  Content -->|"physical readback"| BG
+  Audio -->|"processor readback"| BG
+  Remote -->|"authenticated dispatch ticket"| BG
+  BG --> Snapshot["Durable snapshots + bounded projections"]
+  Snapshot --> UI["Popup / Side Panel / Options / badge"]
+```
+
+Every arrow is a validated port, not shared mutable state. UI and Remote submit intent; only the physical Content or offscreen owner can produce an actual-state fact, and only Background can commit that fact into the durable control model.
 
 ## Audio lifecycle
 
@@ -30,7 +48,43 @@ phase: idle | starting | active | stopping | error
 ```
 
 Navigation/transition advances generation; late ACKs cannot update newer documents. Default is transparent bypass.
-Capture activates only after offscreen host creates processor and returns readback. Transitions neutralize old route, verify candidate, switch ownership, and release old route. Capture processor responses remain tab-owned, while Content lifecycle events require the authoritative `documentId` and are delivered through Chrome's exact-document target; a late event for an old document therefore cannot mutate its replacement.
+MediaElement WebAudio activates only after complete exact source coverage, running context, graph signature, normalized configuration, and source-count readback. Capture activates only after the offscreen host returns the equivalent tab-owned proof. Every transition neutralizes the candidate's competing route, verifies the candidate, switches ownership, and only then releases the previous owner; a failed handoff restores the last acknowledged owner. Content lifecycle events require the authoritative `documentId`, so a late event for an old document cannot mutate its replacement.
+
+Revisioned Settings may pin a site to `direct` or `capture`; absence means
+`auto`. `direct` never falls through from a failed page graph to Capture, while
+`capture` remains only a preference and still requires a current one-shot
+admission. Worker-restart projection replays the selected route to every
+resident tab, and new Content pulls it with the additive
+`spectra.audio.policy.get` request. The established
+`spectra.audio.config.get -> AudioConfig` v2 response remains unchanged so old
+resident Content and a new Background worker remain wire-compatible.
+
+`audio-processor.contracts.ts` is the sole runtime owner of the processor DTO and
+its exact guard. The full audio contract projects product configuration onto
+that type, while the Offscreen protocol imports the leaf directly; Capture
+startup therefore does not load persistence, migration, session, or page-native
+audio validators that it cannot consume.
+
+```mermaid
+sequenceDiagram
+  participant L as Browser lifecycle
+  participant B as TabControlActor
+  participant P as Physical owner
+  participant S as Durable snapshot
+  L->>B: beforeNavigate(tab, oldDocument)
+  B->>B: advance documentEpoch and invalidate pending work
+  B->>P: prepare(ticket, identity, baseRevision)
+  P-->>B: physical ACK + actual readback
+  B->>B: revalidate identity, epoch, ticket, lease, revision
+  alt every proof is current
+    B->>S: commit next revision
+    S-->>B: durable readback
+    B-->>L: bounded projections
+  else any proof is stale or unknown
+    B->>P: compensate / release when required
+    B-->>L: typed rejection or indeterminate result
+  end
+```
 
 ## Unified offscreen host
 
@@ -38,7 +92,7 @@ Capture activates only after offscreen host creates processor and returns readba
 
 - Leases: `audio:<tabId>`, `remote:<sessionId>`
 - Serialized creation/reconciliation/close decisions. Closes only after all leases released + 1-shot grace alarm.
-- Remote controller is a deferred module. Status requests without runtime return empty exact result.
+- Remote controller is a deferred module. Status requests without runtime return an empty exact result. The first explicit session creation loads exactly one local `peerjs-vendor.js` ESM default export through the offscreen-local single-flight loader. That output is built from the same workspace-owned PeerJS 1.5.5-derived data-only source consumed by the checked-in Remote page: JSON serialization is mandatory, UTF-8 messages are capped at 16 KiB before parsing or sending, and MediaConnection, BinaryPack, Raw/binary serializers, package/CDN fallbacks, and global `Peer` ownership are absent. Capture-only work does not load the transport, and load timeout/disposal fences reject only the initiating request instead of installing a fallback.
 - HELLO reconstructs processors/sessions after worker restart. Unresponsive hosts enter 30s grace.
 - Content READY waits for Capture reconciliation to prevent duplicate Captures.
 
@@ -50,9 +104,11 @@ No generic MAIN runtime or domain tables. Two version-guarded bridges own cross-
 
 Page-media discovery walks composed-ancestors. Matches require paired getter/setter. Mismatch restores baseline. Admits one `dom-native` fallback before ownership. Bridge retains no controller, domain table, or polling loop.
 
-Media WebAudio is isolated-world. Media element receives at most one `MediaElementSourceNode`. Leaving active processing binds to unity route, never closes binding. Page volume/mute never enter processor contract.
+Content creates a lazy isolated-world `AudioContext` only when a visible analyser or explicit DSP demand has complete proven coverage for every current media element. The controller owns one page-lifetime source binding per element, never mutates CORS state, and disconnects on element/runtime disposal. Page volume/mute remain native fields. Capture remains the complete-tab fallback; leaving either processor first acknowledges a transparent configuration before releasing its physical owner.
 
-## Settings and route registry
+Physical Capture keeps an explicit `targetTabId` so an async transition can never capture whichever tab happens to become focused later. The manifest therefore owns `activeTab` together with `tabCapture`: a user action or registered Chrome command grants temporary authority for that exact active page, while Background still rechecks tab/document/generation before and after stream-ID acquisition. Programmatic Popup opening, page activity, restore, Remote, and background-tab work cannot manufacture that grant.
+
+## Settings and hotkey target state
 
 Background owns revisioned settings in `chrome.storage.local`. Revisions are written to physical storage before broadcast.
 Per-tab control session is stored in `chrome.storage.session` (`tabId+documentId+origin+resourceUrl`), containing 20 refresh-restorable fields.
@@ -71,12 +127,11 @@ Resource URL canonicalization:
 - Same-origin, diff URL: origin-portable patch only
 - Cross-origin: both retired
 
-A separate monotonic per-tab record owns Action-badge stickiness, surviving worker replacements.
-Media route registry (Background-owned) caches `direct | capture` routes as planning hints.
+A separate monotonic per-tab record owns Action-badge stickiness, surviving worker replacements. The session-scoped global hotkey target is owned by `hotkey-target-repository.ts`; it is independent from media identity and never selects or activates an audio processor.
 
 ## Media discovery and identity
 
-Content maintains media through event-driven registry. Registration does one viewport-geometry seed. Deduplicated on same-document navigation. Every element independently receives configuration upon registration/play/selection.
+Content maintains media through an event-driven registry. Registration does one viewport-geometry seed. Deduplicated on same-document navigation. Every element independently receives native configuration upon registration/play/selection; the registry never binds an audio graph.
 Passive bootstrap may do bounded top-level getter. Background captures `volumechange`/`ratechange`, submits complete actual pairs without media identity.
 
 ## Runtime loading and shortcuts
@@ -147,15 +202,38 @@ This model removes document-lifetime heavy **hotkey ownership** for eligible sit
 
 ## Remote control
 
-Optional, capability-bound, authenticated. Requires HMAC-SHA-256 nonce challenge. Allowlisted commands bound to session/tab/generation/sequence.
+Optional, capability-bound, authenticated. Requires an HMAC-SHA-256 nonce challenge. Allowlisted commands are bound to `sessionId + sessionEpoch + commandId + sequence + tabId + generation`. Offscreen is the sole live session/Peer owner; Background serializes admitted commands per session and revalidates the dispatch ticket after every await. Receipt retention and recovery are bounded, and a delayed connection/open/close callback cannot retire a newer Peer.
 
 Remote generation advances in Background only after the authoritative offscreen host accepts the exact state. The host caches accepted state while unauthenticated or disconnected and sends it in the authenticated handshake; a hard send rejection leaves the last accepted generation unchanged, so the next command for that generation is not silently consumed. Out-of-order acknowledgements may advance but never regress accepted generation.
 
 Runtime RPC `source` is a claim, never authority by itself. Popup and page sources must match their physical sender; page mutations require the exact current top document; `remote` and `system` are internal-only and are rejected from runtime messages. The retired Content legacy mutation adapter no longer relabels itself as Popup.
 
-## Protocol compatibility
+## Protocol and envelope ownership
 
-v2 envelopes validated at runtime. Compatibility adapters are temporary translation boundaries, not alternate protocols. Listeners own exact request-type sets.
+The content-runtime v3 release line has one SPECTRA envelope owner. `@nexus/contracts`
+owns the typed `SpectraRequestEnvelope` / `SpectraEventEnvelope` schema and runtime
+validators. Common envelope/RPC primitives live in `spectra.protocol-primitives.ts`;
+canonical Background route guards live in `spectra.background-runtime.ts` and are reused
+by the generic protocol. `background-rpc.ts` owns only the allowlist derived from the
+routes Background actually registers. It does not copy payload fields, DTOs, error
+codes, or the full protocol table. `shared/spectra-client.ts` owns general request
+construction, delivery, and response validation. Focused UI clients are typed transport
+facades, not alternate protocol owners. The wire value remains the single
+`SPECTRA_PROTOCOL_VERSION` contract constant, including for the minimal document-start
+bootstrap boundary.
+
+That constant versions the extension-internal RPC only. The authenticated
+Remote transport has its own v3 protocol/version owner. Diagnostic errors must
+name the endpoint and request type; a generic “Peer returned invalid v2” message
+is forbidden because it hides whether Background or Content violated which
+route contract.
+
+A top-level `action:` message object is the retired V1 runtime protocol and is forbidden
+in every production sender. `action` may occur only inside a validated hotkey payload
+(`payload.action`), where it is a domain value carried by the typed envelope. The retired
+kernel action table, `createRouter` / `router.on` / `router.listen`, and
+`GLOBAL_SETTINGS_UPDATE` are not SPECTRA runtime paths. Listeners own exact request-type
+sets and reject unknown or malformed envelopes before a handler sees them.
 
 ## Boundary projections
 
@@ -163,19 +241,70 @@ Favicon/QR are UI/security boundaries, not media capabilities. Exact-element, Pi
 
 ## Production performance budgets
 
-`scripts/check-production-artifacts.ts` owns hard byte ceilings for service-worker wake (256KiB), manifest `document_start` (24KiB), Content bootstrap (14KiB), lean hotkeys (11KiB), Capture-only offscreen (28KiB), Remote-eventual offscreen (72KiB), Popup static/eventual (144/152KiB), Content runtime eventual (176KiB), video effects (12KiB), Options eventual (40KiB), total JavaScript (680KiB), and total production artifact (780KiB). The v1.4.2 Windows candidate measures 248.8KiB, 18.3KiB, 12.0KiB, 9.1KiB, 24.1KiB, 68.2KiB, 141.7/147.2KiB, 167.0KiB, 10.9KiB, 37.2KiB, 658.2KiB, and 753.3KiB respectively. An intentional increase must update this owner and the executable budget together; source lines and local build time do not substitute for closure measurement.
+`scripts/check-production-artifacts.ts` is the executable owner. Its graph accepts only manifest/HTML/CSS references, static imports, deferred imports, declared runtime-loader edges, and the explicit vendor-module edge. An arbitrary string cannot make a file reachable.
+
+```mermaid
+flowchart LR
+  Files["83 physical output files"] --> Graph["Typed ArtifactGraph"]
+  Meta["Build metafiles"] --> Attribution["Physical output attribution"]
+  Graph --> Static["Static script closure"]
+  Graph --> Possible["Possible script union"]
+  Graph --> Payload["Possible non-script payload"]
+  Attribution --> Report["One analyzed report + artifact SHA-256"]
+  Static --> Report
+  Possible --> Report
+  Payload --> Report
+  Report --> Hard{"Within hard ceilings?"}
+  Hard -->|no| Fail["build failure"]
+  Hard -->|yes| Headroom{"At least 15% headroom?"}
+  Headroom -->|no| Advise["non-blocking optimization advisory"]
+  Headroom -->|yes| Eligible["eligible for later release gates"]
+  Advise --> Eligible
+```
+
+Terms are deliberately non-interchangeable:
+
+- **Physical output bytes** are bytes of one file on disk, counted once in total JS/dist. `outputAttribution: measured` means build metafiles assigned emitted bytes to their producing inputs; `not-measured` is explicit and cannot support module-contribution claims.
+- **Static script closure** is the set-union of JavaScript reachable without a deferred/runtime edge from an entry. It is a loading-topology measurement, not parsed heap or CPU time.
+- **Possible script union** adds every admitted deferred/runtime/vendor JavaScript edge and counts each file once. It is an upper bound on code the surface can request over its lifetime, not startup residency, simultaneous residency, or memory use.
+- **Possible non-script payload** is the same possible closure's bytes excluding JavaScript, such as reachable locale assets. **Possible payload** is possible script plus those non-script bytes.
+- Residency, CPU, IPC, allocation, and latency claims require a named Chrome scenario trace. Artifact reachability alone cannot prove them.
+
+The integrated Windows production analysis for the current local v1.4.2 candidate produced artifact SHA-256 `6504eedd91e19794b8c94694583c808ec5e15adf750f72e3b474596e8a44ecf3`, `84/84` reachable files, zero byte-identical duplicates, `outputAttribution: measured`, 618,332 JavaScript bytes, and 709,960 total bytes:
+
+| Executable surface | Current bytes | Hard ceiling | 85% target max | Status |
+| --- | ---: | ---: | ---: | --- |
+| Service-worker wake | 231,774 | 262,144 | 222,822 | headroom deficit 8,952 |
+| `document_start` | 19,704 | 24,576 | 20,889 | within target by 1,185 |
+| Content bootstrap static script | 12,496 | 14,336 | 12,185 | headroom deficit 311 |
+| Lean site-hotkey static script | 9,693 | 11,264 | 9,574 | headroom deficit 119 |
+| Offscreen Capture-only script | 20,127 | 28,672 | 24,371 | within target by 4,244 |
+| Offscreen Remote possible script | 50,505 | 73,728 | 62,668 | within target by 12,163 |
+| Popup static script | 106,668 | 147,456 | 125,337 | within target |
+| Popup possible script | 133,790 | 155,648 | 132,300 | headroom deficit 1,490 |
+| Popup possible payload | 145,305 | informational | — | script plus reachable non-script assets |
+| Content runtime possible script | 159,324 | 180,224 | 153,190 | headroom deficit 6,134 |
+| Video-effects possible script | 10,444 | 12,288 | 10,444 | at target boundary |
+| Options possible script | 34,146 | 40,960 | 34,816 | within target by 670 |
+| Options possible payload | 43,655 | informational | — | script plus reachable non-script assets |
+| Total production JavaScript | 618,332 | 696,320 | 591,872 | headroom deficit 26,460 |
+| Total production artifact | 709,960 | 798,720 | 678,912 | headroom deficit 31,048 |
+
+All hard ceilings pass; this proves the build is structurally valid. The 85% values are optimization targets, not release authority: deficits are reported as non-blocking advisories and may guide owner-local work, while only an exceeded absolute ceiling is a capacity failure. Hiding graph edges, weakening protocol guards, or relabelling possible closure as non-resident remains forbidden because it corrupts measurement rather than improving the product.
 
 All tab-set operations use bounded concurrency. Settings and visualizer projection use eight workers, remote restoration uses four, and Capture/runtime-restart flows use their declared bounded fan-out owners. On failure, the fan-out owner stops admitting new items but waits for every live worker to retire before rejecting, so an immediate retry cannot overlap the previous generation and exceed the bound. A new tab-wide `Promise.all` is a release regression unless the owner proves a smaller physical bound.
 
-Release and cross-platform lanes build the production SPECTRA candidate exactly once before Chrome integration. `test:chrome:dist` consumes that existing `dist`; the developer convenience command `test:chrome` alone may prepend a development build. Production artifact integrity remains owned by the production build and is not repeated immediately afterward.
+Release and cross-platform lanes build the production SPECTRA candidate exactly once before Chrome integration. The build computes the analysis once, prints that same report, and binds its artifact hash; a second analysis of a changing directory is not equivalent evidence. `test:chrome:dist` consumes the receipt-bound existing `dist` when release orchestration supplies a CandidateReceipt. Standalone use requires a clean exact tree and creates a temporary receipt instead of accepting arbitrary ignored output. The developer convenience command `test:chrome` alone may prepend a development build. Capacity passes when every absolute ceiling passes in the matching receipt; 15% headroom remains advisory.
 
 ## Current implementation ownership
 
 | Concern | Owner | Invariant |
 | --- | --- | --- |
-| Route persistence | `registry-repository.ts` | One normalized site route; UI never writes storage |
-| Route resolution | Content policy executor | Cache is not activation |
-| Processor lifecycle | offscreen coordinator/delegate | Actual host ACK drives status |
+| Tab control order | `control-coordinator.ts` + pure `control-coordinator-values.ts` helpers | One serialized actor per tab; synchronous navigation fence; post-await identity/epoch/revision validation |
+| Hotkey target persistence | `hotkey-target-repository.ts` | One serialized session-scoped tab target; stale tabs are cleared |
+| Audio mode classification | `@nexus/contracts/audio.contracts.ts` + current registry evidence | `bypass`, proven `webaudio`, or admitted `capture`; neutral hidden work never acquires a processor |
+| Capture admission | `capture-admission.ts` | One-shot document/worker fence expires or is consumed before acquisition |
+| Processor lifecycle | `offscreen/audio-host.ts` + Capture handler | Only exact host ACK drives status |
 | Cold native refresh | bootstrap/coordinator | Targetless 4-field obs; no badge-use fact |
 | Built-in shortcut readiness | shared keyboard arbiter + transient READY lease | Exclusive ownership of 5 defaults; no document-lifetime default-hotkey lease |
 | Configured-site lean ownership | `site-hotkey-owner.ts` + exact lean host + heavy projection adapter | Empty lean barrier; heavy exact suspend; revision-2 physical fence; sender-document execution |
@@ -183,5 +312,10 @@ Release and cross-platform lanes build the production SPECTRA candidate exactly 
 | Toast/OSD | Content feedback modules | One feedback owner on Popover; lean reuses existing gesture/feedback path |
 | Page media semantics | page-media bridge/native executor | Exact-element readback, DOM fallback, no polling |
 | PiP/fullscreen | fullscreen bridge/native executor | Actual native lifecycle preservation |
-| Visualizer | subscriber registry/Popup scheduler | Existing active processor only, bounded lease |
+| Visualizer | Popup scheduler + subscriber registry + coordinator/Content demand lease | Only visible foreground card owns analyser demand; proven page WebAudio precedes exact-document Capture fallback; background cards are passive; bounded heartbeat/tombstone/release retry |
+| Popup vertical geometry | `popup.css` + `views/navigation.ts` | Main view follows intrinsic card content; only `settings-view-active` owns the 600px settings viewport; navigation never writes inline height |
 | Favicon/QR | Popup/remote renderers | Validated payload, no undeclared capability |
+| Remote transport/session | `remote-site/vendor/peerjs.min.js` + `offscreen-remote/peerjs-loader.ts` + `remote-host.ts` | One workspace-owned JSON/DataChannel-only transport source, one lazy extension output, one Offscreen session/Peer owner, 16 KiB wire cap; epoch/command receipt/recovery remain bounded |
+| UI event projection | `popup/ui-event-hub.ts` + surface/session stores | One Chrome runtime listener; subscriber isolation; identity/revision/session-token monotonicity |
+| Locale assets | surface catalogs + `shared/i18n/locale-sections.ts` | Popup/Options/Actions fetch only their surface; settled loads clear; two-locale LRU bound |
+| Artifact evidence | `scripts/check-production-artifacts.ts` | Typed reachability, exact set-union closures, one physical file count, measured attribution when metafiles exist, absolute hard ceilings plus non-blocking 15% planning advisories |

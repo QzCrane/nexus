@@ -4,6 +4,7 @@
 import { swLog } from '../shared/logger';
 import { injectMainBootstrap, injectMainBridges } from './main-runtime-manager';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
+import { isContentDocumentUrl } from './content-document-url';
 
 export const WARM_UPDATE_CONCURRENCY = 4;
 
@@ -50,9 +51,13 @@ export async function performWarmUpdate(): Promise<void> {
 
 	swLog.info('[Upgrade] Starting zero-refresh transition...');
 
-	const tabs = await chrome.tabs.query({ url: ["http://*/*", "https://*/*"] });
+	// Querying by URL pattern omits file:// tabs on some Chrome builds and when
+	// file access is user-enabled. Query every tab once, then apply the same
+	// admission policy used by runtime-loader.
+	const queriedTabs = await chrome.tabs.query({});
+	const tabs = queriedTabs.filter((tab) => typeof tab.url === 'string' && isContentDocumentUrl(tab.url));
 	if (tabs.length === 0) {
-		swLog.info('[Upgrade] No target tabs found');
+		swLog.info(`[Upgrade] No target tabs found (${queriedTabs.length} tabs inspected)`);
 		return;
 	}
 

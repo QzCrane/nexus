@@ -8,6 +8,8 @@ export interface SettingsProjectionWork<T extends RevisionedSnapshot> {
 	snapshot: T;
 	global: boolean;
 	hotkeys: boolean;
+	mediaRouteDomains: string[];
+	mediaRoutesAll: boolean;
 }
 
 export interface SettingsProjectionQueueOptions<T extends RevisionedSnapshot> {
@@ -27,6 +29,8 @@ function mergeWork<T extends RevisionedSnapshot>(
 		snapshot: right.snapshot.revision >= left.snapshot.revision ? right.snapshot : left.snapshot,
 		global: left.global || right.global,
 		hotkeys: left.hotkeys || right.hotkeys,
+		mediaRouteDomains: [...new Set([...left.mediaRouteDomains, ...right.mediaRouteDomains])],
+		mediaRoutesAll: left.mediaRoutesAll || right.mediaRoutesAll,
 	};
 }
 

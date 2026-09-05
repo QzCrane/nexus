@@ -8,6 +8,35 @@ interface Point {
   y: number;
 }
 
+// post: converts the theme's opaque color token to an alpha color without
+// assuming an rgb() function shape. The previous string replacement produced
+// invalid CSS for the canonical hex palette and silently dropped the EQ fill.
+export function withAlpha(color: string, alpha: number): string {
+  const opacity = Math.max(0, Math.min(1, alpha));
+  const value = color.trim();
+  const hex = value.match(/^#([\da-f]{3,8})$/iu)?.[1];
+  if (hex) {
+    const expanded = hex.length === 3 || hex.length === 4
+      ? [...hex].map((digit) => `${digit}${digit}`).join('')
+      : hex;
+    const red = Number.parseInt(expanded.slice(0, 2), 16);
+    const green = Number.parseInt(expanded.slice(2, 4), 16);
+    const blue = Number.parseInt(expanded.slice(4, 6), 16);
+    const sourceAlpha = expanded.length === 8
+      ? Number.parseInt(expanded.slice(6, 8), 16) / 255
+      : 1;
+    return `rgba(${red}, ${green}, ${blue}, ${(sourceAlpha * opacity).toFixed(3)})`;
+  }
+
+  const rgb = value.match(/^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/iu);
+  if (rgb) {
+    const sourceAlpha = rgb[4] === undefined ? 1 : Number(rgb[4]);
+    return `rgba(${rgb[1]}, ${rgb[2]}, ${rgb[3]}, ${(sourceAlpha * opacity).toFixed(3)})`;
+  }
+
+  return value;
+}
+
 // eff: calculates spline points from slider offsets and draws a styled curve with gradient fills and shadows
 export function drawEqCurve(
   ctx: CanvasRenderingContext2D,
@@ -87,13 +116,13 @@ export function drawEqCurve(
 
   // note: generate a dynamic linear gradient that fades from the theme color to transparent at the bottom
   const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, color.replace(')', ', 0.25)').replace('rgb', 'rgba'));
-  grad.addColorStop(1, color.replace(')', ', 0.0)').replace('rgb', 'rgba'));
+  grad.addColorStop(0, withAlpha(color, 0.25));
+  grad.addColorStop(1, withAlpha(color, 0));
   ctx.fillStyle = grad;
   ctx.fill(fillPath);
 
   // rule: apply a subtle bloom effect via shadowBlur and a thick stroke to make the curve feel "premium"
-  ctx.shadowColor = color.replace(')', ', 0.5)').replace('rgb', 'rgba');
+  ctx.shadowColor = withAlpha(color, 0.5);
   ctx.shadowBlur = UI_SIZES.EQ_CURVE_SHADOW_BLUR;
   ctx.shadowOffsetY = 2;
   ctx.lineWidth = UI_SIZES.EQ_CURVE_LINE_WIDTH;

@@ -37,7 +37,7 @@ describe('remote service-worker reconciliation', () => {
 			kind: 'video' as const,
 		};
 		const hostSession = {
-			protocolVersion: 2 as const,
+			protocolVersion: 3 as const,
 			sessionId,
 			peerId: `spectra-${'b'.repeat(32)}`,
 			secret: 'C'.repeat(22),
@@ -48,11 +48,17 @@ describe('remote service-worker reconciliation', () => {
 			capability: 'D'.repeat(22),
 			reconnectUntil: null,
 			generation: 7,
+			sessionEpoch: 1,
+			lastSequence: 0,
 		};
 		let hasDocument = true;
 		let helloCalls = 0;
 		let createDocumentCalls = 0;
 		let stateSendCalls = 0;
+		let remoteHostClosed = false;
+		let operationCalls = 0;
+		let deferNextOperation = false;
+		let releaseOperation: (() => void) | null = null;
 
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
@@ -72,7 +78,13 @@ describe('remote service-worker reconciliation', () => {
 							if (helloCalls <= 3) throw new Error('temporary HELLO failure');
 							return { audioTabs: [], remoteTabs: [{ tabId: 71, sessionId }] };
 						}
-						if (message.type === 'REMOTE_HOST_GET_STATUS') return { session: hostSession };
+						if (message.type === 'REMOTE_HOST_GET_STATUS') {
+							return { session: remoteHostClosed ? null : hostSession };
+						}
+						if (message.type === 'REMOTE_HOST_CLOSE_SESSION') {
+							remoteHostClosed = true;
+							return { success: true };
+						}
 						if (message.type === 'REMOTE_HOST_CLOSE_TAB') {
 							closeTabMessages.push(structuredClone(message));
 							return { success: false };
@@ -161,6 +173,13 @@ describe('remote service-worker reconciliation', () => {
 							};
 						}
 						if (message.type === 'spectra.control.intent.execute') {
+							operationCalls += 1;
+							if (deferNextOperation) {
+								deferNextOperation = false;
+								await new Promise<void>((resolveOperation) => {
+									releaseOperation = resolveOperation;
+								});
+							}
 							const payload = message.payload as {
 								intentId: string;
 								tabId: number;
@@ -258,7 +277,7 @@ describe('remote service-worker reconciliation', () => {
 				ok: true,
 				data: {
 					session: {
-						protocolVersion: 2,
+						protocolVersion: 3,
 						sessionId,
 						peerId: hostSession.peerId,
 						secret: hostSession.secret,
@@ -276,6 +295,8 @@ describe('remote service-worker reconciliation', () => {
 				tabId: 71,
 				sessionId,
 				capability: hostSession.capability,
+				sessionEpoch: hostSession.sessionEpoch,
+				commandId: 'E'.repeat(22),
 				sequence: 1,
 				generation: hostSession.generation,
 				command: 'play_pause',
@@ -287,6 +308,46 @@ describe('remote service-worker reconciliation', () => {
 				`a failed state send must not consume the last delivered generation or drop the next legal command: ${JSON.stringify(tabMessages)}`,
 			).toBe(true);
 			expect(stateSendCalls).toBe(1);
+			deferNextOperation = true;
+			const pendingCommand = invokeRuntimeEvent(listeners, {
+				type: 'REMOTE_HOST_EXECUTE_COMMAND',
+				tabId: 71,
+				sessionId,
+				capability: hostSession.capability,
+				sessionEpoch: hostSession.sessionEpoch,
+				commandId: 'F'.repeat(22),
+				sequence: 2,
+				generation: hostSession.generation,
+				command: 'play_pause',
+			});
+			await waitFor(() => releaseOperation !== null);
+			const queuedCommand = invokeRuntimeEvent(listeners, {
+				type: 'REMOTE_HOST_EXECUTE_COMMAND',
+				tabId: 71,
+				sessionId,
+				capability: hostSession.capability,
+				sessionEpoch: hostSession.sessionEpoch,
+				commandId: 'G'.repeat(22),
+				sequence: 3,
+				generation: hostSession.generation,
+				command: 'volume_up',
+			});
+			// The second command is queued behind the first per session. Closing the
+			// authority while the first physical await is suspended must fence both
+			// its post-await publication and the queued command.
+			const close = invokeRuntimeRequest(listeners, {
+				protocolVersion: SPECTRA_PROTOCOL_VERSION,
+				requestId: 'remote-reconcile-close',
+				type: 'spectra.remote.session.close',
+				tabId: 71,
+				payload: { tabId: 71, sessionId },
+			});
+			expect(await close).toEqual({ ok: true, data: { closed: true } });
+			releaseOperation?.();
+			releaseOperation = null;
+			expect(await pendingCommand.response).toEqual({ settled: true });
+			expect(await queuedCommand.response).toEqual({ settled: true });
+			expect(operationCalls).toBe(2);
 
 			hasDocument = false;
 			await reconcileOffscreenHost();

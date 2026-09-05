@@ -1,12 +1,9 @@
-// goal: handles legacy settings actions and the runtime-validated SPECTRA v2 RPC
+// goal: owns the runtime-validated SPECTRA settings RPC
 
-import { router } from '../state';
 import {
 	SPECTRA_PROTOCOL_VERSION,
-	isSpectraRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
 } from '@nexus/contracts';
+import { toSettingsUiSnapshot } from '@nexus/contracts/ui-settings-runtime';
 import {
 	InvalidSettingsPatchError,
 	SettingsRevisionConflictError,
@@ -17,6 +14,7 @@ import {
 	initializeSettingsProjection,
 	scheduleSettingsProjection,
 } from '../settings-projection';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
 
 function isAttemptedSettingsV2Message(message: unknown): boolean {
 	if (!message || typeof message !== 'object') return false;
@@ -25,6 +23,8 @@ function isAttemptedSettingsV2Message(message: unknown): boolean {
 		&& (candidate.type === 'spectra.content.settings.get'
 			|| candidate.type === 'spectra.settings.get'
 			|| candidate.type === 'spectra.settings.patch'
+			|| candidate.type === 'spectra.settings.ui.get'
+			|| candidate.type === 'spectra.settings.ui.patch'
 			|| candidate.type === 'spectra.settings.flush'
 			|| candidate.type === 'spectra.hotkeys.get');
 }
@@ -36,8 +36,11 @@ function registerV2SettingsListener(): void {
 			sendResponse(rpcFailure('forbidden', 'Settings RPC is extension-internal only'));
 			return false;
 		}
-		if (!isSpectraRequestEnvelope(message)) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed SPECTRA v2 settings request'));
+		if (!isBackgroundRequestEnvelope(message)) {
+			sendResponse(rpcFailure(
+				'invalid_request',
+				`Malformed SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} settings request`,
+			));
 			return false;
 		}
 
@@ -51,6 +54,9 @@ function registerV2SettingsListener(): void {
 				if (message.type === 'spectra.settings.get') {
 					return rpcSuccess(await settingsRepository.getSnapshot());
 				}
+				if (message.type === 'spectra.settings.ui.get') {
+					return rpcSuccess(toSettingsUiSnapshot(await settingsRepository.getSnapshot()));
+				}
 				if (message.type === 'spectra.hotkeys.get') {
 					return rpcSuccess((await settingsRepository.getSnapshot()).hotkeySettings);
 				}
@@ -60,14 +66,17 @@ function registerV2SettingsListener(): void {
 						payload.patch,
 						payload.expectedRevision,
 					);
-					if (payload.patch.scope === 'legacy-theme') {
-						if (next.revision !== payload.expectedRevision) {
-							scheduleSettingsProjection(next, 'global');
-						}
-					} else {
-						scheduleSettingsProjection(next, payload.patch.scope);
-					}
+					scheduleSettingsProjection(next, payload.patch);
 					return rpcSuccess(next);
+				}
+				if (message.type === 'spectra.settings.ui.patch') {
+					const payload = message.payload;
+					const next = await settingsRepository.applyPatch(
+						payload.patch,
+						payload.expectedRevision,
+					);
+					scheduleSettingsProjection(next, payload.patch);
+					return rpcSuccess(toSettingsUiSnapshot(next));
 				}
 				if (message.type === 'spectra.settings.flush') {
 					await settingsRepository.flush();
@@ -95,16 +104,9 @@ function registerV2SettingsListener(): void {
 
 export function registerSettingsHandlers(): void {
 	void settingsRepository.initialize();
-	initializeSettingsProjection(() => settingsRepository.getSnapshot());
+	initializeSettingsProjection(
+		() => settingsRepository.getSnapshot(),
+		() => settingsRepository.getMediaRouteSettings(),
+	);
 	registerV2SettingsListener();
-
-	router.on('SETTINGS_GET', async () => {
-		return withContentOSDMessages((await settingsRepository.getSnapshot()).globalSettings);
-	});
-
-	router.on('SETTINGS_UPDATE', async (req) => {
-		const snapshot = await settingsRepository.applyPatch({ scope: 'global', changes: req.settings });
-		scheduleSettingsProjection(snapshot, 'global');
-		return { success: true };
-	});
 }

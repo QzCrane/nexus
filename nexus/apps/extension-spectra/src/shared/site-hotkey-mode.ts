@@ -8,9 +8,9 @@ import {
 	type SpectraLeanSiteHotkeyBinding,
 } from '@nexus/contracts/bootstrap';
 import {
-	HOTKEY_ACTION_DESCRIPTORS,
 	findBestHostnameMatch,
 	normalizeHostname,
+	selectHotkeyAvailability,
 	type HotkeyBinding,
 	type HotkeySettings,
 	type SiteHotkeyConfig,
@@ -29,7 +29,7 @@ export interface ResolvedSiteHotkeys {
 export function isLiveSiteHotkeyBinding(binding: HotkeyBinding): boolean {
 	return binding.enabled
 		&& !binding.disabledReason
-		&& HOTKEY_ACTION_DESCRIPTORS[binding.action]?.availability === 'enabled';
+		&& selectHotkeyAvailability(binding.action) === 'enabled';
 }
 
 export function isLeanSiteHotkeyBinding(

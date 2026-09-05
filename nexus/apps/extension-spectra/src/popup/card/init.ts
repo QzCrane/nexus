@@ -6,20 +6,26 @@ import {
   type AudioSessionSnapshot,
 } from '@nexus/contracts';
 import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
-import { cardRenderCallbacks } from '../views/settings';
+import { registerCardRenderCallback } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
 import {
 	initialControlConfig,
   mergeAudioConfig,
   type CardInternalState,
   type InitCardParams,
+  type PopupVisualizerFactories,
 } from './types';
 import { createGetCapturing, createUpdateFn } from './state';
 import { createRenderFn } from './render';
 import { bindCardEvents } from './events';
 import { setupCardMessaging } from './messaging';
+import { reportCardControlFailure } from './error';
+import { showPopupToast } from '../toast';
 import { prepareCardDom } from './dom-init';
-import { bindCardIconClick, registerCard } from '../side-panel';
+import { bindCardIconClick, getCurrentPanelTabId, registerCard } from '../side-panel';
+import { syncSidePanelState } from '../side-panel/controls';
+import { setPresetApplyTargetProvider } from '../views/preset-target';
+import { getDomain } from '../utils/dom';
 
 interface PopupObservationLease {
   documentId: string;
@@ -30,21 +36,48 @@ interface PopupObservationLease {
 const observationLeases = new Map<number, PopupObservationLease>();
 let popupClosing = false;
 
-async function acquirePopupObservation(tabId: number): Promise<void> {
-  if (observationLeases.has(tabId) || popupClosing) return;
+function releasePopupObservation(tabId: number, lease: PopupObservationLease): void {
+  if (observationLeases.get(tabId) !== lease) return;
+  observationLeases.delete(tabId);
+  void sendSpectraRequest('spectra.content.runtime.release', {
+    runtimeRevision: lease.runtimeRevision,
+    tabId,
+    documentId: lease.documentId,
+    reason: 'observation',
+    capability: lease.capability,
+  }).catch(() => undefined);
+}
+
+function observePopupTab(tabId: number): () => void {
+  let disposed = false;
+  let ownedLease: PopupObservationLease | null = null;
+  void acquirePopupObservation(tabId, () => disposed).then((lease) => {
+    ownedLease = lease;
+  });
+  return () => {
+    disposed = true;
+    if (ownedLease) releasePopupObservation(tabId, ownedLease);
+  };
+}
+
+async function acquirePopupObservation(
+  tabId: number,
+  isDisposed: () => boolean,
+): Promise<PopupObservationLease | null> {
+  if (observationLeases.has(tabId) || popupClosing) return null;
   const capability = `popup:${crypto.randomUUID()}`;
   const response = await sendSpectraRequest('spectra.content.runtime.ensure', {
     tabId,
     reason: 'observation',
     capability,
   }).catch(() => null);
-  if (!response?.ok) return;
+  if (!response?.ok) return null;
   const lease = {
     documentId: response.data.documentId,
     runtimeRevision: response.data.runtimeRevision,
     capability,
   };
-  if (popupClosing) {
+  if (popupClosing || isDisposed()) {
     void sendSpectraRequest('spectra.content.runtime.release', {
       runtimeRevision: lease.runtimeRevision,
       tabId,
@@ -52,9 +85,10 @@ async function acquirePopupObservation(tabId: number): Promise<void> {
       reason: 'observation',
       capability: lease.capability,
     }).catch(() => undefined);
-    return;
+    return null;
   }
   observationLeases.set(tabId, lease);
+  return lease;
 }
 
 function releasePopupObservations(): void {
@@ -75,7 +109,15 @@ window.addEventListener('pagehide', releasePopupObservations, { once: true });
 
 // post: returns true if card was successfully initialized and appended to the container; false if the tab is non-responsive or should be skipped
 export async function initCard(params: InitCardParams): Promise<boolean> {
-  const { container, template, tab, dict, getGlobalSettings, createEqCurveDrawer } = params;
+  const {
+    container,
+    template,
+    tab,
+    dict,
+    getGlobalSettings,
+    loadVisualizer,
+    registerCleanup,
+  } = params;
 
   if (!tab.id) return false;
   const tabId = tab.id;
@@ -91,14 +133,19 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     }
   };
 
-  const [status, controlSnapshot] = await Promise.all([
-    getRuntimeStatus(),
-    sendSpectraRequest(
-      'spectra.control.snapshot.get',
-      { tabId },
-      { tabId },
-    ).then((response) => response.ok ? response.data : null).catch(() => null),
-  ]);
+	const [status, controlSnapshot] = await Promise.all([
+		getRuntimeStatus(),
+		// Background cards are passive list projections. Reading a full control
+		// snapshot performs the coordinator's actual-state read and can wake the
+		// heavy content runtime, so defer that read until the user opens a card.
+		params.isBackground
+			? Promise.resolve(null)
+			: sendSpectraRequest(
+				'spectra.control.snapshot.get',
+				{ tabId },
+				{ tabId },
+			).then((response) => response.ok ? response.data : null).catch(() => null),
+	]);
 
   let acknowledgedSession: AudioSessionSnapshot | null = null;
   try {
@@ -154,10 +201,6 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     }
   }
 
-  // Route caches never predict card color. Only the acknowledged active runtime
-  // may project the legacy compatibility flag used by the message adapter.
-  const isRestrictedSite = isCaptureActive;
-
 	// ControlSnapshot owns every field-level actual. Runtime/session status below
 	// contributes lifecycle only and may never overwrite or backfill these fields.
 	const config = initialControlConfig(controlSnapshot);
@@ -168,7 +211,6 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     controlSnapshot,
     isCaptureActive,
     userInteracted: status?.userInteracted ?? (controlSnapshot?.revision ?? 0) > 0,
-    isRestrictedSite,
     actualMode: lifecycle?.actualMode ?? 'bypass',
     desiredMode: lifecycle?.desiredMode ?? 'bypass',
     phase: lifecycle?.phase ?? 'idle',
@@ -184,32 +226,109 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   };
 
   const { ui, cardEl } = prepareCardDom({ template, container, tab, dict });
+  const cleanupStack: Array<() => void> = [];
+  let disposed = false;
+  const disposeCard = (): void => {
+    if (disposed) return;
+    disposed = true;
+    for (let index = cleanupStack.length - 1; index >= 0; index -= 1) {
+      try {
+        cleanupStack[index]?.();
+      } catch (error) {
+        console.warn('[SPECTRA Popup] Card cleanup failed:', error);
+      }
+    }
+    cleanupStack.length = 0;
+  };
+  const unregisterAttemptCleanup = registerCleanup?.(disposeCard);
+  if (unregisterAttemptCleanup) cleanupStack.push(unregisterAttemptCleanup);
+  window.addEventListener('pagehide', disposeCard, { once: true });
+  cleanupStack.push(
+    () => window.removeEventListener('pagehide', disposeCard),
+    () => cardEl.remove(),
+  );
 
+  try {
   if (params.isBackground && ui.btnGotoTab) {
     ui.btnGotoTab.classList.remove('hidden');
   }
 
   const getCapturing = createGetCapturing(state);
 
-  const sliderRow = cardEl.querySelector('.eq-sliders-row') as HTMLElement;
-  const eqCanvas = cardEl.querySelector('.eq-curve-canvas') as HTMLCanvasElement;
-  const eqDrawer = createEqCurveDrawer?.(eqCanvas, sliderRow, () => state.config.eqValues);
-  const drawEqCurve = (color: string) => eqDrawer?.draw(color);
-  const updateMetrics = eqDrawer?.updateMetrics ?? (() => { });
-
+  let visualizer: ReturnType<PopupVisualizerFactories['createVizLoop']> | null = null;
+  let visualizerRequest = 0;
+  let visualizerLoading = false;
+  let visualizerLoadFailed = false;
+  let render: () => void = () => undefined;
+  const getVizEnabled = () => getGlobalSettings().visualizerEnabled !== false;
+  const disposeVisualizer = (): void => {
+    visualizerRequest += 1;
+    visualizerLoading = false;
+    visualizer?.dispose();
+    visualizer = null;
+  };
+  cleanupStack.push(disposeVisualizer);
+  const reconcileVisualizer = (): void => {
+    if (!getVizEnabled() || disposed) {
+      disposeVisualizer();
+      visualizerLoadFailed = false;
+      return;
+    }
+    if (!loadVisualizer || visualizer || visualizerLoading || visualizerLoadFailed) return;
+    const request = ++visualizerRequest;
+    visualizerLoading = true;
+    void loadVisualizer().then((factories) => {
+      if (disposed || request !== visualizerRequest || !getVizEnabled()) return;
+      if (ui.canvas) {
+        visualizer = factories.createVizLoop({
+          canvas: ui.canvas,
+          tabId,
+          getConfig: () => state.config,
+          getCapturing,
+          isProcessorActive: () => state.phase === 'active'
+            && state.actualMode === 'capture',
+			allowCaptureAcquisition: !params.isBackground,
+          getGlobalSettings,
+        });
+        visualizer.start();
+      }
+      render();
+    }).catch((error: unknown) => {
+      if (disposed || request !== visualizerRequest) return;
+      disposeVisualizer();
+      visualizerLoadFailed = true;
+      showPopupToast(
+        error instanceof Error ? error.message : 'The visualizer could not be started',
+        'error',
+      );
+    }).finally(() => {
+      if (request === visualizerRequest) visualizerLoading = false;
+    });
+  };
   const renderCard = createRenderFn({
     ui,
     state,
-    drawEqCurve,
-    getVizEnabled: () => getGlobalSettings().visualizerEnabled !== false,
+    getVizEnabled,
     getGlobalSettings,
   });
-  const render = () => {
+  render = () => {
+    reconcileVisualizer();
     renderCard();
+    if (getCurrentPanelTabId() === tabId) syncSidePanelState(state.config);
     document.dispatchEvent(new Event(VISUALIZER_STATE_CHANGED_EVENT));
   };
 
-  const update = createUpdateFn(state, tabId, getCapturing, render, getGlobalSettings);
+  const onControlError = (error: unknown): void => {
+    reportCardControlFailure(tabId, state, render, error);
+  };
+  const update = createUpdateFn(
+    state,
+    tabId,
+    getCapturing,
+    render,
+    getGlobalSettings,
+    onControlError,
+  );
 
   if (ui.vizIsland) {
     ui.vizIsland.classList.toggle('hidden', getGlobalSettings().visualizerEnabled === false);
@@ -222,8 +341,8 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     tabUrl: tab.url || '',
     update,
     getCapturing,
-    onMetricsUpdate: updateMetrics,
     render,
+    onError: onControlError,
   });
 
   if (ui.icon) {
@@ -231,14 +350,25 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   }
 
   // note: register the update handle globally so settings can trigger re-renders from the Settings view
-  registerCard(tabId, state.config, update, () => state.config);
+  cleanupStack.push(registerCard(tabId, update, () => state.config, update.flush));
+
+  if (!params.isBackground) {
+    cleanupStack.push(setPresetApplyTargetProvider(() => ({
+      domain: getDomain(tab.url || ''),
+      apply: async (presetConfig) => {
+        update(presetConfig);
+        await update.flush();
+      },
+      readCurrent: () => ({ ...state.config, eqValues: [...state.config.eqValues] }),
+    })));
+  }
 
   const cleanupMessaging = setupCardMessaging({ tabId, state, render });
-  window.addEventListener('unload', cleanupMessaging);
+  cleanupStack.push(cleanupMessaging);
 
-  cardRenderCallbacks.push(() => {
+  cleanupStack.push(registerCardRenderCallback(() => {
     render();
-  });
+  }));
 
   render();
 
@@ -246,22 +376,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // a document-scoped observation lease installs only event listeners/registry
   // state so page-side changes can flow back to Popup. It never admits MAIN,
   // AudioContext or offscreen processing by itself.
-  if (!params.isBackground) void acquirePopupObservation(tabId);
-
-  // goal: dynamically import the visualizer loop to optimize initial popup load time
-  if (ui.canvas) {
-    const { createVizLoop } = await import('../visualizer/loop');
-    const startViz = createVizLoop({
-      canvas: ui.canvas,
-      tabId,
-      getConfig: () => state.config,
-      getCapturing,
-      isProcessorActive: () => state.phase === 'active'
-        && (state.actualMode === 'webaudio' || state.actualMode === 'capture'),
-      getGlobalSettings,
-    });
-    startViz();
-  }
+  if (!params.isBackground) cleanupStack.push(observePopupTab(tabId));
 
   return true;
+  } catch (error) {
+    disposeCard();
+    throw error;
+  }
 }

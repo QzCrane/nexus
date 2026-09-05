@@ -20,10 +20,10 @@ describe('lean site-hotkey exact-document authority', () => {
 		expect(hostSource).not.toContain('isHotkeysChangedSignal');
 	});
 
-	test('uses epoch plus monotonic generation so a restarted worker can re-establish authority', () => {
+	test('accepts a new epoch while keeping each epoch generation monotonic', () => {
 		expect(hostSource).toContain('configurationEpoch === epoch && generation <= configurationGeneration');
-		expect(hostSource).toContain('if (configurationEpoch !== epoch)');
-		expect(hostSource).toContain('configurationGeneration = -1');
+		expect(hostSource).toContain('configurationEpoch = epoch;');
+		expect(hostSource).toContain('configurationGeneration = generation;');
 		expect(bootstrapContractSource).toContain('epoch: string;');
 		expect(bootstrapContractSource).toContain("type: 'spectra.content.site-hotkeys.configure'");
 	});

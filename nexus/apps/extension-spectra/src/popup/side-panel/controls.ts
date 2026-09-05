@@ -1,7 +1,7 @@
 // goal: binds advanced audio controls in the side panel to configuration update functions and state synchronization
 
 import type { AudioConfig } from '@nexus/kernel';
-import { initSidePanelEqCurve, drawSidePanelEqCurve } from './eq-curve';
+import { destroySidePanelEqCurve, initSidePanelEqCurve, drawSidePanelEqCurve } from './eq-curve';
 import { bindSpeedControls, addWheelSupport, syncSidePanelSpeed } from './speed-controls';
 
 export { syncSidePanelSpeed };
@@ -163,17 +163,50 @@ export function syncSidePanelState(config: AudioConfig): void {
 	if (c.comp) c.comp.checked = config.compressor;
 	if (c.bass) c.bass.checked = config.bass;
 	if (c.mono) c.mono.checked = config.mono;
-	if (c.panSlider) c.panSlider.value = String(config.pan ?? 0);
+	if (typeof config.speed === 'number') {
+		if (c.speedSlider && document.activeElement !== c.speedSlider) c.speedSlider.value = String(config.speed);
+		if (c.speedInput && document.activeElement !== c.speedInput) c.speedInput.value = config.speed.toFixed(2);
+	}
+	if (c.panSlider && document.activeElement !== c.panSlider) c.panSlider.value = String(config.pan ?? 0);
 	if (c.delaySlider) {
-		c.delaySlider.value = String(config.delay ?? 0);
+		if (document.activeElement !== c.delaySlider) c.delaySlider.value = String(config.delay ?? 0);
 		if (c.delayVal) c.delayVal.textContent = `${config.delay ?? 0}ms`;
 	}
 
 	c.eqInputs.forEach((inp, i) => {
 		const v = config.eqValues?.[i] ?? 0;
-		inp.value = String(v);
+		if (document.activeElement !== inp) inp.value = String(v);
 		updateValDisplay(c.eqVals[i], v);
 	});
 
 	drawSidePanelEqCurve(c.eqCanvas, c.eqInputs);
+}
+
+export function clearSidePanelState(): void {
+	currentConfig = null;
+	destroySidePanelEqCurve();
+}
+
+export function disposeSidePanelControls(): void {
+	const controls = getControls();
+	for (const input of [
+		controls.comp,
+		controls.bass,
+		controls.mono,
+		controls.speedSlider,
+		controls.speedInput,
+		controls.panSlider,
+		controls.delaySlider,
+	]) {
+		if (!input) continue;
+		input.oninput = null;
+		input.onchange = null;
+		input.onwheel = null;
+	}
+	controls.eqInputs.forEach((input) => {
+		input.oninput = null;
+		input.onchange = null;
+		if (input.parentElement instanceof HTMLElement) input.parentElement.onwheel = null;
+	});
+	clearSidePanelState();
 }

@@ -13,7 +13,8 @@ describe('content runtime readiness boundary', () => {
 		const restore = source.indexOf('await applyInitialState(', lifecycle);
 		const captureHydration = source.indexOf('if (shouldApplyInitialPolicy(state, source))', lifecycle);
 		const presentation = source.indexOf('void settingsManager.load()', ready);
-		const audioConfigReads = source.match(/sendSpectraRequest\('spectra\.audio\.config\.get'/gu) ?? [];
+		const audioPolicyReads = source.match(/sendSpectraRequest\('spectra\.audio\.policy\.get'/gu) ?? [];
+		const stableConfigFallbacks = source.match(/sendSpectraRequest\('spectra\.audio\.config\.get'/gu) ?? [];
 
 		expect(lifecycle).toBeGreaterThan(-1);
 		expect(restore).toBeGreaterThan(lifecycle);
@@ -21,6 +22,7 @@ describe('content runtime readiness boundary', () => {
 		expect(captureHydration).toBeLessThan(ready);
 		expect(ready).toBeGreaterThan(restore);
 		expect(presentation).toBeGreaterThan(ready);
-		expect(audioConfigReads).toHaveLength(1);
+		expect(audioPolicyReads).toHaveLength(1);
+		expect(stableConfigFallbacks).toHaveLength(1);
 	});
 });

@@ -1,64 +1,72 @@
 // goal: manages the options page theme persistence and visual toggle state
 
-import type { ThemeMode } from '@nexus/contracts';
-import { getSettingsSnapshot, patchSettings } from '../shared/settings-client';
+import type { SettingsUiSnapshot, ThemeMode } from '@nexus/contracts/ui-settings-runtime';
+import {
+	getOptionsSettingsSnapshot,
+	patchOptionsSettings,
+	subscribeOptionsSettingsSnapshots,
+} from '../shared/options-settings-client';
+import { createSerializedToggleQueue } from '../shared/serialized-toggle';
 import { clearOptionsError, showOptionsError } from './status';
 
-const LEGACY_THEME_KEY = 'theme';
 const systemTheme = window.matchMedia('(prefers-color-scheme: dark)');
 let currentMode: ThemeMode = 'system';
+let projectedRevision = -1;
+let unsubscribeSettings: (() => void) | null = null;
+let systemThemeListener: (() => void) | null = null;
 
-// note: one-release read-only adapter for the pre-v2 Options localStorage key.
-// Eligibility and atomic consumption are owned by the background repository.
-function readLegacyThemeCandidateForOneRelease(): ThemeMode | null {
-	const legacy = localStorage.getItem(LEGACY_THEME_KEY);
-	return legacy === 'light' || legacy === 'dark' || legacy === 'system' ? legacy : null;
-}
-
-async function consumeLegacyThemeForOneRelease(): Promise<ThemeMode> {
-	const snapshot = await patchSettings({
-		scope: 'legacy-theme',
-		candidate: readLegacyThemeCandidateForOneRelease(),
-	});
-	localStorage.removeItem(LEGACY_THEME_KEY);
-	return snapshot.globalSettings.themeMode;
+function disposeThemeListeners(): void {
+	unsubscribeSettings?.();
+	unsubscribeSettings = null;
+	if (systemThemeListener) {
+		systemTheme.removeEventListener('change', systemThemeListener);
+		systemThemeListener = null;
+	}
 }
 
 // eff: restores the user's preferred theme from storage and binds the toggle button listener
 export async function initTheme(): Promise<void> {
-	const snapshot = await getSettingsSnapshot();
-	currentMode = snapshot.globalSettings.themeMode;
-	try {
-		currentMode = await consumeLegacyThemeForOneRelease();
-	} catch {
-		// Keep the candidate for the next Options visit if the background is restarting.
+	disposeThemeListeners();
+	projectedRevision = -1;
+	const projectTheme = (snapshot: SettingsUiSnapshot): void => {
+		if (snapshot.revision <= projectedRevision) return;
+		projectedRevision = snapshot.revision;
 		currentMode = snapshot.globalSettings.themeMode;
-	}
-	applyTheme(currentMode);
+		applyTheme(currentMode);
+		updateIcon(document.documentElement.dataset.theme ?? 'light');
+	};
+	unsubscribeSettings = subscribeOptionsSettingsSnapshots(projectTheme);
+	projectTheme(await getOptionsSettingsSnapshot());
 
 	const btn = document.getElementById('theme-toggle');
 	if (btn) {
-		btn.addEventListener('click', async () => {
-			const current = document.documentElement.dataset.theme ?? 'light';
-			const candidate = current === 'dark' ? 'light' : 'dark';
-			try {
-				const snapshot = await patchSettings({ scope: 'global', changes: { themeMode: candidate } });
-				currentMode = snapshot.globalSettings.themeMode;
-				applyTheme(currentMode);
-				updateIcon(currentMode);
+		const toggleQueue = createSerializedToggleQueue<ThemeMode>({
+			readCurrent: () => document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light',
+			nextValue: current => current === 'dark' ? 'light' : 'dark',
+			commit: async candidate => {
+				projectTheme(await patchOptionsSettings({ scope: 'global', changes: { themeMode: candidate } }));
 				clearOptionsError();
-			} catch (error) {
-				showOptionsError(error);
-			}
+			},
+			setBusy: busy => {
+				if (busy) btn.setAttribute('aria-busy', 'true');
+				else btn.removeAttribute('aria-busy');
+			},
+			onError: showOptionsError,
 		});
+		btn.onclick = () => {
+			void toggleQueue.enqueue();
+		};
 		updateIcon(document.documentElement.dataset.theme ?? 'light');
 	}
 
-	systemTheme.addEventListener('change', () => {
+	systemThemeListener = () => {
 		if (currentMode !== 'system') return;
 		applyTheme(currentMode);
 		updateIcon(document.documentElement.dataset.theme ?? 'light');
-	});
+	};
+	systemTheme.addEventListener('change', systemThemeListener);
+
+	window.addEventListener('pagehide', disposeThemeListeners, { once: true });
 }
 
 // eff: injects the theme identifier into the document root for CSS targeting, resolving 'system' to light/dark

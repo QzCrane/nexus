@@ -7,9 +7,9 @@ import type {
 } from '@nexus/contracts';
 import { requiresContentRuntime } from '../shared/content-runtime';
 import {
-	sendSpectraTabRequestOnce,
-	type SpectraRequestContext,
-} from '../shared/spectra-client';
+	sendBackgroundTabRequestOnce,
+	type BackgroundRequestContext,
+} from './background-rpc';
 import {
 	ensureContentRuntime,
 	releaseContentRuntimeLease,
@@ -28,10 +28,10 @@ export async function sendSpectraTabRequest<T extends SpectraRequestType>(
 	tabId: number,
 	type: T,
 	payload: SpectraRequestPayload<T>,
-	context: Omit<SpectraRequestContext, 'tabId'> = {},
+	context: Omit<BackgroundRequestContext, 'tabId'> = {},
 ): Promise<SpectraResponse<T>> {
 	if (!requiresContentRuntime(type)) {
-		return sendSpectraTabRequestOnce(tabId, type, payload, context);
+		return sendBackgroundTabRequestOnce(tabId, type, payload, context);
 	}
 
 	const reason = type === 'spectra.hotkey.trigger' ? 'hotkey' : 'control';
@@ -43,7 +43,7 @@ export async function sendSpectraTabRequest<T extends SpectraRequestType>(
 		capability,
 	);
 	try {
-		return await sendSpectraTabRequestOnce(tabId, type, payload, {
+		return await sendBackgroundTabRequestOnce(tabId, type, payload, {
 			...context,
 			documentId: runtime.documentId,
 		});

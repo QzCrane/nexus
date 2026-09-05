@@ -12,11 +12,13 @@ function apply(
 	generation: number,
 	tabIds: number[],
 	now: number,
+	captureTabId: number | null = null,
 ): VisualizerSubscriberLeases {
 	const plan = planVisualizerSubscriberLease(current, {
 		subscriberId,
 		generation,
 		tabIds,
+		captureTabId,
 	}, now);
 	expect(plan.accepted).toBe(true);
 	return plan.candidate;
@@ -45,6 +47,7 @@ describe('visualizer subscriber leases', () => {
 			subscriberId: 'popup-a',
 			generation: 4,
 			tabIds: [11],
+			captureTabId: 11,
 		}, 5_002);
 		expect(stale.accepted).toBe(false);
 		expect(visualizerSubscriberUnion(stale.candidate)).toEqual([]);
@@ -53,9 +56,18 @@ describe('visualizer subscriber leases', () => {
 			subscriberId: 'popup-a',
 			generation: 5,
 			tabIds: [11],
+			captureTabId: 11,
 		}, 5_003);
 		expect(reacquired.accepted).toBe(true);
 		expect(visualizerSubscriberUnion(reacquired.candidate)).toEqual([11]);
+	});
+
+	test('binds foreground Capture demand to its subscriber and sampled tab set', () => {
+		let leases: VisualizerSubscriberLeases = new Map();
+		leases = apply(leases, 'popup-a', 1, [11, 22], 0, 11);
+		expect(leases.get('popup-a')?.captureTabId).toBe(11);
+		leases = apply(leases, 'popup-a', 2, [22], 1, null);
+		expect(leases.get('popup-a')?.captureTabId).toBeNull();
 	});
 
 	test('deletes bounded tombstones after their stale-message window', () => {

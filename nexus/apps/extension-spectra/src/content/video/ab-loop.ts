@@ -3,7 +3,11 @@
 import type { MediaTarget } from '@nexus/contracts';
 import { createLogger } from '../../shared/logger';
 import { getActiveMediaRegistry, type MediaRegistry } from '../core/media-registry';
-import { seekNativeMedia } from '../logic/native-media-executor';
+import {
+	ContentLifecycleError,
+	isContentLifecycleError,
+} from '../core/content-runtime-context';
+import { seekNativeMedia } from '../logic/native-media-async';
 
 const log = createLogger('ABLoop');
 const MINIMUM_LOOP_SECONDS = 0.1;
@@ -21,6 +25,7 @@ interface ABState {
 	disposeListeners: (() => void) | null;
 	seeking: boolean;
 	skipSuppressed: boolean;
+	seekController: AbortController | null;
 }
 
 const states = new Map<string, ABState>();
@@ -55,17 +60,26 @@ function clearSchedule(state: ABState): void {
 	state.frameId = null;
 }
 
-function disposeState(state: ABState): void {
+function disposeState(
+	state: ABState,
+	reason: 'cancelled' | 'stale-media-source' = 'cancelled',
+): void {
 	clearSchedule(state);
+	state.seekController?.abort(new ContentLifecycleError(reason, 'A/B source operation was disposed'));
+	state.seekController = null;
 	state.disposeListeners?.();
 	state.disposeListeners = null;
 	state.enabled = false;
 }
 
-function retireState(state: ABState, report: boolean): void {
+function retireState(
+	state: ABState,
+	report: boolean,
+	reason: 'cancelled' | 'stale-media-source' = 'cancelled',
+): void {
 	const key = sourceKey(state.target);
 	if (states.get(key) !== state) return;
-	disposeState(state);
+	disposeState(state, reason);
 	states.delete(key);
 	if (report) releaseReporter?.({ ...state.target });
 }
@@ -78,13 +92,27 @@ async function loopToA(state: ABState): Promise<void> {
 	if (state.seeking || !state.enabled || !stillCurrent(state)) return;
 	state.seeking = true;
 	clearSchedule(state);
+	const controller = new AbortController();
+	state.seekController = controller;
 	try {
-		await seekNativeMedia(state.element, state.pointA);
+		await seekNativeMedia(state.element, state.pointA, 0.05, {
+			signal: controller.signal,
+			isCurrent: () => stillCurrent(state),
+		});
+		if (!stillCurrent(state)) {
+			throw new ContentLifecycleError('stale-media-source', 'A/B source changed during boundary seek');
+		}
 		log.info(`Loop A (${state.pointA.toFixed(2)}s)`);
 	} catch (error) {
+		if (isContentLifecycleError(error)
+			&& error.code === 'cancelled'
+			&& (controller !== state.seekController || !state.enabled)) return;
 		log.warn('A/B boundary seek failed', error);
-		retireState(state, true);
+		retireState(state, true, isContentLifecycleError(error) && error.code === 'stale-media-source'
+			? 'stale-media-source'
+			: 'cancelled');
 	} finally {
+		if (state.seekController === controller) state.seekController = null;
 		state.seeking = false;
 		arm(state);
 	}
@@ -159,7 +187,7 @@ function bind(state: ABState): void {
 	};
 	const stop = () => clearSchedule(state);
 	const invalidate = () => {
-		retireState(state, true);
+		retireState(state, true, 'stale-media-source');
 	};
 	for (const type of ['play', 'seeked', 'ratechange'] as const) {
 		state.element.addEventListener(type, rearm);
@@ -179,12 +207,18 @@ function bind(state: ABState): void {
 export function setPointA(target: MediaTarget | null = null): number | null {
 	const context = active(target);
 	if (!context) return null;
+	const pointA = context.element.currentTime;
+	const duration = context.element.duration;
+	if (!Number.isFinite(pointA) || pointA < 0
+		|| Number.isFinite(duration) && (duration < 0 || pointA > duration)) {
+		throw new Error('A/B point A is outside the current media timeline');
+	}
 	const previous = states.get(context.key);
 	if (previous) retireState(previous, false);
 	const state: ABState = {
 		target: { ...context.target },
 		element: context.element,
-		pointA: context.element.currentTime,
+		pointA,
 		pointB: null,
 		enabled: false,
 		timerId: null,
@@ -193,6 +227,7 @@ export function setPointA(target: MediaTarget | null = null): number | null {
 		disposeListeners: null,
 		seeking: false,
 		skipSuppressed: false,
+		seekController: null,
 	};
 	states.set(context.key, state);
 	log.info(`Set A: ${state.pointA.toFixed(2)}s`);
@@ -206,7 +241,10 @@ export function setPointB(target: MediaTarget | null = null): { pointB: number |
 		return { pointB: null, looping: false };
 	}
 	const pointB = context.element.currentTime;
-	if (pointB - state.pointA < MINIMUM_LOOP_SECONDS) {
+	const duration = context.element.duration;
+	if (!Number.isFinite(pointB) || pointB < 0
+		|| Number.isFinite(duration) && (duration < 0 || pointB > duration)
+		|| pointB - state.pointA < MINIMUM_LOOP_SECONDS) {
 		return { pointB: null, looping: false };
 	}
 	state.pointB = pointB;
@@ -236,7 +274,7 @@ export function getABState(target: MediaTarget | null = null): { pointA: number 
 export function listABOwnership(): Array<{ target: MediaTarget; active: boolean }> {
 	return [...states.values()].map((state) => ({
 		target: { ...state.target },
-		active: true,
+		active: state.enabled,
 	}));
 }
 
@@ -246,18 +284,51 @@ export async function skipABLoop(target: MediaTarget | null = null): Promise<num
 	if (!context || !state || state.pointB === null) return null;
 	state.skipSuppressed = true;
 	clearSchedule(state);
+	state.seekController?.abort(new ContentLifecycleError('cancelled', 'A/B skip superseded the prior seek'));
+	const controller = new AbortController();
+	state.seekController = controller;
 	try {
-		return await seekNativeMedia(context.element, state.pointB + 0.05);
+		const currentTime = await seekNativeMedia(context.element, state.pointB + 0.05, 0.05, {
+			signal: controller.signal,
+			isCurrent: () => stillCurrent(state),
+		});
+		if (!stillCurrent(state)) {
+			throw new ContentLifecycleError('stale-media-source', 'A/B source changed during skip');
+		}
+		return currentTime;
 	} catch (error) {
+		if (isContentLifecycleError(error)) {
+			if (error.code === 'stale-media-source') retireState(state, true);
+			throw error;
+		}
 		state.skipSuppressed = false;
 		arm(state);
 		throw error;
+	} finally {
+		if (state.seekController === controller) state.seekController = null;
 	}
 }
 
 export function disposeABLoops(): void {
 	for (const state of states.values()) disposeState(state);
 	states.clear();
+}
+
+export function setABLoopReleaseReporter(
+	reporter: ((target: MediaTarget) => void) | null,
+): () => void {
+	releaseReporter = reporter;
+	return () => {
+		if (releaseReporter === reporter) releaseReporter = null;
+	};
+}
+
+export function disposeABLoopSource(target: MediaTarget): boolean {
+	const key = sourceKey(target);
+	const state = states.get(key);
+	if (!state) return false;
+	retireState(state, false, 'stale-media-source');
+	return true;
 }
 
 // A source revision is a new playback identity even when the page reuses the
@@ -268,7 +339,7 @@ export function observeABLoopSources(
 	registry: MediaRegistry,
 	onReleased?: (target: MediaTarget) => void,
 ): () => void {
-	releaseReporter = onReleased ?? null;
+	const disposeReporter = setABLoopReleaseReporter(onReleased ?? null);
 	const unsubscribe = registry.subscribe((target, event) => {
 		if (event !== 'removed') return;
 		const key = sourceKey(target);
@@ -277,11 +348,11 @@ export function observeABLoopSources(
 		// The registry-level typed lifecycle message clears the Background owner
 		// exactly once. The reporter remains reserved for runtime failures that do
 		// not remove the media source.
-		retireState(state, false);
+		disposeABLoopSource(target);
 	});
 	return () => {
 		unsubscribe();
-		if (releaseReporter === onReleased) releaseReporter = null;
+		disposeReporter();
 	};
 }
 

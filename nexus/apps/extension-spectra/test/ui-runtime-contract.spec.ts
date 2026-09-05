@@ -33,6 +33,7 @@ import {
 	isSpectraSettingsUiEventEnvelope,
 	isSpectraSettingsUiRequestType,
 	isSpectraSettingsUiResponse,
+	type SettingsUiSnapshot,
 } from '@nexus/contracts/ui-settings-runtime';
 
 const tabId = 42;
@@ -107,9 +108,19 @@ function createSettingsSnapshot(): SettingsSnapshot {
 	};
 }
 
+function createSettingsUiSnapshot(): SettingsUiSnapshot {
+	const snapshot = createSettingsSnapshot();
+	return {
+		schemaVersion: snapshot.schemaVersion,
+		revision: snapshot.revision,
+		globalSettings: snapshot.globalSettings,
+		hotkeySettings: snapshot.hotkeySettings,
+	};
+}
+
 function createRemoteSession(): RemotePublicSession {
 	return {
-		protocolVersion: 2,
+		protocolVersion: 3,
 		sessionId: 'A'.repeat(22),
 		peerId: `spectra-${'b'.repeat(32)}`,
 		secret: 'C'.repeat(22),
@@ -126,8 +137,8 @@ function createAudioSession(): AudioSessionSnapshot {
 		documentId,
 		origin: 'https://media.example.com',
 		generation,
-		desiredMode: 'webaudio',
-		actualMode: 'webaudio',
+		desiredMode: 'capture',
+		actualMode: 'capture',
 		phase: 'active',
 		configRevision: 4,
 		actualConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
@@ -140,8 +151,8 @@ function createAudioRuntime(): AudioRuntimeStatus {
 		config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
 		hasAudio: true,
 		isPlaying: true,
-		desiredMode: 'webaudio',
-		actualMode: 'webaudio',
+		desiredMode: 'capture',
+		actualMode: 'capture',
 		phase: 'active',
 		generation,
 		userInteracted: true,
@@ -149,14 +160,6 @@ function createAudioRuntime(): AudioRuntimeStatus {
 		lastError: null,
 	};
 }
-
-const registryEntry = {
-	domain: 'example.com',
-	fingerprint: 'site:example.com',
-	route: 'direct' as const,
-	source: 'user' as const,
-	updatedAt: 1,
-};
 
 function createUiSuccessData(): Record<SpectraUiRequestType, unknown> {
 	const snapshot = createControlSnapshot();
@@ -179,15 +182,10 @@ function createUiSuccessData(): Record<SpectraUiRequestType, unknown> {
 			fields: {},
 		},
 		'spectra.control.operation.submit': createOperationAck(),
-		'spectra.settings.get': createSettingsSnapshot(),
-		'spectra.settings.patch': createSettingsSnapshot(),
+		'spectra.settings.ui.get': createSettingsUiSnapshot(),
+		'spectra.settings.ui.patch': createSettingsUiSnapshot(),
 		'spectra.settings.flush': { flushed: true },
 		'spectra.audio.session.flush': { flushed: true },
-		'spectra.registry.get': { entries: [registryEntry] },
-		'spectra.registry.add': { entries: [registryEntry], entry: registryEntry, created: true },
-		'spectra.registry.remove': { entries: [], removed: true },
-		'spectra.registry.query': { entry: registryEntry },
-		'spectra.registry.mark-probed': { entries: [registryEntry], entry: registryEntry, created: false },
 		'spectra.hotkey-target.get': { tabId },
 		'spectra.hotkey-target.set': { tabId },
 		'spectra.remote.session.get': { session: remoteSession, connected: false },
@@ -216,10 +214,10 @@ function createUiEvents(): Record<SpectraUiEventType, SpectraEventEnvelope> {
 			generation,
 			payload: snapshot,
 		},
-		'spectra.settings.changed': {
+		'spectra.settings.ui.changed': {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			type: 'spectra.settings.changed',
-			payload: createSettingsSnapshot(),
+			type: 'spectra.settings.ui.changed',
+			payload: createSettingsUiSnapshot(),
 		},
 		'spectra.remote.session.changed': {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
@@ -261,7 +259,7 @@ function createUiEvents(): Record<SpectraUiEventType, SpectraEventEnvelope> {
 
 describe('restricted extension UI protocol facade', () => {
 	test('owns one unique closed request and event allowlist', () => {
-		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(23);
+		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(18);
 		expect(new Set(SPECTRA_UI_REQUEST_TYPES).size).toBe(SPECTRA_UI_REQUEST_TYPES.length);
 		expect(SPECTRA_UI_EVENT_TYPES).toHaveLength(6);
 		expect(new Set(SPECTRA_UI_EVENT_TYPES).size).toBe(SPECTRA_UI_EVENT_TYPES.length);
@@ -272,7 +270,7 @@ describe('restricted extension UI protocol facade', () => {
 	});
 
 	test('keeps the Options facade narrow and canonically equivalent', () => {
-		expect(SPECTRA_SETTINGS_UI_REQUEST_TYPES).toHaveLength(10);
+		expect(SPECTRA_SETTINGS_UI_REQUEST_TYPES).toHaveLength(5);
 		expect(new Set(SPECTRA_SETTINGS_UI_REQUEST_TYPES).size)
 			.toBe(SPECTRA_SETTINGS_UI_REQUEST_TYPES.length);
 		const successData = createUiSuccessData();
@@ -288,7 +286,7 @@ describe('restricted extension UI protocol facade', () => {
 			rpcSuccess(createControlSnapshot()),
 		)).toBe(false);
 
-		const settingsEvent = createUiEvents()['spectra.settings.changed'];
+		const settingsEvent = createUiEvents()['spectra.settings.ui.changed'];
 		expect(isSpectraSettingsUiEventEnvelope(settingsEvent)).toBe(true);
 		expect(isSpectraSettingsUiEventEnvelope(
 			createUiEvents()['spectra.control.snapshot.changed'],
@@ -316,6 +314,23 @@ describe('restricted extension UI protocol facade', () => {
 		expect(isSpectraUiResponse('spectra.control.operation.submit', response)).toBe(true);
 	});
 
+	test('accepts a proven Media WebAudio processor ACK in the focused Popup guard', () => {
+		const snapshot = createControlSnapshot();
+		snapshot.fields.boost = {
+			desired: 2,
+			actual: 2,
+			revision: 2,
+			phase: 'applied',
+			strategy: 'media-webaudio',
+			coverage: 'full',
+			controlled: true,
+			lastError: null,
+		};
+		const response = rpcSuccess(snapshot);
+		expect(isSpectraResponse('spectra.control.snapshot.get', response)).toBe(true);
+		expect(isSpectraUiResponse('spectra.control.snapshot.get', response)).toBe(true);
+	});
+
 	test('keeps shared errors canonical but rejects errors for non-UI request types', () => {
 		const failure = rpcFailure('runtime_unavailable', 'retry later', true);
 		for (const type of SPECTRA_UI_REQUEST_TYPES) {
@@ -328,7 +343,7 @@ describe('restricted extension UI protocol facade', () => {
 		expect(isSpectraUiResponse(internalType, failure)).toBe(false);
 	});
 
-	test('rejects capability, result, registry, revision and sample-shape drift exactly like canonical guards', () => {
+	test('rejects capability, result, revision and sample-shape drift exactly like canonical guards', () => {
 		const invalidSnapshot = createControlSnapshot();
 		invalidSnapshot.fields.volumeBase = {
 			desired: 50,
@@ -355,10 +370,15 @@ describe('restricted extension UI protocol facade', () => {
 				...createOperationAck(),
 				result: {},
 			})],
-			['spectra.registry.add', rpcSuccess({
-				entries: [],
-				entry: registryEntry,
-				created: true,
+			['spectra.audio.session.get', rpcSuccess({
+				...createAudioSession(),
+				desiredMode: 'NATIVE_WEBAUDIO',
+				actualMode: 'NATIVE_WEBAUDIO',
+			})],
+			['spectra.audio.runtime.get', rpcSuccess({
+				...createAudioRuntime(),
+				desiredMode: 'NATIVE_WEBAUDIO',
+				actualMode: 'NATIVE_WEBAUDIO',
 			})],
 			['spectra.audio.visualizer.batch', rpcSuccess({
 				subscriberId: 'popup-42',

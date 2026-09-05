@@ -3,7 +3,11 @@
 import type { MediaTarget } from '@nexus/contracts';
 import { createLogger } from '../../shared/logger';
 import { getActiveMediaRegistry, type MediaRegistry } from '../core/media-registry';
-import { seekNativeMedia } from '../logic/native-media-executor';
+import {
+	ContentLifecycleError,
+	sameMediaTarget,
+} from '../core/content-runtime-context';
+import { seekNativeMedia } from '../logic/native-media-async';
 
 const log = createLogger('Marker');
 const MAX_MARKERS_PER_SOURCE = 1_000;
@@ -26,6 +30,11 @@ interface MarkerSet {
 }
 
 const markerSets = new Map<string, MarkerSet>();
+const pendingMarkerOperations = new Set<{
+	target: MediaTarget;
+	controller: AbortController;
+	stop: () => void;
+}>();
 
 function sourceKey(target: {
 	documentId: string;
@@ -61,6 +70,37 @@ function formatTime(seconds: number): string {
 	return `${minutes}:${remainder.toString().padStart(2, '0')}`;
 }
 
+function seekWithFence(context: MarkerContext, desired: number): Promise<number> {
+	const registry = getActiveMediaRegistry();
+	if (!registry) return Promise.reject(new Error('Media registry is unavailable'));
+	const controller = new AbortController();
+	let stop = (): void => undefined;
+	const subscribe = (registry as MediaRegistry & {
+		subscribe?: MediaRegistry['subscribe'];
+	}).subscribe;
+	if (typeof subscribe === 'function') {
+		const unsubscribe = subscribe.call(registry, (target, event) => {
+			if (event !== 'removed' || !sameMediaTarget(target, context.target)) return;
+			controller.abort(new ContentLifecycleError('stale-media-source', 'Marker source was retired'));
+		});
+		stop = unsubscribe;
+	}
+	const operation = { target: { ...context.target }, controller, stop };
+	pendingMarkerOperations.add(operation);
+	return seekNativeMedia(
+		context.element,
+		desired,
+		0.05,
+		{
+			signal: controller.signal,
+			isCurrent: () => getActiveMediaRegistry()?.resolve(context.target)?.element === context.element,
+		},
+	).finally(() => {
+		operation.stop();
+		pendingMarkerOperations.delete(operation);
+	});
+}
+
 function insertionIndex(markers: readonly TimeMarker[], time: number): number {
 	let low = 0;
 	let high = markers.length;
@@ -85,6 +125,11 @@ export function addMarker(
 		throw new Error(`Marker limit reached (${MAX_MARKERS_PER_SOURCE})`);
 	}
 	const time = context.element.currentTime;
+	const duration = context.element.duration;
+	if (!Number.isFinite(time) || time < 0
+		|| Number.isFinite(duration) && (duration < 0 || time > duration)) {
+		throw new Error('Cannot create a marker outside the current media timeline');
+	}
 	const marker: TimeMarker = {
 		id: `m_${crypto.randomUUID()}`,
 		time,
@@ -116,7 +161,7 @@ export async function jumpToMarker(id: string, target: MediaTarget | null = null
 	const context = activeContext(target);
 	const marker = context && markerSets.get(context.key)?.markers.find((candidate) => candidate.id === id);
 	if (!context || !marker) return { jumped: false, time: 0 };
-	const actual = await seekNativeMedia(context.element, marker.time);
+	const actual = await seekWithFence(context, marker.time);
 	log.info(`Jumped: ${marker.label}`);
 	return { jumped: true, time: actual };
 }
@@ -134,7 +179,7 @@ export async function jumpAdjacentMarker(
 		? markers[index]
 		: markers[Math.min(markers.length, index) - 1];
 	if (!marker) return null;
-	const actualTime = await seekNativeMedia(context.element, marker.time);
+	const actualTime = await seekWithFence(context, marker.time);
 	return { marker: { ...marker }, actualTime };
 }
 
@@ -156,7 +201,21 @@ export function listMarkerOwnership(): Array<{
 }
 
 export function disposeMarkers(): void {
+	for (const operation of pendingMarkerOperations) {
+		operation.controller.abort(new ContentLifecycleError('cancelled', 'Markers disposed'));
+		operation.stop();
+	}
+	pendingMarkerOperations.clear();
 	markerSets.clear();
+}
+
+export function disposeMarkerSource(target: MediaTarget): boolean {
+	const removed = markerSets.delete(sourceKey(target));
+	for (const operation of pendingMarkerOperations) {
+		if (!sameMediaTarget(operation.target, target)) continue;
+		operation.controller.abort(new ContentLifecycleError('stale-media-source', 'Marker source was retired'));
+	}
+	return removed;
 }
 
 // Markers describe one resource timeline, not the reusable DOM element. Drop
@@ -164,7 +223,7 @@ export function disposeMarkers(): void {
 // later marker command to lazily discover the stale source key.
 export function observeMarkerSources(registry: MediaRegistry): () => void {
 	return registry.subscribe((target, event) => {
-		if (event === 'removed') markerSets.delete(sourceKey(target));
+		if (event === 'removed') disposeMarkerSource(target);
 	});
 }
 

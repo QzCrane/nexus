@@ -17,22 +17,11 @@ export interface CardUIElements {
   fill: HTMLElement;
   val: HTMLElement;
   mute: HTMLElement;
-  comp: HTMLInputElement;
-  bass: HTMLInputElement;
-  mono: HTMLInputElement;
-  eqTrigger: HTMLElement;
-  eqDrawer: HTMLElement;
-  eqInputs: NodeListOf<HTMLInputElement>;
-  eqVals: NodeListOf<HTMLElement>;
   btnSave: HTMLElement;
   btnReset: HTMLElement;
   btnSaveGlobal: HTMLElement | null;
   canvas: HTMLCanvasElement;
   sliderArea: HTMLElement;
-  tComp: HTMLElement;
-  tBass: HTMLElement;
-  tMono: HTMLElement;
-  tEq: HTMLElement;
   vizIsland: HTMLElement | null;
   btnPause: HTMLElement | null;
   btnPip: HTMLElement | null;
@@ -47,9 +36,6 @@ export interface SettingsUIElements {
   swOsd: HTMLInputElement | null;
   swViz: HTMLInputElement | null;
   selLang: HTMLSelectElement | null;
-  txtRegistry: HTMLTextAreaElement | null;
-  groupRegistry: HTMLElement | null;
-  btnSaveReg: HTMLElement | null;
 }
 
 // CardState: UI-specific transient state for a tab card
@@ -60,20 +46,6 @@ export interface CardState {
   isConnected: boolean;
 }
 
-// MetricsCacheData: internal drawing metrics for the smooth EQ analyzer and visualizer
-export interface MetricsCacheData {
-  row: HTMLElement;
-  canvas: HTMLCanvasElement;
-  xCoords: Float32Array;
-  midY: number;
-  width: number;
-  height: number;
-  dpr: number;
-  scaleFactor: number;
-  isValid: boolean;
-}
-
 export type RenderCallback = () => void;
-export type MetricsChangeCallback = () => void;
 
 export type { AudioConfig, GlobalSettings };

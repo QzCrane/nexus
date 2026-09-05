@@ -14,14 +14,17 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BUN_VERSION } from '../../../scripts/toolchain-versions.ts';
 import {
-	computeReleaseSourceDigest,
 	RELEASE_RECEIPT_CAPABILITY_ENV,
 	RELEASE_RECEIPT_PATH_ENV,
 	RELEASE_RECEIPT_TTL_MS,
 	RELEASE_RECEIPT_VERSION,
 	RELEASE_REQUIRED_GATE_LABELS,
+	RELEASE_COMMIT_OID_ENV,
 	RELEASE_SOURCE_DIGEST_ENV,
+	RELEASE_TREE_OID_ENV,
+	readReleaseTreeIdentity,
 	sha256File,
 } from '../../../scripts/release-spectra.ts';
 
@@ -198,6 +201,8 @@ const RECEIPT_BODY_KEYS = new Set([
 	'archiveSha256',
 	'checksumSha256',
 	'lockfileSha256',
+	'commitOid',
+	'treeOid',
 	'sourceSha256',
 	'gateResults',
 ]);
@@ -224,12 +229,15 @@ function assertReceiptPath(receiptPath, consumed = false) {
 }
 
 function currentReceiptFacts(archivePath, checksumPath, archiveDigest = sha256File(archivePath)) {
+	const identity = readReleaseTreeIdentity();
 	return {
 		archivePath: resolve(archivePath),
 		archiveSha256: archiveDigest,
 		checksumSha256: sha256File(checksumPath),
 		lockfileSha256: sha256File(resolve(workspaceDir, 'bun.lock')),
-		sourceSha256: computeReleaseSourceDigest(),
+		commitOid: identity.commitOid,
+		treeOid: identity.treeOid,
+		sourceSha256: identity.sourceSha256,
 	};
 }
 
@@ -237,18 +245,27 @@ function promotionAuthorizationFromEnvironment() {
 	const receiptPath = process.env[RELEASE_RECEIPT_PATH_ENV];
 	const capability = process.env[RELEASE_RECEIPT_CAPABILITY_ENV];
 	const sourceDigest = process.env[RELEASE_SOURCE_DIGEST_ENV];
+	const commitOid = process.env[RELEASE_COMMIT_OID_ENV];
+	const treeOid = process.env[RELEASE_TREE_OID_ENV];
 	if (!receiptPath || !capability) {
 		throw new Error('Release promotion requires a one-time receipt from the complete release orchestrator');
 	}
 	if (!sourceDigest || !/^[a-f0-9]{64}$/u.test(sourceDigest)) {
 		throw new Error('Release promotion requires the frozen source digest from the complete release orchestrator');
 	}
-	return { receiptPath: assertReceiptPath(receiptPath), capability, sourceDigest };
+	if (!commitOid || !/^[a-f0-9]{40,64}$/u.test(commitOid)
+		|| !treeOid || !/^[a-f0-9]{40,64}$/u.test(treeOid)) {
+		throw new Error('Release promotion requires the frozen Git commit and tree from the complete release orchestrator');
+	}
+	return { receiptPath: assertReceiptPath(receiptPath), capability, sourceDigest, commitOid, treeOid };
 }
 
-function assertFrozenSourceDigest(expectedDigest) {
-	const currentDigest = computeReleaseSourceDigest();
-	if (currentDigest !== expectedDigest) {
+function assertFrozenSourceDigest(expectedDigest, expectedCommitOid, expectedTreeOid) {
+	const current = readReleaseTreeIdentity();
+	const currentDigest = current.sourceSha256;
+	if (currentDigest !== expectedDigest
+		|| (expectedCommitOid && current.commitOid !== expectedCommitOid)
+		|| (expectedTreeOid && current.treeOid !== expectedTreeOid)) {
 		throw new Error('Release source changed during extracted ZIP smoke; restart the complete release gate');
 	}
 	return currentDigest;
@@ -283,6 +300,8 @@ export function validatePromotionReceipt({ receiptPath, capability, expectedFact
 		&& body.archiveSha256 === expectedFacts.archiveSha256
 		&& body.checksumSha256 === expectedFacts.checksumSha256
 		&& body.lockfileSha256 === expectedFacts.lockfileSha256
+		&& body.commitOid === expectedFacts.commitOid
+		&& body.treeOid === expectedFacts.treeOid
 		&& body.sourceSha256 === expectedFacts.sourceSha256;
 	if (body.version !== RELEASE_RECEIPT_VERSION
 		|| !/^[a-f0-9]{32}$/u.test(body.nonce)
@@ -441,15 +460,15 @@ export function promoteStagedRelease(
 export function runReleaseSmoke({ stage = false, promote = false, archivePath: requestedArchive } = {}) {
 	if (promote && !stage) throw new Error('--promote requires --stage');
 	const authorization = promote ? promotionAuthorizationFromEnvironment() : null;
-	if (promote && Bun.version !== '1.3.14') {
-		throw new Error(`Release promotion requires Bun 1.3.14, found ${Bun.version}`);
+	if (promote && Bun.version !== BUN_VERSION) {
+		throw new Error(`Release promotion requires Bun ${BUN_VERSION}, found ${Bun.version}`);
 	}
 	const defaultArchive = resolve(releaseDir, stage ? '.staging' : '', archiveName);
 	const archivePath = resolve(requestedArchive ?? process.env.SPECTRA_ARCHIVE_PATH ?? defaultArchive);
 	const checksumPath = `${archivePath}.sha256`;
 	const digest = verifyChecksum(archivePath, checksumPath);
 	if (authorization) {
-		assertFrozenSourceDigest(authorization.sourceDigest);
+		assertFrozenSourceDigest(authorization.sourceDigest, authorization.commitOid, authorization.treeOid);
 		validatePromotionReceipt({
 			...authorization,
 			expectedFacts: currentReceiptFacts(archivePath, checksumPath, digest),
@@ -472,14 +491,18 @@ export function runReleaseSmoke({ stage = false, promote = false, archivePath: r
 		if (result.status !== 0) throw new Error(`Extracted release smoke failed with exit code ${result.status ?? 'unknown'}`);
 		if (authorization) {
 			const currentDigest = verifyChecksum(archivePath, checksumPath);
-			assertFrozenSourceDigest(authorization.sourceDigest);
+			assertFrozenSourceDigest(authorization.sourceDigest, authorization.commitOid, authorization.treeOid);
 			const consumed = consumePromotionReceipt({
 				...authorization,
 				expectedFacts: currentReceiptFacts(archivePath, checksumPath, currentDigest),
 			});
 			try {
 				promoteStagedRelease(archivePath, checksumPath, currentDigest, {
-					assertSourceUnchanged: () => assertFrozenSourceDigest(authorization.sourceDigest),
+				assertSourceUnchanged: () => assertFrozenSourceDigest(
+					authorization.sourceDigest,
+					authorization.commitOid,
+					authorization.treeOid,
+				),
 				});
 			} finally {
 				rmSync(consumed.consumedPath, { force: true });

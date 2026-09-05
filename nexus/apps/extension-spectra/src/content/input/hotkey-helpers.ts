@@ -1,13 +1,14 @@
 // goal: translate content hotkeys into canonical coordinator mutations
-import type {
-	ControlApplyAck,
-	ControlMutation,
-	ControlOperation,
-	ControlOperationAck,
-	ControlOperationPayload,
-	ControlOperationRequest,
-	HotkeyAction,
-	HotkeyParams,
+import {
+	clampControlValue,
+	type ControlApplyAck,
+	type ControlMutation,
+	type ControlOperation,
+	type ControlOperationAck,
+	type ControlOperationPayload,
+	type ControlOperationRequest,
+	type HotkeyAction,
+	type HotkeyParams,
 } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import { getActiveNativeMediaExecutor } from '../logic/native-media-executor';
@@ -99,10 +100,10 @@ export function sendVolumeAction(action: HotkeyAction, params?: HotkeyParams): P
 			{
 				const volume = finiteParam(params?.volume);
 				return volume !== undefined
-				? submitHotkeyOperation('effective-volume', {
-					operation: 'set',
-					value: Math.max(0, Math.min(800, volume)),
-				})
+					? submitHotkeyOperation('effective-volume', {
+						operation: 'set',
+						value: clampControlValue(volume, 'volume', 100),
+					})
 				: Promise.resolve();
 			}
 		default:
@@ -122,8 +123,12 @@ export function sendSpeedAction(action: HotkeyAction, params?: HotkeyParams): Pr
 			{
 				const speed = finiteParam(params?.speed);
 				return speed !== undefined
-				? submitHotkeyMutations([{ field: 'speed', operation: 'set', value: Math.max(0.1, Math.min(16, speed)) }])
-				: Promise.resolve();
+					? submitHotkeyMutations([{
+						field: 'speed',
+						operation: 'set',
+						value: clampControlValue(speed, 'speed', 1),
+					}])
+					: Promise.resolve();
 			}
 		default: return Promise.resolve();
 	}

@@ -7,7 +7,6 @@ import {
 	type ContentRuntimeSourceOwnership,
 	type HotkeySettings,
 } from '@nexus/contracts';
-import { sendSpectraTabRequest } from '../shared/spectra-client';
 import { swLog } from '../shared/logger';
 import { resolveSiteHotkeys, type SiteHotkeyRuntimeMode } from '../shared/site-hotkey-mode';
 import { settingsRepository } from './settings-repository';
@@ -19,6 +18,7 @@ import {
 } from './runtime-loader';
 import { recoverDocumentRuntimeAfterWorkerRestart } from './runtime-restart-recovery';
 import { forEachBounded } from './bounded-fanout';
+import { sendBackgroundTabRequestOnce } from './background-rpc';
 
 const RECOVERY_CAPABILITY = 'worker-restart-recovery';
 const RETRY_DELAYS_MS = [250, 1_000, 4_000] as const;
@@ -69,7 +69,7 @@ async function persistentRestoreCapability(target: RuntimeRestartTarget): Promis
 
 const chromePort: RuntimeRestartStartupPort = {
 	async readStatus(target) {
-		const response = await sendSpectraTabRequest(
+		const response = await sendBackgroundTabRequestOnce(
 			target.tabId,
 			'spectra.content.runtime.status',
 			{},
