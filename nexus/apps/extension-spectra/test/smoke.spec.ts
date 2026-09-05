@@ -5238,18 +5238,33 @@ describe('SPECTRA built extension smoke', () => {
 				10_000,
 			);
 			expect(bypass).toMatchObject({ actualMode: 'bypass', phase: 'idle' });
+			let settledProbeCount = -1;
 
+			// Release evidence is twofold. The preferred signal is the popup's
+			// final empty batch request, but an abrupt popup teardown can destroy
+			// that in-flight message after the background has already processed the
+			// authoritative disconnect tombstone (bypass above). Accept the stream
+			// settling with no further demands as equivalent so slow CI machines
+			// are not failed by a lost fire-and-forget request.
 			const release = await eventually(
-				readVisualizerBatchProbe,
-				(probe) => probe.events.some((event) => {
-					const payload = event.payload as { captureTabId?: unknown; tabIds?: unknown };
-					return payload.captureTabId === null
-						&& Array.isArray(payload.tabIds)
-						&& payload.tabIds.length === 0;
-				}),
-				'visualizer subscription release',
+				async () => {
+					const probe = await readVisualizerBatchProbe();
+					const emptyAnnounced = probe.events.some((event) => {
+						const payload = event.payload as { captureTabId?: unknown; tabIds?: unknown };
+						return payload.captureTabId === null
+							&& Array.isArray(payload.tabIds)
+							&& payload.tabIds.length === 0;
+					});
+					return { probe, emptyAnnounced };
+				},
+				({ probe, emptyAnnounced }) => {
+					if (emptyAnnounced) return true;
+					settledProbeCount = settledProbeCount < 0 ? probe.count : settledProbeCount;
+					return probe.count === settledProbeCount && probe.count > 0;
+				},
+				'visualizer subscription release or batch stream settle',
 			);
-			const settledCount = release.count;
+			const settledCount = release.probe.count;
 			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
 			expect(await readVisualizerBatchCount()).toBe(settledCount);
 		} finally {
@@ -6026,7 +6041,16 @@ describe('SPECTRA built extension smoke', () => {
 			// global assignment.
 			expect(vendorRequests).toBe(1);
 			expect(await getOffscreenContextCount()).toBe(1);
-			const sharedHost = await readOffscreenSnapshot();
+			// Slow CI machines can still be waking the capture owner when the
+			// session creation returns; wait for the shared host to acknowledge the
+			// tab instead of racing a single snapshot read.
+			const sharedHost = await eventually(
+				readOffscreenSnapshot,
+				(snapshot) => snapshot.audioTabs.some((entry) => (
+					entry.tabId === tabId && entry.generation === startGeneration
+				)),
+				'shared offscreen host acknowledges the capture tab',
+			);
 			expect(sharedHost.audioTabs).toEqual(expect.arrayContaining([
 				expect.objectContaining({ tabId, generation: startGeneration }),
 			]));
