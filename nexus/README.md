@@ -25,7 +25,7 @@ Counts of tools, capabilities, algorithms, and invariants belong to executable r
 
 ## Toolchain and commands
 
-The entire workspace is pinned to **Bun 1.3.14**.
+The entire workspace is pinned to **Bun 1.4.0**.
 
 Run from the repository root:
 
@@ -60,7 +60,7 @@ The private monorepo may generate public SPECTRA or HALO repositories through th
 1. finish the applicable private-source gates without pushing;
 2. run the appropriate sync command, which batch-reads committed `HEAD`, installs, and runs the retained public lint, typecheck, and build commands before creating a candidate;
 3. inspect exclusions, validation output, and the single generated repository diff;
-4. verify the generated package remains pinned to Bun 1.3.14;
+4. verify the generated package remains pinned to Bun 1.4.0;
 5. push only through an authorized release workflow.
 
 The script preserves the destination repository's existing `.git` directory and an ignored Turbo cache under `node_modules`; it does not transplant private-repository history. A failed public gate cannot create a candidate commit. Force-push is not the default.

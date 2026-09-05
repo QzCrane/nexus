@@ -2,7 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
-last_reviewed: 2026-07-30
+last_reviewed: 2026-08-28
 ---
 
 # 05. Problem-to-principle map (历史问题 -> 长期判定标准)
@@ -17,7 +17,8 @@ last_reviewed: 2026-07-30
 | Toast 刷新网页时出现 | EPR-016 | 只有明确 intent 触发,初始化/刷新/同步不产生 Toast |
 | 长按快捷键松手后仍有惯性 | EPR-016 | keyup 取消 repeat、timer、toast 和 pending action |
 | 新网页必须先打开 Popup 才能用快捷键 | EPR-004、EPR-016 | 首次快捷键自动完成 identity-bound Runtime ensure |
-| 动态频谱不显示 | EPR-018 | active processor + visible subscriber lease + bounded batch |
+| 原生 0–100 音量时动态频谱不显示 | EPR-010、EPR-018 | visible foreground subscriber + exact-document one-shot Capture admission + active ACK + bounded batch/final release；禁止假数据与后台卡 acquisition |
+| Popup 单主卡仍保留设置页/多卡高度 | EPR-017 | 主视图 intrinsic height；仅 Settings 模式拥有 CSS `min-height`，导航不得写第二份 inline 高度 |
 | 劫持网站全屏失败 | EPR-007、EPR-015 | 标准 fullscreen + trusted activation + baseline handoff |
 | 网站 PiP 后无法恢复原视频 | EPR-013、EPR-015 | `activeVideo`、PiP owner、native enter/leave/getter 同一事务 |
 | 抖音倍速 UI 不同步 | EPR-007、EPR-002、EPR-028 | 只允许已声明的 one-shot official adapter,成功须有官方 getter/readback |

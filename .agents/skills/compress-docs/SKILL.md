@@ -1,30 +1,11 @@
 ---
 name: compress-docs
-description: 压缩工程内的 Markdown 文档，分为自动化无损去空行和深度语义精简两步。触发短语:"compress docs", "文档压缩", "压缩md", "无损压缩"。
+description: 精简 Markdown 文档而不损失 authority、因果、契约、锚点或历史证据。触发短语:"compress docs", "文档压缩", "压缩md", "无损压缩"。
 ---
 
-# 压缩工程 Markdown 文档 (compress-docs)
+# Compress docs
 
-当用户要求对工程文档进行“压缩”、“无损压缩”或“清理”时，必须严格执行以下标准流程。
-
-## 1. 自动化无损排版压缩（去空白符）
-对大量文件进行压缩时，禁止手工逐个去除空格和空行。必须使用脚本批量处理以保证效率。
-- 编写或复用现有的批量清理脚本。
-- 逻辑：扫描所有 `.md` 文件，使用正则去除连续三个及以上的换行符（替换为双换行）、去除行尾多余空格。
-- 这层压缩保证文件语法的绝对物理无损。
-
-## 2. 核心架构文档的深度语义精简（Context Engineering）
-排版压缩完成后，挑出核心文档（>10KB）进行手工深度语义无损压缩。执行时必须遵循以下“保真”规则：
-1. **硬核参数保护 (Hard Parameter Extraction)**：文档中的所有代码块、API 接口名称、数据类型、默认数值、环境变量名、以及诸如 `ALG-XXX`, `SCTRL-XXX` 的架构锚点必须**原文保留**，严禁使用模糊语言（如“一些配置项”）概括。
-2. **提取骨架 (Outline First)**：优先保留 Markdown 目录树和核心模块划分，确保逻辑链条和层级完整，不要随意删减章节头。
-3. **因果逻辑优先**：压缩时优先保留“决策逻辑”与“架构变更原因”，次要保留重复的背景描述。将冗长的叙述转换为紧凑的 Markdown 表格或列表。
-4. **防幻觉校验**：对于包含测试用例和自动化脚本校验的文件，必须确保压缩提取不会破坏自动化脚本读取的关键字。
-5. **归档文件例外**：`_archive/` 下的历史文件仅做自动化空白符压缩，不要做手工语义修改。
-
-## 3. 严格验证与门禁
-压缩完文档后，绝不允许带着潜在语法错误直接提交，必须运行工程门禁：
-1. 运行 `bun scripts/lint-docs.ts --strict` 确保表头格式、严格 H1 验证、锚点和双语链接未被破坏。
-2. 运行 `bun scripts/verify/check-spectra-control.ts` 及 `bun run verify` 确保所有的架构关联验证依旧通过。
-3. 如果有兼容性镜像文件（如 `control-architecture.md` 与 `04a-algorithm-matrix.md`），必须手工执行同步（`fs.writeFileSync`），确保物理拷贝一模一样。
-
-只有在所有检查脚本均 `0 errors` 的情况下，方可交付任务。
+- Read [`rules.md`](../../../rules.md), [`nexus/docs/README.md`](../../../nexus/docs/README.md), and the document's actual owner role.
+- Remove repetition and presentation noise; preserve normative contracts, exact parameters, causal decisions, links, executable anchors, and dated evidence.
+- Never turn an archive, proposal, or projection into a second current authority.
+- Use the repository's current documentation and architecture gates rather than embedding their commands here.

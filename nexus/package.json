@@ -27,12 +27,12 @@
 		"check:platform": "bun test scripts/platform-contract.test.ts && bun scripts/check-platform-contract.ts",
 		"check:governance": "bun test scripts/permission-governance.spec.ts scripts/closeout-governance.spec.ts scripts/dependency-audit.spec.ts",
 		"audit:dependencies": "bun scripts/dependency-audit.ts",
-		"check:public-projections": "bun scripts/check-public-projections.ts",
+		"check:public-projections": "bun test scripts/spectra-public-projections.spec.ts && bun scripts/check-public-projections.ts",
 		"check:spectra-remote-live": "bun scripts/check-spectra-remote-live.ts",
-		"release:spectra": "bunx bun@1.3.14 scripts/release-spectra.ts",
-		"release:spectra:plan": "bunx bun@1.3.14 scripts/release-spectra.ts --list",
-		"release:halo": "bunx bun@1.3.14 scripts/release-halo.ts",
-		"release:halo:plan": "bunx bun@1.3.14 scripts/release-halo.ts --list",
+		"release:spectra": "bunx bun@1.4.0 scripts/release-spectra.ts",
+		"release:spectra:plan": "bunx bun@1.4.0 scripts/release-spectra.ts --list",
+		"release:halo": "bunx bun@1.4.0 scripts/release-halo.ts",
+		"release:halo:plan": "bunx bun@1.4.0 scripts/release-halo.ts --list",
 		"verify": "bun scripts/verify-architecture.ts",
 		"verify:q": "bun scripts/verify-architecture.ts -q",
 		"verify:v": "bun scripts/verify-architecture.ts -v",
@@ -44,21 +44,22 @@
 		"sync:skills": "bun scripts/sync-skills.ts"
 	},
 	"devDependencies": {
-		"@biomejs/biome": "2.5.3",
-		"chrome-types": "^0.1.327",
+		"@biomejs/biome": "2.5.11",
+		"chrome-types": "^0.1.440",
 		"graceful-fs": "^4.2.11",
-		"sharp": "0.35.3",
-		"turbo": "2.10.5",
-		"typescript": "^5.3.0"
+		"sharp": "0.35.4",
+		"turbo": "2.10.12",
+		"typescript": "7.0.2",
+		"typescript-compiler-api": "npm:typescript@6.0.2"
 	},
 	"overrides": {
 		"basic-ftp": "5.3.1",
-		"chrome-types": "^0.1.327",
+		"chrome-types": "^0.1.440",
 		"ip-address": "10.3.1",
 		"js-yaml": "4.3.1",
 		"ws": "8.21.1"
 	},
-	"packageManager": "bun@1.3.14",
+	"packageManager": "bun@1.4.0",
 	"workspaces": [
 		"apps/*",
 		"packages/*",

@@ -2,7 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
-last_reviewed: 2026-07-30
+last_reviewed: 2026-08-28
 ---
 
 # 02. Operations & safety (EPR-010..018)
@@ -40,5 +40,5 @@ PiP 与 fullscreen 严格走标准 API、真实 user activation、生命周期�
 - Reset 语义: `100%` / `1x` 为字面控制值；恢复网页原始值为单独的 restore-page-settings 操作。
 - Favicon 走标准 URL/service 规则，禁止未声明权限或将获取失败转为 unhandled rejection。
 
-## EPR-018: 动态频谱仅消费现有处理器
-频谱订阅仅建立在已 ACK 为 active 的处理器上（独立 generation-aware lease，上限 15 Hz，不可见/关闭立即释放）。无 active processor 时严禁创建 AudioContext、analyser、Capture 或隐藏 IPC。
+## EPR-018: 动态频谱使用显式前台分析租约
+频谱数据只能来自已 ACK 为 active 的唯一 Capture 处理器，不得伪造、不得在页面创建音频图。只有可见的前台 Popup 主卡可以通过可信 sender、当前活动标签页、精确顶层文档和一次性 admission 临时建立处理器 demand；后台卡片、普通 status/read 与持久化设置无权触发。订阅以 subscriber/generation 管理，统一批处理上限 15 Hz，失败退避有界；不可见、失焦、关闭、导航、断连、超时或最终 subscriber 释放时必须退役 transient Capture，除非独立 DSP demand 仍存在。
