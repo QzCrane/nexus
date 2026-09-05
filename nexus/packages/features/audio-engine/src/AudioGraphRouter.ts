@@ -1,7 +1,21 @@
-// goal: one shared, sparse and readback-capable DSP graph for media and Capture
+// goal: one shared, sparse and readback-capable DSP graph for admitted media or Capture sources
 
-import { resolveAudioVolume, type AudioConfig, type AudioProcessorConfig } from '@nexus/contracts';
-import { AudioParams, CompressorOn } from './constants.js';
+import {
+	clampControlValue,
+	type AudioProcessorConfig,
+} from '@nexus/contracts';
+import {
+	BASS_FREQUENCY,
+	BASS_GAIN,
+	COMPRESSOR_ATTACK,
+	COMPRESSOR_KNEE,
+	COMPRESSOR_RATIO,
+	COMPRESSOR_RELEASE,
+	COMPRESSOR_THRESHOLD,
+	EQ_FREQUENCIES,
+	EQ_Q,
+	FFT_SIZE,
+} from './constants.js';
 
 export type AudioGraphConfig = AudioProcessorConfig;
 
@@ -30,8 +44,6 @@ interface GraphLane {
 	fade: GainNode;
 	nodes: AudioNode[];
 	eqNodes: Map<number, BiquadFilterNode>;
-	bass: BiquadFilterNode | null;
-	compressor: DynamicsCompressorNode | null;
 	panner: StereoPannerNode | null;
 	delay: DelayNode | null;
 }
@@ -57,71 +69,53 @@ export const DEFAULT_AUDIO_GRAPH_CONFIG: Readonly<AudioGraphConfig> = {
 	delay: 0,
 };
 
-function clamp(value: number, minimum: number, maximum: number, fallback: number): number {
-	return Number.isFinite(value) ? Math.max(minimum, Math.min(maximum, value)) : fallback;
-}
-
 export function normalizeAudioGraphConfig(config: AudioGraphConfig): AudioGraphConfig {
 	return {
-		boostGain: clamp(config.boostGain, 1, 8, 1),
+		boostGain: clampControlValue(config.boostGain, 'boost', 1),
 		bass: config.bass === true,
-		eqValues: AudioParams.EQ_FREQUENCIES.map((_, index) =>
-			clamp(config.eqValues[index] ?? 0, AudioParams.EQ_MIN, AudioParams.EQ_MAX, 0)),
+		eqValues: EQ_FREQUENCIES.map((_, index) =>
+			clampControlValue(config.eqValues[index] ?? 0, 'eqBand', 0)),
 		compressor: config.compressor === true,
 		mono: config.mono === true,
-		pan: clamp(config.pan, -1, 1, 0),
-		delay: clamp(config.delay, 0, 500, 0),
+		pan: clampControlValue(config.pan, 'pan', 0),
+		delay: clampControlValue(config.delay, 'delay', 0),
 	};
 }
 
-export function audioConfigToGraphConfig(
-	config: AudioConfig,
-	gain = resolveAudioVolume(config).boost,
-): AudioGraphConfig {
-	return normalizeAudioGraphConfig({
-		boostGain: gain,
-		bass: config.bass,
-		eqValues: config.eqValues,
-		compressor: config.compressor,
-		mono: config.mono,
-		pan: config.pan,
-		delay: config.delay,
-	});
-}
-
-export function audioGraphSignature(config: AudioGraphConfig): string {
-	const normalized = normalizeAudioGraphConfig(config);
-	const eq = normalized.eqValues
+function signatureForNormalizedConfig(config: AudioGraphConfig): string {
+	const eq = config.eqValues
 		.map((value, index) => value === 0 ? null : index)
 		.filter((index): index is number => index !== null)
 		.join(',');
 	return [
-		`bass:${normalized.bass ? 1 : 0}`,
+		`bass:${config.bass ? 1 : 0}`,
 		`eq:${eq || '-'}`,
-		`compressor:${normalized.compressor ? 1 : 0}`,
-		`mono:${normalized.mono ? 1 : 0}`,
-		`pan:${normalized.pan === 0 ? 0 : 1}`,
+		`compressor:${config.compressor ? 1 : 0}`,
+		`mono:${config.mono ? 1 : 0}`,
+		`pan:${config.pan === 0 ? 0 : 1}`,
 		// Delay amount is a parameter, not topology. Rebuild only when the node
 		// enters or leaves the sparse graph; continuous slider updates ramp the
 		// existing DelayNode and therefore never allocate/crossfade a new lane.
-		`delay:${normalized.delay === 0 ? 0 : 1}`,
+		`delay:${config.delay === 0 ? 0 : 1}`,
 	].join('|');
 }
 
-function setImmediate(param: AudioParam, value: number, time: number): void {
-	param.cancelScheduledValues(time);
-	param.setValueAtTime(value, time);
+export function audioGraphSignature(config: AudioGraphConfig): string {
+	return signatureForNormalizedConfig(normalizeAudioGraphConfig(config));
 }
 
-function rampParam(
+function setParam(
 	param: AudioParam,
 	value: number,
 	time: number,
 	durationMs = AUDIO_PARAM_RAMP_MS,
 ): void {
 	param.cancelScheduledValues(time);
-	param.setValueAtTime(param.value, time);
-	param.linearRampToValueAtTime(value, time + durationMs / 1_000);
+	if (durationMs === 0) param.setValueAtTime(value, time);
+	else {
+		param.setValueAtTime(param.value, time);
+		param.linearRampToValueAtTime(value, time + durationMs / 1_000);
+	}
 }
 
 function disconnect(node: AudioNode): void {
@@ -132,14 +126,13 @@ export class AudioGraphRouter {
 	private readonly input: GainNode;
 	private readonly master: GainNode;
 	private readonly output: GainNode;
-	private readonly destination: AudioNode;
 	private readonly sources = new Set<AudioNode>();
-	private readonly knownSources = new WeakSet<AudioNode>();
 	private readonly crossfadeMs: number;
 	private activeLane: GraphLane | null = null;
-	private actualConfig: AudioGraphConfig | null = null;
 	private analyser: AnalyserNode | null = null;
+	private visualizerBuffer: Uint8Array<ArrayBuffer> | null = null;
 	private analyserSubscribers = 0;
+	private actualConfig: AudioGraphConfig | null = null;
 	private pendingApply: PendingApply | null = null;
 	private drainPromise: Promise<void> | null = null;
 	private disposed = false;
@@ -149,13 +142,10 @@ export class AudioGraphRouter {
 		destination: AudioNode = context.destination,
 		options: AudioGraphRouterOptions = {},
 	) {
-		this.destination = destination;
-		this.crossfadeMs = clamp(
-			options.crossfadeMs ?? AUDIO_GRAPH_CROSSFADE_MS,
-			0,
-			250,
-			AUDIO_GRAPH_CROSSFADE_MS,
-		);
+		const crossfadeMs = options.crossfadeMs ?? AUDIO_GRAPH_CROSSFADE_MS;
+		this.crossfadeMs = Number.isFinite(crossfadeMs)
+			? Math.max(0, Math.min(250, crossfadeMs))
+			: AUDIO_GRAPH_CROSSFADE_MS;
 		this.input = context.createGain();
 		this.master = context.createGain();
 		this.output = context.createGain();
@@ -167,7 +157,6 @@ export class AudioGraphRouter {
 		this.assertUsable();
 		if (this.sources.has(source)) return false;
 		source.connect(this.input);
-		this.knownSources.add(source);
 		this.sources.add(source);
 		return true;
 	}
@@ -224,7 +213,7 @@ export class AudioGraphRouter {
 		this.drainPromise = operation;
 	}
 
-	async bypass(options: AudioGraphApplyOptions = {}): Promise<AudioGraphSnapshot> {
+	bypass(options: AudioGraphApplyOptions = {}): Promise<AudioGraphSnapshot> {
 		return this.apply(DEFAULT_AUDIO_GRAPH_CONFIG, options);
 	}
 
@@ -233,7 +222,7 @@ export class AudioGraphRouter {
 		this.analyserSubscribers += 1;
 		if (!this.analyser) {
 			this.analyser = this.context.createAnalyser();
-			this.analyser.fftSize = AudioParams.FFT_SIZE;
+			this.analyser.fftSize = FFT_SIZE;
 			this.output.connect(this.analyser);
 		}
 		let subscribed = true;
@@ -245,15 +234,18 @@ export class AudioGraphRouter {
 				disconnect(this.analyser);
 				this.output.disconnect(this.analyser);
 				this.analyser = null;
+				this.visualizerBuffer = null;
 			}
 		};
 	}
 
 	getVisualizerData(): Uint8Array | null {
-		if (!this.analyser || this.analyserSubscribers === 0) return null;
-		const data = new Uint8Array(this.analyser.frequencyBinCount);
-		this.analyser.getByteFrequencyData(data);
-		return data;
+		if (!this.analyser) return null;
+		if (!this.visualizerBuffer || this.visualizerBuffer.length !== this.analyser.frequencyBinCount) {
+			this.visualizerBuffer = new Uint8Array(this.analyser.frequencyBinCount);
+		}
+		this.analyser.getByteFrequencyData(this.visualizerBuffer);
+		return this.visualizerBuffer;
 	}
 
 	getSnapshot(): AudioGraphSnapshot | null {
@@ -277,6 +269,7 @@ export class AudioGraphRouter {
 		this.activeLane = null;
 		this.actualConfig = null;
 		this.analyser = null;
+		this.visualizerBuffer = null;
 		this.analyserSubscribers = 0;
 	}
 
@@ -288,17 +281,20 @@ export class AudioGraphRouter {
 		if (options.requireRunning && this.context.state !== 'running') {
 			throw new Error(`AudioContext is ${this.context.state}, expected running`);
 		}
-		const normalized = normalizeAudioGraphConfig(config);
-		const signature = audioGraphSignature(normalized);
+		// `apply()` canonicalizes before enqueueing; using that normalized value
+		// here avoids a second allocation and clamp pass on every acknowledged
+		// update while preserving the same transaction boundary.
+		const normalized = config;
+		const signature = signatureForNormalizedConfig(normalized);
 		const time = this.context.currentTime;
-		rampParam(
-			this.master.gain,
-			normalized.boostGain,
-			time,
-			AUDIO_PARAM_RAMP_MS,
-		);
 
 		if (this.activeLane?.signature === signature) {
+			setParam(
+				this.master.gain,
+				normalized.boostGain,
+				time,
+				AUDIO_PARAM_RAMP_MS,
+			);
 			this.updateLane(this.activeLane, normalized);
 			await new Promise<void>((resolve) => setTimeout(resolve, AUDIO_PARAM_RAMP_MS));
 			this.actualConfig = normalized;
@@ -306,10 +302,19 @@ export class AudioGraphRouter {
 		}
 
 		const candidate = this.buildLane(normalized, signature);
+		// Build the candidate before mutating the live master gain. A node
+		// construction failure must leave the previously acknowledged lane and
+		// output gain untouched for transaction rollback.
+		setParam(
+			this.master.gain,
+			normalized.boostGain,
+			time,
+			AUDIO_PARAM_RAMP_MS,
+		);
 		// A newly connected GainNode defaults to 1. Set its gate before it can
 		// reach the live output, otherwise one render quantum can carry both the
 		// old and candidate lanes at full gain.
-		setImmediate(candidate.fade.gain, this.activeLane ? 0 : 1, time);
+		setParam(candidate.fade.gain, this.activeLane ? 0 : 1, time, 0);
 		this.master.connect(candidate.fade);
 		if (!this.activeLane) {
 			await new Promise<void>((resolve) => setTimeout(resolve, AUDIO_PARAM_RAMP_MS));
@@ -319,10 +324,10 @@ export class AudioGraphRouter {
 		}
 
 		const previous = this.activeLane;
-		setImmediate(previous.fade.gain, 1, time);
+		setParam(previous.fade.gain, 1, time, 0);
 		if (this.crossfadeMs === 0) {
-			setImmediate(candidate.fade.gain, 1, time);
-			setImmediate(previous.fade.gain, 0, time);
+			setParam(candidate.fade.gain, 1, time, 0);
+			setParam(previous.fade.gain, 0, time, 0);
 		} else {
 			const end = time + this.crossfadeMs / 1_000;
 			candidate.fade.gain.linearRampToValueAtTime(1, end);
@@ -341,8 +346,6 @@ export class AudioGraphRouter {
 		const fade = this.context.createGain();
 		nodes.push(fade);
 		let head: AudioNode = fade;
-		let bass: BiquadFilterNode | null = null;
-		let compressor: DynamicsCompressorNode | null = null;
 		let panner: StereoPannerNode | null = null;
 		let delay: DelayNode | null = null;
 
@@ -355,27 +358,27 @@ export class AudioGraphRouter {
 
 		try {
 			if (config.bass) {
-				bass = append(this.context.createBiquadFilter());
+				const bass = append(this.context.createBiquadFilter());
 				bass.type = 'lowshelf';
-				bass.frequency.value = AudioParams.BASS_FREQUENCY;
-				bass.gain.value = AudioParams.BASS_GAIN;
+				bass.frequency.value = BASS_FREQUENCY;
+				bass.gain.value = BASS_GAIN;
 			}
 			for (const [index, value] of config.eqValues.entries()) {
 				if (value === 0) continue;
 				const node = append(this.context.createBiquadFilter());
 				node.type = 'peaking';
-				node.frequency.value = AudioParams.EQ_FREQUENCIES[index] ?? 1_000;
-				node.Q.value = AudioParams.EQ_Q;
+				node.frequency.value = EQ_FREQUENCIES[index] ?? 1_000;
+				node.Q.value = EQ_Q;
 				node.gain.value = value;
 				eqNodes.set(index, node);
 			}
 			if (config.compressor) {
-				compressor = append(this.context.createDynamicsCompressor());
-				compressor.threshold.value = CompressorOn.threshold;
-				compressor.knee.value = CompressorOn.knee;
-				compressor.ratio.value = CompressorOn.ratio;
-				compressor.attack.value = CompressorOn.attack;
-				compressor.release.value = CompressorOn.release;
+				const compressor = append(this.context.createDynamicsCompressor());
+				compressor.threshold.value = COMPRESSOR_THRESHOLD;
+				compressor.knee.value = COMPRESSOR_KNEE;
+				compressor.ratio.value = COMPRESSOR_RATIO;
+				compressor.attack.value = COMPRESSOR_ATTACK;
+				compressor.release.value = COMPRESSOR_RELEASE;
 			}
 			if (config.mono) head = this.appendDeterministicMono(head, nodes);
 			if (config.pan !== 0) {
@@ -387,7 +390,7 @@ export class AudioGraphRouter {
 				delay.delayTime.value = config.delay / 1_000;
 			}
 			head.connect(this.output);
-			return { signature, fade, nodes, eqNodes, bass, compressor, panner, delay };
+			return { signature, fade, nodes, eqNodes, panner, delay };
 		} catch (error) {
 			for (const node of nodes) disconnect(node);
 			throw error;
@@ -416,10 +419,10 @@ export class AudioGraphRouter {
 	private updateLane(lane: GraphLane, config: AudioGraphConfig): void {
 		const time = this.context.currentTime;
 		for (const [index, node] of lane.eqNodes) {
-			rampParam(node.gain, config.eqValues[index] ?? 0, time);
+			setParam(node.gain, config.eqValues[index] ?? 0, time);
 		}
-		if (lane.panner) rampParam(lane.panner.pan, config.pan, time);
-		if (lane.delay) rampParam(lane.delay.delayTime, config.delay / 1_000, time);
+		if (lane.panner) setParam(lane.panner.pan, config.pan, time);
+		if (lane.delay) setParam(lane.delay.delayTime, config.delay / 1_000, time);
 	}
 
 	private destroyLane(lane: GraphLane): void {
@@ -433,9 +436,7 @@ export class AudioGraphRouter {
 			contextState: this.context.state,
 			graphSignature: signature,
 			normalizedActualConfig: { ...config, eqValues: [...config.eqValues] },
-			outputChannels: config.mono || config.pan !== 0
-				? 2
-				: Math.max(1, this.destination.channelCount || 2),
+			outputChannels: config.mono || config.pan !== 0 ? 2 : Math.max(1, this.context.destination.channelCount || 2),
 			sourceCount: this.sources.size,
 		};
 	}

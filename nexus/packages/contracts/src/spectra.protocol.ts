@@ -12,15 +12,49 @@ import {
 	type AudioSessionSnapshot,
 	type SpectraAudioMode,
 } from './audio.contracts.js';
+import { isFiniteControlValue } from './control-value-limits.js';
+import {
+	isCaptureAdmission,
+	type CaptureAdmission,
+} from './capture-admission.contracts.js';
 import {
 	isGlobalSettings,
+	isAudioSitePolicy,
 	isHotkeySettings,
 	isSettingsPatchRequest,
 	isSettingsSnapshot,
 	type GlobalSettings,
+	type AudioSitePolicy,
 	type SettingsPatchRequest,
 	type SettingsSnapshot,
 } from './settings.contracts.js';
+import {
+	isSettingsUiPatchRequest,
+	isSettingsUiSnapshot,
+	type SettingsUiPatchRequest,
+	type SettingsUiSnapshot,
+} from './settings-ui.contracts.js';
+import {
+	isRegistryAddResult,
+	isRegistryAddPayload,
+	isRegistryQueryResult,
+	isRegistryQueryPayload,
+	isRegistryRemoveResult,
+	isRegistryRemovePayload,
+	isRegistryRecordPayload,
+	isRegistrySnapshot,
+	isMediaRouteChangedEvent,
+	isMediaRouteDecision,
+	isMediaRouteRecordRequest,
+	type MediaRoute,
+	type MediaRouteChangedEvent,
+	type MediaRouteDecision,
+	type MediaRouteRecordRequest,
+	type RegistryAddResult,
+	type RegistryQueryResult,
+	type RegistryRemoveResult,
+	type RegistrySnapshot,
+} from './media-route.contracts.js';
 import {
 	HOTKEY_ACTIONS,
 	type HotkeyAction,
@@ -29,23 +63,16 @@ import {
 } from './hotkeys.contracts.js';
 import {
 	isRemotePublicSession,
+	isRemoteSessionToken,
 	type RemotePublicSession,
 	type RemoteSessionChangedEvent,
 	type RemoteSessionClosedEvent,
 	type RemoteSessionStatus,
 } from './remote.contracts.js';
 import {
-	isDomainEntry,
-	isMediaRouteFingerprint,
-	isRegistryEntries,
+	isHotkeyTargetState,
 	type HotkeyTargetState,
-	type MediaRoute,
-	type RegistryAddResult,
-	type RegistryQueryResult,
-	type RegistryRemoveResult,
-	type RegistrySnapshot,
-} from './registry.contracts.js';
-import { normalizeHostname } from './domain.contracts.js';
+} from './hotkey-target.contracts.js';
 import {
 	isControlApplyAck,
 	isControlIntent,
@@ -68,19 +95,71 @@ import {
 	type ControlReadResult,
 	type MediaTarget,
 } from './control.contracts.js';
+import type { SpectraDefaultHotkeyTriggerPayload } from './spectra.bootstrap.js';
 import {
-	SPECTRA_PROTOCOL_VERSION,
-	isSpectraDefaultHotkeyTriggerPayload,
-	type SpectraDefaultHotkeyTriggerPayload,
-} from './spectra.bootstrap.js';
+	isAudioVisualizerDemandPayload,
+	isVisualizerBatchPayload,
+	isVisualizerBatchResult,
+	isVisualizerFrameResult,
+	type AudioVisualizerDemandPayload,
+	type VisualizerBatchPayload,
+	type VisualizerBatchResult,
+	type VisualizerFrameResult,
+} from './visualizer.contracts.js';
+import type { SPECTRA_PROTOCOL_VERSION } from './spectra.protocol-primitives.js';
+import {
+	isContentBootstrapHelloPayload,
+	isContentRuntimeEnsurePayload,
+	isContentRuntimeReleasePayload,
+	isContentRuntimeRevisionPayload,
+	isContentSourceReleasedPayload,
+	isContentTargetChangedPayload,
+	isAudioCaptureSetPayload,
+	isAudioConfigPayload,
+	isAudioSessionGetPayload,
+	isAudioSessionPublishPayload,
+	hasCanonicalRequestContext,
+	isRemoteSessionClosePayload,
+	isRemoteSessionPayload,
+	isScreenshotCapturePayload,
+	isTabIdPayload,
+	isTabMediaReportPayload,
+	isUiOpenPayload,
+	isUserScriptPayload,
+} from './spectra.background-runtime.js';
+import { isSpectraDefaultHotkeyTriggerPayload } from './spectra.bootstrap.js';
+import {
+	hasValidEventEnvelopeBase,
+	hasValidRequestEnvelopeBase,
+	hasOnlyProtocolKeys as hasOnlyKeys,
+	isDocumentId,
+	isEmptyPayload,
+	isFiniteInRange,
+	isNonNegativeInteger,
+	isOptionalFiniteInRange,
+	isPositiveInteger,
+	isProtocolRecord as isRecord,
+	isRpcError,
+	isRpcFailureResult,
+	isRpcSuccessResult,
+	isRuntimeRevision,
+	type RpcResult,
+} from './spectra.protocol-primitives.js';
 
 export {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
-	SPECTRA_PROTOCOL_VERSION,
 } from './spectra.bootstrap.js';
+export { SPECTRA_PROTOCOL_VERSION } from './spectra.protocol-primitives.js';
+export type { RpcError, RpcResult } from './spectra.protocol-primitives.js';
 
-export type ContentRuntimeLeaseReason = 'control' | 'restore' | 'hotkey' | 'remote' | 'observation';
+export type ContentRuntimeLeaseReason =
+	| 'control'
+	| 'restore'
+	| 'hotkey'
+	| 'remote'
+	| 'observation'
+	| 'visualizer';
 
 export interface ContentRuntimeSourceOwnership {
 	target: MediaTarget;
@@ -101,22 +180,9 @@ export interface ContentRuntimeReadyResult {
 	ready: true;
 }
 
-export interface RpcError {
-	code: string;
-	message: string;
-	retryable: boolean;
-}
-
-export interface VisualizerBatchPayload {
-	subscriberId: string;
-	generation: number;
-	tabIds: number[];
-}
-
-export interface VisualizerBatchResult {
-	subscriberId: string;
-	generation: number;
-	frames: Record<string, number[] | null>;
+export interface ContentRuntimeDocumentIdentity {
+	documentId: string;
+	frameId: 0;
 }
 
 export interface AudioSessionFlushResult {
@@ -201,10 +267,6 @@ export interface ScreenshotResult {
 	height: number;
 }
 
-export type RpcResult<T> =
-	| { ok: true; data: T }
-	| { ok: false; error: RpcError };
-
 export interface SpectraRequestMap {
 	'spectra.content.bootstrap.hello': {
 		payload: { bootstrapRevision: string };
@@ -213,6 +275,10 @@ export interface SpectraRequestMap {
 	'spectra.content.runtime.status': {
 		payload: Record<string, never>;
 		response: ContentRuntimeStatus;
+	};
+	'spectra.content.runtime.identity': {
+		payload: Record<string, never>;
+		response: ContentRuntimeDocumentIdentity;
 	};
 	'spectra.content.runtime.ensure': {
 		payload: {
@@ -273,6 +339,10 @@ export interface SpectraRequestMap {
 		payload: ControlReadRequest;
 		response: ControlReadResult;
 	};
+	'spectra.control.page.scale.probe': {
+		payload: Record<string, never>;
+		response: { supported: boolean };
+	};
 	'spectra.content.settings.get': {
 		payload: Record<string, never>;
 		response: SpectraContentSettings;
@@ -288,6 +358,14 @@ export interface SpectraRequestMap {
 	'spectra.settings.patch': {
 		payload: SettingsPatchRequest;
 		response: SettingsSnapshot;
+	};
+	'spectra.settings.ui.get': {
+		payload: Record<string, never>;
+		response: SettingsUiSnapshot;
+	};
+	'spectra.settings.ui.patch': {
+		payload: SettingsUiPatchRequest;
+		response: SettingsUiSnapshot;
 	};
 	'spectra.settings.flush': {
 		payload: Record<string, never>;
@@ -345,6 +423,22 @@ export interface SpectraRequestMap {
 		payload: Record<string, never>;
 		response: AudioConfig;
 	};
+	'spectra.audio.policy.get': {
+		payload: Record<string, never>;
+		response: AudioSitePolicy;
+	};
+	'spectra.audio.route.get': {
+		payload: Record<string, never>;
+		response: MediaRouteDecision;
+	};
+	'spectra.audio.route.record': {
+		payload: MediaRouteRecordRequest;
+		response: MediaRouteDecision;
+	};
+	'spectra.audio.page-scale.record': {
+		payload: { supported: boolean };
+		response: { recorded: true };
+	};
 	'spectra.audio.config.set': {
 		payload: { config: AudioConfig };
 		response: AudioConfigSavedResult;
@@ -374,8 +468,8 @@ export interface SpectraRequestMap {
 		response: AudioSessionFlushResult;
 	};
 	'spectra.audio.capture.set': {
-		payload: { enabled: boolean; config: AudioConfig };
-		response: AudioCaptureState;
+		payload: AudioCaptureTransitionPayload;
+		response: AudioCaptureTransitionResult;
 	};
 	'spectra.audio.capture.config': {
 		payload: { config: AudioConfig };
@@ -387,11 +481,11 @@ export interface SpectraRequestMap {
 	};
 	'spectra.audio.visualizer.get': {
 		payload: Record<string, never>;
-		response: { buffer: number[] | null };
+		response: VisualizerFrameResult;
 	};
-	'spectra.audio.visualizer.subscription.set': {
-		payload: { subscribed: boolean };
-		response: { subscribed: boolean };
+	'spectra.audio.visualizer.demand.set': {
+		payload: AudioVisualizerDemandPayload;
+		response: AudioRuntimeStatus;
 	};
 	'spectra.hotkey.trigger': {
 		payload: { action: HotkeyAction };
@@ -511,10 +605,29 @@ export interface SpectraRequestMap {
 	};
 }
 
+export type AudioCaptureTransitionPayload =
+	| {
+		enabled: true;
+		config: AudioConfig;
+		admission: CaptureAdmission;
+		requestContinuation?: never;
+	}
+	| {
+		enabled: false;
+		config: AudioConfig;
+		admission?: never;
+		requestContinuation?: boolean;
+	};
+
+export type AudioCaptureTransitionResult = AudioCaptureState & {
+	continuationAdmission?: CaptureAdmission;
+};
+
 export interface SpectraEventMap {
 	'spectra.control.snapshot.changed': ControlSnapshot;
 	'spectra.content.settings.changed': SpectraContentSettings;
 	'spectra.settings.changed': SettingsSnapshot;
+	'spectra.settings.ui.changed': SettingsUiSnapshot;
 	'spectra.hotkeys.changed': HotkeySettings;
 	'spectra.hotkey.target.feedback': {
 		action: HotkeyAction;
@@ -529,6 +642,7 @@ export interface SpectraEventMap {
 	'spectra.remote.session.closed': RemoteSessionClosedEvent;
 	'spectra.audio.session.changed': AudioSessionSnapshot;
 	'spectra.audio.capture.changed': AudioCaptureState;
+	'spectra.audio.route.changed': MediaRouteChangedEvent;
 }
 
 export type SpectraRequestType = keyof SpectraRequestMap;
@@ -592,49 +706,10 @@ export type SpectraEventEnvelope<T extends SpectraEventType = SpectraEventType> 
 
 type RuntimeGuard<T> = (value: unknown) => value is T;
 
-const REQUEST_ENVELOPE_KEYS = new Set([
-	'protocolVersion',
-	'requestId',
-	'type',
-	'payload',
-	'tabId',
-	'documentId',
-	'generation',
+const AUDIO_CAPTURE_TRANSITION_RESULT_KEYS = new Set([
+	'tabId', 'generation', 'phase', 'active', 'actualMode', 'lastError',
+	'actualConfig', 'continuationAdmission',
 ]);
-const EVENT_ENVELOPE_KEYS = new Set([
-	'protocolVersion',
-	'type',
-	'payload',
-	'tabId',
-	'documentId',
-	'generation',
-]);
-const AUDIO_SESSION_GET_PAYLOAD_KEYS = new Set(['tabId']);
-const CONTENT_BOOTSTRAP_HELLO_PAYLOAD_KEYS = new Set(['bootstrapRevision']);
-const CONTENT_RUNTIME_ENSURE_PAYLOAD_KEYS = new Set(['tabId', 'documentId', 'reason', 'capability']);
-const CONTENT_RUNTIME_REVISION_PAYLOAD_KEYS = new Set(['runtimeRevision']);
-const CONTENT_RUNTIME_RELEASE_PAYLOAD_KEYS = new Set([
-	'runtimeRevision', 'tabId', 'documentId', 'reason', 'capability',
-]);
-const CONTENT_SOURCE_RELEASED_PAYLOAD_KEYS = new Set(['target']);
-const CONTENT_TARGET_CHANGED_PAYLOAD_KEYS = new Set(['target']);
-const AUDIO_CONFIG_PAYLOAD_KEYS = new Set(['config']);
-const AUDIO_SESSION_PUBLISH_PAYLOAD_KEYS = new Set([
-	'config',
-	'desiredMode',
-	'actualMode',
-	'phase',
-	'lastError',
-	'userInteracted',
-]);
-const AUDIO_CAPTURE_SET_PAYLOAD_KEYS = new Set(['enabled', 'config']);
-const UI_OPEN_PAYLOAD_KEYS = new Set(['view']);
-const TAB_ID_PAYLOAD_KEYS = new Set(['tabId']);
-const REMOTE_SESSION_PAYLOAD_KEYS = new Set(['tabId']);
-const REMOTE_SESSION_CLOSE_PAYLOAD_KEYS = new Set(['tabId', 'sessionId']);
-const USER_SCRIPT_PAYLOAD_KEYS = new Set(['script']);
-const VISUALIZER_BATCH_PAYLOAD_KEYS = new Set(['subscriberId', 'generation', 'tabIds']);
-const VISUALIZER_SUBSCRIPTION_PAYLOAD_KEYS = new Set(['subscribed']);
 const CONTENT_SETTINGS_KEYS = new Set([
 	'osdEnabled',
 	'visualizerEnabled',
@@ -666,24 +741,14 @@ const VIDEO_FILTER_PAYLOAD_KEYS = new Set([
 	'invert',
 ]);
 const VIDEO_DIM_PAYLOAD_KEYS = new Set(['enabled', 'opacity']);
-const SCREENSHOT_CAPTURE_PAYLOAD_KEYS = new Set(['captureToken', 'rect']);
 const SCREENSHOT_TARGET_VERIFY_PAYLOAD_KEYS = new Set(['captureToken']);
-const SCREENSHOT_RECT_KEYS = new Set(['x', 'y', 'width', 'height', 'viewportWidth', 'viewportHeight']);
 const MARKER_LABEL_PAYLOAD_KEYS = new Set(['label']);
 const MARKER_ID_PAYLOAD_KEYS = new Set(['id']);
-const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted']);
-const REGISTRY_ADD_PAYLOAD_KEYS = new Set(['domain', 'route']);
-const REGISTRY_REMOVE_PAYLOAD_KEYS = new Set(['fingerprint']);
-const REGISTRY_QUERY_PAYLOAD_KEYS = new Set(['domain', 'fingerprint']);
-const REGISTRY_RECORD_PAYLOAD_KEYS = new Set(['domain', 'fingerprint', 'route', 'force']);
-const HOTKEY_TARGET_KEYS = new Set(['tabId']);
-const RPC_SUCCESS_KEYS = new Set(['ok', 'data']);
-const RPC_FAILURE_KEYS = new Set(['ok', 'error']);
-const RPC_ERROR_KEYS = new Set<keyof RpcError>(['code', 'message', 'retryable']);
 const ACCEPTED_RESULT_KEYS = new Set(['accepted']);
 const BOOTSTRAP_HELLO_RESULT_KEYS = new Set(['accepted', 'runtimeRevision']);
 const CONTENT_RUNTIME_STATUS_KEYS = new Set(['bootstrapRevision', 'runtimeRevision', 'ready', 'ownedSources']);
 const CONTENT_RUNTIME_SOURCE_OWNERSHIP_KEYS = new Set(['target', 'markerCount', 'abActive']);
+const CONTENT_RUNTIME_IDENTITY_KEYS = new Set(['documentId', 'frameId']);
 const CONTENT_RUNTIME_READY_RESULT_KEYS = new Set(['documentId', 'runtimeRevision', 'ready']);
 const AUDIO_SESSION_FLUSH_RESULT_KEYS = new Set(['flushed']);
 const REMOTE_SESSION_STATUS_KEYS = new Set(['session', 'connected']);
@@ -697,7 +762,6 @@ const INJECTED_RESULT_KEYS = new Set(['injected']);
 const REPORTED_RESULT_KEYS = new Set(['reported']);
 const HANDLED_RESULT_KEYS = new Set(['handled']);
 const TABS_RESULT_KEYS = new Set(['tabs']);
-const BUFFER_RESULT_KEYS = new Set(['buffer']);
 const PLAYING_RESULT_KEYS = new Set(['playing']);
 const ACTIVE_RESULT_KEYS = new Set(['active']);
 const MEDIA_STATE_RESULT_KEYS = new Set(['playing', 'speed', 'pipActive', 'preservePitch']);
@@ -720,139 +784,9 @@ const MARKER_KEYS = new Set(['id', 'time', 'label']);
 const REMOVED_RESULT_KEYS = new Set(['removed']);
 const JUMP_RESULT_KEYS = new Set(['jumped', 'time']);
 const MARKERS_RESULT_KEYS = new Set(['markers']);
-const REGISTRY_SNAPSHOT_KEYS = new Set(['entries']);
-const REGISTRY_ADD_RESULT_KEYS = new Set(['entries', 'entry', 'created']);
-const REGISTRY_REMOVE_RESULT_KEYS = new Set(['entries', 'removed']);
-const REGISTRY_QUERY_RESULT_KEYS = new Set(['entry']);
 const REMOTE_SESSION_CHANGED_KEYS = new Set(['tabId', 'sessionId', 'connected']);
 const REMOTE_SESSION_CLOSED_KEYS = new Set(['tabId', 'sessionId']);
 const NAVIGATION_CHANGED_KEYS = new Set(['url']);
-const BASE64URL_128_RE = /^[A-Za-z0-9_-]{22}$/u;
-const AUDIO_SESSION_MODES = new Set<SpectraAudioMode>(['bypass', 'webaudio', 'capture']);
-const AUDIO_SESSION_PHASES = new Set<AudioSessionPhase>(['idle', 'starting', 'active', 'stopping', 'error']);
-const CONTENT_RUNTIME_LEASE_REASONS = new Set<ContentRuntimeLeaseReason>([
-	'control',
-	'restore',
-	'hotkey',
-	'remote',
-	'observation',
-]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
-	return Object.keys(value).every((key) => allowed.has(key));
-}
-
-function isPositiveInteger(value: unknown): value is number {
-	return typeof value === 'number' && Number.isInteger(value) && value > 0;
-}
-
-function isNonNegativeInteger(value: unknown): value is number {
-	return typeof value === 'number' && Number.isInteger(value) && value >= 0;
-}
-
-function isEmptyPayload(value: unknown): value is Record<string, never> {
-	return isRecord(value) && Object.keys(value).length === 0;
-}
-
-function isRuntimeRevision(value: unknown): value is string {
-	return typeof value === 'string' && /^[0-9]+\.[0-9]+\.[0-9]+(?:-[A-Za-z0-9.-]+)?$/u.test(value);
-}
-
-function isDocumentId(value: unknown): value is string {
-	return typeof value === 'string' && value.length > 0 && value.length <= 256;
-}
-
-function isContentBootstrapHelloPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.content.bootstrap.hello'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, CONTENT_BOOTSTRAP_HELLO_PAYLOAD_KEYS)
-		&& isRuntimeRevision(value.bootstrapRevision);
-}
-
-function isContentRuntimeEnsurePayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.content.runtime.ensure'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, CONTENT_RUNTIME_ENSURE_PAYLOAD_KEYS)
-		&& isPositiveInteger(value.tabId)
-		&& (value.documentId === undefined || isDocumentId(value.documentId))
-		&& typeof value.reason === 'string'
-		&& CONTENT_RUNTIME_LEASE_REASONS.has(value.reason as ContentRuntimeLeaseReason)
-		&& (value.capability === undefined || (
-			typeof value.capability === 'string'
-			&& value.capability.length > 0
-			&& value.capability.length <= 128
-		));
-}
-
-function isContentRuntimeRevisionPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.content.runtime.ready'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, CONTENT_RUNTIME_REVISION_PAYLOAD_KEYS)
-		&& isRuntimeRevision(value.runtimeRevision);
-}
-
-function isContentRuntimeReleasePayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.content.runtime.release'> {
-	if (!isRecord(value)
-		|| !hasOnlyKeys(value, CONTENT_RUNTIME_RELEASE_PAYLOAD_KEYS)
-		|| !isRuntimeRevision(value.runtimeRevision)) return false;
-	// rule: validate each optional field independently — the previous all-or-none check
-	// required ALL four fields to be present+valid if ANY was present, rejecting partial
-	// identities like { tabId: 5 } alone. The type declaration permits each of
-	// tabId/documentId/reason/capability to be omitted independently (mirrors
-	// isContentRuntimeEnsurePayload's per-field optional pattern at lines ~756-763).
-	return (value.tabId === undefined || isPositiveInteger(value.tabId))
-		&& (value.documentId === undefined || isDocumentId(value.documentId))
-		&& (value.reason === undefined || (
-			typeof value.reason === 'string'
-			&& CONTENT_RUNTIME_LEASE_REASONS.has(value.reason as ContentRuntimeLeaseReason)
-		))
-		&& (value.capability === undefined || (
-			typeof value.capability === 'string'
-			&& value.capability.length > 0
-			&& value.capability.length <= 128
-		));
-}
-
-function isContentSourceReleasedPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.content.source.released'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, CONTENT_SOURCE_RELEASED_PAYLOAD_KEYS)
-		&& isMediaTarget(value.target);
-}
-
-function isContentTargetChangedPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.content.target.changed'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, CONTENT_TARGET_CHANGED_PAYLOAD_KEYS)
-		&& isMediaTarget(value.target);
-}
-
-function isFiniteNumber(value: unknown): value is number {
-	return typeof value === 'number' && Number.isFinite(value);
-}
-
-function isFiniteInRange(value: unknown, minimum: number, maximum: number): value is number {
-	return isFiniteNumber(value) && value >= minimum && value <= maximum;
-}
-
-function isOptionalFiniteInRange(
-	value: unknown,
-	minimum: number,
-	maximum: number,
-): value is number | undefined {
-	return value === undefined || isFiniteInRange(value, minimum, maximum);
-}
 
 function isContentSettings(value: unknown): value is SpectraContentSettings {
 	if (!isRecord(value) || !hasOnlyKeys(value, CONTENT_SETTINGS_KEYS)) return false;
@@ -872,14 +806,6 @@ function isContentSettings(value: unknown): value is SpectraContentSettings {
 		&& typeof osdMessages.corsCorrectedSafe === 'string'
 		&& osdMessages.corsCorrectedSafe.length > 0
 		&& osdMessages.corsCorrectedSafe.length <= 256;
-}
-
-function isTabIdPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.content.inject'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, TAB_ID_PAYLOAD_KEYS)
-		&& isPositiveInteger(value.tabId);
 }
 
 const LEGACY_UNSUPPORTED_HOTKEY_ACTIONS = new Set<HotkeyAction>([
@@ -922,13 +848,13 @@ function isHotkeyTargetFeedback(
 			isRecord(value.feedback)
 			&& (value.feedback.kind === 'volume'
 				? hasOnlyKeys(value.feedback, HOTKEY_VOLUME_FEEDBACK_KEYS)
-					&& isFiniteInRange(value.feedback.value, 0, 800)
+					&& isFiniteControlValue(value.feedback.value, 'volume')
 					&& (value.feedback.volumeState === 'silent'
 						|| value.feedback.volumeState === 'native'
 						|| value.feedback.volumeState === 'capture')
 				: value.feedback.kind === 'speed'
 					&& hasOnlyKeys(value.feedback, HOTKEY_SPEED_FEEDBACK_KEYS)
-					&& isFiniteInRange(value.feedback.value, 0.1, 16))
+					&& isFiniteControlValue(value.feedback.value, 'speed'))
 		));
 }
 
@@ -937,7 +863,7 @@ function isMediaSpeedPayload(
 ): value is SpectraRequestPayload<'spectra.media.speed.set'> {
 	if (!isRecord(value)
 		|| !hasOnlyKeys(value, MEDIA_SPEED_PAYLOAD_KEYS)
-		|| !isOptionalFiniteInRange(value.speed, 0.1, 16)
+		|| !(value.speed === undefined || isFiniteControlValue(value.speed, 'speed'))
 		|| !isOptionalFiniteInRange(value.delta, -15.9, 15.9)
 		|| (value.preservePitch !== undefined && typeof value.preservePitch !== 'boolean')) return false;
 	return (value.speed === undefined) !== (value.delta === undefined);
@@ -957,24 +883,6 @@ function isVideoSeekPayload(
 	return isRecord(value)
 		&& hasOnlyKeys(value, VIDEO_SEEK_PAYLOAD_KEYS)
 		&& isFiniteInRange(value.delta, -86_400, 86_400);
-}
-
-function isScreenshotCapturePayload(
-	value: unknown,
-): value is ScreenshotCapturePayload {
-	if (!isRecord(value)
-		|| !hasOnlyKeys(value, SCREENSHOT_CAPTURE_PAYLOAD_KEYS)
-		|| typeof value.captureToken !== 'string'
-		|| value.captureToken.length === 0
-		|| value.captureToken.length > 128
-		|| !isRecord(value.rect)
-		|| !hasOnlyKeys(value.rect, SCREENSHOT_RECT_KEYS)) return false;
-	return isFiniteInRange(value.rect.x, -100_000, 100_000)
-		&& isFiniteInRange(value.rect.y, -100_000, 100_000)
-		&& isFiniteInRange(value.rect.width, 1, 100_000)
-		&& isFiniteInRange(value.rect.height, 1, 100_000)
-		&& isFiniteInRange(value.rect.viewportWidth, 1, 100_000)
-		&& isFiniteInRange(value.rect.viewportHeight, 1, 100_000);
 }
 
 function isScreenshotTargetVerifyPayload(
@@ -1028,173 +936,17 @@ function isMarkerIdPayload(
 		&& /^m_[0-9a-f-]{36}$/iu.test(value.id);
 }
 
-function isTabMediaReportPayload(
+function isAudioCaptureTransitionResult(
 	value: unknown,
-): value is SpectraRequestPayload<'spectra.tab.media.report'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, TAB_MEDIA_REPORT_PAYLOAD_KEYS)
-		&& typeof value.hasMediaElement === 'boolean'
-		&& typeof value.userInteracted === 'boolean';
-}
-
-function isRegistryDomain(value: unknown): value is string {
-	return typeof value === 'string'
-		&& value.length > 0
-		&& value.length <= 2048
-		&& normalizeHostname(value) !== null;
-}
-
-function isRegistryAddPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.registry.add'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_ADD_PAYLOAD_KEYS)
-		&& isRegistryDomain(value.domain)
-		&& (value.route === 'direct' || value.route === 'capture');
-}
-
-function isRegistryRemovePayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.registry.remove'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_REMOVE_PAYLOAD_KEYS)
-		&& isMediaRouteFingerprint(value.fingerprint);
-}
-
-function isRegistryQueryPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.registry.query'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_QUERY_PAYLOAD_KEYS)
-		&& isRegistryDomain(value.domain)
-		&& isMediaRouteFingerprint(value.fingerprint);
-}
-
-function isRegistryRecordPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.registry.mark-probed'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_RECORD_PAYLOAD_KEYS)
-		&& isRegistryDomain(value.domain)
-		&& isMediaRouteFingerprint(value.fingerprint)
-		&& (value.route === 'direct' || value.route === 'capture')
-		&& (value.force === undefined || typeof value.force === 'boolean');
-}
-
-function isHotkeyTargetState(value: unknown): value is HotkeyTargetState {
-	return isRecord(value)
-		&& hasOnlyKeys(value, HOTKEY_TARGET_KEYS)
-		&& (value.tabId === null || isPositiveInteger(value.tabId));
-}
-
-function isRegistrySnapshot(value: unknown): value is RegistrySnapshot {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_SNAPSHOT_KEYS)
-		&& isRegistryEntries(value.entries);
-}
-
-function isRegistryAddResult(value: unknown): value is RegistryAddResult {
-	if (!isRecord(value)
-		|| !hasOnlyKeys(value, REGISTRY_ADD_RESULT_KEYS)
-		|| !isRegistryEntries(value.entries)
-		|| !isDomainEntry(value.entry)) return false;
-	const addedEntry = value.entry;
-	return value.entries.some((entry) => entry.fingerprint === addedEntry.fingerprint)
-		&& typeof value.created === 'boolean';
-}
-
-function isUserRegistryAddResult(value: unknown): value is RegistryAddResult {
-	return isRegistryAddResult(value) && value.entry.source === 'user';
-}
-
-function isRegistryRemoveResult(value: unknown): value is RegistryRemoveResult {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_REMOVE_RESULT_KEYS)
-		&& isRegistryEntries(value.entries)
-		&& typeof value.removed === 'boolean';
-}
-
-function isRegistryQueryResult(value: unknown): value is RegistryQueryResult {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REGISTRY_QUERY_RESULT_KEYS)
-		&& (value.entry === null || isDomainEntry(value.entry));
-}
-
-function isAudioSessionGetPayload(value: unknown): value is SpectraRequestPayload<'spectra.audio.session.get'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, AUDIO_SESSION_GET_PAYLOAD_KEYS)
-		&& isPositiveInteger(value.tabId);
-}
-
-function isAudioConfigPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.audio.config.set' | 'spectra.audio.runtime.configure' | 'spectra.audio.capture.config'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, AUDIO_CONFIG_PAYLOAD_KEYS)
-		&& isAudioConfig(value.config);
-}
-
-function isAudioCaptureSetPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.audio.capture.set'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, AUDIO_CAPTURE_SET_PAYLOAD_KEYS)
-		&& typeof value.enabled === 'boolean'
-		&& isAudioConfig(value.config);
-}
-
-function isAudioSessionPublishPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.audio.session.publish'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, AUDIO_SESSION_PUBLISH_PAYLOAD_KEYS)
-		&& isAudioConfig(value.config)
-		&& typeof value.desiredMode === 'string'
-		&& AUDIO_SESSION_MODES.has(value.desiredMode as SpectraAudioMode)
-		&& typeof value.actualMode === 'string'
-		&& AUDIO_SESSION_MODES.has(value.actualMode as SpectraAudioMode)
-		&& typeof value.phase === 'string'
-		&& AUDIO_SESSION_PHASES.has(value.phase as AudioSessionPhase)
-		&& (value.lastError === null || (
-			typeof value.lastError === 'string'
-			&& value.lastError.length > 0
-			&& value.lastError.length <= 4096
-		))
-		&& typeof value.userInteracted === 'boolean';
-}
-
-function isUiOpenPayload(value: unknown): value is SpectraRequestPayload<'spectra.ui.open'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, UI_OPEN_PAYLOAD_KEYS)
-		&& (value.view === 'options' || value.view === 'popup');
-}
-
-function isRemoteSessionPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.remote.session.get' | 'spectra.remote.session.create'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REMOTE_SESSION_PAYLOAD_KEYS)
-		&& isPositiveInteger(value.tabId);
-}
-
-function isRemoteSessionClosePayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.remote.session.close'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, REMOTE_SESSION_CLOSE_PAYLOAD_KEYS)
-		&& isPositiveInteger(value.tabId)
-		&& typeof value.sessionId === 'string'
-		&& BASE64URL_128_RE.test(value.sessionId);
-}
-
-function isUserScriptPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.user-script.execute'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, USER_SCRIPT_PAYLOAD_KEYS)
-		&& typeof value.script === 'string'
-		&& value.script.length > 0
-		&& value.script.length <= 100_000;
+): value is AudioCaptureTransitionResult {
+	if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_CAPTURE_TRANSITION_RESULT_KEYS)) return false;
+	const { continuationAdmission: _, ...state } = value;
+	if (!isAudioCaptureState(state)) return false;
+	if (value.continuationAdmission === undefined) return true;
+	return value.active === false
+		&& value.phase === 'idle'
+		&& isCaptureAdmission(value.continuationAdmission)
+		&& value.continuationAdmission.kind === 'capture-resume';
 }
 
 function isRemoteSessionStatus(value: unknown): value is RemoteSessionStatus {
@@ -1211,7 +963,7 @@ function isRemoteSessionChangedEvent(value: unknown): value is RemoteSessionChan
 		&& hasOnlyKeys(value, REMOTE_SESSION_CHANGED_KEYS)
 		&& isPositiveInteger(value.tabId)
 		&& typeof value.sessionId === 'string'
-		&& BASE64URL_128_RE.test(value.sessionId)
+		&& isRemoteSessionToken(value.sessionId)
 		&& typeof value.connected === 'boolean';
 }
 
@@ -1220,7 +972,7 @@ function isRemoteSessionClosedEvent(value: unknown): value is RemoteSessionClose
 		&& hasOnlyKeys(value, REMOTE_SESSION_CLOSED_KEYS)
 		&& isPositiveInteger(value.tabId)
 		&& typeof value.sessionId === 'string'
-		&& BASE64URL_128_RE.test(value.sessionId);
+		&& isRemoteSessionToken(value.sessionId);
 }
 
 function isNavigationChangedEvent(value: unknown): value is NavigationChangedEvent {
@@ -1237,57 +989,10 @@ function isNavigationChangedEvent(value: unknown): value is NavigationChangedEve
 	}
 }
 
-function isVisualizerBatchPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.audio.visualizer.batch'> {
-	if (!isRecord(value)
-		|| !hasOnlyKeys(value, VISUALIZER_BATCH_PAYLOAD_KEYS)
-		|| typeof value.subscriberId !== 'string'
-		|| value.subscriberId.length === 0
-		|| value.subscriberId.length > 128
-		|| !isNonNegativeInteger(value.generation)
-		|| !Array.isArray(value.tabIds)
-		|| value.tabIds.length > 64) return false;
-	const unique = new Set<number>();
-	for (const tabId of value.tabIds) {
-		if (!isPositiveInteger(tabId) || unique.has(tabId)) return false;
-		unique.add(tabId);
-	}
-	return true;
-}
-
-function isVisualizerSubscriptionPayload(
-	value: unknown,
-): value is SpectraRequestPayload<'spectra.audio.visualizer.subscription.set'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, VISUALIZER_SUBSCRIPTION_PAYLOAD_KEYS)
-		&& typeof value.subscribed === 'boolean';
-}
-
-function isVisualizerFrame(value: unknown): value is number[] | null {
-	return value === null || (
-		Array.isArray(value)
-		&& value.length <= 4096
-		&& value.every((sample) => Number.isInteger(sample) && sample >= 0 && sample <= 255)
-	);
-}
-
-function isVisualizerBatchResult(value: unknown): value is VisualizerBatchResult {
-	if (!isRecord(value)
-		|| !hasOnlyKeys(value, new Set(['subscriberId', 'generation', 'frames']))
-		|| typeof value.subscriberId !== 'string'
-		|| value.subscriberId.length === 0
-		|| value.subscriberId.length > 128
-		|| !isNonNegativeInteger(value.generation)
-		|| !isRecord(value.frames)) return false;
-	return Object.entries(value.frames).every(([tabId, frame]) => (
-		/^[1-9]\d*$/u.test(tabId) && isVisualizerFrame(frame)
-	));
-}
-
 const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.content.bootstrap.hello': isContentBootstrapHelloPayload,
 	'spectra.content.runtime.status': isEmptyPayload,
+	'spectra.content.runtime.identity': isEmptyPayload,
 	'spectra.content.runtime.ensure': isContentRuntimeEnsurePayload,
 	'spectra.content.runtime.ready': isContentRuntimeRevisionPayload,
 	'spectra.content.runtime.release': isContentRuntimeReleasePayload,
@@ -1300,10 +1005,13 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.control.operation.submit': isControlOperationRequest,
 	'spectra.control.operation.execute': isControlOperationIntent,
 	'spectra.control.actual.read': isControlReadRequest,
+	'spectra.control.page.scale.probe': isEmptyPayload,
 	'spectra.content.settings.get': isEmptyPayload,
 	'spectra.content.inject': isTabIdPayload,
 	'spectra.settings.get': isEmptyPayload,
 	'spectra.settings.patch': isSettingsPatchRequest,
+	'spectra.settings.ui.get': isEmptyPayload,
+	'spectra.settings.ui.patch': isSettingsUiPatchRequest,
 	'spectra.settings.flush': isEmptyPayload,
 	'spectra.hotkeys.get': isEmptyPayload,
 	'spectra.registry.get': isEmptyPayload,
@@ -1318,6 +1026,14 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.remote.session.close': isRemoteSessionClosePayload,
 	'spectra.user-script.execute': isUserScriptPayload,
 	'spectra.audio.config.get': isEmptyPayload,
+	'spectra.audio.policy.get': isEmptyPayload,
+	'spectra.audio.route.get': isEmptyPayload,
+	'spectra.audio.route.record': isMediaRouteRecordRequest,
+	'spectra.audio.page-scale.record': (
+		value: unknown,
+	): value is SpectraRequestPayload<'spectra.audio.page-scale.record'> => {
+		return isRecord(value) && typeof value.supported === 'boolean';
+	},
 	'spectra.audio.config.set': isAudioConfigPayload,
 	'spectra.audio.runtime.get': isEmptyPayload,
 	'spectra.audio.runtime.configure': isAudioConfigPayload,
@@ -1329,7 +1045,7 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.audio.capture.config': isAudioConfigPayload,
 	'spectra.audio.visualizer.batch': isVisualizerBatchPayload,
 	'spectra.audio.visualizer.get': isEmptyPayload,
-	'spectra.audio.visualizer.subscription.set': isVisualizerSubscriptionPayload,
+	'spectra.audio.visualizer.demand.set': isAudioVisualizerDemandPayload,
 	'spectra.hotkey.trigger': isHotkeyTriggerPayload,
 	'spectra.media.state.get': isEmptyPayload,
 	'spectra.media.play.toggle': isEmptyPayload,
@@ -1375,7 +1091,7 @@ function isMediaStateResult(value: unknown): value is MediaStateResult {
 	return isRecord(value)
 		&& hasOnlyKeys(value, MEDIA_STATE_RESULT_KEYS)
 		&& typeof value.playing === 'boolean'
-		&& isFiniteInRange(value.speed, 0.1, 16)
+		&& isFiniteControlValue(value.speed, 'speed')
 		&& typeof value.pipActive === 'boolean'
 		&& typeof value.preservePitch === 'boolean';
 }
@@ -1385,16 +1101,8 @@ function isMediaSpeedResult(
 ): value is SpectraResponseData<'spectra.media.speed.set'> {
 	return isRecord(value)
 		&& hasOnlyKeys(value, MEDIA_SPEED_RESULT_KEYS)
-		&& isFiniteInRange(value.speed, 0.1, 16)
+		&& isFiniteControlValue(value.speed, 'speed')
 		&& typeof value.preservePitch === 'boolean';
-}
-
-function isVisualizerResult(
-	value: unknown,
-): value is SpectraResponseData<'spectra.audio.visualizer.get'> {
-	return isRecord(value)
-		&& hasOnlyKeys(value, BUFFER_RESULT_KEYS)
-		&& isVisualizerFrame(value.buffer);
 }
 
 function isVisibleTabsResult(
@@ -1494,6 +1202,15 @@ function isContentRuntimeReadyResult(
 		&& value.ready === true;
 }
 
+function isContentRuntimeDocumentIdentity(
+	value: unknown,
+): value is SpectraResponseData<'spectra.content.runtime.identity'> {
+	return isRecord(value)
+		&& hasOnlyKeys(value, CONTENT_RUNTIME_IDENTITY_KEYS)
+		&& isDocumentId(value.documentId)
+		&& value.frameId === 0;
+}
+
 function isAcceptedResult(
 	value: unknown,
 ): value is SpectraResponseData<
@@ -1509,6 +1226,7 @@ function isAcceptedResult(
 const RESPONSE_DATA_GUARDS = {
 	'spectra.content.bootstrap.hello': isContentBootstrapHelloResult,
 	'spectra.content.runtime.status': isContentRuntimeStatus,
+	'spectra.content.runtime.identity': isContentRuntimeDocumentIdentity,
 	'spectra.content.runtime.ensure': isContentRuntimeReadyResult,
 	'spectra.content.runtime.ready': isAcceptedResult,
 	'spectra.content.runtime.release': isAcceptedResult,
@@ -1523,6 +1241,11 @@ const RESPONSE_DATA_GUARDS = {
 	'spectra.control.operation.submit': isControlOperationAck,
 	'spectra.control.operation.execute': isControlOperationAck,
 	'spectra.control.actual.read': isControlReadResult,
+	'spectra.control.page.scale.probe': (
+		value: unknown,
+	): value is SpectraResponseData<'spectra.control.page.scale.probe'> => {
+		return isRecord(value) && typeof value.supported === 'boolean';
+	},
 	'spectra.content.settings.get': isContentSettings,
 	'spectra.content.inject': (
 		value: unknown,
@@ -1533,6 +1256,8 @@ const RESPONSE_DATA_GUARDS = {
 	),
 	'spectra.settings.get': isSettingsSnapshot,
 	'spectra.settings.patch': isSettingsSnapshot,
+	'spectra.settings.ui.get': isSettingsUiSnapshot,
+	'spectra.settings.ui.patch': isSettingsUiSnapshot,
 	'spectra.settings.flush': (
 		value: unknown,
 	): value is SpectraResponseData<'spectra.settings.flush'> => isRecord(value)
@@ -1540,7 +1265,7 @@ const RESPONSE_DATA_GUARDS = {
 		&& value.flushed === true,
 	'spectra.hotkeys.get': isHotkeySettings,
 	'spectra.registry.get': isRegistrySnapshot,
-	'spectra.registry.add': isUserRegistryAddResult,
+	'spectra.registry.add': isRegistryAddResult,
 	'spectra.registry.remove': isRegistryRemoveResult,
 	'spectra.registry.query': isRegistryQueryResult,
 	'spectra.registry.mark-probed': isRegistryAddResult,
@@ -1559,6 +1284,14 @@ const RESPONSE_DATA_GUARDS = {
 		&& hasOnlyKeys(value, EXECUTED_RESULT_KEYS)
 		&& value.executed === true,
 	'spectra.audio.config.get': isAudioConfig,
+	'spectra.audio.policy.get': isAudioSitePolicy,
+	'spectra.audio.route.get': isMediaRouteDecision,
+	'spectra.audio.route.record': isMediaRouteDecision,
+	'spectra.audio.page-scale.record': (
+		value: unknown,
+	): value is SpectraResponseData<'spectra.audio.page-scale.record'> => {
+		return isRecord(value) && value.recorded === true;
+	},
 	'spectra.audio.config.set': (
 		value: unknown,
 	): value is SpectraResponseData<'spectra.audio.config.set'> => isRecord(value)
@@ -1578,14 +1311,11 @@ const RESPONSE_DATA_GUARDS = {
 	): value is SpectraResponseData<'spectra.audio.session.flush'> => isRecord(value)
 		&& hasOnlyKeys(value, AUDIO_SESSION_FLUSH_RESULT_KEYS)
 		&& value.flushed === true,
-	'spectra.audio.capture.set': isAudioCaptureState,
+	'spectra.audio.capture.set': isAudioCaptureTransitionResult,
 	'spectra.audio.capture.config': isAudioCaptureState,
 	'spectra.audio.visualizer.batch': isVisualizerBatchResult,
-	'spectra.audio.visualizer.get': isVisualizerResult,
-	'spectra.audio.visualizer.subscription.set': (
-		value,
-	): value is SpectraResponseData<'spectra.audio.visualizer.subscription.set'> =>
-		isBooleanFieldResult(value, VISUALIZER_SUBSCRIPTION_PAYLOAD_KEYS, 'subscribed'),
+	'spectra.audio.visualizer.get': isVisualizerFrameResult,
+	'spectra.audio.visualizer.demand.set': isAudioRuntimeStatus,
 	'spectra.hotkey.trigger': (
 		value: unknown,
 	): value is SpectraResponseData<'spectra.hotkey.trigger'> => isRecord(value)
@@ -1730,6 +1460,7 @@ const EVENT_PAYLOAD_GUARDS = {
 	'spectra.control.snapshot.changed': isControlSnapshot,
 	'spectra.content.settings.changed': isContentSettings,
 	'spectra.settings.changed': isSettingsSnapshot,
+	'spectra.settings.ui.changed': isSettingsUiSnapshot,
 	'spectra.hotkeys.changed': isHotkeySettings,
 	'spectra.hotkey.target.feedback': isHotkeyTargetFeedback,
 	'spectra.navigation.changed': isNavigationChangedEvent,
@@ -1737,6 +1468,7 @@ const EVENT_PAYLOAD_GUARDS = {
 	'spectra.remote.session.closed': isRemoteSessionClosedEvent,
 	'spectra.audio.session.changed': isAudioSessionSnapshot,
 	'spectra.audio.capture.changed': isAudioCaptureState,
+	'spectra.audio.route.changed': isMediaRouteChangedEvent,
 } satisfies { [T in SpectraEventType]: RuntimeGuard<SpectraEventPayload<T>> };
 
 function isSpectraRequestType(value: unknown): value is SpectraRequestType {
@@ -1747,41 +1479,7 @@ function isSpectraEventType(value: unknown): value is SpectraEventType {
 	return typeof value === 'string' && Object.hasOwn(EVENT_PAYLOAD_GUARDS, value);
 }
 
-function hasValidContextFields(value: Record<string, unknown>): boolean {
-	return (value.tabId === undefined || isPositiveInteger(value.tabId))
-		&& (value.documentId === undefined || (
-			typeof value.documentId === 'string'
-			&& value.documentId.length > 0
-			&& value.documentId.length <= 256
-		))
-		&& (value.generation === undefined || isNonNegativeInteger(value.generation));
-}
-
-function hasValidRequestEnvelopeBase(value: Record<string, unknown>): boolean {
-	return hasOnlyKeys(value, REQUEST_ENVELOPE_KEYS)
-		&& value.protocolVersion === SPECTRA_PROTOCOL_VERSION
-		&& typeof value.requestId === 'string'
-		&& value.requestId.length > 0
-		&& value.requestId.length <= 128
-		&& hasValidContextFields(value);
-}
-
-function hasValidEventEnvelopeBase(value: Record<string, unknown>): boolean {
-	return hasOnlyKeys(value, EVENT_ENVELOPE_KEYS)
-		&& value.protocolVersion === SPECTRA_PROTOCOL_VERSION
-		&& hasValidContextFields(value);
-}
-
-export function isRpcError(value: unknown): value is RpcError {
-	if (!isRecord(value) || !hasOnlyKeys(value, RPC_ERROR_KEYS)) return false;
-	return typeof value.code === 'string'
-		&& value.code.length > 0
-		&& value.code.length <= 128
-		&& typeof value.message === 'string'
-		&& value.message.length > 0
-		&& value.message.length <= 4096
-		&& typeof value.retryable === 'boolean';
-}
+export { isRpcError } from './spectra.protocol-primitives.js';
 
 // post: rejects unknown message types and malformed payloads before a handler sees them
 export function isSpectraRequestEnvelope(value: unknown): value is SpectraRequestEnvelope {
@@ -1790,74 +1488,7 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 		|| !isSpectraRequestType(value.type)) return false;
 	const payloadGuard: RuntimeGuard<unknown> = REQUEST_PAYLOAD_GUARDS[value.type];
 	if (!payloadGuard(value.payload)) return false;
-	if (value.type === 'spectra.audio.session.get') {
-		return isAudioSessionGetPayload(value.payload)
-			&& (value.tabId === undefined || value.tabId === value.payload.tabId);
-	}
-	if (value.type === 'spectra.audio.session.current') {
-		// Current-document recovery is deliberately sender-bound. A caller may not
-		// self-assert routing fields that could be mistaken for Chrome sender data.
-		return value.tabId === undefined
-			&& value.documentId === undefined
-			&& value.generation === undefined;
-	}
-	if (value.type === 'spectra.content.inject') {
-		return isTabIdPayload(value.payload) && value.tabId === value.payload.tabId;
-	}
-	if (value.type === 'spectra.content.default-hotkey.trigger') {
-		// The browser sender identity is authoritative for this page event.
-		return value.tabId === undefined
-			&& value.documentId === undefined
-			&& value.generation === undefined;
-	}
-	if (value.type === 'spectra.control.intent.execute'
-		|| value.type === 'spectra.control.operation.execute') {
-		const payload = value.payload as ControlIntent | ControlOperationIntent;
-		return isPositiveInteger(value.tabId)
-			&& value.tabId === payload.tabId
-			&& isDocumentId(value.documentId)
-			&& value.documentId === payload.documentId
-			&& isNonNegativeInteger(value.generation)
-			&& value.generation === payload.generation;
-	}
-	if (value.type === 'spectra.content.source.released'
-		|| value.type === 'spectra.content.target.changed') {
-		const payload = value.payload as SpectraRequestPayload<
-			'spectra.content.source.released' | 'spectra.content.target.changed'
-		>;
-		return value.tabId === undefined
-			&& value.generation === undefined
-			&& (value.documentId === undefined || value.documentId === payload.target.documentId);
-	}
-	if (value.type === 'spectra.control.intent.submit'
-		|| value.type === 'spectra.control.operation.submit') {
-		const payload = value.payload as ControlSubmitRequest | ControlOperationRequest;
-		return (value.tabId === undefined || isPositiveInteger(value.tabId))
-			&& (payload.tabId === undefined
-				|| value.tabId === undefined
-				|| value.tabId === payload.tabId);
-	}
-	if (value.type === 'spectra.audio.runtime.get'
-		|| value.type === 'spectra.audio.runtime.configure'
-		|| value.type === 'spectra.audio.visualizer.get'
-		|| value.type === 'spectra.hotkey.trigger'
-		|| value.type.startsWith('spectra.media.')
-		|| value.type.startsWith('spectra.video.')) {
-		return isPositiveInteger(value.tabId);
-	}
-	if (value.type === 'spectra.audio.session.publish'
-		|| value.type === 'spectra.audio.capture.set'
-		|| value.type === 'spectra.audio.capture.config') {
-		return isNonNegativeInteger(value.generation);
-	}
-	if (value.type === 'spectra.remote.session.get'
-		|| value.type === 'spectra.remote.session.create'
-		|| value.type === 'spectra.remote.session.close') {
-		return isRecord(value.payload)
-			&& isPositiveInteger(value.payload.tabId)
-			&& value.tabId === value.payload.tabId;
-	}
-	return true;
+	return hasCanonicalRequestContext(value.type, value);
 }
 
 // post: accepts only versioned, type-correlated events with trustworthy routing metadata
@@ -1899,15 +1530,12 @@ export function isSpectraResponse<T extends SpectraRequestType>(
 	type: T,
 	value: unknown,
 ): value is SpectraResponse<T> {
-	if (!isSpectraRequestType(type) || !isRecord(value)) return false;
-	if (value.ok === true) {
-		if (!hasOnlyKeys(value, RPC_SUCCESS_KEYS)) return false;
+	if (!isSpectraRequestType(type)) return false;
+	if (isRpcSuccessResult(value)) {
 		const responseGuard: RuntimeGuard<unknown> = RESPONSE_DATA_GUARDS[type];
 		return responseGuard(value.data);
 	}
-	return value.ok === false
-		&& hasOnlyKeys(value, RPC_FAILURE_KEYS)
-		&& isRpcError(value.error);
+	return isRpcFailureResult(value) && isRpcError(value.error);
 }
 
 export function rpcSuccess<T>(data: T): RpcResult<T> {

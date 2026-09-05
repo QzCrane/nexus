@@ -1,6 +1,7 @@
 // goal: extension-internal UI/background boundary for authenticated remote sessions
 
 import type { ControlCapability } from './control.contracts.js';
+import { compileEffectiveVolume, isFiniteControlValue } from './control-value-limits.js';
 import type {
 	AudioSessionPhase,
 	AudioVolumeState,
@@ -8,7 +9,7 @@ import type {
 } from './audio.contracts.js';
 
 export interface RemotePublicSession {
-	protocolVersion: 2;
+	protocolVersion: 3;
 	sessionId: string;
 	peerId: string;
 	secret: string;
@@ -39,10 +40,6 @@ export const REMOTE_COMMANDS = [
 	'volume_down',
 	'volume_max',
 	'volume_100',
-	'boost_up',
-	'boost_down',
-	'boost_reset',
-	'boost_max',
 	'mute',
 	'play_pause',
 	'seek_forward',
@@ -52,11 +49,37 @@ export const REMOTE_COMMANDS = [
 	'speed_up',
 	'speed_down',
 	'speed_reset',
-	'fullscreen',
-	'pip',
 ] as const;
 
 export type RemoteCommand = (typeof REMOTE_COMMANDS)[number];
+
+/**
+ * Bounded replay/deduplication memory for one authenticated Remote epoch.
+ * The Offscreen authority and Background admission ledger intentionally use
+ * the same window so a long-lived session cannot grow either owner without
+ * limit.
+ */
+export const REMOTE_COMMAND_RECEIPT_LIMIT = 512;
+
+/** Maximum number of authenticated Remote commands admitted but not settled. */
+export const REMOTE_COMMAND_PENDING_LIMIT = 32;
+
+/**
+ * A command must leave the Background admission queue within this window. The
+ * physical control owner may finish a non-cancellable browser operation later,
+ * but its late result is fenced by the command ticket and cannot publish as a
+ * Remote success.
+ */
+export const REMOTE_COMMAND_TIMEOUT_MS = 15_000;
+
+/** Maximum number of pre-authentication data channels retained by one host. */
+export const REMOTE_PENDING_CONNECTION_LIMIT = 8;
+
+/** Maximum number of pairings retained by the standalone Remote page. */
+export const REMOTE_PAIRING_LIMIT = 16;
+
+/** UTF-8 storage budget for the standalone Remote page's pairing ledger. */
+export const REMOTE_PAIRING_STORAGE_LIMIT_BYTES = 64 * 1024;
 
 export type RemoteCommandOperation = 'delta' | 'set' | 'toggle';
 
@@ -64,15 +87,15 @@ export interface RemoteCommandDescriptor {
 	capability: ControlCapability;
 	operation: RemoteCommandOperation;
 	value?: number;
-	legacyAlias: boolean;
 }
 
 const remoteDescriptor = (
 	capability: ControlCapability,
 	operation: RemoteCommandOperation,
 	value?: number,
-	legacyAlias = false,
-): RemoteCommandDescriptor => ({ capability, operation, value, legacyAlias });
+): RemoteCommandDescriptor => value === undefined
+	? { capability, operation }
+	: { capability, operation, value };
 
 // Remote buttons are surface aliases, never independent algorithms. This
 // exhaustive map fixes their canonical capability and transform so handler,
@@ -82,10 +105,6 @@ export const REMOTE_COMMAND_DESCRIPTORS = {
 	volume_down: remoteDescriptor('effective-volume', 'delta', -10),
 	volume_max: remoteDescriptor('effective-volume', 'set', 800),
 	volume_100: remoteDescriptor('effective-volume', 'set', 100),
-	boost_up: remoteDescriptor('effective-volume', 'delta', 10, true),
-	boost_down: remoteDescriptor('effective-volume', 'delta', -10, true),
-	boost_reset: remoteDescriptor('effective-volume', 'set', 100, true),
-	boost_max: remoteDescriptor('effective-volume', 'set', 800, true),
 	mute: remoteDescriptor('mediaMuted', 'toggle'),
 	play_pause: remoteDescriptor('playback-toggle', 'toggle'),
 	seek_forward: remoteDescriptor('seek-relative', 'delta', 10),
@@ -95,22 +114,20 @@ export const REMOTE_COMMAND_DESCRIPTORS = {
 	speed_up: remoteDescriptor('speed', 'delta', 0.25),
 	speed_down: remoteDescriptor('speed', 'delta', -0.25),
 	speed_reset: remoteDescriptor('speed', 'set', 1),
-	fullscreen: remoteDescriptor('fullscreen', 'toggle'),
-	pip: remoteDescriptor('pip', 'toggle'),
 } as const satisfies Record<RemoteCommand, RemoteCommandDescriptor>;
 
 export interface RemoteState {
 	generation: number;
 	/** Monotonic control snapshot revision within the current generation. */
 	revision: number;
-	/** @deprecated one-release effective-volume projection */
+	/** Effective volume used directly by the Remote presentation. */
 	volume: number;
-	volumeBase?: number;
-	boost?: number;
+	volumeBase: number;
+	boost: number;
 	actualMode: SpectraAudioMode;
 	phase: AudioSessionPhase;
-	/** Canonical color/state projection; optional only for one-release clients. */
-	volumeState?: AudioVolumeState;
+	/** Canonical color/state projection derived from acknowledged processor state. */
+	volumeState: AudioVolumeState;
 	muted: boolean;
 	playing: boolean;
 	speed: number;
@@ -139,7 +156,7 @@ export function isRemotePublicSession(value: unknown): value is RemotePublicSess
 	if (!isRecord(value) || !Object.keys(value).every((key) => REMOTE_PUBLIC_SESSION_KEYS.has(key as keyof RemotePublicSession))) {
 		return false;
 	}
-	return value.protocolVersion === 2
+	return value.protocolVersion === 3
 		&& typeof value.sessionId === 'string'
 		&& TOKEN_RE.test(value.sessionId)
 		&& typeof value.peerId === 'string'
@@ -160,6 +177,20 @@ export function isRemotePublicSession(value: unknown): value is RemotePublicSess
 
 export function isRemoteSessionToken(value: unknown): value is string {
 	return typeof value === 'string' && TOKEN_RE.test(value);
+}
+
+/**
+ * A session epoch is minted by the offscreen Remote authority after every
+ * successful authentication. It is deliberately separate from the pairing
+ * identity and is monotonic for the lifetime of the authority.
+ */
+export function isRemoteSessionEpoch(value: unknown): value is number {
+	return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+/** Command ids are opaque, one-shot receipts generated by the controller. */
+export function isRemoteCommandId(value: unknown): value is string {
+	return isRemoteSessionToken(value);
 }
 
 export function isRemoteCommand(value: unknown): value is RemoteCommand {
@@ -188,26 +219,21 @@ export function isRemoteState(value: unknown): value is RemoteState {
 		&& (value.generation as number) >= 0
 		&& Number.isSafeInteger(value.revision)
 		&& (value.revision as number) >= 0
-		&& isFiniteInRange(value.volume, 0, 800)
-		&& (value.volumeBase === undefined || isFiniteInRange(value.volumeBase, 0, 100))
-		&& (value.boost === undefined || isFiniteInRange(value.boost, 1, 8))
-		&& (value.actualMode === 'bypass' || value.actualMode === 'webaudio' || value.actualMode === 'capture')
+		&& isFiniteControlValue(value.volume, 'volume')
+		&& isFiniteControlValue(value.volumeBase, 'volumeBase')
+		&& isFiniteControlValue(value.boost, 'boost')
+		&& value.volume === compileEffectiveVolume(value.volumeBase, value.boost)
+		&& (value.actualMode === 'bypass' || value.actualMode === 'webaudio'
+			|| value.actualMode === 'capture')
 		&& (value.phase === 'idle' || value.phase === 'starting' || value.phase === 'active'
 			|| value.phase === 'stopping' || value.phase === 'error')
-		&& (value.volumeState === undefined || value.volumeState === 'silent'
+		&& (value.volumeState === 'silent'
 			|| value.volumeState === 'native' || value.volumeState === 'capture')
 		&& typeof value.muted === 'boolean'
 		&& typeof value.playing === 'boolean'
-		&& isFiniteInRange(value.speed, 0.1, 16)
+		&& isFiniteControlValue(value.speed, 'speed')
 		&& (value.tabTitle === undefined
 			|| (typeof value.tabTitle === 'string' && value.tabTitle.length <= 512))
 		&& (value.tabDomain === undefined
 			|| (typeof value.tabDomain === 'string' && value.tabDomain.length <= 253));
-}
-
-function isFiniteInRange(value: unknown, minimum: number, maximum: number): value is number {
-	return typeof value === 'number'
-		&& Number.isFinite(value)
-		&& value >= minimum
-		&& value <= maximum;
 }

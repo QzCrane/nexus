@@ -17,16 +17,17 @@
     "declaration": true,
     "declarationMap": true,
     "sourceMap": true,
-    "baseUrl": ".",
 		"paths": {
-			"@nexus/contracts": ["packages/contracts/src"],
-		"@nexus/contracts/bootstrap": ["packages/contracts/src/spectra.bootstrap.ts"],
-		"@nexus/contracts/ui-runtime": ["packages/contracts/src/spectra.ui-runtime.ts"],
-		"@nexus/contracts/ui-settings-runtime": ["packages/contracts/src/spectra.ui-settings-runtime.ts"],
-		"@nexus/contracts/content-runtime": ["packages/contracts/src/spectra.content-runtime.ts"],
-      "@nexus/kernel": ["packages/nexus-kernel/src"],
-      "@nexus/ui-kit": ["packages/ui-kit/src"],
-      "@nexus/audio-engine": ["packages/features/audio-engine/src"]
+			"@nexus/contracts": ["./packages/contracts/src"],
+			"@nexus/contracts/bootstrap": ["./packages/contracts/src/spectra.bootstrap.ts"],
+			"@nexus/contracts/ui-runtime": ["./packages/contracts/src/spectra.ui-runtime.ts"],
+			"@nexus/contracts/ui-settings-runtime": ["./packages/contracts/src/spectra.ui-settings-runtime.ts"],
+			"@nexus/contracts/full-settings-runtime": ["./packages/contracts/src/spectra.full-settings-runtime.ts"],
+			"@nexus/contracts/registry-runtime": ["./packages/contracts/src/spectra.registry-runtime.ts"],
+			"@nexus/contracts/content-runtime": ["./packages/contracts/src/spectra.content-runtime.ts"],
+      "@nexus/kernel": ["./packages/nexus-kernel/src"],
+      "@nexus/ui-kit": ["./packages/ui-kit/src"],
+      "@nexus/audio-engine": ["./packages/features/audio-engine/src"]
     },
     "types": ["chrome-types"]
   },

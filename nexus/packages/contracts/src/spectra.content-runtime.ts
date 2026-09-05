@@ -6,25 +6,43 @@
 // background/offscreen/UI contexts keep the complete protocol validator.
 
 import {
+	audioConfigToProcessorConfig,
 	DEFAULT_AUDIO_CONFIG,
 	isAudioCaptureState,
 	isAudioConfig,
-	isAudioRuntimeStatus,
 	isAudioSessionSnapshot,
 	isDefaultAudioConfig,
+	requiresAudioProcessor,
 	resolveAudioVolume,
 	resolveAudioVolumeState,
-	crossesAudioVolumeProcessorBoundary,
+	resolveDesiredAudioMode,
+	crossesAudioVolumeRoutingBoundary,
 } from './audio.contracts.js';
+import { isAudioSitePolicy } from './settings.contracts.js';
+import {
+	isMediaRouteChangedEvent,
+	isMediaRouteDecision,
+} from './media-route.contracts.js';
+import {
+	CONTROL_VALUE_LIMITS,
+	clampControlValue,
+	compileEffectiveVolume,
+	isFiniteControlValue,
+	splitEffectiveVolume,
+} from './control-value-limits.js';
+import { isCaptureAdmission } from './capture-admission.contracts.js';
+import { isAudioVisualizerDemandPayload } from './visualizer.contracts.js';
 import { findBestHostnameMatch, normalizeHostname } from './domain.contracts.js';
 import {
 	DEFAULT_HOTKEY_SETTINGS,
 	HOTKEY_ACTION_DESCRIPTORS,
+	isHotkeyAction,
 	isHotkeyParamsForAction,
 	isSpectraDefaultHotkeyKeyCombo,
 	resolveSpectraHotkeyActualFeedback,
+	selectHotkeyFeedbackOwner,
+	selectHotkeyRepeatPolicy,
 } from './hotkeys.contracts.js';
-import { createSiteRouteFingerprint } from './registry.contracts.js';
 import { isHotkeySettings } from './settings.contracts.js';
 import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
@@ -47,30 +65,38 @@ import type {
 } from './spectra.protocol.js';
 
 export {
+	audioConfigToProcessorConfig,
 	DEFAULT_AUDIO_CONFIG,
 	DEFAULT_HOTKEY_SETTINGS,
 	HOTKEY_ACTION_DESCRIPTORS,
+	CONTROL_VALUE_LIMITS,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
-	createSiteRouteFingerprint,
 	findBestHostnameMatch,
 	isAudioConfig,
 	isDefaultAudioConfig,
+	isFiniteControlValue,
+	isHotkeyAction,
 	isHotkeyParamsForAction,
 	isSpectraDefaultHotkeyKeyCombo,
 	normalizeHostname,
+	clampControlValue,
+	compileEffectiveVolume,
+	requiresAudioProcessor,
 	resolveAudioVolume,
 	resolveAudioVolumeState,
-	crossesAudioVolumeProcessorBoundary,
+	resolveDesiredAudioMode,
+	splitEffectiveVolume,
+	crossesAudioVolumeRoutingBoundary,
 	resolveSpectraDefaultHotkeyAction,
 	resolveSpectraHotkeyActualFeedback,
+	selectHotkeyFeedbackOwner,
+	selectHotkeyRepeatPolicy,
 };
-
-// One-release legacy capture event adapter. Keeping the single literal avoids
-// shipping the unrelated Nexus/Halo action table into every page runtime.
-export const Actions = Object.freeze({
-	CAPTURE_STATE_CHANGE: 'CAPTURE_STATE_CHANGE',
-});
+export type {
+	MediaProcessingRoute,
+	MediaRouteDecision,
+} from './media-route.contracts.js';
 
 const REQUEST_KEYS = new Set(['protocolVersion', 'requestId', 'tabId', 'documentId', 'generation', 'type', 'payload']);
 const EVENT_KEYS = new Set(['protocolVersion', 'tabId', 'documentId', 'generation', 'type', 'payload']);
@@ -83,7 +109,7 @@ const CONTROL_FIELDS = new Set<ControlField>([
 ]);
 const DIRECT_FIELDS = new Set<ControlField>([...CONTROL_FIELDS].filter((field) => field !== 'visualizer'));
 const STRATEGIES = new Set<ControlStrategy>([
-	'observe', 'page-native', 'dom-native', 'chrome-native', 'extension-state',
+	'observe', 'capture-observe', 'page-native', 'dom-native', 'chrome-native', 'extension-state',
 	'extension-css', 'extension-overlay', 'media-webaudio', 'capture', 'unsupported',
 ]);
 const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);
@@ -95,8 +121,6 @@ const CONTENT_OPERATIONS = new Set<ControlOperation>([
 	'ab-clear', 'ab-skip', 'show-info',
 ]);
 const CONTENT_COMMAND_TYPES = new Set([
-	'spectra.audio.visualizer.get',
-	'spectra.audio.visualizer.subscription.set',
 	'spectra.hotkey.trigger',
 	'spectra.media.state.get',
 	'spectra.media.play.toggle',
@@ -120,6 +144,16 @@ const CONTENT_COMMAND_TYPES = new Set([
 	'spectra.video.marker.jump',
 	'spectra.video.marker.list',
 ]);
+const MEDIA_TARGET_KEYS = new Set(['frameId', 'documentId', 'mediaId', 'sourceRevision', 'kind']);
+const FILTER_KEYS = new Set(['brightness', 'contrast', 'saturate', 'grayscale', 'invert']);
+const AB_LOOP_KEYS = new Set(['pointA', 'pointB', 'enabled']);
+const CONTROL_FIELD_STATE_KEYS = new Set([
+	'desired', 'actual', 'restoreBaseline', 'revision', 'phase', 'strategy',
+	'coverage', 'controlled', 'intentId', 'lastError',
+]);
+const DELTA_KEYS = new Set(['delta']);
+const LABEL_KEYS = new Set(['label']);
+const ID_KEYS = new Set(['id']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -138,12 +172,14 @@ function isFiniteInRange(value: unknown, minimum: number, maximum: number): valu
 }
 
 function isBoundedString(value: unknown, maximum: number): value is string {
-	return typeof value === 'string' && value.length > 0 && value.length <= maximum;
+	return typeof value === 'string'
+		&& value.length <= maximum
+		&& value.trim().length > 0;
 }
 
 export function isMediaTarget(value: unknown): value is MediaTarget {
 	return isRecord(value)
-		&& hasOnly(value, new Set(['frameId', 'documentId', 'mediaId', 'sourceRevision', 'kind']))
+		&& hasOnly(value, MEDIA_TARGET_KEYS)
 		&& isInteger(value.frameId)
 		&& isBoundedString(value.documentId, 256)
 		&& isBoundedString(value.mediaId, 256)
@@ -153,7 +189,7 @@ export function isMediaTarget(value: unknown): value is MediaTarget {
 
 function isFilter(value: unknown): boolean {
 	return isRecord(value)
-		&& hasOnly(value, new Set(['brightness', 'contrast', 'saturate', 'grayscale', 'invert']))
+		&& hasOnly(value, FILTER_KEYS)
 		&& isFiniteInRange(value.brightness, 0, 200)
 		&& isFiniteInRange(value.contrast, 0, 200)
 		&& isFiniteInRange(value.saturate, 0, 200)
@@ -163,23 +199,23 @@ function isFilter(value: unknown): boolean {
 
 function isControlValue(field: ControlField, value: unknown): boolean {
 	switch (field) {
-		case 'volumeBase': return isFiniteInRange(value, 0, 100);
-		case 'boost': return isFiniteInRange(value, 1, 8);
-		case 'speed': return isFiniteInRange(value, 0.1, 16);
-		case 'currentTime': return isFiniteInRange(value, 0, Number.MAX_SAFE_INTEGER);
+		case 'volumeBase': return isFiniteControlValue(value, 'nativeVolume');
+		case 'boost': return isFiniteControlValue(value, 'boost');
+		case 'speed': return isFiniteControlValue(value, 'speed');
+		case 'currentTime': return isFiniteControlValue(value, 'currentTime');
 		case 'rotation': return value === 0 || value === 90 || value === 180 || value === 270;
 		case 'filter': return isFilter(value);
 		case 'abLoop': return isRecord(value)
-			&& hasOnly(value, new Set(['pointA', 'pointB', 'enabled']))
+			&& hasOnly(value, AB_LOOP_KEYS)
 			&& (value.pointA === null || isFiniteInRange(value.pointA, 0, Number.MAX_SAFE_INTEGER))
 			&& (value.pointB === null || isFiniteInRange(value.pointB, 0, Number.MAX_SAFE_INTEGER))
 			&& typeof value.enabled === 'boolean';
-		case 'dimOpacity': return isFiniteInRange(value, 0, 1);
+		case 'dimOpacity': return isFiniteControlValue(value, 'dimOpacity');
 		case 'eqValues': return Array.isArray(value)
 			&& value.length === 10
-			&& value.every((item) => isFiniteInRange(item, -12, 12));
-		case 'pan': return isFiniteInRange(value, -1, 1);
-		case 'delay': return isFiniteInRange(value, 0, 500);
+			&& value.every((item) => isFiniteControlValue(item, 'eqBand'));
+		case 'pan': return isFiniteControlValue(value, 'pan');
+		case 'delay': return isFiniteControlValue(value, 'delay');
 		default: return typeof value === 'boolean';
 	}
 }
@@ -193,10 +229,7 @@ function isControlFieldStates(value: unknown): boolean {
 	if (!isRecord(value) || !hasOnly(value, CONTROL_FIELDS)) return false;
 	return Object.entries(value).every(([field, item]) => {
 		if (!isRecord(item)
-			|| !hasOnly(item, new Set([
-				'desired', 'actual', 'restoreBaseline', 'revision', 'phase', 'strategy',
-				'coverage', 'controlled', 'intentId', 'lastError',
-			]))) return false;
+			|| !hasOnly(item, CONTROL_FIELD_STATE_KEYS)) return false;
 		return (item.desired === null || isControlValue(field as ControlField, item.desired))
 			&& (item.actual === null || isControlValue(field as ControlField, item.actual))
 			&& (item.restoreBaseline === undefined || isControlValue(field as ControlField, item.restoreBaseline))
@@ -227,7 +260,7 @@ function isControlIntent(value: unknown): boolean {
 		&& isControlPatch(value.actualContext, true)
 		&& isControlPatch(value.patch)
 		&& (value.captureAdmission === undefined
-			|| value.captureAdmission === 'extension-invocation');
+			|| isCaptureAdmission(value.captureAdmission));
 }
 
 function isControlReadRequest(value: unknown): boolean {
@@ -247,10 +280,10 @@ function isOperationPayload(operation: ControlOperation, value: unknown): boolea
 		case 'restore-page-settings': return hasOnly(value, new Set());
 		case 'frame-step': return hasOnly(value, new Set(['direction']))
 			&& (value.direction === -1 || value.direction === 1);
-		case 'marker-add': return hasOnly(value, new Set(['label']))
+		case 'marker-add': return hasOnly(value, LABEL_KEYS)
 			&& (value.label === undefined || typeof value.label === 'string' && value.label.length <= 256);
 		case 'marker-remove':
-		case 'marker-jump': return hasOnly(value, new Set(['id'])) && isBoundedString(value.id, 128);
+		case 'marker-jump': return hasOnly(value, ID_KEYS) && isBoundedString(value.id, 128);
 		default: return Object.keys(value).length === 0;
 	}
 }
@@ -284,27 +317,25 @@ function isContentCommandPayload(type: string, value: unknown): boolean {
 		return isRecord(value)
 			&& hasOnly(value, new Set(['speed', 'delta', 'preservePitch']))
 			&& (value.speed === undefined) !== (value.delta === undefined)
-			&& (value.speed === undefined || isFiniteInRange(value.speed, 0.1, 16))
+			&& (value.speed === undefined || isFiniteControlValue(value.speed, 'speed'))
 			&& (value.delta === undefined || isFiniteInRange(value.delta, -15.9, 15.9))
 			&& (value.preservePitch === undefined || typeof value.preservePitch === 'boolean');
 	}
 	if (type === 'spectra.video.rotate') return isRecord(value)
-		&& hasOnly(value, new Set(['delta'])) && (value.delta === -90 || value.delta === 90);
+		&& hasOnly(value, DELTA_KEYS) && (value.delta === -90 || value.delta === 90);
 	if (type === 'spectra.video.seek') return isRecord(value)
-		&& hasOnly(value, new Set(['delta'])) && isFiniteInRange(value.delta, -86_400, 86_400);
+		&& hasOnly(value, DELTA_KEYS) && isFiniteInRange(value.delta, -86_400, 86_400);
 	if (type === 'spectra.video.filter.set') return isFilter(value);
 	if (type === 'spectra.video.dim.toggle') return isRecord(value)
 		&& hasOnly(value, new Set(['enabled', 'opacity']))
 		&& (value.enabled === undefined || typeof value.enabled === 'boolean')
 		&& (value.opacity === undefined || isFiniteInRange(value.opacity, 0, 1));
 	if (type === 'spectra.video.marker.add') return isRecord(value)
-		&& hasOnly(value, new Set(['label']))
+		&& hasOnly(value, LABEL_KEYS)
 		&& (value.label === undefined || typeof value.label === 'string' && value.label.length <= 256);
 	if (type === 'spectra.video.marker.remove' || type === 'spectra.video.marker.jump') {
-		return isRecord(value) && hasOnly(value, new Set(['id'])) && isBoundedString(value.id, 128);
+		return isRecord(value) && hasOnly(value, ID_KEYS) && isBoundedString(value.id, 128);
 	}
-	if (type === 'spectra.audio.visualizer.subscription.set') return isRecord(value)
-		&& hasOnly(value, new Set(['subscribed'])) && typeof value.subscribed === 'boolean';
 	if (type === 'spectra.hotkey.trigger') return isRecord(value)
 		&& hasOnly(value, new Set(['action'])) && typeof value.action === 'string' && value.action.length <= 64;
 	return isEmpty(value);
@@ -339,6 +370,20 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 	if (value.type === 'spectra.screenshot.target.verify') return isRecord(value.payload)
 		&& hasOnly(value.payload, new Set(['captureToken']))
 		&& isBoundedString(value.payload.captureToken, 128);
+	if (value.type === 'spectra.audio.visualizer.demand.set') {
+		if (!isInteger(value.tabId, true)
+			|| !isBoundedString(value.documentId, 256)
+			|| !isInteger(value.generation)
+			|| !isAudioVisualizerDemandPayload(value.payload)) return false;
+		return value.payload.enabled === false || (
+			value.tabId === value.payload.admission.document.tabId
+			&& value.documentId === value.payload.admission.document.documentId
+			&& value.generation === value.payload.admission.documentEpoch
+		);
+	}
+	if (value.type === 'spectra.audio.visualizer.get') {
+		return isInteger(value.tabId, true) && isEmpty(value.payload);
+	}
 	if (value.type === 'spectra.audio.runtime.get') return isInteger(value.tabId, true) && isEmpty(value.payload);
 	if (value.type === 'spectra.audio.runtime.configure') return isInteger(value.tabId, true)
 		&& isRecord(value.payload) && hasOnly(value.payload, new Set(['config'])) && isAudioConfig(value.payload.config);
@@ -379,6 +424,7 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 		&& isBoundedString(value.documentId, 256)
 		&& value.generation === value.payload.generation;
 	if (value.type === 'spectra.content.settings.changed') return isContentSettings(value.payload);
+	if (value.type === 'spectra.audio.route.changed') return isMediaRouteChangedEvent(value.payload);
 	if (value.type === 'spectra.hotkeys.changed') return isHotkeySettings(value.payload);
 	if (value.type === 'spectra.hotkey.target.feedback') return isInteger(value.tabId, true)
 		&& isRecord(value.payload)
@@ -386,7 +432,7 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 			'action', 'targetTabId', 'targetTitle', 'targetHostname', 'gesture', 'feedback',
 		]))
 		&& typeof value.payload.action === 'string'
-		&& Object.hasOwn(HOTKEY_ACTION_DESCRIPTORS, value.payload.action)
+		&& isHotkeyAction(value.payload.action)
 		&& isInteger(value.payload.targetTabId, true)
 		&& isBoundedString(value.payload.targetTitle, 512)
 		&& isBoundedString(value.payload.targetHostname, 253)
@@ -395,13 +441,13 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 			isRecord(value.payload.feedback)
 			&& (value.payload.feedback.kind === 'volume'
 				? hasOnly(value.payload.feedback, new Set(['kind', 'value', 'volumeState']))
-					&& isFiniteInRange(value.payload.feedback.value, 0, 800)
+					&& isFiniteControlValue(value.payload.feedback.value, 'volume')
 					&& (value.payload.feedback.volumeState === 'silent'
 						|| value.payload.feedback.volumeState === 'native'
 						|| value.payload.feedback.volumeState === 'capture')
 				: value.payload.feedback.kind === 'speed'
 					&& hasOnly(value.payload.feedback, new Set(['kind', 'value']))
-					&& isFiniteInRange(value.payload.feedback.value, 0.1, 16))
+					&& isFiniteControlValue(value.payload.feedback.value, 'speed'))
 		));
 	if (value.type === 'spectra.navigation.changed') return isInteger(value.tabId, true)
 		&& isBoundedString(value.documentId, 256)
@@ -432,7 +478,7 @@ function isControlAck(value: unknown, operation = false): boolean {
 		|| (value.audioVolume !== undefined && !(
 			isRecord(value.audioVolume)
 			&& hasOnly(value.audioVolume, new Set(['effectiveVolume', 'volumeState']))
-			&& isFiniteInRange(value.audioVolume.effectiveVolume, 0, 800)
+		&& isFiniteControlValue(value.audioVolume.effectiveVolume, 'volume')
 			&& (value.audioVolume.volumeState === 'silent'
 				|| value.audioVolume.volumeState === 'native'
 				|| value.audioVolume.volumeState === 'capture')
@@ -452,13 +498,11 @@ function isControlAck(value: unknown, operation = false): boolean {
 }
 
 function isContentResponseData(type: string, value: unknown): boolean {
-	if (type === 'spectra.content.runtime.ensure') return isRecord(value)
-		&& hasOnly(value, new Set(['documentId', 'runtimeRevision', 'ready']))
+	if (type === 'spectra.content.runtime.identity') return isRecord(value)
+		&& hasOnly(value, new Set(['documentId', 'frameId']))
 		&& isBoundedString(value.documentId, 256)
-		&& isBoundedString(value.runtimeRevision, 64)
-		&& value.ready === true;
+		&& value.frameId === 0;
 	if (type === 'spectra.content.runtime.ready'
-		|| type === 'spectra.content.runtime.release'
 		|| type === 'spectra.content.source.released'
 		|| type === 'spectra.content.target.changed') return isRecord(value)
 		&& hasOnly(value, new Set(['accepted'])) && value.accepted === true;
@@ -466,14 +510,30 @@ function isContentResponseData(type: string, value: unknown): boolean {
 	if (type === 'spectra.control.operation.submit') return isControlAck(value, true);
 	if (type === 'spectra.content.settings.get') return isContentSettings(value);
 	if (type === 'spectra.audio.config.get') return isAudioConfig(value);
+	if (type === 'spectra.audio.policy.get') return isAudioSitePolicy(value);
+	if (type === 'spectra.audio.route.get' || type === 'spectra.audio.route.record') {
+		return isMediaRouteDecision(value);
+	}
 	if (type === 'spectra.audio.config.set') return isRecord(value)
 		&& hasOnly(value, new Set(['saved'])) && value.saved === true;
-	if (type === 'spectra.audio.runtime.get' || type === 'spectra.audio.runtime.configure') return isAudioRuntimeStatus(value);
 	if (type === 'spectra.audio.session.current') return value === null || isAudioSessionSnapshot(value);
 	if (type === 'spectra.audio.session.publish') return isAudioSessionSnapshot(value);
-	if (type === 'spectra.audio.session.flush' || type === 'spectra.settings.flush') return isRecord(value)
+	if (type === 'spectra.audio.session.flush') return isRecord(value)
 		&& hasOnly(value, new Set(['flushed'])) && value.flushed === true;
-	if (type === 'spectra.audio.capture.set' || type === 'spectra.audio.capture.config') return isAudioCaptureState(value);
+	if (type === 'spectra.audio.capture.set') {
+		if (!isRecord(value) || !hasOnly(value, new Set([
+			'tabId', 'generation', 'phase', 'active', 'actualMode', 'lastError',
+			'actualConfig', 'continuationAdmission',
+		]))) return false;
+		const { continuationAdmission: _, ...state } = value;
+		if (!isAudioCaptureState(state)) return false;
+		return value.continuationAdmission === undefined
+			|| value.active === false
+				&& value.phase === 'idle'
+				&& isCaptureAdmission(value.continuationAdmission)
+				&& value.continuationAdmission.kind === 'capture-resume';
+	}
+	if (type === 'spectra.audio.capture.config') return isAudioCaptureState(value);
 	if (type === 'spectra.hotkeys.get') return isHotkeySettings(value);
 	if (type === 'spectra.screenshot.capture-visible') return isRecord(value)
 		&& hasOnly(value, new Set(['saved', 'method', 'width', 'height']))

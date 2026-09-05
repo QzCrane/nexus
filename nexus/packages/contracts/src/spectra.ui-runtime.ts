@@ -12,6 +12,9 @@ import {
 	isUiControlOperationAck,
 	isUiControlSnapshot,
 } from './spectra.ui-control-runtime.js';
+import { isVisualizerBatchResult } from './visualizer.contracts.js';
+
+export { resolveAcknowledgedProcessorLifecycle } from './spectra.ui-control-runtime.js';
 import {
 	SPECTRA_SETTINGS_UI_REQUEST_TYPES,
 	isSpectraSettingsUiEventEnvelope,
@@ -30,6 +33,18 @@ import type {
 	SpectraRequestType,
 	SpectraResponse,
 } from './spectra.protocol.js';
+
+// Keep the UI's pure audio-value helpers on the lightweight UI facade.  The
+// package barrel re-exports these names through control.contracts for the
+// kernel, but that barrel route would pull the full strategy/algorithm catalog
+// into Popup merely to split and clamp a slider value.
+export {
+	CONTROL_VALUE_LIMITS,
+	clampControlValue,
+	compileEffectiveVolume,
+	isFiniteControlValue,
+	splitEffectiveVolume,
+} from './control-value-limits.js';
 
 export const SPECTRA_UI_REQUEST_TYPES = [
 	'spectra.content.runtime.ensure',
@@ -52,7 +67,7 @@ export type SpectraUiRequestType = (typeof SPECTRA_UI_REQUEST_TYPES)[number];
 
 export const SPECTRA_UI_EVENT_TYPES = [
 	'spectra.control.snapshot.changed',
-	'spectra.settings.changed',
+	'spectra.settings.ui.changed',
 	'spectra.remote.session.changed',
 	'spectra.remote.session.closed',
 	'spectra.audio.session.changed',
@@ -130,20 +145,6 @@ function isRemoteSessionClosed(value: unknown): value is RemoteSessionClosedEven
 		&& BASE64URL_128_RE.test(value.sessionId);
 }
 
-function isVisualizerBatch(value: unknown): boolean {
-	if (!isRecord(value)
-		|| !hasExact(value, ['subscriberId', 'generation', 'frames'])
-		|| !isBoundedString(value.subscriberId, 128)
-		|| !isInteger(value.generation)
-		|| !isRecord(value.frames)) return false;
-	return Object.entries(value.frames).every(([tabId, frame]) => (
-		/^[1-9]\d*$/u.test(tabId)
-		&& (frame === null || Array.isArray(frame)
-			&& frame.length <= 4096
-			&& frame.every((sample) => Number.isInteger(sample) && sample >= 0 && sample <= 255))
-	));
-}
-
 function isVisibleTabs(value: unknown): boolean {
 	if (!isRecord(value) || !hasExact(value, ['tabs']) || !Array.isArray(value.tabs)) return false;
 	return value.tabs.length <= 10_000
@@ -172,7 +173,7 @@ function isUiResponseData(type: SpectraUiRequestType, value: unknown): boolean {
 			&& hasExact(value, ['closed']) && value.closed === true;
 		case 'spectra.audio.session.get': return value === null || isAudioSessionSnapshot(value);
 		case 'spectra.audio.runtime.get': return isAudioRuntimeStatus(value);
-		case 'spectra.audio.visualizer.batch': return isVisualizerBatch(value);
+		case 'spectra.audio.visualizer.batch': return isVisualizerBatchResult(value);
 		case 'spectra.tab.visible.list': return isVisibleTabs(value);
 		default: return false;
 	}
@@ -209,7 +210,7 @@ export function isSpectraUiEventEnvelope(
 			&& value.documentId === value.payload.documentId
 			&& value.generation === value.payload.generation;
 	}
-	if (value.type === 'spectra.settings.changed') return isSpectraSettingsUiEventEnvelope(value);
+	if (value.type === 'spectra.settings.ui.changed') return isSpectraSettingsUiEventEnvelope(value);
 	if (value.type === 'spectra.remote.session.changed') {
 		return isRemoteSessionChanged(value.payload) && value.tabId === value.payload.tabId;
 	}

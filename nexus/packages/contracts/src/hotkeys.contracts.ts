@@ -1,6 +1,7 @@
 // goal: contract for hotkey management including actions, bindings, and configurations
 
 import type { AudioVolumeState } from './audio.contracts.js';
+import { isFiniteControlValue } from './control-value-limits.js';
 import type {
 	ControlApplyAck,
 	ControlCapability,
@@ -24,92 +25,154 @@ export interface HotkeyActionDescriptor {
 	feedbackOwner: HotkeyFeedbackOwner;
 }
 
-const descriptor = (
-	capability: ControlCapability | null,
-	feedbackOwner: HotkeyFeedbackOwner,
-	repeatPolicy: HotkeyRepeatPolicy = 'ignore-repeat',
-	requiresUserActivation = false,
-	parameter: HotkeyParameterKind = 'none',
-	availability: HotkeyAvailability = 'enabled',
-): HotkeyActionDescriptor => ({
-	capability,
-	availability,
-	repeatPolicy,
-	requiresUserActivation,
-	parameter,
-	feedbackOwner,
-});
+const FEEDBACK_HANDLER = 1;
+const FEEDBACK_LISTENER = 2;
+const FEEDBACK_NONE = 3;
+const REPEAT_IGNORE = 1 << 2;
+const REPEAT_SINGLE = 2 << 2;
+const USER_ACTIVATION = 1 << 4;
+const PARAM_SPEED = 1 << 5;
+const PARAM_VOLUME = 2 << 5;
+const PARAM_SCRIPT = 3 << 5;
+const PARAM_URL = 4 << 5;
+const AVAILABILITY_NOOP = 1 << 8;
+const AVAILABILITY_DISABLED = 2 << 8;
 
-// One executable disposition for every persisted action. Options, page
-// listeners, Chrome command slots and migration tests consume this table so a
-// shortcut cannot claim support while bypassing the canonical control planner.
-export const HOTKEY_ACTION_DESCRIPTORS = {
-	none: descriptor(null, 'none', 'ignore-repeat', false, 'none', 'no-op'),
-	play_pause: descriptor('playback-toggle', 'listener-label', 'ignore-repeat', true),
-	seek_forward_5s: descriptor('seek-relative', 'listener-label', 'coalesce-20hz'),
-	seek_forward_10s: descriptor('seek-relative', 'listener-label', 'coalesce-20hz'),
-	seek_forward_30s: descriptor('seek-relative', 'listener-label', 'coalesce-20hz'),
-	seek_backward_5s: descriptor('seek-relative', 'listener-label', 'coalesce-20hz'),
-	seek_backward_10s: descriptor('seek-relative', 'listener-label', 'coalesce-20hz'),
-	seek_backward_30s: descriptor('seek-relative', 'listener-label', 'coalesce-20hz'),
-	seek_frame_forward: descriptor('frame-step', 'listener-label', 'coalesce-20hz'),
-	seek_frame_backward: descriptor('frame-step', 'listener-label', 'coalesce-20hz'),
-	speed_up: descriptor('speed', 'actual-osd', 'coalesce-20hz'),
-	speed_down: descriptor('speed', 'actual-osd', 'coalesce-20hz'),
-	speed_reset: descriptor('speed', 'actual-osd'),
-	speed_set: descriptor('speed', 'actual-osd', 'ignore-repeat', false, 'speed'),
-	volume_up: descriptor('effective-volume', 'actual-osd', 'coalesce-20hz'),
-	volume_down: descriptor('effective-volume', 'actual-osd', 'coalesce-20hz'),
-	volume_mute: descriptor('mediaMuted', 'actual-osd'),
-	volume_set: descriptor('effective-volume', 'actual-osd', 'ignore-repeat', false, 'volume'),
-	audio_reset: descriptor('audio-reset', 'actual-osd'),
-	gain_up: descriptor('effective-volume', 'actual-osd', 'coalesce-20hz'),
-	gain_down: descriptor('effective-volume', 'actual-osd', 'coalesce-20hz'),
-	pitch_up: descriptor(null, 'handler-result', 'ignore-repeat', false, 'none', 'disabled-legacy'),
-	pitch_down: descriptor(null, 'handler-result', 'ignore-repeat', false, 'none', 'disabled-legacy'),
-	pitch_reset: descriptor(null, 'handler-result', 'ignore-repeat', false, 'none', 'disabled-legacy'),
-	delay_up: descriptor('delay', 'listener-label', 'coalesce-20hz'),
-	delay_down: descriptor('delay', 'listener-label', 'coalesce-20hz'),
-	delay_reset: descriptor('delay', 'listener-label'),
-	pan_left: descriptor('pan', 'listener-label', 'coalesce-20hz'),
-	pan_right: descriptor('pan', 'listener-label', 'coalesce-20hz'),
-	pan_reset: descriptor('pan', 'listener-label'),
-	mono_toggle: descriptor('mono', 'listener-label'),
-	capture_toggle: descriptor(null, 'handler-result', 'ignore-repeat', false, 'none', 'disabled-legacy'),
-	fullscreen_toggle: descriptor('fullscreen', 'listener-label', 'ignore-repeat', true),
-	pip_toggle: descriptor('pip', 'listener-label', 'ignore-repeat', true),
-	rotate_cw: descriptor('rotation', 'listener-label'),
-	rotate_ccw: descriptor('rotation', 'listener-label'),
-	mirror_toggle: descriptor('mirrored', 'listener-label'),
-	screenshot: descriptor('screenshot', 'listener-label', 'single', true),
-	dim_background: descriptor('dimEnabled', 'listener-label'),
-	marker_add: descriptor('marker-add', 'handler-result'),
-	marker_jump_prev: descriptor('marker-jump-previous', 'handler-result', 'coalesce-20hz'),
-	marker_jump_next: descriptor('marker-jump-next', 'handler-result', 'coalesce-20hz'),
-	ab_set_a: descriptor('ab-set-a', 'handler-result'),
-	ab_set_b: descriptor('ab-set-b', 'handler-result'),
-	ab_clear: descriptor('ab-clear', 'handler-result'),
-	ab_skip: descriptor('ab-skip', 'handler-result', 'coalesce-20hz'),
-	loop_toggle: descriptor('loop', 'listener-label'),
-	fx_toggle: descriptor('video-effects-toggle', 'listener-label'),
-	fx_reset: descriptor('video-effects-reset', 'listener-label'),
-	tab_pin: descriptor('tabPinned', 'listener-label'),
-	tab_mute: descriptor('tabMuted', 'listener-label'),
-	show_info: descriptor('show-info', 'handler-result'),
-	open_popup: descriptor('open-popup', 'none'),
-	open_options: descriptor('open-options', 'none'),
-	run_js: descriptor('run-user-script', 'none', 'ignore-repeat', false, 'script'),
-	open_url: descriptor('open-url', 'none', 'ignore-repeat', false, 'url'),
-} as const satisfies Record<string, HotkeyActionDescriptor>;
+// The tuple is [canonical capability, packed policy dimensions]. Zero values
+// mean actual-osd, coalesce-20hz, no activation, no parameter and enabled.
+// This is the sole persisted-action disposition owner; human-readable audit
+// descriptors and every production selector are derived from this index.
+const HOTKEY_ACTION_INDEX = {
+	none: [null, FEEDBACK_NONE | REPEAT_IGNORE | AVAILABILITY_NOOP],
+	play_pause: ['playback-toggle', FEEDBACK_LISTENER | REPEAT_IGNORE | USER_ACTIVATION],
+	seek_forward_5s: ['seek-relative', FEEDBACK_LISTENER],
+	seek_forward_10s: ['seek-relative', FEEDBACK_LISTENER],
+	seek_forward_30s: ['seek-relative', FEEDBACK_LISTENER],
+	seek_backward_5s: ['seek-relative', FEEDBACK_LISTENER],
+	seek_backward_10s: ['seek-relative', FEEDBACK_LISTENER],
+	seek_backward_30s: ['seek-relative', FEEDBACK_LISTENER],
+	seek_frame_forward: ['frame-step', FEEDBACK_LISTENER],
+	seek_frame_backward: ['frame-step', FEEDBACK_LISTENER],
+	speed_up: ['speed', 0],
+	speed_down: ['speed', 0],
+	speed_reset: ['speed', REPEAT_IGNORE],
+	speed_set: ['speed', REPEAT_IGNORE | PARAM_SPEED],
+	volume_up: ['effective-volume', 0],
+	volume_down: ['effective-volume', 0],
+	volume_mute: ['mediaMuted', REPEAT_IGNORE],
+	volume_set: ['effective-volume', REPEAT_IGNORE | PARAM_VOLUME],
+	audio_reset: ['audio-reset', REPEAT_IGNORE],
+	gain_up: ['effective-volume', 0],
+	gain_down: ['effective-volume', 0],
+	pitch_up: [null, FEEDBACK_HANDLER | REPEAT_IGNORE | AVAILABILITY_DISABLED],
+	pitch_down: [null, FEEDBACK_HANDLER | REPEAT_IGNORE | AVAILABILITY_DISABLED],
+	pitch_reset: [null, FEEDBACK_HANDLER | REPEAT_IGNORE | AVAILABILITY_DISABLED],
+	delay_up: ['delay', FEEDBACK_LISTENER],
+	delay_down: ['delay', FEEDBACK_LISTENER],
+	delay_reset: ['delay', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	pan_left: ['pan', FEEDBACK_LISTENER],
+	pan_right: ['pan', FEEDBACK_LISTENER],
+	pan_reset: ['pan', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	mono_toggle: ['mono', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	capture_toggle: [null, FEEDBACK_HANDLER | REPEAT_IGNORE | AVAILABILITY_DISABLED],
+	fullscreen_toggle: ['fullscreen', FEEDBACK_LISTENER | REPEAT_IGNORE | USER_ACTIVATION],
+	pip_toggle: ['pip', FEEDBACK_LISTENER | REPEAT_IGNORE | USER_ACTIVATION],
+	rotate_cw: ['rotation', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	rotate_ccw: ['rotation', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	mirror_toggle: ['mirrored', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	screenshot: ['screenshot', FEEDBACK_LISTENER | REPEAT_SINGLE | USER_ACTIVATION],
+	dim_background: ['dimEnabled', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	marker_add: ['marker-add', FEEDBACK_HANDLER | REPEAT_IGNORE],
+	marker_jump_prev: ['marker-jump-previous', FEEDBACK_HANDLER],
+	marker_jump_next: ['marker-jump-next', FEEDBACK_HANDLER],
+	ab_set_a: ['ab-set-a', FEEDBACK_HANDLER | REPEAT_IGNORE],
+	ab_set_b: ['ab-set-b', FEEDBACK_HANDLER | REPEAT_IGNORE],
+	ab_clear: ['ab-clear', FEEDBACK_HANDLER | REPEAT_IGNORE],
+	ab_skip: ['ab-skip', FEEDBACK_HANDLER],
+	loop_toggle: ['loop', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	fx_toggle: ['video-effects-toggle', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	fx_reset: ['video-effects-reset', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	tab_pin: ['tabPinned', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	tab_mute: ['tabMuted', FEEDBACK_LISTENER | REPEAT_IGNORE],
+	show_info: ['show-info', FEEDBACK_HANDLER | REPEAT_IGNORE],
+	open_popup: ['open-popup', FEEDBACK_NONE | REPEAT_IGNORE],
+	open_options: ['open-options', FEEDBACK_NONE | REPEAT_IGNORE],
+	run_js: ['run-user-script', FEEDBACK_NONE | REPEAT_IGNORE | PARAM_SCRIPT],
+	open_url: ['open-url', FEEDBACK_NONE | REPEAT_IGNORE | PARAM_URL],
+} as const satisfies Record<string, readonly [ControlCapability | null, number]>;
 
-export type HotkeyAction = keyof typeof HOTKEY_ACTION_DESCRIPTORS;
+export type HotkeyAction = keyof typeof HOTKEY_ACTION_INDEX;
+
+function hotkeyFlags(action: HotkeyAction): number {
+	return HOTKEY_ACTION_INDEX[action][1];
+}
+
+export function selectHotkeyCapability(action: HotkeyAction): ControlCapability | null {
+	return HOTKEY_ACTION_INDEX[action][0];
+}
+
+export function selectHotkeyFeedbackOwner(action: HotkeyAction): HotkeyFeedbackOwner {
+	switch (hotkeyFlags(action) & 3) {
+		case FEEDBACK_HANDLER: return 'handler-result';
+		case FEEDBACK_LISTENER: return 'listener-label';
+		case FEEDBACK_NONE: return 'none';
+		default: return 'actual-osd';
+	}
+}
+
+export function selectHotkeyRepeatPolicy(action: HotkeyAction): HotkeyRepeatPolicy {
+	switch ((hotkeyFlags(action) >>> 2) & 3) {
+		case 1: return 'ignore-repeat';
+		case 2: return 'single';
+		default: return 'coalesce-20hz';
+	}
+}
+
+export function hotkeyActionRequiresUserActivation(action: HotkeyAction): boolean {
+	return (hotkeyFlags(action) & USER_ACTIVATION) !== 0;
+}
+
+export function selectHotkeyParameterKind(action: HotkeyAction): HotkeyParameterKind {
+	switch ((hotkeyFlags(action) >>> 5) & 7) {
+		case 1: return 'speed';
+		case 2: return 'volume';
+		case 3: return 'script';
+		case 4: return 'url';
+		default: return 'none';
+	}
+}
+
+export function selectHotkeyAvailability(action: HotkeyAction): HotkeyAvailability {
+	switch ((hotkeyFlags(action) >>> 8) & 3) {
+		case 1: return 'no-op';
+		case 2: return 'disabled-legacy';
+		default: return 'enabled';
+	}
+}
 
 // The descriptor table is the sole persisted-action key owner. Object.keys
 // preserves its declaration order, so the historical public list API remains
 // stable without a second hand-maintained action vocabulary.
 export const HOTKEY_ACTIONS: readonly HotkeyAction[] = Object.freeze(
-	Object.keys(HOTKEY_ACTION_DESCRIPTORS) as HotkeyAction[],
+	Object.keys(HOTKEY_ACTION_INDEX) as HotkeyAction[],
 );
+
+function projectHotkeyActionDescriptors(): Readonly<Record<HotkeyAction, HotkeyActionDescriptor>> {
+	return Object.freeze(Object.fromEntries(HOTKEY_ACTIONS.map((action) => [action, {
+		capability: selectHotkeyCapability(action),
+		availability: selectHotkeyAvailability(action),
+		repeatPolicy: selectHotkeyRepeatPolicy(action),
+		requiresUserActivation: hotkeyActionRequiresUserActivation(action),
+		parameter: selectHotkeyParameterKind(action),
+		feedbackOwner: selectHotkeyFeedbackOwner(action),
+	}])) as Record<HotkeyAction, HotkeyActionDescriptor>);
+}
+
+export const HOTKEY_ACTION_DESCRIPTORS = /* @__PURE__ */ projectHotkeyActionDescriptors();
+
+export function selectHotkeyActionDescriptor(action: HotkeyAction): HotkeyActionDescriptor {
+	return HOTKEY_ACTION_DESCRIPTORS[action];
+}
 
 export type SpectraHotkeyActualFeedback =
 	| { kind: 'volume'; value: number; volumeState: AudioVolumeState }
@@ -119,7 +182,7 @@ export function resolveSpectraHotkeyActualFeedback(
 	action: HotkeyAction,
 	acknowledgement: unknown,
 ): SpectraHotkeyActualFeedback | undefined {
-	if (HOTKEY_ACTION_DESCRIPTORS[action].feedbackOwner !== 'actual-osd'
+	if (selectHotkeyFeedbackOwner(action) !== 'actual-osd'
 		|| typeof acknowledgement !== 'object'
 		|| acknowledgement === null) return undefined;
 	const candidate = acknowledgement as Partial<
@@ -140,17 +203,20 @@ export function resolveSpectraHotkeyActualFeedback(
 const HOTKEY_ACTION_SET: ReadonlySet<string> = new Set(HOTKEY_ACTIONS);
 const DEFAULT_HOTKEY_ACTION_SET: ReadonlySet<string> = new Set(SPECTRA_DEFAULT_HOTKEY_ACTIONS);
 
+export function isHotkeyAction(value: unknown): value is HotkeyAction {
+	return typeof value === 'string' && HOTKEY_ACTION_SET.has(value);
+}
+
 // Chrome command slots expose neither physical keyup nor action parameters.
 // Keep this runtime predicate beside the exhaustive descriptor table so
 // storage normalization, settings patches and command dispatch enforce one
 // capability boundary: held/coalesced actions belong to page KeyboardEvents.
 export function isSlotHotkeyAction(action: unknown): action is HotkeyAction {
-	if (typeof action !== 'string' || !HOTKEY_ACTION_SET.has(action)) return false;
-	const descriptor = HOTKEY_ACTION_DESCRIPTORS[action as HotkeyAction];
-	return descriptor.availability !== 'disabled-legacy'
+	if (!isHotkeyAction(action)) return false;
+	return selectHotkeyAvailability(action) === 'enabled'
 		&& !DEFAULT_HOTKEY_ACTION_SET.has(action)
-		&& descriptor.parameter === 'none'
-		&& descriptor.repeatPolicy !== 'coalesce-20hz';
+		&& selectHotkeyParameterKind(action) === 'none'
+		&& selectHotkeyRepeatPolicy(action) !== 'coalesce-20hz';
 }
 
 export interface KeyModifiers {
@@ -227,11 +293,11 @@ export function isHotkeyParamsForAction(
 	action: HotkeyAction,
 	value: unknown,
 ): value is HotkeyParams | undefined {
-	const required = HOTKEY_ACTION_DESCRIPTORS[action].parameter;
+	const required = selectHotkeyParameterKind(action);
 	if (value === undefined) return required === 'none';
 	if (!isRecord(value) || !Object.keys(value).every((key) => HOTKEY_PARAM_KEYS.has(key))) return false;
-	if (value.speed !== undefined && !isFiniteInRange(value.speed, 0.1, 16)) return false;
-	if (value.volume !== undefined && !isFiniteInRange(value.volume, 0, 800)) return false;
+	if (value.speed !== undefined && !isFiniteControlValue(value.speed, 'speed')) return false;
+	if (value.volume !== undefined && !isFiniteControlValue(value.volume, 'volume')) return false;
 	if (value.step !== undefined && !isFiniteInRange(value.step, 0.001, 800)) return false;
 	if (value.script !== undefined && (
 		typeof value.script !== 'string' || value.script.length === 0 || value.script.length > 100_000

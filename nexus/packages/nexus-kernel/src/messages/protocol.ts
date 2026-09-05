@@ -3,8 +3,6 @@
 
 export type {
   AudioConfig,
-  AudioState,
-  AudioMode,
 
   NexusMessages,
   NexusAction,

@@ -5,8 +5,12 @@ import {
 	DEFAULT_AUDIO_CONFIG,
 	isAudioConfig,
 	isControlSessionPatch,
+	isLegacyAudioConfig,
+	normalizeLegacyAudioConfig,
 	resolveAudioVolume,
+	splitEffectiveVolume,
 	type AudioConfig,
+	type LegacyAudioConfig,
 	type ControlSessionPatch,
 	type TabSessionIdentity,
 } from '@nexus/contracts';
@@ -40,7 +44,7 @@ interface PreviousStoredTabControlSession {
 
 interface LegacyStoredAudioSession {
 	identity: TabSessionIdentity;
-	config: AudioConfig;
+	config: LegacyAudioConfig;
 	updatedAt: number;
 }
 
@@ -144,9 +148,14 @@ function isLegacyStoredAudioSession(value: unknown): value is LegacyStoredAudioS
 	if (!value || typeof value !== 'object') return false;
 	const record = value as Partial<LegacyStoredAudioSession>;
 	return isTabSessionIdentity(record.identity)
-		&& isAudioConfig(record.config)
+		&& isLegacyAudioConfig(record.config)
 		&& typeof record.updatedAt === 'number'
 		&& Number.isFinite(record.updatedAt);
+}
+
+function normalizeLegacyStoredAudioConfig(config: LegacyAudioConfig): AudioConfig | null {
+	const normalized = normalizeLegacyAudioConfig(config);
+	return normalized && isAudioConfig(normalized) ? normalized : null;
 }
 
 function normalizeStoredSession(value: unknown): NormalizedStoredSession | null {
@@ -171,10 +180,12 @@ function normalizeStoredSession(value: unknown): NormalizedStoredSession | null 
 		};
 	}
 	if (!isLegacyStoredAudioSession(value)) return null;
+	const config = normalizeLegacyStoredAudioConfig(value.config);
+	if (!config) return null;
 	return {
 		identity: value.identity,
 		resourceUrl: null,
-		patch: audioConfigToControlSessionPatch(value.config),
+		patch: audioConfigToControlSessionPatch(config),
 		portablePatch: {},
 		updatedAt: value.updatedAt,
 		migration: 'audio-config',
@@ -223,11 +234,11 @@ export function audioConfigPatchToControlSessionPatch(
 ): ControlSessionPatch {
 	const patch: ControlSessionPatch = {};
 	if (config.enabled !== undefined) patch.audioEnabled = config.enabled;
-	const legacyVolumeOnly = config.volume !== undefined
+	const effectiveVolumeOnly = config.volume !== undefined
 		&& config.volumeBase === undefined
 		&& config.boost === undefined;
-	if (legacyVolumeOnly) {
-		const volume = resolveAudioVolume({ volume: config.volume ?? DEFAULT_AUDIO_CONFIG.volume });
+	if (effectiveVolumeOnly) {
+		const volume = splitEffectiveVolume(config.volume ?? DEFAULT_AUDIO_CONFIG.volume);
 		patch.volumeBase = volume.volumeBase;
 		patch.boost = volume.boost;
 	} else {
@@ -269,7 +280,6 @@ export function controlSessionPatchToAudioConfig(
 	if (patch.pan !== undefined) next.pan = patch.pan;
 	if (patch.delay !== undefined) next.delay = patch.delay;
 	const volume = resolveAudioVolume({
-		volume: baseline.volume,
 		volumeBase: patch.volumeBase ?? baseline.volumeBase,
 		boost: patch.boost ?? baseline.boost,
 	});

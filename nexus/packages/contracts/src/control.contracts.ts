@@ -6,9 +6,20 @@ import {
 	type AudioVolumeState,
 	type SpectraAudioMode,
 } from './audio.contracts.js';
+import {
+	CONTROL_VALUE_LIMITS,
+	compileEffectiveVolume,
+	isFiniteControlValue,
+} from './control-value-limits.js';
+export { compileEffectiveVolume, splitEffectiveVolume } from './control-value-limits.js';
+import {
+	isCaptureAdmission,
+	type CaptureAdmission,
+} from './capture-admission.contracts.js';
 
 export const CONTROL_STRATEGIES = [
 	'observe',
+	'capture-observe',
 	'page-native',
 	'dom-native',
 	'chrome-native',
@@ -48,7 +59,7 @@ export type ControlWriterOwner =
 	| 'extension-overlay'
 	| 'media-processor'
 	| 'capture-processor';
-export type ControlAudioRuntimeCost = 'none' | 'existing-processor-only' | 'lazy-audio-context' | 'lazy-offscreen-capture';
+export type ControlAudioRuntimeCost = 'none' | 'lazy-audio-context' | 'lazy-offscreen-capture';
 export type ControlMainWorldPolicy = 'forbidden' | 'exact-element-page-bridge';
 
 export interface ControlStrategyRule {
@@ -65,72 +76,6 @@ export interface ControlStrategyRule {
 	canBypassCorsOrDrm: false;
 }
 
-// Strategy semantics are data, not comments hidden in one executor. Runtime
-// planners, architecture checks and UX tests consume this exhaustive record so
-// a future strategy cannot quietly acquire broader MAIN/audio/permission power.
-export const CONTROL_STRATEGY_RULES = {
-	observe: {
-		class: 'observe', writerOwner: 'none', requiresExplicitIntent: false,
-		interception: 'none', admissionEvidence: 'existing-runtime-state',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
-		audioRuntimeCost: 'existing-processor-only', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	'page-native': {
-		class: 'native', writerOwner: 'page-media-controller', requiresExplicitIntent: true,
-		interception: 'none', admissionEvidence: 'page-controller-readback',
-		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'exact-element-page-bridge',
-		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	'dom-native': {
-		class: 'native', writerOwner: 'standard-dom-api', requiresExplicitIntent: true,
-		interception: 'none', admissionEvidence: 'standard-api-readback',
-		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'forbidden',
-		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	'chrome-native': {
-		class: 'native', writerOwner: 'chrome-api', requiresExplicitIntent: true,
-		interception: 'none', admissionEvidence: 'chrome-api-readback',
-		requiresActualReadback: true, requiresDisposer: false, mainWorld: 'forbidden',
-		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	'extension-state': {
-		class: 'augmentation', writerOwner: 'extension-state', requiresExplicitIntent: true,
-		interception: 'reversible-extension-layer', admissionEvidence: 'extension-owner-readback',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
-		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	'extension-css': {
-		class: 'augmentation', writerOwner: 'extension-style', requiresExplicitIntent: true,
-		interception: 'reversible-extension-layer', admissionEvidence: 'computed-style-readback',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
-		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	'extension-overlay': {
-		class: 'augmentation', writerOwner: 'extension-overlay', requiresExplicitIntent: true,
-		interception: 'reversible-extension-layer', admissionEvidence: 'overlay-geometry-readback',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
-		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	'media-webaudio': {
-		class: 'augmentation', writerOwner: 'media-processor', requiresExplicitIntent: true,
-		interception: 'irreversible-media-source-binding', admissionEvidence: 'proven-media-source-eligibility',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
-		audioRuntimeCost: 'lazy-audio-context', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	capture: {
-		class: 'augmentation', writerOwner: 'capture-processor', requiresExplicitIntent: true,
-		interception: 'authorized-tab-stream', admissionEvidence: 'authorized-capture-readback',
-		requiresActualReadback: true, requiresDisposer: true, mainWorld: 'forbidden',
-		audioRuntimeCost: 'lazy-offscreen-capture', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-	unsupported: {
-		class: 'unsupported', writerOwner: 'none', requiresExplicitIntent: false,
-		interception: 'none', admissionEvidence: 'none',
-		requiresActualReadback: false, requiresDisposer: false, mainWorld: 'forbidden',
-		audioRuntimeCost: 'none', canBypassUserActivation: false, canBypassCorsOrDrm: false,
-	},
-} as const satisfies Record<ControlStrategy, ControlStrategyRule>;
-
 // A failed native attempt may enter a more invasive strategy only when the
 // failure proves that the capability itself is incomplete. Permission,
 // activation, protected-content and identity boundaries are terminal: MAIN or
@@ -140,7 +85,6 @@ export const CONTROL_RETRYABLE_STRATEGY_FAILURES = [
 	'write-unsupported',
 	'readback-mismatch',
 	'coverage-incomplete',
-	'source-binding-ineligible',
 	'strategy-runtime-failed',
 ] as const;
 
@@ -182,7 +126,6 @@ export type ControlCoverage = 'full' | 'active-target' | 'partial' | 'opaque';
 export type ControlRequestedCoverage = Extract<ControlCoverage, 'full' | 'active-target'>;
 export type ControlFieldPhase = 'idle' | 'applying' | 'applied' | 'error';
 export type ControlIntentSource = 'page' | 'popup' | 'remote' | 'hotkey' | 'restore' | 'system';
-export type CaptureAdmission = 'extension-invocation';
 export type MediaKind = 'audio' | 'video';
 
 export interface MediaTarget {
@@ -430,8 +373,7 @@ export type ControlAcknowledgement =
 export type ControlRecurringWork =
 	| 'none'
 	| 'while-owned'
-	| 'while-subscribed'
-	| 'page-lifetime-after-media-binding';
+	| 'while-subscribed';
 
 export interface ControlAlgorithmPolicy {
 	scope: ControlScope;
@@ -451,296 +393,314 @@ export type ControlAugmentationAdmission =
 	| 'none'
 	| 'native-incomplete'
 	| 'extension-owned-capability'
-	| 'proven-safe-source-or-explicit-full-output'
 	| 'explicit-full-output-only'
-	| 'existing-processor-only';
+	| 'explicit-foreground-subscription';
 
 export interface ControlAlgorithmAdjudication {
 	nativePreference: ControlNativePreference;
 	augmentationAdmission: ControlAugmentationAdmission;
 }
 
-// This is the executable owner of the native/extension decision table. The
-// CapabilityPlanner consumes this record, and the exhaustive Record type makes
-// a new field or operation fail compilation until its complete algorithm is
-// classified. `unsupported` is deliberately absent: it is the result after all
-// listed candidates fail actual-write/readback checks.
-export const CONTROL_ALGORITHM_POLICIES = {
-	audioEnabled: {
-		scope: 'document', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
-	},
-	volumeBase: {
-		scope: 'requested-audio-scope', kind: 'field',
-		orderedStrategies: ['page-native', 'dom-native'],
-		acknowledgements: ['page-controller-getter', 'dom-event-getter'],
-		recurringWork: 'none',
-	},
-	boost: {
-		scope: 'requested-audio-scope', kind: 'field',
-		orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
-	},
-	mediaMuted: {
-		scope: 'requested-audio-scope', kind: 'field',
-		orderedStrategies: ['page-native', 'dom-native'],
-		acknowledgements: ['page-controller-getter', 'dom-event-getter'],
-		recurringWork: 'none',
-	},
-	tabMuted: {
-		scope: 'tab', kind: 'field', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['chrome-event-getter'], recurringWork: 'none',
-	},
-	speed: {
-		scope: 'active-media', kind: 'field', orderedStrategies: ['page-native', 'dom-native'],
-		acknowledgements: ['page-controller-getter', 'dom-event-getter'],
-		recurringWork: 'none',
-	},
-	preservePitch: {
-		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-stable-getter'], recurringWork: 'none',
-	},
-	playing: {
-		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	currentTime: {
-		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	loop: {
-		scope: 'active-media', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-stable-getter'], recurringWork: 'none',
-	},
-	pip: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	fullscreen: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	rotation: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], recurringWork: 'none',
-	},
-	mirrored: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], recurringWork: 'none',
-	},
-	fill: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], recurringWork: 'none',
-	},
-	filterEnabled: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], recurringWork: 'none',
-	},
-	filter: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-css'],
-		acknowledgements: ['computed-style'], recurringWork: 'none',
-	},
-	dimEnabled: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-overlay'],
-		acknowledgements: ['overlay-readback'], recurringWork: 'while-owned',
-	},
-	dimOpacity: {
-		scope: 'active-video', kind: 'field', orderedStrategies: ['extension-overlay'],
-		acknowledgements: ['overlay-readback'], recurringWork: 'while-owned',
-	},
-	abLoop: {
-		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot', 'dom-event-getter'],
-		recurringWork: 'while-owned',
-	},
-	tabPinned: {
-		scope: 'tab', kind: 'field', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['chrome-event-getter'], recurringWork: 'none',
-	},
-	eqValues: {
-		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
-	},
-	bass: {
-		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
-	},
-	compressor: {
-		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
-	},
-	mono: {
-		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
-	},
-	pan: {
-		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
-	},
-	delay: {
-		scope: 'requested-audio-scope', kind: 'field', orderedStrategies: ['media-webaudio', 'capture'],
-		acknowledgements: ['processor-readback'], recurringWork: 'page-lifetime-after-media-binding',
-	},
-	visualizer: {
-		scope: 'requested-audio-scope', kind: 'subscription', orderedStrategies: ['observe'],
-		acknowledgements: ['subscription-state'], recurringWork: 'while-subscribed',
-	},
-	'restore-page-settings': {
-		scope: 'document', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
-	},
-	'effective-volume': {
-		scope: 'requested-audio-scope', kind: 'compound',
-		orderedStrategies: ['page-native', 'dom-native', 'extension-state', 'media-webaudio', 'capture'],
-		acknowledgements: ['page-controller-getter', 'dom-event-getter', 'processor-readback'],
-		recurringWork: 'none',
-	},
-	'playback-toggle': {
-		scope: 'active-media', kind: 'compound', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	'seek-relative': {
-		scope: 'active-media', kind: 'compound', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	'frame-step': {
-		// No native media API exposes exact frame stepping.
-		// Extension-owned cadence estimation selects the delta, then the DOM executor
-		// performs one measured, explicitly approximate native seek.
-		scope: 'active-video', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	screenshot: {
-		scope: 'active-video', kind: 'compound', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['operation-result'], recurringWork: 'none',
-	},
-	'marker-add': {
-		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
-	},
-	'marker-remove': {
-		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
-	},
-	'marker-jump': {
-		scope: 'media-source', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	'marker-jump-previous': {
-		scope: 'media-source', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	'marker-jump-next': {
-		scope: 'media-source', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	'ab-set-a': {
-		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['operation-result'], recurringWork: 'none',
-	},
-	'ab-set-b': {
-		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['operation-result'], recurringWork: 'none',
-	},
-	'ab-clear': {
-		scope: 'media-source', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['operation-result'], recurringWork: 'none',
-	},
-	'ab-skip': {
-		scope: 'media-source', kind: 'state-then-native', orderedStrategies: ['dom-native'],
-		acknowledgements: ['dom-event-getter'], recurringWork: 'none',
-	},
-	'audio-reset': {
-		scope: 'requested-audio-scope', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
-	},
-	'video-effects-toggle': {
-		scope: 'active-video', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
-	},
-	'video-effects-reset': {
-		scope: 'active-video', kind: 'compound', orderedStrategies: ['extension-state'],
-		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
-	},
-	'show-info': {
-		scope: 'document', kind: 'observation', orderedStrategies: ['observe'],
-		acknowledgements: ['coordinator-snapshot'], recurringWork: 'none',
-	},
-	'open-popup': {
-		scope: 'extension-ui', kind: 'browser-action', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['operation-result'], recurringWork: 'none',
-	},
-	'open-options': {
-		scope: 'extension-ui', kind: 'browser-action', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['operation-result'], recurringWork: 'none',
-	},
-	'run-user-script': {
-		scope: 'sandbox', kind: 'sandbox', orderedStrategies: ['extension-state'],
-		acknowledgements: ['operation-result'], recurringWork: 'none',
-	},
-	'open-url': {
-		scope: 'tab', kind: 'browser-action', orderedStrategies: ['chrome-native'],
-		acknowledgements: ['operation-result'], recurringWork: 'none',
-	},
-} as const satisfies Record<ControlCapability, ControlAlgorithmPolicy>;
+// One compact, exhaustive owner contains all runtime dimensions. The numeric
+// indexes intentionally share these dictionaries so consumers can select only
+// the dimension they need (for example scope or Capture admission) without
+// pulling unrelated audit values into an application bundle. The audit views
+// below are derived from this owner and are not runtime authorities.
+const CONTROL_STRATEGY_CLASSES = ['observe', 'native', 'augmentation', 'unsupported'] as const;
+const CONTROL_STRATEGY_WRITERS = [
+	'none', 'page-media-controller', 'standard-dom-api', 'chrome-api',
+	'extension-state', 'extension-style', 'extension-overlay', 'capture-processor', 'media-processor',
+] as const;
+const CONTROL_STRATEGY_INTERCEPTIONS = [
+	'none', 'reversible-extension-layer', 'authorized-tab-stream', 'irreversible-media-source-binding',
+] as const;
+const CONTROL_STRATEGY_EVIDENCE = [
+	'none', 'existing-runtime-state', 'page-controller-readback', 'standard-api-readback',
+	'chrome-api-readback', 'extension-owner-readback', 'computed-style-readback',
+	'overlay-geometry-readback', 'authorized-capture-readback', 'proven-media-source-eligibility',
+] as const;
+const CONTROL_STRATEGY_MAIN_WORLD = ['forbidden', 'exact-element-page-bridge'] as const;
+const CONTROL_STRATEGY_AUDIO_COSTS = ['none', 'lazy-offscreen-capture', 'lazy-audio-context'] as const;
+const CONTROL_SCOPES = [
+	'document', 'tab', 'requested-audio-scope', 'active-media', 'active-video',
+	'media-source', 'extension-ui', 'sandbox',
+] as const;
+const CONTROL_KINDS = ['field', 'compound', 'state-then-native', 'observation', 'subscription', 'browser-action', 'sandbox'] as const;
+const CONTROL_ACKNOWLEDGEMENTS = [
+	'coordinator-snapshot', 'page-controller-getter', 'dom-event-getter', 'dom-stable-getter',
+	'chrome-event-getter', 'processor-readback', 'computed-style', 'overlay-readback',
+	'subscription-state', 'operation-result',
+] as const;
+const CONTROL_RECURRING_WORK = ['none', 'while-owned', 'while-subscribed'] as const;
+const CONTROL_NATIVE_PREFERENCES = ['observation-only', 'native-only', 'hybrid-extension-native', 'augmentation-only'] as const;
+const CONTROL_AUGMENTATION_ADMISSIONS = [
+	'none', 'native-incomplete', 'extension-owned-capability',
+	'explicit-full-output-only', 'explicit-foreground-subscription',
+] as const;
 
-// Ordered strategies say what may execute. This second exhaustive record says
-// why a non-native candidate may be admitted at all. Keeping that distinction
-// explicit prevents a future executor from treating Capture, CSS or WebAudio as
-// a generic fallback merely because it appears later in an ordered list.
-export const CONTROL_ALGORITHM_ADJUDICATIONS = {
-	audioEnabled: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	volumeBase: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	boost: { nativePreference: 'augmentation-only', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
-	mediaMuted: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	tabMuted: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	speed: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	preservePitch: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	playing: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	currentTime: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	loop: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	pip: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	fullscreen: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	rotation: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	mirrored: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	fill: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	filterEnabled: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	filter: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	dimEnabled: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	dimOpacity: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	abLoop: { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	tabPinned: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	eqValues: { nativePreference: 'augmentation-only', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
-	bass: { nativePreference: 'augmentation-only', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
-	compressor: { nativePreference: 'augmentation-only', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
-	mono: { nativePreference: 'augmentation-only', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
-	pan: { nativePreference: 'augmentation-only', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
-	delay: { nativePreference: 'augmentation-only', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
-	visualizer: { nativePreference: 'observation-only', augmentationAdmission: 'existing-processor-only' },
-	'restore-page-settings': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'effective-volume': { nativePreference: 'hybrid-extension-native', augmentationAdmission: 'proven-safe-source-or-explicit-full-output' },
-	'playback-toggle': { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	'seek-relative': { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	'frame-step': { nativePreference: 'hybrid-extension-native', augmentationAdmission: 'extension-owned-capability' },
-	screenshot: { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	'marker-add': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'marker-remove': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'marker-jump': { nativePreference: 'hybrid-extension-native', augmentationAdmission: 'extension-owned-capability' },
-	'marker-jump-previous': { nativePreference: 'hybrid-extension-native', augmentationAdmission: 'extension-owned-capability' },
-	'marker-jump-next': { nativePreference: 'hybrid-extension-native', augmentationAdmission: 'extension-owned-capability' },
-	'ab-set-a': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'ab-set-b': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'ab-clear': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'ab-skip': { nativePreference: 'hybrid-extension-native', augmentationAdmission: 'extension-owned-capability' },
-	'audio-reset': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'video-effects-toggle': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'video-effects-reset': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'show-info': { nativePreference: 'observation-only', augmentationAdmission: 'none' },
-	'open-popup': { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	'open-options': { nativePreference: 'native-only', augmentationAdmission: 'none' },
-	'run-user-script': { nativePreference: 'augmentation-only', augmentationAdmission: 'extension-owned-capability' },
-	'open-url': { nativePreference: 'native-only', augmentationAdmission: 'none' },
-} as const satisfies Record<ControlCapability, ControlAlgorithmAdjudication>;
+// CONTROL_STRATEGIES is the stable wire enum and therefore also owns bit
+// positions. Execution order is a separate policy: a proven page graph must
+// precede the more invasive Capture observer without renumbering the wire
+// strategy values.
+const CONTROL_STRATEGY_SELECTION_ORDER = [
+	'observe', 'page-native', 'dom-native', 'chrome-native', 'extension-state',
+	'extension-css', 'extension-overlay', 'media-webaudio', 'capture-observe',
+	'capture', 'unsupported',
+] as const satisfies readonly ControlStrategy[];
+
+type ControlStrategyDimension = readonly [
+	classIndex: number,
+	writerIndex: number,
+	interceptionIndex: number,
+	evidenceIndex: number,
+	mainWorldIndex: number,
+	audioRuntimeCostIndex: number,
+	flags: number,
+];
+
+type ControlCapabilityDimension = readonly [
+	scopeIndex: number,
+	kindIndex: number,
+	strategyMask: number,
+	acknowledgementMask: number,
+	recurringWorkIndex: number,
+	nativePreferenceIndex: number,
+	augmentationAdmissionIndex: number,
+];
+
+interface ControlDimensionIndex {
+	strategies: readonly ControlStrategyDimension[];
+	capabilities: readonly ControlCapabilityDimension[];
+}
+
+const CONTROL_DIMENSION_INDEX = {
+	strategies: [
+		[0, 0, 0, 1, 0, 0, 6],
+		[0, 7, 2, 8, 0, 1, 7],
+		[1, 1, 0, 2, 1, 0, 3],
+		[1, 2, 0, 3, 0, 0, 3],
+		[1, 3, 0, 4, 0, 0, 3],
+		[2, 4, 1, 5, 0, 0, 7],
+		[2, 5, 1, 6, 0, 0, 7],
+		[2, 6, 1, 7, 0, 0, 7],
+		[2, 8, 3, 9, 0, 2, 7],
+		[2, 7, 2, 8, 0, 1, 7],
+		[3, 0, 0, 0, 0, 0, 0],
+	],
+	capabilities: [
+		[0, 1, 32, 1, 0, 3, 2],
+		[2, 0, 12, 6, 0, 1, 0],
+		[2, 0, 768, 32, 1, 3, 3],
+		[2, 0, 12, 6, 0, 1, 0],
+		[1, 0, 16, 16, 0, 1, 0],
+		[3, 0, 12, 6, 0, 1, 0],
+		[3, 0, 8, 8, 0, 1, 0],
+		[3, 0, 8, 4, 0, 1, 0],
+		[3, 0, 8, 4, 0, 1, 0],
+		[3, 0, 8, 8, 0, 1, 0],
+		[4, 0, 8, 4, 0, 1, 0],
+		[4, 0, 8, 4, 0, 1, 0],
+		[4, 0, 64, 64, 0, 3, 2],
+		[4, 0, 64, 64, 0, 3, 2],
+		[4, 0, 64, 64, 0, 3, 2],
+		[4, 0, 64, 64, 0, 3, 2],
+		[4, 0, 64, 64, 0, 3, 2],
+		[4, 0, 128, 128, 1, 3, 2],
+		[4, 0, 128, 128, 1, 3, 2],
+		[5, 1, 32, 5, 1, 3, 2],
+		[1, 0, 16, 16, 0, 1, 0],
+		[2, 0, 768, 32, 1, 3, 3],
+		[2, 0, 768, 32, 1, 3, 3],
+		[2, 0, 768, 32, 1, 3, 3],
+		[2, 0, 768, 32, 1, 3, 3],
+		[2, 0, 768, 32, 1, 3, 3],
+		[2, 0, 768, 32, 1, 3, 3],
+		[2, 4, 258, 256, 2, 0, 4],
+		[0, 1, 32, 1, 0, 3, 2],
+		[2, 1, 812, 38, 0, 2, 3],
+		[3, 1, 8, 4, 0, 1, 0],
+		[3, 1, 8, 4, 0, 1, 0],
+		[4, 2, 8, 4, 0, 2, 2],
+		[4, 1, 16, 512, 0, 1, 0],
+		[5, 1, 32, 1, 0, 3, 2],
+		[5, 1, 32, 1, 0, 3, 2],
+		[5, 2, 8, 4, 0, 2, 2],
+		[5, 2, 8, 4, 0, 2, 2],
+		[5, 2, 8, 4, 0, 2, 2],
+		[5, 1, 32, 512, 0, 3, 2],
+		[5, 1, 32, 512, 0, 3, 2],
+		[5, 1, 32, 512, 0, 3, 2],
+		[5, 2, 8, 4, 0, 2, 2],
+		[2, 1, 32, 1, 0, 3, 2],
+		[4, 1, 32, 1, 0, 3, 2],
+		[4, 1, 32, 1, 0, 3, 2],
+		[0, 3, 1, 1, 0, 0, 0],
+		[6, 5, 16, 512, 0, 1, 0],
+		[6, 5, 16, 512, 0, 1, 0],
+		[7, 6, 32, 512, 0, 3, 2],
+		[1, 5, 16, 512, 0, 1, 0],
+	],
+} as const satisfies ControlDimensionIndex;
+
+function dimensionValue<T>(values: readonly T[], index: number, label: string): T {
+	const value = values[index];
+	if (value === undefined) throw new Error(`Invalid control ${label} index ${index}`);
+	return value;
+}
+
+function controlStrategyDimension(strategy: ControlStrategy): ControlStrategyDimension {
+	return dimensionValue(
+		CONTROL_DIMENSION_INDEX.strategies,
+		CONTROL_STRATEGIES.indexOf(strategy),
+		'strategy',
+	);
+}
+
+function controlCapabilityDimension(capability: ControlCapability): ControlCapabilityDimension {
+	return dimensionValue(
+		CONTROL_DIMENSION_INDEX.capabilities,
+		CONTROL_CAPABILITIES.indexOf(capability),
+		'capability',
+	);
+}
+
+export function selectControlStrategyClass(strategy: ControlStrategy): ControlStrategyClass {
+	const [classIndex] = controlStrategyDimension(strategy);
+	return dimensionValue(CONTROL_STRATEGY_CLASSES, classIndex, 'strategy class');
+}
+
+export function selectControlStrategyRule(strategy: ControlStrategy): ControlStrategyRule {
+	const [classIndex, writerIndex, interceptionIndex, evidenceIndex, mainWorldIndex, audioRuntimeCostIndex, flags] =
+		controlStrategyDimension(strategy);
+	return {
+		class: dimensionValue(CONTROL_STRATEGY_CLASSES, classIndex, 'strategy class'),
+		writerOwner: dimensionValue(CONTROL_STRATEGY_WRITERS, writerIndex, 'strategy writer'),
+		interception: dimensionValue(CONTROL_STRATEGY_INTERCEPTIONS, interceptionIndex, 'strategy interception'),
+		admissionEvidence: dimensionValue(CONTROL_STRATEGY_EVIDENCE, evidenceIndex, 'strategy evidence'),
+		requiresExplicitIntent: (flags & 1) !== 0,
+		requiresActualReadback: (flags & 2) !== 0,
+		requiresDisposer: (flags & 4) !== 0,
+		mainWorld: dimensionValue(CONTROL_STRATEGY_MAIN_WORLD, mainWorldIndex, 'strategy MAIN policy'),
+		audioRuntimeCost: dimensionValue(CONTROL_STRATEGY_AUDIO_COSTS, audioRuntimeCostIndex, 'strategy audio cost'),
+		canBypassUserActivation: false,
+		canBypassCorsOrDrm: false,
+	};
+}
+
+function selectControlStrategies(
+	mask: number,
+): readonly Exclude<ControlStrategy, 'unsupported'>[] {
+	const strategies: Exclude<ControlStrategy, 'unsupported'>[] = [];
+	for (const strategy of CONTROL_STRATEGY_SELECTION_ORDER) {
+		const index = CONTROL_STRATEGIES.indexOf(strategy);
+		if ((mask & (1 << index)) === 0) continue;
+		if (strategy === 'unsupported') throw new Error('Unsupported strategy cannot be an executable candidate');
+		strategies.push(strategy);
+	}
+	return strategies;
+}
+
+function selectControlAcknowledgements(mask: number): readonly ControlAcknowledgement[] {
+	const acknowledgements: ControlAcknowledgement[] = [];
+	for (let index = 0; index < CONTROL_ACKNOWLEDGEMENTS.length; index += 1) {
+		if ((mask & (1 << index)) === 0) continue;
+		acknowledgements.push(dimensionValue(
+			CONTROL_ACKNOWLEDGEMENTS,
+			index,
+			'capability acknowledgement',
+		));
+	}
+	return acknowledgements;
+}
+
+export function selectControlCapabilityScope(capability: ControlCapability): ControlScope {
+	const [scopeIndex] = controlCapabilityDimension(capability);
+	return dimensionValue(CONTROL_SCOPES, scopeIndex, 'capability scope');
+}
+
+export function selectControlAlgorithmPolicy(capability: ControlCapability): ControlAlgorithmPolicy {
+	const [scopeIndex, kindIndex, strategyMask, acknowledgementMask, recurringWorkIndex] =
+		controlCapabilityDimension(capability);
+	return {
+		scope: dimensionValue(CONTROL_SCOPES, scopeIndex, 'capability scope'),
+		kind: dimensionValue(CONTROL_KINDS, kindIndex, 'capability kind'),
+		orderedStrategies: selectControlStrategies(strategyMask),
+		acknowledgements: selectControlAcknowledgements(acknowledgementMask),
+		recurringWork: dimensionValue(CONTROL_RECURRING_WORK, recurringWorkIndex, 'capability recurring work'),
+	};
+}
+
+export function selectControlAlgorithmAdjudication(
+	capability: ControlCapability,
+): ControlAlgorithmAdjudication {
+	const [, , , , , nativePreferenceIndex, augmentationAdmissionIndex] =
+		controlCapabilityDimension(capability);
+	return {
+		nativePreference: dimensionValue(
+			CONTROL_NATIVE_PREFERENCES,
+			nativePreferenceIndex,
+			'capability native preference',
+		),
+		augmentationAdmission: dimensionValue(
+			CONTROL_AUGMENTATION_ADMISSIONS,
+			augmentationAdmissionIndex,
+			'capability augmentation admission',
+		),
+	};
+}
+
+export function selectControlAugmentationAdmission(
+	capability: ControlCapability,
+): ControlAugmentationAdmission {
+	const [, , , , , , augmentationAdmissionIndex] = controlCapabilityDimension(capability);
+	return dimensionValue(
+		CONTROL_AUGMENTATION_ADMISSIONS,
+		augmentationAdmissionIndex,
+		'capability augmentation admission',
+	);
+}
+
+export function controlCapabilityUsesStrategy(
+	capability: ControlCapability,
+	strategy: ControlStrategy,
+): boolean {
+	const [, , strategyMask] = controlCapabilityDimension(capability);
+	const strategyIndex = CONTROL_STRATEGIES.indexOf(strategy);
+	return strategyIndex >= 0 && (strategyMask & (1 << strategyIndex)) !== 0;
+}
+
+export function controlCapabilityUsesAcknowledgement(
+	capability: ControlCapability,
+	acknowledgement: ControlAcknowledgement,
+): boolean {
+	const [, , , acknowledgementMask] = controlCapabilityDimension(capability);
+	const acknowledgementIndex = CONTROL_ACKNOWLEDGEMENTS.indexOf(acknowledgement);
+	return acknowledgementIndex >= 0 && (acknowledgementMask & (1 << acknowledgementIndex)) !== 0;
+}
+
+function projectControlRecord<K extends string, V>(
+	keys: readonly K[],
+	project: (key: K) => V,
+): Record<K, V> {
+	const record = {} as Record<K, V>;
+	for (const key of keys) record[key] = project(key);
+	return record;
+}
+
+// These complete objects are compatibility/audit projections only. Runtime
+// consumers must use the selectors above so esbuild can drop unused metadata.
+export const CONTROL_STRATEGY_RULES = /* @__PURE__ */ projectControlRecord(
+	CONTROL_STRATEGIES,
+	selectControlStrategyRule,
+);
+export const CONTROL_ALGORITHM_POLICIES = /* @__PURE__ */ projectControlRecord(
+	CONTROL_CAPABILITIES,
+	selectControlAlgorithmPolicy,
+);
+export const CONTROL_ALGORITHM_ADJUDICATIONS = /* @__PURE__ */ projectControlRecord(
+	CONTROL_CAPABILITIES,
+	selectControlAlgorithmAdjudication,
+);
 
 export interface ControlError {
 	code: string;
@@ -781,10 +741,10 @@ export function resolveAcknowledgedProcessorLifecycle(
 	const processorStates = Object.entries(fields)
 		.flatMap(([field, state]) => {
 			if (state === undefined) return [];
-			const acknowledgements = CONTROL_ALGORITHM_POLICIES[
-				field as keyof typeof CONTROL_ALGORITHM_POLICIES
-			].acknowledgements as readonly ControlAcknowledgement[];
-			return acknowledgements.includes('processor-readback') ? [state] : [];
+			return controlCapabilityUsesAcknowledgement(
+				field as ControlField,
+				'processor-readback',
+			) ? [state] : [];
 		});
 	const revision = processorStates.reduce(
 		(latest, field) => Math.max(latest, field.revision),
@@ -1170,7 +1130,7 @@ function isControlAudioVolumeProjection(
 ): value is ControlAudioVolumeProjection {
 	return isRecord(value)
 		&& hasOnlyKeys(value, audioVolumeKeys)
-		&& isFiniteInRange(value.effectiveVolume, 0, 800)
+		&& isFiniteControlValue(value.effectiveVolume, 'volume')
 		&& (value.volumeState === 'silent'
 			|| value.volumeState === 'native'
 			|| value.volumeState === 'capture');
@@ -1186,21 +1146,8 @@ function isCanonicalOrigin(value: unknown): value is string {
 	}
 }
 
-export function compileEffectiveVolume(volumeBase: number, boost: number): number {
-	const base = Math.max(0, Math.min(100, Number.isFinite(volumeBase) ? volumeBase : 100));
-	const multiplier = Math.max(1, Math.min(8, Number.isFinite(boost) ? boost : 1));
-	return Math.max(0, Math.min(800, Math.round(base * multiplier * 100) / 100));
-}
-
-export function splitEffectiveVolume(volume: number): { volumeBase: number; boost: number } {
-	const normalized = Math.max(0, Math.min(800, Number.isFinite(volume) ? volume : 100));
-	return normalized <= 100
-		? { volumeBase: normalized, boost: 1 }
-		: { volumeBase: 100, boost: normalized / 100 };
-}
-
 export function classifyControlStrategy(strategy: ControlStrategy): ControlStrategyClass {
-	return CONTROL_STRATEGY_RULES[strategy].class;
+	return selectControlStrategyClass(strategy);
 }
 
 // Cross-process ACKs must prove more than "this is a known strategy name".
@@ -1212,8 +1159,7 @@ export function isControlStrategyAdmittedForCapability(
 	strategy: ControlStrategy,
 ): boolean {
 	if (strategy === 'unsupported') return false;
-	return (CONTROL_ALGORITHM_POLICIES[capability].orderedStrategies as readonly ControlStrategy[])
-		.includes(strategy);
+	return controlCapabilityUsesStrategy(capability, strategy);
 }
 
 export function isControlError(value: unknown): value is ControlError {
@@ -1288,8 +1234,8 @@ function isOperationPayload(operation: ControlOperation, value: unknown): boolea
 			|| (value.operation !== 'set' && value.operation !== 'delta')
 			|| typeof value.value !== 'number' || !Number.isFinite(value.value)) return false;
 		return value.operation === 'set'
-			? value.value >= 0 && value.value <= 800
-			: value.value >= -800 && value.value <= 800 && value.value !== 0;
+			? isFiniteControlValue(value.value, 'volume')
+			: Math.abs(value.value) <= CONTROL_VALUE_LIMITS.volume.max && value.value !== 0;
 	}
 	if (operation === 'frame-step') {
 		return isRecord(value) && hasOnlyKeys(value, new Set(['direction']))
@@ -1330,9 +1276,9 @@ function isOperationResult(operation: ControlOperation, value: unknown): boolean
 				&& value.releasedFields.every((field) => typeof field === 'string' && controlFields.has(field));
 		case 'effective-volume':
 			return hasOnlyKeys(value, new Set(['effectiveVolume', 'volumeBase', 'boost']))
-				&& isFiniteInRange(value.effectiveVolume, 0, 800)
-				&& isFiniteInRange(value.volumeBase, 0, 100)
-				&& isFiniteInRange(value.boost, 1, 8)
+				&& isFiniteControlValue(value.effectiveVolume, 'volume')
+				&& isFiniteControlValue(value.volumeBase, 'nativeVolume')
+				&& isFiniteControlValue(value.boost, 'boost')
 				&& compileEffectiveVolume(value.volumeBase, value.boost) === value.effectiveVolume;
 		case 'playback-toggle':
 			return hasOnlyKeys(value, new Set(['playing'])) && typeof value.playing === 'boolean';
@@ -1398,19 +1344,19 @@ function isOperationResult(operation: ControlOperation, value: unknown): boolean
 
 function isControlValue(field: ControlField, value: unknown): boolean {
 	switch (field) {
-		case 'volumeBase': return isFiniteInRange(value, 0, 100);
-		case 'boost': return isFiniteInRange(value, 1, 8);
-		case 'speed': return isFiniteInRange(value, 0.1, 16);
-		case 'currentTime': return isFiniteInRange(value, 0, Number.MAX_SAFE_INTEGER);
+		case 'volumeBase': return isFiniteControlValue(value, 'nativeVolume');
+		case 'boost': return isFiniteControlValue(value, 'boost');
+		case 'speed': return isFiniteControlValue(value, 'speed');
+		case 'currentTime': return isFiniteControlValue(value, 'currentTime');
 		case 'rotation': return value === 0 || value === 90 || value === 180 || value === 270;
 		case 'filter': return isVideoFilterState(value);
 		case 'abLoop': return isABLoopState(value);
-		case 'dimOpacity': return isFiniteInRange(value, 0, 1);
+		case 'dimOpacity': return isFiniteControlValue(value, 'dimOpacity');
 		case 'eqValues': return Array.isArray(value)
 			&& value.length === 10
-			&& value.every((item) => isFiniteInRange(item, -12, 12));
-		case 'pan': return isFiniteInRange(value, -1, 1);
-		case 'delay': return isFiniteInRange(value, 0, 500);
+			&& value.every((item) => isFiniteControlValue(item, 'eqBand'));
+		case 'pan': return isFiniteControlValue(value, 'pan');
+		case 'delay': return isFiniteControlValue(value, 'delay');
 		default: return typeof value === 'boolean';
 	}
 }
@@ -1426,15 +1372,14 @@ export function isControlSessionPatch(value: unknown): value is ControlSessionPa
 }
 
 // post: identifies whether a session patch carries any extension-only
-// contribution. Fields whose `nativePreference` is `'augmentation-only'` in
-// CONTROL_ALGORITHM_ADJUDICATIONS represent capabilities the page cannot
-// provide natively (boost, audio DSP, video CSS/overlay). A patch that only
-// touches native-owned fields (volume, mute, speed) does not constitute
-// extension usage. `audioEnabled` alone is the master switch, not a
+// contribution. The canonical adjudication selector represents capabilities
+// the page cannot provide natively (boost, audio DSP, video CSS/overlay). A
+// patch that only touches native-owned fields (volume, mute, speed) does not
+// constitute extension usage. `audioEnabled` alone is the master switch, not a
 // contribution: only a non-default augmentation field proves the processor is
 // actively reshaping output.
 export function hasExtensionOnlyContribution(patch: ControlSessionPatch): boolean {
-	// Audio processor DSP (media-webaudio / capture strategies)
+	// Audio processor DSP (authorized Capture strategy)
 	if (typeof patch.boost === 'number' && patch.boost > 1) return true;
 	if (Array.isArray(patch.eqValues) && patch.eqValues.some((v) => v !== 0)) return true;
 	if (patch.bass === true) return true;
@@ -1517,8 +1462,8 @@ function isControlFieldState(field: ControlField, value: unknown): boolean {
 			// A neutral or disabled processor reports an observation-only release:
 			// no graph owns the field, and saved desired DSP values may remain idle.
 			|| (strategy === 'observe'
-				&& CONTROL_ALGORITHM_ADJUDICATIONS[field].augmentationAdmission
-					=== 'proven-safe-source-or-explicit-full-output'
+				&& selectControlAugmentationAdmission(field)
+					=== 'explicit-full-output-only'
 				&& value.controlled === false
 				&& (value.phase === 'idle' || value.phase === 'applied'))
 		);
@@ -1556,7 +1501,7 @@ export function isControlIntent(value: unknown): value is ControlIntent {
 		&& isControlActualContext(value.actualContext)
 		&& isControlPatch(value.patch)
 		&& (value.captureAdmission === undefined
-			|| value.captureAdmission === 'extension-invocation');
+			|| isCaptureAdmission(value.captureAdmission));
 }
 
 export function isControlSubmitRequest(value: unknown): value is ControlSubmitRequest {

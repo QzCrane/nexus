@@ -1,14 +1,20 @@
 // goal: defines core audio data structures and service interfaces for the audio engine
 
-import type { Result } from './common.types.js';
+import {
+  clampControlValue,
+  compileEffectiveVolume,
+  isFiniteControlValue,
+  splitEffectiveVolume,
+} from './control-value-limits.js';
+import type { AudioProcessorConfig } from './audio-processor.contracts.js';
 
-// `volume` remains the one-release v1 compatibility projection. New code owns
-// `volumeBase` (page-native 0-100) and `boost` (processor 1-8) independently.
 export interface AudioConfig {
   enabled: boolean;
+  // Derived product projection. Every complete config must equal
+  // compileEffectiveVolume(volumeBase, boost).
   volume: number;
-  volumeBase?: number;
-  boost?: number;
+  volumeBase: number;
+  boost: number;
   muted: boolean;
   compressor: boolean;
   mono: boolean;
@@ -25,20 +31,14 @@ export interface AudioConfig {
   preservePitch: boolean;
 }
 
-// Exact graph state shared by Media WebAudio and Capture. Playback speed and
-// the product enable switch are intentionally outside the processor boundary.
-export interface AudioProcessorConfig {
-  // Processor gain is Boost only. Page volume and media mute remain owned by
-  // the standard DOM/allowlisted official-player writers and cannot be encoded
-  // as a second DSP writer at this boundary.
-  boostGain: number;
-  compressor: boolean;
-  mono: boolean;
-  bass: boolean;
-  eqValues: number[];
-  pan: number;
-  delay: number;
-}
+/**
+ * The pre-v3 persisted audio shape. The effective `volume` projection was the
+ * only required volume field; the pair was optional and was not required to
+ * satisfy the current product invariant. This type is only for bounded
+ * storage migration and must never cross a current runtime boundary.
+ */
+export type LegacyAudioConfig = Omit<AudioConfig, 'volumeBase' | 'boost'>
+  & Partial<Pick<AudioConfig, 'volumeBase' | 'boost'>>;
 
 export const DEFAULT_AUDIO_CONFIG: Readonly<AudioConfig> = {
   enabled: true,
@@ -70,16 +70,6 @@ const AUDIO_CONFIG_KEYS = new Set<keyof AudioConfig>([
   'delay',
   'speed',
   'preservePitch',
-]);
-
-const AUDIO_PROCESSOR_CONFIG_KEYS = new Set<keyof AudioProcessorConfig>([
-  'boostGain',
-  'compressor',
-  'mono',
-  'bass',
-  'eqValues',
-  'pan',
-  'delay',
 ]);
 
 const AUDIO_SESSION_KEYS = new Set<keyof AudioSessionSnapshot>([
@@ -130,33 +120,85 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string
   return Object.keys(value).every((key) => allowed.has(key));
 }
 
-function isFiniteInRange(value: unknown, minimum: number, maximum: number): value is number {
-  return typeof value === 'number'
-    && Number.isFinite(value)
-    && value >= minimum
-    && value <= maximum;
-}
-
 export interface ResolvedAudioVolume {
   volumeBase: number;
   boost: number;
   effectiveVolume: number;
 }
 
-export function resolveAudioVolume(config: Pick<AudioConfig, 'volume' | 'volumeBase' | 'boost'>): ResolvedAudioVolume {
-  const legacy = Math.max(0, Math.min(800, Number.isFinite(config.volume) ? config.volume : 100));
-  const hasCanonical = config.volumeBase !== undefined || config.boost !== undefined;
-  const volumeBase = hasCanonical
-    ? Math.max(0, Math.min(100, Number.isFinite(config.volumeBase) ? Number(config.volumeBase) : 100))
-    : Math.min(100, legacy);
-  const boost = hasCanonical
-    ? Math.max(1, Math.min(8, Number.isFinite(config.boost) ? Number(config.boost) : 1))
-    : legacy > 100 ? legacy / 100 : 1;
+export function resolveAudioVolume(config: Pick<AudioConfig, 'volumeBase' | 'boost'>): ResolvedAudioVolume {
+  const volumeBase = clampControlValue(config.volumeBase, 'nativeVolume', 100);
+  const boost = clampControlValue(config.boost, 'boost', 1);
   return {
     volumeBase,
     boost,
-    effectiveVolume: Math.round(volumeBase * boost * 100) / 100,
+    effectiveVolume: compileEffectiveVolume(volumeBase, boost),
   };
+}
+
+/**
+ * Projects the complete, validated product configuration onto the physical
+ * WebAudio/Capture processor boundary. Native media fields are deliberately omitted;
+ * `boostGain` is the only volume-related value owned by the graph.
+ */
+export function audioConfigToProcessorConfig(config: AudioConfig): AudioProcessorConfig {
+  return {
+    boostGain: config.boost,
+    compressor: config.compressor,
+    mono: config.mono,
+    bass: config.bass,
+    eqValues: [...config.eqValues],
+    pan: config.pan,
+    delay: config.delay,
+  };
+}
+
+/**
+ * Canonical processor predicate shared by policy, control and release gates.
+ * Native media-element controls are deliberately absent: only fields that
+ * require an acknowledged processor graph return true. Policy separately
+ * chooses the lower-cost page MediaElement graph when every source is proven
+ * safe, otherwise the explicitly admitted full-tab Capture graph.
+ */
+export function requiresAudioProcessor(config: Pick<
+	AudioConfig,
+	'volume' | 'volumeBase' | 'boost' | 'eqValues' | 'compressor' | 'bass' | 'mono' | 'pan' | 'delay'
+>): boolean {
+	return resolveAudioVolume(config).boost > 1
+		|| config.eqValues.some((value) => value !== 0)
+		|| config.compressor
+		|| config.bass
+		|| config.mono
+		|| config.pan !== 0
+		|| config.delay !== 0;
+}
+
+export interface AudioProcessorDemand {
+	// A visible foreground visualizer needs an analyser backed by a real audio
+	// source, but owns that demand only for its acknowledged subscription.
+	visualizer: boolean;
+	// True only when the current document can bind every media source to the
+	// page-lifetime MediaElementAudioSource graph without risking CORS silence.
+	mediaWebAudio: boolean;
+	// A user-pinned route overrides automatic owner selection. `direct` keeps
+	// processing in the page and never escalates to full-tab Capture; `capture`
+	// skips a known-bad page graph after an explicit Capture admission.
+	mediaRoute?: 'auto' | 'direct' | 'capture';
+}
+
+const NO_AUDIO_PROCESSOR_DEMAND: Readonly<AudioProcessorDemand> = Object.freeze({
+	visualizer: false,
+	mediaWebAudio: false,
+});
+
+export function resolveDesiredAudioMode(
+	config: AudioConfig,
+	demand: Readonly<AudioProcessorDemand> = NO_AUDIO_PROCESSOR_DEMAND,
+): SpectraAudioMode {
+	if (!config.enabled || (!requiresAudioProcessor(config) && !demand.visualizer)) return 'bypass';
+	if (demand.mediaRoute === 'capture') return 'capture';
+	if (demand.mediaRoute === 'direct') return 'webaudio';
+	return demand.mediaWebAudio ? 'webaudio' : 'capture';
 }
 
 function isNonNegativeInteger(value: unknown): value is number {
@@ -184,46 +226,99 @@ function isCanonicalOrigin(value: unknown): value is string {
   }
 }
 
-// post: accepts only a complete, finite AudioConfig that the WebAudio runtime can implement
+// post: accepts only a complete, finite AudioConfig that the Capture runtime can implement
 export function isAudioConfig(value: unknown): value is AudioConfig {
   if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_CONFIG_KEYS)) return false;
   return typeof value.enabled === 'boolean'
-    && isFiniteInRange(value.volume, 0, 800)
-    && (value.volumeBase === undefined || isFiniteInRange(value.volumeBase, 0, 100))
-    && (value.boost === undefined || isFiniteInRange(value.boost, 1, 8))
+    && isFiniteControlValue(value.volume, 'volume')
+    && isFiniteControlValue(value.volumeBase, 'volumeBase')
+    && isFiniteControlValue(value.boost, 'boost')
+    && value.volume === compileEffectiveVolume(value.volumeBase, value.boost)
     && typeof value.muted === 'boolean'
     && typeof value.compressor === 'boolean'
     && typeof value.mono === 'boolean'
     && typeof value.bass === 'boolean'
     && Array.isArray(value.eqValues)
     && value.eqValues.length === 10
-    && value.eqValues.every((item) => isFiniteInRange(item, -12, 12))
-    && isFiniteInRange(value.pan, -1, 1)
-    && isFiniteInRange(value.delay, 0, 500)
-    && isFiniteInRange(value.speed, 0.1, 16)
+    && value.eqValues.every((item) => isFiniteControlValue(item, 'eqBand'))
+    && isFiniteControlValue(value.pan, 'pan')
+    && isFiniteControlValue(value.delay, 'delay')
+    && isFiniteControlValue(value.speed, 'speed')
     && typeof value.preservePitch === 'boolean';
 }
 
-export function isAudioProcessorConfig(value: unknown): value is AudioProcessorConfig {
-  if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_PROCESSOR_CONFIG_KEYS)) return false;
-  return isFiniteInRange(value.boostGain, 1, 8)
+/**
+ * Pre-v3 storage guard. It deliberately does not call `isAudioConfig` and does
+ * not enforce the derived-volume invariant, so a legacy record can be
+ * canonicalized before the strict v3 guard is applied.
+ */
+export function isLegacyAudioConfig(value: unknown): value is LegacyAudioConfig {
+  if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_CONFIG_KEYS)) return false;
+  return typeof value.enabled === 'boolean'
+    && isFiniteControlValue(value.volume, 'volume')
+    && (value.volumeBase === undefined || isFiniteControlValue(value.volumeBase, 'volumeBase'))
+    && (value.boost === undefined || isFiniteControlValue(value.boost, 'boost'))
+    && typeof value.muted === 'boolean'
     && typeof value.compressor === 'boolean'
     && typeof value.mono === 'boolean'
     && typeof value.bass === 'boolean'
     && Array.isArray(value.eqValues)
     && value.eqValues.length === 10
-    && value.eqValues.every((item) => isFiniteInRange(item, -12, 12))
-    && isFiniteInRange(value.pan, -1, 1)
-    && isFiniteInRange(value.delay, 0, 500);
+    && value.eqValues.every((item) => isFiniteControlValue(item, 'eqBand'))
+    && isFiniteControlValue(value.pan, 'pan')
+    && isFiniteControlValue(value.delay, 'delay')
+    && isFiniteControlValue(value.speed, 'speed')
+    && typeof value.preservePitch === 'boolean';
+}
+
+/**
+ * Converts a validated pre-v3 record into the strict current AudioConfig.
+ * A complete legacy pair remains authoritative for compatibility with the
+ * old writer; otherwise the old effective volume is split into the canonical
+ * native base and Capture boost before strict validation.
+ */
+export function normalizeLegacyAudioConfig(value: LegacyAudioConfig): AudioConfig | null {
+	if (!isLegacyAudioConfig(value)) return null;
+	const volume = value.volumeBase !== undefined && value.boost !== undefined
+    ? resolveAudioVolume({ volumeBase: value.volumeBase, boost: value.boost })
+    : (() => {
+      const split = splitEffectiveVolume(value.volume);
+      return {
+        volumeBase: split.volumeBase,
+        boost: split.boost,
+        effectiveVolume: compileEffectiveVolume(split.volumeBase, split.boost),
+      };
+    })();
+  const normalized: AudioConfig = {
+    ...DEFAULT_AUDIO_CONFIG,
+    ...value,
+    volume: volume.effectiveVolume,
+    volumeBase: volume.volumeBase,
+    boost: volume.boost,
+    eqValues: [...value.eqValues],
+  };
+  return isAudioConfig(normalized) ? normalized : null;
 }
 
 // post: validates a field-level audio update without requiring unrelated fields
 export function isAudioConfigPatch(value: unknown): value is Partial<AudioConfig> {
   if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_CONFIG_KEYS)) return false;
-  return (value.enabled === undefined || typeof value.enabled === 'boolean')
-    && (value.volume === undefined || isFiniteInRange(value.volume, 0, 800))
-    && (value.volumeBase === undefined || isFiniteInRange(value.volumeBase, 0, 100))
-    && (value.boost === undefined || isFiniteInRange(value.boost, 1, 8))
+  const hasVolume = value.volume !== undefined;
+  const hasVolumeBase = value.volumeBase !== undefined;
+  const hasBoost = value.boost !== undefined;
+  const consistentProjection = !hasVolume || (!hasVolumeBase && !hasBoost) || (
+    hasVolumeBase
+    && hasBoost
+    && isFiniteControlValue(value.volume, 'volume')
+    && isFiniteControlValue(value.volumeBase, 'volumeBase')
+    && isFiniteControlValue(value.boost, 'boost')
+    && value.volume === compileEffectiveVolume(value.volumeBase, value.boost)
+  );
+  return consistentProjection
+    && (value.enabled === undefined || typeof value.enabled === 'boolean')
+    && (value.volume === undefined || isFiniteControlValue(value.volume, 'volume'))
+    && (value.volumeBase === undefined || isFiniteControlValue(value.volumeBase, 'volumeBase'))
+    && (value.boost === undefined || isFiniteControlValue(value.boost, 'boost'))
     && (value.muted === undefined || typeof value.muted === 'boolean')
     && (value.compressor === undefined || typeof value.compressor === 'boolean')
     && (value.mono === undefined || typeof value.mono === 'boolean')
@@ -231,11 +326,11 @@ export function isAudioConfigPatch(value: unknown): value is Partial<AudioConfig
     && (value.eqValues === undefined || (
       Array.isArray(value.eqValues)
       && value.eqValues.length === 10
-      && value.eqValues.every((item) => isFiniteInRange(item, -12, 12))
+      && value.eqValues.every((item) => isFiniteControlValue(item, 'eqBand'))
     ))
-    && (value.pan === undefined || isFiniteInRange(value.pan, -1, 1))
-    && (value.delay === undefined || isFiniteInRange(value.delay, 0, 500))
-    && (value.speed === undefined || isFiniteInRange(value.speed, 0.1, 16))
+    && (value.pan === undefined || isFiniteControlValue(value.pan, 'pan'))
+    && (value.delay === undefined || isFiniteControlValue(value.delay, 'delay'))
+    && (value.speed === undefined || isFiniteControlValue(value.speed, 'speed'))
     && (value.preservePitch === undefined || typeof value.preservePitch === 'boolean');
 }
 
@@ -255,26 +350,6 @@ export function isDefaultAudioConfig(config: AudioConfig): boolean {
 		&& config.preservePitch === DEFAULT_AUDIO_CONFIG.preservePitch
 		&& config.eqValues.length === DEFAULT_AUDIO_CONFIG.eqValues.length
 		&& config.eqValues.every((value, index) => value === DEFAULT_AUDIO_CONFIG.eqValues[index]);
-}
-
-// Types of audio processing engines
-export type AudioMode =
-  // Legacy internal tokens kept for the v1 adapter. `NATIVE_WEBAUDIO` means
-  // explicitly admitted extension-owned Media WebAudio, never page injection
-  // or a native fallback; `NATIVE_LITE` means transparent/native-only bypass.
-  | 'NATIVE_WEBAUDIO'
-  | 'NATIVE_LITE'
-  | 'CAPTURE'          // browser tab capture mode (prevents CORS issues)
-  | 'DISABLED';
-
-// Runtime state of the audio engine
-export interface AudioState {
-  config: AudioConfig;
-  mode: AudioMode;
-  hasAudio: boolean;
-  isPlaying: boolean;
-  userInteracted: boolean;
-  corsBlocked: boolean;
 }
 
 export type SpectraAudioMode = 'bypass' | 'webaudio' | 'capture';
@@ -361,10 +436,11 @@ export function resolveAudioVolumeState(value: {
 		: 'native';
 }
 
-// post: identifies the only effective-volume boundary that can transfer audio
-// processor ownership. Presentation layers retain one complete value/tone pair
-// across this boundary until the actual processor ACK arrives.
-export function crossesAudioVolumeProcessorBoundary(from: number, to: number): boolean {
+// post: identifies the effective-volume boundary where the physical route may
+// change between standard DOM, an amplified page controller, and Capture.
+// Presentation layers retain one complete value/tone pair until the actual
+// route acknowledgement arrives; the threshold itself never claims Capture.
+export function crossesAudioVolumeRoutingBoundary(from: number, to: number): boolean {
 	return (from > 100) !== (to > 100);
 }
 
@@ -444,68 +520,3 @@ export function isAudioCaptureState(value: unknown): value is AudioCaptureState 
     && (value.actualConfig === undefined || isAudioConfig(value.actualConfig))
     && (value.lastError === null || isAudioSessionError(value.lastError));
 }
-
-// goal: abstract interface for audio control, implementation in @nexus/audio-engine
-export interface IAudioService {
-  getState(): AudioState;
-
-  // eff: returns frequency data for visualization
-  getVisualizerData(): Float32Array | null;
-
-  setVolume(level: number): Result<void>;
-
-  toggleMute(): Result<boolean>;
-
-  updateConfig(config: Partial<AudioConfig>): Result<void>;
-
-  // eff: switch to tab capture mode, requires user permission
-  setCaptureMode(enabled: boolean): Promise<Result<void>>;
-
-  on(event: 'stateChange', handler: (state: AudioState) => void): () => void;
-
-  on(event: 'corsDetected', handler: () => void): () => void;
-
-  init(): Promise<Result<void>>;
-
-  // post: release all hardware and memory resources
-  dispose(): void;
-}
-
-export interface UrlInfo {
-  fullUrl: string;
-  domain: string;
-  pathname: string;
-  isIframe: boolean;
-}
-
-// Input for audio mode policy calculation
-export interface PolicyContext {
-  urlInfo: UrlInfo;
-  hasMediaElement: boolean;
-  hasAudioContext: boolean;
-  userInteracted: boolean;
-  enabled: boolean;
-  volume: number;
-  // rule: force native mode for specific self-healing scenarios
-  forceNative: boolean;
-  // rule: determined by CORS detection results
-  isRestricted?: boolean;
-  config?: AudioConfig;
-}
-
-// goal: stateless engine to determine optimal audio mode based on environment
-export interface IPolicyEngine {
-  // eff: compute the best mode for the given context
-  calculateMode(context: PolicyContext): AudioMode;
-
-  /** @deprecated v3.0 */
-  getRuleForDomain(domain: string): SiteRule | null;
-}
-
-/** @deprecated moved to dynamic CORS detection */
-export interface SiteRule {
-  type: 'whitelist' | 'blacklist' | 'force_capture' | 'force_native';
-  pattern: string;
-  reason?: string;
-}
-

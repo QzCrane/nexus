@@ -1,14 +1,14 @@
 // goal: one runtime-validated contract for the SPECTRA background/offscreen boundary
 
 import {
-	isAudioConfig,
 	isAudioProcessorConfig,
-	type AudioConfig,
 	type AudioProcessorConfig,
-} from './audio.contracts.js';
+} from './audio-processor.contracts.js';
 import {
 	isRemoteCommand,
+	isRemoteCommandId,
 	isRemotePublicSession,
+	isRemoteSessionEpoch,
 	isRemoteSessionToken,
 	isRemoteState,
 	type RemoteCommand,
@@ -59,10 +59,6 @@ export type OffscreenAudioResult =
 		phase?: never;
 	};
 
-export interface OffscreenVisualizerFrame {
-	buffer: number[] | null;
-}
-
 export interface OffscreenVisualizerBatch {
 	frames: Record<string, number[] | null>;
 }
@@ -75,6 +71,10 @@ export interface RemoteHostSession extends RemotePublicSession {
 	capability: string;
 	reconnectUntil: number | null;
 	generation: number;
+	/** Current authenticated Remote authority epoch; 0 means not authenticated. */
+	sessionEpoch: number;
+	/** Highest command sequence durably admitted by the Remote authority. */
+	lastSequence: number;
 }
 
 export type RemoteHostCreateResponse =
@@ -105,7 +105,7 @@ export interface OffscreenHostRequestMap {
 	OFFSCREEN_AUDIO_START: OffscreenHostRequestDefinition<{
 		tabId: number;
 		streamId: string;
-		config: AudioConfig;
+		config: AudioProcessorConfig;
 		generation: number;
 		controlRevision?: number;
 	}, OffscreenAudioResult>;
@@ -122,11 +122,8 @@ export interface OffscreenHostRequestMap {
 		tabId: number;
 		generation: number;
 		controlRevision?: number;
-		config: AudioConfig;
+		config: AudioProcessorConfig;
 	}, OffscreenAudioResult>;
-	OFFSCREEN_AUDIO_GET_VIZ: OffscreenHostRequestDefinition<{
-		tabId: number;
-	}, OffscreenVisualizerFrame>;
 	OFFSCREEN_AUDIO_GET_VIZ_BATCH: OffscreenHostRequestDefinition<{
 		tabIds: number[];
 	}, OffscreenVisualizerBatch>;
@@ -188,6 +185,8 @@ interface OffscreenHostEventMap {
 		tabId: number;
 		sessionId: string;
 		capability: string;
+		sessionEpoch: number;
+		commandId: string;
 		sequence: number;
 		generation: number;
 		command: RemoteCommand;
@@ -196,11 +195,13 @@ interface OffscreenHostEventMap {
 		tabId: number;
 		sessionId: string;
 		capability: string;
+		sessionEpoch: number;
 	};
 	REMOTE_HOST_STATUS_CHANGE: {
 		tabId: number;
 		sessionId: string;
 		capability: string;
+		sessionEpoch: number;
 	} & (
 		| { connected: true; reconnectUntil?: never }
 		| { connected: false; reconnectUntil: number }
@@ -254,7 +255,7 @@ export function isOffscreenHostRequest(value: unknown): value is OffscreenHostWi
 				&& typeof value.streamId === 'string'
 				&& value.streamId.length > 0
 				&& value.streamId.length <= MAX_STREAM_ID_LENGTH
-				&& isAudioConfig(value.config)
+				&& isAudioProcessorConfig(value.config)
 				&& isGeneration(value.generation)
 				&& (value.controlRevision === undefined || isGeneration(value.controlRevision));
 		case 'OFFSCREEN_AUDIO_STOP':
@@ -278,8 +279,7 @@ export function isOffscreenHostRequest(value: unknown): value is OffscreenHostWi
 				&& isTabId(value.tabId)
 				&& isGeneration(value.generation)
 				&& (value.controlRevision === undefined || isGeneration(value.controlRevision))
-				&& isAudioConfig(value.config);
-		case 'OFFSCREEN_AUDIO_GET_VIZ':
+				&& isAudioProcessorConfig(value.config);
 		case 'REMOTE_HOST_CREATE_SESSION':
 		case 'REMOTE_HOST_GET_STATUS':
 		case 'REMOTE_HOST_CLOSE_TAB':
@@ -314,10 +314,6 @@ export function isOffscreenHostResponse<TType extends OffscreenHostRequestType>(
 		case 'OFFSCREEN_AUDIO_CANCEL_START':
 		case 'OFFSCREEN_AUDIO_UPDATE':
 			return isOffscreenAudioResult(value);
-		case 'OFFSCREEN_AUDIO_GET_VIZ':
-			return isRecord(value)
-				&& hasOnlyKeys(value, ['buffer'])
-				&& isVisualizerFrame(value.buffer);
 		case 'OFFSCREEN_AUDIO_GET_VIZ_BATCH':
 			return isVisualizerBatch(value);
 		case 'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS':
@@ -358,27 +354,34 @@ export function isOffscreenHostEvent(value: unknown): value is OffscreenHostEven
 				'tabId',
 				'sessionId',
 				'capability',
+				'sessionEpoch',
+				'commandId',
 				'sequence',
 				'generation',
 				'command',
 			])
 				&& isRemoteEventIdentity(value)
+				&& isRemoteSessionEpoch(value.sessionEpoch)
+				&& isRemoteCommandId(value.commandId)
 				&& isPositiveSequence(value.sequence)
 				&& isGeneration(value.generation)
 				&& isRemoteCommand(value.command);
 		case 'REMOTE_HOST_REQUEST_SYNC':
-			return hasOnlyKeys(value, ['type', 'tabId', 'sessionId', 'capability'])
-				&& isRemoteEventIdentity(value);
+			return hasOnlyKeys(value, ['type', 'tabId', 'sessionId', 'capability', 'sessionEpoch'])
+				&& isRemoteEventIdentity(value)
+				&& isRemoteSessionEpoch(value.sessionEpoch);
 		case 'REMOTE_HOST_STATUS_CHANGE':
 			return hasOnlyKeys(value, [
 				'type',
 				'tabId',
 				'sessionId',
 				'capability',
+				'sessionEpoch',
 				'connected',
 				'reconnectUntil',
 			])
 				&& isRemoteEventIdentity(value)
+				&& isRemoteSessionEpoch(value.sessionEpoch)
 				&& (value.connected === true
 					? value.reconnectUntil === undefined
 					: value.connected === false && isTimestamp(value.reconnectUntil));
@@ -480,6 +483,8 @@ export function isRemoteHostSession(value: unknown): value is RemoteHostSession 
 		'capability',
 		'reconnectUntil',
 		'generation',
+		'sessionEpoch',
+		'lastSequence',
 	])) return false;
 	const publicSession = {
 		protocolVersion: value.protocolVersion,
@@ -494,7 +499,9 @@ export function isRemoteHostSession(value: unknown): value is RemoteHostSession 
 	return isRemotePublicSession(publicSession)
 		&& isRemoteSessionToken(value.capability)
 		&& (value.reconnectUntil === null || isTimestamp(value.reconnectUntil))
-		&& isGeneration(value.generation);
+		&& isGeneration(value.generation)
+		&& isRemoteSessionEpoch(value.sessionEpoch)
+		&& isGeneration(value.lastSequence);
 }
 
 function isRemoteHostCreateResponse(value: unknown): value is RemoteHostCreateResponse {

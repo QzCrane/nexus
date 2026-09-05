@@ -23,6 +23,14 @@
 			"types": "./dist/spectra.ui-settings-runtime.d.ts",
 			"import": "./dist/spectra.ui-settings-runtime.js"
 		},
+		"./full-settings-runtime": {
+			"types": "./dist/spectra.full-settings-runtime.d.ts",
+			"import": "./dist/spectra.full-settings-runtime.js"
+		},
+		"./registry-runtime": {
+			"types": "./dist/spectra.registry-runtime.d.ts",
+			"import": "./dist/spectra.registry-runtime.js"
+		},
 		"./content-runtime": {
 			"types": "./dist/spectra.content-runtime.d.ts",
 			"import": "./dist/spectra.content-runtime.js"
@@ -37,8 +45,8 @@
 		"typecheck": "bun tsc --noEmit --tsBuildInfoFile typecheck.tsbuildinfo"
 	},
 	"devDependencies": {
-		"typescript": "^5.3.0",
-		"chrome-types": "^0.1.327"
+		"typescript": "7.0.2",
+		"chrome-types": "^0.1.440"
 	},
 	"files": [
 		"dist"

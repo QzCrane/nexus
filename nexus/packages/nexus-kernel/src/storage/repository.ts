@@ -1,23 +1,9 @@
 // goal: type-safe storage repository providing unified access to split storage modules
-// note: exposes background-owned registry and acknowledged tab-session projections
+// note: exposes acknowledged tab-session projections
 
-import * as restrictedRegistry from './restricted-registry.js';
 import * as tabSessionModule from './tab-session.js';
 
 export class StorageRepository {
-  // Restricted domain registry (v3.0+)
-  registry = {
-    init: restrictedRegistry.initRegistry,
-    get: restrictedRegistry.getRegistry,
-    query: restrictedRegistry.queryDomain,
-    isRestricted: restrictedRegistry.isRestricted,
-    add: restrictedRegistry.addDomain,
-    remove: restrictedRegistry.removeDomain,
-    markProbed: restrictedRegistry.markProbed,
-    getDomainList: restrictedRegistry.getDomainList,
-    set: restrictedRegistry.setRegistry,
-  };
-
   // Acknowledged control session (resource observations + origin-portable intent, isolated per tab)
   tabSession = {
 	identity: tabSessionModule.createTabControlSessionIdentity,

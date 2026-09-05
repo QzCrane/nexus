@@ -8,13 +8,78 @@ export type {
   Unsubscribe
 } from './common.types.js';
 
+export type {
+	ControlValueLimit,
+	ControlValueLimitName,
+} from './control-value-limits.js';
+export {
+	createSiteRouteFingerprint,
+	isDomainEntry,
+	isMediaProcessingRoute,
+	isMediaRouteFingerprint,
+	isMediaRouteEntry,
+	isMediaRouteChangedEvent,
+	isMediaRouteDecision,
+	isMediaRouteRecordRequest,
+	isMediaRouteSettings,
+	isRegistryEntries,
+	isRegistryAddResult,
+	isRegistryAddPayload,
+	isRegistryQueryResult,
+	isRegistryQueryPayload,
+	isRegistryRemoveResult,
+	isRegistryRemovePayload,
+	isRegistryRecordPayload,
+	isRegistrySnapshot,
+	selectMediaProcessingRoute,
+} from './media-route.contracts.js';
+export type {
+	DomainEntry,
+	DomainSource,
+	MediaRoute,
+	MediaProcessingRoute,
+	MediaRouteEntry,
+	MediaRouteChangedEvent,
+	MediaRouteDecision,
+	MediaRouteRecordRequest,
+	MediaRouteSettings,
+	MediaRouteSource,
+	RegistryAddResult,
+	RegistryAddPayload,
+	RegistryQueryResult,
+	RegistryQueryPayload,
+	RegistryRemoveResult,
+	RegistryRemovePayload,
+	RegistryRecordPayload,
+	RegistrySnapshot,
+} from './media-route.contracts.js';
+
+export {
+	CONTROL_VALUE_LIMITS,
+	clampControlValue,
+	isFiniteControlValue,
+} from './control-value-limits.js';
+
+export type {
+	CaptureAdmission,
+	CaptureAdmissionKind,
+	CaptureDocumentKey,
+} from './capture-admission.contracts.js';
+export {
+	CAPTURE_ADMISSION_KINDS,
+	isCaptureAdmission,
+	isCaptureDocumentKey,
+} from './capture-admission.contracts.js';
+
 // Audio contracts
+export type { AudioProcessorConfig } from './audio-processor.contracts.js';
+export { isAudioProcessorConfig } from './audio-processor.contracts.js';
+
 export type {
   AudioConfig,
-  AudioProcessorConfig,
+  LegacyAudioConfig,
+  AudioProcessorDemand,
   ResolvedAudioVolume,
-  AudioMode,
-  AudioState,
   SpectraAudioMode,
   AudioSessionPhase,
   AudioVolumeState,
@@ -23,18 +88,14 @@ export type {
   AudioSessionIdentity,
   AudioRuntimeStatus,
   AudioCaptureState,
-  TabSessionIdentity,
-  IPolicyEngine,
-  PolicyContext,
-  UrlInfo,
-  // @deprecated: moved to dynamic CORS detection; kept for audio-engine PolicyEngine.getRuleForDomain
-  SiteRule
+  TabSessionIdentity
 } from './audio.contracts.js';
 
 export {
   DEFAULT_AUDIO_CONFIG,
   isAudioConfig,
-  isAudioProcessorConfig,
+  isLegacyAudioConfig,
+  normalizeLegacyAudioConfig,
   isAudioConfigPatch,
   isAudioSessionError,
   isAudioSessionSnapshot,
@@ -42,11 +103,14 @@ export {
   isAudioCaptureState,
   isDefaultAudioConfig,
   resolveAudioVolume,
+  audioConfigToProcessorConfig,
+  requiresAudioProcessor,
+  resolveDesiredAudioMode,
   audioSessionMatchesIdentity,
   audioSessionMatchesControlDocument,
   isActiveCaptureLifecycle,
   resolveAudioVolumeState,
-  crossesAudioVolumeProcessorBoundary
+  crossesAudioVolumeRoutingBoundary
 } from './audio.contracts.js';
 
 // Per-field SPECTRA control contracts
@@ -65,7 +129,6 @@ export type {
 	ControlRequestedCoverage,
 	ControlFieldPhase,
 	ControlIntentSource,
-	CaptureAdmission,
 	MediaKind,
 	MediaTarget,
 	VideoFilterState,
@@ -125,6 +188,13 @@ export {
 	CONTROL_CAPABILITIES,
 	CONTROL_ALGORITHM_POLICIES,
 	CONTROL_ALGORITHM_ADJUDICATIONS,
+	controlCapabilityUsesAcknowledgement,
+	controlCapabilityUsesStrategy,
+	selectControlAlgorithmAdjudication,
+	selectControlAlgorithmPolicy,
+	selectControlCapabilityScope,
+	selectControlStrategyClass,
+	selectControlStrategyRule,
 	compileEffectiveVolume,
 	splitEffectiveVolume,
 	resolveAcknowledgedProcessorLifecycle,
@@ -162,7 +232,8 @@ export type {
 
 // Settings contracts
 export type {
-  GlobalSettings,
+	GlobalSettings,
+	AudioSitePolicy,
   SupportedLanguage,
   ThemeMode,
   SettingsSnapshot,
@@ -175,12 +246,25 @@ export type {
 
 export {
   DEFAULT_GLOBAL_SETTINGS,
+  MAX_SETTINGS_SNAPSHOT_ENTRIES,
   SPECTRA_SETTINGS_SCHEMA_VERSION,
   isGlobalSettings,
 	isHotkeySettings,
+	isAudioSitePolicy,
   isSettingsPatchRequest,
   isSettingsSnapshot
 } from './settings.contracts.js';
+export type {
+	SettingsUiPatch,
+	SettingsUiPatchRequest,
+	SettingsUiSnapshot,
+} from './settings-ui.contracts.js';
+export {
+	isSettingsUiPatch,
+	isSettingsUiPatchRequest,
+	isSettingsUiSnapshot,
+	toSettingsUiSnapshot,
+} from './settings-ui.contracts.js';
 
 // SPECTRA v2 protocol and runtime guards
 export type {
@@ -190,10 +274,10 @@ export type {
 	ContentRuntimeSourceOwnership,
 	ContentRuntimeStatus,
 	ContentRuntimeReadyResult,
-	VisualizerBatchPayload,
-	VisualizerBatchResult,
 	AudioSessionPublishPayload,
 	AudioConfigSavedResult,
+	AudioCaptureTransitionPayload,
+	AudioCaptureTransitionResult,
 	TabPinnedResult,
 	TabMutedResult,
 	UiOpenedResult,
@@ -216,15 +300,63 @@ export type {
 	SpectraEventEnvelope,
 } from './spectra.protocol.js';
 export {
-	SPECTRA_PROTOCOL_VERSION,
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
-	isRpcError,
 	isSpectraRequestEnvelope,
 	isSpectraEventEnvelope,
 	isSpectraResponse,
 	rpcSuccess,
 	rpcFailure,
 } from './spectra.protocol.js';
+export {
+	SPECTRA_PROTOCOL_VERSION,
+	hasOnlyProtocolKeys,
+	hasValidContextFields,
+	hasValidEventEnvelopeBase,
+	hasValidRequestEnvelopeBase,
+	isDocumentId,
+	isEmptyPayload,
+	isFiniteInRange,
+	isFiniteNumber,
+	isNonNegativeInteger,
+	isPositiveInteger,
+	isProtocolRecord,
+	isRpcError,
+	isRpcFailureResult,
+	isRpcSuccessResult,
+	isRuntimeRevision,
+} from './spectra.protocol-primitives.js';
+export {
+	isAudioCaptureSetPayload,
+	isAudioConfigPayload,
+	isAudioSessionGetPayload,
+	isAudioSessionPublishPayload,
+	hasCanonicalRequestContext,
+	isContentBootstrapHelloPayload,
+	isContentRuntimeEnsurePayload,
+	isContentRuntimeReleasePayload,
+	isContentRuntimeRevisionPayload,
+	isContentSourceReleasedPayload,
+	isContentTargetChangedPayload,
+	isRemoteSessionClosePayload,
+	isRemoteSessionPayload,
+	isScreenshotCapturePayload,
+	isTabIdPayload,
+	isTabMediaReportPayload,
+	isUiOpenPayload,
+	isUserScriptPayload,
+} from './spectra.background-runtime.js';
+export type {
+	AudioVisualizerDemandPayload,
+	VisualizerBatchPayload,
+	VisualizerBatchResult,
+	VisualizerFrameResult,
+} from './visualizer.contracts.js';
+export {
+	isAudioVisualizerDemandPayload,
+	isVisualizerBatchPayload,
+	isVisualizerBatchResult,
+	isVisualizerFrameResult,
+} from './visualizer.contracts.js';
 export {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE,
@@ -254,31 +386,24 @@ export {
 	findBestHostnameMatch,
 } from './domain.contracts.js';
 
-// Registry contracts
-export type {
-  DomainSource,
-  DomainEntry,
-	MediaRoute,
-	RegistryStorage,
-  RegistryResult,
-	RegistrySnapshot,
-	RegistryAddResult,
-	RegistryRemoveResult,
-	RegistryQueryResult,
-	HotkeyTargetState
-} from './registry.contracts.js';
 export {
-	createSiteRouteFingerprint,
-	isDomainEntry,
-	isMediaRouteFingerprint,
-	isRegistryEntries,
-} from './registry.contracts.js';
+	isHotkeyTargetState,
+} from './hotkey-target.contracts.js';
+export type { HotkeyTargetState } from './hotkey-target.contracts.js';
 
 export {
+	REMOTE_COMMAND_RECEIPT_LIMIT,
+	REMOTE_COMMAND_PENDING_LIMIT,
+	REMOTE_COMMAND_TIMEOUT_MS,
+	REMOTE_PENDING_CONNECTION_LIMIT,
+	REMOTE_PAIRING_LIMIT,
+	REMOTE_PAIRING_STORAGE_LIMIT_BYTES,
 	REMOTE_COMMANDS,
 	REMOTE_COMMAND_DESCRIPTORS,
 	isRemoteCommand,
+	isRemoteCommandId,
 	isRemotePublicSession,
+	isRemoteSessionEpoch,
 	isRemoteSessionToken,
 	isRemoteState,
 } from './remote.contracts.js';
@@ -297,7 +422,6 @@ export type {
 export type {
 	OffscreenHostSnapshot,
 	OffscreenAudioResult,
-	OffscreenVisualizerFrame,
 	OffscreenVisualizerBatch,
 	RemoteHostSession,
 	RemoteHostCreateResponse,
@@ -351,10 +475,18 @@ export type {
 export {
   HOTKEY_ACTIONS,
 	HOTKEY_ACTION_DESCRIPTORS,
+	hotkeyActionRequiresUserActivation,
+	isHotkeyAction,
 	isHotkeyParamsForAction,
 	isSpectraDefaultHotkeyKeyCombo,
 	isSlotHotkeyAction,
 	resolveSpectraHotkeyActualFeedback,
+	selectHotkeyActionDescriptor,
+	selectHotkeyAvailability,
+	selectHotkeyCapability,
+	selectHotkeyFeedbackOwner,
+	selectHotkeyParameterKind,
+	selectHotkeyRepeatPolicy,
 	DEFAULT_MODIFIERS,
   DEFAULT_HOTKEY_SETTINGS
 } from './hotkeys.contracts.js';

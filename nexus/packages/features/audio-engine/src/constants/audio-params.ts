@@ -1,35 +1,28 @@
-// goal: central definition of audio processing parameters, thresholds, and modes
+// goal: central definition of Capture graph processing parameters
 
-export const AudioMode = {
-	NATIVE_WEBAUDIO: 'NATIVE_WEBAUDIO',
-	NATIVE_LITE: 'NATIVE_LITE',
-	CAPTURE: 'CAPTURE',
-	DISABLED: 'DISABLED'
-} as const;
+export const EQ_FREQUENCIES = [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const;
+export const EQ_Q = 1.4;
+export const BASS_FREQUENCY = 200;
+export const BASS_GAIN = 10;
+export const FFT_SIZE = 256;
 
-export type AudioModeType = typeof AudioMode[keyof typeof AudioMode];
-
-export const AudioParams = {
-	EQ_FREQUENCIES: [32, 64, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const,
-	EQ_Q: 1.4,
-	BASS_FREQUENCY: 200,
-	BASS_GAIN: 10,
-	SMOOTH_TIME: 0.1,
-	SMOOTH_TIME_FAST: 0.05,
-	FFT_SIZE: 256,
-	MAX_VOLUME: 800,
-	VOLUME_STEP: 10,
-	EQ_MIN: -12,
-	EQ_MAX: 12,
-	EQ_STEP: 0.1
-} as const;
+// Compatibility projection for tests and UI-facing architecture readers. The
+// graph imports the named owners above so production can tree-shake this object.
+export const AudioParams = { EQ_FREQUENCIES, EQ_Q, BASS_FREQUENCY, BASS_GAIN, FFT_SIZE } as const;
 
 // goal: aggressive compression settings to prevent clipping/distortion during high gain
+export const COMPRESSOR_THRESHOLD = -24;
+export const COMPRESSOR_KNEE = 30;
+export const COMPRESSOR_RATIO = 12;
+export const COMPRESSOR_ATTACK = 0.003;
+export const COMPRESSOR_RELEASE = 0.25;
+
+// Compatibility projection for tests and architecture readers; graph code uses
+// the named constants so this object is not pulled into the Capture bundle.
 export const CompressorOn = {
-	threshold: -24, knee: 30, ratio: 12, attack: 0.003, release: 0.25
+	threshold: COMPRESSOR_THRESHOLD,
+	knee: COMPRESSOR_KNEE,
+	ratio: COMPRESSOR_RATIO,
+	attack: COMPRESSOR_ATTACK,
+	release: COMPRESSOR_RELEASE,
 } as const;
-
-export const CompressorOff = { threshold: 0, ratio: 1 } as const;
-
-// note: used as a bypass state during NATIVE mode cleanup
-export const CompressorNativeOff = { threshold: -10, ratio: 1 } as const;

@@ -4,7 +4,7 @@ import type { ControlDirectField, MediaTarget } from './control.contracts.js';
 
 export const SPECTRA_PROTOCOL_VERSION = 2 as const;
 export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.3.2' as const;
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.3.8' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.4.0' as const;
 
 export const SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE = {
 	ArrowLeft: 'speed_down',
@@ -135,7 +135,7 @@ function hasOnlyKeys(value: Record<string, unknown>, keys: ReadonlySet<string>):
 }
 
 function isSafeNonNegativeInteger(value: unknown): boolean {
-	return Number.isSafeInteger(value) && Number(value) >= 0;
+	return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
 function isBoundedString(value: unknown, max: number): value is string {
@@ -193,7 +193,7 @@ function hasValidEnvelope(value: Record<string, unknown>): boolean {
 	return hasOnlyKeys(value, REQUEST_KEYS)
 		&& value.protocolVersion === SPECTRA_PROTOCOL_VERSION
 		&& isBoundedString(value.requestId, 128)
-		&& (value.tabId === undefined || Number.isInteger(value.tabId) && Number(value.tabId) > 0)
+		&& (value.tabId === undefined || Number.isInteger(value.tabId) && (value.tabId as number) > 0)
 		&& (value.documentId === undefined || isBoundedString(value.documentId, 256))
 		&& (value.generation === undefined || isSafeNonNegativeInteger(value.generation));
 }
@@ -202,7 +202,7 @@ function isMediaTarget(value: unknown): boolean {
 	return isRecord(value)
 		&& hasOnlyKeys(value, MEDIA_TARGET_KEYS)
 		&& Number.isInteger(value.frameId)
-		&& Number(value.frameId) >= 0
+		&& (value.frameId as number) >= 0
 		&& isBoundedString(value.documentId, 256)
 		&& isBoundedString(value.mediaId, 256)
 		&& isSafeNonNegativeInteger(value.sourceRevision)
