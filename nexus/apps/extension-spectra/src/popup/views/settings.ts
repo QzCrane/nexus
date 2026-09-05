@@ -14,6 +14,18 @@ import {
 import { loadPopupLocaleCatalog } from '../../shared/i18n/popup-catalog';
 import { createSerializedToggleQueue } from '../../shared/serialized-toggle';
 import { showPopupToast } from '../toast';
+// The drawer modules ship in the static popup closure on purpose: a lazily
+// imported module let the card's save-as-global action reach an uninitialized
+// dictionary, and the load cost is marginal next to that failure class.
+import {
+  disposePresetsUI,
+  initPresetsUI,
+  updatePresetsI18n,
+} from './presets-ui';
+import {
+  initMediaRouteUI,
+  updateMediaRouteI18n,
+} from './media-route-ui';
 
 export interface SettingsState {
   gSettings: GlobalSettings;
@@ -50,50 +62,22 @@ export async function initSettings(): Promise<SettingsState> {
 
   let disposed = false;
   let unsubscribeSettings: () => void = () => undefined;
-  let presetsModule: typeof import('./presets-ui') | null = null;
-  let presetsLoad: Promise<typeof import('./presets-ui')> | null = null;
   let presetsInitialized = false;
-  let mediaRoutesModule: typeof import('./media-route-ui') | null = null;
-  let mediaRoutesInit: Promise<void> | null = null;
   let disposeMediaRoutes: (() => void) | null = null;
   const dictionaryListeners = new Set<(dict: I18NDict) => void>();
 
-  const loadPresetsModule = async (): Promise<typeof import('./presets-ui')> => {
-    const pending = presetsLoad ?? import('./presets-ui');
-    presetsLoad = pending;
-    try {
-      presetsModule = await pending;
-      return presetsModule;
-    } finally {
-      if (presetsLoad === pending) presetsLoad = null;
-    }
-  };
-
   const ensurePresetsUI = async (): Promise<void> => {
     if (disposed || presetsInitialized) return;
-    const module = await loadPresetsModule();
-    if (disposed) return;
-    module.initPresetsUI(state.dict);
+    initPresetsUI(state.dict);
     presetsInitialized = true;
   };
 
   const onSettingsOpen = (): void => {
 	const ensureMediaRoutesUI = async (): Promise<void> => {
 		if (disposed || disposeMediaRoutes) return;
-		const pending = mediaRoutesInit ?? (async () => {
-			const module = mediaRoutesModule ?? await import('./media-route-ui');
-			if (disposed || disposeMediaRoutes) return;
-			mediaRoutesModule = module;
-			const dispose = await module.initMediaRouteUI(state.dict);
-			if (disposed) dispose();
-			else disposeMediaRoutes = dispose;
-		})();
-		mediaRoutesInit = pending;
-		try {
-			await pending;
-		} finally {
-			if (mediaRoutesInit === pending) mediaRoutesInit = null;
-		}
+		const dispose = await initMediaRouteUI(state.dict);
+		if (disposed) dispose();
+		else disposeMediaRoutes = dispose;
 	};
 	void Promise.all([
 		ensurePresetsUI(),
@@ -110,7 +94,7 @@ export async function initSettings(): Promise<SettingsState> {
     disposed = true;
     unsubscribeSettings();
     dictionaryListeners.clear();
-    if (presetsInitialized) presetsModule?.disposePresetsUI();
+    if (presetsInitialized) disposePresetsUI();
 		disposeMediaRoutes?.();
 		disposeMediaRoutes = null;
     presetsInitialized = false;
@@ -142,8 +126,8 @@ export async function initSettings(): Promise<SettingsState> {
       // leave Popup controls on its previous language/theme/visualizer state.
       state.dict = applyLang(state.gSettings.lang);
       updateCardsI18n(state.dict, state.gSettings.visualizerEnabled);
-		if (presetsInitialized) presetsModule?.updatePresetsI18n(state.dict);
-		mediaRoutesModule?.updateMediaRouteI18n(state.dict);
+		if (presetsInitialized) updatePresetsI18n(state.dict);
+		updateMediaRouteI18n(state.dict);
 		for (const callback of dictionaryListeners) {
 			try {
 				callback(state.dict);

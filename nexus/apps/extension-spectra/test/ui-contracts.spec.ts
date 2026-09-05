@@ -347,7 +347,7 @@ describe('extension-page DOM and idle contracts', () => {
 		);
 		expect(settings).not.toContain('getRegistrySnapshot');
 		expect(settings).not.toContain('registryEntries');
-		expect(settings).toContain("import('./media-route-ui')");
+		expect(settings).toContain('initMediaRouteUI(state.dict)');
 		expect(routeUI).toContain('getRegistrySnapshot');
 		expect(routeUI).toContain('addRegistryDomain');
 		expect(routeUI).toContain('removeRegistryDomain');
@@ -459,9 +459,9 @@ describe('extension-page DOM and idle contracts', () => {
 
 		expect(settings).not.toContain('initRegistryUI');
 		expect(settings).not.toContain('getRegistrySnapshot');
-		expect(settings).toContain('module.initPresetsUI(state.dict)');
-		expect(settings).toContain("import('./presets-ui')");
-		expect(settings).not.toContain("from './presets-ui'");
+		expect(settings).toContain('initPresetsUI(state.dict)');
+		expect(settings).toContain("} from './presets-ui'");
+		expect(settings).not.toContain('disposePresetsUI?.(');
 		expect(normalizedPresets).toContain('export function initPresetsUI(dict: I18NDict):');
 		expect(presets).toContain('const refreshRevision = ++latestRefreshRevision');
 		expect(presets).not.toContain('currentDict: I18NDict | null');
