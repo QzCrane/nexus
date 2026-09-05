@@ -12,7 +12,7 @@ interface StoreHeaderProps {
 	setSearchQuery: (q: string) => void;
 	isSearchFocused: boolean;
 	setIsSearchFocused: (f: boolean) => void;
-	searchInputRef: React.RefObject<HTMLInputElement>;
+	searchInputRef: React.RefObject<HTMLInputElement | null>;
 	handleRefresh: () => void;
 	remoteLoading: boolean;
 	filterType: FilterType;

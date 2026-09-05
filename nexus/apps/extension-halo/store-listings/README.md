@@ -27,7 +27,7 @@ Roadmaps, proposals, screenshots, and older listing text are not behavior author
 - Required screenshot: `assets/halo-sidepanel-1280x800.png`
 - Extension icons: `../public/icon16.png`, `../public/icon48.png`, and `../public/icon128.png`
 
-Regenerate the screenshot from the production extension with Bun 1.3.14:
+Regenerate the screenshot from the production extension with Bun 1.4.0:
 
 ```bash
 bun run --cwd apps/extension-halo capture:store-assets

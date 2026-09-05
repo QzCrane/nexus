@@ -6,7 +6,7 @@ It keeps ordinary processing and persistence on the user's device while exposing
 
 ## Build from source
 
-Use the repository-pinned Bun **1.3.14** toolchain from the repository root:
+Use the repository-pinned Bun **1.4.0** toolchain from the repository root:
 
 ```bash
 bun install --frozen-lockfile

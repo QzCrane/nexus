@@ -20,7 +20,7 @@ export function createSerializedAsyncPoller<Result>(
 	delayMs: number,
 	dependencies: SerializedAsyncPollerDependencies = {},
 ): SerializedAsyncPoller {
-	const schedule = dependencies.schedule ?? setTimeout;
+	const schedule = dependencies.schedule ?? ((callback, delay) => setTimeout(callback, delay));
 	const clearTimer = dependencies.clearTimer ?? clearTimeout;
 	let active = false;
 	let disposed = false;

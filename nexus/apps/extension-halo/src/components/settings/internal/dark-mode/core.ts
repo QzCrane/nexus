@@ -31,6 +31,7 @@ export interface DarkModeFixes {
 	css: string;
 	ignoreInlineStyle: string[];
 	ignoreImageAnalysis: string[];
+	ignoreCSSUrl: string[];
 	disableStyleSheetsProxy: boolean;
 }
 
@@ -51,6 +52,7 @@ export const DEFAULT_FIXES: DarkModeFixes = {
 	css: '',
 	ignoreInlineStyle: ['[class*="icon"]', '[class*="Icon"]'],
 	ignoreImageAnalysis: ['[class*="cover"]', '[class*="thumb"]'],
+	ignoreCSSUrl: [],
 	disableStyleSheetsProxy: true, // inv: avoid CSP violations on strict sites like Bilibili
 };
 
