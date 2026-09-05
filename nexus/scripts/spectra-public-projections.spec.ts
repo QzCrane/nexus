@@ -9,7 +9,7 @@ const spectraDirectory = fileURLToPath(new URL('../apps/extension-spectra/', imp
 const temporaryDirectories: string[] = [];
 
 afterEach(() => {
-	for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+	for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 });
 
 describe('SPECTRA public ProjectionModel', () => {
