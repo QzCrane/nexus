@@ -25,3 +25,6 @@ artifacts/
 # read natively by Cursor / Codex / Copilot / Gemini CLI / Cline / OpenCode /
 # Amp / Kimi / Replit. No mirrors are generated — Antigravity/TRAE users
 # maintain their skills in their own global config (`~/.agent/skills/`) instead.
+
+# Halo local public-candidate build output
+halo-public-candidate-*/
