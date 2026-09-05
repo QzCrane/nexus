@@ -43,7 +43,7 @@ function receipt(attempt: number): CloseoutReceipt {
 			spectra: { path: 'spectra.zip', sha256: '5'.repeat(64), bytes: 200 },
 		},
 		toolSha256: { policy: '6'.repeat(64) },
-		host: { platform: 'win32', bun: '1.3.14', chromium: 'test' },
+		host: { platform: 'win32', bun: '1.4.0', chromium: 'test' },
 		hosted: { status: 'INFRA_UNAVAILABLE', detail: 'runner was not allocated' },
 		platform: {
 			schemaVersion: 1 as const,
@@ -97,7 +97,7 @@ describe('exact-head closeout governance', () => {
 		expect(policy.hostedRequired).toBe(false);
 		expect(policy.allowedHostedStatuses).toContain('INFRA_UNAVAILABLE');
 		expect(policy.toolFiles).toContain('scripts/dependency-audit.ts');
-		expect(policy.platform.image).toMatch(/^oven\/bun:1\.3\.14@sha256:[a-f0-9]{64}$/u);
+		expect(policy.platform.image).toMatch(/^oven\/bun:1\.4\.0@sha256:[a-f0-9]{64}$/u);
 		expect(policy.platform.environment).toEqual({
 			PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1',
 			PUPPETEER_SKIP_DOWNLOAD: 'true',
@@ -107,7 +107,7 @@ describe('exact-head closeout governance', () => {
 		expect(() => assertDockerImageIdentity(policy.platform.image, 'sha256:wrong')).toThrow(
 			'Docker image identity does not contain',
 		);
-		expect(() => assertDockerImageIdentity('oven/bun:1.3.14', 'sha256:unknown')).toThrow(
+		expect(() => assertDockerImageIdentity('oven/bun:1.4.0', 'sha256:unknown')).toThrow(
 			'not pinned by digest',
 		);
 		assertDockerImageIdentity(

@@ -1,6 +1,6 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { dirname, extname, join, relative, resolve } from 'node:path';
+import { dirname, extname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BIOME_VERSION, BUN_VERSION, TURBO_VERSION } from './toolchain-versions.ts';
 
@@ -50,14 +50,6 @@ for (const [tool, version] of Object.entries(expected)) {
 	}
 }
 
-const ignoredDirectories = new Set([
-	'.git',
-	'.turbo',
-	'build',
-	'dist',
-	'node_modules',
-	'coverage',
-]);
 const scannedExtensions = new Set(['.cjs', '.js', '.json', '.md', '.mjs', '.ts', '.toml', '.yaml', '.yml']);
 const versionPatterns = [
 	/\bbun@(\d+\.\d+\.\d+)\b/giu,
@@ -65,24 +57,24 @@ const versionPatterns = [
 	/\bBUN_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]/gu,
 ];
 
-function collectFiles(directory, output = []) {
-	for (const entry of readdirSync(directory)) {
-		if (ignoredDirectories.has(entry)) continue;
-		const fullPath = join(directory, entry);
-		const stats = statSync(fullPath);
-		if (stats.isDirectory()) {
-			collectFiles(fullPath, output);
-			continue;
-		}
-		if (!stats.isFile() || !scannedExtensions.has(extname(entry))) continue;
-		if (entry === 'bun.lock' || entry === 'bun.lockb') continue;
-		output.push(fullPath);
-	}
-	return output;
+function trackedCurrentFiles() {
+	const result = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '-z'], {
+		encoding: 'utf8',
+		shell: false,
+	});
+	if (result.error) throw result.error;
+	if (result.status !== 0) throw new Error(`git ls-files failed: ${result.stderr.trim()}`);
+	return result.stdout
+		.split('\0')
+		.filter(Boolean)
+		.filter((path) => !path.includes('/docs/_archive/'))
+		.filter((path) => path !== 'bun.lock' && scannedExtensions.has(extname(path)))
+		.map((path) => resolve(repositoryRoot, path))
+		.filter(existsSync);
 }
 
 const drift = [];
-for (const filePath of collectFiles(repositoryRoot)) {
+for (const filePath of trackedCurrentFiles()) {
 	const content = readFileSync(filePath, 'utf8');
 	for (const pattern of versionPatterns) {
 		pattern.lastIndex = 0;

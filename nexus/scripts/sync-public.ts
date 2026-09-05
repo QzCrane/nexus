@@ -17,7 +17,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Keep in sync with scripts/toolchain-versions.ts.
-const BUN_VERSION = '1.3.14';
+const BUN_VERSION = '1.4.0';
 const PACKAGE_MANAGER = `bun@${BUN_VERSION}`;
 const SUPPORTED_APPS = new Set(['spectra', 'halo']);
 const PUBLIC_TURBO_CACHE_DIR = 'node_modules/.cache/turbo-public-sync';
@@ -110,7 +110,6 @@ const APP_CONFIGS = {
     },
     publicApplicationScriptFiles: [
       'apps/extension-spectra/scripts/check-production-artifacts.ts',
-      'apps/extension-spectra/scripts/chrome120-webrtc-adapter.ts',
       'apps/extension-spectra/scripts/i18n-assets.ts',
       'apps/extension-spectra/scripts/minification-policy.ts',
     ],
@@ -160,14 +159,14 @@ const APP_CONFIGS = {
     publicApplicationScriptFiles: [],
     publicApplicationDevDependencies: [
       '@playwright/test',
-      '@types/file-saver',
+      '@types/qrcode',
       '@types/node',
       '@types/react',
       '@types/react-dom',
       'chrome-types',
       'esbuild',
-      'playwright',
-      'tsx',
+      'react',
+      'react-dom',
       'typescript',
     ],
     readme: 'apps/extension-halo/README.md',

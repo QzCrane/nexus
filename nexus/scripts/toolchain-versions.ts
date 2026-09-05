@@ -8,6 +8,6 @@
  *   - scripts/sync-public.ts
  */
 
-export const BUN_VERSION = '1.3.14';
-export const BIOME_VERSION = '2.5.3';
-export const TURBO_VERSION = '2.10.5';
+export const BUN_VERSION = '1.4.0';
+export const BIOME_VERSION = '2.5.11';
+export const TURBO_VERSION = '2.10.12';

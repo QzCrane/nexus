@@ -1,6 +1,32 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import {
+	CONTROL_ALGORITHM_ADJUDICATIONS,
+	CONTROL_ALGORITHM_POLICIES,
+	CONTROL_CAPABILITIES,
+	CONTROL_STRATEGIES,
+	CONTROL_STRATEGY_RULES,
+	controlCapabilityUsesAcknowledgement,
+	controlCapabilityUsesStrategy,
+	selectControlAlgorithmAdjudication,
+	selectControlAlgorithmPolicy,
+	selectControlCapabilityScope,
+	selectControlStrategyRule,
+} from '../../packages/contracts/src/control.contracts.ts';
+import {
+	HOTKEY_ACTIONS,
+	HOTKEY_ACTION_DESCRIPTORS,
+	hotkeyActionRequiresUserActivation,
+	selectHotkeyActionDescriptor,
+	selectHotkeyAvailability,
+	selectHotkeyCapability,
+	selectHotkeyFeedbackOwner,
+	selectHotkeyParameterKind,
+	selectHotkeyRepeatPolicy,
+} from '../../packages/contracts/src/hotkeys.contracts.ts';
 import { SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS } from './spectra-control-algorithm-catalog.ts';
+import { missingSourceEvidence } from './source-evidence.ts';
 import { error, ok, scanDir, section } from './utils.ts';
 
 const APP_PATH = 'apps/extension-spectra';
@@ -11,7 +37,6 @@ const LEGACY_WRITERS = Object.freeze({
 	muted: new Set(),
 	playbackRate: new Set([
 		`${SOURCE_PATH}/content/audio/volume-observer.ts`,
-		`${SOURCE_PATH}/content/core/lifecycle/media-observer.ts`,
 		`${SOURCE_PATH}/content/logic/media-control.ts`,
 	]),
 	currentTime: new Set([
@@ -36,7 +61,7 @@ const CANONICAL_WRITERS = Object.freeze({
 	volume: new Set([`${SOURCE_PATH}/content/logic/native-media-executor.ts`]),
 	muted: new Set([`${SOURCE_PATH}/content/logic/native-media-executor.ts`]),
 	playbackRate: new Set([`${SOURCE_PATH}/content/logic/native-media-executor.ts`]),
-	currentTime: new Set([`${SOURCE_PATH}/content/logic/native-media-executor.ts`]),
+	currentTime: new Set([`${SOURCE_PATH}/content/logic/native-media-async.ts`]),
 	preservesPitch: new Set([`${SOURCE_PATH}/content/logic/native-media-executor.ts`]),
 	loop: new Set([`${SOURCE_PATH}/content/logic/native-media-executor.ts`]),
 	inlineVideoStyle: new Set(),
@@ -45,6 +70,12 @@ const CANONICAL_WRITERS = Object.freeze({
 
 function normalize(root, fullPath) {
 	return path.relative(root, fullPath).replaceAll('\\', '/');
+}
+
+function executableSource(source) {
+	return source
+		.replace(/\/\*[\s\S]*?\*\//gu, '')
+		.replace(/\/\/.*$/gmu, '');
 }
 
 export function hasNamedImports(source, moduleSpecifier, requiredNames) {
@@ -93,8 +124,7 @@ function checkSourceAlgorithmCatalog(root, contracts, architecture) {
 	const admissions = new Set([
 		'none',
 		'extension-owned',
-		'proven-safe-media-or-explicit-full-output',
-		'existing-processor-only',
+		'explicit-foreground-subscription',
 		'sandbox-only',
 		'not-applicable',
 	]);
@@ -263,6 +293,479 @@ function checkDefaultRuntime(root) {
 	}
 }
 
+function checkAudioProcessorOwners(root) {
+	const captureOwnerRelative = `${SOURCE_PATH}/offscreen/audio-host.ts`;
+	const captureOwnerPath = path.join(root, captureOwnerRelative);
+	const mediaOwnerRelative = 'packages/features/audio-engine/src/WebAudioController.ts';
+	const mediaOwnerPath = path.join(root, mediaOwnerRelative);
+	const retiredPaths = [
+		`${SOURCE_PATH}/content/core/lifecycle/media-observer.ts`,
+		`${SOURCE_PATH}/background/registry-repository.ts`,
+		`${SOURCE_PATH}/popup/views/registry-ui.ts`,
+		`${SOURCE_PATH}/popup/utils/registry-helpers.ts`,
+		'packages/contracts/src/registry.contracts.ts',
+		'packages/features/audio-engine/src/CapabilityPlanner.ts',
+		'packages/features/audio-engine/src/PolicyEngine.ts',
+		'packages/features/audio-engine/src/color-predictor.ts',
+		'packages/features/audio-engine/src/webaudio/controller.ts',
+		'packages/features/audio-engine/src/webaudio/index.ts',
+	];
+	for (const relative of retiredPaths) {
+		if (fs.existsSync(path.join(root, relative))) {
+			error(`SCTRL-003/SCTRL-008/SCTRL-041: retired/forbidden processor or route path returned (${relative})`);
+		}
+	}
+	if (!fs.existsSync(captureOwnerPath) || !fs.existsSync(mediaOwnerPath)) {
+		error('SCTRL-003/SCTRL-008/SCTRL-041: the three-state audio policy requires both Media WebAudio and Capture owners');
+		return;
+	}
+
+	const processorConstruction = /\bnew\s+(?:window\.)?(?:AudioContext|webkitAudioContext)\s*\(|\bcreateMediaStreamSource\s*\(|\bcreateMediaElementSource\s*\(|\bMediaElementAudioSourceNode\b/u;
+	const forbiddenImport = /(?:from\s+|import\s*\(\s*)['"][^'"]*(?:CapabilityPlanner|PolicyEngine|media-observer)[^'"]*['"]/iu;
+	const forbiddenBinding = /\b(?:SiteRouteRecord|CapabilityPlanner|PolicyEngine)\b/u;
+	scanDir(path.join(root, SOURCE_PATH), (fullPath, entry) => {
+		if (!/\.(?:ts|tsx|js|mjs)$/u.test(entry.name) || entry.name.endsWith('.d.ts')) return;
+		const relative = normalize(root, fullPath);
+		const raw = fs.readFileSync(fullPath, 'utf8');
+		const source = executableSource(raw);
+		if (processorConstruction.test(source)
+			&& relative !== captureOwnerRelative
+			&& relative !== mediaOwnerRelative) {
+			error(`SCTRL-003/SCTRL-008: audio processor construction escaped the two physical owners (${relative})`);
+		}
+		if (forbiddenImport.test(source) || forbiddenBinding.test(source)) {
+			error(`SCTRL-003/SCTRL-008/SCTRL-041: production source imports or binds a retired processor/route owner (${relative})`);
+		}
+	});
+
+	const host = fs.readFileSync(captureOwnerPath, 'utf8');
+	for (const required of [
+		'const processors = new Map<number, AudioProcessor>()',
+		'async function startCapture(',
+		'ctx = new AudioContext()',
+		'ctx.createMediaStreamSource(stream)',
+		"if (ctx.state !== 'running')",
+		'processors.set(tabId, candidate)',
+		'function activeResult(processor: AudioProcessor)',
+		'contextState: \'running\'',
+		'graphSignature: processor.snapshot.graphSignature',
+		'normalizedActualConfig: processor.snapshot.normalizedActualConfig',
+		'function getVisualizerFrame(tabId: number)',
+		'if (!processor || !visualizerSubscriptions.has(tabId)) return EMPTY_VISUALIZER_FRAME;',
+		'processor.router.getVisualizerData()',
+	]) {
+		if (!host.includes(required)) {
+			error(`SCTRL-003/SCTRL-008/SCTRL-013: Capture owner lost the required physical/readback boundary (${required})`);
+		}
+	}
+	if (/createMediaElementSource|MediaElementAudioSourceNode/u.test(executableSource(host))) {
+		error('SCTRL-003/SCTRL-008: Capture owner must not bind a page MediaElementAudioSourceNode');
+	}
+	const mediaOwner = fs.readFileSync(mediaOwnerPath, 'utf8');
+	for (const required of [
+		'export function assessMediaSourceEligibility(',
+		'export function assessMediaSourceCoverage(',
+		'context.createMediaElementSource(element)',
+		'canAttachAll(',
+		'hasCompleteCoverage(',
+		'runtime.router.apply(',
+		'setVisualizerSubscribed(',
+		'for (const element of [...this.ownedSources]) this.detachNode(element);',
+	]) {
+		if (!mediaOwner.includes(required)) {
+			error(`SCTRL-003/SCTRL-008/SCTRL-013: Media WebAudio owner lost exact coverage/readback/lifecycle proof (${required})`);
+		}
+	}
+	if (/\.crossOrigin\s*=|setAttribute\(\s*['"]crossorigin/iu.test(executableSource(mediaOwner))
+		|| /createMediaStreamSource/u.test(executableSource(mediaOwner))) {
+		error('SCTRL-003/SCTRL-008: Media WebAudio must neither mutate CORS state nor acquire a tab stream');
+	}
+
+	const audioContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/audio.contracts.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'export function requiresAudioProcessor(',
+		'export interface AudioProcessorDemand',
+		'export function resolveDesiredAudioMode(',
+		'!requiresAudioProcessor(config) && !demand.visualizer',
+		'mediaWebAudio: boolean;',
+		"return demand.mediaWebAudio ? 'webaudio' : 'capture';",
+		'export interface AudioSessionSnapshot',
+		'export function isActiveCaptureLifecycle(',
+		"value.actualMode === 'capture' && value.phase === 'active'",
+		'configRevision',
+		'actualConfig',
+	]) {
+		if (!audioContracts.includes(required)) {
+			error(`SCTRL-002/SCTRL-005/SCTRL-008: audio contract lost Capture lifecycle authority (${required})`);
+		}
+	}
+	const offscreenContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/offscreen.contracts.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'export type OffscreenAudioResult =',
+		'controlRevision: number;',
+		"phase: 'active';",
+		"contextState: 'running';",
+		'graphSignature: string;',
+		'normalizedActualConfig: AudioProcessorConfig;',
+		"phase: 'idle';",
+		"contextState: 'closed';",
+		"graphSignature: 'none';",
+		'normalizedActualConfig: null;',
+		'export function isOffscreenAudioResult(',
+	]) {
+		if (!offscreenContracts.includes(required)) {
+			error(`SCTRL-005/SCTRL-008: offscreen Capture ACK contract lost an exact identity/readback field (${required})`);
+		}
+	}
+	const captureAdmission = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/capture-admission.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'export function mintCaptureAdmission(',
+		'export function consumeCaptureAdmission(',
+		'isCaptureAdmissionFenceCurrent(',
+		'oneShot: true',
+		'CAPTURE_ADMISSION_TTL_MS',
+	]) {
+		if (!captureAdmission.includes(required)) {
+			error(`SCTRL-041: Capture admission owner lost its one-shot document fence (${required})`);
+		}
+	}
+	const captureHandler = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/handlers/capture.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'async function commitCaptureSnapshot(',
+		'async function publishAcknowledgedCaptureState(',
+		'audioGraphSignature(result.normalizedActualConfig) === result.graphSignature',
+		'result.generation !== generation',
+		'result.controlRevision !== controlRevision',
+		"result.contextState !== 'running'",
+		"result.phase !== 'active'",
+		'state.controlRevision = result.controlRevision',
+		'state.actualConfig = actualConfigFromProcessor(config, result.normalizedActualConfig)',
+	]) {
+		if (!captureHandler.includes(required)) {
+			error(`SCTRL-005/SCTRL-008/SCTRL-041: Background must publish only an exact Capture ACK (${required})`);
+		}
+	}
+
+	const captureManager = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/audio/capture-manager.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'function applyConfirmedState(',
+		'shouldAcceptAudioSessionPhase(',
+		'actualConfig',
+		"Capture start requires a one-shot Background admission",
+		'response.data.generation',
+		'continuationAdmission',
+	]) {
+		if (!captureManager.includes(required)) {
+			error(`SCTRL-005/SCTRL-008: Content Capture state must accept only monotonic acknowledged readback (${required})`);
+		}
+	}
+
+	const modeExecutor = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/logic/mode-executor.ts'),
+		'utf8',
+	);
+	const modeExecutable = executableSource(modeExecutor);
+	if (processorConstruction.test(modeExecutable)) {
+		error('SCTRL-003/SCTRL-008: Content mode executor must not construct an audio processor');
+	}
+	for (const required of [
+		'export function createModeExecutor(',
+		'owner.disposed = true',
+		'async function executeModeTransition(',
+		"mode === 'webaudio'",
+		'async function enterWebAudio(',
+		'deps.audioController.canAttachAll(',
+		'deps.audioController.hasCompleteCoverage(',
+		'actualConfigFromGraphSnapshot(',
+		'snapshot.sourceCount !== expectedSources',
+		'deps.audioController.setVisualizerSubscribed(',
+		'async function fallbackFromWebAudio(',
+		"captureAdmission?.kind === 'capture-start'",
+		'captureManager.request(true',
+		'captureManager.syncConfig',
+		"result.phase === 'active'",
+		'captureManager.request(false',
+		'transparentAudioConfig()',
+		'CAPTURE_ADMISSION_REQUIRED',
+	]) {
+		if (!modeExecutor.includes(required)) {
+			error(`SCTRL-003/SCTRL-005/SCTRL-008: Content mode transition lost the three-owner lifecycle boundary (${required})`);
+		}
+	}
+
+	const visualizerLoop = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'popup/visualizer/loop.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'isProcessorActive: () => boolean',
+		'allowCaptureAcquisition: boolean',
+		'subscription.params.isProcessorActive()',
+		'subscription.params.allowCaptureAcquisition',
+		'captureTabId',
+		'batchRetryAt',
+		'VISUALIZER_STATE_CHANGED_EVENT',
+		'spectra.audio.visualizer.batch',
+		'response.data.generation === generation',
+	]) {
+		if (!visualizerLoop.includes(required)) {
+			error(`SCTRL-013/SCTRL-021: Visualizer lost its foreground-only bounded scheduler (${required})`);
+		}
+	}
+	const audioHandler = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/handlers/audio.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'isExtensionPopupSender(sender)',
+		'reconcileVisualizerSourceOwners(',
+		'acquirePopupVisualizerSource(',
+		'releasePopupVisualizerSource(',
+		'scheduleVisualizerSourceOwnerRetry(',
+		'captureStates.get(tabId) === true',
+		"'spectra.audio.visualizer.get'",
+		'OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS',
+		'OFFSCREEN_AUDIO_GET_VIZ_BATCH',
+		'const captureTabIds',
+		'unionCaptureTabIds',
+	]) {
+		if (!audioHandler.includes(required)) {
+			error(`SCTRL-013/SCTRL-021: Visualizer Background ownership/admitted Capture projection drifted (${required})`);
+		}
+	}
+	const coordinator = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/control-coordinator.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'export async function acquirePopupVisualizerSource(',
+		'captureAdmissionForInvocation(',
+		"'spectra.audio.visualizer.demand.set'",
+		"'visualizer'",
+		'export function releasePopupVisualizerSource(',
+		'chrome.webNavigation.getFrame({',
+		'interface PopupVisualizerSourceAcquisition',
+		"actualMode: 'webaudio' | 'capture' | null;",
+		'lease: pendingLease',
+	]) {
+		if (!coordinator.includes(required)) {
+			error(`SCTRL-013/SCTRL-021/SCTRL-041: Visualizer transient Capture lost foreground/document admission or release compensation (${required})`);
+		}
+	}
+	const contentMessageHandler = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/logic/message-handler.ts'),
+		'utf8',
+	);
+	for (const required of [
+		"message.type !== 'spectra.audio.visualizer.get'",
+		'deps.audioController.getVisualizerData()',
+		"message.type !== 'spectra.audio.visualizer.demand.set'",
+		'visualizerSubscribers.add(message.payload.subscriberId)',
+		'visualizerSubscribers.delete(message.payload.subscriberId)',
+		'captureAdmission: message.payload.admission',
+	]) {
+		if (!contentMessageHandler.includes(required)) {
+			error(`SCTRL-013/SCTRL-021/SCTRL-041: Content lost exact-subscriber Visualizer demand ownership (${required})`);
+		}
+	}
+	const visualizerContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/visualizer.contracts.ts'),
+		'utf8',
+	);
+	for (const required of [
+		'captureTabId: number | null',
+		'export function isVisualizerBatchPayload(',
+		'value.captureTabId === null || unique.has(value.captureTabId)',
+		'export function isAudioVisualizerDemandPayload(',
+		"value.admission.kind === 'capture-start'",
+	]) {
+		if (!visualizerContracts.includes(required)) {
+			error(`SCTRL-002/SCTRL-013/SCTRL-021/SCTRL-041: canonical Visualizer wire guard drifted (${required})`);
+		}
+	}
+}
+
+function checkSpectraV3EnvelopeOwner(root) {
+	const bootstrapContract = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.bootstrap.ts'),
+		'utf8',
+	);
+	const protocol = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.protocol.ts'),
+		'utf8',
+	);
+	const runtimeClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/spectra-client.ts'),
+		'utf8',
+	);
+	const uiClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/ui-spectra-client.ts'),
+		'utf8',
+	);
+	const settingsClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/ui-settings-spectra-client.ts'),
+		'utf8',
+	);
+	const runtimeArchitecture = fs.readFileSync(
+		path.join(root, APP_PATH, 'docs/architecture/runtime.md'),
+		'utf8',
+	);
+	const strategyArchitecture = fs.readFileSync(
+		path.join(root, APP_PATH, 'docs/control/02-strategy-and-routes.md'),
+		'utf8',
+	);
+
+	const protocolVersionDefinitions = bootstrapContract.match(
+		/^export const SPECTRA_PROTOCOL_VERSION\s*=/gmu,
+	) ?? [];
+	if (protocolVersionDefinitions.length !== 1
+		|| !/^export const SPECTRA_CONTENT_RUNTIME_REVISION\s*=\s*'3\./mu.test(bootstrapContract)) {
+		error('SCTRL-001/SCTRL-034: SPECTRA v3 must have one canonical protocol/runtime version owner');
+	}
+	for (const required of [
+		'export type SpectraRequestEnvelope',
+		'export type SpectraEventEnvelope',
+		'export function isSpectraRequestEnvelope(',
+		'export function isSpectraEventEnvelope(',
+	]) {
+		if (!protocol.includes(required)) {
+			error(`SCTRL-001/SCTRL-034: SPECTRA v3 envelope contract owner drifted (${required})`);
+		}
+	}
+	for (const required of [
+		'function createEnvelope<T extends SpectraRequestType>(',
+		'protocolVersion: SPECTRA_PROTOCOL_VERSION',
+		'requestId: createRequestId()',
+		'const message = createEnvelope(type, payload, context)',
+		'function deliverSpectraTabEnvelope<T extends SpectraRequestType>(',
+		'createEnvelope(type, payload, { ...context, tabId })',
+	]) {
+		if (!runtimeClient.includes(required)) {
+			error(`SCTRL-001/SCTRL-034: SPECTRA extension request transport lost the canonical envelope owner (${required})`);
+		}
+	}
+	for (const [name, source] of [
+		['ui-spectra-client.ts', uiClient],
+		['ui-settings-spectra-client.ts', settingsClient],
+	]) {
+		if (!source.includes('SpectraRequestEnvelope')
+			|| !source.includes('SPECTRA_PROTOCOL_VERSION')
+			|| !source.includes('requestId')) {
+			error(`SCTRL-001/SCTRL-034: focused SPECTRA transport must remain typed by the canonical envelope owner (${name})`);
+		}
+	}
+	for (const [name, document, required] of [
+		['architecture/runtime.md', runtimeArchitecture, [
+			'## Protocol and envelope ownership',
+			'one SPECTRA envelope owner',
+			'top-level `action:` message object is the retired V1 runtime protocol',
+			'`GLOBAL_SETTINGS_UPDATE`',
+		]],
+		['control/02-strategy-and-routes.md', strategyArchitecture, [
+			'### §4.2 SPECTRA extension envelope owner and V1 retirement',
+			'顶层 `action:` envelope 属于已退役的 V1 runtime',
+			'`createRouter`',
+			'envelope 当前为 v2',
+			'Remote 的 v3 是独立',
+			'替换 response shape',
+		]],
+	]) {
+		for (const phrase of required) {
+			if (!document.includes(phrase)) {
+				error(`SCTRL-016/SCTRL-034: SPECTRA extension envelope ownership rule is missing from the owner document (${name}: ${phrase})`);
+			}
+		}
+	}
+
+	const nakedActionEnvelope = /(?:chrome\.)?(?:runtime|tabs)\.sendMessage\([^;]{0,800}?\baction\s*:/u;
+	const forbiddenRuntime = /\b(?:createMessenger|sendToTab|messenger\.send|createRouter|router\.(?:on|listen)|NEXUS_ACTIONS|NexusAction|NexusMessages|GLOBAL_SETTINGS_UPDATE)\b/u;
+	scanDir(path.join(root, SOURCE_PATH), (fullPath, entry) => {
+		if (!/\.(?:ts|tsx|js|mjs)$/u.test(entry.name) || entry.name.endsWith('.d.ts')) return;
+		const relative = normalize(root, fullPath);
+		const source = executableSource(fs.readFileSync(fullPath, 'utf8'));
+		if (nakedActionEnvelope.test(source)) {
+			error(`SCTRL-001/SCTRL-034: V1 action envelope sender is forbidden in SPECTRA production (${relative})`);
+		}
+		if (forbiddenRuntime.test(source)) {
+			error(`SCTRL-001/SCTRL-034: retired V1 action/router runtime reached SPECTRA production (${relative})`);
+		}
+	});
+}
+
+const CONTROL_ACKNOWLEDGEMENTS = [
+	'coordinator-snapshot',
+	'page-controller-getter',
+	'dom-event-getter',
+	'dom-stable-getter',
+	'chrome-event-getter',
+	'processor-readback',
+	'computed-style',
+	'overlay-readback',
+	'subscription-state',
+	'operation-result',
+];
+
+function controlDimensionOwnerIsNotExhaustive() {
+	if (Object.keys(CONTROL_ALGORITHM_POLICIES).length !== CONTROL_CAPABILITIES.length
+		|| Object.keys(CONTROL_ALGORITHM_ADJUDICATIONS).length !== CONTROL_CAPABILITIES.length
+		|| Object.keys(CONTROL_STRATEGY_RULES).length !== CONTROL_STRATEGIES.length) return true;
+	for (const strategy of CONTROL_STRATEGIES) {
+		if (!isDeepStrictEqual(selectControlStrategyRule(strategy), CONTROL_STRATEGY_RULES[strategy])) {
+			return true;
+		}
+	}
+	for (const capability of CONTROL_CAPABILITIES) {
+		const policy = selectControlAlgorithmPolicy(capability);
+		if (!isDeepStrictEqual(policy, CONTROL_ALGORITHM_POLICIES[capability])
+			|| !isDeepStrictEqual(
+				selectControlAlgorithmAdjudication(capability),
+				CONTROL_ALGORITHM_ADJUDICATIONS[capability],
+			)
+			|| selectControlCapabilityScope(capability) !== policy.scope) return true;
+		for (const strategy of CONTROL_STRATEGIES) {
+			if (controlCapabilityUsesStrategy(capability, strategy)
+				!== policy.orderedStrategies.includes(strategy)) return true;
+		}
+		for (const acknowledgement of CONTROL_ACKNOWLEDGEMENTS) {
+			if (controlCapabilityUsesAcknowledgement(capability, acknowledgement)
+				!== policy.acknowledgements.includes(acknowledgement)) return true;
+		}
+	}
+	return false;
+}
+
+function hotkeyActionOwnerIsNotExhaustive() {
+	if (Object.keys(HOTKEY_ACTION_DESCRIPTORS).length !== HOTKEY_ACTIONS.length) return true;
+	for (const action of HOTKEY_ACTIONS) {
+		const descriptor = HOTKEY_ACTION_DESCRIPTORS[action];
+		if (!isDeepStrictEqual(selectHotkeyActionDescriptor(action), descriptor)
+			|| selectHotkeyCapability(action) !== descriptor.capability
+			|| selectHotkeyAvailability(action) !== descriptor.availability
+			|| selectHotkeyRepeatPolicy(action) !== descriptor.repeatPolicy
+			|| selectHotkeyParameterKind(action) !== descriptor.parameter
+			|| selectHotkeyFeedbackOwner(action) !== descriptor.feedbackOwner
+			|| hotkeyActionRequiresUserActivation(action) !== descriptor.requiresUserActivation) {
+			return true;
+		}
+	}
+	return false;
+}
+
 function checkPolicyOwner(root) {
 	const contracts = fs.readFileSync(
 		path.join(root, 'packages/contracts/src/control.contracts.ts'),
@@ -272,15 +775,23 @@ function checkPolicyOwner(root) {
 		path.join(root, 'packages/contracts/src/spectra.protocol.ts'),
 		'utf8',
 	);
-	if (!contracts.includes('CONTROL_ALGORITHM_POLICIES')) {
-		error('SCTRL-002: exhaustive CONTROL_ALGORITHM_POLICIES owner is missing');
+	if (!contracts.includes('const CONTROL_DIMENSION_INDEX = {')
+		|| !contracts.includes('as const satisfies ControlDimensionIndex')
+		|| !contracts.includes('/* @__PURE__ */ projectControlRecord(')) {
+		error('SCTRL-002: compact control dimension owner or derived audit projection is missing');
 	}
 	if (!contracts.includes('export const CONTROL_DIRECT_FIELDS')
 		|| !contracts.includes("Exclude<ControlField, 'abLoop' | 'visualizer'>")
 		|| !contracts.includes('hasOnlyKeys(value, controlDirectFields)')) {
 		error('SCTRL-002/SCTRL-005: A/B and Visualizer must stay outside ordinary patch/mutation execution');
 	}
-	if (!/screenshot:\s*\{\s*scope:\s*'active-video',\s*kind:\s*'compound',\s*orderedStrategies:\s*\['chrome-native'\]/u.test(contracts)
+	const screenshotPolicy = selectControlAlgorithmPolicy('screenshot');
+	if (screenshotPolicy.scope !== 'active-video'
+		|| screenshotPolicy.kind !== 'compound'
+		|| screenshotPolicy.orderedStrategies.length !== 1
+		|| screenshotPolicy.orderedStrategies[0] !== 'chrome-native'
+		|| screenshotPolicy.acknowledgements.length !== 1
+		|| screenshotPolicy.acknowledgements[0] !== 'operation-result'
 		|| contracts.includes("method: 'canvas'")
 		|| protocol.includes("method: 'canvas'")) {
 		error('SCTRL-002/SCTRL-005: screenshot must have one Chrome-native, completed-save result path');
@@ -291,60 +802,62 @@ function checkPolicyOwner(root) {
 	if (!/export interface ControlSnapshot\s*\{[^}]*activeMedia:\s*MediaTarget\s*\|\s*null;[^}]*activeVideo:\s*MediaTarget\s*\|\s*null;/su.test(contracts)) {
 		error('SCTRL-005/SCTRL-006/SCTRL-025: shared state must distinguish active media from active video');
 	}
-	if (!contracts.includes('satisfies Record<ControlCapability, ControlAlgorithmPolicy>')) {
-		error('SCTRL-002: control policy must be compile-time exhaustive');
-	}
-	if (!contracts.includes('CONTROL_STRATEGY_RULES')
-		|| !contracts.includes('satisfies Record<ControlStrategy, ControlStrategyRule>')) {
-		error('SCTRL-002/SCTRL-015: strategy admission and permission-boundary rules must be exhaustive');
-	}
-	if (!contracts.includes('CONTROL_ALGORITHM_ADJUDICATIONS')
-		|| !contracts.includes('satisfies Record<ControlCapability, ControlAlgorithmAdjudication>')) {
-		error('SCTRL-002: every algorithm needs an exhaustive native/augmentation adjudication');
+	if (controlDimensionOwnerIsNotExhaustive()) {
+		error('SCTRL-002/SCTRL-015: compact control dimensions and their audit projections must be exhaustive and equivalent');
 	}
 	if (!contracts.includes('export function isControlStrategyAdmittedForCapability(')
 		|| !contracts.includes('isControlStrategyAdmittedForCapability(field, strategy)')
 		|| !/isControlStrategyAdmittedForCapability\(\s*value\.operation as ControlOperation,/u.test(contracts)) {
 		error('SCTRL-002/SCTRL-005: field and operation ACKs must reject strategies outside the exact capability policy');
 	}
-	const policyBlock = contracts.match(
-		/export const CONTROL_ALGORITHM_POLICIES = \{(.*?)\}\s+as const satisfies Record<ControlCapability, ControlAlgorithmPolicy>/su,
-	);
-	if (!policyBlock) {
-		error('SCTRL-002: unable to parse policy owner');
+	const processorCapabilities = ['boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay'];
+	if (processorCapabilities.some((capability) => {
+		const policy = selectControlAlgorithmPolicy(capability);
+		return policy.orderedStrategies.length !== 2
+			|| policy.orderedStrategies[0] !== 'media-webaudio'
+			|| policy.orderedStrategies[1] !== 'capture';
+	})) {
+		error('SCTRL-002/SCTRL-041: audio augmentation must prefer proven Media WebAudio before Capture');
 	}
-	const planner = fs.readFileSync(
-		path.join(root, 'packages/features/audio-engine/src/CapabilityPlanner.ts'),
-		'utf8',
-	);
-	if (!planner.includes('CONTROL_ALGORITHM_POLICIES[field]')) {
-		error('SCTRL-002: CapabilityPlanner must consume the canonical algorithm policy');
-	}
-	if (!planner.includes('CONTROL_STRATEGY_RULES[strategy]')) {
-		error('SCTRL-002: CapabilityPlanner must consume canonical strategy admission rules');
-	}
-	if (!planner.includes('CONTROL_ALGORITHM_ADJUDICATIONS[field]')) {
-		error('SCTRL-002: CapabilityPlanner must enforce per-algorithm augmentation admission');
-	}
-	if ((planner.match(/context\.requiredCoverage !== 'full'/gu) ?? []).length < 2) {
-		error('SCTRL-002/SCTRL-011: Capture must not widen an active-target request to the whole tab');
+	const visualizerPolicy = selectControlAlgorithmPolicy('visualizer');
+	const mediaStrategy = selectControlStrategyRule('media-webaudio');
+	const visualizerStrategy = selectControlStrategyRule('capture-observe');
+	if (visualizerPolicy.orderedStrategies.length !== 2
+		|| visualizerPolicy.orderedStrategies[0] !== 'media-webaudio'
+		|| visualizerPolicy.orderedStrategies[1] !== 'capture-observe'
+		|| visualizerPolicy.recurringWork !== 'while-subscribed'
+		|| mediaStrategy.writerOwner !== 'media-processor'
+		|| mediaStrategy.interception !== 'irreversible-media-source-binding'
+		|| mediaStrategy.admissionEvidence !== 'proven-media-source-eligibility'
+		|| mediaStrategy.audioRuntimeCost !== 'lazy-audio-context'
+		|| visualizerStrategy.class !== 'observe'
+		|| visualizerStrategy.interception !== 'authorized-tab-stream'
+		|| visualizerStrategy.admissionEvidence !== 'authorized-capture-readback'
+		|| visualizerStrategy.audioRuntimeCost !== 'lazy-offscreen-capture') {
+		error('SCTRL-002/SCTRL-013/SCTRL-021: Visualizer must prefer exact-coverage Media WebAudio before Capture observation');
 	}
 	const hotkeys = fs.readFileSync(path.join(root, 'packages/contracts/src/hotkeys.contracts.ts'), 'utf8');
-	if (!hotkeys.includes('export const HOTKEY_ACTION_DESCRIPTORS = {')
-		|| !hotkeys.includes('satisfies Record<string, HotkeyActionDescriptor>')
-		|| !hotkeys.includes('export type HotkeyAction = keyof typeof HOTKEY_ACTION_DESCRIPTORS')
-		|| !hotkeys.includes('Object.keys(HOTKEY_ACTION_DESCRIPTORS) as HotkeyAction[]')
+	if (!hotkeys.includes('const HOTKEY_ACTION_INDEX = {')
+		|| !hotkeys.includes('satisfies Record<string, readonly [ControlCapability | null, number]>')
+		|| !hotkeys.includes('export type HotkeyAction = keyof typeof HOTKEY_ACTION_INDEX')
+		|| !hotkeys.includes('Object.keys(HOTKEY_ACTION_INDEX) as HotkeyAction[]')
+		|| !hotkeys.includes('/* @__PURE__ */ projectHotkeyActionDescriptors()')
 		|| /export const HOTKEY_ACTIONS[^=]*=\s*\[/u.test(hotkeys)
 		|| !hotkeys.includes('export function isSlotHotkeyAction(')
-		|| !hotkeys.includes('export function isHotkeyParamsForAction(')) {
+		|| !hotkeys.includes('export function isHotkeyParamsForAction(')
+		|| hotkeyActionOwnerIsNotExhaustive()) {
 		error('SCTRL-002: hotkey actions must map exhaustively to control capabilities');
 	}
-	const settingsContracts = fs.readFileSync(
-		path.join(root, 'packages/contracts/src/settings.contracts.ts'),
+	const settingsUiContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/settings-ui.contracts.ts'),
 		'utf8',
 	);
 	const settingsRepository = fs.readFileSync(
 		path.join(root, APP_PATH, 'src/background/settings-repository.ts'),
+		'utf8',
+	);
+	const settingsNormalization = fs.readFileSync(
+		path.join(root, APP_PATH, 'src/background/settings-value-normalization.ts'),
 		'utf8',
 	);
 	const shortcuts = fs.readFileSync(
@@ -359,22 +872,22 @@ function checkPolicyOwner(root) {
 		path.join(root, APP_PATH, 'src/options/modal.ts'),
 		'utf8',
 	);
-	if (!settingsContracts.includes('isSlotHotkeyAction(action)')
-		|| !settingsContracts.includes('isHotkeyParamsForAction(action, value.params)')
+	if (!settingsUiContracts.includes('isSlotHotkeyAction(action)')
+		|| !settingsUiContracts.includes('isHotkeyParamsForAction(action, value.params)')
 		|| !settingsRepository.includes('isSlotHotkeyAction(action)')
-		|| !settingsRepository.includes('isHotkeyParamsForAction(binding.action, value.params)')
+		|| !settingsNormalization.includes('isHotkeyParamsForAction(binding.action, value.params)')
 		|| !shortcuts.includes('filter(([, action]) => isSlotHotkeyAction(action))')
 		|| !hotkeyActions.includes('isHotkeyParamsForAction(action, params)')) {
 		error('SCTRL-002/SCTRL-016: hotkey slots and parameters must share one contract at storage, runtime and execution boundaries');
 	}
 	if (!hotkeys.includes('export function isSpectraDefaultHotkeyKeyCombo(')
 		|| !hotkeys.includes('return resolveSpectraDefaultHotkeyAction({')
-		|| !settingsContracts.includes('!isSpectraDefaultHotkeyKeyCombo(value.key)')
-		|| !settingsContracts.includes("value.disabledReason === 'reserved_default_chord'")
+		|| !settingsUiContracts.includes('!isSpectraDefaultHotkeyKeyCombo(value.key)')
+		|| !settingsUiContracts.includes("value.disabledReason === 'reserved_default_chord'")
 		|| !settingsRepository.includes(
 			'if (isSpectraDefaultHotkeyKeyCombo(mutation.binding.key))',
 		)
-		|| !settingsRepository.includes("binding.disabledReason = 'reserved_default_chord'")
+		|| !settingsNormalization.includes("binding.disabledReason = 'reserved_default_chord'")
 		|| !settingsRepository.includes('hotkeyNormalization.requiresPersistence')
 		|| !hotkeyOptionsModal.includes('if (renderReservedHotkeyWarning()) return;')
 		|| !hotkeyOptionsModal.includes('delete currentBinding.disabledReason;')) {
@@ -384,7 +897,7 @@ function checkPolicyOwner(root) {
 		path.join(root, APP_PATH, 'src/options/supported-hotkey-actions.ts'),
 		'utf8',
 	);
-	if (!supportedHotkeys.includes('HOTKEY_ACTION_DESCRIPTORS[action]')) {
+	if (!supportedHotkeys.includes('selectHotkeyAvailability(action)')) {
 		error('SCTRL-016: Options must derive hotkey availability from canonical descriptors');
 	}
 	const remoteCommands = fs.readFileSync(
@@ -415,6 +928,10 @@ function checkPolicyOwner(root) {
 		path.join(root, APP_PATH, 'src/background/control-coordinator.ts'),
 		'utf8',
 	);
+	const coordinatorValues = fs.readFileSync(
+		path.join(root, APP_PATH, 'src/background/control-coordinator-values.ts'),
+		'utf8',
+	);
 	const submitKeys = contracts.match(
 		/const submitKeys = new Set<keyof ControlSubmitRequest>\(\[(.*?)\]\);/su,
 	)?.[1] ?? '';
@@ -441,12 +958,12 @@ function checkPolicyOwner(root) {
 			.test(contentRuntimeContracts);
 	const duplicateRuntimeRevision =
 		/export const SPECTRA_CONTENT_RUNTIME_REVISION\s*=\s*'/u;
-	if (!contracts.includes("export type CaptureAdmission = 'extension-invocation'")
+	if (!contracts.includes('type CaptureAdmission')
 		|| !contracts.includes('captureAdmission?: CaptureAdmission')
-		|| !contracts.includes("|| value.captureAdmission === 'extension-invocation'")
+		|| !contracts.includes('isCaptureAdmission(value.captureAdmission)')
 		|| submitKeys.length === 0
 		|| submitKeys.includes('captureAdmission')) {
-		error('SCTRL-041: Capture admission must exist only on validated internal intents, never ControlSubmitRequest');
+		error('SCTRL-041: Capture admission must use the typed validated internal-intent boundary, never ControlSubmitRequest');
 	}
 	if (!canonicalRuntimeRevision
 		|| duplicateRuntimeRevision.test(contentRuntimeContracts)
@@ -459,7 +976,7 @@ function checkPolicyOwner(root) {
 		)
 		|| !contentReexportsRuntimeRevision
 		|| !contentRuntimeContracts.includes("'patch', 'captureAdmission'")
-		|| !contentRuntimeContracts.includes("|| value.captureAdmission === 'extension-invocation'")) {
+		|| !contentRuntimeContracts.includes('isCaptureAdmission(value.captureAdmission)')) {
 		error('SCTRL-006/SCTRL-041: Bootstrap must solely own the runtime revision while both protocol facades preserve the canonical Capture boundary');
 	}
 	for (const required of [
@@ -495,7 +1012,7 @@ function checkPolicyOwner(root) {
 		path.join(root, APP_PATH, 'src/content/audio/capture-manager.ts'),
 		'utf8',
 	);
-	if ((captureModeExecutor.match(/captureAdmission === 'extension-invocation'/gu) ?? []).length !== 2
+	if (!captureModeExecutor.includes("captureAdmission?.kind === 'capture-start'")
 		|| !captureModeExecutor.includes('CAPTURE_ADMISSION_REQUIRED')
 		|| captureModeExecutor.includes('requiresAudioProcessor(config) && hasUserGesture(state)')
 		|| captureManager.includes('Capture transition blocked by missing activeTab permission')
@@ -511,7 +1028,8 @@ function checkPolicyOwner(root) {
 		'utf8',
 	);
 	if (!hydrationInitialState.includes("export type InitialStateSource = 'handoff' | 'session' | 'fresh'")
-		|| !hydrationInitialState.includes("return source === 'fresh' || (source === 'session' && state.actualMode !== 'capture')")
+		|| !hydrationInitialState.includes("source === 'session'")
+		|| !hydrationInitialState.includes("state.actualMode !== 'capture' || state.desiredMode !== 'capture'")
 		|| !hydrationContentCore.includes('if (shouldApplyInitialPolicy(state, source))')) {
 		error('SCTRL-012/SCTRL-041: same-document handoff must hydrate without replaying policy before READY');
 	}
@@ -520,14 +1038,15 @@ function checkPolicyOwner(root) {
 		|| !coordinator.includes('patch: routedPatch')) {
 		error('SCTRL-017: page observations must commit without routing a second content write');
 	}
-	for (const required of [
-		"intent.requestedCoverage !== 'active-target'",
-		'applyChromeTabObservation(',
-		'changeInfo.mutedInfo?.muted',
-	]) {
-		if (!coordinator.includes(required)) {
-			error(`SCTRL-017: required coordinator invariant is missing (${required})`);
-		}
+	for (const missing of missingSourceEvidence(
+		{ coordinator, coordinatorValues },
+		[
+			{ owner: 'coordinatorValues', fragment: "intent.requestedCoverage !== 'active-target'" },
+			{ owner: 'coordinator', fragment: 'applyChromeTabObservation(' },
+			{ owner: 'coordinator', fragment: 'changeInfo.mutedInfo?.muted' },
+		],
+	)) {
+		error(`SCTRL-017: required coordinator invariant is missing (${missing.fragment})`);
 	}
 	const document = path.join(root, APP_PATH, 'docs/control-architecture.md');
 	if (!fs.existsSync(document)) error('SCTRL-016: control-architecture.md owner is missing');
@@ -544,8 +1063,8 @@ function checkPolicyOwner(root) {
 			'### §8.5 Per-capability native and augmentation ledger',
 			'### §8.6 Native versus interception adjudication for every algorithm',
 			'#### §8.6.1 Algorithm entry points and implementation anchors',
-			'### §9.4 Source algorithm adjudication catalog',
-			'### §12.1 Media WebAudio complete-coverage admission',
+			'### §9.4 Retired/forbidden source inventory and current anchors',
+			'### §12.1 Media WebAudio / Capture admission and ACK',
 			'### §17.1 Implementation status ledger',
 		]) {
 			if (!architecture.includes(requiredSection)) {
@@ -561,9 +1080,12 @@ function checkPolicyOwner(root) {
 		if (!architecture.includes('| Ordered strategies | MAIN policy | ACK evidence | Recurring work |')) {
 			error('SCTRL-016: executable algorithm mirror must include strategy, MAIN, ACK and lifetime columns');
 		}
-		if (!architecture.includes('page-lifetime-after-media-binding')
-			|| !architecture.includes('the smallest source -> gain -> destination route until navigation')) {
-			error('SCTRL-013/SCTRL-016/SCTRL-028: Media WebAudio post-binding lifetime must be explicit and bounded');
+		if (!architecture.includes('three-owner')
+			|| !architecture.includes('MediaElement WebAudio')
+			|| !architecture.includes('graphSignature')
+			|| !architecture.includes('controlRevision')
+			|| !architecture.includes("contextState: 'running'")) {
+			error('SCTRL-013/SCTRL-016/SCTRL-028: three-owner processor identity and running-state ACK must be explicit and bounded');
 		}
 		for (const invariant of [
 			'SCTRL-025',
@@ -603,64 +1125,36 @@ function checkPolicyOwner(root) {
 				error(`SCTRL-002/SCTRL-016: native volume or mute cannot fall back to Capture (${staleCaptureClaim})`);
 			}
 		}
-		const extractCapabilities = (name) => {
-			const match = contracts.match(new RegExp(`export const ${name} = \\[(.*?)\\] as const`, 'su'));
-			if (!match) {
-				error(`SCTRL-002: unable to read ${name} for documentation coverage`);
-				return [];
-			}
-			return [...match[1].matchAll(/'([^']+)'/gu)].map((item) => item[1]);
-		};
-		for (const capability of [
-			...extractCapabilities('CONTROL_FIELDS'),
-			...extractCapabilities('CONTROL_OPERATIONS'),
-		]) {
+		for (const capability of CONTROL_CAPABILITIES) {
 			if (!architecture.includes(`| \`${capability}\` |`)) {
 				error(`SCTRL-016: per-capability adjudication row is missing for ${capability}`);
 			}
 		}
 
-		const adjudicationBlock = contracts.match(
-			/export const CONTROL_ALGORITHM_ADJUDICATIONS = \{(.*?)\}\s+as const satisfies Record<ControlCapability, ControlAlgorithmAdjudication>/su,
-		);
-		if (!adjudicationBlock) {
-			error('SCTRL-002: unable to parse CONTROL_ALGORITHM_ADJUDICATIONS');
-		} else {
-			const entries = [...adjudicationBlock[1].matchAll(
-				/^\s*(?:'([^']+)'|([A-Za-z][A-Za-z0-9]*)):\s*\{\s*nativePreference:\s*'([^']+)',\s*augmentationAdmission:\s*'([^']+)'\s*\},?$/gmu,
-			)];
-			for (const entry of entries) {
-				const capability = entry[1] ?? entry[2];
-				const preference = entry[3];
-				const admission = entry[4];
-				const exactRow = `| \`${capability}\` | \`${preference}\` | \`${admission}\` |`;
-				if (!architecture.includes(exactRow)) {
-					error(`SCTRL-016: executable adjudication mirror drifted for ${capability}`);
-				}
+		if (CONTROL_CAPABILITIES.length !== 51) {
+			error(`SCTRL-002: canonical capability count must be 51, found ${CONTROL_CAPABILITIES.length}`);
+		}
+		const adjudicationTotals = new Map();
+		for (const capability of CONTROL_CAPABILITIES) {
+			const { nativePreference, augmentationAdmission } =
+				selectControlAlgorithmAdjudication(capability);
+			const exactRow = `| \`${capability}\` | \`${nativePreference}\` | \`${augmentationAdmission}\` |`;
+			if (!architecture.includes(exactRow)) {
+				error(`SCTRL-016: executable adjudication mirror drifted for ${capability}`);
 			}
-			const expectedCount = [
-				...extractCapabilities('CONTROL_FIELDS'),
-				...extractCapabilities('CONTROL_OPERATIONS'),
-			].length;
-			if (expectedCount !== 51) {
-				error(`SCTRL-002: canonical capability count must be 51, found ${expectedCount}`);
-			}
-			if (entries.length !== expectedCount) {
-				error(`SCTRL-002: parsed ${entries.length}/${expectedCount} algorithm adjudications`);
-			}
-			const totals = entries.reduce((counts, entry) => {
-				counts.set(entry[3], (counts.get(entry[3]) ?? 0) + 1);
-				return counts;
-			}, new Map());
-			for (const [preference, expected] of Object.entries({
-				'native-only': 17,
-				'hybrid-extension-native': 6,
-				'augmentation-only': 26,
-				'observation-only': 2,
-			})) {
-				if ((totals.get(preference) ?? 0) !== expected) {
-					error(`SCTRL-002: ${preference} count drifted (${totals.get(preference) ?? 0}/${expected})`);
-				}
+			adjudicationTotals.set(
+				nativePreference,
+				(adjudicationTotals.get(nativePreference) ?? 0) + 1,
+			);
+		}
+		for (const [preference, expected] of Object.entries({
+			'native-only': 17,
+			'hybrid-extension-native': 6,
+			'augmentation-only': 26,
+			'observation-only': 2,
+		})) {
+			if ((adjudicationTotals.get(preference) ?? 0) !== expected) {
+				error(`SCTRL-002: ${preference} count drifted (${adjudicationTotals.get(preference) ?? 0}/${expected})`);
 			}
 		}
 		if (/^\|\s*(?:partial|pending)\s*\|/mu.test(architecture)) {
@@ -682,11 +1176,13 @@ function checkPolicyOwner(root) {
 			|| runtimeProtocols.includes('MAIN WebAudio')) {
 			error('SCTRL-014/SCTRL-016/SCTRL-032: runtime protocol narrative drifted from control ownership');
 		}
-		if (!sourceEligibility.includes('never binds or samples a source as a probe')
-			|| !sourceEligibility.includes('same-origin URL or CORS mode established before')
-			|| sourceEligibility.includes('cors-handler.ts')
-			|| sourceEligibility.includes('media-probe.ts')) {
-			error('SCTRL-008/SCTRL-016: Media WebAudio eligibility narrative regained probe-based admission');
+		if (!sourceEligibility.includes('bypass -> webaudio -> capture')
+			|| !sourceEligibility.includes('graphSignature')
+			|| !sourceEligibility.includes('normalizedActualConfig')
+			|| !sourceEligibility.includes('MediaElementAudioSourceNode')
+			|| !sourceEligibility.includes('every current media source is proven safe')
+			|| !sourceEligibility.includes('Forbidden designs')) {
+			error('SCTRL-008/SCTRL-016: audio source admission must require complete MediaElement evidence and typed WebAudio/Capture readback');
 		}
 	}
 }
@@ -726,6 +1222,10 @@ function checkProductionLoadingTopology(root) {
 		path.join(root, SOURCE_PATH, 'offscreen-remote/peerjs-loader.ts'),
 		'utf8',
 	);
+	const peerVendor = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'offscreen-remote/peerjs-vendor.ts'),
+		'utf8',
+	);
 	const manifest = JSON.parse(fs.readFileSync(
 		path.join(root, APP_PATH, 'public/manifest.json'),
 		'utf8',
@@ -754,8 +1254,16 @@ function checkProductionLoadingTopology(root) {
 		path.join(root, SOURCE_PATH, 'shared/settings-client.ts'),
 		'utf8',
 	);
-	const registryClient = fs.readFileSync(
-		path.join(root, SOURCE_PATH, 'shared/registry-client.ts'),
+	const optionsSettingsClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/options-settings-client.ts'),
+		'utf8',
+	);
+	const hotkeyTargetClient = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'shared/hotkey-target-client.ts'),
+		'utf8',
+	);
+	const hotkeyTargetRepository = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/hotkey-target-repository.ts'),
 		'utf8',
 	);
 	const uiRuntimeTest = fs.readFileSync(
@@ -800,12 +1308,11 @@ function checkProductionLoadingTopology(root) {
 		"sharingDomain: 'extension-pages'",
 		`chunkNames: \`chunks/\${group.name}/[name]-[hash]\``,
 		'plugins: [contractRuntimeFacadePlugin()]',
-		"import { checkProductionArtifacts } from './scripts/check-production-artifacts.ts'",
 		"import { productionMangleOptions } from './scripts/minification-policy.ts'",
 		'if (!opaqueVendor) continue',
 		'mangle: productionMangleOptions(true)',
 		"out: 'peerjs-vendor.js'",
-		"format: 'iife'",
+		"format: 'esm'",
 		"path.endsWith('peerjs-vendor.js')",
 		'for (const entry of backgroundEntries) await buildOne(entry)',
 		'splitting: true',
@@ -814,7 +1321,10 @@ function checkProductionLoadingTopology(root) {
 			error(`SCTRL-001/SCTRL-034: production loading topology drifted (${required})`);
 		}
 	}
-	if (!hasNamedImports(build, './scripts/minification-policy.ts', [
+	if (!hasNamedImports(build, './scripts/check-production-artifacts.ts', [
+		'analyzeProductionArtifacts',
+		'assertProductionArtifactReport',
+	]) || !hasNamedImports(build, './scripts/minification-policy.ts', [
 		'productionMangleOptions',
 	]) || !hasNamedImports(build, './scripts/i18n-assets.ts', [
 		'writeI18nAssets',
@@ -834,14 +1344,22 @@ function checkProductionLoadingTopology(root) {
 		|| !offscreenEntry.includes("import('../offscreen-remote/runtime')")
 		|| !offscreenEntry.includes("message.type !== 'REMOTE_HOST_CREATE_SESSION'")
 		|| !offscreenRemoteRuntime.includes('ensurePeerRuntime: peerRuntime.ensure')
-		|| !peerRuntimeLoader.includes("chrome.runtime.getURL('peerjs-vendor.js')")
+		|| !peerRuntimeLoader.includes("return import(chrome.runtime.getURL('peerjs-vendor.js'))")
 		|| peerRuntimeLoader.includes('PEER_VENDOR_FILE')
-		|| !remoteHost.includes("import type Peer from 'peerjs'")
-		|| !remoteHost.includes("import type { DataConnection } from 'peerjs'")
-		|| /(?:^|\n)import\s+(?!type\b)[^;\n]*\bfrom\s+['"]peerjs['"]/u.test(remoteHost)
-		|| !remoteHost.includes("throw new Error('Local PeerJS vendor runtime is unavailable')")
+		|| !peerRuntimeLoader.includes("typeof module.default !== 'function'")
+		|| !peerRuntimeLoader.includes("throw new Error('Local PeerJS vendor runtime is unavailable')")
+		|| !peerRuntimeLoader.includes("from '../../../../../remote-site/vendor/peerjs.min.js'")
+		|| !peerVendor.includes('export default Peer')
+		|| !peerVendor.includes("import Peer from '../../../../../remote-site/vendor/peerjs.min.js'")
+		|| peerVendor.includes('globalThis.Peer')
+		|| !remoteHost.includes("import type { DataConnection, Peer } from './peerjs-loader'")
+		|| /(?:^|\n)import\s+[^;\n]*\bfrom\s+['"]peerjs['"]/u.test(
+			`${peerVendor}\n${peerRuntimeLoader}\n${remoteHost}`,
+		)
+		|| !remoteHost.includes('createPeer: (peerId: string) => Peer')
+		|| !remoteHost.includes('peer = createPeer(session.pairing.peerId)')
 		|| !build.includes("sharingDomain: 'offscreen-vendor'")) {
-		error('SCTRL-004/SCTRL-014/SCTRL-034/SCTRL-044: application property stability or Remote-only lazy PeerJS vendor boundary drifted');
+		error('SCTRL-004/SCTRL-014/SCTRL-034/SCTRL-044: application property stability or Remote-only lazy data-channel vendor boundary drifted');
 	}
 	const videoEffectsResource = (manifest.web_accessible_resources ?? [])
 		.find((item) => item.resources?.includes('content-video-effects.js'));
@@ -877,13 +1395,23 @@ function checkProductionLoadingTopology(root) {
 		|| settingsUiRuntime.includes('spectra.audio.session.get')
 		|| !settingsUiClient.includes("from '@nexus/contracts/ui-settings-runtime'")
 		|| settingsUiClient.includes("from '@nexus/contracts/ui-runtime'")
-		|| !settingsClient.includes("from '@nexus/contracts/ui-settings-runtime'")
-		|| !settingsClient.includes("from './ui-settings-spectra-client'")
-		|| !registryClient.includes("from './ui-settings-spectra-client'")
+		|| !optionsSettingsClient.includes("from '@nexus/contracts/ui-settings-runtime'")
+		|| !optionsSettingsClient.includes("from './revisioned-settings-client'")
+		|| optionsSettingsClient.includes("from '@nexus/contracts/ui-runtime'")
+		|| optionsSettingsClient.includes("from './ui-settings-spectra-client'")
+		|| !settingsClient.includes("from '@nexus/contracts/full-settings-runtime'")
+		|| !settingsClient.includes("from './revisioned-settings-client'")
+		|| settingsClient.includes("from './ui-settings-spectra-client'")
 		|| settingsClient.includes("from './ui-spectra-client'")
-		|| registryClient.includes("from './ui-spectra-client'")
-		|| !uiRuntimeTest.includes('keeps the Options facade narrow and canonically equivalent')) {
-		error('SCTRL-014/SCTRL-034/SCTRL-043: Options must not load Popup control/session validators');
+		|| !hotkeyTargetClient.includes("from './ui-settings-spectra-client'")
+		|| !hotkeyTargetClient.includes('getHotkeyTarget(')
+		|| !hotkeyTargetClient.includes('setHotkeyTarget(')
+		|| !hotkeyTargetRepository.includes('createSerializedQueue')
+		|| !hotkeyTargetRepository.includes('chrome.storage.session')
+		|| !hotkeyTargetRepository.includes('clearIfMatches(')
+		|| !uiRuntimeTest.includes('keeps the Options facade narrow and canonically equivalent')
+		|| !build.includes("'@nexus/contracts/full-settings-runtime': resolve(")) {
+		error('SCTRL-014/SCTRL-034/SCTRL-043: Options and the independent hotkey-target owner must use only the settings facade and serialized session state');
 	}
 	for (const required of [
 		'export function bundleFootprint(',
@@ -996,18 +1524,29 @@ function checkRetiredPaths(root) {
 		path.join(root, 'packages/features/audio-engine/src/AudioGraphRouter.ts'),
 		'utf8',
 	);
+	const processorContracts = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/audio-processor.contracts.ts'),
+		'utf8',
+	);
 	const audioContracts = fs.readFileSync(
 		path.join(root, 'packages/contracts/src/audio.contracts.ts'),
 		'utf8',
 	);
-	const processorContract = audioContracts.match(
+	const contractsIndex = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/index.ts'),
+		'utf8',
+	);
+	const processorContract = processorContracts.match(
 		/export interface AudioProcessorConfig \{(.*?)\n\}/su,
 	)?.[1] ?? '';
 	if (!processorContract.includes('boostGain: number')
 		|| processorContract.includes('muted:')
 		|| /^\s*volume(?:Base)?\??:/mu.test(processorContract)
-		|| !audioContracts.includes('isFiniteInRange(value.boostGain, 1, 8)')
-		|| !router.includes('boostGain: clamp(config.boostGain, 1, 8, 1)')
+		|| !processorContracts.includes("isFiniteControlValue(value.boostGain, 'boost')")
+		|| !contractsIndex.includes("export { isAudioProcessorConfig } from './audio-processor.contracts.js';")
+		|| !audioContracts.includes('export function audioConfigToProcessorConfig(')
+		|| !audioContracts.includes('boostGain: config.boost')
+		|| !router.includes("boostGain: clampControlValue(config.boostGain, 'boost', 1)")
 		|| router.includes('normalized.muted')
 		|| router.includes('config.muted')) {
 		error('SCTRL-003/SCTRL-032: processor contracts cannot become page-volume or media-mute writers');
@@ -1015,6 +1554,10 @@ function checkRetiredPaths(root) {
 
 	const nativeExecutor = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/logic/native-media-executor.ts'),
+		'utf8',
+	);
+	const nativeMediaAsync = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/logic/native-media-async.ts'),
 		'utf8',
 	);
 	if (!nativeExecutor.includes('target: resolved?.target ?? null')) {
@@ -1061,17 +1604,12 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/audio/media-detection.ts'),
 		'utf8',
 	);
-	const mediaObserver = fs.readFileSync(
-		path.join(root, SOURCE_PATH, 'content/core/lifecycle/media-observer.ts'),
-		'utf8',
-	);
 	const pauseTracker = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/utils/pause-tracker.ts'),
 		'utf8',
 	);
 	for (const [name, content] of [
 		['media-detection.ts', mediaDetection],
-		['media-observer.ts', mediaObserver],
 		['pause-tracker.ts', pauseTracker],
 	]) {
 		for (const forbidden of [
@@ -1085,11 +1623,6 @@ function checkRetiredPaths(root) {
 				error(`SCTRL-012/SCTRL-030: ${name} status projection regained a side effect or DOM fallback (${forbidden})`);
 			}
 		}
-	}
-	if (mediaObserver.includes('CustomEvent(')
-		|| mediaObserver.includes('.dispatchEvent(')
-		|| mediaObserver.includes('MEDIA_REGISTRY_CHANGED_EVENT')) {
-		error('SCTRL-012/SCTRL-030: MediaRegistry must not emit a second synthetic status event');
 	}
 	const contentCoreIndex = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/core/index.ts'),
@@ -1109,10 +1642,13 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/video/time-marker.ts'),
 		'utf8',
 	);
-	if (!contentCoreIndex.includes('registry.track(observeABLoopSources(mediaRegistry, (target) => {')
-		|| !contentCoreIndex.includes('registry.track(observeMarkerSources(mediaRegistry))')
+	if (!/registry\.track\(mediaRegistry\.subscribe\(\(target,\s*event(?:,\s*[^)]*)?\)\s*=>\s*\{/u.test(contentCoreIndex)
+		|| !contentCoreIndex.includes('disposeABLoopSource(target)')
+		|| !contentCoreIndex.includes('disposeMarkerSource(target)')
+		|| !contentCoreIndex.includes("if (event !== 'removed') return;")
 		|| !abLoop.includes("if (event !== 'removed') return;")
-		|| !markers.includes("if (event === 'removed') markerSets.delete(sourceKey(target));")) {
+		|| !markers.includes("if (event === 'removed') disposeMarkerSource(target);")
+		|| !markers.includes('markerSets.delete(sourceKey(target))')) {
 		error('SCTRL-010/SCTRL-013: A/B schedulers and marker state must release immediately at the source-revision removal boundary');
 	}
 	const operationExecutor = fs.readFileSync(
@@ -1130,7 +1666,8 @@ function checkRetiredPaths(root) {
 	if (!operationExecutor.includes('isContentActiveVideoOperation(originalIntent.operation)')
 		|| !operationExecutor.includes('registry?.resolveVideo(originalIntent.target)')
 		|| !operationExecutor.includes('registry?.resolve(originalIntent.target)')
-		|| !operationExecutor.includes('const intent = { ...originalIntent, target: resolvedTarget }')) {
+		|| !operationExecutor.includes('const operationTarget = resolved ??')
+		|| !operationExecutor.includes('const currentTarget = (): MediaTarget | null =>')) {
 		error('SCTRL-005/SCTRL-006/SCTRL-025: momentary operations must resolve their contract-scoped actual target');
 	}
 	for (const required of [
@@ -1145,7 +1682,6 @@ function checkRetiredPaths(root) {
 		}
 	}
 	if (operationExecutor.includes('CONTROL_ALGORITHM_POLICIES')
-		|| nativeExecutor.includes('CapabilityPlanner')
 		|| !controlContractsTest.includes('release-gates the narrow Content strategy projection against the canonical policy')) {
 		error('SCTRL-002/SCTRL-004/SCTRL-016: Content projection must stay small and release-gated against the canonical policy');
 	}
@@ -1184,12 +1720,13 @@ function checkRetiredPaths(root) {
 		'utf8',
 	);
 	for (const required of [
-		"video.style.removeProperty('--spectra-rotate')",
-		"video.style.removeProperty('--spectra-scale-x')",
-		"video.style.removeProperty('--spectra-filter')",
-		'assertOwnerReadback(video, state, field)',
-		'!this.ownerBaselines.has(video) && !this.hasActiveCssEffect(predicted)',
-		'private readonly ownerToken = crypto.randomUUID()',
+		'video.style.removeProperty(OWNER_PROPERTIES[0])',
+		'video.style.removeProperty(OWNER_PROPERTIES[1])',
+		'video.style.removeProperty(OWNER_PROPERTIES[2])',
+		'video.style.removeProperty(OWNER_PROPERTIES[3])',
+		'this.#assertOwnerReadback(video, state, field)',
+		'!hadOwnerBaseline && !hasActiveCssEffect',
+		'readonly #ownerToken = crypto.randomUUID()',
 		`video[\${OWNER_ATTRIBUTE}="\${ownerToken}"]`,
 	]) {
 		if (!videoEffects.includes(required)) {
@@ -1198,12 +1735,12 @@ function checkRetiredPaths(root) {
 	}
 	if (!videoEffects.includes('window.visualViewport?.addEventListener')
 		|| !videoEffects.includes('rect.left - offsetLeft')
-		|| !videoEffects.includes('this.dimBoxes(video)')) {
+		|| !videoEffects.includes('this.#dimBoxes(video)')) {
 		error('SCTRL-005/SCTRL-013: dim overlay must read back visual-viewport geometry only while owned');
 	}
 	if (videoEffects.includes('if (previousState) previousState.dimEnabled = false;\n\t\t\tthis.release(previous);')
-		|| !videoEffects.includes('if (previousState && !this.hasActiveEffect(previousState))')
-		|| !videoEffects.includes('if (this.dimTarget && this.dimTarget !== video)')
+		|| !videoEffects.includes('if (previousState) this.#commit(previous, previousState)')
+		|| !videoEffects.includes('if (this.#dimTarget && this.#dimTarget !== video)')
 		|| !fs.readFileSync(
 			path.join(root, APP_PATH, 'test/video-effects-controller.spec.ts'),
 			'utf8',
@@ -1213,8 +1750,8 @@ function checkRetiredPaths(root) {
 	const videoSnapshot = videoEffects.match(
 		/snapshot\(video: HTMLVideoElement\): VideoEffectState \{(.*?)\n\t\}/su,
 	)?.[1] ?? '';
-	if (!videoSnapshot.includes('this.states.get(video) ?? DEFAULT_STATE')
-		|| videoSnapshot.includes('this.state(video)')) {
+	if (!videoSnapshot.includes('this.#states.get(video) ?? DEFAULT_STATE')
+		|| videoSnapshot.includes('this.#state(video)')) {
 		error('SCTRL-012/SCTRL-026/SCTRL-030: video snapshot must not allocate target owner state');
 	}
 
@@ -1247,14 +1784,16 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'background/handlers/audio.ts'),
 		'utf8',
 	);
-	const visualizerGet = spectraCommands.match(
-		/case 'spectra\.audio\.visualizer\.get':\s*\{(.*?)case 'spectra\.audio\.visualizer\.subscription\.set'/su,
-	)?.[1] ?? '';
-	if (!messageHandler.includes("message.type === 'spectra.audio.visualizer.subscription.set'")
-		|| !audioHandler.includes("'spectra.audio.visualizer.subscription.set'")
-		|| !visualizerGet.includes('deps.getVisualizerData()')
-		|| visualizerGet.includes('setVisualizerSubscribed')) {
-		error('SCTRL-012/SCTRL-013: Visualizer GET must be a pure read and analyser ownership must use the explicit subscription route');
+	if (messageHandler.includes("'spectra.audio.visualizer.batch'")
+		|| !messageHandler.includes("'spectra.audio.visualizer.demand.set'")
+		|| spectraCommands.includes('spectra.audio.visualizer')
+		|| !audioHandler.includes("candidate.type === 'spectra.audio.visualizer.batch'")
+		|| !audioHandler.includes('return getVisualizerBatch(message.payload)')
+		|| !audioHandler.includes('OFFSCREEN_AUDIO_SET_VIZ_SUBSCRIPTIONS')
+		|| !audioHandler.includes('OFFSCREEN_AUDIO_GET_VIZ_BATCH')
+		|| !audioHandler.includes('captureStates.get(tabId) === true')
+		|| audioHandler.includes('setVisualizerSubscribed')) {
+		error('SCTRL-012/SCTRL-013: Visualizer sampling must remain Background-owned while exact Content demand uses the explicit subscription route');
 	}
 
 	const userScripts = fs.readFileSync(
@@ -1279,6 +1818,10 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'background/control-coordinator.ts'),
 		'utf8',
 	);
+	const coordinatorValues = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/control-coordinator-values.ts'),
+		'utf8',
+	);
 	const protocol = fs.readFileSync(
 		path.join(root, 'packages/contracts/src/spectra.protocol.ts'),
 		'utf8',
@@ -1295,20 +1838,24 @@ function checkRetiredPaths(root) {
 		|| !protocolTest.includes("type: 'spectra.content.target.changed'")) {
 		error('SCTRL-005/SCTRL-014/SCTRL-025: active media/video selection and release must update the shared snapshot without polling');
 	}
-	for (const required of [
-		'function projectControlTarget(',
-		'function assertUnambiguousTargetScope(',
-		'CONTROL_ALGORITHM_POLICIES[capability].scope',
-		"scope === 'active-video'",
-		"scope === 'active-media'",
-		"scope === 'media-source'",
-		"scope === 'requested-audio-scope'",
-		'ackTarget = response.data.target',
-		'Mixed media/video controls require one explicit video target',
-	]) {
-		if (!coordinator.includes(required)) {
-			error(`SCTRL-002/SCTRL-025/SCTRL-029: ACK target projection must remain contract-scoped (${required})`);
-		}
+	for (const missing of missingSourceEvidence(
+		{ coordinator, coordinatorValues },
+		[
+			{ owner: 'coordinatorValues', fragment: 'function projectControlTarget(' },
+			{ owner: 'coordinatorValues', fragment: 'function assertUnambiguousTargetScope(' },
+			{ owner: 'coordinatorValues', fragment: 'capabilities.map(selectControlCapabilityScope)' },
+			{ owner: 'coordinatorValues', fragment: "scope === 'active-video'" },
+			{ owner: 'coordinatorValues', fragment: "scope === 'active-media'" },
+			{ owner: 'coordinatorValues', fragment: "scope === 'media-source'" },
+			{ owner: 'coordinatorValues', fragment: "scope === 'requested-audio-scope'" },
+			{ owner: 'coordinator', fragment: 'ackTarget = response.data.target' },
+			{
+				owner: 'coordinatorValues',
+				fragment: 'Mixed media/video controls require one explicit video target',
+			},
+		],
+	)) {
+		error(`SCTRL-002/SCTRL-025/SCTRL-029: ACK target projection must remain contract-scoped (${missing.fragment})`);
 	}
 	if (coordinator.includes('activeMedia = response.data.target')) {
 		error('SCTRL-025/SCTRL-029: an executed video target must not overwrite active media');
@@ -1335,7 +1882,7 @@ function checkRetiredPaths(root) {
 		|| (coordinator.match(/compensateControlPatch\(/gu) ?? []).length < 3) {
 		error('SCTRL-003/SCTRL-005: compound reset/restore operations must compensate side effects and expose rollback failure');
 	}
-	const audioResetTargetPatch = coordinator.match(
+	const audioResetTargetPatch = coordinatorValues.match(
 		/const RESET_AUDIO_TARGET_PATCH: ControlPatch = \{([\s\S]*?)\n\};/u,
 	)?.[1] ?? '';
 	if (!audioResetTargetPatch.includes('volumeBase: 100')
@@ -1452,6 +1999,10 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/core/index.ts'),
 		'utf8',
 	);
+	const contentRuntimeLifecycle = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'content/core/content-runtime-lifecycle.ts'),
+		'utf8',
+	);
 	const contentRuntimeDisposeStart = contentRuntime.indexOf('dispose(handoff = false)');
 	const contentRuntimeDisposeEnd = contentRuntime.indexOf(
 		'function isCurrentRuntime(',
@@ -1518,6 +2069,9 @@ function checkRetiredPaths(root) {
 	)?.[0] ?? '';
 	const bootstrapAcceptedKeydown = bootstrap.match(
 		/const acceptDefaultHotkeyKeydown =[\s\S]*?(?=\n\tconst releaseDefaultScalarGesture)/u,
+	)?.[0] ?? '';
+	const bootstrapHotkeyClaim = bootstrap.match(
+		/function claimHotkeyEvent\([\s\S]*?\n\}/u,
 	)?.[0] ?? '';
 	const siteHotkeyResolver = pageHotkeyListener.match(
 		/function resolveSiteHotkeyBinding\([\s\S]*?(?=\nfunction handleKeydown)/u,
@@ -1616,8 +2170,9 @@ function checkRetiredPaths(root) {
 			.test(bootstrapDefaultResolver)
 			|| /event\.defaultPrevented[\s\S]*defaultHotkeyAction\(event\)/u
 				.test(bootstrapAcceptedKeydown))
-		|| !bootstrapAcceptedKeydown.includes('event.preventDefault()')
-		|| !bootstrapAcceptedKeydown.includes('event.stopImmediatePropagation()')
+		|| !bootstrapAcceptedKeydown.includes('claimHotkeyEvent(event)')
+		|| !bootstrapHotkeyClaim.includes('event.preventDefault()')
+		|| !bootstrapHotkeyClaim.includes('event.stopImmediatePropagation()')
 		|| !bootstrap.includes("window.addEventListener('keydown', onDefaultHotkeyKeydown, true)")
 		|| !bootstrap.includes("window.addEventListener('keyup', onDefaultHotkeyKeyup, true)")
 		|| !pageHotkeyListener.includes('resolveCandidate: resolveSiteHotkeyBinding')
@@ -1686,7 +2241,7 @@ function checkRetiredPaths(root) {
 		|| !shortcuts.includes('message.payload.gesture')
 		|| shortcuts.includes('isCancelled')
 		|| shortcuts.includes('isReleased')
-		|| !hotkeyContracts.includes("descriptor.repeatPolicy !== 'coalesce-20hz'")
+		|| !hotkeyContracts.includes("selectHotkeyRepeatPolicy(action) !== 'coalesce-20hz'")
 		|| !hotkeyContracts.includes(
 			'const DEFAULT_HOTKEY_ACTION_SET: ReadonlySet<string> = new Set(SPECTRA_DEFAULT_HOTKEY_ACTIONS)',
 		)
@@ -1718,9 +2273,12 @@ function checkRetiredPaths(root) {
 		|| !contentRuntime.includes('disposeToast();')
 		|| !contentRuntime.includes('disposeFeedbackSurfaces();')
 		|| !contentRuntime.includes('contentRuntime.registry.track(disposeFeedbackUI)')
+		|| !contentRuntime.includes('disposeSynchronous: () => {')
 		|| contentRuntimeDispose.indexOf('disposeFeedbackUI();') < 0
 		|| contentRuntimeDispose.indexOf('disposeFeedbackUI();')
-			>= contentRuntimeDispose.indexOf('await runtime.release?.();')
+			>= contentRuntimeDispose.indexOf('registry.dispose();')
+		|| !/disposal\.context\?\.dispose\(\);[\s\S]*disposal\.disposeSynchronous\(\);[\s\S]*await disposal\.release\?\.\(\);[\s\S]*disposal\.finalize\(\);/u
+			.test(contentRuntimeLifecycle)
 		|| !osd.includes('if (state.disposed) return;')
 		|| !toast.includes('if (s.disposed || !document.documentElement) return;')) {
 		error('SCTRL-016/SCTRL-022: Toast and OSD require one fullscreen-safe top-layer host whose complete generation lifecycle is runtime-owned');
@@ -1732,8 +2290,8 @@ function checkRetiredPaths(root) {
 		|| !osd.includes('volumeState: feedback.volumeState')
 		|| !osd.includes('advanceHotkeyTargetOSD(')
 		|| !osd.includes('pendingVolumeBoundary(')
-		|| !osd.includes('UIColors.CAPTURE')
-		|| !osd.includes('UIColors.NATIVE')
+		|| !osd.includes('UI_COLORS.CAPTURE')
+		|| !osd.includes('UI_COLORS.NATIVE')
 		|| osd.includes('resolveAudioVolumeState')
 		|| osd.includes('#3b82f6')
 		|| osd.includes('#8b5cf6')
@@ -1897,8 +2455,9 @@ function checkRetiredPaths(root) {
 	const popupPipDispatch = popupPipDispatchStart >= 0 && popupPipDispatchEnd > popupPipDispatchStart
 		? popupMediaControls.slice(popupPipDispatchStart, popupPipDispatchEnd)
 		: '';
-	if ((videoControls.match(/target: currentSnapshot\?\.activeVideo \?\? null/gu) ?? []).length !== 3
+	if ((videoControls.match(/target: snapshot\.activeVideo/gu) ?? []).length !== 3
 		|| videoControls.includes('target: currentSnapshot?.activeMedia ?? null')
+		|| videoControls.includes('target: snapshot.activeMedia')
 		|| !videoControls.includes('activeMedia: currentSnapshot.activeMedia')
 		|| videoControls.includes('activeMedia: ack.target ?? currentSnapshot.activeMedia')
 		|| !popupMediaControls.includes('togglePictureInPicture(tabId)')
@@ -1917,7 +2476,8 @@ function checkRetiredPaths(root) {
 		error('ALG-038: Popup PiP must settle through one event-driven ISOLATED execution without polling');
 	}
 	if (!videoControls.includes('const FILTER_SEND_INTERVAL_MS = 50')
-		|| !videoControls.includes('await submitPatch({ filter, filterEnabled: true })')
+		|| !videoControls.includes('await enqueueControlAction(')
+		|| !videoControls.includes('(currentFence) => submitPatch({ filter, filterEnabled: true }, currentFence)')
 		|| !videoControls.includes('if (filterInFlight || !pendingFilter) return;')
 		|| videoControls.includes("submitMutation({ field: 'filter'")) {
 		error('SCTRL-005/SCTRL-013/SCTRL-016: Filter must use one 20 Hz latest-value intent for value plus ownership');
@@ -1966,10 +2526,10 @@ function checkRetiredPaths(root) {
 		error('SCTRL-013/SCTRL-024: runtime reference count must use unique consumer tokens');
 	}
 
-	const nativeAckStart = nativeExecutor.indexOf('async function writeWithStableEventAck<');
-	const nativeAckEnd = nativeExecutor.indexOf('\nasync function measureVideoFrameDuration(', nativeAckStart);
+	const nativeAckStart = nativeMediaAsync.indexOf('export async function writeWithStableEventAck<');
+	const nativeAckEnd = nativeMediaAsync.indexOf('\nexport async function measureVideoFrameDuration(', nativeAckStart);
 	const nativeAckFunction = nativeAckStart >= 0 && nativeAckEnd > nativeAckStart
-		? nativeExecutor.slice(nativeAckStart, nativeAckEnd)
+		? nativeMediaAsync.slice(nativeAckStart, nativeAckEnd)
 		: '';
 	const nativeAckTest = fs.readFileSync(
 		path.join(root, APP_PATH, 'test/native-media-executor.spec.ts'),
@@ -1994,9 +2554,9 @@ function checkRetiredPaths(root) {
 		|| !smoke.includes('replays speed when a pre-rendered same-document SPA modal becomes active')) {
 		error('SCTRL-005/SCTRL-017/SCTRL-027/SCTRL-040: native ACK, rollback, writer maturation, and SPA activation replay must remain covered');
 	}
-	if (!nativeExecutor.includes('requestVideoFrameCallback')
-		|| !nativeExecutor.includes('sourceRevision')
-		|| nativeExecutor.includes('totalVideoFrames')) {
+	if (!nativeMediaAsync.includes('requestVideoFrameCallback')
+		|| !nativeMediaAsync.includes('sourceRevision')
+		|| nativeMediaAsync.includes('totalVideoFrames')) {
 		error('SCTRL-005/SCTRL-010: frame-step must use bounded source-scoped frame cadence evidence');
 	}
 
@@ -2005,88 +2565,17 @@ function checkRetiredPaths(root) {
 		error('SCTRL-003/SCTRL-015: disabling PiP/fullscreen must not exit another page element\'s native session');
 	}
 
-	const webAudio = fs.readFileSync(
-		path.join(root, 'packages/features/audio-engine/src/webaudio/controller.ts'),
-		'utf8',
-	);
-	if (webAudio.includes('querySelectorAll')) {
-		error('SCTRL-013: WebAudio command paths must consume the event registry, not scan the document');
-	}
-	if (!webAudio.includes('private readonly ownedSources = new Set<HTMLMediaElement>()')
-		|| !webAudio.includes('if (!this.ownedSources.delete(element)) return;')) {
-		error('SCTRL-003/SCTRL-008/SCTRL-013: each WebAudio controller may detach only sources it owns');
-	}
-	if (!webAudio.includes('async cleanup(): Promise<void>')
-		|| !webAudio.includes('await this.runtime.router.bypass()')) {
-		error('SCTRL-011/SCTRL-013: WebAudio cleanup must await an acknowledged transparent bypass');
-	}
-	const webAudioCleanup = webAudio.match(
-		/async cleanup\(\): Promise<void> \{(.*?)\n\t\}/su,
-	)?.[1] ?? '';
-	if (!webAudioCleanup || webAudioCleanup.includes('setVisualizerSubscribed(false)')) {
-		error('SCTRL-013/SCTRL-021: processor cleanup cannot release an independent visualizer subscriber lease');
-	}
-	for (const required of [
-		'assessMediaSourceCoverage(',
-		'ensureAttached(',
-		'hasCompleteCoverage(',
-		'hasKnownBindingFailure(',
-		'this.runtime.router.disconnectSource(source)',
-	]) {
-		if (!webAudio.includes(required)) {
-			error(`SCTRL-008/SCTRL-011/SCTRL-013: WebAudio complete-coverage ownership is missing (${required})`);
-		}
-	}
 	const modeExecutor = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/logic/mode-executor.ts'),
 		'utf8',
 	);
-	if (!modeExecutor.includes('const previousAppliedConfig = cloneAudioConfig(state.appliedConfig)')
-		|| !modeExecutor.includes('restoreWebAudioState(previousAppliedConfig, deps)')
-		|| !modeExecutor.includes('async function restoreWebAudioState(')) {
-		error('SCTRL-003/SCTRL-011/SCTRL-038: mode handoff must have one transition owner and restore only proven previous actual WebAudio');
-	}
-	for (const required of [
-		'assessMediaSourceCoverage(mediaElements, evidenceFor)',
-		'audioController.ensureAttached(element, evidenceFor(element))',
-		'audioController.hasCompleteCoverage(mediaElements, evidenceFor)',
-	]) {
-		if (!modeExecutor.includes(required)) {
-			error(`SCTRL-008/SCTRL-011: mode transition may not claim partial Media WebAudio coverage (${required})`);
-		}
-	}
-	const captureBranch = modeExecutor.match(
-		/if \(mode === AudioMode\.CAPTURE\) \{(.*?)\} else if \(mode === AudioMode\.DISABLED\)/su,
-	)?.[1] ?? '';
-	const webAudioBranch = modeExecutor.match(
-		/else if \(mode === AudioMode\.NATIVE_WEBAUDIO\) \{(.*?)\n\t\}/su,
-	)?.[1] ?? '';
-	const modeTransitionTest = fs.readFileSync(
-		path.join(root, APP_PATH, 'test/mode-executor-actual-config.spec.ts'),
-		'utf8',
-	);
-	if (!captureBranch
-		|| captureBranch.indexOf('await audioController.cleanup()')
-			> captureBranch.indexOf('captureManager.request(true')
-		|| !webAudioBranch
-		|| webAudioBranch.indexOf('captureManager.syncConfig(transparentAudioConfig()')
-			> webAudioBranch.indexOf('audioController.initialize(true)')
-		|| webAudioBranch.indexOf('applyWebAudioState(config, deps)')
-			> webAudioBranch.lastIndexOf('captureManager.request(false')
-		|| !modeTransitionTest.includes('neutralizes Media WebAudio before Capture')
-		|| !modeTransitionTest.includes('uses Capture as a unity relay')) {
-		error('SCTRL-003/SCTRL-005/SCTRL-011: cross-processor handoff must neutralize the old DSP, verify the candidate and only then release');
-	}
 	const policyExecutor = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/logic/policy-executor/index.ts'),
 		'utf8',
 	);
-	if (policyExecutor.includes('state.activeMode === AudioMode.NATIVE_WEBAUDIO) await deps.audioController.cleanup()')) {
-		error('SCTRL-003/SCTRL-011/SCTRL-038: PolicyExecutor cannot pre-release the old WebAudio path');
-	}
-	if (!policyExecutor.includes('evaluateMediaSourceEligibility(')
-		|| !policyExecutor.includes('deps.audioController.hasKnownBindingFailure(element)')) {
-		error('SCTRL-008/SCTRL-011: policy must route unknown, unsafe or failed full coverage away from Media WebAudio');
+	if (/\b(?:AudioContext|MediaElementAudioSourceNode|createMediaElementSource|WebAudioController|CapabilityPlanner)\b/u.test(executableSource(modeExecutor))
+		|| /\b(?:AudioContext|MediaElementAudioSourceNode|createMediaElementSource|WebAudioController|CapabilityPlanner)\b/u.test(executableSource(policyExecutor))) {
+		error('SCTRL-003/SCTRL-008: Content mode and policy executors must remain Capture-only and processor-free');
 	}
 	const contentCore = fs.readFileSync(
 		path.join(root, SOURCE_PATH, 'content/logic/audio-runtime-control-delegate.ts'),
@@ -2105,6 +2594,8 @@ function checkRetiredPaths(root) {
 export function checkSpectraControlArchitecture(root) {
 	section('检查 SPECTRA 控制架构...');
 	checkDefaultRuntime(root);
+	checkAudioProcessorOwners(root);
+	checkSpectraV3EnvelopeOwner(root);
 	checkPolicyOwner(root);
 	checkProductionLoadingTopology(root);
 	checkWriterBoundaries(root);

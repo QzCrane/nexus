@@ -1,9 +1,10 @@
 // goal: fail closed when production extension copy exceeds verified product behavior
 // inv: every shipped product projection is bounded, version-current, and privacy-consistent
 
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { buildSpectraProjectionModel } from './spectra-public-projections.ts';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const spectraDir = resolve(workspaceDir, 'apps/extension-spectra');
@@ -41,20 +42,8 @@ function rejectUniversalClaim(text: string, label: string): void {
 }
 
 function checkSpectra(): number {
-	const localesDir = resolve(spectraDir, 'public/_locales');
-	const locales = readdirSync(localesDir, { withFileTypes: true })
-		.filter((entry) => entry.isDirectory());
-	for (const locale of locales) {
-		const messages = readJson(resolve(localesDir, locale.name, 'messages.json')) as {
-			extDescription?: { message?: unknown };
-		};
-		const description = messages.extDescription?.message;
-		if (typeof description !== 'string' || description.trim().length === 0) {
-			failures.push(`SPECTRA ${locale.name}: missing extDescription.message`);
-			continue;
-		}
-		rejectUniversalClaim(description, `SPECTRA ${locale.name}`);
-	}
+	const model = buildSpectraProjectionModel(spectraDir);
+	failures.push(...model.failures);
 
 	requireText(
 		resolve(spectraDir, 'store-listings/en-US.md'),
@@ -66,12 +55,7 @@ function checkSpectra(): number {
 		'具体能力取决于页面、媒体元素、浏览器支持、权限和用户激活条件。',
 		'SPECTRA Chinese store owner',
 	);
-	const packageVersion = readJson(resolve(spectraDir, 'package.json')).version;
-	if (typeof packageVersion !== 'string'
-		|| !existsSync(resolve(spectraDir, `store-listings/release-notes-${packageVersion}.md`))) {
-		failures.push(`SPECTRA: missing release notes for package version ${String(packageVersion)}`);
-	}
-	return locales.length;
+	return model.locales.length;
 }
 
 function checkHalo(): void {

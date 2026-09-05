@@ -1,4 +1,4 @@
-import ts from 'typescript';
+import ts from 'typescript-compiler-api';
 
 export const MANIFEST_PERMISSION_LISTS = [
 	'permissions',

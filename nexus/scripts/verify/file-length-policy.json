@@ -8,12 +8,6 @@
 			"rationale": "One transaction owner currently preserves target identity, strategy escalation, readback, rollback, revision and sender authorization without cross-module partial commits.",
 			"decompositionTrigger": "Split only when a typed transaction sub-owner can retain one revision writer and the full source-by-sender authorization matrix across dynamic and Chrome tests."
 		},
-		"apps/extension-spectra/src/background/settings-repository.ts": {
-			"maxLines": 1120,
-			"owner": "spectra-settings-repository",
-			"rationale": "Migration, schema normalization, revision compare-and-swap and the physical write transaction remain one durable repository authority.",
-			"decompositionTrigger": "Extract only pure value objects whose property tests prove no storage, revision, migration or unknown-field ownership crosses the boundary."
-		},
 		"apps/extension-spectra/src/content/logic/native-media-executor.ts": {
 			"maxLines": 1950,
 			"owner": "spectra-native-media-executor",

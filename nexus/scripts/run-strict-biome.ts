@@ -2,7 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import ts from 'typescript';
+import ts from 'typescript-compiler-api';
 
 const MAX_BUFFER_BYTES = 32 * 1024 * 1024;
 const BIOME_LINT_EXTENSIONS = new Set([

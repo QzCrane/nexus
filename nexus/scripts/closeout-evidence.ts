@@ -560,7 +560,7 @@ async function hostedEvidence(head: string): Promise<HostedEvidence> {
 export async function browserHostIdentity(): Promise<Record<string, unknown>> {
 	const haloRequire = createRequire(resolve(workspaceDir, 'apps/extension-halo/package.json'));
 	const spectraRequire = createRequire(resolve(workspaceDir, 'apps/extension-spectra/package.json'));
-	const playwright = haloRequire('playwright') as { chromium: BrowserOwner };
+	const playwright = haloRequire('@playwright/test') as { chromium: BrowserOwner };
 	const puppeteerModule = spectraRequire('puppeteer') as BrowserOwner & { default?: BrowserOwner };
 	const puppeteer = puppeteerModule.default ?? puppeteerModule;
 	const browsers = {
