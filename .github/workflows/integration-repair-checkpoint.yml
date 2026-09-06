@@ -1,0 +1,69 @@
+name: Integration final repair checkpoint
+on:
+  push:
+    branches: [codex/nexus-business-preserving-integration]
+    paths: ['.github/workflows/integration-repair-checkpoint.yml']
+permissions:
+  contents: write
+jobs:
+  retain:
+    if: github.repository == 'QzCrane/nexus' && github.ref == 'refs/heads/codex/nexus-business-preserving-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Apply exact reviewed source repairs
+        env:
+          RECIPE: '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'
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os, subprocess
+          from pathlib import Path
+          def git(*args): return subprocess.check_output(['git', *args]).decode().strip()
+          assert git('rev-parse', 'HEAD^') == 'f874dd8ef44e19eb73c11868b9202dcedba59501'
+          raw = base64.b64decode(os.environ['RECIPE'], validate=True)
+          assert hashlib.sha256(raw).hexdigest() == '2291874d04be404465f12bc3df5edd638a3235066eeb48cdd79bd52967929f23'
+          allowed = {'nexus/apps/extension-spectra/test/performance.spec.ts', 'nexus/closeout-policy.json', 'nexus/docs/release-closeout.md', 'nexus/scripts/closeout-evidence.ts', 'nexus/scripts/closeout-governance.spec.ts'}
+          for row in json.loads(lzma.decompress(raw, memlimit=256*1024*1024)):
+              name = row['path']; assert name in allowed; allowed.remove(name)
+              path = Path(name); assert not path.is_symlink()
+              assert git('hash-object', name) == row['source'], name
+              old = path.read_text(encoding='utf-8'); parts = []
+              for part in row['parts']:
+                  if isinstance(part, str): parts.append(part)
+                  else:
+                      a, b = part; assert 0 <= a <= b <= len(old); parts.append(old[a:b])
+              path.write_text(''.join(parts), encoding='utf-8')
+              assert git('hash-object', name) == row['target'], name
+          assert not allowed
+          subprocess.check_call(['git', 'add', '--', 'nexus'])
+          assert git('rev-parse', git('write-tree') + ':nexus') == 'be5db6a1f616b8102b9004b238dffe705607a619'
+          subprocess.check_call(['git', 'diff', '--cached', '--check'])
+          subprocess.check_call(['git', 'diff', '--cached', '--exit-code', '--', '.github'])
+          PY
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - name: Test the production policy reader
+        run: |
+          bun install --cwd nexus --frozen-lockfile
+          bun test nexus/scripts/closeout-governance.spec.ts
+          bun run --cwd nexus lint:repository-surfaces
+          git diff --exit-code
+      - name: Retain verified repair on the integration branch only
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=codex/nexus-business-preserving-integration
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = 664d0615f850c568a8840ac312ca7c92cb81ceee
+          test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$GITHUB_SHA"
+          git config user.name 'NEXUS integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git diff --cached --exit-code -- .github
+          git commit -m 'fix(closeout): bind policy to canonical Bun and benchmark shared user readiness'
+          git push origin "HEAD:refs/heads/$branch"
+          test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$(git rev-parse HEAD)"
+          printf 'REPAIR_COMMIT=%s\nPRODUCT_TREE=%s\n' "$(git rev-parse HEAD)" "$(git rev-parse HEAD:nexus)"
