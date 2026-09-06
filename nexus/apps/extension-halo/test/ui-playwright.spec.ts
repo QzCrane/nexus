@@ -1,3 +1,4 @@
+import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -453,8 +454,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 				],
 			});
 
-			const background = context.serviceWorkers()[0] ??
-				await context.waitForEvent('serviceworker', { timeout: 10_000 });
+			const background = await extensionWorker(context);
 			const extensionId = new URL(background.url()).host;
 			const sidepanel = await context.newPage();
 			const sidepanelErrors: string[] = [];

@@ -1,3 +1,4 @@
+import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -9,16 +10,9 @@ import {
 	expect,
 	test,
 	type BrowserContext,
-	type Worker,
 } from '@playwright/test';
 
 const DIST_PATH = fileURLToPath(new URL('../dist/', import.meta.url));
-
-async function extensionWorker(context: BrowserContext): Promise<Worker> {
-	const existing = context.serviceWorkers()[0];
-	if (existing) return existing;
-	return context.waitForEvent('serviceworker', { timeout: 10_000 });
-}
 
 test.describe('HALO local diagnostic export privacy', () => {
 	test('exports manifest/browser/runtime counts without page URL/title/content', async () => {

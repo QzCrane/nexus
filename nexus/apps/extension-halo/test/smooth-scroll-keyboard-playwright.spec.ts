@@ -1,3 +1,4 @@
+import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -251,10 +252,7 @@ async function repeatArrowStream(
 }
 
 async function enableSmoothScroll(context: BrowserContext): Promise<string> {
-	let [serviceWorker] = context.serviceWorkers();
-	if (!serviceWorker) {
-		serviceWorker = await context.waitForEvent('serviceworker', { timeout: 10_000 });
-	}
+	const serviceWorker = await extensionWorker(context);
 	const extensionId = new URL(serviceWorker.url()).hostname;
 	if (!extensionId) throw new Error(`HALO service worker has no extension id: ${serviceWorker.url()}`);
 	const grantedOrigins = await serviceWorker.evaluate(async () => {

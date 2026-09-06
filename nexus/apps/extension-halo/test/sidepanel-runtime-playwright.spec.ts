@@ -1,3 +1,4 @@
+import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,17 +10,10 @@ import {
 	test,
 	type BrowserContext,
 	type Page,
-	type Worker,
 } from '@playwright/test';
 
 const DIST_PATH = fileURLToPath(new URL('../dist/', import.meta.url));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
-
-async function extensionWorker(context: BrowserContext): Promise<Worker> {
-	const existing = context.serviceWorkers()[0];
-	if (existing) return existing;
-	return context.waitForEvent('serviceworker', { timeout: 10_000 });
-}
 
 function isSidepanelLazyChunk(url: string): boolean {
 	return url.startsWith('chrome-extension://') && url.includes('/chunks/') && url.endsWith('.js');

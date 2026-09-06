@@ -1,3 +1,4 @@
+import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -64,12 +65,6 @@ async function closeServer(server: Server | null): Promise<void> {
 	await new Promise<void>((resolve, reject) => {
 		server.close((error) => error ? reject(error) : resolve());
 	});
-}
-
-async function extensionWorker(context: BrowserContext): Promise<Worker> {
-	const existing = context.serviceWorkers()[0];
-	if (existing) return existing;
-	return context.waitForEvent('serviceworker', { timeout: 10_000 });
 }
 
 async function setHoverZoom(worker: Worker, enabled: boolean): Promise<void> {

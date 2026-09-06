@@ -1,10 +1,11 @@
+import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { chromium, expect, test, type BrowserContext, type Worker } from '@playwright/test';
+import { chromium, expect, test, type BrowserContext } from '@playwright/test';
 import {
 	runtimePerformanceIdentityFromEnvironment,
 	writeRuntimePerformanceEvidence,
@@ -17,12 +18,6 @@ const DIST_PATH = resolve(
 const SAMPLE_COUNT = 20;
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
-
-async function extensionWorker(context: BrowserContext): Promise<Worker> {
-	const existing = context.serviceWorkers()[0];
-	if (existing) return existing;
-	return context.waitForEvent('serviceworker', { timeout: 10_000 });
-}
 
 
 test.describe('HALO runtime performance evidence', () => {

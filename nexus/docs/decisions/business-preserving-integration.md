@@ -86,6 +86,29 @@ the Git-free source archive was scanned as though it were a Git checkout. The
 archive inventory. No release lane, required attempt, pinned image, production
 budget or business capability is removed by these corrections.
 
+## Observation and native-binding readiness barriers
+
+A repeated Windows capture-recovery test exposed an effectful observer: opening
+another Action Popup merely to read the audio session acquires and retires
+visualizer/observation leases, so its returned generation may be superseded by
+its own teardown. The recovery scenario now reads the browser-identified current
+Content session without creating a Popup, samples Content, background session and
+physical processor until their current generation agrees, and preserves exact
+generation across the isolated worker restart. Physical capture calls and
+processor identity must also remain unchanged. Actual volume and Remote actions
+still use the real Action Popup. Tab-hosted Options is not granted permission to
+impersonate another tab; the current-document RPC keeps its existing identity
+checks.
+
+The HALO minimum-browser replay also exposed a worker-target readiness race:
+receiving a service-worker target is not proof that `chrome.storage` is usable.
+All nine HALO browser entry paths now share one bounded readiness helper. It
+selects only an extension background URL, verifies the same native runtime ID,
+and waits for storage, messaging, tabs and permission bindings. Website workers,
+wrong IDs and incomplete bindings fail their negative tests; actual evaluation
+errors propagate. This does not suppress product failures or lengthen the
+browser scenarios' deadlines.
+
 ## Security decisions following the real audit
 
 Canonical quality CI now performs the actual advisory audit after both frozen dependency-domain installs, rather than only testing the audit validator. That exposed `fast-uri` 3.1.4 and `js-yaml` 4.3.0 in repository governance, and `extract-zip` 2.0.1 in the test-only Chrome-floor driver dependency chain. The compatible maintainer parser fixes resolve to 3.1.6 and 4.3.1. Root manifests are unchanged; Bun regenerated only those two root lock entries. Valid and invalid commitlint input, actual consumer resolution, international-domain normalization and ordered-map parsing were exercised.

@@ -14,6 +14,7 @@ import puppeteer, {
 import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	type ControlSnapshot,
+	type AudioSessionSnapshot,
 	type RegistrySnapshot,
 	type SettingsPatch,
 	type SettingsSnapshot,
@@ -1074,6 +1075,26 @@ async function sendExtensionMessage<T>(
 	return client.evaluate(async (request) => chrome.runtime.sendMessage(
 		{ ...request, requestId: crypto.randomUUID() },
 	), message) as Promise<T>;
+}
+
+// Read through the existing Content-document contract. A tab-hosted Options
+// page cannot impersonate a different tab, and opening an Action Popup to read
+// would itself change observation leases. No production permission is relaxed.
+async function readCurrentAudioSession(tabId: number): Promise<SmokeRpcResult<AudioSessionSnapshot | null>> {
+	return evaluateServiceWorker(async (targetTabId) => {
+		const [execution] = await chrome.scripting.executeScript({
+			target: { tabId: targetTabId, frameIds: [0] },
+			world: 'ISOLATED',
+			func: async () => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type: 'spectra.audio.session.current',
+				payload: {},
+			}),
+		});
+		if (execution?.result === undefined) throw new Error('Current-document session read returned no result');
+		return execution.result;
+	}, tabId) as Promise<SmokeRpcResult<AudioSessionSnapshot | null>>;
 }
 
 async function readExtensionSettings(client: Page): Promise<SettingsSnapshot> {
@@ -6552,7 +6573,8 @@ describe('SPECTRA built extension smoke', () => {
 	test('restores active capture across worker restart and shares one host with authenticated remote', async () => {
 		await installSyntheticCaptureHarness();
 		await installTabCaptureStreamIdStub();
-		const extensionClient = await openExtensionClient();
+		// A status reader must not create another Popup's observation/visualizer leases.
+		const extensionClient = await openExtensionClient('options.html');
 		const secondary = await browser.newPage();
 		const tabId = await getTabId(fixturePage.url());
 		const secondaryUrl = `${fixtureUrl}?remote-secondary=1`;
@@ -6574,38 +6596,28 @@ describe('SPECTRA built extension smoke', () => {
 					&& status.phase === 'active',
 				15_000,
 			);
-			const initialCaptureSession = await sendFromActionPopup<{
-				ok: boolean;
-				data?: { generation?: number; actualMode?: string; phase?: string };
-			}>({
-				protocolVersion: 2,
-				tabId,
-				type: 'spectra.audio.session.get',
-				payload: { tabId },
-			});
-			expect(initialCaptureSession).toMatchObject({
-				ok: true,
-				data: { actualMode: 'capture', phase: 'active' },
-			});
-			const captureGeneration = initialCaptureSession.data?.generation;
-			if (typeof captureGeneration !== 'number') throw new Error('Initial Capture generation is missing');
-			const convergedCapture = started.generation === captureGeneration
-				? started
-				: await waitForContentStatus(
-					(status) => status.generation === captureGeneration
-						&& status.mode === 'capture'
-						&& status.phase === 'active',
-					10_000,
-				);
-			expect(convergedCapture.generation).toBe(captureGeneration);
+			// The initiating Action Popup has closed, but its last asynchronous
+			// projection can still be settling. Sample the current owners together;
+			// never freeze a transient session generation and wait for time to reverse.
+			const capture = await eventually(async () => {
+				const audio = await readCurrentAudioSession(tabId);
+				const content = await readContentStatus();
+				const processor = (await readOffscreenSnapshot()).audioTabs.find((entry) => entry.tabId === tabId);
+				return { audio, content, processor };
+			}, ({ audio, content, processor }) => audio.ok
+				&& typeof audio.data?.generation === 'number'
+				&& audio.data.actualMode === 'capture' && audio.data.phase === 'active'
+				&& content.generation === audio.data.generation
+				&& processor?.generation === audio.data.generation
+				&& content.actualMode === 'capture' && content.phase === 'active'
+				&& content.config?.volume === 130 && content.config.boost === 1.3,
+			'current content, session and physical capture generation convergence', 10_000);
+			const captureGeneration = requireValue(capture.audio.data?.generation, 'Missing Capture generation');
+			expect(captureGeneration).toBeGreaterThanOrEqual(started.generation ?? 0);
+			const physicalBeforeRestart = await readSyntheticCaptureState();
 			await restartServiceWorker();
 
-			const recovered = await sendFromActionPopup({
-				protocolVersion: 2,
-				tabId,
-				type: 'spectra.audio.session.get',
-				payload: { tabId },
-			});
+			const recovered = await readCurrentAudioSession(tabId);
 			expect(recovered).toMatchObject({
 				ok: true,
 				data: { generation: captureGeneration, phase: 'active', actualMode: 'capture' },
@@ -6614,6 +6626,8 @@ describe('SPECTRA built extension smoke', () => {
 			expect((await readOffscreenSnapshot()).audioTabs).toEqual(expect.arrayContaining([
 				expect.objectContaining({ tabId, generation: captureGeneration }),
 			]));
+			expect((await readSyntheticCaptureState()).calls).toBe(physicalBeforeRestart.calls);
+			expect((await readSyntheticCaptureState()).processorStates).toEqual(physicalBeforeRestart.processorStates);
 			// The Chrome integration owns extension-side offscreen/background/content
 			// recovery, authentication and command routing. PeerJS signaling availability
 			// is an external transport fact and must not make this product proof depend
@@ -6782,12 +6796,7 @@ describe('SPECTRA built extension smoke', () => {
 						tabId: targetTabId,
 					}), tabId).catch(() => null),
 					readOffscreenSnapshot().catch(() => null),
-					sendFromActionPopup({
-						protocolVersion: 2,
-						tabId,
-						type: 'spectra.audio.session.get',
-						payload: { tabId },
-					}).catch(() => null),
+					readCurrentAudioSession(tabId).catch(() => null),
 					extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
 						protocolVersion: 2,
 						requestId: crypto.randomUUID(),
@@ -6846,12 +6855,7 @@ describe('SPECTRA built extension smoke', () => {
 				ok: true,
 				data: { generation: stopGeneration, actualMode: 'bypass', phase: 'idle', active: false },
 			});
-			expect(await sendFromActionPopup({
-				protocolVersion: 2,
-				tabId,
-				type: 'spectra.audio.session.get',
-				payload: { tabId },
-			})).toMatchObject({
+			expect(await readCurrentAudioSession(tabId)).toMatchObject({
 				ok: true,
 				data: { generation: stopGeneration, actualMode: 'bypass', phase: 'idle' },
 			});
