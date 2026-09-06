@@ -89,6 +89,9 @@ jobs:
       - name: Install product-workspace dependencies
         run: bun install --cwd nexus --frozen-lockfile
 
+      - name: Audit frozen dependency domains
+        run: bun --cwd nexus audit:dependencies
+
       - name: Check dependency-domain authority
         run: bun nexus/scripts/check-dependency-domains.ts
 
@@ -157,11 +160,11 @@ jobs:
 
       - name: Build SPECTRA production candidate
         if: needs.scope.outputs.spectra == 'true' && needs.scope.outputs.halo != 'true'
-        run: bun --cwd nexus run build:spectra
+        run: bun run --cwd nexus build:spectra
 
       - name: Build HALO production candidate
         if: needs.scope.outputs.halo == 'true' && needs.scope.outputs.spectra != 'true'
-        run: bun --cwd nexus run build:halo
+        run: bun run --cwd nexus build:halo
 
       - name: Test SPECTRA
         if: needs.scope.outputs.spectra == 'true'
