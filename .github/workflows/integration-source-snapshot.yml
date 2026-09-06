@@ -1,73 +1,72 @@
 name: Materialize verified integration
-
 on:
   push:
     branches:
       - codex/nexus-business-preserving-integration
     paths:
       - '.github/workflows/integration-source-snapshot.yml'
-
 permissions:
   contents: write
-
 concurrency:
   group: materialize-nexus-business-integration
   cancel-in-progress: false
-
 jobs:
   materialize:
     if: github.repository == 'QzCrane/nexus' && github.ref == 'refs/heads/codex/nexus-business-preserving-integration'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Read frozen transport head and source histories
+      - name: Read frozen transport head and histories
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           ref: ${{ github.sha }}
           fetch-depth: 0
-      - name: Decode and verify reviewed reconciliation recipe
+      - name: Verify candidate source and preserve workflows outside Actions write scope
         shell: bash
         run: |
           set -euo pipefail
           python3 - <<'PY'
-          import base64, os
+          import base64, os, subprocess, tempfile
           from pathlib import Path
           source = ''.join(Path(f'.integration-replay/part-{i}.txt').read_text().strip() for i in range(1, 5))
-          Path(os.environ['RUNNER_TEMP'], 'nexus-integration-recipe.xz').write_bytes(base64.b64decode(source, validate=True))
+          recipe = Path(os.environ['RUNNER_TEMP'], 'nexus-integration-recipe.xz')
+          recipe.write_bytes(base64.b64decode(source, validate=True))
+          tree = subprocess.check_output(['python3', '.integration-replay/apply.py', str(recipe)], text=True).strip()
+          assert tree == 'cc81a3cbb01f5ee989a4474ac9d09023e723a291'
+          fd, index = tempfile.mkstemp(); os.close(fd); os.unlink(index)
+          env = dict(os.environ, GIT_INDEX_FILE=index)
+          def git(*args): return subprocess.check_output(['git', *args], env=env)
+          try:
+              git('read-tree', tree)
+              for path in git('ls-tree', '-rz', '--name-only', tree, '--', '.github/workflows').split(b'\0'):
+                  if path: git('update-index', '--force-remove', '--', path.decode())
+              for row in git('ls-tree', '-rz', 'HEAD', '--', '.github/workflows').split(b'\0'):
+                  if not row: continue
+                  meta, path = row.split(b'\t', 1)
+                  mode, kind, sha = meta.decode().split()
+                  assert kind == 'blob'
+                  git('update-index', '--add', '--cacheinfo', f'{mode},{sha},{path.decode()}')
+              code_tree = git('write-tree').decode().strip()
+              with open(os.environ['GITHUB_ENV'], 'a') as f: f.write('CODE_TREE=' + code_tree + '\n')
+          finally:
+              if Path(index).exists(): Path(index).unlink()
           PY
-          tree="$(python3 .integration-replay/apply.py "$RUNNER_TEMP/nexus-integration-recipe.xz")"
-          test "$tree" = cc81a3cbb01f5ee989a4474ac9d09023e723a291
-          echo "VERIFIED_TREE=$tree" >> "$GITHUB_ENV"
-      - name: Commit exact tested tree without changing main
+      - name: Fast-forward integration code only
         shell: bash
         run: |
           set -euo pipefail
           branch=codex/nexus-business-preserving-integration
           main=664d0615f850c568a8840ac312ca7c92cb81ceee
           head="$(git rev-parse HEAD)"
-          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
-          remote_head="$(git ls-remote origin "refs/heads/$branch" | cut -f1)"
-          test "$remote_main" = "$main"
-          test "$remote_head" = "$head"
-          git diff --check "$main" "$VERIFIED_TREE"
-          test -z "$(git ls-tree --name-only "$VERIFIED_TREE" .integration-replay .github/workflows/integration-source-snapshot.yml)"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$main"
+          test "$(git ls-remote origin "refs/heads/$branch" | cut -f1)" = "$head"
+          git diff --exit-code "$head" "$CODE_TREE" -- .github/workflows
+          git diff --check "$main" "$CODE_TREE"
           git config user.name 'NEXUS integration'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          commit="$(git commit-tree "$VERIFIED_TREE" -p "$head" -p 7d4bf273130d73dbf63348affc3a258fcdac4627 -p 4b14658c107f33778bc5d48505609cafd58a0aec <<'MESSAGE'
-          feat(integration): reconcile closure branches without shrinking product capabilities
-
-          Retain the current main protocol/runtime, all 88 HALO panels and both scripts.
-          Integrate explicit release admission, state separation, bounded passive media
-          discovery, lifecycle-safe optional permissions, diagnostics and quality gates.
-          Every reconstructed blob and the complete tree are checksum verified against
-          the locally tested candidate. Preserve per-path decisions in the repository.
-
-          Local types, strict lint, architecture and governance checks, HALO unit tests,
-          Spectra isolated unit tests and both production builds passed. Full Chrome
-          browser replay remains blocked and this candidate is NOT approved for main
-          or product publication. Transport files are absent from the final tree.
-          MESSAGE
-          )"
+          commit="$(printf '%s\n\n%s\n' 'feat(integration): preserve business and reconcile closure implementations' 'Verified candidate source; workflow-only reconciliation remains for the authorized connector. Main promotion is blocked until full browser validation.' | git commit-tree "$CODE_TREE" -p "$head")"
           git push origin "$commit:refs/heads/$branch"
           test "$(git ls-remote origin "refs/heads/$branch" | cut -f1)" = "$commit"
-          printf 'Integrated commit: `%s`\n\nVerified tree: `%s`\n\nMain unchanged: `%s`\n\nFull browser replay is not yet green.\n' "$commit" "$VERIFIED_TREE" "$main" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Integrated code commit: `%s`\n\nIntermediate tree: `%s`\n\nCanonical complete candidate tree: `cc81a3cbb01f5ee989a4474ac9d09023e723a291`\n\nWorkflow changes are deliberately left unchanged for authorized connector publication.\n' "$commit" "$CODE_TREE" >> "$GITHUB_STEP_SUMMARY"
+          echo "Integrated code commit: $commit"
+          echo "Intermediate tree: $CODE_TREE"
