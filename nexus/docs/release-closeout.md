@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: repository-release-closeout
-last_reviewed: 2026-08-13
+last_reviewed: 2026-09-06
 ---
 
 # Release closeout authority
@@ -17,6 +17,10 @@ HALO and SPECTRA are Chrome MV3 extensions. Their product runtime is an installe
 Ubuntu or Windows runner parity is additionally required only when the changed mechanism itself crosses an operating-system boundary, such as filesystem paths, archive metadata, process spawning, shell behavior, native binaries, or toolchain resolution. Repeating the same Chrome behavior on Ubuntu does not make it more product-real.
 
 GitHub-hosted jobs are an independent replay surface. `runner_id=0`, empty steps, and a billing/spending-limit annotation mean `INFRA_UNAVAILABLE`; they are neither product failure nor product success. The closeout policy deliberately does not make paid runner allocation the repository trust root.
+
+## Policy identity
+
+The production policy reader verifies the digest-pinned Bun image against the current `BUN_VERSION` exported by [`../scripts/toolchain-versions.ts`](../scripts/toolchain-versions.ts), not a second hard-coded version. That source is part of the receipt tool-hash closure. The current policy and stale/unpinned image counterexamples are tested through the same reader invoked by record and merge; passing receipt-shape fixtures alone does not validate the executable entrypoint. This changes no attempt, platform, artifact or promotion requirement.
 
 ## Exact-head evidence
 

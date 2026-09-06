@@ -81,6 +81,7 @@
 		"scripts/check-typescript-7-epoch.ts",
 		"scripts/check-visual-regression-policy.ts",
 		"scripts/closeout-evidence.ts",
+		"scripts/toolchain-versions.ts",
 		"scripts/dependency-audit.ts",
 		"scripts/dependency-automation.spec.ts",
 		"scripts/dependency-update-evidence.ts",

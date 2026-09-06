@@ -59,7 +59,21 @@ test('records twenty independent SPECTRA Popup cold-interactive samples', async 
 			const page = await browser.newPage();
 			const navigationStarted = performance.now();
 			await page.goto(`chrome-extension://${id}/popup.html`, { waitUntil: 'domcontentloaded' });
-			await page.waitForSelector('html[data-spectra-ready="true"]', { timeout: 10_000 });
+			// Observe the same user-facing readiness in both builds. The candidate's
+			// private ready marker is absent from the frozen base and cannot be a
+			// common benchmark oracle. Verify settings data and real navigation.
+			await page.waitForFunction(() => {
+				const settings = document.getElementById('btn-settings');
+				return document.documentElement.lang.length > 0
+					&& settings instanceof HTMLElement && typeof settings.onclick === 'function'
+					&& typeof document.querySelector<HTMLInputElement>('#set-osd')?.onchange === 'function'
+					&& document.getElementById('bg-badge')?.textContent?.trim() === '0'
+					&& !document.getElementById('empty-state')?.classList.contains('hidden');
+			}, { timeout: 10_000 });
+			await page.click('#btn-settings');
+			await page.waitForSelector('#view-settings.active', { visible: true, timeout: 10_000 });
+			await page.click('#btn-back');
+			await page.waitForSelector('#view-main.active', { visible: true, timeout: 10_000 });
 			const interactiveAt = performance.now();
 			samples.push({
 				metric: 'spectra.popup.cold-profile-to-interactive',

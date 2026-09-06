@@ -16,6 +16,7 @@ import {
 import { arch, release as osRelease, tmpdir } from 'node:os';
 import { basename, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { BUN_VERSION } from './toolchain-versions';
 
 export interface CloseoutPolicy {
 	schemaVersion: 1;
@@ -126,12 +127,13 @@ export function writeImmutableEvidenceFile(path: string, content: string): 'crea
 	}
 }
 
-function readPolicy(): CloseoutPolicy {
-	const policy = JSON.parse(readFileSync(policyPath, 'utf8')) as CloseoutPolicy;
+export function readPolicy(path = policyPath): CloseoutPolicy {
+	const policy = JSON.parse(readFileSync(path, 'utf8')) as CloseoutPolicy;
+	const image = policy.platform?.image?.match(/^oven\/bun:([^@]+)@sha256:[a-f0-9]{64}$/u);
 	if (policy.schemaVersion !== 1 || policy.requiredAttempts !== 2
 		|| policy.targetBranch !== 'main' || policy.hostedRequired !== false
 		|| policy.lanes.length !== 2 || Object.keys(policy.products).length !== 2
-		|| !/^oven\/bun:1\.3\.14@sha256:[a-f0-9]{64}$/u.test(policy.platform?.image ?? '')
+		|| image?.[1] !== BUN_VERSION
 		|| policy.platform.environment?.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD !== '1'
 		|| policy.platform.environment?.PUPPETEER_SKIP_DOWNLOAD !== 'true'
 		|| Object.keys(policy.platform.environment).length !== 2
