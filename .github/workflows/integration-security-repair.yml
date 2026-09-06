@@ -21,13 +21,14 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version: 1.4.0
-      - name: Resolve only patched compatible transitive versions with Bun
+      - name: Resolve only the reviewed governance patches and safe existing browser manager
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = 863d17ac66702e240379f6878055b3fd8e2a4031
+          test "$(git rev-parse HEAD^)" = b2b8682a1540cae8763158a1d79074cb98cc2a58
           cp package.json "$RUNNER_TEMP/nexus-root-package.json"
           cp bun.lock "$RUNNER_TEMP/nexus-root-before.lock"
+          cp nexus/bun.lock "$RUNNER_TEMP/nexus-product-before.lock"
           bun -e 'const p=await Bun.file("package.json").json(); if(p.overrides) throw Error("Unexpected existing overrides"); p.overrides={"fast-uri":"3.1.6","js-yaml":"4.3.1"}; await Bun.write("package.json",JSON.stringify(p,null,2)+"\n");'
           bun install --ignore-scripts
           cp "$RUNNER_TEMP/nexus-root-package.json" package.json
@@ -40,23 +41,44 @@ jobs:
             if(after.packages["fast-uri"][0]!=="fast-uri@3.1.6"||after.packages["js-yaml"][0]!=="js-yaml@4.3.1") throw Error("Patch resolution drift");
             delete before.packages; delete after.packages;
             if(JSON.stringify(before)!==JSON.stringify(after)) throw Error("Lock topology or override drift");
+            const p=await Bun.file("nexus/package.json").json();
+            if(p.overrides["@puppeteer/browsers"]) throw Error("Unexpected existing browser override");
+            p.overrides["@puppeteer/browsers"]="3.2.1";
+            await Bun.write("nexus/package.json",JSON.stringify(p,null,"\t")+"\n");
           '
-          git diff --exit-code -- package.json nexus/bun.lock
+          bun install --cwd nexus
+          bun -e '
+            const before=Bun.JSONC.parse(await Bun.file(process.env.RUNNER_TEMP+"/nexus-product-before.lock").text());
+            const after=Bun.JSONC.parse(await Bun.file("nexus/bun.lock").text());
+            const oldVersions=new Set(Object.values(before.packages).map(p=>p[0]));
+            for(const [name,p] of Object.entries(after.packages)) {
+              if(!oldVersions.has(p[0])) throw Error("Unreviewed resolved version: "+p[0]);
+              if(p[0].startsWith("extract-zip@")) throw Error("Vulnerable extractor remains");
+              if(p[0].startsWith("@puppeteer/browsers@")&&p[0]!=="@puppeteer/browsers@3.2.1") throw Error("Duplicate obsolete manager remains");
+            }
+            if(after.packages["puppeteer-floor"][0]!=="puppeteer-core@24.7.2") throw Error("Floor CDP driver changed");
+            if(JSON.stringify(before.workspaces)!==JSON.stringify(after.workspaces)) throw Error("Direct workspace dependencies changed");
+          '
+          git diff --exit-code -- package.json
           bun install --frozen-lockfile --ignore-scripts
           bun install --cwd nexus --frozen-lockfile
+          out="$RUNNER_TEMP/nexus-security-evidence"
+          mkdir -p "$out"
+          cp bun.lock "$out/repository.bun.lock"
+          cp nexus/bun.lock "$out/product.bun.lock"
+          cp nexus/package.json "$out/product.package.json"
+          git diff -- bun.lock nexus/bun.lock nexus/package.json > "$out/security-lock.patch"
       - name: Verify actual advisory responses and resolved consumers
         shell: bash
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/nexus-security-evidence"
-          mkdir -p "$out"
-          bun audit --json > "$out/repository-audit.json"
-          (cd nexus && bun audit --json) > "$out/product-audit.json"
+          bun audit --json | tee "$out/repository-audit.json"
+          (cd nexus && bun audit --json) | tee "$out/product-audit.json"
           bun --cwd nexus audit:dependencies
           printf 'fix(integration): retain secure transitive resolvers\n' | bun node_modules/@commitlint/cli/cli.js --strict
           if printf 'invalid commit message\n' | bun node_modules/@commitlint/cli/cli.js --strict; then
-            echo 'Invalid commit message was accepted' >&2
-            exit 1
+            echo 'Invalid commit message was accepted' >&2; exit 1
           fi
           bun -e '
             const {createRequire}=require("node:module");
@@ -66,33 +88,33 @@ jobs:
             const uri=ajv("fast-uri"); const yaml=config("js-yaml");
             if(ajv("fast-uri/package.json").version!=="3.1.6"||config("js-yaml/package.json").version!=="4.3.1") throw Error("Consumer resolution mismatch");
             if(uri.resolve("http://example.test/","//bücher.test/")!=="http://xn--bcher-kva.test/") throw Error("IDN resolution regression");
-            const result=yaml.load("!!omap\n- a: 1\n- b: 2\n");
-            if(JSON.stringify(result)!==JSON.stringify([{a:1},{b:2}])) throw Error("Ordered-map semantics changed");
+            if(JSON.stringify(yaml.load("!!omap\n- a: 1\n- b: 2\n"))!==JSON.stringify([{a:1},{b:2}])) throw Error("Ordered-map semantics changed");
             let rejected=false; try {yaml.load("!!omap\n- a: 1\n- a: 2\n");} catch {rejected=true;}
             if(!rejected) throw Error("Duplicate ordered-map key accepted");
             console.log("Actual commitlint consumers use patched compatible URI/YAML parsers");
           '
-          cp bun.lock "$out/bun.lock"
-          git diff -- bun.lock > "$out/security-lock.patch"
-          (cd "$out" && sha256sum bun.lock repository-audit.json product-audit.json > SHA256SUMS.txt)
-      - name: Retain the reviewed lock repair without touching main or workflows
+          bun run build
+          bun run typecheck
+          bun run --cwd nexus check:governance
+          git diff --check
+      - name: Retain the verified dependency repair within the integration branch
         shell: bash
         run: |
           set -euo pipefail
           branch=codex/nexus-business-preserving-integration
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = 664d0615f850c568a8840ac312ca7c92cb81ceee
           test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$GITHUB_SHA"
-          test "$(git diff --name-only)" = bun.lock
-          git diff --check
-          git add -- bun.lock
+          test "$(git diff --name-only)" = "$(printf 'bun.lock\nnexus/bun.lock\nnexus/package.json')"
+          git add -- bun.lock nexus/bun.lock nexus/package.json
+          git diff --cached --exit-code -- .github
           git config user.name 'NEXUS integration'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix(deps): resolve patched URI and YAML transitive governance dependencies'
+          git commit -m 'fix(deps): eliminate vulnerable URI, YAML and browser extraction dependencies'
           git push origin "HEAD:refs/heads/$branch"
           test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$(git rev-parse HEAD)"
           git rev-parse HEAD > "$RUNNER_TEMP/nexus-security-evidence/head.txt"
           git rev-parse HEAD^{tree} > "$RUNNER_TEMP/nexus-security-evidence/tree.txt"
-      - name: Preserve exact resolution and real audit evidence
+      - name: Preserve exact resolution and actual audit evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
