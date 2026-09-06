@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: contributor
 owner: repository-documentation
-last_reviewed: 2026-08-13
+last_reviewed: 2026-09-07
 ---
 
 # NEXUS documentation
@@ -41,3 +41,6 @@ Canonical entrypoint organizing NEXUS documentation by **authority and lifecycle
 ## Integration decisions
 
 - [Business-preserving branch integration](decisions/business-preserving-integration.md) — source identities, business/data invariants, retained and rejected mechanisms, costs and evidence boundaries.
+- [Library reuse decisions](decisions/library-reuse.md) — all 56 selection directions, 82 tool-directory mappings, retained duties, sources and admission/acceptance limits; not a claim that candidate packages are installed.
+- [Reuse-first execution and rework assessment](decisions/reuse-first-execution.md) — proactive selection boundary, preserved work, avoidable rework, implementation sequence and branch disposition.
+- [Audit-to-reuse routing](../reuse-remediation-map.json) — complete mapping of the original 86 findings to reuse decisions and retained domain duties; [remediation status](../remediation-status.json) remains the only implementation-status owner.

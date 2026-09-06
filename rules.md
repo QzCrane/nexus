@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: contributor
 owner: repository-governance
-last_reviewed: 2026-09-01
+last_reviewed: 2026-09-07
 ---
 
 # NEXUS repository rules
@@ -28,6 +28,14 @@ owner documents.
 - Validate untrusted boundaries with the canonical contract. Keep permissions and
   capabilities minimal, never execute remotely supplied extension code, and keep
   privacy claims aligned with the shipped artifact.
+- Before implementing or repairing a generic capability, compare native APIs,
+  existing dependencies, and maintained libraries before choosing custom code.
+  Retaining a custom parser, codec, algorithm, validator, or infrastructure engine
+  requires a concrete semantic, host, license, security, or measured-cost reason;
+  fewer dependencies and sunk effort are not sufficient reasons. Use the
+  [reuse decision owner](nexus/docs/decisions/library-reuse.md). An urgent minimal
+  safety repair may precede replacement, but preserve its regression vectors and
+  record the temporary implementation's exit condition.
 - Dependencies require a real consumer and one current resolved version unless a
   proven constraint prevents it. Remove unused dependencies and stale physical
   copies. Measure performance on the production path.
