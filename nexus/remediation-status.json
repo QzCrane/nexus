@@ -1,0 +1,710 @@
+{
+  "schemaVersion": 1,
+  "audit": "docs/_archive/audits/2026-09-06-7230b68.json",
+  "preservedSourceHead": "7230b688718ef48e829dcaf05d4729ec88bb0b8d",
+  "preservedIntegrationHead": "49df809bd37672857c64189adfe4f7e69d68d38e",
+  "preservedSourceTree": "00ea207461eab5b34264a4949aebd25eabba60a4",
+  "semantics": "implemented means the named mechanism has code and focused regression evidence; it does not mean release certification. Open and partial items block a claim of complete remediation.",
+  "items": [
+    {
+      "id": "G01",
+      "title": "Windows 路径误判使真正发布失败，并漏检 tsconfig",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "scripts/check-typescript-7-epoch.ts",
+        "scripts/check-typescript-7-epoch.spec.ts"
+      ],
+      "verification": [
+        "scripts/check-typescript-7-epoch.spec.ts"
+      ]
+    },
+    {
+      "id": "G02",
+      "title": "普通 CI 与完整发布的操作系统覆盖不一致",
+      "priority": "P0",
+      "status": "awaiting-hosted-verification",
+      "changes": [
+        "../.github/workflows/cross-platform.yml"
+      ],
+      "verification": []
+    },
+    {
+      "id": "G03",
+      "title": "已验证 Bun 的发布链再次通过 bunx 获取运行时",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "package.json",
+        "scripts/check-typescript-7-epoch.spec.ts"
+      ],
+      "verification": [
+        "scripts/check-typescript-7-epoch.spec.ts"
+      ]
+    },
+    {
+      "id": "G04",
+      "title": "发布策略读取器只验证数量，未验证完整语义",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G05",
+      "title": "单次 receipt 验证边界接受缺失事实",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G06",
+      "title": "证据摘要证明字节一致，不证明执行来源",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G07",
+      "title": "canonical hosted 判断没有证明必需检查集合完整",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G08",
+      "title": "重跑与基础设施失败需要精确分类，不可挑绿色或永久卡历史",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G09",
+      "title": "PR head 与实际 checkout 需要显式区分",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G10",
+      "title": "单提交候选校验没有验证唯一父提交",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G11",
+      "title": "receipt 中的浏览器身份可能不是实际运行的浏览器",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G12",
+      "title": "最终 ZIP 的供应链证明没有完整接入 canonical release",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G13",
+      "title": "已存在的中间供应链文件不能代替新鲜性校验",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G14",
+      "title": "发布、合并、对外发布过度捆绑与反复候选重写",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G15",
+      "title": "历史已打包功能被错误归入未来晋升任务",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G16",
+      "title": "晋升证据和测试归属仍偏向文件存在/源码字符串",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G17",
+      "title": "视觉检查目前只是候选采集，不是已认证回归",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G18",
+      "title": "性能统计样本与业务负载不足以支持全面优化结论",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G19",
+      "title": "分支、执行来源与长期证据保全尚需独立防线",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G20",
+      "title": "对话/PR 最终状态曾倒退到旧提交，交付观察需要单一事实来源",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S01",
+      "title": "存储等待超时后迟到旧写入覆盖新值",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S02",
+      "title": "读取失败与键不存在被合并为默认值",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S03",
+      "title": "Timer 与 Pomodoro 的状态构造违反共享 JSON 合同",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S04",
+      "title": "复杂工具状态只有容器种类检查，缺少领域 schema",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S05",
+      "title": "多个上下文的读改写可能丢更新",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S06",
+      "title": "写入失败只留日志，用户无法判断是否保存",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S07",
+      "title": "数量上限不能代替字节配额及保留策略",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S08",
+      "title": "归档元数据与 Blob 不在同一事务，裁剪留下孤儿",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S09",
+      "title": "IndexedDB 请求成功过早被当作事务已提交",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S10",
+      "title": "剪贴板满额时仍会丢固定条目",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S11",
+      "title": "Session Manager 保存两份会话列表，初始展示可能失真",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S12",
+      "title": "会话恢复丢 pinned 状态且无法表达部分成功",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N01",
+      "title": "站点存储编辑时重新选择当前标签，可能写到别的站点",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N02",
+      "title": "站点存储编辑 UI 忽略写入/删除失败结果",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N03",
+      "title": "Cookie 身份丢失 store/partition/hostOnly，更新目标也可能漂移",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N04",
+      "title": "内部消息路由并未统一区分可信 UI 与 Content 权限",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N05",
+      "title": "私网主机字面量过滤既有漏判也有误封",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N06",
+      "title": "初始 URL 筛选不能证明重定向和 DNS 后的目标安全",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N07",
+      "title": "网络响应没有统一时间、字节和生命周期边界",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N08",
+      "title": "敏感输入默认跟随通用工具状态持久化",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N09",
+      "title": "选择 DeepL 翻译网页时被静默转给 Google",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N10",
+      "title": "生产日志直接记录 URL 片段，诊断脱敏不覆盖它",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "N11",
+      "title": "权限和目标必须在真正副作用发生时仍有效",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D01",
+      "title": "物理并发有界但永久在途会导致后续发现饥饿",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D02",
+      "title": "超时观察者在未结束 Promise 上累积 reaction",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D03",
+      "title": "没有媒体与探测失败仍有被合并的路径",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D04",
+      "title": "冷启动的暂停 iframe 媒体不属于当前顶层探测覆盖",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D05",
+      "title": "媒体报告和共享扫描缓存的身份粒度需覆盖文档代际",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D06",
+      "title": "多来源卡片快照应保留字段级未知，而非伪事务",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J01",
+      "title": "Timer/Pomodoro 完成副作用仍由面板存活决定",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J02",
+      "title": "计时完成“恰好一次”需定义崩溃语义",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J03",
+      "title": "PDF 拆分只交付第一个结果",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J04",
+      "title": "PDF 页范围容错会把错误请求变成“成功但少内容”",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J05",
+      "title": "PDF/图像任务缺少冻结输入、有界执行和统一取消",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J06",
+      "title": "对象 URL 生命周期未与解码/预览/新标签绑定",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J07",
+      "title": "Gzip 解压缺少输出预算且 writer 错误未完整等待",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J08",
+      "title": "Diff 的完整 LCS 矩阵使内存随两边行数乘积增长",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J09",
+      "title": "多哈希文件计算重复整文件读取，另有双份 MD5 实现",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J10",
+      "title": "多面板异步失败与迟到结果缺乏一致状态机",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U01",
+      "title": "Unicode 正则的空匹配推进可无限循环",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U02",
+      "title": "正则回溯与逐匹配定位仍可阻塞 UI",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U03",
+      "title": "TOTP URI 丢算法、截断 issuer 并接受错误类型/参数",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U04",
+      "title": "JWT Base64URL 字节未按 UTF-8 解码",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U05",
+      "title": "CSV 多行引号字段被预先按换行拆坏",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U06",
+      "title": "CSV/JSON 转换默认改值且对象数组校验不完整",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U07",
+      "title": "表格文本导出存在公式语义边界",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U08",
+      "title": "进制转换使用浮点数且接受部分非法输入",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U09",
+      "title": "Protobuf varint 被 32 位位运算截断",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U10",
+      "title": "JSONPath 不支持的语法被静默误解，且可读继承属性",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U11",
+      "title": "Cron 解析未验证范围，固定七天搜索不能交付月度结果",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U12",
+      "title": "SQL 格式化修改字面量，验证器把无效语句判有效",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U13",
+      "title": "XML 重建/压缩可能丢转义和混合内容空白",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U14",
+      "title": "调色板量化可生成超出 255 的颜色分量",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U15",
+      "title": "密码生成的字符映射与强度评分需要准确语义",
+      "priority": "P2",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U16",
+      "title": "JSON 格式化会舍入大整数，排序还丢 __proto__ 自有键",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U17",
+      "title": "YAML 极简解析器静默丢结构，JSON→YAML 改字符串类型",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U18",
+      "title": "通用代码压缩会把后续 JS 语句变成注释",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U19",
+      "title": "证书解析器把非 X.509 数据包装成证书结果",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U20",
+      "title": "CSP 百分制不能代表有效安全策略",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U21",
+      "title": "UUID v7 的 48 位时间戳被 JS 32 位移位破坏",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U22",
+      "title": "Punycode 多标签域名解码错误且字符校验不足",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U23",
+      "title": "URL 参数解析视图丢失重复 key",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "A01",
+      "title": "巨大单一 owner 需要内部拆分，但不能产生第二写入者",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "A02",
+      "title": "产物余量过低，不宜继续靠预算微调容纳重复实现",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "A03",
+      "title": "诊断应报告未知与必要故障计数，不新增默认遥测",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "A04",
+      "title": "标准、权限与功能宣称需要从实际能力导出",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    }
+  ]
+}

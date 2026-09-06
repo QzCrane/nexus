@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import {
 	checkTypeScript7Epoch,
+	classifyTypeScriptPath,
 	deprecatedCompilerOptions,
 } from './check-typescript-7-epoch';
 
@@ -59,4 +60,25 @@ describe('TypeScript 7 compiler epoch governance', () => {
 		wrong.nativeCli.version = '7.0.0';
 		expect(() => checkTypeScript7Epoch({ epoch: wrong })).toThrow('version drifted');
 	});
+});
+
+
+test('classifies the same package, source and config paths on every host before filtering', () => {
+	for (const prefix of ['', '/repo/nexus/', 'D:\\repo\\nexus\\', 'D:/repo\\nexus/']) {
+		expect(classifyTypeScriptPath(`${prefix}package.json`)).toBe('package');
+		for (const name of ['tsconfig.json', 'tsconfig.typecheck.json', 'tsconfig.build.debug.json']) {
+			expect(classifyTypeScriptPath(`${prefix}${name}`)).toBe('config');
+		}
+		expect(classifyTypeScriptPath(`${prefix}source.tsx`)).toBe('source');
+		expect(classifyTypeScriptPath(`${prefix}not-package.json`)).toBeNull();
+		expect(classifyTypeScriptPath(`${prefix}tsconfig.json.bak`)).toBeNull();
+	}
+});
+
+test('release entrypoints reuse the runtime which their owner checks instead of reacquiring Bun', () => {
+	const scripts = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).scripts;
+	for (const product of ['halo', 'spectra']) {
+		expect(scripts[`release:${product}`]).toBe(`bun scripts/release-${product}.ts`);
+		expect(scripts[`release:${product}:plan`]).toBe(`bun scripts/release-${product}.ts --list`);
+	}
 });

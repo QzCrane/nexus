@@ -108,3 +108,17 @@ A real checkout still requires a successful Git index read: missing Git or an
 index failure never silently becomes an archive-mode pass. The scanner and
 reference checker are included in the receipt's tool hashes. This changes no
 platform lane, pinned image or required release attempt.
+
+
+## Platform-complete runtime checks
+
+Package and TypeScript-config classification normalizes the logical filename
+before filtering. Filesystem I/O still uses the original native path. The quality
+workflow executes the governance, toolchain and dependency checks on Windows as
+well as Linux, not only the product build matrix. Release commands invoke the
+installed Bun whose exact version each release owner validates; they do not
+resolve a second runtime through an online package-execution step.
+
+The dated audit is retained in `_archive/audits/2026-09-06-7230b68.json`.
+`../remediation-status.json` tracks implementation and evidence separately;
+neither an audit finding nor a focused unit pass is a release receipt.

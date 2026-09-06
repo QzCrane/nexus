@@ -10,6 +10,14 @@ const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const SKIP = new Set(['.git', '.turbo', 'dist', 'node_modules', 'release', 'test-results', 'playwright-report', 'artifacts']);
 const SOURCE = /\.[cm]?[jt]sx?$/u;
 
+// Physical paths remain native for I/O; classification must not depend on the host separator.
+export function classifyTypeScriptPath(path: string): 'package' | 'config' | 'source' | null {
+	const name = path.replaceAll('\\', '/').split('/').at(-1) ?? '';
+	if (name === 'package.json') return 'package';
+	if (/^tsconfig(?:\.[^./]+)*\.json$/u.test(name)) return 'config';
+	return SOURCE.test(name) ? 'source' : null;
+}
+
 interface ApiConsumer { path: string; packagePath: string; marker: string; role: string; publicProjection: boolean }
 export interface TypeScriptEpoch {
 	schemaVersion: 2;
@@ -99,11 +107,15 @@ export function checkTypeScript7Epoch({
 		throw new Error('TypeScript CLI/API identities require a separately reviewed epoch');
 	}
 	const files = walk();
-	const actualNativeOwners = files.filter((file) => file.endsWith('/package.json'))
+	const actualNativeOwners = files.filter((file) => classifyTypeScriptPath(file) === 'package')
 		.filter((file) => Boolean(declared(readJson<PackageDocument>(file), nativeCli.package)))
 		.map((file) => relative(workspaceDir, file).replaceAll('\\', '/'));
 	if (new Set(nativeCli.packagePaths).size !== nativeCli.packagePaths.length
-		|| canonical(actualNativeOwners) !== canonical(nativeCli.packagePaths)) throw new Error('TypeScript native CLI package owner census drifted');
+		|| canonical(actualNativeOwners) !== canonical(nativeCli.packagePaths)) {
+		const missing = nativeCli.packagePaths.filter((path) => !actualNativeOwners.includes(path));
+		const unexpected = actualNativeOwners.filter((path) => !nativeCli.packagePaths.includes(path));
+		throw new Error(`TypeScript native CLI package owner census drifted: missing=${JSON.stringify(missing)}; unexpected=${JSON.stringify(unexpected)}`);
+	}
 	for (const path of nativeCli.packagePaths) {
 		if (declared(readJson<PackageDocument>(owned(path)), nativeCli.package) !== nativeCli.version) {
 			throw new Error(`${path}: TypeScript native CLI version drifted`);
@@ -116,7 +128,7 @@ export function checkTypeScript7Epoch({
 		|| !lockContains(lock, api.alias, api.package, api.version)) throw new Error('TypeScript compiler/API exact lock drifted');
 
 	const actualConsumers = new Set<string>();
-	for (const file of files.filter((file) => SOURCE.test(file))) {
+	for (const file of files.filter((file) => classifyTypeScriptPath(file) === 'source')) {
 		const imports = compilerApiImports(file);
 		if (imports.includes(nativeCli.package)) throw new Error(`${relative(workspaceDir, file)}: programmatic tooling may not import the native CLI package`);
 		if (imports.includes(api.alias)) actualConsumers.add(relative(workspaceDir, file).replaceAll('\\', '/'));
@@ -133,7 +145,7 @@ export function checkTypeScript7Epoch({
 	}
 	const banned = deprecatedCompilerOptions({ baseUrl: '.', downlevelIteration: false, moduleResolution: 'node', target: 'es5', module: 'amd', outFile: 'x', esModuleInterop: false, allowSyntheticDefaultImports: false, alwaysStrict: false, ignoreDeprecations: '6.0' });
 	for (const option of banned) if (!epoch.ts6DeprecatedConfig.includes(option)) throw new Error(`TypeScript deprecated-config inventory omitted ${option}`);
-	for (const file of files.filter((path) => /(?:^|\/)tsconfig(?:\.[^.]+)?\.json$/u.test(path))) {
+	for (const file of files.filter((path) => classifyTypeScriptPath(path) === 'config')) {
 		const parsed = ts.readConfigFile(file, ts.sys.readFile);
 		if (parsed.error) throw new Error(`${relative(workspaceDir, file)}: invalid TypeScript configuration`);
 		const options = (parsed.config as { compilerOptions?: Record<string, unknown> }).compilerOptions ?? {};
