@@ -1,55 +1,29 @@
 name: Integration source snapshot
-
 on:
   push:
     branches:
       - codex/nexus-business-preserving-integration
     paths:
       - '.github/workflows/integration-source-snapshot.yml'
-
 permissions:
   contents: read
-
-concurrency:
-  group: integration-source-snapshot
-  cancel-in-progress: true
-
 jobs:
-  workbench:
+  browser:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - name: Read exact integration source
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.sha }}
-          persist-credentials: false
-      - name: Set up pinned repository runtime
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.0
-      - name: Install locked governance and product graphs
-        run: |
-          bun install --frozen-lockfile --ignore-scripts
-          bun install --cwd nexus --frozen-lockfile
-      - name: Retain reproducible offline verification inputs
+      - name: Download exact Chrome floor
         shell: bash
         run: |
           set -euo pipefail
-          out="$RUNNER_TEMP/nexus-integration-workbench"
+          out="$RUNNER_TEMP/nexus-chrome-floor"
           mkdir -p "$out"
-          bun --version > "$out/bun-version.txt"
-          cp "$(command -v bun)" "$out/bun"
-          gzip -9 "$out/bun"
-          find . -path './.git' -prune -o -type d -name node_modules -print0 -prune > "$RUNNER_TEMP/dependency-paths.z"
-          tar -czf "$out/dependencies.tar.gz" --null -T "$RUNNER_TEMP/dependency-paths.z"
-          git rev-parse HEAD > "$out/source-head.txt"
-          sha256sum bun.lock nexus/bun.lock > "$out/lock-sha256.txt"
-          (cd "$out" && sha256sum bun.gz dependencies.tar.gz > SHA256SUMS.txt)
-      - name: Retain private verification inputs
+          curl --fail --location --retry 3 --output "$out/chrome-linux64.zip" https://storage.googleapis.com/chrome-for-testing-public/135.0.7049.114/linux64/chrome-linux64.zip
+          printf '%s  %s\n' dd86dbace037a9b6c4bc993fc4e20ee768a804923850511e53255743760d8b82 "$out/chrome-linux64.zip" | sha256sum --check --strict
+      - name: Retain exact browser for local integration verification
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-integration-workbench
-          path: ${{ runner.temp }}/nexus-integration-workbench/
-          if-no-files-found: error
+          name: nexus-chrome-floor
+          path: ${{ runner.temp }}/nexus-chrome-floor/chrome-linux64.zip
           retention-days: 1
+          if-no-files-found: error
