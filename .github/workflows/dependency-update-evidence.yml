@@ -95,8 +95,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bun --cwd "$BASE_ROOT/nexus" run build
-          bun --cwd nexus run build
+          bun run --cwd "$BASE_ROOT/nexus" build
+          bun run --cwd nexus build
+          for root in "$BASE_ROOT" "$GITHUB_WORKSPACE"; do
+            for product in halo spectra; do
+              test -s "$root/nexus/apps/extension-$product/dist/manifest.json"
+            done
+          done
 
       - name: Snapshot exact production artifacts
         shell: bash
@@ -151,8 +156,8 @@ jobs:
           export NEXUS_PERFORMANCE_OUTPUT_DIR="$EVIDENCE_ROOT/base/performance"
           export HALO_EXTENSION_DIR="$BASE_ROOT/nexus/apps/extension-halo/dist"
           export SPECTRA_EXTENSION_DIR="$BASE_ROOT/nexus/apps/extension-spectra/dist"
-          bun --cwd nexus/apps/extension-halo run test:performance
-          bun --cwd nexus/apps/extension-spectra run test:performance
+          bun run --cwd nexus/apps/extension-halo test:performance
+          bun run --cwd nexus/apps/extension-spectra test:performance
 
       - name: Measure candidate artifacts with the same workload
         shell: bash
@@ -163,8 +168,8 @@ jobs:
           export NEXUS_PERFORMANCE_OUTPUT_DIR="$EVIDENCE_ROOT/candidate/performance"
           export HALO_EXTENSION_DIR="$GITHUB_WORKSPACE/nexus/apps/extension-halo/dist"
           export SPECTRA_EXTENSION_DIR="$GITHUB_WORKSPACE/nexus/apps/extension-spectra/dist"
-          bun --cwd nexus/apps/extension-halo run test:performance
-          bun --cwd nexus/apps/extension-spectra run test:performance
+          bun run --cwd nexus/apps/extension-halo test:performance
+          bun run --cwd nexus/apps/extension-spectra test:performance
 
       - name: Build exact dependency-update delta evidence
         shell: bash

@@ -21,11 +21,16 @@ if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 }
 
 async function extensionId(browser: Browser): Promise<string> {
-	const target = await browser.waitForTarget(
-		(candidate) => candidate.type() === 'service_worker' && candidate.url().startsWith('chrome-extension://'),
-		{ timeout: 10_000 },
-	);
-	return new URL(target.url()).hostname;
+	try {
+		const target = await browser.waitForTarget(
+			(candidate) => candidate.type() === 'service_worker' && candidate.url().startsWith('chrome-extension://'),
+			{ timeout: 10_000 },
+		);
+		return new URL(target.url()).hostname;
+	} catch (cause) {
+		const targets = browser.targets().map((target) => ({ type: target.type(), url: target.url() }));
+		throw new Error(`Cold profile did not expose its extension worker: ${JSON.stringify({ extensionDir: EXTENSION_DIR, targets })}`, { cause });
+	}
 }
 
 test('records twenty independent SPECTRA Popup cold-interactive samples', async () => {

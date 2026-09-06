@@ -7,7 +7,10 @@ export async function launchBrowser(options: ReplayOptions): Promise<Browser> {
 	const expected = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
 	const policy = browserReplayPolicy(expected, options.executablePath, process.platform);
 	const rootArgs = process.getuid?.() === 0 ? ['--no-sandbox'] : [];
-	const launchOptions = { ...options, args: [...new Set([...(options.args ?? []), ...policy.args, ...rootArgs])] };
+	// Both supported drivers disable extensions by default. An explicit extension
+	// fixture must not launch with contradictory enable/disable flags.
+	const extensionFixture = options.args?.some((argument) => argument.startsWith('--load-extension='));
+	const launchOptions = { ...options, ...(extensionFixture ? { ignoreDefaultArgs: ['--disable-extensions'] } : {}), args: [...new Set([...(options.args ?? []), ...policy.args, ...rootArgs])] };
 	// Chrome 135 and current Chrome need different CDP drivers. The nominal
 	// class types differ, but this boundary uses only their shared public API;
 	// the same installed-extension tests exercise both implementations.

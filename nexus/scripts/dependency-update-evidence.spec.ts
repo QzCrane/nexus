@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { buildDependencyUpdateEvidence } from './dependency-update-evidence';
@@ -26,7 +26,7 @@ function performance(product: 'halo' | 'spectra', metric: string, head: string, 
 		product,
 		head,
 		tree,
-		host: { bun: '1.3.14', browser: { name: 'Chrome', version: '135.0.7049.114' } },
+		host: { bun: '1.4.0' as string | null, node: process.versions.node, browser: { name: 'Chrome', version: '135.0.7049.114' } },
 		metrics: [{
 			metric,
 			unit: 'ms',
@@ -117,4 +117,39 @@ describe('dependency update artifact/performance delta evidence', () => {
 			rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
+	test('accepts Node-hosted Playwright evidence without inventing a Bun version', () => {
+		const { root, base, candidate } = fixture();
+		try {
+			for (const side of [base, candidate]) {
+				const path = resolve(side, 'performance/halo.json');
+				const value = JSON.parse(readFileSync(path, 'utf8'));
+				value.host.bun = null;
+				writeJson(path, value);
+			}
+			expect(buildDependencyUpdateEvidence({ baseRoot: base, candidateRoot: candidate, policy: policy as never }).performance).toHaveLength(2);
+		} finally {
+			rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+		}
+	});
+
+	test('rejects missing runtime identity and host changes instead of comparing unlike drivers', () => {
+		const { root, base, candidate } = fixture();
+		try {
+			const path = resolve(candidate, 'performance/halo.json');
+			const value = performance('halo', 'halo.metric', '2'.repeat(40), '4'.repeat(40), 11);
+			for (const [field, replacement, error] of [
+				['node', null, 'malformed'],
+				['node', '99.0.0', 'Node version changed'],
+				['bun', null, 'Bun version changed'],
+			] as const) {
+				writeJson(path, { ...value, host: { ...value.host, [field]: replacement } });
+				expect(() => buildDependencyUpdateEvidence({ baseRoot: base, candidateRoot: candidate, policy: policy as never })).toThrow(error);
+			}
+			writeJson(path, { ...value, host: { ...value.host, browser: { ...value.host.browser, name: 'Firefox' } } });
+			expect(() => buildDependencyUpdateEvidence({ baseRoot: base, candidateRoot: candidate, policy: policy as never })).toThrow('browser kind changed');
+		} finally {
+			rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+		}
+	});
+
 });

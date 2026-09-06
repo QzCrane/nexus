@@ -93,12 +93,16 @@ jobs:
         working-directory: nexus/apps/extension-spectra
         run: bun test test/accessibility-chrome.spec.ts
 
+      - name: Prove SPECTRA local diagnostic source and port lifecycle on Chrome floor
+        working-directory: nexus/apps/extension-spectra
+        run: bun test test/diagnostics-chrome.spec.ts
+
       - name: Prove HALO admitted SidePanel and page capabilities on Chrome floor
         working-directory: nexus/apps/extension-halo
         run: bunx playwright test test/minimum-chrome-playwright.spec.ts --workers=1
 
       - name: Capture review visuals or enforce certified exact baselines on Chrome floor
-        run: bun --cwd nexus run test:visual
+        run: bun run --cwd nexus test:visual
 
       - name: Publish visual review candidates
         if: always()

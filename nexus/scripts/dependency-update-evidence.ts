@@ -5,22 +5,12 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { ProductArtifactFile, ProductArtifactSnapshot } from './product-artifact-snapshot';
-import type { RuntimePerformanceSummary } from './runtime-performance';
+import type { buildRuntimePerformanceEvidence, RuntimePerformanceSummary } from './runtime-performance';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const performancePolicyPath = resolve(workspaceDir, 'runtime-performance-policy.json');
 
-interface RuntimePerformanceEvidence {
-	schemaVersion: 1;
-	product: 'halo' | 'spectra';
-	head: string;
-	tree: string;
-	host: {
-		bun: string;
-		browser: { name: string; version: string };
-	};
-	metrics: RuntimePerformanceSummary[];
-}
+type RuntimePerformanceEvidence = ReturnType<typeof buildRuntimePerformanceEvidence>;
 
 interface RuntimePerformancePolicy {
 	schemaVersion: 1;
@@ -113,7 +103,10 @@ function loadSide(
 		const document = readJson<RuntimePerformanceEvidence>(path);
 		if (document.schemaVersion !== 1 || (document.product !== 'halo' && document.product !== 'spectra')
 			|| document.head !== head || document.tree !== tree || !Array.isArray(document.metrics)
-			|| typeof document.host?.bun !== 'string' || typeof document.host?.browser?.version !== 'string') {
+			|| !(document.host?.bun === null || typeof document.host?.bun === 'string' && document.host.bun.length > 0)
+			|| typeof document.host?.node !== 'string' || !document.host.node
+			|| typeof document.host?.browser?.name !== 'string' || !document.host.browser.name
+			|| typeof document.host?.browser?.version !== 'string' || !document.host.browser.version) {
 			throw new Error(`runtime performance evidence is malformed or bound to the wrong artifact identity: ${path}`);
 		}
 		for (const summary of document.metrics) {
@@ -186,6 +179,8 @@ function performanceDelta(
 		if (!before || !after) throw new Error(`${metric}: missing comparison evidence`);
 		if (before.summary.unit !== after.summary.unit) throw new Error(`${metric}: unit changed across dependency comparison`);
 		if (before.host.bun !== after.host.bun) throw new Error(`${metric}: Bun version changed inside one dependency comparison`);
+		if (before.host.node !== after.host.node) throw new Error(`${metric}: Node version changed inside one dependency comparison`);
+		if (before.host.browser.name !== after.host.browser.name) throw new Error(`${metric}: browser kind changed inside one dependency comparison`);
 		if (before.host.browser.version !== after.host.browser.version) {
 			throw new Error(`${metric}: browser version changed inside one dependency comparison`);
 		}
