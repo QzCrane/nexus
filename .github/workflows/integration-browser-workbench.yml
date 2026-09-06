@@ -1,0 +1,39 @@
+name: Integration browser workbench
+on:
+  push:
+    branches:
+      - codex/nexus-business-preserving-integration
+    paths:
+      - '.github/workflows/integration-browser-workbench.yml'
+permissions:
+  contents: read
+jobs:
+  tools:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.4.0
+      - name: Acquire supported test-only driver and matching current browser
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/nexus-browser-workbench"
+          driver="$RUNNER_TEMP/nexus-floor-driver"
+          mkdir -p "$out" "$driver"
+          printf '{"private":true,"dependencies":{"puppeteer-core":"24.7.2"}}\n' > "$driver/package.json"
+          bun install --cwd "$driver" --ignore-scripts
+          tar -czf "$out/floor-driver.tar.gz" -C "$driver" package.json bun.lock node_modules
+          curl --fail --location --retry 3 --dump-header "$out/chrome152-origin-headers.txt" --output "$out/chrome152-linux64.zip" https://storage.googleapis.com/chrome-for-testing-public/152.0.7977.54/linux64/chrome-linux64.zip
+          curl --fail --location --retry 3 --output "$out/chrome152-version.json" https://googlechromelabs.github.io/chrome-for-testing/152.0.7977.54.json
+          (cd "$out" && sha256sum floor-driver.tar.gz chrome152-linux64.zip > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: nexus-browser-workbench
+          path: ${{ runner.temp }}/nexus-browser-workbench/
+          if-no-files-found: error
+          retention-days: 1
