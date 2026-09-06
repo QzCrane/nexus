@@ -49,7 +49,7 @@ describe('product-retained npm dependency evidence', () => {
 				{ name: 'alpha', version: '1.2.3', license: 'Apache-2.0', bytesInOutput: 37 },
 			]);
 		} finally {
-			rmSync(project, { recursive: true, force: true });
+			rmSync(project, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -63,7 +63,7 @@ describe('product-retained npm dependency evidence', () => {
 				analysis: { outputs: { 'sidepanel.js': { inputs: { 'src/local.ts': { bytesInOutput: 0 } } } } },
 			})).toThrow('contains no retained input bytes');
 		} finally {
-			rmSync(project, { recursive: true, force: true });
+			rmSync(project, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 

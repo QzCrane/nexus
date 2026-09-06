@@ -137,7 +137,7 @@ function listSkillNames() {
   if (!existsSync(skillsSrc)) {
     throw new Error(`Skills source dir missing: ${skillsSrc}`);
   }
-  return readdirSync(skillsSrc).filter((d) => {
+  return readdirSync(skillsSrc).sort().filter((d) => {
     const full = join(skillsSrc, d);
     return statSync(full).isDirectory() && existsSync(join(full, 'SKILL.md'));
   });

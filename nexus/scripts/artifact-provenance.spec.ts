@@ -37,7 +37,7 @@ describe('whole extension artifact provenance', () => {
 		]) {
 			expect(normalizeBuildOutputIdentity(input), input).toBe('background.js');
 		}
-		expect(normalizeBuildOutputIdentity('/tmp/dist-cache/dist/chunks/popup.js'))
+		expect(normalizeBuildOutputIdentity('/fixture/dist-cache/dist/chunks/popup.js'))
 			.toBe('chunks/popup.js');
 	});
 
@@ -73,7 +73,7 @@ describe('whole extension artifact provenance', () => {
 				.toBe('src/entry/background.ts');
 			expect(() => verifyArtifactProvenance({ product: 'halo', distDir: dist, evidence })).not.toThrow();
 		} finally {
-			rmSync(dirname(dist), { recursive: true, force: true });
+			rmSync(dirname(dist), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -109,7 +109,7 @@ describe('whole extension artifact provenance', () => {
 				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
 			})).toThrow('public release file changed without an explicit build transformer: accessibility.css');
 		} finally {
-			rmSync(dirname(dist), { recursive: true, force: true });
+			rmSync(dirname(dist), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -128,7 +128,7 @@ describe('whole extension artifact provenance', () => {
 			expect(evidence.files.find(({ path }) => path === 'i18n/en-US.json.gz')?.origin)
 				.toMatchObject({ kind: 'generated-metadata', owner: 'nexus/apps/extension-spectra/scripts/i18n-assets.ts' });
 		} finally {
-			rmSync(dirname(dist), { recursive: true, force: true });
+			rmSync(dirname(dist), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -144,7 +144,7 @@ describe('whole extension artifact provenance', () => {
 				analysis: { outputs: { 'dist/background.js': { entryPoint: 'src/background/index.ts' } } },
 			})).toThrow('has no explicit provenance owner: mystery.bin');
 		} finally {
-			rmSync(dirname(dist), { recursive: true, force: true });
+			rmSync(dirname(dist), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -165,7 +165,7 @@ describe('whole extension artifact provenance', () => {
 			expect(() => verifyArtifactProvenance({ product: 'spectra', distDir: dist, evidence }))
 				.toThrow('unrecorded release file extra.js');
 		} finally {
-			rmSync(dirname(dist), { recursive: true, force: true });
+			rmSync(dirname(dist), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -215,7 +215,7 @@ describe('whole extension artifact provenance', () => {
 				product: 'spectra', artifactPath: artifact, evidence,
 			})).toThrow('final ZIP differs from whole-artifact provenance');
 		} finally {
-			rmSync(dirname(dist), { recursive: true, force: true });
+			rmSync(dirname(dist), { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 });

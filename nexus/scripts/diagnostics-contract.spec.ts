@@ -1,3 +1,4 @@
+import { isLocalDiagnosticSender } from '../packages/nexus-kernel/src/diagnostics';
 import { describe, expect, test } from 'bun:test';
 import {
 	assembleLocalDiagnosticBundle,
@@ -63,4 +64,17 @@ describe('local diagnostic privacy contract', () => {
 			events: [],
 		})).toThrow('must be boolean, finite number or null');
 	});
+});
+
+
+test('diagnostics trusts extension pages, including tab-hosted Options, but not content scripts', () => {
+	const id = 'abcdefghijklmnopabcdefghijklmnop';
+	const url = `chrome-extension://${id}/options.html`;
+	expect(isLocalDiagnosticSender({ id, url }, id)).toBe(true);
+	expect(isLocalDiagnosticSender({ id, url, origin: `chrome-extension://${id}`, tab: { id: 7 } as chrome.tabs.Tab }, id)).toBe(true);
+	for (const sender of [
+		undefined, {}, { id }, { id: 'other', url }, { id, url: 'https://example.test/' },
+		{ id, url, origin: 'null' }, { id, url: `chrome-extension://${id}.evil/` },
+		{ id, url: `chrome-extension://user@${id}/` },
+	]) expect(isLocalDiagnosticSender(sender, id)).toBe(false);
 });

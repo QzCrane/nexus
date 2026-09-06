@@ -92,7 +92,7 @@ describe('visual regression baseline lifecycle', () => {
 				workspaceDir: directory,
 			})).toThrow('visual regression');
 		} finally {
-			rmSync(directory, { recursive: true, force: true });
+			rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -120,7 +120,7 @@ describe('visual regression baseline lifecycle', () => {
 			});
 			expect(result.mode).toBe('candidate-only');
 		} finally {
-			rmSync(directory, { recursive: true, force: true });
+			rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 });

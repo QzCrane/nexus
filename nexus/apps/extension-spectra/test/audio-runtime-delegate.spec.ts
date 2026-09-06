@@ -228,3 +228,20 @@ describe('audio runtime coverage boundary', () => {
 		});
 	});
 });
+
+
+test('volume feedback reads the actual processor without applying desired state or acquiring resources', () => {
+	const applied = { ...DEFAULT_AUDIO_CONFIG, volumeBase: 50, boost: 2, volume: 100, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] };
+	const state: PolicyExecutorState = {
+		config: { ...applied, boost: 3, volume: 150 }, appliedConfig: applied,
+		activeMode: 'capture', desiredMode: 'capture', actualMode: 'capture', phase: 'active',
+		generation: 2, userHasInteracted: true, isPopupOpen: false,
+	};
+	const updateConfig = mock(async () => ({ ok: true as const, data: { revision: 1 } }));
+	const delegate = createAudioRuntimeControlDelegate({ updateConfig } as unknown as PolicyExecutor, state);
+	expect(delegate.readAudioVolume?.(25, false)).toEqual({ effectiveVolume: 50, volumeState: 'capture' });
+	expect(delegate.readAudioVolume?.(25, true)).toEqual({ effectiveVolume: 50, volumeState: 'silent' });
+	expect(updateConfig).not.toHaveBeenCalled();
+	expect(state.appliedConfig).toBe(applied);
+	expect(state.generation).toBe(2);
+});

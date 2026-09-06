@@ -53,6 +53,11 @@ async function reloadPopup(): Promise<void> {
   window.location.reload();
 }
 
+// Intrinsic Action-popup sizing must not be determined by its transient initial
+// viewport; a tab-hosted extension page, unlike that popup, may reflow narrowly.
+document.documentElement.dataset.spectraSurface = chrome.extension.getViews({ type: 'popup' })
+  .some((view) => view === window) ? 'action-popup' : 'extension-page';
+
 // eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
 async function main(): Promise<void> {
   disposePopupAttempt();

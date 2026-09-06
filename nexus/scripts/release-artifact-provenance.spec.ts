@@ -66,7 +66,7 @@ describe('final release whole-artifact attestation', () => {
 				},
 			});
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -88,7 +88,7 @@ describe('final release whole-artifact attestation', () => {
 				sourceDerived: { schemaVersion: 1, entries: [] },
 			})).toThrow('does not belong to this product');
 		} finally {
-			rmSync(dir, { recursive: true, force: true });
+			rmSync(dir, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 });

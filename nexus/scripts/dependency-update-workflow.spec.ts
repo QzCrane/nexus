@@ -16,14 +16,15 @@ describe('dependency update evidence workflow', () => {
 	test('builds the exact base in an isolated worktree with its own frozen lock', () => {
 		expect(workflow).toContain('git worktree add --detach "$base_root" "$base_sha"');
 		expect(workflow).toContain('bun install --cwd "$BASE_ROOT/nexus" --frozen-lockfile');
-		expect(workflow).toContain('bun --cwd "$BASE_ROOT/nexus" run build');
+		expect(workflow).toContain('bun run --cwd "$BASE_ROOT/nexus" build');
 		expect(workflow).toContain('bun install --cwd nexus --frozen-lockfile');
-		expect(workflow).toContain('bun --cwd nexus run build');
+		expect(workflow).toContain('bun run --cwd nexus build');
+		expect(workflow).toContain('test -s "$root/nexus/apps/extension-$product/dist/manifest.json"');
 	});
 
 	test('fails candidate governance before any production build or browser measurement', () => {
 		const governance = workflow.indexOf('bun --cwd nexus check:governance');
-		const build = workflow.indexOf('bun --cwd "$BASE_ROOT/nexus" run build');
+		const build = workflow.indexOf('bun run --cwd "$BASE_ROOT/nexus" build');
 		const browser = workflow.indexOf('bunx playwright install-deps chromium');
 		expect(governance).toBeGreaterThan(0);
 		expect(governance).toBeLessThan(build);
@@ -40,8 +41,8 @@ describe('dependency update evidence workflow', () => {
 			workflow.indexOf('- name: Build exact dependency-update delta evidence'),
 		);
 		for (const measure of [baseMeasure, candidateMeasure]) {
-			expect(measure).toContain('bun --cwd nexus/apps/extension-halo run test:performance');
-			expect(measure).toContain('bun --cwd nexus/apps/extension-spectra run test:performance');
+			expect(measure).toContain('bun run --cwd nexus/apps/extension-halo test:performance');
+			expect(measure).toContain('bun run --cwd nexus/apps/extension-spectra test:performance');
 			expect(measure).toContain('NEXUS_PERFORMANCE_TARGET_HEAD');
 			expect(measure).toContain('NEXUS_PERFORMANCE_TARGET_TREE');
 			expect(measure).toContain('NEXUS_PERFORMANCE_OUTPUT_DIR');

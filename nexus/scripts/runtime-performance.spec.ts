@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import {
 	buildRuntimePerformanceEvidence,
@@ -84,7 +85,7 @@ describe('runtime performance evidence', () => {
 	});
 
 	test('isolates comparison output without allowing path traversal through a workload filename', () => {
-		const root = resolve('/tmp/nexus-performance-comparison');
+		const root = resolve(tmpdir(), 'nexus-performance-comparison');
 		expect(runtimePerformanceOutputPath('spectra-worker-wake.json', {
 			NEXUS_PERFORMANCE_OUTPUT_DIR: root,
 		})).toBe(resolve(root, 'spectra-worker-wake.json'));

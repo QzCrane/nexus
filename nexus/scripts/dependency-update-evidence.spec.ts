@@ -88,7 +88,7 @@ describe('dependency update artifact/performance delta evidence', () => {
 			const halo = evidence.performance.find(({ metric }) => metric === 'halo.metric');
 			expect(halo?.p95).toEqual({ base: 10, candidate: 11, absolute: 1, percent: 10 });
 		} finally {
-			rmSync(root, { recursive: true, force: true });
+			rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -100,7 +100,7 @@ describe('dependency update artifact/performance delta evidence', () => {
 				baseRoot: base, candidateRoot: candidate, policy: policy as never,
 			})).toThrow('omitted policy metrics');
 		} finally {
-			rmSync(root, { recursive: true, force: true });
+			rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -114,7 +114,7 @@ describe('dependency update artifact/performance delta evidence', () => {
 				baseRoot: base, candidateRoot: candidate, policy: policy as never,
 			})).toThrow('browser version changed');
 		} finally {
-			rmSync(root, { recursive: true, force: true });
+			rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 });

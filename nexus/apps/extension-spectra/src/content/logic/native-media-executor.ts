@@ -148,6 +148,7 @@ ownershipScope.__nexusSpectraNativeMediaOwnershipV3 = nativeMediaOwnership;
 export interface AudioRuntimeControlDelegate {
 	apply(intent: ControlIntent, patch: ControlPatch): Promise<ControlFieldStates>;
 	read(fields: readonly ControlField[]): ControlPatch;
+	readAudioVolume?(volumeBase: number, muted: boolean): NonNullable<ControlApplyAck['audioVolume']>;
 	synchronizeNative(context: ControlActualContext): void;
 	runFullscreenTransition?<T>(operation: () => Promise<T>): Promise<T>;
 }
@@ -467,8 +468,8 @@ export class NativeMediaExecutor {
 		// Establish event-correlation baselines when the runtime is acquired. A
 		// later status/read request must remain a pure projection and must not
 		// mutate the executor merely to suppress the next native event.
-		for (const { element, target } of this.registry.list()) {
-			this.primeObserved(target.mediaId, element);
+		for (const { target } of this.registry.list()) {
+			this.primeObserved(target);
 		}
 	}
 
@@ -642,7 +643,23 @@ export class NativeMediaExecutor {
 			if (restored) this.appliedDesiredRevision.set(this.targetKey(resolved.target), this.desiredRevision);
 		}
 		if (resolved) this.assertCurrentTarget(resolved.target, resolved.element, operationSignal);
+		// Feedback is a physical readback, not a mutation of unrelated snapshot
+		// fields. A cold mute still needs actual base volume and processor state.
+		let audioVolume: ControlApplyAck['audioVolume'];
+		if (resolved && this.audioRuntimeDelegate?.readAudioVolume
+			&& (fields.mediaMuted?.phase === 'applied' || fields.volumeBase?.phase === 'applied')) {
+			try {
+				const { patch } = this.read({ fields: ['volumeBase', 'mediaMuted'], target: resolved.target });
+				if (typeof patch.volumeBase === 'number' && typeof patch.mediaMuted === 'boolean') {
+					audioVolume = this.audioRuntimeDelegate.readAudioVolume(patch.volumeBase, patch.mediaMuted);
+				}
+			} catch (error) {
+				// Preserve the applied mutation, but report the unavailable feedback sample.
+				console.warn('[SPECTRA] Audio feedback readback unavailable', error);
+			}
+		}
 		return {
+			...(audioVolume ? { audioVolume } : {}),
 			intentId: intent.intentId,
 			tabId: intent.tabId,
 			documentId: intent.documentId,
@@ -791,12 +808,10 @@ export class NativeMediaExecutor {
 		speed: number;
 		currentTime: number;
 	} {
-		const resolved = this.registry.resolve(target);
-		if (!resolved) throw new Error('No active media target');
-		return {
-			playing: !resolved.element.paused,
-			speed: readRestorableMediaFieldWithWriter(resolved.element, 'speed').actual as number,
-			currentTime: resolved.element.currentTime,
+		return this.read({ target, fields: ['playing', 'speed', 'currentTime'] }).patch as {
+			playing: boolean;
+			speed: number;
+			currentTime: number;
 		};
 	}
 
@@ -905,7 +920,8 @@ export class NativeMediaExecutor {
 				: this.registry.resolve(request.target));
 		if (resolved) {
 			const { element, target } = resolved;
-			const effectState = element instanceof HTMLVideoElement
+			const effectState = request.fields.some((field) => VIDEO_EFFECT_FIELDS.has(field))
+				&& element instanceof HTMLVideoElement
 				? this.effects?.snapshot(element) ?? DEFAULT_VIDEO_EFFECT_STATE
 				: null;
 			for (const field of request.fields) {
@@ -965,7 +981,7 @@ export class NativeMediaExecutor {
 		const isCurrent = (): boolean => this.isCurrentTarget(target, element);
 		const assertCurrent = (waitSignal = signal): void => this.assertCurrentTarget(target, element, waitSignal);
 		assertCurrent();
-		this.primeObserved(target.mediaId, element);
+		this.primeObserved(target);
 		if (VIDEO_EFFECT_FIELDS.has(field)) {
 			if (!(element instanceof HTMLVideoElement)) {
 				this.putError(fields, field, value, intent, 'capability-unavailable', 'The active target is audio-only');
@@ -1518,7 +1534,7 @@ export class NativeMediaExecutor {
 		}
 		if (this.disposed || this.tabId === null) return;
 		if (event === 'selected') {
-			this.primeObserved(target.mediaId, element);
+			this.primeObserved(target);
 			this.replayDesired(target, element, true);
 			void sendSpectraRequest(
 				'spectra.content.target.changed',
@@ -1527,7 +1543,7 @@ export class NativeMediaExecutor {
 			).catch(() => undefined);
 			return;
 		}
-		if (event === 'registered') this.primeObserved(target.mediaId, element);
+		if (event === 'registered') this.primeObserved(target);
 		if (event === 'registered') this.replayDesired(target);
 		else if (event === 'loadedmetadata' || event === 'play') {
 			this.replayDesired(target, element, true);
@@ -1535,48 +1551,26 @@ export class NativeMediaExecutor {
 		const resolved = this.registry.resolve(null);
 		if (!resolved || resolved.target.mediaId !== target.mediaId) return;
 		const mediaId = target.mediaId;
-		const candidates: ControlPatch = {};
-		const candidateStrategies: ControlNativeObservationStrategies = {};
+		let observedFields: ControlReadRequest['fields'];
 		if (event === 'volumechange') {
-			const volume = readRestorableMediaFieldWithWriter(element, 'volumeBase');
-			const muted = readRestorableMediaFieldWithWriter(element, 'mediaMuted');
-			candidates.volumeBase = volume.actual as number;
-			candidates.mediaMuted = muted.actual as boolean;
-			candidateStrategies.volumeBase = volume.writer;
-			candidateStrategies.mediaMuted = muted.writer;
+			observedFields = ['volumeBase', 'mediaMuted'];
 		} else if (event === 'ratechange') {
-			const speed = readRestorableMediaFieldWithWriter(element, 'speed');
-			candidates.speed = speed.actual as number;
-			candidateStrategies.speed = speed.writer;
-			// preservesPitch has no standard change event. Reading it on the native
-			// rate event captures the common page-player transaction without adding
-			// polling or a prototype/descriptor interception.
-			if ('preservesPitch' in element) {
-				candidates.preservePitch = (
-					element as HTMLMediaElement & { preservesPitch: boolean }
-				).preservesPitch;
-				candidateStrategies.preservePitch = 'dom-native';
-			}
+			// preservesPitch has no native event; observe it in the rate transaction.
+			observedFields = ['speed', 'preservePitch'];
 		} else if (event === 'play' || event === 'pause') {
-			candidates.playing = !element.paused;
-			candidateStrategies.playing = 'dom-native';
-		}
-		else if (event === 'seeked') {
-			candidates.currentTime = element.currentTime;
-			candidateStrategies.currentTime = 'dom-native';
-		}
-		else if (event === 'loopchange') {
-			candidates.loop = element.loop;
-			candidateStrategies.loop = 'dom-native';
-		}
-		else if (event === 'enterpictureinpicture' || event === 'leavepictureinpicture') {
-			candidates.pip = document.pictureInPictureElement === element;
-			candidateStrategies.pip = 'dom-native';
+			observedFields = ['playing'];
+		} else if (event === 'seeked') {
+			observedFields = ['currentTime'];
+		} else if (event === 'loopchange') {
+			observedFields = ['loop'];
+		} else if (event === 'enterpictureinpicture' || event === 'leavepictureinpicture') {
+			observedFields = ['pip'];
 		} else if (event === 'fullscreenchange') {
-			candidates.fullscreen = fullscreenOwnsMedia(element);
-			candidateStrategies.fullscreen = 'dom-native';
-		}
-		else return;
+			observedFields = ['fullscreen'];
+		} else return;
+		const { patch: candidates, observedStrategies: candidateStrategies } = this.read({
+			target, fields: observedFields,
+		});
 
 		const pending = this.pending.get(mediaId);
 		const ownedSeek = event === 'seeked'
@@ -1756,29 +1750,16 @@ export class NativeMediaExecutor {
 		return { supported: false };
 	}
 
-	private primeObserved(mediaId: string, element: HTMLMediaElement): void {
-		if (this.observed.has(mediaId)) return;
-		// The volume writer discovery below is the page-entry capability probe:
-		// it is a read-only bridge transaction whose writer verdict doubles as
-		// the amplified-controller answer for this hostname.
-		const volumeState = readRestorableMediaFieldWithWriter(element, 'volumeBase');
+	private primeObserved(target: MediaTarget): void {
+		if (this.observed.has(target.mediaId)) return;
+		const { patch, observedStrategies } = this.read({
+			target,
+			fields: ['volumeBase', 'mediaMuted', 'speed', 'playing', 'currentTime', 'loop', 'pip', 'fullscreen', 'preservePitch'],
+		});
 		void sendSpectraRequest('spectra.audio.page-scale.record', {
-			supported: volumeState.writer === 'page-native',
+			supported: observedStrategies.volumeBase === 'page-native',
 		}).catch(() => undefined);
-		const values: Partial<ControlValues> = {
-			volumeBase: volumeState.actual as number,
-			mediaMuted: readRestorableMediaFieldWithWriter(element, 'mediaMuted').actual as boolean,
-			speed: readRestorableMediaFieldWithWriter(element, 'speed').actual as number,
-			playing: !element.paused,
-			currentTime: element.currentTime,
-			loop: element.loop,
-			pip: document.pictureInPictureElement === element,
-			fullscreen: fullscreenOwnsMedia(element),
-		};
-		if ('preservesPitch' in element) {
-			values.preservePitch = (element as HTMLMediaElement & { preservesPitch: boolean }).preservesPitch;
-		}
-		this.observed.set(mediaId, values);
+		this.observed.set(target.mediaId, patch);
 	}
 
 	private observe(

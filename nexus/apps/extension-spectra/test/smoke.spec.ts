@@ -4731,7 +4731,7 @@ describe('SPECTRA built extension smoke', () => {
 	test('keeps English and Chinese extension layouts bounded and exposes dynamic controls in the AX tree', async () => {
 		const assertPageAudit = async (page: Page, label: string) => {
 			const layout = await inspectExtensionLayout(page);
-			expect(layout.documentOverflow, `${label} document overflow`).toBeLessThanOrEqual(0);
+			expect(layout.documentOverflow, `${label} document overflow: ${JSON.stringify(layout)}`).toBeLessThanOrEqual(0);
 			expect(layout.controlsOutsideViewport, `${label} controls outside viewport`).toEqual([]);
 			expect(layout.clippedText, `${label} clipped text`).toEqual([]);
 			const accessibility = await inspectExtensionAccessibility(page);
@@ -4792,6 +4792,7 @@ describe('SPECTRA built extension smoke', () => {
 				};
 			});
 			const intrinsicMain = await readPopupGeometry();
+			expect(await popup.evaluate(() => window.innerWidth)).toBe(390);
 			expect(intrinsicMain).toMatchObject({
 				inlineMinHeight: '',
 				settingsMode: false,
@@ -5952,6 +5953,7 @@ describe('SPECTRA built extension smoke', () => {
 			await waitForContentBootstrapStatus(captureOnlyUrl);
 			tabId = await getTabId(captureOnlyUrl);
 			await installTabCaptureStreamIdStub();
+			await installSyntheticCaptureHarness();
 
 			const denied = await sendCaptureRequest(extensionClient, tabId, true, 1);
 			expect(denied).toMatchObject({
@@ -5970,7 +5972,6 @@ describe('SPECTRA built extension smoke', () => {
 				peerDestructions: 0,
 			});
 
-			await installSyntheticCaptureHarness();
 			await captureOnly.bringToFront();
 			await submitEffectiveVolume(tabId, 130);
 			const started = await eventually(
@@ -6001,6 +6002,8 @@ describe('SPECTRA built extension smoke', () => {
 				vendorRequests += 1;
 			});
 
+			const physicalBeforeRemote = await readSyntheticCaptureState();
+			const processorBeforeRemote = (await readOffscreenSnapshot()).audioTabs.find((entry) => entry.tabId === tabId);
 			const creation = await sendFromActionPopup<{
 				ok: boolean;
 				data?: RemotePublicSession;
@@ -6044,16 +6047,21 @@ describe('SPECTRA built extension smoke', () => {
 			// Slow CI machines can still be waking the capture owner when the
 			// session creation returns; wait for the shared host to acknowledge the
 			// tab instead of racing a single snapshot read.
+			const currentCapture = await readContentStatus(captureOnlyUrl);
 			const sharedHost = await eventually(
 				readOffscreenSnapshot,
 				(snapshot) => snapshot.audioTabs.some((entry) => (
-					entry.tabId === tabId && entry.generation === startGeneration
+					entry.tabId === tabId && entry.generation === currentCapture.generation
 				)),
 				'shared offscreen host acknowledges the capture tab',
 			);
 			expect(sharedHost.audioTabs).toEqual(expect.arrayContaining([
-				expect.objectContaining({ tabId, generation: startGeneration }),
+				expect.objectContaining({ tabId, generation: currentCapture.generation,
+					graphSignature: processorBeforeRemote?.graphSignature,
+					normalizedActualConfig: processorBeforeRemote?.normalizedActualConfig }),
 			]));
+			expect((await readSyntheticCaptureState()).calls).toBe(physicalBeforeRemote.calls);
+			expect((await readSyntheticCaptureState()).processorStates).toEqual(physicalBeforeRemote.processorStates);
 			expect(sharedHost.remoteTabs).toEqual([{ tabId, sessionId: session.sessionId }]);
 
 			const repeated = await sendFromActionPopup<{

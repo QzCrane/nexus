@@ -56,48 +56,47 @@ textarea::placeholder {
   }
 }
 
-/* The normal Chrome Action popup is intentionally 390px wide. At browser zoom
- * or other narrow CSS viewports it must reflow instead of preserving that fixed
- * width and requiring horizontal scrolling. Options uses the same guard. */
+/* Tab-hosted extension pages reflow. A real Action popup keeps its intrinsic
+ * width; its initially narrow sizing probe must not collapse the product. */
 @media (max-width: 389px) {
-  html,
-  html.side-panel-open,
-  body,
-  .app-wrapper {
+  html:not([data-spectra-surface="action-popup"]),
+  html:not([data-spectra-surface="action-popup"]).side-panel-open,
+  html:not([data-spectra-surface="action-popup"]) body,
+  html:not([data-spectra-surface="action-popup"]) .app-wrapper {
     width: 100%;
     min-width: 0;
     max-width: 100%;
   }
 
-  body:has(.app-wrapper) {
+  html:not([data-spectra-surface="action-popup"]) body:has(.app-wrapper) {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .app-wrapper,
-  .view-container,
-  #view-main,
-  #view-settings,
-  #app,
-  .main,
-  .section {
+  html:not([data-spectra-surface="action-popup"]) .app-wrapper,
+  html:not([data-spectra-surface="action-popup"]) .view-container,
+  html:not([data-spectra-surface="action-popup"]) #view-main,
+  html:not([data-spectra-surface="action-popup"]) #view-settings,
+  html:not([data-spectra-surface="action-popup"]) #app,
+  html:not([data-spectra-surface="action-popup"]) .main,
+  html:not([data-spectra-surface="action-popup"]) .section {
     min-width: 0;
     max-width: 100%;
   }
 
-  #app {
+  html:not([data-spectra-surface="action-popup"]) #app {
     padding-left: 12px;
     padding-right: 12px;
   }
 
-  .header,
-  .header-actions,
-  .section-header {
+  html:not([data-spectra-surface="action-popup"]) .header,
+  html:not([data-spectra-surface="action-popup"]) .header-actions,
+  html:not([data-spectra-surface="action-popup"]) .section-header {
     flex-wrap: wrap;
   }
 
-  input,
-  select,
-  textarea {
+  html:not([data-spectra-surface="action-popup"]) input,
+  html:not([data-spectra-surface="action-popup"]) select,
+  html:not([data-spectra-surface="action-popup"]) textarea {
     max-width: 100%;
   }
 }

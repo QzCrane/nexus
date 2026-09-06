@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
-import { dirname, extname, resolve } from 'node:path';
+import { dirname, extname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { findBunVersionDrift } from './toolchain-references';
 import { BIOME_VERSION, BUN_VERSION, TURBO_VERSION } from './toolchain-versions.ts';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -51,12 +52,6 @@ for (const [tool, version] of Object.entries(expected)) {
 }
 
 const scannedExtensions = new Set(['.cjs', '.js', '.json', '.md', '.mjs', '.ts', '.toml', '.yaml', '.yml']);
-const versionPatterns = [
-	/\bbun@(\d+\.\d+\.\d+)\b/giu,
-	/\bBun\s+(\d+\.\d+\.\d+)\b/gu,
-	/\bBUN_VERSION\s*=\s*['"](\d+\.\d+\.\d+)['"]/gu,
-];
-
 function trackedCurrentFiles() {
 	const result = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '-z'], {
 		encoding: 'utf8',
@@ -76,14 +71,7 @@ function trackedCurrentFiles() {
 const drift = [];
 for (const filePath of trackedCurrentFiles()) {
 	const content = readFileSync(filePath, 'utf8');
-	for (const pattern of versionPatterns) {
-		pattern.lastIndex = 0;
-		for (const match of content.matchAll(pattern)) {
-			if (match[1] !== expected.bun) {
-				drift.push(`${relative(repositoryRoot, filePath)}: Bun ${match[1]}`);
-			}
-		}
-	}
+	drift.push(...findBunVersionDrift(relative(repositoryRoot, filePath), content, expected.bun));
 }
 
 if (drift.length > 0) {

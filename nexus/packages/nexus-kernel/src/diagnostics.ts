@@ -199,6 +199,17 @@ function disconnectDiagnosticPort(port: chrome.runtime.Port): void {
 	try { port.disconnect(); } catch { console.debug('[NEXUS diagnostics] Port already retired'); }
 }
 
+/** Browser-owned sender metadata, never a caller-supplied payload identity. */
+export function isLocalDiagnosticSender(sender: chrome.runtime.MessageSender | undefined, extensionId: string): boolean {
+	if (!sender || sender.id !== extensionId || !sender.url) return false;
+	try {
+		const url = new URL(sender.url);
+		return url.protocol === 'chrome-extension:' && url.hostname === extensionId
+			&& !url.username && !url.password && !url.port
+			&& (sender.origin === undefined || sender.origin === `chrome-extension://${extensionId}`);
+	} catch { return false; }
+}
+
 export function installLocalDiagnosticPort({
 	product,
 	owners,
@@ -211,7 +222,7 @@ export function installLocalDiagnosticPort({
 	const retirements = new Set<() => void>();
 	const listener = (port: chrome.runtime.Port): void => {
 		if (port.name !== DIAGNOSTIC_PORT) return;
-		if (port.sender?.tab || port.sender?.id && port.sender.id !== chrome.runtime.id) {
+		if (!isLocalDiagnosticSender(port.sender, chrome.runtime.id)) {
 			disconnectDiagnosticPort(port);
 			return;
 		}

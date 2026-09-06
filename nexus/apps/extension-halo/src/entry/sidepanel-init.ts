@@ -2,34 +2,16 @@
 // inv: Keep the pre-React critical path limited to paint/input initialization.
 
 // ===== Theme =====
-const DARK = {
-	'--halo-bg': '#1a1a1a',
-	'--halo-bg-secondary': '#242424',
-	'--halo-bg-tertiary': '#2a2a2a',
-	'--halo-text': '#f0f0f0',
-	'--halo-text-secondary': '#b0b0b0',
-	'--halo-text-muted': '#666666',
-	'--halo-border': '#444444',
-};
-
-const LIGHT = {
-	'--halo-bg': '#ffffff',
-	'--halo-bg-secondary': '#f5f5f5',
-	'--halo-bg-tertiary': '#eeeeee',
-	'--halo-text': '#1a1a1a',
-	'--halo-text-secondary': '#555555',
-	'--halo-text-muted': '#888888',
-	'--halo-border': '#dddddd',
-};
+import { THEME_SURFACES } from '../kernel/core/theme-palette';
 
 function initTheme(): void {
 	const applyTheme = (mode: unknown): void => {
 		const isDark =
 			mode === 'dark' ||
 			(mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-		const colors = isDark ? DARK : LIGHT;
+		const colors = isDark ? THEME_SURFACES.dark : THEME_SURFACES.light;
 		for (const [key, value] of Object.entries(colors)) {
-			document.documentElement.style.setProperty(key, value);
+			document.documentElement.style.setProperty(`--halo-${key.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}`, value);
 		}
 	};
 

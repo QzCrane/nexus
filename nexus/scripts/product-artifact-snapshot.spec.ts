@@ -27,7 +27,7 @@ describe('product artifact snapshot', () => {
 			expect(snapshot.files.map(({ path }) => path)).toEqual(['manifest.json', 'nested/a.js']);
 			expect(snapshot.files.every(({ sha256 }) => /^[a-f0-9]{64}$/u.test(sha256))).toBe(true);
 		} finally {
-			rmSync(directory, { recursive: true, force: true });
+			rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 
@@ -42,7 +42,7 @@ describe('product artifact snapshot', () => {
 				product: 'spectra', distDir: directory, head: 'bad', tree: 'b'.repeat(40),
 			})).toThrow('exact Git head/tree');
 		} finally {
-			rmSync(directory, { recursive: true, force: true });
+			rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
 	});
 });
