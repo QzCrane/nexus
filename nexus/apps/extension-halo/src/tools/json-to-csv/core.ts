@@ -1,4 +1,8 @@
-// goal: JSON to CSV core logic
+// goal: JSON to CSV adapter over Papa Parse (R01)
+// rule: header collection and cell typing policy stay with the tool; the
+// generic CSV serialization and escaping belong to the engine.
+
+import Papa from 'papaparse';
 
 // Convert JSON array to CSV
 export function jsonToCsv(json: unknown[], delimiter = ','): string {
@@ -15,31 +19,14 @@ export function jsonToCsv(json: unknown[], delimiter = ','): string {
 	});
 
 	const headers = Array.from(keys);
-	const lines: string[] = [];
+	const rows = json.map((item) => headers.map((header) => {
+		const value = (item as Record<string, unknown>)[header];
+		if (value === null || value === undefined) return '';
+		if (typeof value === 'object') return JSON.stringify(value);
+		return String(value);
+	}));
 
-	// Header row
-	lines.push(headers.map((h) => escapeCell(h, delimiter)).join(delimiter));
-
-	// Data rows
-	json.forEach((item) => {
-		const row = headers.map((h) => {
-			const val = (item as Record<string, unknown>)[h];
-			if (val === null || val === undefined) return '';
-			if (typeof val === 'object') return escapeCell(JSON.stringify(val), delimiter);
-			return escapeCell(String(val), delimiter);
-		});
-		lines.push(row.join(delimiter));
-	});
-
-	return lines.join('\n');
-}
-
-// Escape CSV cell
-function escapeCell(val: string, delimiter: string): string {
-	if (val.includes(delimiter) || val.includes('"') || val.includes('\n')) {
-		return `"${val.replace(/"/g, '""')}"`;
-	}
-	return val;
+	return Papa.unparse({ fields: headers, data: rows }, { delimiter, newline: '\n' });
 }
 
 // Parse JSON safely

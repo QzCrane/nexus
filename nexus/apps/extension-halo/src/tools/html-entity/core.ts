@@ -1,6 +1,12 @@
-// goal: HTML Entity core logic - encode and decode HTML entities
+// goal: HTML Entity adapter over the maintained `entities` engine (R14)
+// rule: entity tables, named/numeric decoding and astral (non-BMP) code point
+// handling belong to the engine — the hand-rolled map produced UTF-16 surrogate
+// halves for non-BMP characters. The adapter keeps the tool's three encoding
+// modes and its reference table display.
 
-// Named entities map (common ones)
+import { decodeHTML, encodeHTML, encodeNonAsciiHTML, escapeUTF8 } from 'entities';
+
+// Named entities shown in the reference table (display policy stays local)
 const NAMED_ENTITIES: Record<string, string> = {
 	'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
 	'©': '&copy;', '®': '&reg;', '™': '&trade;', '€': '&euro;', '£': '&pound;',
@@ -13,56 +19,24 @@ const NAMED_ENTITIES: Record<string, string> = {
 	'ñ': '&ntilde;', 'ü': '&uuml;', 'ç': '&ccedil;',
 };
 
-// Reverse map for decoding
-const REVERSE_ENTITIES: Record<string, string> = Object.fromEntries(
-	Object.entries(NAMED_ENTITIES).map(([k, v]) => [v, k])
-);
-
 // Encode special HTML characters (safe for HTML)
 export function encodeHtmlSpecial(text: string): string {
-	return text
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#39;');
+	return escapeUTF8(text);
 }
 
 // Encode all characters to numeric entities
 export function encodeHtmlAll(text: string): string {
-	return Array.from(text)
-		.map((char) => {
-			const code = char.charCodeAt(0);
-			if (code > 127 || '<>&"\''.includes(char)) {
-				return `&#${code};`;
-			}
-			return char;
-		})
-		.join('');
+	return encodeNonAsciiHTML(text);
 }
 
 // Encode to named entities where possible
 export function encodeHtmlNamed(text: string): string {
-	return Array.from(text)
-		.map((char) => NAMED_ENTITIES[char] || char)
-		.join('');
+	return encodeHTML(text);
 }
 
-// Decode HTML entities
+// Decode HTML entities (named, decimal and hex, astral-safe)
 export function decodeHtml(text: string): string {
-	// Decode named entities
-	let result = text;
-	for (const [entity, char] of Object.entries(REVERSE_ENTITIES)) {
-		result = result.split(entity).join(char);
-	}
-	
-	// Decode numeric entities (decimal)
-	result = result.replace(/&#(\d+);/g, (_, code) => String.fromCharCode(parseInt(code, 10)));
-	
-	// Decode numeric entities (hex)
-	result = result.replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCharCode(parseInt(code, 16)));
-	
-	return result;
+	return decodeHTML(text);
 }
 
 // Get entity reference table for display
@@ -70,6 +44,6 @@ export function getEntityTable(): Array<{ char: string; entity: string; code: st
 	return Object.entries(NAMED_ENTITIES).map(([char, entity]) => ({
 		char,
 		entity,
-		code: `&#${char.charCodeAt(0)};`,
+		code: `&#${char.codePointAt(0)};`,
 	}));
 }

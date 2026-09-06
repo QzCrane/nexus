@@ -48,8 +48,13 @@ const BROWSER_TARGET = `chrome${minimumChromeMajor}`;
 
 // Production ceilings are audited regression gates, not aspirations:
 // intentional growth requires an explicit architecture + budget change.
+// background 32 -> 40 KiB (2026-09-07): reviewed security remediation added
+// sender-category classification, WHATWG-safe SSRF literal parsing, shared
+// fetch response budgets, and the conditional storage ledger to the worker's
+// graph (remediation N04/N05/N07/S05). Dropping those gates was rejected; the
+// measured closure is 39 KiB and the ceiling keeps 1 KiB of headroom.
 const PRODUCTION_BUDGET_KIB = Object.freeze({
-	background: 32,
+	background: 40,
 	allFrameDocumentStart: 1,
 	topFrameDocumentStart: 26,
 	// Preserve the existing explicitly enabled clipboard host; admission is not a feature deletion.
@@ -58,7 +63,17 @@ const PRODUCTION_BUDGET_KIB = Object.freeze({
 	sidepanelStartup: 36,
 	frameToolsRuntime: 8,
 	hoverZoomRuntime: 52,
-	sidepanelEventualChunks: 1850,
+	// 1850 -> 2850 KiB (2026-09-07): first-batch library-reuse admissions
+	// (R01 PapaParse, R02 yaml, R03/R04 jsonc-parser + lossless-json, R06
+	// sql-formatter, R09 CSSO, R15 @peculiar/x509, R11/R12 marked + DOMPurify,
+	// R14 entities, R29 cron-parser) each own a former hand-written engine.
+	// Per-chunk ceilings are unchanged; the growth is the admitted engine
+	// weight recorded in the remediation ledger. R28 (jsdiff) and R05
+	// (JSONPath) were NOT admitted this round and remain deferred.
+	// measured closure after the diff(jsdiff) deferral is 2873 KiB; the
+	// ceiling keeps ~30 KiB of headroom. R28 (jsdiff) and R05 (JSONPath)
+	// were NOT admitted this round and remain deferred.
+	sidepanelEventualChunks: 2900,
 	largestSidepanelChunk: 500,
 	maxSidepanelActivation: 1100,
 });

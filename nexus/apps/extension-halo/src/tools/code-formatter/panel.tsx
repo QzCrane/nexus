@@ -30,23 +30,27 @@ export const CodeFormatterPanel: React.FC = () => {
 	// Format
 	const handleFormat = useCallback(() => {
 		setError('');
-		try {
-			const formatted = formatCode(code, { language, indentSize, useTabs: false });
-			setCode(formatted);
-		} catch (e) {
-			setError((e as Error).message);
-		}
+		void (async () => {
+			try {
+				const formatted = await formatCode(code, { language, indentSize, useTabs: false });
+				setCode(formatted);
+			} catch (e) {
+				setError((e as Error).message);
+			}
+		})();
 	}, [code, language, indentSize, setCode]);
 
 	// Minify
 	const handleMinify = useCallback(() => {
 		setError('');
-		try {
-			const minified = minifyCode(code, language);
-			setCode(minified);
-		} catch (e) {
-			setError((e as Error).message);
-		}
+		void (async () => {
+			try {
+				const minified = await minifyCode(code, language);
+				setCode(minified);
+			} catch (e) {
+				setError((e as Error).message);
+			}
+		})();
 	}, [code, language, setCode]);
 
 	// Copy

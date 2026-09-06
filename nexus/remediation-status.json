@@ -712,9 +712,14 @@
       "id": "U01",
       "title": "Unicode 正则的空匹配推进可无限循环",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/regex/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "Zero-length matches advance past one full code point (surrogates are not split in unicode mode) and collected matches are capped at 10000; invalid patterns surface as errors instead of an empty result. Exponential backtracking cost is a separate item (U02)."
     },
     {
       "id": "U02",
@@ -722,7 +727,8 @@
       "priority": "P1",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "Mitigation shipped: the match cap bounds pathological loops; exponential backtracking still runs on the UI thread and needs a worker admission (R32 Comlink) to close."
     },
     {
       "id": "U03",
@@ -755,17 +761,29 @@
       "id": "U05",
       "title": "CSV 多行引号字段被预先按换行拆坏",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/csv-to-json/core.ts",
+        "apps/extension-halo/src/tools/csv-viewer/core.ts",
+        "apps/extension-halo/src/tools/json-to-csv/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "All three CSV surfaces parse through PapaParse (R01): quoted fields spanning lines, escaped quotes and delimiter-in-cell parse as one record. Parse errors are surfaced, never treated as a complete conversion."
     },
     {
       "id": "U06",
       "title": "CSV/JSON 转换默认改值且对象数组校验不完整",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/csv-to-json/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "Conversion is fidelity-first: cells keep their text (007, big integers, true stay strings); numeric coercion is an explicit opt-in that only converts exact numbers."
     },
     {
       "id": "U07",
@@ -807,31 +825,48 @@
       "priority": "P1",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "R05 (@swaggerexpert/jsonpath) pilot deferred: the RFC 9535 compliance harness is a precondition and the measured lazy-chunk budget could not admit it this round; the package was removed and the previous tokenizer remains with its known misread limits."
     },
     {
       "id": "U11",
       "title": "Cron 解析未验证范围，固定七天搜索不能交付月度结果",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/cron/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "cron-parser (R29) owns range/dialect validation and schedule iteration: out-of-range fields are rejected and monthly schedules deliver real month-apart results instead of a seven-day window."
     },
     {
       "id": "U12",
       "title": "SQL 格式化修改字面量，验证器把无效语句判有效",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/sql-formatter/core.ts",
+        "apps/extension-halo/src/tools/code-formatter/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "sql-formatter (R06) owns layout with keywordCase preserve: string literals keep their case and content. Formatter errors surface with the input untouched; minify collapses whitespace outside literals; the validator checks quotes, parens and statement head lexically without claiming executability."
     },
     {
       "id": "U13",
       "title": "XML 重建/压缩可能丢转义和混合内容空白",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/xml-formatter/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "Rebuilt output re-escapes text and attribute values through the DOM own values and keeps mixed content inline; minify removes only whitespace-only text nodes, so character data survives (R10 native DOMParser/XMLSerializer)."
     },
     {
       "id": "U14",
@@ -862,33 +897,54 @@
       "id": "U16",
       "title": "JSON 格式化会舍入大整数，排序还丢 __proto__ 自有键",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/json-formatter/core.ts",
+        "apps/extension-halo/src/tools/code-formatter/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "jsonc-parser (R03) owns tokenizing/diagnostics; numbers recover their exact source spelling through the lossless-json LosslessNumber bridge (R04); objects are rebuilt on null prototypes so a __proto__ own key is data that survives sorting and round-trips."
     },
     {
       "id": "U17",
       "title": "YAML 极简解析器静默丢结构，JSON→YAML 改字符串类型",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/yaml/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "The yaml engine (R02) owns parsing/serialization: duplicate keys fail explicitly, integers beyond the safe range stay exact through the lossless bridge, and JSON-to-YAML quotes scalars YAML would reinterpret (true, 001)."
     },
     {
       "id": "U18",
       "title": "通用代码压缩会把后续 JS 语句变成注释",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/code-formatter/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "Minify removes comments with a string-aware scanner and keeps the following line break, so a JS statement can never become part of a removed comment; HTML minify only removes whitespace between tags; CSS compression is owned by CSSO (R09). The Terser admission (R08) for deeper JS minification stays deferred."
     },
     {
       "id": "U19",
       "title": "证书解析器把非 X.509 数据包装成证书结果",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/ssl-cert/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "@peculiar/x509 (R15) owns DER/PEM decoding: subject, issuer, serial and validity are real decoded fields; input that is not a certificate returns null with an explicit panel message. Parsing success is never presented as trust or revocation state."
     },
     {
       "id": "U20",
@@ -896,7 +952,8 @@
       "priority": "P1",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "Routed through the reuse map; no CSP engine decision recorded yet."
     },
     {
       "id": "U21",

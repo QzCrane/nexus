@@ -193,3 +193,26 @@ pattern matching, narrows the overbroad benchmark range, and never blocks a
 hostname for starting with numeric text. The guard still only evaluates the
 initial URL literal; redirect and DNS-target safety is explicitly not claimed.
 Focused regressions live in `apps/extension-halo/test/network-targets.spec.ts`.
+
+## First-batch library-reuse admissions
+
+The reuse-first decisions are now implemented for their first batch. Admitted
+with exact versions in the HALO manifest and lockfile: PapaParse 5.7.0 (R01),
+yaml 2.9.0 (R02), jsonc-parser 3.3.1 (R03), lossless-json 4.3.1 (R04),
+sql-formatter 15.8.2 (R06), CSSO 5.0.5 (R09), @peculiar/x509 2.1.0 with
+reflect-metadata (R15), marked 18.0.11 + DOMPurify 3.4.15 (R11/R12), entities
+8.0.0 (R14), cron-parser 5.10.0 (R29). Each replaced engine was deleted; the
+old regression vectors now run as adapter entrance vectors
+(test/library-reuse-admission.spec.ts). Licenses are permissive, the advisory
+audit responds clean, and every package has a shipped owner.
+
+Deferred with recorded reasons: R05 JSONPath (pilot; the RFC 9535 compliance
+harness is a precondition and the package was removed again), R07 Prettier and
+R08 Terser (measured activation/total closure exceeds the production budgets;
+hand formatters remain glue until a loading strategy fits), R28 jsdiff (the
+committed bounded diff engine already caps memory; the package was removed).
+The lazy-chunk budget was raised 1850 -> 2900 KiB and background 32 -> 40 KiB
+with per-line accounting in build.ts: the growth is admitted engine weight and
+reviewed security repairs, not silent drift. Per-chunk and activation ceilings
+are unchanged. DOMPurify sanitizing semantics are verified in the real-browser
+lane because a synthetic DOM does not faithfully resolve template parsing.

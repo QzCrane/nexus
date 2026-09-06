@@ -1,79 +1,70 @@
-// goal: CSV to JSON core logic
+// goal: CSV to JSON adapter over Papa Parse (R01)
+// rule: quoted fields may span lines, cell text is preserved byte-for-byte
+// (numeric coercion is an explicit opt-in), duplicate headers keep the tool's
+// documented policy, and engine parse errors are surfaced instead of being
+// treated as a complete conversion.
+
+import Papa from 'papaparse';
 
 export interface CsvOptions {
 	delimiter: string;
 	hasHeader: boolean;
+	/** Convert cells to numbers when they parse exactly. Default false: fidelity first. */
+	coerceNumbers?: boolean;
+}
+
+function convertCell(rawValue: string, coerceNumbers: boolean): unknown {
+	if (!coerceNumbers) return rawValue;
+	if (rawValue === '' || rawValue.trim() !== rawValue) return rawValue;
+	const parsed = Number(rawValue);
+	// Only exact, finite conversions change type; '007' stays '007'.
+	if (Number.isFinite(parsed) && String(parsed) === rawValue) return parsed;
+	return rawValue;
 }
 
 // Convert CSV to JSON array
 export function csvToJson(csv: string, options: CsvOptions = { delimiter: ',', hasHeader: true }): Record<string, unknown>[] {
-	const lines = csv.trim().split(/\r?\n/);
-	const firstLine = lines[0];
-	if (firstLine === undefined) return [];
+	const result = Papa.parse<string[]>(csv, {
+		delimiter: options.delimiter,
+		header: false,
+		skipEmptyLines: 'greedy',
+		dynamicTyping: false,
+	});
 
-	let headers: string[] = [];
-	let startRow = 0;
+	if (result.errors.length > 0) {
+		const first = result.errors[0];
+		throw new Error(`CSV parse error at row ${(first?.row ?? 0) + 1}: ${first?.message ?? 'unknown'}`);
+	}
+
+	const records = result.data;
+	if (records.length === 0) return [];
+
+	const coerceNumbers = options.coerceNumbers === true;
+
+	let headers: string[];
+	let dataRecords: string[][];
 
 	if (options.hasHeader) {
-		headers = parseCsvLine(firstLine, options.delimiter);
-		startRow = 1;
+		const headerRecord = records[0];
+		if (!headerRecord) return [];
+		headers = headerRecord;
+		dataRecords = records.slice(1);
 	} else {
-		// Generate headers: col1, col2, ...
-		const firstRow = parseCsvLine(firstLine, options.delimiter);
-		headers = firstRow.map((_, i) => `col${i + 1}`);
+		const first = records[0];
+		if (!first) return [];
+		headers = first.map((_, i) => `col${i + 1}`);
+		dataRecords = records;
 	}
 
-	const result: Record<string, unknown>[] = [];
+	const output: Record<string, unknown>[] = [];
 
-	for (let i = startRow; i < lines.length; i++) {
-		const sourceLine = lines[i];
-		if (sourceLine === undefined) continue;
-		const line = sourceLine.trim();
-		if (!line) continue;
-
-		const values = parseCsvLine(line, options.delimiter);
+	for (const cells of dataRecords) {
 		const obj: Record<string, unknown> = {};
-
 		headers.forEach((header, index) => {
-			const rawValue = values[index];
-			let value: unknown = rawValue;
-			// Try to convert numbers/booleans? For now keep strings to be safe or simple conversion
-			if (rawValue === 'true') value = true;
-			else if (rawValue === 'false') value = false;
-			else if (rawValue === 'null') value = null;
-			else if (rawValue !== undefined && !Number.isNaN(Number(rawValue)) && rawValue.trim() !== '') value = Number(rawValue);
-
-			obj[header] = value;
+			obj[header] = convertCell(cells[index] ?? '', coerceNumbers);
 		});
-
-		result.push(obj);
+		output.push(obj);
 	}
 
-	return result;
-}
-
-// Parse a single CSV line handling quotes
-function parseCsvLine(line: string, delimiter: string): string[] {
-	const values: string[] = [];
-	let current = '';
-	let inQuote = false;
-
-	for (let i = 0; i < line.length; i++) {
-		const char = line[i];
-
-		if (char === '"' && line[i + 1] === '"') {
-			current += '"';
-			i++; // skip next quote
-		} else if (char === '"') {
-			inQuote = !inQuote;
-		} else if (char === delimiter && !inQuote) {
-			values.push(current);
-			current = '';
-		} else {
-			current += char;
-		}
-	}
-	values.push(current);
-
-	return values;
+	return output;
 }

@@ -1,70 +1,104 @@
-// goal: SQL Formatter core logic
+// goal: SQL formatting adapter over the maintained `sql-formatter` engine (R06)
+// rule: the engine owns keyword layout, casing policy and dialect grammar.
+// Keyword case is preserved so quoted strings and identifiers are never
+// rewritten; dialect selection and explicit error reporting stay with the tool.
+// The formatter does not validate executability, permissions or table names.
 
-const KEYWORDS = [
-	'SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'INSERT', 'INTO', 'VALUES', 'UPDATE', 'SET',
-	'DELETE', 'CREATE', 'TABLE', 'ALTER', 'DROP', 'INDEX', 'JOIN', 'LEFT', 'RIGHT', 'INNER',
-	'OUTER', 'ON', 'AS', 'ORDER', 'BY', 'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'UNION',
-	'ALL', 'DISTINCT', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END', 'NULL', 'NOT', 'IN', 'LIKE',
-	'BETWEEN', 'EXISTS', 'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'ASC', 'DESC', 'PRIMARY', 'KEY',
-	'FOREIGN', 'REFERENCES', 'CONSTRAINT', 'DEFAULT', 'AUTO_INCREMENT', 'IF', 'ELSE',
-];
+import { format as formatSqlEngine } from 'sql-formatter';
 
-const NEWLINE_KEYWORDS = ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'ORDER', 'GROUP', 'HAVING', 'LIMIT', 'UNION', 'INSERT', 'UPDATE', 'DELETE', 'SET', 'VALUES'];
-
-// Format SQL
+/**
+ * Format SQL text. The engine's errors are surfaced with the input untouched:
+ * a failed format never silently returns mangled SQL.
+ */
 export function formatSql(sql: string, indent = '  '): string {
-	let formatted = sql.trim();
-
-	// Normalize whitespace
-	formatted = formatted.replace(/\s+/g, ' ');
-
-	// Add newlines before keywords
-	NEWLINE_KEYWORDS.forEach((kw) => {
-		const regex = new RegExp(`\\s+(${kw})\\s+`, 'gi');
-		formatted = formatted.replace(regex, `\n${kw} `);
-	});
-
-	// Uppercase keywords
-	KEYWORDS.forEach((kw) => {
-		const regex = new RegExp(`\\b(${kw})\\b`, 'gi');
-		formatted = formatted.replace(regex, kw);
-	});
-
-	// Indent subqueries
-	let depth = 0;
-	const lines = formatted.split('\n');
-	const indented = lines.map((line) => {
-		const trimmed = line.trim();
-		if (trimmed.includes(')')) depth = Math.max(0, depth - 1);
-		const result = indent.repeat(depth) + trimmed;
-		if (trimmed.includes('(')) depth++;
-		return result;
-	});
-
-	return indented.join('\n');
+	const trimmed = sql.trim();
+	if (!trimmed) return sql;
+	try {
+		return formatSqlEngine(trimmed, {
+			// Standard SQL dialect; keyword case is preserved from the input.
+			keywordCase: 'preserve',
+			tabWidth: indent.length,
+			useTabs: indent.startsWith('\t'),
+			expressionWidth: 80,
+		});
+	} catch (e) {
+		throw new Error(`SQL formatting failed: ${e instanceof Error ? e.message : String(e)}`);
+	}
 }
 
-// Minify SQL
+/**
+ * Minify SQL: whitespace collapses outside string literals, so quoted text
+ * keeps its exact spacing. This is domain glue, not a second formatter engine.
+ */
 export function minifySql(sql: string): string {
-	return sql.replace(/\s+/g, ' ').replace(/\s*([(),])\s*/g, '$1').trim();
+	let result = '';
+	let inString = false;
+	let stringChar = '';
+	for (let i = 0; i < sql.length; i++) {
+		const char = sql[i] ?? '';
+		if (inString) {
+			result += char;
+			if (char === stringChar && sql[i - 1] !== '\\') inString = false;
+			continue;
+		}
+		if (char === "'" || char === '"') {
+			inString = true;
+			stringChar = char;
+			result += char;
+			continue;
+		}
+		if (/\s/.test(char)) {
+			let j = i;
+			while (j < sql.length && /\s/.test(sql[j] ?? ' ')) j++;
+			result += ' ';
+			i = j - 1;
+			continue;
+		}
+		result += char;
+	}
+	return result.replace(/\s*([(),])\s*/g, '$1').trim();
 }
 
-// Validate SQL (basic check)
+/**
+ * Lexical validation: balanced quotes and parentheses outside string literals,
+ * a recognizable statement head, and no stray separators. This is a syntax
+ * sanity check, not a claim that the statement executes.
+ */
 export function validateSql(sql: string): { valid: boolean; message: string } {
-	const trimmed = sql.trim().toUpperCase();
+	const trimmed = sql.trim();
 	if (!trimmed) return { valid: false, message: 'Empty SQL' };
 
-	const startsWithValid = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'WITH'].some((kw) => trimmed.startsWith(kw));
-	if (!startsWithValid) return { valid: false, message: 'Invalid SQL statement' };
-
-	// Check balanced parentheses
+	const head = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'CREATE', 'ALTER', 'DROP', 'WITH', 'TRUNCATE'];
+	let inString = false;
+	let stringChar = '';
 	let balance = 0;
-	for (const char of sql) {
+	let lexical = '';
+	for (const char of trimmed) {
+		if (inString) {
+			lexical += ' ';
+			if (char === stringChar) inString = false;
+			continue;
+		}
+		if (char === "'" || char === '"') {
+			inString = true;
+			stringChar = char;
+			lexical += ' ';
+			continue;
+		}
 		if (char === '(') balance++;
 		if (char === ')') balance--;
 		if (balance < 0) return { valid: false, message: 'Unbalanced parentheses' };
+		lexical += char;
 	}
+	if (inString) return { valid: false, message: 'Unterminated string literal' };
 	if (balance !== 0) return { valid: false, message: 'Unbalanced parentheses' };
+
+	if (!head.some((kw) => lexical.toUpperCase().startsWith(kw))) {
+		return { valid: false, message: 'Invalid SQL statement' };
+	}
+	if (/;\s*;/.test(lexical)) {
+		return { valid: false, message: 'Statement contains empty separators' };
+	}
 
 	return { valid: true, message: 'Valid SQL' };
 }

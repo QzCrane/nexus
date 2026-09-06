@@ -1,66 +1,48 @@
-// goal: CSV Viewer core logic - parse and format CSV
+// goal: CSV Viewer adapter over Papa Parse (R01)
+// rule: the generic CSV parsing/serializing algorithm belongs to the maintained
+// engine. This adapter owns the tool contract: header-first table shape, row
+// and column counts, and the failure semantics — parse errors are surfaced,
+// never silently treated as a complete success.
 
+import Papa from 'papaparse';
 import type { ParsedCsv } from './types';
 
 // Parse CSV string
 export function parseCsv(input: string, delimiter = ','): ParsedCsv {
-	const lines = input.trim().split(/\r?\n/);
-	const [firstLine, ...remainingLines] = lines;
-	if (firstLine === undefined) {
-		return { headers: [], rows: [], rowCount: 0, colCount: 0 };
+	const result = Papa.parse<string[]>(input, {
+		delimiter,
+		header: false,
+		skipEmptyLines: false,
+		// Cell text is preserved byte-for-byte; the viewer applies no typing.
+		dynamicTyping: false,
+	});
+
+	if (result.errors.length > 0) {
+		const first = result.errors[0];
+		throw new Error(`CSV parse error at row ${(first?.row ?? 0) + 1}: ${first?.message ?? 'unknown'}`);
 	}
 
-	const parseRow = (line: string): string[] => {
-		const result: string[] = [];
-		let current = '';
-		let inQuotes = false;
-
-		for (let i = 0; i < line.length; i++) {
-			const char = line[i];
-			if (char === '"') {
-				if (inQuotes && line[i + 1] === '"') {
-					current += '"';
-					i++;
-				} else {
-					inQuotes = !inQuotes;
-				}
-			} else if (char === delimiter && !inQuotes) {
-				result.push(current.trim());
-				current = '';
-			} else {
-				current += char;
-			}
-		}
-		result.push(current.trim());
-		return result;
-	};
-
-	const headers = parseRow(firstLine);
-	const rows = remainingLines.map(parseRow);
+	const rows = result.data;
+	const headerRow = rows[0];
+	if (!headerRow) {
+		return { headers: [], rows: [], rowCount: 0, colCount: 0 };
+	}
+	const dataRows = rows.slice(1);
 
 	return {
-		headers,
-		rows,
-		rowCount: rows.length,
-		colCount: headers.length,
+		headers: headerRow,
+		rows: dataRows,
+		rowCount: dataRows.length,
+		colCount: headerRow.length,
 	};
 }
 
 // Convert table to CSV string
 export function toCsv(headers: string[], rows: string[][], delimiter = ','): string {
-	const escapeCsvValue = (val: string): string => {
-		if (val.includes(delimiter) || val.includes('"') || val.includes('\n')) {
-			return `"${val.replace(/"/g, '""')}"`;
-		}
-		return val;
-	};
-
-	const headerLine = headers.map(escapeCsvValue).join(delimiter);
-	const rowLines = rows.map((row) => row.map(escapeCsvValue).join(delimiter));
-	return [headerLine, ...rowLines].join('\n');
+	return Papa.unparse({ fields: headers, data: rows }, { delimiter, newline: '\n' });
 }
 
-// Auto-detect delimiter
+// Auto-detect delimiter (tool-level hint for the engine, not a parser)
 export function detectDelimiter(input: string): string {
 	const firstLine = input.split(/\r?\n/)[0] || '';
 	const counts: Record<string, number> = { ',': 0, ';': 0, '\t': 0, '|': 0 };
