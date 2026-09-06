@@ -140,3 +140,28 @@ Smooth Scroll is physically and semantically top-document-only: its static conte
 - No silent growth across the audited production startup ceilings.
 
 Roadmap sequencing lives in [`roadmap.md`](roadmap.md).
+
+## Tool data fidelity
+
+Identity tools preserve integer and text semantics through their visible result:
+base conversion uses BigInt; UUIDv7 and ULID use the complete 48-bit time layout;
+JWT viewers decode UTF-8 without treating decode as signature verification. TOTP
+imports retain issuer, account, period, digits and HMAC algorithm, with RFC 6238
+vectors for SHA-1/256/512; malformed or HOTP input is explicitly rejected.
+Historical entries without an algorithm retain SHA-1 compatibility rather than
+claiming the discarded original parameter can be recovered. New import drafts
+are ephemeral; this is not a claim that stored account secrets are encrypted.
+
+The schema-free Protobuf viewer retains raw bytes, exact 64-bit integers and
+labels speculative string/message interpretations. The interactive decode
+contract limits input to 256 KiB, 4,096 traversed fields and 32 nesting levels;
+these are explicit product admission bounds, not hardware performance claims.
+Corrupt trailing fields are errors, not successful partial results. Users can
+select Hex or Base64 explicitly when auto-detection would be ambiguous.
+
+Password generation samples a deduplicated Unicode scalar pool using rejection
+sampling and the existing cryptographic random source. Complexity labels are
+heuristics, not entropy certification. URL parameter views preserve duplicate
+names and order; palette extraction excludes fully transparent pixels and keeps
+quantized channels within the actual eight-bit gamut. These tool contracts are
+executed by the default unit lane, not only ad-hoc probes.

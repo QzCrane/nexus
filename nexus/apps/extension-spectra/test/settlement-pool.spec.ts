@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { describe, expect, spyOn, test } from 'bun:test';
 import { createSettlementPool, observeWithin } from '@nexus/kernel';
 
 function deferred<T>() {
@@ -64,4 +64,24 @@ describe('physical settlement capacity', () => {
 			expect(() => observeWithin(Promise.resolve(1), value)).toThrow();
 		}
 	});
+});
+
+test('expired observations leave one physical Promise reaction, not one per retry', async () => {
+	const pending = deferred<number>();
+	const registrations = spyOn(pending.promise, 'then');
+	for (let index = 0; index < 20; index++) expect(await observeWithin(pending.promise, 1)).toEqual({ settled: false });
+	expect(registrations).toHaveBeenCalledTimes(1);
+	pending.resolve(23);
+	expect(await observeWithin(pending.promise, 100)).toEqual({ settled: true, value: 23 });
+	expect(await observeWithin(pending.promise, 100)).toEqual({ settled: true, value: 23 });
+	expect(registrations).toHaveBeenCalledTimes(1);
+});
+
+test('a shared late failure rejects current and subsequent observers without an unhandled rejection', async () => {
+	const pending = deferred<number>();
+	expect(await observeWithin(pending.promise, 1)).toEqual({ settled: false });
+	const active = observeWithin(pending.promise, 100);
+	pending.reject(new Error('late failure'));
+	await expect(active).rejects.toThrow('late failure');
+	await expect(observeWithin(pending.promise, 100)).rejects.toThrow('late failure');
 });

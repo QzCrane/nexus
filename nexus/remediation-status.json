@@ -334,9 +334,12 @@
       "id": "N08",
       "title": "敏感输入默认跟随通用工具状态持久化",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "partial",
+      "changes": [
+        "apps/extension-halo/src/tools/totp/panel.tsx"
+      ],
+      "verification": [],
+      "remaining": "New TOTP import drafts are ephemeral. Existing account-secret storage, Crypto/API editors and opt-in migration require a separate explicit vault boundary; no historical secret was deleted."
     },
     {
       "id": "N09",
@@ -374,9 +377,13 @@
       "id": "D02",
       "title": "超时观察者在未结束 Promise 上累积 reaction",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/settlement-pool.ts"
+      ],
+      "verification": [
+        "apps/extension-spectra/test/settlement-pool.spec.ts"
+      ]
     },
     {
       "id": "D03",
@@ -510,17 +517,28 @@
       "id": "U03",
       "title": "TOTP URI 丢算法、截断 issuer 并接受错误类型/参数",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/totp/core.ts",
+        "apps/extension-halo/src/tools/totp/types.ts",
+        "apps/extension-halo/src/tools/totp/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "U04",
       "title": "JWT Base64URL 字节未按 UTF-8 解码",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/jwt-decoder/core.ts",
+        "apps/extension-halo/src/tools/crypto/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "U05",
@@ -550,17 +568,27 @@
       "id": "U08",
       "title": "进制转换使用浮点数且接受部分非法输入",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/number-base/core.ts",
+        "apps/extension-halo/src/tools/number-base/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "U09",
       "title": "Protobuf varint 被 32 位位运算截断",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/protobuf/core.ts",
+        "apps/extension-halo/src/tools/protobuf/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "U10",
@@ -598,17 +626,26 @@
       "id": "U14",
       "title": "调色板量化可生成超出 255 的颜色分量",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/color-palette/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "U15",
       "title": "密码生成的字符映射与强度评分需要准确语义",
       "priority": "P2",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/password-gen/core.ts",
+        "apps/extension-halo/src/tools/password-gen/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "U16",
@@ -654,25 +691,38 @@
       "id": "U21",
       "title": "UUID v7 的 48 位时间戳被 JS 32 位移位破坏",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/uuid/core.ts",
+        "apps/extension-halo/src/tools/random-gen/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "U22",
       "title": "Punycode 多标签域名解码错误且字符校验不足",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/punycode/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "U23",
       "title": "URL 参数解析视图丢失重复 key",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/url/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
     },
     {
       "id": "A01",

@@ -76,14 +76,14 @@ export const NumberBasePanel: React.FC = () => {
 					<div style={styles.resultCard}>
 						<div>
 							<div style={styles.resultLabel}>Decimal (10)</div>
-							<div style={styles.resultValue}>{Number(result.decimal).toLocaleString()}</div>
+							<div style={styles.resultValue}>{formatWithGrouping(result.decimal, 3)}</div>
 						</div>
 						<button type="button" style={styles.btnCopy} onClick={() => handleCopy(result.decimal)}>📋</button>
 					</div>
 					<div style={styles.resultCard}>
 						<div>
 							<div style={styles.resultLabel}>Hexadecimal (16)</div>
-							<div style={styles.resultValue}>0x{result.hex}</div>
+							<div style={styles.resultValue}>{result.hex.startsWith('-') ? `-0x${result.hex.slice(1)}` : `0x${result.hex}`}</div>
 						</div>
 						<button type="button" style={styles.btnCopy} onClick={() => handleCopy(result.hex)}>📋</button>
 					</div>

@@ -25,6 +25,7 @@ export const PasswordGenPanel: React.FC = () => {
 	const [password, setPassword] = useState(() => generatePassword(DEFAULT_CONFIG));
 	const [bulkPasswords, setBulkPasswords] = useState<GeneratedPassword[]>([]);
 	const [showBulk, setShowBulk] = useState(false);
+	const [error, setError] = useState('');
 	// const [toast, setToast] = useState<string | null>(null); // Removed
 
 	const strength = useMemo(() => evaluateStrength(password), [password]);
@@ -32,16 +33,13 @@ export const PasswordGenPanel: React.FC = () => {
 	// const showToast = ... // Removed local implementation
 
 	const handleGenerate = useCallback(() => {
-		if (showBulk) {
-			setBulkPasswords(
-				generatePasswords(config, 10).map((value) => ({
-					id: crypto.randomUUID(),
-					value,
-				})),
-			);
-		} else {
-			const newPwd = generatePassword(config);
-			setPassword(newPwd);
+		try {
+			if (showBulk) {
+				setBulkPasswords(generatePasswords(config, 10).map((value) => ({ id: crypto.randomUUID(), value })));
+			} else setPassword(generatePassword(config));
+			setError('');
+		} catch (failure) {
+			setError(failure instanceof Error ? failure.message : 'Password generation failed');
 		}
 	}, [config, showBulk]);
 
@@ -66,6 +64,7 @@ export const PasswordGenPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			{error && <div role="alert">{error}</div>}
 			{/* Mode Toggle */}
 			<div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
 				<button type="button"
@@ -86,7 +85,7 @@ export const PasswordGenPanel: React.FC = () => {
 				<>
 					<div style={styles.password}>{password}</div>
 					<div style={{ ...styles.strength, background: `${strength.color}20`, color: strength.color }}>
-						🔐 {strength.label} — {strength.feedback[0]}
+						🔐 {strength.label} — {strength.feedback.join(' ')}
 					</div>
 					<div style={styles.row}>
 						<button type="button" style={{ ...styles.btn, flex: 2 }} onClick={handleGenerate}>🎲 {t('passwordGen.regenerate', { defaultValue: 'Regenerate' })}</button>

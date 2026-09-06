@@ -27,15 +27,43 @@ export function createSettlementPool<K, V>(concurrency: number): SettlementPool<
 
 export type DeadlineObservation<T> = { settled: true; value: T } | { settled: false };
 
-// This bounds only the caller's observation. It neither cancels the operation
-// nor gives the caller permission to release a physically occupied pool slot.
+type Outcome = { ok: true; value: unknown } | { ok: false; error: unknown };
+interface ObservationHub { outcome?: Outcome; listeners: Set<(outcome: Outcome) => void> }
+const observations = new WeakMap<Promise<unknown>, ObservationHub>();
+
+// Only one reaction is ever retained by a physical operation. Expired callers
+// unregister from its removable subscriber set, even if it never settles.
 export function observeWithin<T>(operation: Promise<T>, timeoutMs: number): Promise<DeadlineObservation<T>> {
-	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('timeout must be finite and positive');
+	if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) throw new Error('timeout must fit a positive timer delay');
+	let hub = observations.get(operation);
+	if (!hub) {
+		hub = { listeners: new Set() };
+		observations.set(operation, hub);
+		const owner = hub;
+		const settle = (outcome: Outcome) => {
+			owner.outcome = outcome;
+			for (const notify of owner.listeners) notify(outcome);
+			owner.listeners.clear();
+		};
+		void operation.then((value) => settle({ ok: true, value }), (error: unknown) => settle({ ok: false, error }));
+	}
+	const owner = hub;
 	return new Promise((resolve, reject) => {
-		const timer = setTimeout(() => resolve({ settled: false }), timeoutMs);
-		void operation.then(
-			(value) => { clearTimeout(timer); resolve({ settled: true, value }); },
-			(error: unknown) => { clearTimeout(timer); reject(error); },
-		);
+		if (owner.outcome) {
+			if (owner.outcome.ok) resolve({ settled: true, value: owner.outcome.value as T });
+			else reject(owner.outcome.error);
+			return;
+		}
+		const notify = (outcome: Outcome) => {
+			clearTimeout(timer);
+			owner.listeners.delete(notify);
+			if (outcome.ok) resolve({ settled: true, value: outcome.value as T });
+			else reject(outcome.error);
+		};
+		const timer = setTimeout(() => {
+			owner.listeners.delete(notify);
+			resolve({ settled: false });
+		}, timeoutMs);
+		owner.listeners.add(notify);
 	});
 }

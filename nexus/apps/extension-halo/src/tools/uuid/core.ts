@@ -1,8 +1,9 @@
 // goal: UUID generation core logic (v1, v4, v7, ULID)
 
 let lastV1Time = 0;
-let v1Sequence = Math.floor(Math.random() * 0x3fff);
+let v1Sequence = new DataView(crypto.getRandomValues(new Uint8Array(2)).buffer).getUint16(0) & 0x3fff;
 const v1Node = crypto.getRandomValues(new Uint8Array(6));
+v1Node[0] = (v1Node[0] ?? 0) | 1; // RFC 9562: a random node is not an IEEE MAC address.
 
 /**
  * Generate v1 UUID (Time-based)
@@ -45,9 +46,9 @@ export function generateV4(): string {
 /**
  * Generate ULID (Canonical implementation in pure JS)
  */
-export function generateULID(): string {
+export function generateULID(nowMs = Date.now()): string {
 	const ENCODING = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-	const time = Date.now();
+	const time = timestamp48(nowMs);
 	const timeLen = 10;
 	const randomLen = 16;
 	let str = '';
@@ -64,18 +65,16 @@ export function generateULID(): string {
 }
 
 /**
- * Generate v7 UUID (Proposed standard - Timestamp based)
+ * Generate RFC 9562 UUIDv7 (48-bit Unix milliseconds, random within one millisecond)
  */
-export function generateV7(): string {
+export function generateV7(nowMs = Date.now()): string {
 	const value = new Uint8Array(16);
 	crypto.getRandomValues(value);
-	const timestamp = Date.now();
-	value[0] = (timestamp >> 40) & 0xff;
-	value[1] = (timestamp >> 32) & 0xff;
-	value[2] = (timestamp >> 24) & 0xff;
-	value[3] = (timestamp >> 16) & 0xff;
-	value[4] = (timestamp >> 8) & 0xff;
-	value[5] = timestamp & 0xff;
+	let timestamp = BigInt(timestamp48(nowMs));
+	for (let index = 5; index >= 0; index -= 1) {
+		value[index] = Number(timestamp & 0xffn);
+		timestamp >>= 8n;
+	}
 	value[6] = ((value[6] ?? 0) & 0x0f) | 0x70;
 	value[8] = ((value[8] ?? 0) & 0x3f) | 0x80;
 	return [...value].map((b, i) => {
@@ -89,4 +88,11 @@ export function formatUUID(uuid: string, uppercase: boolean, hyphens: boolean): 
 	if (!hyphens) result = result.replace(/-/g, '');
 	if (uppercase) result = result.toUpperCase();
 	return result;
+}
+
+function timestamp48(value: number): number {
+	if (!Number.isSafeInteger(value) || value < 0 || value >= 2 ** 48) {
+		throw new RangeError('Timestamp must be an unsigned 48-bit integer in milliseconds');
+	}
+	return value;
 }
