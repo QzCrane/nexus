@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD^)" = b2b8682a1540cae8763158a1d79074cb98cc2a58
+          test "$(git rev-parse HEAD^)" = c322d0daffba7ba52a837691600b86ec9dd967ec
           cp package.json "$RUNNER_TEMP/nexus-root-package.json"
           cp bun.lock "$RUNNER_TEMP/nexus-root-before.lock"
           cp nexus/bun.lock "$RUNNER_TEMP/nexus-product-before.lock"
@@ -76,13 +76,14 @@ jobs:
           bun audit --json | tee "$out/repository-audit.json"
           (cd nexus && bun audit --json) | tee "$out/product-audit.json"
           bun --cwd nexus audit:dependencies
-          printf 'fix(integration): retain secure transitive resolvers\n' | bun node_modules/@commitlint/cli/cli.js --strict
+          printf 'fix(deps): retain secure transitive resolvers\n' | bun node_modules/@commitlint/cli/cli.js --strict
           if printf 'invalid commit message\n' | bun node_modules/@commitlint/cli/cli.js --strict; then
             echo 'Invalid commit message was accepted' >&2; exit 1
           fi
           bun -e '
             const {createRequire}=require("node:module");
-            const load=createRequire(require.resolve("@commitlint/load"));
+            const cli=createRequire(require.resolve("@commitlint/cli"));
+            const load=createRequire(cli.resolve("@commitlint/load"));
             const ajv=createRequire(createRequire(load.resolve("@commitlint/config-validator")).resolve("ajv"));
             const config=createRequire(load.resolve("cosmiconfig"));
             const uri=ajv("fast-uri"); const yaml=config("js-yaml");
@@ -109,7 +110,7 @@ jobs:
           git diff --cached --exit-code -- .github
           git config user.name 'NEXUS integration'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git commit -m 'fix(deps): eliminate vulnerable URI, YAML and browser extraction dependencies'
+          git commit -m 'fix(deps): eliminate vulnerable uri, yaml and browser extraction dependencies'
           git push origin "HEAD:refs/heads/$branch"
           test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$(git rev-parse HEAD)"
           git rev-parse HEAD > "$RUNNER_TEMP/nexus-security-evidence/head.txt"
