@@ -6,6 +6,8 @@ import {
 	assertPlatformEvidenceSnapshot,
 	assertSameRepositoryPull,
 	assertDockerImageIdentity,
+	parseDockerImageInspection,
+	ensureDockerImage,
 	classifyMainPosition,
 	githubReadJson,
 	isExactPromotionProjection,
@@ -142,8 +144,64 @@ describe('exact-head closeout governance', () => {
 		);
 		assertDockerImageIdentity(
 			policy.platform.image,
-			`sha256:local oven/bun@${policy.platform.image.split('@')[1]}`,
+			`sha256:${'a'.repeat(64)} oven/bun@${policy.platform.image.split('@')[1]}`,
 		);
+	});
+
+	test('uses exact JSON image metadata instead of Docker Go-template slice assumptions', () => {
+		const digest = policy.platform.image.split('@')[1];
+		const entry = { Id: `sha256:${'a'.repeat(64)}`, Os: 'linux', RepoDigests: [`oven/bun@${digest}`] };
+		const output = JSON.stringify([entry]);
+		const expected = `${entry.Id} ${entry.RepoDigests[0]}`;
+		expect(parseDockerImageInspection(policy.platform.image, output)).toBe(expected);
+		expect(parseDockerImageInspection(policy.platform.image, JSON.stringify([
+			{ ...entry, RepoDigests: [`docker.io/oven/bun@${digest}`] },
+		]))).toBe(`${entry.Id} docker.io/oven/bun@${digest}`);
+		for (const invalid of ['not JSON', '[]', JSON.stringify([entry, entry]), JSON.stringify([
+			{ ...entry, Os: 'windows' },
+		]), JSON.stringify([{ ...entry, RepoDigests: [] }]), JSON.stringify([
+			{ ...entry, RepoDigests: [`other/bun@${digest}`] },
+		]), JSON.stringify([{ ...entry, Id: 'sha256:short' }])]) {
+			expect(() => parseDockerImageInspection(policy.platform.image, invalid)).toThrow();
+		}
+		for (const invalid of [
+			`${entry.Id} other/bun@${digest}`,
+			`${entry.Id} prefix-oven/bun@${digest}`,
+			`${entry.Id} oven/bun@${digest}suffix`,
+			`${entry.Id} oven/bun@${digest} extra`,
+		]) expect(() => assertDockerImageIdentity(policy.platform.image, invalid)).toThrow('exact');
+	});
+
+	test('inspects the real JSON command, bounds pull retries, and exposes inspection failures', () => {
+		const output = JSON.stringify([{
+			Id: `sha256:${'a'.repeat(64)}`, Os: 'linux',
+			RepoDigests: [`oven/bun@${policy.platform.image.split('@')[1]}`],
+		}]);
+		const calls: string[][] = [];
+		const expected = parseDockerImageInspection(policy.platform.image, output);
+		expect(ensureDockerImage(policy.platform.image, (command, args) => {
+			calls.push([command, ...args]);
+			return calls.length === 1
+				? { status: 1, stdout: '', stderr: 'No such image' }
+				: { status: 0, stdout: args[0] === 'image' ? output : '', stderr: '' };
+		})).toBe(expected);
+		expect(calls).toEqual([
+			['docker', 'image', 'inspect', policy.platform.image],
+			['docker', 'pull', policy.platform.image],
+			['docker', 'image', 'inspect', policy.platform.image],
+		]);
+		let pulls = 0;
+		expect(() => ensureDockerImage(policy.platform.image, (_command, args) => {
+			if (args[0] === 'pull') pulls += 1;
+			return { status: args[0] === 'pull' ? 0 : 1, stdout: '', stderr: 'inspection denied' };
+		})).toThrow('inspection denied');
+		expect(pulls).toBe(3);
+		let reads = 0;
+		expect(() => ensureDockerImage(policy.platform.image, () => {
+			reads += 1;
+			return { status: 0, stdout: 'invalid JSON', stderr: '' };
+		})).toThrow('invalid JSON');
+		expect(reads).toBe(1);
 	});
 
 	test('atomically leases the exact main base and candidate head for one-commit promotion', () => {

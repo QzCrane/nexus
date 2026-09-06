@@ -361,31 +361,58 @@ function platformEvidenceDigest(body: Omit<PlatformEvidence, 'evidenceSha256'>):
 }
 
 export function assertDockerImageIdentity(image: string, identity: string): void {
-	const expectedDigest = image.split('@')[1];
-	if (!/^sha256:[a-f0-9]{64}$/u.test(expectedDigest ?? '')) {
-		throw new Error(`Docker image is not pinned by digest: ${image}`);
-	}
-	if (!identity.trim() || !identity.includes(expectedDigest)) {
-		throw new Error(`Docker image identity does not contain ${expectedDigest}: ${identity}`);
+	const pinned = image.match(/^(oven\/bun):[^@\s]+@(sha256:[a-f0-9]{64})$/u);
+	if (!pinned) throw new Error(`Docker image is not pinned by digest: ${image}`);
+	const expected = `${pinned[1]}@${pinned[2]}`;
+	const [id, repositories, ...extra] = identity.trim().split(/\s+/u);
+	const digests = repositories?.split(',').map((ref) => ref.replace(/^docker\.io\//u, '')) ?? [];
+	if (!/^sha256:[a-f0-9]{64}$/u.test(id ?? '') || extra.length > 0 || !digests.includes(expected)) {
+		throw new Error(`Docker image identity does not contain exact ${expected}: ${identity}`);
 	}
 }
 
-function ensureDockerImage(image: string): string {
-	const inspectArgs = [
-		'image', 'inspect', image,
-		'--format', '{{.Id}} {{join .RepoDigests ","}}',
-	];
-	let inspection = run('docker', inspectArgs, { allowFailure: true });
-	for (let attempt = 1; inspection.status !== 0 && attempt <= 3; attempt += 1) {
-		const pull = run('docker', ['pull', image], { inherit: true, allowFailure: true });
-		if (pull.status !== 0 && attempt === 3) {
-			throw new Error(`Docker could not obtain exact image ${image} after ${attempt} attempts`);
-		}
-		inspection = run('docker', inspectArgs, { allowFailure: true });
+export function parseDockerImageInspection(image: string, output: string): string {
+	let parsed: unknown;
+	try {
+		parsed = JSON.parse(output);
+	} catch {
+		throw new Error('Docker image inspection returned invalid JSON');
 	}
-	if (inspection.status !== 0) throw new Error(`Docker image is unavailable: ${image}`);
-	assertDockerImageIdentity(image, inspection.stdout);
-	return inspection.stdout;
+	if (!Array.isArray(parsed) || parsed.length !== 1 || !parsed[0] || typeof parsed[0] !== 'object') {
+		throw new Error('Docker image inspection must describe exactly one image');
+	}
+	const entry = parsed[0] as { Id?: unknown; RepoDigests?: unknown; Os?: unknown };
+	if (typeof entry.Id !== 'string' || entry.Os !== 'linux'
+		|| !Array.isArray(entry.RepoDigests) || entry.RepoDigests.length === 0
+		|| !entry.RepoDigests.every((ref): ref is string => (
+			typeof ref === 'string' && /^[^\s,@]+@sha256:[a-f0-9]{64}$/u.test(ref)
+		))) {
+		throw new Error('Docker image inspection has invalid Linux image metadata');
+	}
+	const identity = `${entry.Id} ${[...entry.RepoDigests].sort().join(',')}`;
+	assertDockerImageIdentity(image, identity);
+	return identity;
+}
+
+export function ensureDockerImage(image: string, execute: typeof run = run): string {
+	// Read the CLI's JSON contract. Go-template join rejects []interface{} on
+	// some Docker versions even after a successful, digest-exact pull.
+	const inspectArgs = ['image', 'inspect', image];
+	const inspect = () => execute('docker', inspectArgs, { allowFailure: true, timeoutMs: 30_000 });
+	let inspection = inspect();
+	for (let attempt = 1; inspection.status !== 0 && attempt <= 3; attempt += 1) {
+		const pull = execute('docker', ['pull', image], {
+			inherit: true, allowFailure: true, timeoutMs: 120_000,
+		});
+		if (pull.status !== 0 && attempt === 3) {
+			throw new Error(`Docker could not obtain exact image ${image} after ${attempt} attempts: ${pull.stderr}`);
+		}
+		inspection = inspect();
+	}
+	if (inspection.status !== 0) {
+		throw new Error(`Docker image inspection failed for ${image}: ${inspection.stderr}`);
+	}
+	return parseDockerImageInspection(image, inspection.stdout);
 }
 
 function readPlatformEvidence(
@@ -399,6 +426,7 @@ function readPlatformEvidence(
 	const evidence = JSON.parse(readFileSync(path, 'utf8')) as PlatformEvidence;
 	const { evidenceSha256, ...body } = evidence;
 	if (platformEvidenceDigest(body) !== evidenceSha256) throw new Error('Linux platform evidence digest mismatch');
+	assertDockerImageIdentity(evidence.image, evidence.imageIdentity);
 	if (evidence.schemaVersion !== 1 || evidence.platform !== 'linux'
 		|| evidence.head !== identity.head || evidence.tree !== identity.tree
 		|| evidence.image !== policy.platform.image

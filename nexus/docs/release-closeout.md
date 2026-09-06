@@ -77,3 +77,20 @@ Every branch must end in exactly one semantic state before deletion:
 4. experiment discarded with no unique retained product work.
 
 Branch count is not product backlog. A ref already contained by `main`, a historical PR head, or a transport-only branch is cleanup work, not another merge candidate.
+
+## Docker inspection compatibility
+
+The image lock is still a repository/version plus an immutable registry digest.
+The Docker identity owner reads the standard JSON array from `docker image
+inspect`, requires exactly one Linux image with a valid local image ID, and
+matches the exact `oven/bun` repository digest. It does not accept a substring,
+an unrelated repository sharing the same text, malformed output, or a different
+OS. Existing platform receipts are rechecked at this same identity boundary.
+
+A real hosted replay on Docker 28.0.4 exposed that `join .RepoDigests` in a Go
+template can reject the engine's `[]interface{}` value even after a successful
+pull. Re-pulling cannot repair a formatter failure. The JSON reader avoids that
+formatter dependency; bounded command deadlines and inspection stderr preserve
+the actual failure instead of reporting every inspection error as a missing
+image. The pinned image, two product attempts, exact commit/tree, artifact hashes,
+and atomic promotion requirements are unchanged.
