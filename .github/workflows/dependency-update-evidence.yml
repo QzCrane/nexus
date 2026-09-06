@@ -129,6 +129,7 @@ jobs:
         run: bun nexus/scripts/browser-floor.ts github-env >> "$GITHUB_ENV"
 
       - name: Download and verify canonical Chrome floor
+        id: chrome_floor
         shell: bash
         run: |
           set -euo pipefail
@@ -146,8 +147,21 @@ jobs:
             *) echo "Expected Chrome ${CHROME_FLOOR_VERSION}, got ${version_output}" >&2; exit 1 ;;
           esac
           echo "NEXUS_CHROME_EXECUTABLE=$executable" >> "$GITHUB_ENV"
+          # The verified Chrome archive carries its matching sandbox helper.
+          # Install it in a root-owned directory instead of disabling browser
+          # sandboxing or the host's AppArmor/user-namespace restrictions.
+          sandbox_source="$(dirname "$executable")/chrome_sandbox"
+          test -f "$sandbox_source" && test ! -L "$sandbox_source"
+          sandbox_dir="$(sudo mktemp -d /opt/nexus-chrome-sandbox.XXXXXX)"
+          sudo chmod 755 "$sandbox_dir"
+          sandbox_helper="$sandbox_dir/chrome-sandbox"
+          sudo install -o root -g root -m 4755 "$sandbox_source" "$sandbox_helper"
+          cmp "$sandbox_source" "$sandbox_helper"
+          test "$(stat -c '%u:%g:%a' "$sandbox_helper")" = '0:0:4755'
+          echo "CHROME_DEVEL_SANDBOX=$sandbox_helper" >> "$GITHUB_ENV"
 
       - name: Measure base artifacts with candidate workload
+        id: base_measurement
         shell: bash
         run: |
           set -euo pipefail
@@ -156,10 +170,12 @@ jobs:
           export NEXUS_PERFORMANCE_OUTPUT_DIR="$EVIDENCE_ROOT/base/performance"
           export HALO_EXTENSION_DIR="$BASE_ROOT/nexus/apps/extension-halo/dist"
           export SPECTRA_EXTENSION_DIR="$BASE_ROOT/nexus/apps/extension-spectra/dist"
-          bun run --cwd nexus/apps/extension-halo test:performance
-          bun run --cwd nexus/apps/extension-spectra test:performance
+          bun run --cwd nexus/apps/extension-halo test:performance 2>&1 | tee -a "$EVIDENCE_ROOT/base/workload.log"
+          bun run --cwd nexus/apps/extension-spectra test:performance 2>&1 | tee -a "$EVIDENCE_ROOT/base/workload.log"
 
       - name: Measure candidate artifacts with the same workload
+        id: candidate_measurement
+        if: ${{ !cancelled() && steps.chrome_floor.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -168,10 +184,11 @@ jobs:
           export NEXUS_PERFORMANCE_OUTPUT_DIR="$EVIDENCE_ROOT/candidate/performance"
           export HALO_EXTENSION_DIR="$GITHUB_WORKSPACE/nexus/apps/extension-halo/dist"
           export SPECTRA_EXTENSION_DIR="$GITHUB_WORKSPACE/nexus/apps/extension-spectra/dist"
-          bun run --cwd nexus/apps/extension-halo test:performance
-          bun run --cwd nexus/apps/extension-spectra test:performance
+          bun run --cwd nexus/apps/extension-halo test:performance 2>&1 | tee -a "$EVIDENCE_ROOT/candidate/workload.log"
+          bun run --cwd nexus/apps/extension-spectra test:performance 2>&1 | tee -a "$EVIDENCE_ROOT/candidate/workload.log"
 
       - name: Build exact dependency-update delta evidence
+        if: ${{ !cancelled() && steps.base_measurement.outcome == 'success' && steps.candidate_measurement.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -179,6 +196,7 @@ jobs:
             "$EVIDENCE_ROOT/base" "$EVIDENCE_ROOT/candidate" "$EVIDENCE_ROOT/comparison.json"
 
       - name: Upload immutable comparison evidence
+        if: ${{ !cancelled() && env.EVIDENCE_ROOT != '' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: dependency-update-evidence-${{ github.event.pull_request.number || github.run_id }}

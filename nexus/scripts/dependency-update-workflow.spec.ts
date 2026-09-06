@@ -53,6 +53,26 @@ describe('dependency update evidence workflow', () => {
 		expect(candidateMeasure).toContain('$GITHUB_WORKSPACE/nexus/apps/extension-halo/dist');
 	});
 
+	test('configures the matching sandbox without disabling browser or host protection', () => {
+		const download = workflow.indexOf('"$CHROME_FLOOR_SHA256" "$archive" | sha256sum --check --strict');
+		const install = workflow.indexOf('sudo install -o root -g root -m 4755');
+		expect(download).toBeGreaterThan(0);
+		expect(install).toBeGreaterThan(download);
+		expect(workflow).toContain('CHROME_DEVEL_SANDBOX=$sandbox_helper');
+		expect(workflow).toContain('cmp "$sandbox_source" "$sandbox_helper"');
+		expect(workflow).not.toContain('--no-sandbox');
+		expect(workflow).not.toContain('sysctl');
+	});
+
+	test('keeps candidate measurements and diagnostic evidence when the baseline fails without masking failure', () => {
+		expect(workflow).toContain(`if: \${{ !cancelled() && steps.chrome_floor.outcome == 'success' }}`);
+		expect(workflow).toContain("steps.base_measurement.outcome == 'success' && steps.candidate_measurement.outcome == 'success'");
+		expect(workflow).toContain(`if: \${{ !cancelled() && env.EVIDENCE_ROOT != '' }}`);
+		expect(workflow).toContain('tee -a "$EVIDENCE_ROOT/base/workload.log"');
+		expect(workflow).toContain('tee -a "$EVIDENCE_ROOT/candidate/workload.log"');
+		expect(workflow).not.toContain('continue-on-error');
+	});
+
 	test('derives one canonical Chrome floor and uploads only immutable comparison evidence', () => {
 		expect(workflow).toContain('bun nexus/scripts/browser-floor.ts github-env >> "$GITHUB_ENV"');
 		expect(workflow).toContain('printf \'%s  %s\\n\' "$CHROME_FLOOR_SHA256" "$archive" | sha256sum --check --strict');
