@@ -8,32 +8,31 @@ on:
 permissions:
   contents: read
 jobs:
-  tools:
+  snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 5
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
           persist-credentials: false
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
-        with:
-          bun-version: 1.4.0
-      - name: Acquire supported test-only driver and matching current browser
+      - name: Capture committed source without credentials or dependencies
         shell: bash
         run: |
           set -euo pipefail
-          out="$RUNNER_TEMP/nexus-browser-workbench"
-          driver="$RUNNER_TEMP/nexus-floor-driver"
-          mkdir -p "$out" "$driver"
-          printf '{"private":true,"dependencies":{"puppeteer-core":"24.7.2"}}\n' > "$driver/package.json"
-          bun install --cwd "$driver" --ignore-scripts
-          tar -czf "$out/floor-driver.tar.gz" -C "$driver" package.json bun.lock node_modules
-          curl --fail --location --retry 3 --dump-header "$out/chrome152-origin-headers.txt" --output "$out/chrome152-linux64.zip" https://storage.googleapis.com/chrome-for-testing-public/152.0.7977.54/linux64/chrome-linux64.zip
-          curl --fail --location --retry 3 --output "$out/chrome152-version.json" https://googlechromelabs.github.io/chrome-for-testing/152.0.7977.54.json
-          (cd "$out" && sha256sum floor-driver.tar.gz chrome152-linux64.zip > SHA256SUMS.txt)
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+          out="$RUNNER_TEMP/nexus-candidate-source"
+          mkdir -p "$out"
+          git update-ref refs/audit/candidate HEAD
+          git update-ref refs/audit/main 664d0615f850c568a8840ac312ca7c92cb81ceee
+          git update-ref refs/audit/architecture 7d4bf273130d73dbf63348affc3a258fcdac4627
+          git update-ref refs/audit/total 4b14658c107f33778bc5d48505609cafd58a0aec
+          git bundle create "$out/candidate.bundle" refs/audit/candidate refs/audit/main refs/audit/architecture refs/audit/total
+          git bundle verify "$out/candidate.bundle"
+          (cd "$out" && sha256sum candidate.bundle > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: nexus-browser-workbench
-          path: ${{ runner.temp }}/nexus-browser-workbench/
-          if-no-files-found: error
+          name: nexus-candidate-source
+          path: ${{ runner.temp }}/nexus-candidate-source/
           retention-days: 1
+          if-no-files-found: error
