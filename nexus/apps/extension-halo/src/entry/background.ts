@@ -23,6 +23,7 @@ import {
 	type SaaTPluginDescriptor,
 } from '../kernel/services/saat-service';
 import { isPrivateHost } from '../kernel/utils/ssrf-guard';
+import { readBodyCapped } from '../kernel/utils/fetch-budget';
 import { saveToClipboardHistory } from '../tools/clipboard/core';
 import { reconcileAntiHotlinkRules, type AntiHotlinkReceipt } from '../tools/hover-zoom/logic/engine';
 import { parseHoverZoomSettings } from '../tools/hover-zoom/settings';
@@ -73,6 +74,46 @@ function isTrustedSidepanelSender(sender: chrome.runtime.MessageSender): boolean
 		&& sender.url.startsWith(extensionOrigin)
 		&& !sender.tab;
 }
+
+/**
+ * Content-realm senders: our own extension speaking from a web tab. Message
+ * structure validity never substitutes for this category check.
+ */
+function isExtensionTabSender(sender: chrome.runtime.MessageSender): boolean {
+	return sender.id === chrome.runtime.id
+		&& sender.tab?.id !== undefined
+		&& typeof sender.url === 'string'
+		&& (sender.url.startsWith('http:') || sender.url.startsWith('https:'));
+}
+
+// HoverZoom proxy transfers are bounded in time and bytes and are cancelled
+// when their requesting tab disappears.
+const HZ_PROXY_TIMEOUT_MS = 15_000;
+const HZ_PROXY_MAX_BYTES = 10 * 1024 * 1024;
+const hzProxyTransfers = new Map<number, Set<AbortController>>();
+function trackProxyTransfer(tabId: number, controller: AbortController): () => void {
+	let transfers = hzProxyTransfers.get(tabId);
+	if (!transfers) {
+		transfers = new Set();
+		hzProxyTransfers.set(tabId, transfers);
+	}
+	transfers.add(controller);
+	return () => {
+		const owned = hzProxyTransfers.get(tabId);
+		if (!owned) return;
+		owned.delete(controller);
+		if (owned.size === 0) hzProxyTransfers.delete(tabId);
+	};
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+	const transfers = hzProxyTransfers.get(tabId);
+	if (!transfers) return;
+	for (const controller of transfers) controller.abort();
+	hzProxyTransfers.delete(tabId);
+});
+
+
 
 // The MV3 worker is the sole DNR writer. Every worker birth rechecks durable
 // intent against the complete physical rule set; install/startup/storage events
@@ -329,6 +370,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	}
 
 	if (message.type === 'HALO_CLIPBOARD_ADD') {
+		if (!isExtensionTabSender(sender)) {
+			sendResponse({ success: false, error: 'untrusted_sender' });
+			return false;
+		}
 		const { text, sourceUrl, sourceTitle } = message;
 		saveToClipboardHistory(
 			text,
@@ -342,6 +387,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 	}
 
 	if (message.type === 'HALO_HZ_PROXY_AJAX') {
+		if (!isExtensionTabSender(sender)) {
+			sendResponse({ success: false, error: 'untrusted_sender' });
+			return false;
+		}
 		const { url, method = 'GET', headers = {}, body, responseType = 'text' } = message;
 		if (!url || typeof url !== 'string') {
 			sendResponse({ success: false, error: 'missing url' });
@@ -365,35 +414,59 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			return true;
 		}
 
-		console.log(LOG_TAG, 'HoverZoom proxy request:', url.slice(0, 80), 'type:', responseType);
+		// Never log the full URL: the path and query can carry secrets. The
+		// host identifies the transfer for diagnostics.
+		console.log(LOG_TAG, 'HoverZoom proxy request:', parsedUrl.host, 'type:', responseType);
 
-		fetch(url, {
-			method,
-			headers: { ...headers },
-			body: method === 'POST' ? body : undefined,
-			credentials: 'omit',
-		})
-			.then(async (response) => {
+		const controller = new AbortController();
+		const tabId = sender.tab?.id;
+		if (tabId === undefined) {
+			sendResponse({ success: false, error: 'untrusted_sender' });
+			return false;
+		}
+		const releaseTransfer = trackProxyTransfer(tabId, controller);
+		const timer = setTimeout(() => controller.abort(), HZ_PROXY_TIMEOUT_MS);
+		void (async () => {
+			try {
+				const response = await fetch(url, {
+					method,
+					headers: { ...headers },
+					body: method === 'POST' ? body : undefined,
+					credentials: 'omit',
+					signal: controller.signal,
+				});
 				if (!response.ok) throw new Error(`HTTP ${response.status}`);
+				const bytes = await readBodyCapped(response, HZ_PROXY_MAX_BYTES);
+				let data: string;
 				if (responseType === 'arraybuffer') {
-					const buffer = await response.arrayBuffer();
-					const bytes = new Uint8Array(buffer);
 					const chunkSize = 0x8000;
 					const chunks: string[] = [];
 					for (let index = 0; index < bytes.length; index += chunkSize) {
 						chunks.push(String.fromCharCode(...bytes.subarray(index, index + chunkSize)));
 					}
-					return btoa(chunks.join(''));
+					data = btoa(chunks.join(''));
+				} else {
+					data = new TextDecoder().decode(bytes);
 				}
-				return response.text();
-			})
-			.then((data) => sendResponse({ success: true, data }))
-			.catch((error) => sendResponse({ success: false, error: error.message }));
-
+				sendResponse({ success: true, data });
+			} catch (error) {
+				sendResponse({
+					success: false,
+					error: controller.signal.aborted ? 'proxy request timed out or was cancelled' : String((error as Error)?.message ?? error),
+				});
+			} finally {
+				clearTimeout(timer);
+				releaseTransfer();
+			}
+		})();
 		return true;
 	}
 
 	if (message.type === 'HALO_INJECT_CSS') {
+		if (!isExtensionTabSender(sender)) {
+			sendResponse({ success: false, error: 'untrusted_sender' });
+			return false;
+		}
 		const { css } = message;
 		if (!sender.tab?.id || !css) {
 			sendResponse({ success: false, error: 'missing_tab_or_css' });

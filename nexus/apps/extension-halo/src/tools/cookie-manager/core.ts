@@ -1,17 +1,34 @@
 // goal: Cookie Manager core logic - read, edit, delete cookies
+// rule: every operation carries the full cookie identity (store, partition,
+// host-only flag, scheme, domain, path). The update target is derived from the
+// cookie itself, never from whichever tab happens to be active.
 
 import type { CookieInfo } from './types';
 
-// Get all cookies for current tab
-export async function getCookiesForCurrentTab(): Promise<CookieInfo[]> {
-	try {
-		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-		if (!tab?.url) return [];
+export interface CookieScan {
+	origin: string;
+	cookies: CookieInfo[];
+}
 
-		const url = new URL(tab.url);
-		const cookies = await chrome.cookies.getAll({ domain: url.hostname });
+function originOf(url: string | undefined): string {
+	try { return new URL(url ?? '').origin; } catch { return ''; }
+}
 
-		return cookies.map((c) => ({
+function hostOf(domain: string): string {
+	return domain.replace(/^\./, '');
+}
+
+// Get all cookies for the current tab, bound to its origin at scan time
+export async function scanActiveTabCookies(): Promise<CookieScan> {
+	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+	if (!tab?.url) throw new Error('No active tab with a scannable URL.');
+
+	const url = new URL(tab.url);
+	const cookies = await chrome.cookies.getAll({ domain: url.hostname });
+
+	return {
+		origin: originOf(tab.url),
+		cookies: cookies.map((c) => ({
 			name: c.name,
 			value: c.value,
 			domain: c.domain,
@@ -20,49 +37,57 @@ export async function getCookiesForCurrentTab(): Promise<CookieInfo[]> {
 			httpOnly: c.httpOnly,
 			secure: c.secure,
 			sameSite: c.sameSite || 'unspecified',
-		}));
-	} catch {
-		return [];
-	}
+			hostOnly: c.hostOnly,
+			session: c.session,
+			storeId: c.storeId,
+			partitionKey: c.partitionKey,
+		})),
+	};
 }
 
-// Delete a cookie
-export async function deleteCookie(
-	name: string,
-	domain: string,
-	path: string,
-	secure: boolean = false,
-): Promise<boolean> {
+/**
+ * The URL that addresses this exact cookie: scheme from its secure flag, host
+ * from its domain, and its own path.
+ */
+export function cookieUrl(cookie: Pick<CookieInfo, 'secure' | 'domain' | 'path'>): string {
+	return `${cookie.secure ? 'https' : 'http'}://${hostOf(cookie.domain)}${cookie.path || '/'}`;
+}
+
+// Delete a cookie by its full identity
+export async function deleteCookie(cookie: CookieInfo): Promise<boolean> {
 	try {
-		// rule: derive scheme from the cookie's secure flag — the previous form inferred
-		// https from a leading '.' in the domain, which is unrelated to the cookie's actual
-		// secure flag and caused silent deletion failures for both secure (http:// used) and
-		// non-secure (https:// used) cookies.
-		const url = `${secure ? 'https' : 'http'}://${domain.replace(/^\./, '')}${path}`;
-		await chrome.cookies.remove({ url, name });
+		const details: Parameters<typeof chrome.cookies.remove>[0] = {
+			url: cookieUrl(cookie),
+			name: cookie.name,
+		};
+		if (cookie.storeId !== undefined) details.storeId = cookie.storeId;
+		if (cookie.partitionKey !== undefined) details.partitionKey = cookie.partitionKey;
+		await chrome.cookies.remove(details);
 		return true;
 	} catch {
 		return false;
 	}
 }
 
-// Set/update a cookie
+// Set/update a cookie using its own identity as the target
 export async function setCookie(cookie: CookieInfo): Promise<boolean> {
 	try {
-		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-		if (!tab?.url) return false;
-
-		await chrome.cookies.set({
-			url: tab.url,
+		const details: Parameters<typeof chrome.cookies.set>[0] = {
+			url: cookieUrl(cookie),
 			name: cookie.name,
 			value: cookie.value,
-			domain: cookie.domain || undefined,
 			path: cookie.path || '/',
 			secure: cookie.secure,
 			httpOnly: cookie.httpOnly,
 			sameSite: cookie.sameSite as chrome.cookies.SameSiteStatus,
 			expirationDate: cookie.expires,
-		});
+		};
+		// A host-only cookie must never gain a domain attribute: that would
+		// silently turn it into a domain cookie shared with subdomains.
+		if (!cookie.hostOnly && cookie.domain) details.domain = cookie.domain;
+		if (cookie.storeId !== undefined) details.storeId = cookie.storeId;
+		if (cookie.partitionKey !== undefined) details.partitionKey = cookie.partitionKey;
+		await chrome.cookies.set(details);
 		return true;
 	} catch {
 		return false;

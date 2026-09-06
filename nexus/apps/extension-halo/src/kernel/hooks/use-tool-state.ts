@@ -1,20 +1,27 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ToolId } from '../core/types';
-import { safeStorageGet } from '../core/safe-storage';
+import { safeStorageGet, safeStorageRemove } from '../core/safe-storage';
 import { conditionalLedgerWrite, ledgerRevisionKey } from '../core/safe-storage';
 import type { LedgerWriteOutcome } from '../core/safe-storage';
 import { reportStorageHealth } from '../core/storage-health';
 import { subscribeHaloStorageChanges } from '../core/storage-change-bus';
 
 export interface UseToolStateOptions<T = unknown> {
-	/** Storage area: 'local' (default) or 'sync' */
-	area?: 'local' | 'sync';
+	/** Storage area: 'local' (default) or 'session' */
+	area?: 'local' | 'sync' | 'session';
 	/** Debounce delay for writes (default: 300ms) */
 	debounceMs?: number;
 	/** Custom storage key override */
 	storageKey?: string;
 	/** Normalize values at every storage and local-update boundary */
 	normalize?: (value: unknown) => T;
+	/**
+	 * Session-scoped sensitive state: hydrates from the session key, and when
+	 * that is absent adopts a legacy 'local' copy once — writing it to the
+	 * session area and removing the long-term copy — so secrets stop resting
+	 * on disk without destroying the user's data.
+	 */
+	migrateLegacyLocal?: boolean;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -151,6 +158,11 @@ interface OwnWriteEcho<T> {
 }
 
 const MAX_RECENT_OWN_WRITE_ECHOES = 4;
+
+/** Read the long-term copy of a session-scoped key; null when unavailable. */
+function readLegacyLocalCopy(storageKey: string): Promise<Record<string, unknown> | null> {
+	return safeStorageGet([storageKey], {}, { area: 'local' });
+}
 
 /**
  * Mount-scoped admission for setters captured by asynchronous consumers.
@@ -370,6 +382,7 @@ export function useToolState<T>(
 		debounceMs = 300,
 		storageKey: customKey,
 		normalize,
+		migrateLegacyLocal,
 	} = options;
 
 	const getInitialValue = useCallback(() => {
@@ -481,10 +494,22 @@ export function useToolState<T>(
 		const baseValue = normalizeValueRef.current(initialValue, initialValue);
 		authorityEpoch.hydrated = false;
 		setIsReady(false);
-		void safeStorageGet([storageKey, ledgerRevisionKey(storageKey)], { [storageKey]: baseValue }, { area })
-			.then((res) => {
+		void (async () => {
+			try {
+				const res = await safeStorageGet(
+					[storageKey, ledgerRevisionKey(storageKey)],
+					{ [storageKey]: baseValue },
+					{ area },
+				);
 				if (!isMounted) return;
-				const loaded = normalizeValueRef.current(res[storageKey] !== undefined ? res[storageKey] : baseValue, baseValue);
+				let legacyRaw: unknown;
+				if (migrateLegacyLocal && area === 'session' && res[storageKey] === undefined) {
+					// A failed legacy read keeps the session defaults; nothing is deleted.
+					const legacy = await readLegacyLocalCopy(storageKey).catch(() => null);
+					if (legacy?.[storageKey] !== undefined) legacyRaw = legacy[storageKey];
+				}
+				const raw = res[storageKey] !== undefined ? res[storageKey] : legacyRaw;
+				const loaded = normalizeValueRef.current(raw !== undefined ? raw : baseValue, baseValue);
 				baseRevisionRef.current = typeof res[ledgerRevisionKey(storageKey)] === 'number'
 					&& Number.isSafeInteger(res[ledgerRevisionKey(storageKey)])
 					&& (res[ledgerRevisionKey(storageKey)] as number) >= 0
@@ -497,15 +522,30 @@ export function useToolState<T>(
 					stateRef.current = loaded;
 					setState(loaded);
 				}
+				if (legacyRaw !== undefined) {
+					// Move the adopted legacy value into the session area and clear
+					// the long-term copy. Removal failure is surfaced, never silent.
+					const migration = pendingAuthority.stageLocal(loaded);
+					pendingAuthority.flushPending(migration.token);
+					persistNextState();
+					void safeStorageRemove(storageKey, { area: 'local' }).then((removed) => {
+						if (removed) return;
+						authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(
+							authorityEpoch.healthOwner,
+							'write-error',
+							() => void safeStorageRemove(storageKey, { area: 'local' }),
+						));
+					});
+				}
 				persistNextState();
-			})
-			.catch(() => {
+			} catch {
 				if (!isMounted) return;
 				// Never convert a failed read into an empty initialized record.
 				reportStorageHealth(authorityEpoch.healthOwner, 'read-error', () => setLoadAttempt(loadAttempt + 1));
-			});
+			}
+		})();
 		return () => { isMounted = false; };
-	}, [storageKey, area, pendingAuthority, authorityEpoch, persistNextState, loadAttempt]);
+	}, [storageKey, area, pendingAuthority, authorityEpoch, persistNextState, loadAttempt, migrateLegacyLocal]);
 
 	const flushPendingState = useCallback((expectedToken?: number) => {
 		if (pendingAuthority.flushPending(expectedToken)) persistNextState();

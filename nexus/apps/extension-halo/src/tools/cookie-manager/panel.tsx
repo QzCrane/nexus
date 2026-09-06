@@ -5,7 +5,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { CookieInfo } from './types';
-import { getCookiesForCurrentTab, deleteCookie, exportCookies, formatExpiry } from './core';
+import { scanActiveTabCookies, deleteCookie, exportCookies, formatExpiry } from './core';
 import { styles } from './panel.styles';
 import { usePermission, useToolState } from '../../kernel';
 
@@ -15,15 +15,22 @@ export const CookieManagerPanel: React.FC = () => {
 	const { hasPermission, request } = usePermission('cookies');
 	const [cookies, setCookies] = useState<CookieInfo[]>([]);
 	const [search, setSearch] = useToolState<string>('cookie-manager', '');
+	const [error, setError] = useState<string | null>(null);
 
 	const [loading, setLoading] = useState(false);
 
 	// Load cookies
 	const loadCookies = useCallback(async () => {
 		setLoading(true);
-		const data = await getCookiesForCurrentTab();
-		setCookies(data);
-		setLoading(false);
+		setError(null);
+		try {
+			const scan = await scanActiveTabCookies();
+			setCookies(scan.cookies);
+		} catch (loadError) {
+			setError(String(loadError));
+		} finally {
+			setLoading(false);
+		}
 	}, []);
 
 	useEffect(() => {
@@ -38,9 +45,13 @@ export const CookieManagerPanel: React.FC = () => {
 
 	// Delete cookie
 	const handleDelete = useCallback(async (cookie: CookieInfo) => {
-		await deleteCookie(cookie.name, cookie.domain, cookie.path, cookie.secure);
-		loadCookies();
-	}, [loadCookies]);
+		setError(null);
+		const ok = await deleteCookie(cookie);
+		if (!ok) {
+			setError(t('cookieManager.deleteFailed', { defaultValue: 'Cookie deletion failed; the cookie is still present.' }));
+		}
+		await loadCookies();
+	}, [loadCookies, t]);
 
 	// Export all
 	const handleExport = useCallback(() => {
@@ -110,14 +121,16 @@ export const CookieManagerPanel: React.FC = () => {
 				<button type="button" style={styles.btn} onClick={handleExport}>📋 {t('cookieManager.export', { defaultValue: 'Export JSON' })}</button>
 			</div>
 
+			{error && <div style={{ color: '#d33', fontSize: '12px', padding: '4px 0' }}>{error}</div>}
+
 			{/* Cookie List */}
 			<Card variant="default" padding="sm">
 				<div style={styles.list}>
 					{filtered.length === 0 ? (
 						<div style={styles.empty}>{t('cookieManager.noCookies')}</div>
 					) : (
-						filtered.map((cookie) => (
-							<div key={JSON.stringify([cookie.domain, cookie.path, cookie.name])} style={styles.item}>
+							filtered.map((cookie) => (
+								<div key={JSON.stringify([cookie.storeId ?? '', cookie.partitionKey ?? null, cookie.domain, cookie.path, cookie.name, cookie.hostOnly])} style={styles.item}>
 								<div style={styles.itemHeader}>
 									<span style={styles.name}>{cookie.name}</span>
 									<div style={styles.row}>

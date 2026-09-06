@@ -399,41 +399,69 @@
       "id": "N01",
       "title": "站点存储编辑时重新选择当前标签，可能写到别的站点",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/storage-editor/core.ts",
+        "apps/extension-halo/src/tools/storage-editor/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Storage edits bind to the tab id and origin captured at scan time; the bound tab is re-resolved and its current origin re-checked when the mutation is about to happen. A tab that left the scanned origin fails with an explicit rescan request instead of writing into another site."
     },
     {
       "id": "N02",
       "title": "站点存储编辑 UI 忽略写入/删除失败结果",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/storage-editor/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Set and delete failures now surface as panel status text; the local list only updates after the mutation really committed."
     },
     {
       "id": "N03",
       "title": "Cookie 身份丢失 store/partition/hostOnly，更新目标也可能漂移",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/cookie-manager/core.ts",
+        "apps/extension-halo/src/tools/cookie-manager/types.ts",
+        "apps/extension-halo/src/tools/cookie-manager/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Cookie operations carry full identity (storeId, partitionKey, hostOnly, session, scheme, domain, path). Updates target the cookie own origin; host-only cookies never gain a domain attribute. Deletion failures are surfaced."
     },
     {
       "id": "N04",
       "title": "内部消息路由并未统一区分可信 UI 与 Content 权限",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/entry/background.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Tab-originated internal messages (clipboard add, HoverZoom proxy, CSS injection) now require the extension tab sender category; UI-authority messages keep the sidepanel check. Message structure validity no longer substitutes for sender authorization."
     },
     {
       "id": "N05",
       "title": "私网主机字面量过滤既有漏判也有误封",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/kernel/utils/ssrf-guard.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "IPv4 literals are parsed per inet_aton/WHATWG forms (short, octal, hex, decimal, trailing dot) before pattern matching, so 127.1, 0177.0.0.1 and 0x7f.0.0.1 are blocked. The overbroad 198.x pattern was narrowed to the benchmark range, and names that merely start with digits (10.0.0.1.com) are no longer blocked on prefix. Literal-shaped garbage fails closed."
     },
     {
       "id": "N06",
@@ -441,50 +469,80 @@
       "priority": "P1",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "Boundary note: isPrivateHost evaluates the initial URL literal only. Post-redirect and post-DNS target validation is not implemented and no code or doc may claim it; keep claims limited accordingly."
     },
     {
       "id": "N07",
       "title": "网络响应没有统一时间、字节和生命周期边界",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/kernel/utils/fetch-budget.ts",
+        "apps/extension-halo/src/entry/background.ts",
+        "apps/extension-halo/src/tools/api-tester/core.ts",
+        "apps/extension-halo/src/tools/api-tester/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "One fetch-budget owner supplies timeout, encoded-byte ceiling and cancellation. The HoverZoom worker proxy and the API tester both use it; proxy transfers abort when the requesting tab closes and the tester cancels on panel disposal. Oversized responses fail explicitly instead of truncating."
     },
     {
       "id": "N08",
       "title": "敏感输入默认跟随通用工具状态持久化",
       "priority": "P0",
-      "status": "partial",
+      "status": "implemented",
       "changes": [
-        "apps/extension-halo/src/tools/totp/panel.tsx"
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/tools/totp/panel.tsx",
+        "apps/extension-halo/src/tools/api-tester/panel.tsx"
       ],
-      "verification": [],
-      "remaining": "New TOTP import drafts are ephemeral. Existing account-secret storage, Crypto/API editors and opt-in migration require a separate explicit vault boundary; no historical secret was deleted."
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "remaining": "New TOTP import drafts are ephemeral. Existing account-secret storage, Crypto/API editors and opt-in migration require a separate explicit vault boundary; no historical secret was deleted.",
+      "scope": "Sensitive state (TOTP account secrets, API tester request config with Authorization headers, response bodies) is session-scoped by default. The hook migrates a legacy long-term copy once: it hydrates the value into the session area and removes the on-disk copy, surfacing removal failures. No persisted data is destroyed silently."
     },
     {
       "id": "N09",
       "title": "选择 DeepL 翻译网页时被静默转给 Google",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/translate/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "DeepL full-page translation is refused explicitly instead of silently handing the page to Google; text translation still goes to the selected receiver and unknown engines fail closed."
     },
     {
       "id": "N10",
       "title": "生产日志直接记录 URL 片段，诊断脱敏不覆盖它",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/entry/background.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "The production proxy log records the target host only; URL paths and queries are never logged."
     },
     {
       "id": "N11",
       "title": "权限和目标必须在真正副作用发生时仍有效",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "partial",
+      "changes": [
+        "apps/extension-halo/src/tools/storage-editor/core.ts",
+        "apps/extension-halo/src/entry/background.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Effect-time revalidation now covers storage-editor origin rebinding and proxy transfers cancelled at tab close. Remaining: the same at-effect recheck for the remaining injection and capture surfaces outside these paths."
     },
     {
       "id": "D01",

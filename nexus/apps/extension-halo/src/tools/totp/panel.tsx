@@ -33,7 +33,9 @@ function cacheSignature(entry: TotpEntry): string {
 
 export const TotpPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [entries, setEntries] = useToolState<TotpEntry[]>('totp', []);
+	// Account secrets are sensitive: they live in session-scoped storage and a
+	// legacy long-term copy is migrated once instead of resting on disk.
+	const [entries, setEntries] = useToolState<TotpEntry[]>('totp', [], { area: 'session', migrateLegacyLocal: true });
 	const [codes, setCodes] = useState<Record<string, TotpCode>>({});
 	const [codeErrors, setCodeErrors] = useState<Record<string, string>>({});
 	const [pollFailed, setPollFailed] = useState(false);

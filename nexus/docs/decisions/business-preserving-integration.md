@@ -173,3 +173,23 @@ entries and bytes while always retaining the newest session. These repairs are
 focused regressions in `apps/extension-halo/test/storage-ledger.spec.ts`; they
 do not complete the remaining domain schemas, budgets, or failure-surface work
 tracked as S04, S06, and S07.
+
+## Effect-time target binding and bounded network surfaces
+
+Internal message routing now classifies senders once: UI-authority messages
+require the trusted sidepanel sender, and tab-originated operations (clipboard
+capture, the HoverZoom proxy, dynamic CSS injection) require the extension tab
+sender category. Storage Editor mutations bind to the tab and origin captured
+at scan time and re-verify the live tab origin when the effect happens; cookie
+operations carry store, partition and host-only identity and target the cookie
+own origin rather than the active tab. One fetch-budget owner bounds wall-clock
+time and encoded response bytes and supports cancellation; the worker proxy and
+the API tester use it, proxy transfers abort when their tab closes, and the
+tester cancels on panel disposal. The proxy log records target hosts only.
+Sensitive tool state (TOTP secrets, API tester config and responses) is
+session-scoped by default with a one-time legacy migration off disk that never
+destroys data. The SSRF guard parses IPv4 literals per WHATWG forms before
+pattern matching, narrows the overbroad benchmark range, and never blocks a
+hostname for starting with numeric text. The guard still only evaluates the
+initial URL literal; redirect and DNS-target safety is explicitly not claimed.
+Focused regressions live in `apps/extension-halo/test/network-targets.spec.ts`.
