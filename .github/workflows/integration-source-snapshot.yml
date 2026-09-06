@@ -1,36 +1,73 @@
-name: Integration source snapshot
+name: Materialize verified integration
+
 on:
   push:
     branches:
       - codex/nexus-business-preserving-integration
     paths:
       - '.github/workflows/integration-source-snapshot.yml'
+
 permissions:
-  contents: read
+  contents: write
+
+concurrency:
+  group: materialize-nexus-business-integration
+  cancel-in-progress: false
+
 jobs:
-  browser:
+  materialize:
+    if: github.repository == 'QzCrane/nexus' && github.ref == 'refs/heads/codex/nexus-business-preserving-integration'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Independently reacquire and quarantine official browser bytes
+      - name: Read frozen transport head and source histories
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - name: Decode and verify reviewed reconciliation recipe
         shell: bash
         run: |
           set -euo pipefail
-          out="$RUNNER_TEMP/nexus-chrome-floor"
-          mkdir -p "$out"
-          url=https://storage.googleapis.com/chrome-for-testing-public/135.0.7049.114/linux64/chrome-linux64.zip
-          curl --fail --location --retry 3 --dump-header "$out/origin-headers.txt" --output "$out/chrome-linux64.zip" "$url"
-          curl --fail --location --retry 3 --output "$RUNNER_TEMP/chrome-second.zip" "$url"
-          cmp "$out/chrome-linux64.zip" "$RUNNER_TEMP/chrome-second.zip"
-          curl --fail --location --retry 3 --output "$out/upstream-version.json" https://googlechromelabs.github.io/chrome-for-testing/135.0.7049.114.json
-          (cd "$out" && sha256sum chrome-linux64.zip > SHA256SUMS.txt && md5sum chrome-linux64.zip > MD5SUMS.txt)
-          cat "$out/SHA256SUMS.txt"
-          cat "$out/MD5SUMS.txt"
-          grep -i 'x-goog-hash\|x-goog-generation\|etag\|last-modified' "$out/origin-headers.txt"
-      - name: Retain bytes and provenance for review without execution
-        uses: actions/upload-artifact@v4
-        with:
-          name: nexus-chrome-floor-quarantine
-          path: ${{ runner.temp }}/nexus-chrome-floor/
-          retention-days: 1
-          if-no-files-found: error
+          python3 - <<'PY'
+          import base64, os
+          from pathlib import Path
+          source = ''.join(Path(f'.integration-replay/part-{i}.txt').read_text().strip() for i in range(1, 5))
+          Path(os.environ['RUNNER_TEMP'], 'nexus-integration-recipe.xz').write_bytes(base64.b64decode(source, validate=True))
+          PY
+          tree="$(python3 .integration-replay/apply.py "$RUNNER_TEMP/nexus-integration-recipe.xz")"
+          test "$tree" = cc81a3cbb01f5ee989a4474ac9d09023e723a291
+          echo "VERIFIED_TREE=$tree" >> "$GITHUB_ENV"
+      - name: Commit exact tested tree without changing main
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=codex/nexus-business-preserving-integration
+          main=664d0615f850c568a8840ac312ca7c92cb81ceee
+          head="$(git rev-parse HEAD)"
+          remote_main="$(git ls-remote origin refs/heads/main | cut -f1)"
+          remote_head="$(git ls-remote origin "refs/heads/$branch" | cut -f1)"
+          test "$remote_main" = "$main"
+          test "$remote_head" = "$head"
+          git diff --check "$main" "$VERIFIED_TREE"
+          test -z "$(git ls-tree --name-only "$VERIFIED_TREE" .integration-replay .github/workflows/integration-source-snapshot.yml)"
+          git config user.name 'NEXUS integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          commit="$(git commit-tree "$VERIFIED_TREE" -p "$head" -p 7d4bf273130d73dbf63348affc3a258fcdac4627 -p 4b14658c107f33778bc5d48505609cafd58a0aec <<'MESSAGE'
+          feat(integration): reconcile closure branches without shrinking product capabilities
+
+          Retain the current main protocol/runtime, all 88 HALO panels and both scripts.
+          Integrate explicit release admission, state separation, bounded passive media
+          discovery, lifecycle-safe optional permissions, diagnostics and quality gates.
+          Every reconstructed blob and the complete tree are checksum verified against
+          the locally tested candidate. Preserve per-path decisions in the repository.
+
+          Local types, strict lint, architecture and governance checks, HALO unit tests,
+          Spectra isolated unit tests and both production builds passed. Full Chrome
+          browser replay remains blocked and this candidate is NOT approved for main
+          or product publication. Transport files are absent from the final tree.
+          MESSAGE
+          )"
+          git push origin "$commit:refs/heads/$branch"
+          test "$(git ls-remote origin "refs/heads/$branch" | cut -f1)" = "$commit"
+          printf 'Integrated commit: `%s`\n\nVerified tree: `%s`\n\nMain unchanged: `%s`\n\nFull browser replay is not yet green.\n' "$commit" "$VERIFIED_TREE" "$main" >> "$GITHUB_STEP_SUMMARY"
