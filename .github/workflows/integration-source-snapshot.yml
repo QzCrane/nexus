@@ -15,33 +15,41 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  snapshot:
+  workbench:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
-      - name: Read exact repository histories
+      - name: Read exact integration source
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 0
           persist-credentials: false
-      - name: Bundle committed source only
+      - name: Set up pinned repository runtime
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.0
+      - name: Install locked governance and product graphs
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          bun install --cwd nexus --frozen-lockfile
+      - name: Retain reproducible offline verification inputs
         shell: bash
         run: |
           set -euo pipefail
-          out="$RUNNER_TEMP/nexus-source-snapshot"
+          out="$RUNNER_TEMP/nexus-integration-workbench"
           mkdir -p "$out"
-          git update-ref refs/audit/main 664d0615f850c568a8840ac312ca7c92cb81ceee
-          git update-ref refs/audit/architecture 7d4bf273130d73dbf63348affc3a258fcdac4627
-          git update-ref refs/audit/total 4b14658c107f33778bc5d48505609cafd58a0aec
-          git bundle create "$out/nexus.bundle" refs/audit/main refs/audit/architecture refs/audit/total
-          git bundle verify "$out/nexus.bundle"
-          git bundle list-heads "$out/nexus.bundle" > "$out/refs.txt"
-          (cd "$out" && sha256sum nexus.bundle > SHA256SUMS.txt)
-      - name: Retain private integration source
+          bun --version > "$out/bun-version.txt"
+          cp "$(command -v bun)" "$out/bun"
+          gzip -9 "$out/bun"
+          find . -path './.git' -prune -o -type d -name node_modules -print0 -prune > "$RUNNER_TEMP/dependency-paths.z"
+          tar -czf "$out/dependencies.tar.gz" --null -T "$RUNNER_TEMP/dependency-paths.z"
+          git rev-parse HEAD > "$out/source-head.txt"
+          sha256sum bun.lock nexus/bun.lock > "$out/lock-sha256.txt"
+          (cd "$out" && sha256sum bun.gz dependencies.tar.gz > SHA256SUMS.txt)
+      - name: Retain private verification inputs
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-integration-source
-          path: ${{ runner.temp }}/nexus-source-snapshot/
+          name: nexus-integration-workbench
+          path: ${{ runner.temp }}/nexus-integration-workbench/
           if-no-files-found: error
           retention-days: 1
