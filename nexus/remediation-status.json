@@ -602,7 +602,8 @@
       "priority": "P0",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "Designed mechanism: an alarms permission plus a background deadline owner that sets one alarm per running countdown and fires completion out of the panel lifetime. Blocked on a deliberate permission-set decision (manifest, privacy projection, store listings) rather than a code-only change."
     },
     {
       "id": "J02",
@@ -610,23 +611,34 @@
       "priority": "P1",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "Exactly-once needs the J01 background owner plus a persisted completion marker written before the notification side effect; not implementable while completion lives only in the panel."
     },
     {
       "id": "J03",
       "title": "PDF 拆分只交付第一个结果",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/pdf/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "Every split range produces its own named download entry (split-1.pdf, split-2.pdf, ...); the panel no longer delivers only the first result."
     },
     {
       "id": "J04",
       "title": "PDF 页范围容错会把错误请求变成“成功但少内容”",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/pdf/structure-ops.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "Split ranges and extract pages are validated against the document up front; out-of-bounds requests fail with an explicit message instead of a success that quietly misses content."
     },
     {
       "id": "J05",
@@ -634,7 +646,8 @@
       "priority": "P1",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "Strict input validation and single-flight processing exist; frozen-input snapshots, worker-side execution with bounded concurrency and a cancel surface remain open."
     },
     {
       "id": "J06",
@@ -642,31 +655,49 @@
       "priority": "P1",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "Download paths revoke their object URLs; viewer paths must keep the URL alive for the new tab and need an ownership table with explicit retirement before this can close."
     },
     {
       "id": "J07",
       "title": "Gzip 解压缺少输出预算且 writer 错误未完整等待",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/gzip/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "One pump owner awaits the writer (no unhandled stream rejections), enforces a 64 MiB encoded output budget, and aborts the stream explicitly when the budget trips."
     },
     {
       "id": "J08",
       "title": "Diff 的完整 LCS 矩阵使内存随两边行数乘积增长",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/diff/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "Common prefix/suffix stripping plus a flat Int32Array LCS table capped at 16M cells; past the cap the middle region degrades to an explicit block replace that is still a correct edit script."
     },
     {
       "id": "J09",
       "title": "多哈希文件计算重复整文件读取，另有双份 MD5 实现",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/kernel/utils/md5.ts",
+        "apps/extension-halo/src/tools/checksum/core.ts",
+        "apps/extension-halo/src/tools/hash/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "One MD5 owner with the hardcoded RFC 1321 constants; the checksum and hash tools delegate to it. calculateAllChecksums reads the file exactly once instead of once per algorithm."
     },
     {
       "id": "J10",
@@ -674,7 +705,8 @@
       "priority": "P1",
       "status": "open",
       "changes": [],
-      "verification": []
+      "verification": [],
+      "scope": "Stale-result fencing now exists in the touched tools (bound targets, single-flight writes); a unified cross-panel async result state machine is still open."
     },
     {
       "id": "U01",
