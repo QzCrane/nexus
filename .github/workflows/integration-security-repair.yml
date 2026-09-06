@@ -1,0 +1,102 @@
+name: Integration dependency security repair
+on:
+  push:
+    branches: [codex/nexus-business-preserving-integration]
+    paths: ['.github/workflows/integration-security-repair.yml']
+permissions:
+  contents: write
+concurrency:
+  group: nexus-integration-security-repair
+  cancel-in-progress: false
+jobs:
+  repair:
+    if: github.repository == 'QzCrane/nexus' && github.ref == 'refs/heads/codex/nexus-business-preserving-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - name: Resolve only patched compatible transitive versions with Bun
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD^)" = 863d17ac66702e240379f6878055b3fd8e2a4031
+          cp package.json "$RUNNER_TEMP/nexus-root-package.json"
+          cp bun.lock "$RUNNER_TEMP/nexus-root-before.lock"
+          bun -e 'const p=await Bun.file("package.json").json(); if(p.overrides) throw Error("Unexpected existing overrides"); p.overrides={"fast-uri":"3.1.6","js-yaml":"4.3.1"}; await Bun.write("package.json",JSON.stringify(p,null,2)+"\n");'
+          bun install --ignore-scripts
+          cp "$RUNNER_TEMP/nexus-root-package.json" package.json
+          bun install --ignore-scripts
+          bun -e '
+            const before=Bun.JSONC.parse(await Bun.file(process.env.RUNNER_TEMP+"/nexus-root-before.lock").text());
+            const after=Bun.JSONC.parse(await Bun.file("bun.lock").text());
+            const changed=Object.keys({...before.packages,...after.packages}).filter(k=>JSON.stringify(before.packages[k])!==JSON.stringify(after.packages[k])).sort();
+            if(JSON.stringify(changed)!==JSON.stringify(["fast-uri","js-yaml"])) throw Error("Unexpected lock changes: "+JSON.stringify(changed));
+            if(after.packages["fast-uri"][0]!=="fast-uri@3.1.6"||after.packages["js-yaml"][0]!=="js-yaml@4.3.1") throw Error("Patch resolution drift");
+            delete before.packages; delete after.packages;
+            if(JSON.stringify(before)!==JSON.stringify(after)) throw Error("Lock topology or override drift");
+          '
+          git diff --exit-code -- package.json nexus/bun.lock
+          bun install --frozen-lockfile --ignore-scripts
+          bun install --cwd nexus --frozen-lockfile
+      - name: Verify actual advisory responses and resolved consumers
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/nexus-security-evidence"
+          mkdir -p "$out"
+          bun audit --json > "$out/repository-audit.json"
+          (cd nexus && bun audit --json) > "$out/product-audit.json"
+          bun --cwd nexus audit:dependencies
+          printf 'fix(integration): retain secure transitive resolvers\n' | bun node_modules/@commitlint/cli/cli.js --strict
+          if printf 'invalid commit message\n' | bun node_modules/@commitlint/cli/cli.js --strict; then
+            echo 'Invalid commit message was accepted' >&2
+            exit 1
+          fi
+          bun -e '
+            const {createRequire}=require("node:module");
+            const load=createRequire(require.resolve("@commitlint/load"));
+            const ajv=createRequire(createRequire(load.resolve("@commitlint/config-validator")).resolve("ajv"));
+            const config=createRequire(load.resolve("cosmiconfig"));
+            const uri=ajv("fast-uri"); const yaml=config("js-yaml");
+            if(ajv("fast-uri/package.json").version!=="3.1.6"||config("js-yaml/package.json").version!=="4.3.1") throw Error("Consumer resolution mismatch");
+            if(uri.resolve("http://example.test/","//bücher.test/")!=="http://xn--bcher-kva.test/") throw Error("IDN resolution regression");
+            const result=yaml.load("!!omap\n- a: 1\n- b: 2\n");
+            if(JSON.stringify(result)!==JSON.stringify([{a:1},{b:2}])) throw Error("Ordered-map semantics changed");
+            let rejected=false; try {yaml.load("!!omap\n- a: 1\n- a: 2\n");} catch {rejected=true;}
+            if(!rejected) throw Error("Duplicate ordered-map key accepted");
+            console.log("Actual commitlint consumers use patched compatible URI/YAML parsers");
+          '
+          cp bun.lock "$out/bun.lock"
+          git diff -- bun.lock > "$out/security-lock.patch"
+          (cd "$out" && sha256sum bun.lock repository-audit.json product-audit.json > SHA256SUMS.txt)
+      - name: Retain the reviewed lock repair without touching main or workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch=codex/nexus-business-preserving-integration
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = 664d0615f850c568a8840ac312ca7c92cb81ceee
+          test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$GITHUB_SHA"
+          test "$(git diff --name-only)" = bun.lock
+          git diff --check
+          git add -- bun.lock
+          git config user.name 'NEXUS integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(deps): resolve patched URI and YAML transitive governance dependencies'
+          git push origin "HEAD:refs/heads/$branch"
+          test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$(git rev-parse HEAD)"
+          git rev-parse HEAD > "$RUNNER_TEMP/nexus-security-evidence/head.txt"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/nexus-security-evidence/tree.txt"
+      - name: Preserve exact resolution and real audit evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: nexus-security-repair
+          path: ${{ runner.temp }}/nexus-security-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
