@@ -1,0 +1,47 @@
+name: Integration source snapshot
+
+on:
+  push:
+    branches:
+      - codex/nexus-business-preserving-integration
+    paths:
+      - '.github/workflows/integration-source-snapshot.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: integration-source-snapshot
+  cancel-in-progress: true
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read exact repository histories
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Bundle committed source only
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/nexus-source-snapshot"
+          mkdir -p "$out"
+          git update-ref refs/audit/main 664d0615f850c568a8840ac312ca7c92cb81ceee
+          git update-ref refs/audit/architecture 7d4bf273130d73dbf63348affc3a258fcdac4627
+          git update-ref refs/audit/total 4b14658c107f33778bc5d48505609cafd58a0aec
+          git bundle create "$out/nexus.bundle" refs/audit/main refs/audit/architecture refs/audit/total
+          git bundle verify "$out/nexus.bundle"
+          git bundle list-heads "$out/nexus.bundle" > "$out/refs.txt"
+          (cd "$out" && sha256sum nexus.bundle > SHA256SUMS.txt)
+      - name: Retain private integration source
+        uses: actions/upload-artifact@v4
+        with:
+          name: nexus-integration-source
+          path: ${{ runner.temp }}/nexus-source-snapshot/
+          if-no-files-found: error
+          retention-days: 1
