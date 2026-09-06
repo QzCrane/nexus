@@ -80,6 +80,15 @@ export async function safeStorageSet(data: Record<string, unknown>, options: Sto
 	catch { return false; }
 }
 
+export function scheduleStorageOperation(
+	area: StorageArea,
+	bytes: number,
+	operation: (storage: chrome.storage.StorageArea) => Promise<void>,
+	retries: number,
+): StorageWrite {
+	return scheduleMutation(area, bytes, operation, retries);
+}
+
 export async function safeStorageRemove(keys: string | string[], options: StorageOptions = {}): Promise<boolean> {
 	try {
 		const snapshot = typeof keys === 'string' ? keys : [...keys];

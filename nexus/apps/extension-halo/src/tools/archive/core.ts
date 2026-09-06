@@ -1,11 +1,61 @@
-// goal: Archive core logic using chrome.pageCapture API + IndexedDB
+// goal: Archive core logic using chrome.pageCapture API + IndexedDB.
+// The metadata list in chrome.storage and the MHTML blobs in IndexedDB are
+// reconciled in a fixed order: blob first, metadata second, rollback on
+// metadata failure, and an explicit orphan sweep for older damage.
 
+import { conditionalLedgerWrite, readLedgerEntry } from '@nexus/kernel';
 import type { ArchiveEntry } from './types';
-import { saveMHTMLBlob, getMHTMLBlob, deleteMHTMLBlob } from './storage';
+import { saveMHTMLBlob, getMHTMLBlob, deleteMHTMLBlob, deleteMHTMLBlobs, getAllBlobIds } from './storage';
 
 const STORAGE_KEY = 'halo_archive_entries';
+export const MAX_ARCHIVE_ENTRIES = 50;
+const MAX_MUTATION_ATTEMPTS = 3;
 
-// Capture current page as MHTML
+/**
+ * Sole missing/malformed-storage policy for the metadata list. Entries that do
+ * not satisfy the domain contract are dropped, never shape-coerced.
+ */
+export function parseArchiveEntries(value: unknown): ArchiveEntry[] {
+	if (!Array.isArray(value)) return [];
+	const parsed: ArchiveEntry[] = [];
+	for (const entry of value) {
+		if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
+		const candidate = entry as Record<string, unknown>;
+		if (typeof candidate.id !== 'string' || candidate.id.length === 0) continue;
+		if (typeof candidate.title !== 'string') continue;
+		if (typeof candidate.url !== 'string') continue;
+		if (typeof candidate.savedAt !== 'number' || !Number.isFinite(candidate.savedAt)) continue;
+		if (typeof candidate.size !== 'number' || !Number.isFinite(candidate.size)) continue;
+		parsed.push({ id: candidate.id, title: candidate.title, url: candidate.url, savedAt: candidate.savedAt, size: candidate.size });
+	}
+	return parsed;
+}
+
+async function mutateEntries(mutate: (stored: ArchiveEntry[]) => ArchiveEntry[]): Promise<ArchiveEntry[]> {
+	let base = await readLedgerEntry(STORAGE_KEY, { area: 'local' });
+	for (let attempt = 1; attempt <= MAX_MUTATION_ATTEMPTS; attempt++) {
+		const next = mutate(parseArchiveEntries(base.value));
+		const outcome = await conditionalLedgerWrite(STORAGE_KEY, {
+			area: 'local',
+			baseRevision: base.revision,
+			value: next,
+			remerge: (current, remergeAttempt) => {
+				if (remergeAttempt >= MAX_MUTATION_ATTEMPTS) return null;
+				return mutate(parseArchiveEntries(current));
+			},
+		});
+		if (outcome.kind === 'committed') return parseArchiveEntries(outcome.value);
+		if (outcome.kind === 'external') {
+			if (outcome.revision === base.revision) return parseArchiveEntries(base.value);
+			base = { value: parseArchiveEntries(outcome.value), revision: outcome.revision };
+			continue;
+		}
+		throw new Error('Archive metadata update was not committed; the stored list is unchanged.');
+	}
+	return parseArchiveEntries(base.value);
+}
+
+// Capture current page as MHTML and store blob plus metadata as one logical unit
 export async function captureCurrentPage(): Promise<ArchiveEntry | null> {
 	try {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -16,10 +66,6 @@ export async function captureCurrentPage(): Promise<ArchiveEntry | null> {
 		if (!mhtmlBlob) throw new Error('Capture failed');
 
 		const id = crypto.randomUUID();
-		
-		// Save blob to IndexedDB
-		await saveMHTMLBlob(id, mhtmlBlob);
-
 		const entry: ArchiveEntry = {
 			id,
 			title: tab.title || 'Untitled',
@@ -27,6 +73,16 @@ export async function captureCurrentPage(): Promise<ArchiveEntry | null> {
 			savedAt: Date.now(),
 			size: mhtmlBlob.size,
 		};
+
+		await saveMHTMLBlob(id, mhtmlBlob);
+		try {
+			await saveEntryMeta(entry);
+		} catch (metaError) {
+			// Metadata did not commit: remove the just-written blob so the two
+			// stores never disagree about this entry.
+			await deleteMHTMLBlob(id).catch(() => undefined);
+			throw metaError;
+		}
 
 		return entry;
 	} catch (error) {
@@ -39,10 +95,10 @@ export async function captureCurrentPage(): Promise<ArchiveEntry | null> {
 export async function downloadArchive(entry: ArchiveEntry): Promise<void> {
 	const blob = await getMHTMLBlob(entry.id);
 	if (!blob) return;
-	
+
 	const url = URL.createObjectURL(blob);
 	const filename = `${sanitizeFilename(entry.title)}_${formatDate(entry.savedAt)}.mhtml`;
-	
+
 	const a = document.createElement('a');
 	a.href = url;
 	a.download = filename;
@@ -63,27 +119,67 @@ export async function openInViewer(entry: ArchiveEntry): Promise<void> {
 	chrome.tabs.create({ url });
 }
 
-// Save entry metadata to storage
-export async function saveEntryMeta(entry: ArchiveEntry): Promise<void> {
-	const stored = await getStoredEntries();
-	const meta = { id: entry.id, title: entry.title, url: entry.url, savedAt: entry.savedAt, size: entry.size };
-	stored.unshift(meta as ArchiveEntry);
-	if (stored.length > 50) stored.pop();
-	await chrome.storage.local.set({ [STORAGE_KEY]: stored });
+// Save entry metadata, trim the list to its ceiling, and delete the blobs of
+// trimmed entries so trimming cannot leave orphans behind.
+export async function saveEntryMeta(entry: ArchiveEntry): Promise<ArchiveEntry[]> {
+	let base = await readLedgerEntry(STORAGE_KEY, { area: 'local' });
+	for (let attempt = 1; attempt <= MAX_MUTATION_ATTEMPTS; attempt++) {
+		const stored = parseArchiveEntries(base.value);
+		const updated = [entry, ...stored.filter((e) => e.id !== entry.id)];
+		const kept = updated.slice(0, MAX_ARCHIVE_ENTRIES);
+		const trimmedIds = updated.slice(MAX_ARCHIVE_ENTRIES).map((e) => e.id);
+		const outcome = await conditionalLedgerWrite(STORAGE_KEY, {
+			area: 'local',
+			baseRevision: base.revision,
+			value: kept,
+			remerge: (current, remergeAttempt) => {
+				if (remergeAttempt >= MAX_MUTATION_ATTEMPTS) return null;
+				const refreshed = [entry, ...parseArchiveEntries(current).filter((e) => e.id !== entry.id)];
+				return refreshed.slice(0, MAX_ARCHIVE_ENTRIES);
+			},
+		});
+		if (outcome.kind === 'committed' || outcome.kind === 'external') {
+			if (trimmedIds.length > 0) {
+				// A failed blob cleanup is recovered by the orphan sweep, not silenced.
+				await deleteMHTMLBlobs(trimmedIds).catch((error) => {
+					console.error('[HALO:Archive] Trimmed blob cleanup failed:', error);
+				});
+			}
+			if (outcome.kind === 'committed') return parseArchiveEntries(outcome.value);
+			if (outcome.revision === base.revision) return parseArchiveEntries(base.value);
+			base = { value: parseArchiveEntries(outcome.value), revision: outcome.revision };
+			continue;
+		}
+		throw new Error('Archive metadata update was not committed; the stored list is unchanged.');
+	}
+	return parseArchiveEntries(base.value);
 }
 
 // Get stored entries (metadata only)
 export async function getStoredEntries(): Promise<ArchiveEntry[]> {
-	const result = await chrome.storage.local.get(STORAGE_KEY);
-	return result[STORAGE_KEY] || [];
+	const entry = await readLedgerEntry(STORAGE_KEY, { area: 'local' });
+	return parseArchiveEntries(entry.value);
 }
 
 // Delete entry (both metadata and blob)
-export async function deleteEntry(id: string): Promise<void> {
-	const stored = await getStoredEntries();
-	const filtered = stored.filter((e) => e.id !== id);
-	await chrome.storage.local.set({ [STORAGE_KEY]: filtered });
+export async function deleteEntry(id: string): Promise<ArchiveEntry[]> {
+	// The blob goes first: a metadata failure then leaves an entry whose blob is
+	// gone (surfaced by the viewer alert), never an unreferenced orphan.
 	await deleteMHTMLBlob(id);
+	return mutateEntries((stored) => stored.filter((e) => e.id !== id));
+}
+
+/**
+ * Delete blobs that no longer have a metadata entry, up to a bounded count per
+ * run. Returns how many orphans were removed; storage failures propagate.
+ */
+export async function reconcileArchiveOrphans(): Promise<number> {
+	const entries = await getStoredEntries();
+	const known = new Set(entries.map((e) => e.id));
+	const blobs = await getAllBlobIds();
+	const orphanIds = blobs.filter((blob) => !known.has(blob.id)).map((blob) => blob.id).slice(0, 50);
+	if (orphanIds.length > 0) await deleteMHTMLBlobs(orphanIds);
+	return orphanIds.length;
 }
 
 // Utilities

@@ -1,4 +1,5 @@
-// goal: Archive IndexedDB storage for MHTML blobs
+// goal: Archive IndexedDB storage for MHTML blobs with transaction-completion
+// semantics: a request's success alone is not treated as a committed mutation.
 
 import type { ArchiveEntry } from './types';
 
@@ -36,55 +37,65 @@ async function openDB(): Promise<IDBDatabase> {
 	});
 }
 
+function requestValue<T>(request: IDBRequest<T>): Promise<T> {
+	return new Promise((resolve, reject) => {
+		request.onsuccess = () => resolve(request.result);
+		request.onerror = () => reject(request.error ?? new Error('IndexedDB request failed'));
+	});
+}
+
+// Resolve only when the surrounding transaction has committed; an abort or a
+// transaction-level error rejects even when individual requests succeeded.
+function transactionDone(tx: IDBTransaction): Promise<void> {
+	return new Promise((resolve, reject) => {
+		tx.oncomplete = () => resolve();
+		tx.onabort = () => reject(tx.error ?? new Error('IndexedDB transaction aborted'));
+		tx.onerror = () => reject(tx.error ?? new Error('IndexedDB transaction failed'));
+	});
+}
+
 // Save MHTML blob to IndexedDB
 export async function saveMHTMLBlob(id: string, blob: Blob): Promise<void> {
 	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(STORE_NAME, 'readwrite');
-		const store = tx.objectStore(STORE_NAME);
-		const request = store.put({ id, blob, savedAt: Date.now() });
-		request.onsuccess = () => resolve();
-		request.onerror = () => reject(request.error);
-	});
+	const tx = db.transaction(STORE_NAME, 'readwrite');
+	tx.objectStore(STORE_NAME).put({ id, blob, savedAt: Date.now() });
+	await transactionDone(tx);
 }
 
 // Get MHTML blob from IndexedDB
 export async function getMHTMLBlob(id: string): Promise<Blob | null> {
 	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(STORE_NAME, 'readonly');
-		const store = tx.objectStore(STORE_NAME);
-		const request = store.get(id);
-		request.onsuccess = () => resolve(request.result?.blob || null);
-		request.onerror = () => reject(request.error);
-	});
+	const tx = db.transaction(STORE_NAME, 'readonly');
+	const result = await requestValue(tx.objectStore(STORE_NAME).get(id));
+	await transactionDone(tx);
+	return result?.blob || null;
 }
 
 // Delete MHTML blob from IndexedDB
 export async function deleteMHTMLBlob(id: string): Promise<void> {
 	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(STORE_NAME, 'readwrite');
-		const store = tx.objectStore(STORE_NAME);
-		const request = store.delete(id);
-		request.onsuccess = () => resolve();
-		request.onerror = () => reject(request.error);
-	});
+	const tx = db.transaction(STORE_NAME, 'readwrite');
+	tx.objectStore(STORE_NAME).delete(id);
+	await transactionDone(tx);
+}
+
+// Delete several blobs in one committed transaction
+export async function deleteMHTMLBlobs(ids: string[]): Promise<void> {
+	if (ids.length === 0) return;
+	const db = await openDB();
+	const tx = db.transaction(STORE_NAME, 'readwrite');
+	const store = tx.objectStore(STORE_NAME);
+	for (const id of ids) store.delete(id);
+	await transactionDone(tx);
 }
 
 // Get all stored blob IDs with sizes
 export async function getAllBlobIds(): Promise<{ id: string; size: number }[]> {
 	const db = await openDB();
-	return new Promise((resolve, reject) => {
-		const tx = db.transaction(STORE_NAME, 'readonly');
-		const store = tx.objectStore(STORE_NAME);
-		const request = store.getAll();
-		request.onsuccess = () => {
-			const items = request.result || [];
-			resolve(items.map((item: { id: string; blob: Blob }) => ({ id: item.id, size: item.blob?.size || 0 })));
-		};
-		request.onerror = () => reject(request.error);
-	});
+	const tx = db.transaction(STORE_NAME, 'readonly');
+	const items = await requestValue(tx.objectStore(STORE_NAME).getAll());
+	await transactionDone(tx);
+	return (items || []).map((item: { id: string; blob: Blob }) => ({ id: item.id, size: item.blob?.size || 0 }));
 }
 
 // Open MHTML in new tab (Chrome can render MHTML natively)

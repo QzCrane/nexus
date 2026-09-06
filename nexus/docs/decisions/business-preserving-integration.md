@@ -146,3 +146,30 @@ byte-budget history work is tracked separately. The test transport's command
 wrapping was also corrected after an actual invocation printed Bun help with a
 zero exit code. Retained checkpoint claims must distinguish focused tests that
 ran from previous orchestration calls that did not execute their script owner.
+
+## Conditional storage ledger for shared keys
+
+Shared tool keys now support conditional read-modify-write through a kernel
+storage ledger: each write carries a companion revision committed in the same
+physical `set`, the stored value is verified after the write, and a detected
+concurrent change is repaired by a bounded caller-supplied remerge instead of
+becoming a silent lost update. `useToolState`, clipboard history, the session
+list and archive metadata use this path. A degraded transport that drops the
+revision key still commits by stored-value equality. This is optimistic
+concurrency for those keys; it is not a cross-window transaction, plain
+unledgered writes remain unconditional overwrites, and unrelated legacy keys
+keep their previous behavior. The mechanism is the implemented boundary for
+remediation items S01 and S05 and the cross-context part of S10, not a claim of
+transactional storage.
+
+Archive consistency is enforced by order and reconciliation rather than one
+atomic store: blob first, metadata second, blob rollback when metadata cannot
+commit, blob deletion for trimmed entries, and a bounded orphan sweep on panel
+mount. IndexedDB helpers resolve only when the surrounding transaction
+completes. The session manager persists one list only, restores pinned state in
+both window paths, and reports per-tab restore results. Clipboard admission
+adds an encoded byte budget with pinned-preserving eviction; session lists cap
+entries and bytes while always retaining the newest session. These repairs are
+focused regressions in `apps/extension-halo/test/storage-ledger.spec.ts`; they
+do not complete the remaining domain schemas, budgets, or failure-surface work
+tracked as S04, S06, and S07.

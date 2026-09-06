@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ToolId } from '../core/types';
-import { safeStorageGet, scheduleStorageSet } from '../core/safe-storage';
+import { safeStorageGet } from '../core/safe-storage';
+import { conditionalLedgerWrite, ledgerRevisionKey } from '../core/safe-storage';
+import type { LedgerWriteOutcome } from '../core/safe-storage';
 import { reportStorageHealth } from '../core/storage-health';
 import { subscribeHaloStorageChanges } from '../core/storage-change-bus';
 
@@ -388,6 +390,7 @@ export function useToolState<T>(
 	const [isReady, setIsReady] = useState(false);
 	const stateRef = useRef(state);
 	const storageKey = customKey ?? `halo_tool_state_${toolId}`;
+	const baseRevisionRef = useRef(0);
 	const authorityIdentity = `${area}\u0000${storageKey}`;
 	const pendingAuthorityRef = useRef<{
 		identity: string;
@@ -418,27 +421,54 @@ export function useToolState<T>(
 		const request = pendingAuthority.beginNextWrite();
 		if (!request) return;
 		void (async () => {
-			let saved = false;
+			let outcome: LedgerWriteOutcome;
 			try {
-				const write = scheduleStorageSet({ [storageKey]: request.value }, { area });
-				const observed = await write.observe();
-				if (observed === 'unknown') {
-					authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, 'write-unknown'));
-				}
-				// Keep this authority busy until actual completion, including after
-				// an observation timeout. A timeout cannot authorize an overlapping write.
-				saved = await write.completion;
+				outcome = await conditionalLedgerWrite(storageKey, {
+					area,
+					baseRevision: baseRevisionRef.current,
+					value: request.value,
+					remerge: (_current, attempt) => {
+						// Concede to the stored value unless a newer local edit exists;
+						// then revalidate against the fresh revision with that intent.
+						if (attempt >= 2 || storageValuesEqual(stateRef.current, request.value)) return null;
+						try { return normalizeValueRef.current(stateRef.current, request.value); }
+						catch { return null; }
+					},
+				});
 			} catch {
-				saved = false;
+				outcome = { kind: 'rejected' };
 			}
-			pendingAuthority.completeWrite(saved);
-			authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(
-				authorityEpoch.healthOwner, saved ? null : 'write-error', saved ? null : () => {
-					const retry = pendingAuthority.stageLocal(stateRef.current);
-					pendingAuthority.flushPending(retry.token);
-					persistNextForEpoch();
-				},
-			));
+			if (outcome.kind === 'committed') {
+				baseRevisionRef.current = outcome.revision;
+				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, null));
+			} else if (outcome.kind === 'external') {
+				baseRevisionRef.current = outcome.revision;
+				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, null));
+				let stored: T | null = null;
+				try { stored = normalizeValueRef.current(outcome.value, stateRef.current); }
+				catch { stored = null; }
+				if (stored !== null) {
+					const decision = pendingAuthority.observeStorage(stored);
+					if (decision.kind === 'external') {
+						stateRef.current = decision.value;
+						setState(decision.value);
+					}
+				}
+			} else if (outcome.kind === 'unknown') {
+				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, 'write-unknown'));
+			}
+			// Keep this authority busy until actual completion, including after
+			// an observation timeout. A timeout cannot authorize an overlapping write.
+			pendingAuthority.completeWrite(outcome.kind === 'committed');
+			if (outcome.kind === 'rejected') {
+				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(
+					authorityEpoch.healthOwner, 'write-error', () => {
+						const retry = pendingAuthority.stageLocal(stateRef.current);
+						pendingAuthority.flushPending(retry.token);
+						persistNextForEpoch();
+					},
+				));
+			}
 			persistNextForEpoch();
 		})();
 	}, [storageKey, area, authorityEpoch, pendingAuthority]);
@@ -451,10 +481,15 @@ export function useToolState<T>(
 		const baseValue = normalizeValueRef.current(initialValue, initialValue);
 		authorityEpoch.hydrated = false;
 		setIsReady(false);
-		void safeStorageGet([storageKey], { [storageKey]: baseValue }, { area })
+		void safeStorageGet([storageKey, ledgerRevisionKey(storageKey)], { [storageKey]: baseValue }, { area })
 			.then((res) => {
 				if (!isMounted) return;
 				const loaded = normalizeValueRef.current(res[storageKey] !== undefined ? res[storageKey] : baseValue, baseValue);
+				baseRevisionRef.current = typeof res[ledgerRevisionKey(storageKey)] === 'number'
+					&& Number.isSafeInteger(res[ledgerRevisionKey(storageKey)])
+					&& (res[ledgerRevisionKey(storageKey)] as number) >= 0
+					? (res[ledgerRevisionKey(storageKey)] as number)
+					: 0;
 				authorityEpoch.hydrated = true;
 				setIsReady(true);
 				reportStorageHealth(authorityEpoch.healthOwner, null);

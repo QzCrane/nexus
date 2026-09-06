@@ -182,21 +182,17 @@
       "id": "S01",
       "title": "存储等待超时后迟到旧写入覆盖新值",
       "priority": "P0",
-      "status": "partial",
+      "status": "implemented",
       "changes": [
+        "packages/nexus-kernel/src/storage/ledger.ts",
         "packages/nexus-kernel/src/storage/safe-storage.ts",
-        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
-        "apps/extension-halo/src/kernel/core/storage-health.ts",
-        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
-        "apps/extension-halo/src/tools/timer/core.ts",
-        "apps/extension-halo/src/tools/pomodoro/core.ts",
-        "apps/extension-halo/src/tools/clipboard/core.ts"
+        "packages/nexus-kernel/src/storage/index.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts"
       ],
       "verification": [
-        "apps/extension-halo/test/storage-settlement.spec.ts",
-        "apps/extension-halo/test/storage-boundaries.spec.ts"
+        "apps/extension-halo/test/storage-ledger.spec.ts"
       ],
-      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
+      "scope": "Conditional ledger writes now carry a companion revision, verify after commit, and repair detected conflicts with a bounded remerge. This is optimistic concurrency for hook-mediated and reworked tool keys; it is still not a cross-window transaction, and plain unledgered writes remain unconditional overwrites."
     },
     {
       "id": "S02",
@@ -250,21 +246,33 @@
         "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
         "apps/extension-halo/src/tools/timer/core.ts",
         "apps/extension-halo/src/tools/pomodoro/core.ts",
-        "apps/extension-halo/src/tools/clipboard/core.ts"
+        "apps/extension-halo/src/tools/clipboard/core.ts",
+        "apps/extension-halo/src/tools/clipboard/types.ts",
+        "apps/extension-halo/src/tools/session-manager/core.ts",
+        "apps/extension-halo/src/tools/archive/core.ts"
       ],
       "verification": [
         "apps/extension-halo/test/storage-settlement.spec.ts",
-        "apps/extension-halo/test/storage-boundaries.spec.ts"
+        "apps/extension-halo/test/storage-boundaries.spec.ts",
+        "apps/extension-halo/test/storage-ledger.spec.ts"
       ],
-      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
+      "scope": "Clipboard history, session list and archive metadata now have domain-owned parsers that drop malformed entries instead of shape-coercing. Remaining: equivalent owned schemas for the other complex persisted tools (sticky notes, todo list, code snippets, bookmarks, annotations) and versioned migration for their damaged data."
     },
     {
       "id": "S05",
       "title": "多个上下文的读改写可能丢更新",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/storage/ledger.ts",
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "packages/nexus-kernel/src/storage/index.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Shared keys written through the ledger (tool hooks, clipboard history, session list, archive metadata) use conditional read-modify-write: a concurrent change is detected and remerged instead of silently lost. Domains not yet on the ledger keep their previous behavior."
     },
     {
       "id": "S06",
@@ -278,13 +286,16 @@
         "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
         "apps/extension-halo/src/tools/timer/core.ts",
         "apps/extension-halo/src/tools/pomodoro/core.ts",
-        "apps/extension-halo/src/tools/clipboard/core.ts"
+        "apps/extension-halo/src/tools/clipboard/core.ts",
+        "apps/extension-halo/src/tools/session-manager/panel.tsx",
+        "apps/extension-halo/src/tools/archive/panel.tsx"
       ],
       "verification": [
         "apps/extension-halo/test/storage-settlement.spec.ts",
-        "apps/extension-halo/test/storage-boundaries.spec.ts"
+        "apps/extension-halo/test/storage-boundaries.spec.ts",
+        "apps/extension-halo/test/storage-ledger.spec.ts"
       ],
-      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
+      "scope": "Session and archive panels now surface mutation failures as explicit status text and keep their view consistent; hook-mediated keys report rejected/unknown writes through the mounted banner. Remaining: direct chrome.storage callers outside these paths."
     },
     {
       "id": "S07",
@@ -298,65 +309,91 @@
         "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
         "apps/extension-halo/src/tools/timer/core.ts",
         "apps/extension-halo/src/tools/pomodoro/core.ts",
-        "apps/extension-halo/src/tools/clipboard/core.ts"
+        "apps/extension-halo/src/tools/clipboard/core.ts",
+        "apps/extension-halo/src/tools/clipboard/types.ts",
+        "apps/extension-halo/src/tools/session-manager/core.ts",
+        "apps/extension-halo/src/tools/archive/core.ts"
       ],
       "verification": [
         "apps/extension-halo/test/storage-settlement.spec.ts",
-        "apps/extension-halo/test/storage-boundaries.spec.ts"
+        "apps/extension-halo/test/storage-boundaries.spec.ts",
+        "apps/extension-halo/test/storage-ledger.spec.ts"
       ],
-      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
+      "scope": "Clipboard history now enforces an encoded byte budget with pinned-preserving eviction; sessions enforce entry and byte ceilings that always keep the newest session; archive metadata caps entries and deletes trimmed blobs. Remaining: per-domain budgets and retention for sticky notes, todo list, snippets, bookmarks, annotations."
     },
     {
       "id": "S08",
       "title": "归档元数据与 Blob 不在同一事务，裁剪留下孤儿",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/archive/core.ts",
+        "apps/extension-halo/src/tools/archive/storage.ts",
+        "apps/extension-halo/src/tools/archive/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Capture stores blob then metadata and rolls the blob back when metadata cannot commit; trimming deletes trimmed blobs; a bounded orphan sweep runs on panel mount. IndexedDB and chrome.storage still cannot share one atomic transaction; consistency is enforced by order, rollback, and reconciliation."
     },
     {
       "id": "S09",
       "title": "IndexedDB 请求成功过早被当作事务已提交",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/archive/storage.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Archive IndexedDB helpers resolve only when the surrounding transaction completes; an abort after request success rejects."
     },
     {
       "id": "S10",
       "title": "剪贴板满额时仍会丢固定条目",
       "priority": "P0",
-      "status": "partial",
+      "status": "implemented",
       "changes": [
+        "packages/nexus-kernel/src/storage/ledger.ts",
         "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "packages/nexus-kernel/src/storage/index.ts",
         "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
-        "apps/extension-halo/src/kernel/core/storage-health.ts",
-        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
-        "apps/extension-halo/src/tools/timer/core.ts",
-        "apps/extension-halo/src/tools/pomodoro/core.ts",
-        "apps/extension-halo/src/tools/clipboard/core.ts"
+        "apps/extension-halo/src/tools/clipboard/core.ts",
+        "apps/extension-halo/src/tools/clipboard/types.ts"
       ],
       "verification": [
-        "apps/extension-halo/test/storage-settlement.spec.ts",
-        "apps/extension-halo/test/storage-boundaries.spec.ts"
+        "apps/extension-halo/test/storage-ledger.spec.ts"
       ],
-      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
+      "scope": "Clipboard history mutations are conditional ledger writes whose intent is re-applied to the fresh stored list, so concurrent appends from panel and background converge and pinned entries survive. This is convergence through conditional writes, not a cross-window transaction."
     },
     {
       "id": "S11",
       "title": "Session Manager 保存两份会话列表，初始展示可能失真",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/session-manager/core.ts",
+        "apps/extension-halo/src/tools/session-manager/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "The persisted session list lives only in the core-owned key; the panel keeps a mount-scoped view refreshed from each mutation result. The duplicate persisted hook copy for the list is gone."
     },
     {
       "id": "S12",
       "title": "会话恢复丢 pinned 状态且无法表达部分成功",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/session-manager/core.ts",
+        "apps/extension-halo/src/tools/session-manager/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Restore preserves pinned tabs in both current-window and new-window paths (window first tab pinned via tabs.update) and returns per-tab restored/failed results that the panel displays."
     },
     {
       "id": "N01",
