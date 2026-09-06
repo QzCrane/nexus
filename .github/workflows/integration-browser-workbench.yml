@@ -1,42 +1,85 @@
-name: Integration browser workbench
+name: Integration repair checkpoint
 on:
   push:
-    branches:
-      - codex/nexus-business-preserving-integration
-    paths:
-      - '.github/workflows/integration-browser-workbench.yml'
+    branches: [codex/nexus-business-preserving-integration]
+    paths: ['.github/workflows/integration-browser-workbench.yml']
 permissions:
-  contents: read
+  contents: write
+concurrency:
+  group: nexus-integration-repair-checkpoint
+  cancel-in-progress: false
 jobs:
-  resolve:
+  checkpoint:
+    if: github.repository == 'QzCrane/nexus' && github.ref == 'refs/heads/codex/nexus-business-preserving-integration'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           ref: ${{ github.sha }}
-          persist-credentials: false
+          fetch-depth: 2
+      - name: Reconstruct locally checked source changes
+        env:
+          RECIPE: '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'
+        run: |
+          python3 - <<'PY'
+          import base64, hashlib, json, lzma, os, subprocess
+          from pathlib import Path
+          def git(*args): return subprocess.check_output(['git', *args]).decode().strip()
+          assert git('rev-parse', 'HEAD^') == 'd3eb8c614c82b65a0652ef941bf4a8ef387ac128'
+          assert git('diff-tree', '--no-commit-id', '--name-only', '-r', 'HEAD') == '.github/workflows/integration-browser-workbench.yml'
+          data = base64.b64decode(os.environ['RECIPE'], validate=True)
+          assert hashlib.sha256(data).hexdigest() == '04294ce59f78c3c53144542e5df60fa6d463fe62aecbfabfa6c08296bc95cfd6'
+          rows = json.loads(lzma.decompress(data, memlimit=256*1024*1024))
+          seen = set()
+          for row in rows:
+              name = row['path']; path = Path(name)
+              assert name not in seen and not path.is_absolute() and '..' not in path.parts
+              assert name == 'AGENTS.md' or name.startswith('nexus/')
+              seen.add(name)
+              if row['source']:
+                  assert git('hash-object', name) == row['source'], name
+                  old = path.read_text()
+              else:
+                  assert not path.exists(), name
+                  old = ''
+              result = []
+              for part in row['parts']:
+                  if isinstance(part, str): result.append(part)
+                  else:
+                      start, end = part
+                      assert 0 <= start <= end <= len(old)
+                      result.append(old[start:end])
+              path.parent.mkdir(parents=True, exist_ok=True)
+              path.write_text(''.join(result))
+              assert git('hash-object', name) == row['target'], name
+          subprocess.check_call(['git', 'add', '--', 'AGENTS.md', 'nexus'])
+          tree = git('write-tree')
+          assert git('rev-parse', tree + ':nexus') == '6242894343ac51d472f20bfcdfca07decd032a53'
+          assert git('rev-parse', tree + ':AGENTS.md') == 'fcda9ab4a76f8b5f7d91b74563b739098e655f8b'
+          subprocess.check_call(['git', 'diff', '--cached', '--check'])
+          subprocess.check_call(['git', 'diff', '--cached', '--exit-code', '--', '.github'])
+          PY
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: 1.4.0
-      - name: Resolve a separate exact minimum-browser protocol driver
+      - name: Verify candidate types and regression tests
+        run: |
+          bun install --cwd nexus --frozen-lockfile
+          bun run typecheck
+          bun run --cwd nexus check:toolchain
+          bun run --cwd nexus/apps/extension-spectra test:unit
+          bun test nexus/apps/extension-halo/test/theme-contrast.spec.ts nexus/scripts/diagnostics-contract.spec.ts
+      - name: Commit the verified repairs to integration only
         shell: bash
         run: |
           set -euo pipefail
-          bun install --cwd nexus --frozen-lockfile
-          bun add --cwd nexus/apps/extension-spectra --dev --exact 'puppeteer-floor@npm:puppeteer-core@24.7.2'
-          bun install --cwd nexus --frozen-lockfile
-          out="$RUNNER_TEMP/nexus-floor-lock"
-          mkdir -p "$out"
-          cp nexus/apps/extension-spectra/package.json "$out/spectra-package.json"
-          cp nexus/bun.lock "$out/bun.lock"
-          git diff -- nexus/bun.lock nexus/apps/extension-spectra/package.json > "$out/driver.patch"
-          find nexus -type d -name node_modules -print0 -prune > "$RUNNER_TEMP/dependency-paths.z"
-          tar -czf "$out/dependencies.tar.gz" --null -T "$RUNNER_TEMP/dependency-paths.z"
-          (cd "$out" && sha256sum spectra-package.json bun.lock dependencies.tar.gz > SHA256SUMS.txt)
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
-        with:
-          name: nexus-floor-lock
-          path: ${{ runner.temp }}/nexus-floor-lock/
-          retention-days: 1
-          if-no-files-found: error
+          branch=codex/nexus-business-preserving-integration
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = 664d0615f850c568a8840ac312ca7c92cb81ceee
+          test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$GITHUB_SHA"
+          git config user.name 'NEXUS integration'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'fix(integration): restore physical feedback, popup sizing, diagnostics and quality contracts'
+          git push origin "HEAD:refs/heads/$branch"
+          test "$(git ls-remote origin refs/heads/$branch | cut -f1)" = "$(git rev-parse HEAD)"
+          printf 'Repair checkpoint: %s\nProduct tree: %s\n' "$(git rev-parse HEAD)" "$(git rev-parse HEAD:nexus)" >> "$GITHUB_STEP_SUMMARY"
