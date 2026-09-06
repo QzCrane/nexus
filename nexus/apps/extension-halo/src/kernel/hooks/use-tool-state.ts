@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ToolId } from '../core/types';
-import { safeStorageGet, safeStorageSet } from '../core/safe-storage';
+import { safeStorageGet, scheduleStorageSet } from '../core/safe-storage';
+import { reportStorageHealth } from '../core/storage-health';
 import { subscribeHaloStorageChanges } from '../core/storage-change-bus';
 
 export interface UseToolStateOptions<T = unknown> {
@@ -392,12 +393,16 @@ export function useToolState<T>(
 		identity: string;
 		controller: UseToolStatePendingAuthority<T>;
 		lifecycle: UseToolStateLifecycleEpoch;
+		hydrated: boolean;
+		healthOwner: symbol;
 	} | null>(null);
 	if (pendingAuthorityRef.current?.identity !== authorityIdentity) {
 		pendingAuthorityRef.current = {
 			identity: authorityIdentity,
 			controller: new UseToolStatePendingAuthority(stateRef.current),
 			lifecycle: new UseToolStateLifecycleEpoch(),
+			hydrated: false,
+			healthOwner: Symbol("tool-state-storage-health"),
 		};
 	}
 	const authorityEpoch = pendingAuthorityRef.current;
@@ -408,54 +413,64 @@ export function useToolState<T>(
 	const normalizeValueRef = useRef(normalizeValue);
 	useEffect(() => { normalizeValueRef.current = normalizeValue; }, [normalizeValue]);
 
-	useEffect(() => {
-		let isMounted = true;
-		const requestedRevision = pendingAuthority.authorityRevision;
-		const initialValue = initialValueRef.current();
-		const baseValue = normalizeValueRef.current(initialValue, initialValue);
-		setIsReady(false);
-		void safeStorageGet([storageKey], { [storageKey]: baseValue }, { area })
-			.then((res) => {
-				if (!isMounted) return;
-				setIsReady(true);
-				const storedValue = res[storageKey];
-				const loaded = normalizeValueRef.current(
-					storedValue !== undefined ? storedValue : baseValue,
-					baseValue,
-				);
-				if (!pendingAuthority.acceptLoaded(loaded, requestedRevision)) return;
-				stateRef.current = loaded;
-				setState(loaded);
-			})
-			.catch((error: unknown) => {
-				if (!isMounted) return;
-				setIsReady(true);
-				console.error(`[HALO:useToolState] Failed to load ${storageKey}`, error);
-			});
-		return () => { isMounted = false; };
-	}, [storageKey, area, pendingAuthority]);
-
 	const persistNextState = useCallback(function persistNextForEpoch(): void {
+		if (!authorityEpoch.hydrated) return;
 		const request = pendingAuthority.beginNextWrite();
 		if (!request) return;
 		void (async () => {
 			let saved = false;
 			try {
-				saved = await safeStorageSet(
-					{ [storageKey]: request.value },
-					{ area },
-				);
-				if (!saved) throw new Error(`Storage rejected state for ${storageKey}`);
-			} catch (error: unknown) {
-				console.error(
-					`[HALO:useToolState] Failed to persist ${storageKey}`,
-					error,
-				);
+				const write = scheduleStorageSet({ [storageKey]: request.value }, { area });
+				const observed = await write.observe();
+				if (observed === 'unknown') {
+					authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, 'write-unknown'));
+				}
+				// Keep this authority busy until actual completion, including after
+				// an observation timeout. A timeout cannot authorize an overlapping write.
+				saved = await write.completion;
+			} catch {
+				saved = false;
 			}
 			pendingAuthority.completeWrite(saved);
+			authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(
+				authorityEpoch.healthOwner, saved ? null : 'write-error', saved ? null : () => {
+					const retry = pendingAuthority.stageLocal(stateRef.current);
+					pendingAuthority.flushPending(retry.token);
+					persistNextForEpoch();
+				},
+			));
 			persistNextForEpoch();
 		})();
-	}, [storageKey, area, pendingAuthority]);
+	}, [storageKey, area, authorityEpoch, pendingAuthority]);
+
+	const [loadAttempt, setLoadAttempt] = useState(0);
+	useEffect(() => {
+		let isMounted = true;
+		const requestedRevision = 0;
+		const initialValue = initialValueRef.current();
+		const baseValue = normalizeValueRef.current(initialValue, initialValue);
+		authorityEpoch.hydrated = false;
+		setIsReady(false);
+		void safeStorageGet([storageKey], { [storageKey]: baseValue }, { area })
+			.then((res) => {
+				if (!isMounted) return;
+				const loaded = normalizeValueRef.current(res[storageKey] !== undefined ? res[storageKey] : baseValue, baseValue);
+				authorityEpoch.hydrated = true;
+				setIsReady(true);
+				reportStorageHealth(authorityEpoch.healthOwner, null);
+				if (pendingAuthority.acceptLoaded(loaded, requestedRevision)) {
+					stateRef.current = loaded;
+					setState(loaded);
+				}
+				persistNextState();
+			})
+			.catch(() => {
+				if (!isMounted) return;
+				// Never convert a failed read into an empty initialized record.
+				reportStorageHealth(authorityEpoch.healthOwner, 'read-error', () => setLoadAttempt(loadAttempt + 1));
+			});
+		return () => { isMounted = false; };
+	}, [storageKey, area, pendingAuthority, authorityEpoch, persistNextState, loadAttempt]);
 
 	const flushPendingState = useCallback((expectedToken?: number) => {
 		if (pendingAuthority.flushPending(expectedToken)) persistNextState();
@@ -482,7 +497,12 @@ export function useToolState<T>(
 			const candidate = typeof action === 'function'
 				? (action as (prev: T) => T)(previous)
 				: action;
-			const next = normalizeValueRef.current(candidate, previous);
+			let next: T;
+			try { next = normalizeValueRef.current(candidate, previous); }
+			catch {
+				reportStorageHealth(authorityEpoch.healthOwner, 'write-error');
+				return;
+			}
 			stateRef.current = next;
 			setState(next);
 			saveState(next);
@@ -497,10 +517,12 @@ export function useToolState<T>(
 		) => {
 			const change = changes[storageKey];
 			if (changedArea !== area || !change) return;
-			const next = normalizeValueRef.current(
-				change.newValue,
-				stateRef.current,
-			);
+			let next: T;
+			try { next = normalizeValueRef.current(change.newValue, stateRef.current); }
+			catch {
+				reportStorageHealth(authorityEpoch.healthOwner, 'read-error');
+				return;
+			}
 			const decision = pendingAuthority.observeStorage(next);
 			if (decision.kind === 'external') {
 				stateRef.current = decision.value;
@@ -510,6 +532,7 @@ export function useToolState<T>(
 		return () => {
 			authorityEpoch.lifecycle.seal();
 			unsubscribeStorageChanges();
+			reportStorageHealth(authorityEpoch.healthOwner, null);
 			flushPendingState();
 		};
 	}, [storageKey, area, authorityEpoch, pendingAuthority, flushPendingState]);

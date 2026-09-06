@@ -116,6 +116,8 @@ export async function loadSettings(): Promise<HaloSettings> {
 export async function saveSettings(settings: Partial<HaloSettings>): Promise<HaloSettings> {
 	const current = await loadSettings();
 	const updated = { ...current, ...settings };
-	await safeStorageSet({ [SETTINGS_STORAGE_KEY]: updated }, { area: 'sync' });
+	if (!await safeStorageSet({ [SETTINGS_STORAGE_KEY]: updated }, { area: 'sync' })) {
+		throw new Error('Settings write was not confirmed; keep the current draft');
+	}
 	return updated;
 }

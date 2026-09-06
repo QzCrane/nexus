@@ -5,19 +5,12 @@ import type React from 'react';
 import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TimerMode, TimerState } from './types';
-import { formatTime, PRESETS } from './core';
+import { formatTime, PRESETS, INITIAL_TIMER_STATE, normalizeTimerState } from './core';
 import { styles } from './panel.styles';
 import { playCompletionTone, useToolState } from '../../kernel';
 import { watchWallClockDeadline } from '../../kernel/utils/wall-clock-deadline';
 
-const initialState: TimerState = {
-	mode: 'stopwatch',
-	elapsed: 0,
-	startedAt: undefined,
-	target: 300000,
-	isRunning: false,
-	laps: [],
-};
+const initialState = INITIAL_TIMER_STATE;
 
 function runningElapsed(state: TimerState, now: number): number {
 	if (!state.isRunning || typeof state.startedAt !== 'number') return state.elapsed;
@@ -63,20 +56,20 @@ const TimerDisplay: React.FC<{ state: TimerState }> = memo(({ state }) => {
 
 export const TimerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [state, setState] = useToolState<TimerState>('timer', initialState);
-	const [inputMins, setInputMins] = useToolState<number>('timer-mins', 5);
-	const [inputSecs, setInputSecs] = useToolState<number>('timer-secs', 0);
+	const [state, setState, stateReady] = useToolState<TimerState>('timer', initialState, { normalize: normalizeTimerState });
+	const [inputMins, setInputMins, minsReady] = useToolState<number>('timer-mins', 5);
+	const [inputSecs, setInputSecs, secsReady] = useToolState<number>('timer-secs', 0);
 	const stateRef = useRef(state);
 	stateRef.current = state;
 
 	// One-time compatibility repair for pre-anchor persisted running states.
 	useEffect(() => {
-		if (!state.isRunning || typeof state.startedAt === 'number') return;
+		if (!stateReady || !state.isRunning || typeof state.startedAt === 'number') return;
 		setState((current) => {
 			if (!current.isRunning || typeof current.startedAt === 'number') return current;
 			return { ...current, startedAt: Date.now() };
 		});
-	}, [state.isRunning, state.startedAt, setState]);
+	}, [stateReady, state.isRunning, state.startedAt, setState]);
 
 	// The countdown keeps persistent writes at lifecycle boundaries, while a
 	// bounded wall-clock watcher re-evaluates at most once per second. A clock
@@ -85,7 +78,7 @@ export const TimerPanel: React.FC = () => {
 	// stale original timeout. The tone is emitted only after the latest state is
 	// still running and truly due at the same observed clock sample.
 	useEffect(() => {
-		const deadline = countdownDeadline(state);
+		const deadline = stateReady ? countdownDeadline(state) : null;
 		if (deadline === null) return;
 
 		return watchWallClockDeadline(deadline, {
@@ -96,7 +89,7 @@ export const TimerPanel: React.FC = () => {
 				const next: TimerState = {
 					...current,
 					elapsed: current.target,
-					startedAt: undefined,
+					startedAt: null,
 					isRunning: false,
 				};
 				stateRef.current = next;
@@ -106,7 +99,7 @@ export const TimerPanel: React.FC = () => {
 				});
 			},
 		});
-	}, [state, setState]);
+	}, [state, stateReady, setState]);
 
 	const handleToggle = useCallback(() => {
 		const timestamp = Date.now();
@@ -118,7 +111,7 @@ export const TimerPanel: React.FC = () => {
 					elapsed: current.mode === 'countdown'
 						? Math.min(current.target, elapsed)
 						: elapsed,
-					startedAt: undefined,
+					startedAt: null,
 					isRunning: false,
 				};
 			}
@@ -134,7 +127,7 @@ export const TimerPanel: React.FC = () => {
 		setState((current) => ({
 			...current,
 			elapsed: 0,
-			startedAt: undefined,
+			startedAt: null,
 			isRunning: false,
 			laps: [],
 		}));
@@ -161,18 +154,18 @@ export const TimerPanel: React.FC = () => {
 			...current,
 			target: ms,
 			elapsed: 0,
-			startedAt: undefined,
+			startedAt: null,
 			isRunning: false,
 		}));
 	}, [setState, setInputSecs, setInputMins]);
 
 	useEffect(() => {
-		if (state.isRunning) return;
+		if (!stateReady || !minsReady || !secsReady || state.isRunning) return;
 		const target = (inputMins * 60 + inputSecs) * 1000;
 		setState((current) => current.target === target
 			? current
 			: { ...current, target });
-	}, [inputMins, inputSecs, state.isRunning, setState]);
+	}, [inputMins, inputSecs, stateReady, minsReady, secsReady, state.isRunning, setState]);
 
 	return (
 		<div style={styles.wrapper}>

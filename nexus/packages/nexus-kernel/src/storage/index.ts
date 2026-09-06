@@ -14,7 +14,7 @@ export {
 	hasTabControlSession,
 } from './tab-session.js';
 export type { TabControlSessionIdentity, TabControlSessionScope } from './tab-session.js';
-export { safeStorageGet, safeStorageSet, safeStorageRemove } from './safe-storage.js';
-export type { StorageArea } from './safe-storage.js';
+export { safeStorageGet, safeStorageSet, safeStorageRemove, scheduleStorageSet } from './safe-storage.js';
+export type { StorageArea, StorageWrite, StorageWriteResult } from './safe-storage.js';
 export { createSerializedQueue, createKeyedSerializedQueue } from './serialized-queue.js';
 export type { SerializedQueue, KeyedSerializedQueue } from './serialized-queue.js';

@@ -43,19 +43,20 @@ export async function saveToClipboardHistory(
 	}
 
 	const newItem: ClipboardItem = {
-		id: Math.random().toString(36).substring(2, 11),
+		id: crypto.randomUUID(),
 		text,
 		timestamp: Date.now(),
 		pinned: false,
-		sourceUrl,
-		sourceTitle,
+		...(sourceUrl ? { sourceUrl } : {}),
+		...(sourceTitle ? { sourceTitle } : {}),
 	};
 
 	// Keep pinned items, then unpinned ones up to limit
 	const pinned = history.filter(h => h.pinned);
 	const unpinned = history.filter(h => !h.pinned && h.text !== text);
 
-	const updated = [newItem, ...pinned, ...unpinned].slice(0, MAX_HISTORY);
+	if (pinned.length >= MAX_HISTORY) throw new Error('Clipboard history is full of pinned entries. Unpin an entry before adding another.');
+	const updated = [...pinned, newItem, ...unpinned.slice(0, MAX_HISTORY - pinned.length - 1)];
 
 	await chrome.storage.local.set({ [STORAGE_KEY]: updated });
 	return updated;

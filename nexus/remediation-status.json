@@ -182,33 +182,81 @@
       "id": "S01",
       "title": "存储等待超时后迟到旧写入覆盖新值",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "partial",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
     },
     {
       "id": "S02",
       "title": "读取失败与键不存在被合并为默认值",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
     },
     {
       "id": "S03",
       "title": "Timer 与 Pomodoro 的状态构造违反共享 JSON 合同",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
     },
     {
       "id": "S04",
       "title": "复杂工具状态只有容器种类检查，缺少领域 schema",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "partial",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
     },
     {
       "id": "S05",
@@ -222,17 +270,41 @@
       "id": "S06",
       "title": "写入失败只留日志，用户无法判断是否保存",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "partial",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
     },
     {
       "id": "S07",
       "title": "数量上限不能代替字节配额及保留策略",
       "priority": "P1",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "partial",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
     },
     {
       "id": "S08",
@@ -254,9 +326,21 @@
       "id": "S10",
       "title": "剪贴板满额时仍会丢固定条目",
       "priority": "P0",
-      "status": "open",
-      "changes": [],
-      "verification": []
+      "status": "partial",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
     },
     {
       "id": "S11",

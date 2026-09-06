@@ -118,3 +118,31 @@ The extractor had no patched release at this review. Keep `puppeteer-core` 24.7.
 The advisory sources are GHSA-5jgf-p345-68v8, GHSA-5p4m-2wfm-xmqj and GHSA-jmr9-qjv8-65gv. Real root and product audit responses both returned empty advisory objects in Actions run `34029889848`; the resulting code checkpoint is `7dde956ae624e57db0ed6f32f1d3423fd0f5da68`. A clean advisory response describes that service and time, not proof that no vulnerability exists. The revalidation hash binds the new exact lock while preserving historical upstream observation dates and unchanged direct versions. No advisory suppression, scanner bypass, or removal of Chrome 135 support is accepted.
 
 All repair work belongs in repository commits, not only in a local working tree. Temporary acquisition/checkpoint workflows are removed from the final candidate tree. No store publication, public-repository sync, original branch deletion or user-data migration is implied by this integration candidate.
+
+
+## Persistence settlement and domain-state repairs
+
+Storage observation no longer retries an unfinished mutation or frees its physical
+queue slot. A bounded area lane retains at most 64 queued/active operations and
+16 MiB of encoded payload; excess admission fails visibly. The new write handle
+reports committed, rejected or unknown, and exposes physical completion. Existing
+boolean callers get false for unconfirmed outcomes, never a false success. These
+limits are an explicit in-process queue envelope, not Chrome storage quotas and
+not a cross-context transaction guarantee.
+
+Reads distinguish unavailable/timeout from an absent key. Tool hooks wait for a
+successful initial read before any draft write and preserve a changed draft on
+retry. Persistence uncertainty has a mounted SidePanel alert and an explicit retry;
+a slow physical operation keeps its authority until it really completes. Field
+schemas remain domain-owned. Timer and Pomodoro normalize legacy missing anchors
+to nullable JSON-safe timestamps, validate their fields, and never discard a pause
+because an undefined property failed the shared storage contract. Background task
+completion and full cross-context transactional ownership remain explicit open
+items, rather than being inferred from these local repairs.
+
+Clipboard admission preserves every pinned entry; a full pinned history rejects
+new automatic text instead of dropping a pinned entry. Other transactional and
+byte-budget history work is tracked separately. The test transport's command
+wrapping was also corrected after an actual invocation printed Bun help with a
+zero exit code. Retained checkpoint claims must distinguish focused tests that
+ran from previous orchestration calls that did not execute their script owner.

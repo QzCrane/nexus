@@ -30,3 +30,21 @@ export const PRESETS = [
 	{ label: '30 min', ms: 1800000 },
 	{ label: '1 hour', ms: 3600000 },
 ];
+
+
+import type { TimerState } from './types';
+
+export const INITIAL_TIMER_STATE: TimerState = {
+	mode: 'stopwatch', elapsed: 0, startedAt: null, target: 300000, isRunning: false, laps: [],
+};
+
+export function normalizeTimerState(value: unknown): TimerState {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid timer state');
+	const state = value as TimerState;
+	const integer = (input: unknown): input is number => typeof input === 'number' && Number.isSafeInteger(input) && input >= 0;
+	if ((state.mode !== 'stopwatch' && state.mode !== 'countdown') || typeof state.isRunning !== 'boolean'
+		|| !integer(state.elapsed) || !integer(state.target)
+		|| (state.startedAt != null && !integer(state.startedAt))
+		|| !Array.isArray(state.laps) || !state.laps.every(integer)) throw new TypeError('Invalid timer fields');
+	return { ...state, startedAt: state.startedAt ?? null };
+}

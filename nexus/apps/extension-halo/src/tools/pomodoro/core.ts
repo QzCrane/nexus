@@ -34,6 +34,7 @@ export function getNextPhase(state: PomodoroState, config: PomodoroConfig): Pomo
 export function createInitialState(config: PomodoroConfig = DEFAULT_CONFIG): PomodoroState {
 	return {
 		phase: 'work',
+		endsAt: null,
 		remaining: config.workMinutes * 60,
 		isRunning: false,
 		sessionsCompleted: 0,
@@ -53,3 +54,26 @@ export const PHASE_COLORS: Record<PomodoroPhase, string> = {
 	shortBreak: '#22c55e',
 	longBreak: '#3b82f6',
 };
+
+
+function nonnegativeInteger(value: unknown): value is number {
+	return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+export function normalizePomodoroConfig(value: unknown): PomodoroConfig {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid Pomodoro configuration');
+	const config = value as PomodoroConfig;
+	for (const key of ['workMinutes', 'shortBreakMinutes', 'longBreakMinutes', 'sessionsBeforeLongBreak'] as const) {
+		if (!nonnegativeInteger(config[key]) || config[key] === 0 || config[key] > Math.floor(Number.MAX_SAFE_INTEGER / 60000)) {
+			throw new TypeError('Invalid Pomodoro configuration field');
+		}
+	}
+	return { ...config };
+}
+export function normalizePomodoroState(value: unknown): PomodoroState {
+	if (!value || typeof value !== 'object' || Array.isArray(value)) throw new TypeError('Invalid Pomodoro state');
+	const state = value as PomodoroState;
+	if (!['work', 'shortBreak', 'longBreak'].includes(state.phase) || typeof state.isRunning !== 'boolean'
+		|| !nonnegativeInteger(state.remaining) || !nonnegativeInteger(state.sessionsCompleted)
+		|| (state.endsAt != null && !nonnegativeInteger(state.endsAt))) throw new TypeError('Invalid Pomodoro state field');
+	return { ...state, endsAt: state.endsAt ?? null };
+}

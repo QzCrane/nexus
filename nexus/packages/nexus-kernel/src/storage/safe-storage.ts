@@ -1,113 +1,99 @@
-// goal: safe chrome storage wrapper with timeout and retry
-// eff: prevents hang when chrome.storage is unresponsive
-
-const DEFAULT_TIMEOUT = 2000;
-const MAX_RETRIES = 3;
-
-const wait = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
+// goal: bounded storage observation without releasing unfinished physical mutations
+import { observeWithin } from '../settlement-pool.js';
 
 export type StorageArea = 'local' | 'sync' | 'session';
-
-interface SafeStorageOptions {
-	area?: StorageArea;
-	timeout?: number;
-	retries?: number;
+export interface StorageOptions { area?: StorageArea; timeout?: number; retries?: number; }
+export type StorageWriteResult = 'committed' | 'rejected' | 'unknown';
+export interface StorageWrite {
+	readonly completion: Promise<boolean>;
+	observe(timeout?: number): Promise<StorageWriteResult>;
 }
 
-async function withRetry<T>(
-	fn: () => Promise<T>,
-	fallback: T,
-	timeout: number,
-	retries: number,
-	op: string
-): Promise<T> {
-	let lastErr: unknown;
+interface WriteLane { tail: Promise<unknown>; count: number; bytes: number; }
+const lanes = new WeakMap<object, WriteLane>();
+const MAX_PENDING = 64;
+const MAX_PENDING_BYTES = 16 * 1024 * 1024;
 
-	for (let i = 0; i < retries; i++) {
-		// rule: capture the timeout timer and clear it in finally — when fn() resolves first,
-		// the unhandled timer previously held the MV3 service worker alive for `timeout` ms
-		// per call, defeating SW lifecycle reclamation.
-		let timer: ReturnType<typeof setTimeout> | undefined;
-		try {
-			return await Promise.race([
-				fn(),
-				new Promise<T>((_, reject) => {
-					timer = setTimeout(() => reject(new Error('timeout')), timeout);
-				})
-			]);
-		} catch (e) {
-			lastErr = e;
-			if (i < retries - 1) await wait(500 * (i + 1));
-		} finally {
-			if (timer !== undefined) clearTimeout(timer);
+function storageArea(area: StorageArea): chrome.storage.StorageArea {
+	const storage = typeof chrome !== 'undefined' ? chrome.storage?.[area] : undefined;
+	if (!storage) throw new Error('Extension storage is unavailable');
+	return storage;
+}
+
+function attempts(retries: number): number {
+	if (!Number.isInteger(retries) || retries < 0 || retries > 3) throw new RangeError('Invalid storage retry count');
+	return retries + 1;
+}
+
+async function settledRetry<T>(operation: () => Promise<T>, retryCount: number): Promise<T> {
+	const count = attempts(retryCount);
+	let failure: unknown;
+	for (let attempt = 0; attempt < count; attempt++) {
+		try { return await operation(); }
+		catch (error) {
+			failure = error;
+			if (attempt + 1 < count) await new Promise((resolve) => setTimeout(resolve, 100 * (attempt + 1)));
 		}
 	}
-	console.warn(`[SafeStorage] ${op} failed after ${retries} attempts:`, lastErr);
-	return fallback;
+	throw failure;
+}
+
+function rejectedWrite(): StorageWrite {
+	return { completion: Promise.resolve(false), observe: async () => 'rejected' };
+}
+
+function scheduleMutation(area: StorageArea, bytes: number, operation: (storage: chrome.storage.StorageArea) => Promise<void>, retries: number): StorageWrite {
+	const storage = storageArea(area);
+	let lane = lanes.get(storage);
+	if (!lane) { lane = { tail: Promise.resolve(), count: 0, bytes: 0 }; lanes.set(storage, lane); }
+	if (lane.count >= MAX_PENDING || lane.bytes + bytes > MAX_PENDING_BYTES) return rejectedWrite();
+	attempts(retries);
+	lane.count++;
+	lane.bytes += bytes;
+	const owned = lane;
+	// The queue is advanced only by actual settlement, never by an observer timeout.
+	const completion = lane.tail.then(() => settledRetry(() => operation(storage), retries)).then(
+		() => true,
+		() => false,
+	).finally(() => { owned.count--; owned.bytes -= bytes; });
+	lane.tail = completion;
+	return {
+		completion,
+		async observe(timeout = 2000) {
+			const observed = await observeWithin(completion, timeout);
+			return observed.settled ? observed.value ? 'committed' : 'rejected' : 'unknown';
+		},
+	};
+}
+
+export function scheduleStorageSet(data: Record<string, unknown>, { area = 'local', retries = 0 }: StorageOptions = {}): StorageWrite {
+	// Snapshot before enqueuing: later UI mutations cannot change the queued write.
+	const snapshot = structuredClone(data);
+	const serialized = JSON.stringify(snapshot);
+	if (serialized === undefined) throw new TypeError('Storage write must be a JSON record');
+	const bytes = new TextEncoder().encode(serialized).byteLength;
+	return scheduleMutation(area, bytes, (storage) => storage.set(snapshot), retries);
+}
+
+export async function safeStorageSet(data: Record<string, unknown>, options: StorageOptions = {}): Promise<boolean> {
+	try { return await scheduleStorageSet(data, options).observe(options.timeout) === 'committed'; }
+	catch { return false; }
+}
+
+export async function safeStorageRemove(keys: string | string[], options: StorageOptions = {}): Promise<boolean> {
+	try {
+		const snapshot = typeof keys === 'string' ? keys : [...keys];
+		const bytes = new TextEncoder().encode(JSON.stringify(snapshot)).byteLength;
+		return await scheduleMutation(options.area ?? 'local', bytes, (storage) => storage.remove(snapshot), options.retries ?? 0).observe(options.timeout) === 'committed';
+	} catch { return false; }
 }
 
 export async function safeStorageGet<T extends Record<string, unknown>>(
-	keys: string | string[],
-	defaults: T,
-	options: SafeStorageOptions = {}
+	keys: string | string[] | null, defaults: T, { area = 'local', timeout = 2000, retries = 0 }: StorageOptions = {},
 ): Promise<T> {
-	if (typeof chrome === 'undefined' || !chrome.storage) return defaults;
-	const { area = 'local', timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES } = options;
-	const storage = area === 'local'
-		? chrome.storage.local
-		: area === 'session'
-			? chrome.storage.session
-			: chrome.storage.sync;
-	const keyArr = Array.isArray(keys) ? keys : [keys];
-
-	return withRetry(
-		() => storage.get(keyArr) as Promise<T>,
-		defaults,
-		timeout,
-		retries,
-		`get(${keyArr.join(',')})`
-	);
-}
-
-export async function safeStorageSet(
-	items: Record<string, unknown>,
-	options: SafeStorageOptions = {}
-): Promise<boolean> {
-	if (typeof chrome === 'undefined' || !chrome.storage) return false;
-	const { area = 'local', timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES } = options;
-	const storage = area === 'local'
-		? chrome.storage.local
-		: area === 'session'
-			? chrome.storage.session
-			: chrome.storage.sync;
-
-	return withRetry(
-		async () => { await storage.set(items); return true; },
-		false,
-		timeout,
-		retries,
-		'set'
-	);
-}
-
-export async function safeStorageRemove(
-	keys: string | string[],
-	options: SafeStorageOptions = {}
-): Promise<boolean> {
-	if (typeof chrome === 'undefined' || !chrome.storage) return false;
-	const { area = 'local', timeout = DEFAULT_TIMEOUT, retries = MAX_RETRIES } = options;
-	const storage = area === 'local'
-		? chrome.storage.local
-		: area === 'session'
-			? chrome.storage.session
-			: chrome.storage.sync;
-	const keyArr = Array.isArray(keys) ? keys : [keys];
-
-	return withRetry(
-		async () => { await storage.remove(keyArr); return true; },
-		false,
-		timeout,
-		retries,
-		`remove(${keyArr.join(',')})`
-	);
+	const storage = storageArea(area);
+	const snapshot = Array.isArray(keys) ? [...keys] : keys;
+	const outcome = await observeWithin(settledRetry(() => snapshot === null ? storage.get() : storage.get(snapshot), retries), timeout);
+	if (!outcome.settled) throw new Error('Storage read deadline exceeded; existing data was not replaced');
+	return { ...defaults, ...outcome.value } as T;
 }
