@@ -128,6 +128,16 @@ function sourceDependencies(packageDir: string): Set<string> {
 	return dependencies;
 }
 
+// One operation observes one source-import snapshot. The command-line entry
+// always creates a fresh snapshot; policy counterexamples may reuse the same
+// inputs without reparsing the repository for every manifest-only mutation.
+export function readDirectDependencyImports(): ReadonlyMap<string, ReadonlySet<string>> {
+	return new Map(packageManifestPaths().map((manifestPath) => [
+		manifestPath.slice(workspaceDir.length + 1).replaceAll('\\', '/'),
+		sourceDependencies(dirname(manifestPath)),
+	]));
+}
+
 function typePackageTarget(name: string): string | null {
 	if (!name.startsWith('@types/')) return null;
 	const encoded = name.slice('@types/'.length);
@@ -145,6 +155,7 @@ function key(issue: Pick<DirectDependencyIssue, 'packagePath' | 'section' | 'dep
 export function findDirectDependencyIssues(
 	policy: DirectDependencyPolicy = readJson<DirectDependencyPolicy>(policyPath),
 	manifestOverrides: Readonly<Record<string, PackageDocument>> = {},
+	importsByPackage = readDirectDependencyImports(),
 ): DirectDependencyIssue[] {
 	if (policy.schemaVersion !== 1) throw new Error('direct dependency policy schemaVersion must be 1');
 	const exceptionKeys = new Set<string>();
@@ -161,7 +172,8 @@ export function findDirectDependencyIssues(
 		if (!manifest.dependencies?.[exception.dependency]) {
 			throw new Error(`${exception.packagePath}:${exception.dependency} exception no longer names a runtime dependency`);
 		}
-		const imports = sourceDependencies(dirname(manifestPath));
+		const imports = importsByPackage.get(exception.packagePath);
+		if (!imports) throw new Error(`Missing source snapshot for ${exception.packagePath}`);
 		if (imports.has(exception.dependency)) {
 			throw new Error(`${exception.packagePath}:${exception.dependency} exception is stale because src now imports it directly`);
 		}
@@ -194,11 +206,12 @@ export function findDirectDependencyIssues(
 	}
 
 	const issues: DirectDependencyIssue[] = [];
-	const packageState = new Map<string, { manifest: PackageDocument; imports: Set<string> }>();
+	const packageState = new Map<string, { manifest: PackageDocument; imports: ReadonlySet<string> }>();
 	for (const manifestPath of packageManifestPaths()) {
 		const packagePath = manifestPath.slice(workspaceDir.length + 1).replaceAll('\\', '/');
 		const manifest = manifestOverrides[packagePath] ?? readJson<PackageDocument>(manifestPath);
-		const imports = sourceDependencies(dirname(manifestPath));
+		const imports = importsByPackage.get(packagePath);
+		if (!imports) throw new Error(`Missing source snapshot for ${packagePath}`);
 		packageState.set(packagePath, { manifest, imports });
 		const replaced = replacedSourceRuntimeDependencies.get(packagePath) ?? new Set<string>();
 		for (const [dependency, version] of Object.entries(manifest.dependencies ?? {})) {
@@ -251,8 +264,9 @@ export function findDirectDependencyIssues(
 export function checkDirectDependencies(
 	policy: DirectDependencyPolicy = readJson<DirectDependencyPolicy>(policyPath),
 	manifestOverrides: Readonly<Record<string, PackageDocument>> = {},
+	importsByPackage = readDirectDependencyImports(),
 ): void {
-	const actual = findDirectDependencyIssues(policy, manifestOverrides);
+	const actual = findDirectDependencyIssues(policy, manifestOverrides, importsByPackage);
 	const expected = [...(policy.knownDebt ?? [])].sort((left, right) => key(left).localeCompare(key(right)));
 	const actualKeys = actual.map(key);
 	const expectedKeys = expected.map(key);

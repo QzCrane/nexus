@@ -1,16 +1,34 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
-import { checkDirectDependencies, findDirectDependencyIssues, type PackageDocument } from './check-direct-dependencies';
+import { checkDirectDependencies as checkLive, findDirectDependencyIssues as findLive, readDirectDependencyImports, type PackageDocument } from './check-direct-dependencies';
 
 const current = JSON.parse(readFileSync(new URL('../direct-dependency-policy.json', import.meta.url), 'utf8'));
 const haloPath = 'apps/extension-halo/package.json';
 const halo: PackageDocument = JSON.parse(readFileSync(new URL(`../${haloPath}`, import.meta.url), 'utf8'));
+const imports = readDirectDependencyImports();
+const findDirectDependencyIssues = (policy = current, overrides: Readonly<Record<string, PackageDocument>> = {}) => findLive(policy, overrides, imports);
+const checkDirectDependencies = (policy = current, overrides: Readonly<Record<string, PackageDocument>> = {}) => checkLive(policy, overrides, imports);
+
 function withRuntime(dependency: string): Record<string, PackageDocument> {
 	return { [haloPath]: { ...halo, dependencies: { ...halo.dependencies, [dependency]: '1.0.0' } } };
 }
 
 describe('direct dependency usage policy', () => {
+	test('requires complete snapshots and never makes one operation a global source cache', () => {
+		const missing = new Map(imports);
+		missing.delete(haloPath);
+		expect(() => findLive(current, {}, missing)).toThrow('Missing source snapshot');
+		const poisoned = new Map(imports);
+		poisoned.set(haloPath, new Set([...(imports.get(haloPath) ?? []), 'preact']));
+		expect(() => findLive(current, {}, poisoned)).toThrow('exception is stale');
+		const fresh = readDirectDependencyImports();
+		expect(fresh).not.toBe(imports);
+		expect(fresh.get(haloPath)).not.toBe(imports.get(haloPath));
+		expect(findLive(current, {}, fresh)).toEqual([]);
+	});
+
 	test('keeps the already-clean current main dependency graph instead of resurrecting old debt', () => {
+		expect(findLive()).toEqual([]);
 		expect(findDirectDependencyIssues()).toEqual([]);
 		expect(current.knownDebt).toEqual([]);
 		expect(() => checkDirectDependencies()).not.toThrow();
