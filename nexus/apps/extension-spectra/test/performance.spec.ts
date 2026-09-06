@@ -1,10 +1,11 @@
+import { launchBrowser } from './helpers/browser-driver';
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
-import puppeteer, { type Browser } from 'puppeteer';
+import type { Browser } from 'puppeteer';
 import {
 	runtimePerformanceIdentityFromEnvironment,
 	writeRuntimePerformanceEvidence,
@@ -36,7 +37,7 @@ test('records twenty independent SPECTRA Popup cold-interactive samples', async 
 		let browser: Browser | null = null;
 		try {
 			const coldStarted = performance.now();
-			browser = await puppeteer.launch({
+			browser = await launchBrowser({
 				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 				headless: true,
 				userDataDir: profilePath,

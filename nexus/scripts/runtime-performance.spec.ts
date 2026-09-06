@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import {
 	buildRuntimePerformanceEvidence,
+	assertCleanPerformanceSource,
 	percentile,
 	runtimePerformanceIdentityFromEnvironment,
 	runtimePerformanceOutputPath,
@@ -96,4 +97,10 @@ describe('runtime performance evidence', () => {
 			NEXUS_PERFORMANCE_OUTPUT_DIR: root,
 		})).toThrow('one local file name');
 	});
+});
+
+test('refuses to attribute dirty or untracked source to a clean Git head', () => {
+	expect(() => assertCleanPerformanceSource('')).not.toThrow();
+	expect(() => assertCleanPerformanceSource(' M nexus/a.ts')).toThrow('committed source');
+	expect(() => assertCleanPerformanceSource('?? nexus/new.ts')).toThrow('committed source');
 });

@@ -1,3 +1,4 @@
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -113,6 +114,7 @@ test.describe('HALO declared minimum Chrome compatibility', () => {
 				headless: true,
 				viewport: { width: 1_000, height: 700 },
 				args: [
+					...browserReplayPolicy(process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(), EXPLICIT_CHROME, process.platform).args,
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],

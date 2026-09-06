@@ -1,9 +1,10 @@
+import { launchBrowser } from './helpers/browser-driver';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import puppeteer, { type Browser, type Page, type Target, type WebWorker } from 'puppeteer';
+import type { Browser, Page, Target, WebWorker } from 'puppeteer';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
@@ -134,7 +135,7 @@ beforeAll(async () => {
 	mediaUrls = mediaFixtures.map(({ slug }) => `http://127.0.0.1:${server.port}/media/${slug}`);
 	foregroundUrl = `http://127.0.0.1:${server.port}/foreground`;
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-tab-visibility-'));
-	browser = await puppeteer.launch({
+	browser = await launchBrowser({
 		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 		headless: true,
 		userDataDir: profileDir,

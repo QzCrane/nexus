@@ -1,10 +1,11 @@
+import { launchBrowser } from './helpers/browser-driver';
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
-import puppeteer, { type Browser, type CDPSession, type Page, type Target } from 'puppeteer';
+import type { Browser, CDPSession, Page, Target } from 'puppeteer';
 import {
 	runtimePerformanceIdentityFromEnvironment,
 	runtimePerformanceOutputPath,
@@ -76,7 +77,7 @@ async function readRuntimeStatus(options: Page, tabId: number): Promise<{
 			tabId: targetTabId,
 		});
 		if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to read runtime status');
-		return response.data;
+		return { ready: response.data.ready, runtimeRevision: response.data.runtimeRevision };
 	}, tabId);
 }
 
@@ -97,7 +98,7 @@ test('records long-session hotkey, heap, CPU, context and long-task evidence', a
 				);
 			},
 		});
-		browser = await puppeteer.launch({
+		browser = await launchBrowser({
 			...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 			headless: true,
 			userDataDir: profileDir,
@@ -157,10 +158,47 @@ test('records long-session hotkey, heap, CPU, context and long-task evidence', a
 				await tapShortcut(mediaPage, 'ArrowLeft');
 			}
 			const batchElapsed = performance.now() - batchStarted;
-			// The hotkey observation lease has a bounded final-release grace. Wait
-			// beyond it before sampling retained runtime/heap state.
+			// Keyup releases observation, not the user's persistent control intent.
+			// Verify one live runtime while controlled, then explicitly restore the
+			// page before sampling post-release retention. No implicit reset is
+			// injected into production to make this metric look smaller.
+			const controlled = await readRuntimeStatus(options, tabId);
+			expect(controlled.ready).toBe(true);
+			expect(controlled.runtimeRevision).not.toBeNull();
 			await new Promise((resolveWait) => setTimeout(resolveWait, 350));
-			const status = await readRuntimeStatus(options, tabId);
+			expect(await readRuntimeStatus(options, tabId)).toEqual(controlled);
+			// Exercise the real permitted source; Options is not a control authority.
+			const popupTarget = browser.waitForTarget(
+				(target) => target.url() === `chrome-extension://${extensionId}/popup.html`,
+				{ timeout: 10_000 },
+			);
+			await options.evaluate(async () => chrome.action.openPopup());
+			const popup = await (await popupTarget).asPage();
+			try {
+				await popup.evaluate(async (targetTabId) => {
+				const response = await chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.control.operation.submit',
+					tabId: targetTabId,
+					payload: { tabId: targetTabId, source: 'popup', target: null,
+						operation: 'restore-page-settings', payload: {} },
+				});
+				if (!response?.ok) throw new Error(response?.error?.message ?? 'Page settings release failed');
+			}, tabId);
+			} finally {
+				// Abrupt target destruction deliberately does not rely on pagehide
+				// delivery. The browser's port disconnect must retire observation.
+				if (!popup.isClosed()) await popup.close();
+				expect(popup.isClosed()).toBe(true);
+			}
+			const releaseDeadline = Date.now() + 5_000;
+			let status = await readRuntimeStatus(options, tabId);
+			while (status.ready && Date.now() < releaseDeadline) {
+				await new Promise((resolveWait) => setTimeout(resolveWait, 25));
+				status = await readRuntimeStatus(options, tabId);
+			}
+
 			expect(status.ready).toBe(false);
 			expect(status.runtimeRevision).toBeNull();
 			await rendererClient.send('HeapProfiler.collectGarbage');

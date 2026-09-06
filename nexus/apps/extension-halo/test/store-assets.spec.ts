@@ -1,3 +1,4 @@
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -37,19 +38,21 @@ test('captures and verifies the deterministic production HALO SidePanel visual s
 			locale: 'en-US',
 			colorScheme: 'dark',
 			reducedMotion: 'reduce',
-			args: [`--disable-extensions-except=${distPath}`, `--load-extension=${distPath}`],
+			args: [
+				...browserReplayPolicy(expectedChrome, explicitChrome, process.platform).args,`--disable-extensions-except=${distPath}`, `--load-extension=${distPath}`],
 		});
-		if (expectedChrome) {
-			const launchedBrowser = context.browser();
-			if (!launchedBrowser) throw new Error('HALO visual capture has no Browser identity');
-			expect(launchedBrowser.version()).toContain(expectedChrome);
-		}
+
 		const background = context.serviceWorkers()[0] ?? await context.waitForEvent('serviceworker', { timeout: 10_000 });
 		const extensionId = new URL(background.url()).host;
 		await background.evaluate(async () => {
 			await chrome.storage.sync.set({ halo_locale: 'en' });
 		});
 		const page = await context.newPage();
+		if (expectedChrome) {
+			const cdp = await context.newCDPSession(page);
+			try { expect((await cdp.send('Browser.getVersion')).product).toContain(expectedChrome); }
+			finally { await cdp.detach(); }
+		}
 		await page.emulateMedia({ colorScheme: 'dark', reducedMotion: 'reduce' });
 		await page.goto(`chrome-extension://${extensionId}/sidepanel.html`, { waitUntil: 'load' });
 		await expect(page.locator('[data-tool-id]').first()).toBeVisible({ timeout: 10_000 });

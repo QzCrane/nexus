@@ -98,7 +98,7 @@ export function checkVisualRegressionPolicy(
 	}
 	const verificationWorkflow = readFileSync(verificationWorkflowPath, 'utf8');
 	const workspaceName = basename(workspaceDir);
-	const expectedWorkflowInvocation = `bun --cwd ${workspaceName} run ${policy.verification.workspaceScript}`;
+	const expectedWorkflowInvocation = `bun run --cwd ${workspaceName} ${policy.verification.workspaceScript}`;
 	if (!verificationWorkflow.includes(expectedWorkflowInvocation)) {
 		throw new Error(`visual verification workflow does not execute ${expectedWorkflowInvocation}`);
 	}

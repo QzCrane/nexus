@@ -1,3 +1,4 @@
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,6 +58,7 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 				headless: true,
 				viewport: { width: 520, height: 760 },
 				args: [
+					...browserReplayPolicy(process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(), EXPLICIT_CHROME, process.platform).args,
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],

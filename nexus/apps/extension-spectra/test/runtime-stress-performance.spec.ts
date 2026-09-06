@@ -1,10 +1,11 @@
+import { launchBrowser } from './helpers/browser-driver';
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
-import puppeteer, { type Browser, type Page, type Target, type WebWorker } from 'puppeteer';
+import type { Browser, Page, Target, WebWorker } from 'puppeteer';
 import {
 	runtimePerformanceIdentityFromEnvironment,
 	runtimePerformanceOutputPath,
@@ -141,7 +142,7 @@ test('records scaled inventory, full Popup rendering, and first-hotkey physical 
 				);
 			},
 		});
-		browser = await puppeteer.launch({
+		browser = await launchBrowser({
 			...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 			headless: true,
 			userDataDir: profileDir,

@@ -1,9 +1,10 @@
+import { launchBrowser } from './helpers/browser-driver';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import puppeteer, { type Browser, type Page, type Target } from 'puppeteer';
+import type { Browser, Page, Target } from 'puppeteer';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
@@ -37,7 +38,7 @@ beforeAll(async () => {
 	});
 	privateUrl = `http://127.0.0.1:${server.port}/private-diagnostic-fixture?token=PRIVATE_TOKEN_987654`;
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-diagnostics-'));
-	browser = await puppeteer.launch({
+	browser = await launchBrowser({
 		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 		headless: true,
 		userDataDir: profileDir,

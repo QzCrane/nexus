@@ -1,9 +1,10 @@
+import { launchBrowser } from './helpers/browser-driver';
 import { expect, test } from 'bun:test';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import puppeteer, { type Browser, type Target } from 'puppeteer';
+import type { Browser, Target } from 'puppeteer';
 import { verifyVisualRegressionCandidate } from '../../../scripts/verify-visual-regression-candidate';
 
 const VISUAL_STATE_ID = 'spectra.popup.empty.dark.en-US.390x600';
@@ -30,7 +31,7 @@ test('captures and verifies the deterministic SPECTRA empty Popup visual state',
 	const profileDir = await mkdtemp(join(tmpdir(), 'spectra-visual-'));
 	let browser: Browser | null = null;
 	try {
-		browser = await puppeteer.launch({
+		browser = await launchBrowser({
 			...(explicitChrome ? { executablePath: explicitChrome } : {}),
 			headless: true,
 			userDataDir: profileDir,

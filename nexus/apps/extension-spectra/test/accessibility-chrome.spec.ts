@@ -1,9 +1,10 @@
+import { launchBrowser } from './helpers/browser-driver';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import puppeteer, { type Browser, type Page, type Target } from 'puppeteer';
+import type { Browser, Page, Target } from 'puppeteer';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
@@ -21,7 +22,7 @@ let extensionId = '';
 
 beforeAll(async () => {
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-accessibility-'));
-	browser = await puppeteer.launch({
+	browser = await launchBrowser({
 		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 		headless: true,
 		userDataDir: profileDir,
@@ -245,14 +246,19 @@ async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void>
 			if (!sentinel) throw new Error('focus sentinel missing');
 			const focusStyle = getComputedStyle(sentinel);
 			const motionProbe = document.createElement('div');
-			motionProbe.style.transition = 'opacity 2s linear 1s';
-			motionProbe.style.animationDuration = '2s';
-			motionProbe.style.animationIterationCount = '5';
-			motionProbe.style.scrollBehavior = 'smooth';
+			motionProbe.id = 'spectra-a11y-motion-probe';
+			// Product styles are layered, not inline. An inline synthetic declaration
+			// bypasses that authored cascade and would test a policy we do not ship.
+			const productStyle = document.createElement('style');
+			productStyle.textContent = '@layer spectra-product { #spectra-a11y-motion-probe { transition: opacity 2s linear 1s; animation-duration: 2s; animation-iteration-count: 5; scroll-behavior: smooth; } }';
+			document.head.append(productStyle);
 			document.body.append(motionProbe);
 			const motionStyle = getComputedStyle(motionProbe);
 			const policy = document.getElementById('spectra-accessibility-policy') as HTMLLinkElement | null;
 			return {
+				inlineMotion: Array.from(document.querySelectorAll<HTMLElement>('[style]'))
+					.filter((element) => element.style.transition || element.style.animation || element.style.animationDuration || element.style.scrollBehavior)
+					.map((element) => element.id || element.tagName),
 				policyLoaded: Boolean(policy?.sheet),
 				focused: document.activeElement === sentinel,
 				outlineStyle: focusStyle.outlineStyle,
@@ -267,6 +273,7 @@ async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void>
 			};
 		});
 
+		expect(facts.inlineMotion, `${path} motion must remain within the authored layer policy`).toEqual([]);
 		expect(facts.policyLoaded, `${path} accessibility stylesheet`).toBe(true);
 		expect(facts.focused, `${path} keyboard focus target`).toBe(true);
 		expect(facts.outlineStyle, `${path} focus-visible outline style`).not.toBe('none');
@@ -295,6 +302,8 @@ async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void>
 		await page.waitForFunction(() => !matchMedia('(prefers-reduced-motion: reduce)').matches);
 		await nextAnimationFrames(page, 2);
 		expect(await customWheelIsPrevented(page), `${path} restored smooth-scroll owner`).toBe(true);
+		const restoredMotion = await page.$eval('#spectra-a11y-motion-probe', (element) => getComputedStyle(element).transitionDuration);
+		expect(cssTimeMs(restoredMotion), `${path} restored authored motion`).toBe(2_000);
 	} finally {
 		await page.close();
 	}

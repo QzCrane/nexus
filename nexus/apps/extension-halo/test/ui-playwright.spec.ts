@@ -1,3 +1,4 @@
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
@@ -446,6 +447,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 				headless: true,
 				viewport: { width: 1_100, height: 700 },
 				args: [
+					...browserReplayPolicy(process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(), EXPLICIT_CHROME, process.platform).args,
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],

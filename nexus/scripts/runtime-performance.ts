@@ -96,6 +96,10 @@ function assertIdentity(identity: RuntimePerformanceIdentity): RuntimePerformanc
 	return identity;
 }
 
+export function assertCleanPerformanceSource(status: string): void {
+	if (status.trim()) throw new Error('Runtime evidence requires committed source; dirty files cannot be attributed to HEAD');
+}
+
 function gitIdentity(): RuntimePerformanceIdentity {
 	const run = (args: string[]) => {
 		const result = spawnSync('git', args, {
@@ -107,6 +111,7 @@ function gitIdentity(): RuntimePerformanceIdentity {
 		if (result.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${String(result.stderr ?? '')}`);
 		return String(result.stdout ?? '').trim();
 	};
+	assertCleanPerformanceSource(run(['status', '--porcelain', '--untracked-files=normal']));
 	return assertIdentity({
 		head: run(['rev-parse', 'HEAD']),
 		tree: run(['rev-parse', 'HEAD^{tree}']),
@@ -164,7 +169,8 @@ export function buildRuntimePerformanceEvidence({
 			platform: platform(),
 			arch: arch(),
 			osRelease: osRelease(),
-			bun: Bun.version,
+			bun: process.versions.bun ?? null,
+			node: process.versions.node,
 			browser,
 		},
 		metrics: summarizeRuntimePerformance(samples),

@@ -1,3 +1,4 @@
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -30,6 +31,7 @@ test.describe('HALO local diagnostic export privacy', () => {
 				headless: true,
 				viewport: { width: 360, height: 720 },
 				args: [
+					...browserReplayPolicy(process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(), EXPLICIT_CHROME, process.platform).args,
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],

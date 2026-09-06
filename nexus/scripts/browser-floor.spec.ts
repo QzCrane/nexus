@@ -1,3 +1,4 @@
+import { browserReplayPolicy } from './browser-replay';
 import { describe, expect, test } from 'bun:test';
 import {
 	githubEnvironmentLines,
@@ -33,4 +34,12 @@ describe('minimum Chrome evidence owner', () => {
 		expect(validateProductMinimums(floor, { HALO: '135', SPECTRA: '136' }))
 			.toEqual(['SPECTRA: expected minimum Chrome 135, got 136']);
 	});
+});
+
+// Selection is explicit: an unavailable old driver must never silently fall back.
+test('minimum-browser driver policy rejects implicit browser selection', () => {
+	expect(() => browserReplayPolicy('135.0.7049.114', undefined, 'linux')).toThrow('exact executable');
+	expect(browserReplayPolicy('135.0.7049.114', '/browser/chrome', 'linux')).toEqual({ driver: 'floor', args: ['--disable-gpu'] });
+	expect(browserReplayPolicy('135.0.7049.114', 'C:/chrome.exe', 'win32')).toEqual({ driver: 'floor', args: [] });
+	expect(browserReplayPolicy(undefined, undefined, 'linux')).toEqual({ driver: 'current', args: [] });
 });

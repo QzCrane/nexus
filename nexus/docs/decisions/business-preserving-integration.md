@@ -50,6 +50,43 @@ One deliberate budget change is Options: 40 to 41 KiB, supporting strict local d
 
 Before the remote integration checkpoint, local checks passed: six-workspace typechecking; strict lint; architecture verification; 132 governance tests and their production validators; 282 HALO tests including frozen-business and actual clipboard/Bilibili runtime fixtures; all 107 isolated SPECTRA unit files; both production builds. These measurements are working-tree evidence, not a claim that a different commit or remote CI passed.
 
-Browser validation is a separate merge requirement. Local Chromium 144 did not load the extension worker. Chrome for Testing 135 starts the integrated extension, loads SidePanel/JSON Formatter and successfully executes lazy ruler activation in top and cross-origin child frames in a direct browser probe. The default Playwright suite has not yet completed reliably in this local environment. Do not replace that suite with the probe or record it green. Hosted exact-tree browser, production smoke, public-projection and same-feature performance/visual evidence remain required before release or main promotion.
+Browser validation is a separate merge requirement. Local Chromium 144 did not load the extension worker. Chrome for Testing 135 starts the integrated extension, loads SidePanel/JSON Formatter and successfully executes lazy ruler activation in top and cross-origin child frames in a direct browser probe. The initial candidate did not complete the default Playwright suite reliably in this local environment. Do not replace that suite with the probe or record it green. Hosted exact-tree browser, production smoke, public-projection and same-feature performance/visual evidence remain required before release or main promotion.
 
 No store publication, public-repository sync, original branch deletion or user-data migration is authorized implicitly by producing this integration candidate. Temporary private acquisition/replay workflows are excluded from the final product tree.
+
+## Failure-closure amendments
+
+The first remotely retained repair checkpoint is `9df643ebc42fbb49ee41628c6c7fe850afffbf9c`.
+It corrects actual native-volume feedback, Popup surface sizing, HALO palette contrast,
+extension-page diagnostic sender identity, portable cleanup, deterministic skill indices,
+and current-versus-historical toolchain references. Its test results do not certify later changes.
+
+Minimum-version replay uses the test-only `puppeteer-floor` alias (Puppeteer Core 24.7.2)
+for Chrome 135.0.7049.114, while current-browser tests retain the current driver.
+An explicit floor requires the exact executable; a version mismatch fails rather than
+falling back. Linux floor replay explicitly disables GPU acceleration in the headless CI
+environment. These measurements do not claim desktop GPU performance. Shared Playwright
+helpers use standards-compliant JSON imports and CDP Browser.getVersion, not reduced UA
+strings. Node-hosted test evidence records its real runtime and does not invent a Bun version.
+Uncommitted source must not be attributed implicitly to HEAD in performance evidence.
+
+A hotkey keyup releases transient observation, not the user's persistent control intent.
+The long-session workload now checks that the active runtime stays ready at the expected version after keyup, performs
+an explicit restore through a real Action Popup, destroys that Popup abruptly, and measures
+post-release retention. Its 20 batches still execute 400 physical shortcuts. This revealed a
+real stranded Popup observation lease: pagehide's final RPC can be lost. Observation is now
+owned by a browser port. Background mints the capability, admits one document-bound read
+lease per port, enforces an acquisition deadline, and releases on disconnect including late
+acquisition. No fake baseline values, forced production resets, or relaxed retention assertion
+were introduced. The independent visualizer lifetime and persistent control owner stay intact.
+
+Reduced-motion tests author their probe in the actual product CSS layer and verify both
+reduced timing and restoration of normal timing. They also reject actual inline-motion
+styles in the exercised page. A synthetic inline timing declaration would bypass the
+normal layer cascade and is not a valid model of these production surfaces.
+
+Required gates remain separate: unit tests, live installed-extension behavior, least-privilege,
+public copy, and immutable performance/visual evidence are not substitutes for each other.
+Visual capture remains candidate evidence until its baseline is certified. Historical main
+may fail a newly enforced business invariant; such a failure must be retained as baseline
+counter-evidence rather than converted into an invented performance improvement.

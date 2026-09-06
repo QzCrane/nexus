@@ -1,3 +1,4 @@
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
@@ -23,9 +24,6 @@ async function extensionWorker(context: BrowserContext): Promise<Worker> {
 	return context.waitForEvent('serviceworker', { timeout: 10_000 });
 }
 
-function chromeVersion(userAgent: string): string {
-	return /(?:HeadlessChrome|Chrome)\/([0-9.]+)/u.exec(userAgent)?.[1] ?? userAgent;
-}
 
 test.describe('HALO runtime performance evidence', () => {
 	test('records twenty independent SidePanel cold-interactive samples', async () => {
@@ -43,6 +41,7 @@ test.describe('HALO runtime performance evidence', () => {
 					headless: true,
 					viewport: { width: 520, height: 760 },
 					args: [
+					...browserReplayPolicy(process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(), EXPLICIT_CHROME, process.platform).args,
 						`--disable-extensions-except=${DIST_PATH}`,
 						`--load-extension=${DIST_PATH}`,
 					],
@@ -67,7 +66,9 @@ test.describe('HALO runtime performance evidence', () => {
 					unit: 'ms',
 				});
 				if (!observedBrowserVersion) {
-					observedBrowserVersion = chromeVersion(await page.evaluate(() => navigator.userAgent));
+					const cdp = await context.newCDPSession(page);
+					try { observedBrowserVersion = (await cdp.send('Browser.getVersion')).product; }
+					finally { await cdp.detach(); }
 					if (EXPECTED_CHROME) expect(observedBrowserVersion).toContain(EXPECTED_CHROME);
 				}
 			} finally {

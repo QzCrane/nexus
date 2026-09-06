@@ -3,8 +3,10 @@
 import {
 	audioSessionMatchesControlDocument,
 	isActiveCaptureLifecycle,
+	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
-import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { isSpectraUiResponse } from '@nexus/contracts/ui-runtime';
+import { RUNTIME_OBSERVATION_PORT } from '../../shared/runtime-observation';
 import { readCardSnapshot } from './snapshot';
 import { isCurrentTopDocument } from '../../shared/top-document';
 import { registerCardRenderCallback } from '../views/settings';
@@ -28,87 +30,37 @@ import { syncSidePanelState } from '../side-panel/controls';
 import { setPresetApplyTargetProvider } from '../views/preset-target';
 import { getDomain } from '../utils/dom';
 
-interface PopupObservationLease {
-  documentId: string;
-  runtimeRevision: string;
-  capability: string;
-}
-
-const observationLeases = new Map<number, PopupObservationLease>();
 let popupClosing = false;
-
-function releasePopupObservation(tabId: number, lease: PopupObservationLease): void {
-  if (observationLeases.get(tabId) !== lease) return;
-  observationLeases.delete(tabId);
-  void sendSpectraRequest('spectra.content.runtime.release', {
-    runtimeRevision: lease.runtimeRevision,
-    tabId,
-    documentId: lease.documentId,
-    reason: 'observation',
-    capability: lease.capability,
-  }).catch(() => undefined);
-}
+window.addEventListener('pagehide', () => { popupClosing = true; }, { once: true });
 
 function observePopupTab(tabId: number, documentId: string): () => void {
-  let disposed = false;
-  let ownedLease: PopupObservationLease | null = null;
-  void acquirePopupObservation(tabId, documentId, () => disposed).then((lease) => {
-    ownedLease = lease;
+  const port = chrome.runtime.connect(chrome.runtime.id, { name: RUNTIME_OBSERVATION_PORT });
+  let closed = false;
+  const dispose = (): void => {
+    if (closed) return;
+    closed = true;
+    clearTimeout(deadline);
+    port.onMessage.removeListener(onMessage);
+    port.onDisconnect.removeListener(onDisconnect);
+    port.disconnect();
+  };
+  const onDisconnect = (): void => { dispose(); };
+  const onMessage = (response: unknown): void => {
+    clearTimeout(deadline);
+    if (!isSpectraUiResponse('spectra.content.runtime.ensure', response) || !response.ok) {
+      console.warn('[SPECTRA Popup] Runtime observation was not admitted');
+      dispose();
+    }
+  };
+  const deadline = setTimeout(dispose, 15_000);
+  port.onMessage.addListener(onMessage);
+  port.onDisconnect.addListener(onDisconnect);
+  port.postMessage({
+    protocolVersion: SPECTRA_PROTOCOL_VERSION, requestId: crypto.randomUUID(),
+    type: 'spectra.content.runtime.ensure', payload: { tabId, documentId, reason: 'observation' },
   });
-  return () => {
-    disposed = true;
-    if (ownedLease) releasePopupObservation(tabId, ownedLease);
-  };
+  return dispose;
 }
-
-async function acquirePopupObservation(
-  tabId: number,
-  documentId: string,
-  isDisposed: () => boolean,
-): Promise<PopupObservationLease | null> {
-  if (observationLeases.has(tabId) || popupClosing) return null;
-  const capability = `popup:${crypto.randomUUID()}`;
-  const response = await sendSpectraRequest('spectra.content.runtime.ensure', {
-    tabId,
-    documentId,
-    reason: 'observation',
-    capability,
-  }).catch(() => null);
-  if (!response?.ok) return null;
-  const lease = {
-    documentId: response.data.documentId,
-    runtimeRevision: response.data.runtimeRevision,
-    capability,
-  };
-  if (popupClosing || isDisposed() || lease.documentId !== documentId) {
-    void sendSpectraRequest('spectra.content.runtime.release', {
-      runtimeRevision: lease.runtimeRevision,
-      tabId,
-      documentId: lease.documentId,
-      reason: 'observation',
-      capability: lease.capability,
-    }).catch(() => undefined);
-    return null;
-  }
-  observationLeases.set(tabId, lease);
-  return lease;
-}
-
-function releasePopupObservations(): void {
-  popupClosing = true;
-  for (const [tabId, lease] of observationLeases) {
-    void sendSpectraRequest('spectra.content.runtime.release', {
-      runtimeRevision: lease.runtimeRevision,
-      tabId,
-      documentId: lease.documentId,
-      reason: 'observation',
-      capability: lease.capability,
-    }).catch(() => undefined);
-  }
-  observationLeases.clear();
-}
-
-window.addEventListener('pagehide', releasePopupObservations, { once: true });
 
 // post: returns true if card was successfully initialized and appended to the container; false if the tab is non-responsive or should be skipped
 export async function initCard(params: InitCardParams): Promise<boolean> {
