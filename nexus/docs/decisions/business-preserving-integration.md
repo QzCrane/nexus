@@ -36,7 +36,7 @@ Local diagnostics export bounded, validated owner summaries. Unreadable facts re
 
 ## Toolchain, dependencies and browser floor
 
-Main already uses Bun 1.4.0, the native TypeScript 7.0.2 CLI and the separate `typescript-compiler-api` alias to TypeScript 6.0.2. Preserve those locks. The obsolete compatibility-prep plan is replaced with executable current-topology checks and a complete programmatic-import census. This integration does not retroactively claim historical TS6/TS7 diagnostic equivalence measurements.
+Main already uses Bun 1.4.0, the native TypeScript 7.0.2 CLI and the separate `typescript-compiler-api` alias to TypeScript 6.0.2. Preserve those compiler and runtime versions; reviewed security repairs may change the exact dependency locks and must refresh their evidence. The obsolete compatibility-prep plan is replaced with executable current-topology checks and a complete programmatic-import census. This integration does not retroactively claim historical TS6/TS7 diagnostic equivalence measurements.
 
 Previously removed file-saver/jszip and misclassified dependency debt are not restored. Orphan type-package checks discover candidates independently of manual debt entries and respect peer/development targets. Historical upstream observations remain dated 2026-08-19; current lock bindings are separately dated 2026-09-06. Identical SBOM implementations are deduplicated. The one workflow-action validator owns immutable action references.
 
@@ -48,45 +48,24 @@ All HALO production ceilings are unchanged from main. Retaining 88 panels and tw
 
 One deliberate budget change is Options: 40 to 41 KiB, supporting strict local diagnostic validation and retired permission-intent fencing. Measured integrated Options script closure is 41,392 bytes with Bun 1.4.0. Other SPECTRA absolute ceilings remain unchanged. Content runtime is close to its existing ceiling; passing a ceiling is not proof of ample growth headroom.
 
-Before the remote integration checkpoint, local checks passed: six-workspace typechecking; strict lint; architecture verification; 132 governance tests and their production validators; 282 HALO tests including frozen-business and actual clipboard/Bilibili runtime fixtures; all 107 isolated SPECTRA unit files; both production builds. These measurements are working-tree evidence, not a claim that a different commit or remote CI passed.
+## Executed failure closure and evidence
 
-Browser validation is a separate merge requirement. Local Chromium 144 did not load the extension worker. Chrome for Testing 135 starts the integrated extension, loads SidePanel/JSON Formatter and successfully executes lazy ruler activation in top and cross-origin child frames in a direct browser probe. The initial candidate did not complete the default Playwright suite reliably in this local environment. Do not replace that suite with the probe or record it green. Hosted exact-tree browser, production smoke, public-projection and same-feature performance/visual evidence remain required before release or main promotion.
+The first integration tree was not release-ready. Follow-up code checkpoints `9df643ebc42fbb49ee41628c6c7fe850afffbf9c` and `dab96e1a3b8b4eeb2b828af3def6634d9cc21393` retain the actual product repairs: acknowledged mute readback supplies real feedback; Action Popup sizing is separated from tab-hosted responsive layout; extension-owned Options tabs pass browser-owned sender validation; HALO theme text meets the contrast requirement; and abrupt Popup teardown releases observation leases through its owned port rather than assuming pagehide delivery. Late grants, duplicates, forged senders and post-disconnect work have negative tests. The Remote test compares the current observation generation while additionally checking that the physical processor and audio graph remain unchanged.
 
-No store publication, public-repository sync, original branch deletion or user-data migration is authorized implicitly by producing this integration candidate. Temporary private acquisition/replay workflows are excluded from the final product tree.
+The canonical helper selects the Chrome-floor CDP driver explicitly, checks the exact executable version, and avoids contradictory extension flags. Chrome 135 Linux headless replay uses explicit GPU configuration; this is not evidence about desktop GPU performance. Browser performance identity comes from the actual browser, not reduced UA text. Node-hosted Playwright correctly records no Bun host version. The comparison requires equal runtime/browser identities, a common user-visible readiness predicate, actual production artifacts, all owned metrics and complete base/candidate workloads. Partial failure evidence is retained but never converted to a successful comparison.
 
-## Failure-closure amendments
+At `1a864d0729cd4ec06bff04fbeb933390c0b24d88`, hosted documentation, HALO browser contracts, minimum Chrome, Windows/Linux quality and the full base/candidate comparison all passed. The exact comparison is Actions run `34028560811`, artifact `9987907454`, ZIP SHA-256 `9331c0e84ee7027535917e028ba53f6a1b93b9ea8c92567a73d84c4ee9496311`. It compares main `664d0615f850c568a8840ac312ca7c92cb81ceee` with that candidate on 20 metrics, 20 samples each. It is one independent run per revision, not proof of universal speedup or two release attempts.
 
-The first remotely retained repair checkpoint is `9df643ebc42fbb49ee41628c6c7fe850afffbf9c`.
-It corrects actual native-volume feedback, Popup surface sizing, HALO palette contrast,
-extension-page diagnostic sender identity, portable cleanup, deterministic skill indices,
-and current-versus-historical toolchain references. Its test results do not certify later changes.
+That run recorded all-card bootstrap p50 113.619 to 77.987 ms, but visible-tab inventory p50 3.514 to 28.982 ms and Popup navigation-to-interactive p50 149.428 to 182.240 ms. Exact passive document discovery adds work relative to the old heuristic; the aggregate deltas must not all be attributed to a single cause. Retain the more complete business behavior and report this cost, rather than reverting paused-media discovery or asserting every path became faster. Long-session observations ended with zero Popup subscribers and zero renewal alarms. Artifact totals changed by +1,112 bytes for HALO and +24,315 bytes for SPECTRA. These values belong only to that measured revision; later lock changes require new comparisons.
 
-Minimum-version replay uses the test-only `puppeteer-floor` alias (Puppeteer Core 24.7.2)
-for Chrome 135.0.7049.114, while current-browser tests retain the current driver.
-An explicit floor requires the exact executable; a version mismatch fails rather than
-falling back. Linux floor replay explicitly disables GPU acceleration in the headless CI
-environment. These measurements do not claim desktop GPU performance. Shared Playwright
-helpers use standards-compliant JSON imports and CDP Browser.getVersion, not reduced UA
-strings. Node-hosted test evidence records its real runtime and does not invent a Bun version.
-Uncommitted source must not be attributed implicitly to HEAD in performance evidence.
+Production SPECTRA smoke passed 40 tests and 361 assertions, the isolated suite passed 108 files, and HALO passed 284 tests plus its browser checks at the repair checkpoints. The local HALO release pipeline subsequently reached real dependency auditing and stopped on npm DNS failure. Neither that partial release run nor ordinary CI is the two-attempt exact-head release receipt required by [release closeout](../release-closeout.md). Visual candidate generation is not approval of a certified visual baseline. Main promotion requires its actual executable policy; no check, retry or budget is waived by this document.
 
-A hotkey keyup releases transient observation, not the user's persistent control intent.
-The long-session workload now checks that the active runtime stays ready at the expected version after keyup, performs
-an explicit restore through a real Action Popup, destroys that Popup abruptly, and measures
-post-release retention. Its 20 batches still execute 400 physical shortcuts. This revealed a
-real stranded Popup observation lease: pagehide's final RPC can be lost. Observation is now
-owned by a browser port. Background mints the capability, admits one document-bound read
-lease per port, enforces an acquisition deadline, and releases on disconnect including late
-acquisition. No fake baseline values, forced production resets, or relaxed retention assertion
-were introduced. The independent visualizer lifetime and persistent control owner stay intact.
+## Security decisions following the real audit
 
-Reduced-motion tests author their probe in the actual product CSS layer and verify both
-reduced timing and restoration of normal timing. They also reject actual inline-motion
-styles in the exercised page. A synthetic inline timing declaration would bypass the
-normal layer cascade and is not a valid model of these production surfaces.
+Canonical quality CI now performs the actual advisory audit after both frozen dependency-domain installs, rather than only testing the audit validator. That exposed `fast-uri` 3.1.4 and `js-yaml` 4.3.0 in repository governance, and `extract-zip` 2.0.1 in the test-only Chrome-floor driver dependency chain. The compatible maintainer parser fixes resolve to 3.1.6 and 4.3.1. Root manifests are unchanged; Bun regenerated only those two root lock entries. Valid and invalid commitlint input, actual consumer resolution, international-domain normalization and ordered-map parsing were exercised.
 
-Required gates remain separate: unit tests, live installed-extension behavior, least-privilege,
-public copy, and immutable performance/visual evidence are not substitutes for each other.
-Visual capture remains candidate evidence until its baseline is certified. Historical main
-may fail a newly enforced business invariant; such a failure must be retained as baseline
-counter-evidence rather than converted into an invented performance improvement.
+The extractor had no patched release at this review. Keep `puppeteer-core` 24.7.2 as the Chrome 135 protocol driver, but explicitly share the already-used `@puppeteer/browsers` 3.2.1 manager through the product override. The old manager and `extract-zip` leave the lock; no unreviewed package versions are introduced. This is an intentional cross-major manager compatibility decision, not an upstream compatibility guarantee. The driver performs local executable replay, not arbitrary archive extraction. Minimum-Chrome, current-Chrome and same-workload performance CI must exercise the resulting lock. The override can be retired only when the floor driver is upgraded or removed with that compatibility evidence, not simply because newer metadata is available.
+
+The advisory sources are GHSA-5jgf-p345-68v8, GHSA-5p4m-2wfm-xmqj and GHSA-jmr9-qjv8-65gv. Real root and product audit responses both returned empty advisory objects in Actions run `34029889848`; the resulting code checkpoint is `7dde956ae624e57db0ed6f32f1d3423fd0f5da68`. A clean advisory response describes that service and time, not proof that no vulnerability exists. The revalidation hash binds the new exact lock while preserving historical upstream observation dates and unchanged direct versions. No advisory suppression, scanner bypass, or removal of Chrome 135 support is accepted.
+
+All repair work belongs in repository commits, not only in a local working tree. Temporary acquisition/checkpoint workflows are removed from the final candidate tree. No store publication, public-repository sync, original branch deletion or user-data migration is implied by this integration candidate.

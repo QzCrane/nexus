@@ -1,5 +1,6 @@
 import { browserReplayPolicy } from './browser-replay';
 import { describe, expect, test } from 'bun:test';
+import { readFileSync } from 'node:fs';
 import {
 	githubEnvironmentLines,
 	parseBrowserFloor,
@@ -42,4 +43,25 @@ test('minimum-browser driver policy rejects implicit browser selection', () => {
 	expect(browserReplayPolicy('135.0.7049.114', '/browser/chrome', 'linux')).toEqual({ driver: 'floor', args: ['--disable-gpu'] });
 	expect(browserReplayPolicy('135.0.7049.114', 'C:/chrome.exe', 'win32')).toEqual({ driver: 'floor', args: [] });
 	expect(browserReplayPolicy(undefined, undefined, 'linux')).toEqual({ driver: 'current', args: [] });
+});
+
+// Keep the supported Chrome-floor CDP implementation, not its vulnerable old
+// download manager. The override is an explicit, browser-tested compatibility
+// decision, not an advisory suppression or a change to the product runtime.
+test('floor and current CDP drivers share the reviewed manager without the vulnerable extractor', () => {
+	const workspace = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+	const spectra = JSON.parse(readFileSync(new URL('../apps/extension-spectra/package.json', import.meta.url), 'utf8'));
+	const lock = Bun.JSONC.parse(readFileSync(new URL('../bun.lock', import.meta.url), 'utf8')) as {
+		packages: Record<string, [string, ...unknown[]]>;
+		overrides: Record<string, string>;
+	};
+	const manager = workspace.overrides['@puppeteer/browsers'];
+	expect(manager).toMatch(/^\d+\.\d+\.\d+$/u);
+	expect(lock.overrides['@puppeteer/browsers']).toBe(manager);
+	expect(Object.values(lock.packages).filter(([name]) => name.startsWith('@puppeteer/browsers@')))
+		.toEqual([lock.packages['@puppeteer/browsers']]);
+	expect(lock.packages['@puppeteer/browsers']?.[0]).toBe(`@puppeteer/browsers@${manager}`);
+	expect(spectra.devDependencies['puppeteer-floor']).toMatch(/^npm:puppeteer-core@\d+\.\d+\.\d+$/u);
+	expect(lock.packages['puppeteer-floor']?.[0]).toBe(spectra.devDependencies['puppeteer-floor'].slice(4));
+	expect(Object.values(lock.packages).some(([name]) => name.startsWith('extract-zip@'))).toBe(false);
 });
