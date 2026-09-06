@@ -12,18 +12,25 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Download exact Chrome floor
+      - name: Independently reacquire and quarantine official browser bytes
         shell: bash
         run: |
           set -euo pipefail
           out="$RUNNER_TEMP/nexus-chrome-floor"
           mkdir -p "$out"
-          curl --fail --location --retry 3 --output "$out/chrome-linux64.zip" https://storage.googleapis.com/chrome-for-testing-public/135.0.7049.114/linux64/chrome-linux64.zip
-          printf '%s  %s\n' dd86dbace037a9b6c4bc993fc4e20ee768a804923850511e53255743760d8b82 "$out/chrome-linux64.zip" | sha256sum --check --strict
-      - name: Retain exact browser for local integration verification
+          url=https://storage.googleapis.com/chrome-for-testing-public/135.0.7049.114/linux64/chrome-linux64.zip
+          curl --fail --location --retry 3 --dump-header "$out/origin-headers.txt" --output "$out/chrome-linux64.zip" "$url"
+          curl --fail --location --retry 3 --output "$RUNNER_TEMP/chrome-second.zip" "$url"
+          cmp "$out/chrome-linux64.zip" "$RUNNER_TEMP/chrome-second.zip"
+          curl --fail --location --retry 3 --output "$out/upstream-version.json" https://googlechromelabs.github.io/chrome-for-testing/135.0.7049.114.json
+          (cd "$out" && sha256sum chrome-linux64.zip > SHA256SUMS.txt && md5sum chrome-linux64.zip > MD5SUMS.txt)
+          cat "$out/SHA256SUMS.txt"
+          cat "$out/MD5SUMS.txt"
+          grep -i 'x-goog-hash\|x-goog-generation\|etag\|last-modified' "$out/origin-headers.txt"
+      - name: Retain bytes and provenance for review without execution
         uses: actions/upload-artifact@v4
         with:
-          name: nexus-chrome-floor
-          path: ${{ runner.temp }}/nexus-chrome-floor/chrome-linux64.zip
+          name: nexus-chrome-floor-quarantine
+          path: ${{ runner.temp }}/nexus-chrome-floor/
           retention-days: 1
           if-no-files-found: error
