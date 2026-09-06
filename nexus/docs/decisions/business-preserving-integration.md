@@ -60,6 +60,32 @@ That run recorded all-card bootstrap p50 113.619 to 77.987 ms, but visible-tab i
 
 Production SPECTRA smoke passed 40 tests and 361 assertions, the isolated suite passed 108 files, and HALO passed 284 tests plus its browser checks at the repair checkpoints. The local HALO release pipeline subsequently reached real dependency auditing and stopped on npm DNS failure. Neither that partial release run nor ordinary CI is the two-attempt exact-head release receipt required by [release closeout](../release-closeout.md). Visual candidate generation is not approval of a certified visual baseline. Main promotion requires its actual executable policy; no check, retry or budget is waived by this document.
 
+## Repeat-run native route and closeout corrections
+
+Repeating the same candidate exposed a real route bug: a hostname-wide negative
+page-volume capability hint could override an acknowledged writer on the current
+media target after a player mounted late. Current exact-target page-native
+readback or an applied same-target acknowledgement now outranks that older hint.
+The amplified write still requires its own matching acknowledgement; a capped
+player still falls back to the capture processor. Both warm-acknowledgement and
+fresh-readback cases are deterministic unit regressions, and the production
+browser scenario explicitly seeds the stale negative hint before native
+amplification and restores the fixture storage afterwards.
+
+The authenticated Remote recovery scenario now resets through the canonical
+`audio-reset` operation before testing low-level capture retirement. Resetting
+only the Content projection leaves the coordinator's desired boost intact and
+allows a subsequent Popup observation to legitimately reapply it. This repair
+retains the exact stop-generation and offscreen cleanup assertions; it does not
+hide a newer capture session by accepting any idle state.
+
+The full release closeout exposed two verification defects not covered by ordinary
+CI: Docker Go-template slice formatting failed despite a valid pinned image, and
+the Git-free source archive was scanned as though it were a Git checkout. The
+[closeout owner](../release-closeout.md) documents the JSON identity reader and
+archive inventory. No release lane, required attempt, pinned image, production
+budget or business capability is removed by these corrections.
+
 ## Security decisions following the real audit
 
 Canonical quality CI now performs the actual advisory audit after both frozen dependency-domain installs, rather than only testing the audit validator. That exposed `fast-uri` 3.1.4 and `js-yaml` 4.3.0 in repository governance, and `extract-zip` 2.0.1 in the test-only Chrome-floor driver dependency chain. The compatible maintainer parser fixes resolve to 3.1.6 and 4.3.1. Root manifests are unchanged; Bun regenerated only those two root lock entries. Valid and invalid commitlint input, actual consumer resolution, international-domain normalization and ordered-map parsing were exercised.

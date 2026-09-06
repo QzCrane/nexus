@@ -94,3 +94,17 @@ formatter dependency; bounded command deadlines and inspection stderr preserve
 the actual failure instead of reporting every inspection error as a missing
 image. The pinned image, two product attempts, exact commit/tree, artifact hashes,
 and atomic promotion requirements are unchanged.
+
+
+## Git-free immutable source verification
+
+The locked Bun image verifies a `git archive` snapshot, not a repository clone;
+neither Git nor `.git` is part of that environment. Toolchain reference discovery
+therefore scans the source filesystem in archive mode, including hidden workflow
+and skill owners, with the same current-file predicate used for a Git checkout.
+Installed dependencies, build output and historical archives are not current
+source authority. Symlinks are rejected rather than followed outside the source.
+A real checkout still requires a successful Git index read: missing Git or an
+index failure never silently becomes an archive-mode pass. The scanner and
+reference checker are included in the receipt's tool hashes. This changes no
+platform lane, pinned image or required release attempt.

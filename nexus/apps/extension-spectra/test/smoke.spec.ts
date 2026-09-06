@@ -6274,12 +6274,24 @@ describe('SPECTRA built extension smoke', () => {
 		});
 		await fixturePage.bringToFront();
 		const tabId = await getTabId(fixturePage.url());
+		const previousScaleHints = await extensionClient.evaluate(async () => (
+			(await chrome.storage.local.get('siteVolumeScales')).siteVolumeScales ?? null
+		));
 		try {
 			await submitEffectiveVolume(tabId, 80);
 			expect(await readPageMediaControllerHarness()).toMatchObject({
 				volumeBase: 80,
 				domMuted: false,
 			});
+			// Reproduce a late player mount: a shared hostname hint can still be
+			// negative even though this exact player has acknowledged a native write.
+			await extensionClient.evaluate(async (hostname) => {
+				const stored = await chrome.storage.local.get('siteVolumeScales');
+				await chrome.storage.local.set({ siteVolumeScales: {
+					...stored.siteVolumeScales,
+					[hostname]: { supported: false, updatedAt: Date.now() },
+				} });
+			}, new URL(fixturePage.url()).hostname);
 			const captureCallsBeforeNativeAmplification = (await readSyntheticCaptureState()).calls;
 			await submitEffectiveVolume(tabId, 130);
 			const native130 = await waitForContentStatus(
@@ -6529,6 +6541,10 @@ describe('SPECTRA built extension smoke', () => {
 					visualizerEnabled: visualizerSettings.previous.globalSettings.visualizerEnabled,
 				},
 			}).catch(() => undefined);
+			await extensionClient.evaluate(async (previous) => {
+				if (previous === null) await chrome.storage.local.remove('siteVolumeScales');
+				else await chrome.storage.local.set({ siteVolumeScales: previous });
+			}, previousScaleHints);
 			await extensionClient.close();
 		}
 	}, 60_000);
@@ -6808,7 +6824,15 @@ describe('SPECTRA built extension smoke', () => {
 					},
 				},
 			});
-			await configureRuntime(fixturePage.url(), DEFAULT_AUDIO_CONFIG);
+			// Reset through the user-control owner, not only its Content projection.
+			// Otherwise opening the next Popup can legitimately reapply the retained
+			// remote boost and turn a low-level stop assertion into a timing race.
+			expect(await sendFromActionPopup({
+				protocolVersion: 2,
+				tabId,
+				type: 'spectra.control.operation.submit',
+				payload: { tabId, source: 'popup', target: null, operation: 'audio-reset', payload: {} },
+			})).toMatchObject({ ok: true, data: { result: { reset: true } } });
 			const resetStatus = await waitForContentStatus(
 				(status) => status.actualMode === 'bypass'
 					&& status.phase === 'idle'

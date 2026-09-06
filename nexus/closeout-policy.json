@@ -82,6 +82,8 @@
 		"scripts/check-visual-regression-policy.ts",
 		"scripts/closeout-evidence.ts",
 		"scripts/toolchain-versions.ts",
+		"scripts/check-toolchain.ts",
+		"scripts/toolchain-references.ts",
 		"scripts/dependency-audit.ts",
 		"scripts/dependency-automation.spec.ts",
 		"scripts/dependency-update-evidence.ts",

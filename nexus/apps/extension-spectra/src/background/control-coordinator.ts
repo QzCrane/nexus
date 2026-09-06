@@ -1464,7 +1464,15 @@ async function executeFieldOperation(
 				// merely to repeat the rejected probe would interrupt visualizer/DSP and
 				// may require a fresh user-activation admission if the owner is Capture.
 				const verdictDomain = normalizeHostname(baseline.origin) ?? '';
-				let scaleSupported = verdictDomain
+				// A hostname verdict is only a discovery hint: a player can mount
+				// after its initial negative probe. Current exact-target readback or
+				// an applied page-native ACK outranks that older shared observation.
+				// The amplified write still needs its own matching actual ACK below.
+				const currentPageWriter = observedFields.volumeBase?.strategy === 'page-native'
+					|| (target !== null && sameMediaTarget(target, baseline.activeMedia)
+						&& baseline.fields.volumeBase?.phase === 'applied'
+						&& baseline.fields.volumeBase.strategy === 'page-native');
+				let scaleSupported = currentPageWriter ? true : verdictDomain
 					? await settingsRepository.getPageNativeScale(verdictDomain)
 					: null;
 				if (scaleSupported === null && verdictDomain) {

@@ -1057,6 +1057,50 @@ describe('authoritative control coordinator', () => {
 		});
 	});
 
+	test.each(['acknowledged', 'fresh-read'] as const)(
+		'prefers current %s page capability over a stale negative hostname hint',
+		async (evidence) => {
+			const harness = installHarness();
+			harness.storage.set('siteVolumeScales', {
+				'media.example': { supported: false, updatedAt: Date.now() },
+			});
+			const target = {
+				frameId: 0, documentId: harness.documentId,
+				mediaId: 'media:late-page-controller', sourceRevision: 0, kind: 'audio' as const,
+			};
+			const intents: ControlIntent[] = [];
+			harness.contentResponder = ({ type, payload }) => {
+				if (type === 'spectra.control.actual.read') {
+					const response = actualReadAck(payload as ControlReadRequest, target);
+					if (evidence === 'fresh-read') response.data.observedStrategies.volumeBase = 'page-native';
+					return response;
+				}
+				if (type === 'spectra.control.page.scale.probe') {
+					throw new Error('A current page-native observation needs no extra discovery RPC');
+				}
+				const intent = payload as ControlIntent;
+				intents.push(intent);
+				return { ok: true, data: intent.requestedCoverage === 'active-target'
+					? appliedPatchAck(intent, () => 'page-native') : releasedPatchAck(intent) };
+			};
+			if (evidence === 'acknowledged') {
+				await controlCoordinatorTestApi.submit({
+					tabId: 7, source: 'popup', target,
+					requestedCoverage: 'active-target', patch: { volumeBase: 80 },
+				});
+			}
+			intents.length = 0;
+			const result = await controlCoordinatorTestApi.submitOperation({
+				tabId: 7, source: 'popup', target, operation: 'effective-volume',
+				payload: { operation: 'set', value: 130 },
+			});
+			expect(result.result).toEqual({ effectiveVolume: 130, volumeBase: 130, boost: 1 });
+			expect(result.fields.volumeBase?.strategy).toBe('page-native');
+			expect(intents.map(({ patch }) => patch)).toEqual([{ volumeBase: 130 }]);
+			expect(harness.offscreenProcessorActive).toBe(false);
+		},
+	);
+
 	test('keeps later remote volume increments on the already acknowledged processor owner', async () => {
 		const harness = installHarness();
 		const target = {
