@@ -6,7 +6,7 @@ export const layoutStyles: Record<string, CSSProperties> = {
 		display: 'flex',
 		flexDirection: 'column',
 		gap: '16px',
-		scrollBehavior: 'smooth',
+		scrollBehavior: 'var(--halo-motion-scroll, smooth)' as CSSProperties['scrollBehavior'],
 		position: 'relative',
 		minHeight: '100%',
 	},

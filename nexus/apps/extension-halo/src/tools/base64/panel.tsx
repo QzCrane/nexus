@@ -22,7 +22,7 @@ const styles: Record<string, React.CSSProperties> = {
 	resultHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
 	resultLabel: { fontSize: '10px', fontWeight: 700, color: 'var(--halo-accent)', fontFamily: 'monospace', textTransform: 'uppercase' },
 	resultValue: { fontSize: '11px', fontFamily: 'monospace', wordBreak: 'break-all', color: 'var(--halo-text)', lineHeight: 1.4, maxHeight: '100px', overflow: 'auto' },
-	btn: { padding: '4px 8px', borderRadius: '4px', fontSize: '10px', background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)', color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'all 0.15s' },
+	btn: { padding: '4px 8px', borderRadius: '4px', fontSize: '10px', background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)', color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)' },
 	preview: { width: '100%', marginTop: '8px', borderRadius: '8px', border: '1px solid var(--halo-border)', background: '#fff', padding: '8px', display: 'flex', justifyContent: 'center' },
 	img: { maxWidth: '100%', maxHeight: '200px', objectFit: 'contain' },
 };

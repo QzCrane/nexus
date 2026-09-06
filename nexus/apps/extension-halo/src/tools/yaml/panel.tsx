@@ -30,7 +30,7 @@ const resultStyles: Record<string, React.CSSProperties> = {
 	copyBtn: {
 		padding: '4px 8px', borderRadius: '4px', fontSize: '10px',
 		background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)',
-		color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'all 0.15s',
+		color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	copyBtnSuccess: { background: 'var(--halo-accent)', color: '#fff', borderColor: 'var(--halo-accent)' },
 	resultsGrid: { display: 'flex', flexDirection: 'column', gap: '8px' },
@@ -46,12 +46,12 @@ export const YamlPanel: React.FC = () => {
 	// Auto-detect input type and calculate both conversions
 	const results = useMemo(() => {
 		if (!input.trim()) return { json: null, yaml: null, detected: null, error: null };
-		
+
 		const detected = detectInputType(input);
 		let json: string | null = null;
 		let yaml: string | null = null;
 		let error: string | null = null;
-		
+
 		if (detected === 'yaml') {
 			// Input is YAML, convert to JSON
 			const result = parseYaml(input);
@@ -73,7 +73,7 @@ export const YamlPanel: React.FC = () => {
 		} else {
 			error = 'Could not detect format';
 		}
-		
+
 		return { json, yaml, detected, error };
 	}, [input]);
 

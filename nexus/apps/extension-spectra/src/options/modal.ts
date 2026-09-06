@@ -84,6 +84,17 @@ export function openModal(binding: HotkeyBinding | null, onSave: (b: HotkeyBindi
 	requestAnimationFrame(() => keyInput.focus());
 }
 
+export function captureModalSaveIntent(): () => boolean {
+	const binding = currentBinding;
+	const callback = onSaveCallback;
+	const key = JSON.stringify(recordedKey);
+	const action = actionSelect.value;
+	const params = paramsInput.value;
+	return () => !modal.hidden && binding !== null && currentBinding === binding
+		&& onSaveCallback === callback && JSON.stringify(recordedKey) === key
+		&& actionSelect.value === action && paramsInput.value === params;
+}
+
 export function closeModal(): void {
 	if (modal.hidden) return;
 	const restoreFocus = previouslyFocused;

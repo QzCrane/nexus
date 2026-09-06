@@ -26,7 +26,11 @@
 		"test:chrome": "bun run build:dev && bun run test:smoke",
 		"test:e2e": "bun run test:chrome",
 		"test:zip-smoke": "bun scripts/smoke-release.ts",
-		"typecheck": "bun tsc --noEmit"
+		"typecheck": "bun tsc --noEmit",
+		"capture:visual-baseline": "bun scripts/capture-visual-baseline.ts",
+		"test:performance": "bun test test/performance.spec.ts && bun test test/runtime-stress-performance.spec.ts && bun test test/service-worker-wake-performance.spec.ts && bun test test/runtime-long-session-performance.spec.ts",
+		"test:visual": "bun test test/visual-baseline.spec.ts",
+		"test:chrome:dist:fast": "bun run test:smoke"
 	},
 	"dependencies": {
 		"@nexus/audio-engine": "workspace:*",

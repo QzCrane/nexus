@@ -19,7 +19,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		fontSize: '14px',
 		fontWeight: 600,
 		cursor: 'pointer',
-		transition: 'transform 0.1s, box-shadow 0.2s',
+		transition: 'var(--halo-motion-transition, transform 0.1s, box-shadow 0.2s)',
 		display: 'flex',
 		alignItems: 'center',
 		justifyContent: 'center',
@@ -84,7 +84,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		color: 'var(--halo-text, #fff)',
 		fontFamily: 'monospace',
 		cursor: 'pointer',
-		transition: 'color 0.15s',
+		transition: 'var(--halo-motion-transition, color 0.15s)',
 	},
 	diagonalRow: {
 		marginTop: '12px',
@@ -129,6 +129,6 @@ export const styles: Record<string, React.CSSProperties> = {
 		color: '#fff',
 		zIndex: 1000,
 		boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-		animation: 'fadeInUp 0.3s ease-out',
+		animation: 'var(--halo-motion-animation, fadeInUp 0.3s ease-out)',
 	},
 };

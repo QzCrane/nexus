@@ -1,0 +1,806 @@
+{
+  "schemaVersion": 1,
+  "modules": [
+    {
+      "id": "api-tester",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable api-tester surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "archive",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable archive surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "base64",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable base64 surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "bilibili-enhancer",
+      "stage": "beta",
+      "surfaces": [
+        "script-runtime"
+      ],
+      "reason": "Explicit beta packaged script."
+    },
+    {
+      "id": "bilibili-plus",
+      "stage": "legacy",
+      "surfaces": [
+        "script-runtime"
+      ],
+      "reason": "Preserve the executable bilibili-plus surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "bookmark-manager",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable bookmark-manager surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "checksum",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable checksum surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "clipboard",
+      "stage": "legacy",
+      "surfaces": [
+        "panel",
+        "content-runtime",
+        "background-runtime"
+      ],
+      "reason": "Preserve the executable clipboard surface from the frozen main migration baseline without claiming ready/beta maturity.",
+      "contentScript": {
+        "entry": "src/entry/content-clipboard.ts",
+        "js": "content-clipboard.js",
+        "runAt": "document_idle",
+        "allFrames": true
+      },
+      "activeService": {
+        "kind": "storage-enabled",
+        "area": "local",
+        "key": "halo_tool_clipboard_settings",
+        "defaultEnabled": false,
+        "owner": "content-clipboard",
+        "readiness": "validated explicit persisted enablement observed",
+        "disposer": "disable or document retirement detaches the copy listener"
+      }
+    },
+    {
+      "id": "code-formatter",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable code-formatter surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "code-snippets",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable code-snippets surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "color-palette",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable color-palette surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "color-picker",
+      "stage": "ready",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Explicit ready user-facing panel."
+    },
+    {
+      "id": "cookie-manager",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable cookie-manager surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "cron",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable cron surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "crypto",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable crypto surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "csp-analyzer",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable csp-analyzer surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "csv-to-json",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable csv-to-json surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "csv-viewer",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable csv-viewer surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "diff",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable diff surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "dom-selector",
+      "stage": "legacy",
+      "surfaces": [
+        "panel",
+        "content-runtime"
+      ],
+      "reason": "Preserve the executable dom-selector surface from the frozen main migration baseline without claiming ready/beta maturity.",
+      "contentRuntimeOwner": "ruler"
+    },
+    {
+      "id": "emoji-picker",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable emoji-picker surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "exif-reader",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable exif-reader surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "extension-manager",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable extension-manager surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "font-inspector",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable font-inspector surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "gzip",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable gzip surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "hash",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable hash surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "headers-viewer",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable headers-viewer surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "hex-dump",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable hex-dump surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "history-search",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable history-search surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "hover-zoom",
+      "stage": "ready",
+      "surfaces": [
+        "panel",
+        "content-runtime",
+        "background-runtime"
+      ],
+      "contentScript": {
+        "entry": "src/entry/content-hover-zoom.ts",
+        "js": "content-hover-zoom.js",
+        "runAt": "document_idle",
+        "allFrames": false
+      },
+      "webAccessibleRuntimes": [
+        {
+          "entry": "src/entry/content-hover-zoom-runtime.ts",
+          "output": "tools/_hover-zoom/runtime.js"
+        }
+      ],
+      "activeService": {
+        "kind": "storage-enabled",
+        "area": "local",
+        "key": "halo_hover_zoom_settings",
+        "defaultEnabled": true,
+        "owner": "content-hover-zoom",
+        "readiness": "storage snapshot hydrated or later change observed",
+        "disposer": "settings disable/page retirement disposes the page runtime"
+      },
+      "reason": "Ready panel plus the shipped lightweight content host and Background DNR reconciliation owner."
+    },
+    {
+      "id": "html-entity",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable html-entity surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "http-status",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable http-status surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "image-tools",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable image-tools surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "ip-lookup",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable ip-lookup surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "json-formatter",
+      "stage": "ready",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Explicit ready user-facing panel."
+    },
+    {
+      "id": "json-path",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable json-path surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "json-to-csv",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable json-to-csv surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "jwt-decoder",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable jwt-decoder surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "lorem-ipsum",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable lorem-ipsum surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "markdown",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable markdown surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "media-sniffer",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable media-sniffer surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "mock-data",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable mock-data surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "module-store",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable module-store surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "morse",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable morse surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "network",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable network surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "number-base",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable number-base surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "outline",
+      "stage": "ready",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Explicit ready user-facing panel."
+    },
+    {
+      "id": "page-annotate",
+      "stage": "legacy",
+      "surfaces": [
+        "panel",
+        "content-runtime"
+      ],
+      "reason": "Preserve the executable page-annotate surface from the frozen main migration baseline without claiming ready/beta maturity.",
+      "contentRuntimeOwner": "ruler"
+    },
+    {
+      "id": "password-gen",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable password-gen surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "pdf",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable pdf surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "permissions",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable permissions surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "pomodoro",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable pomodoro surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "protobuf",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable protobuf surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "punycode",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable punycode surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "qrcode",
+      "stage": "ready",
+      "surfaces": [
+        "panel",
+        "background-runtime"
+      ],
+      "reason": "Ready panel and context-menu activation delivery owner."
+    },
+    {
+      "id": "random-gen",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable random-gen surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "reader-mode",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable reader-mode surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "regex",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable regex surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "resource-monitor",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable resource-monitor surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "rot13",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable rot13 surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "ruler",
+      "stage": "ready",
+      "surfaces": [
+        "panel",
+        "content-runtime"
+      ],
+      "contentScript": {
+        "entry": "src/entry/content-frame-tools.ts",
+        "js": "content-frame-tools.js",
+        "runAt": "document_start",
+        "allFrames": true
+      },
+      "webAccessibleRuntimes": [
+        {
+          "entry": "src/entry/content-frame-tools-runtime.ts",
+          "output": "tools/_frame-tools/runtime.js"
+        }
+      ],
+      "reason": "Ready panel and shared Frame Tools host; DOM Selector and Page Annotate are preserved admitted consumers of this physical runtime."
+    },
+    {
+      "id": "screenshot",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable screenshot surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "session-manager",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable session-manager surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "settings",
+      "stage": "ready",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Core ready settings panel."
+    },
+    {
+      "id": "shortcuts",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable shortcuts surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "smooth-scroll",
+      "stage": "legacy",
+      "surfaces": [
+        "content-runtime",
+        "panel"
+      ],
+      "contentScript": {
+        "entry": "src/entry/content-smooth-scroll.ts",
+        "js": "content-smooth-scroll.js",
+        "runAt": "document_start",
+        "allFrames": false
+      },
+      "activeService": {
+        "kind": "storage-enabled",
+        "area": "sync",
+        "key": "HALO_SMOOTH_SCROLL_SETTINGS",
+        "defaultEnabled": true,
+        "owner": "content-smooth-scroll",
+        "readiness": "storage snapshot hydrated or later change observed",
+        "disposer": "settings disable/page retirement removes input ownership"
+      },
+      "reason": "Preserve the existing settings panel and top-document runtime, independently of module maturity."
+    },
+    {
+      "id": "sql-formatter",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable sql-formatter surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "ssl-cert",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable ssl-cert surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "sticky-notes",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable sticky-notes surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "storage-editor",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable storage-editor surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "subresource",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable subresource surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "tab-group",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable tab-group surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "table-extractor",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable table-extractor surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "tabs",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable tabs surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "tech-stack",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable tech-stack surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "text-to-speech",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable text-to-speech surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "text-tools",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable text-tools surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "timer",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable timer surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "timestamp",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable timestamp surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "todo-list",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable todo-list surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "totp",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable totp surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "translate",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable translate surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "unit-converter",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable unit-converter surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "url",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable url surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "user-agent",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable user-agent surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "userscripts",
+      "stage": "legacy",
+      "surfaces": [
+        "panel",
+        "background-runtime"
+      ],
+      "activeService": {
+        "kind": "userscripts-authority",
+        "owner": "system/userscripts/storage-authority",
+        "readiness": "user-script storage authority hydrated",
+        "disposer": "subscription disposer retires SidePanel observation"
+      },
+      "reason": "Runtime and editor support required by admitted packaged/user scripts; support admission is independent from catalog maturity status."
+    },
+    {
+      "id": "uuid",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable uuid surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "xml-formatter",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable xml-formatter surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "xor",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable xor surface from the frozen main migration baseline without claiming ready/beta maturity."
+    },
+    {
+      "id": "yaml",
+      "stage": "legacy",
+      "surfaces": [
+        "panel"
+      ],
+      "reason": "Preserve the executable yaml surface from the frozen main migration baseline without claiming ready/beta maturity."
+    }
+  ]
+}

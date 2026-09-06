@@ -57,7 +57,7 @@ export const commonStyles: Record<string, CSSProperties> = {
 		fontSize: '18px',
 		width: '28px',
 		height: '28px',
-		transition: 'all 0.2s',
+		transition: 'var(--halo-motion-transition, all 0.2s)',
 	},
 	content: {
 		flex: 1,
@@ -117,7 +117,7 @@ export const commonStyles: Record<string, CSSProperties> = {
 		padding: '8px 4px',
 		border: '1px solid var(--halo-border, #444)',
 		borderRadius: '8px',
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 		color: 'var(--halo-text)',
 		minWidth: 0,
 		overflow: 'hidden',

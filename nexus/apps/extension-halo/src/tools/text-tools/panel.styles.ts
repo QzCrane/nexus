@@ -7,7 +7,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	tabs: { display: 'flex', gap: '4px', flexWrap: 'wrap' },
 	tab: {
 		padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-		border: 'none', transition: 'all 0.15s',
+		border: 'none', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	active: { background: 'var(--halo-accent)', color: '#fff' },
 	inactive: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)' },
@@ -19,7 +19,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	row: { display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' },
 	btn: {
 		padding: '8px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-		background: 'var(--halo-accent)', color: '#fff', border: 'none', transition: 'opacity 0.15s',
+		background: 'var(--halo-accent)', color: '#fff', border: 'none', transition: 'var(--halo-motion-transition, opacity 0.15s)',
 	},
 	btnSecondary: {
 		padding: '6px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',

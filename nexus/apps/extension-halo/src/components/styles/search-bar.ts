@@ -16,7 +16,7 @@ export const searchBarStyles: Record<string, React.CSSProperties> = {
 		background: 'var(--halo-bg-secondary)',
 		border: '1px solid var(--halo-border)',
 		borderRadius: '8px',
-		transition: 'border-color 0.15s, box-shadow 0.15s',
+		transition: 'var(--halo-motion-transition, border-color 0.15s, box-shadow 0.15s)',
 	},
 	inputWrapperFocus: {
 		borderColor: 'var(--halo-accent)',
@@ -60,7 +60,7 @@ export const searchBarStyles: Record<string, React.CSSProperties> = {
 		gap: '10px',
 		padding: '10px 12px',
 		cursor: 'pointer',
-		transition: 'background 0.1s',
+		transition: 'var(--halo-motion-transition, background 0.1s)',
 	},
 	itemActive: {
 		background: 'var(--halo-bg-tertiary)',

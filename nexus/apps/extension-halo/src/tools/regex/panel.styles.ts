@@ -19,7 +19,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	label: { fontSize: '11px', fontWeight: 600, color: 'var(--halo-text-muted)', textTransform: 'uppercase' as const },
 	flagBtn: {
 		padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
-		cursor: 'pointer', transition: 'all 0.15s', border: '1px solid var(--halo-border)',
+		cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)', border: '1px solid var(--halo-border)',
 	},
 	flagActive: { background: 'var(--halo-accent)', color: '#fff', borderColor: 'var(--halo-accent)' },
 	flagInactive: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)' },

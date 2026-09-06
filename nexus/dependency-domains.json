@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "domains": [
+    {
+      "id": "repository-governance",
+      "root": "..",
+      "packageJson": "../package.json",
+      "lockfile": "../bun.lock",
+      "purpose": "Repository-local commit, hook and contributor governance tooling that must remain isolated from product runtime dependencies.",
+      "frozenInstall": ["install", "--cwd", "..", "--frozen-lockfile", "--ignore-scripts"]
+    },
+    {
+      "id": "product-workspace",
+      "root": ".",
+      "packageJson": "package.json",
+      "lockfile": "bun.lock",
+      "purpose": "NEXUS application, package, build, test and release dependency graph for SPECTRA and HALO.",
+      "frozenInstall": ["install", "--frozen-lockfile"]
+    }
+  ]
+}

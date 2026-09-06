@@ -24,7 +24,7 @@ export const SmoothScrollPanel: React.FC = () => {
 		saveAsCustom,
 		t,
 	} = useSmoothScrollSettings();
-	
+
 	const fileInputRef = useRef<HTMLInputElement>(null);
 
 	// Config management
@@ -72,7 +72,7 @@ export const SmoothScrollPanel: React.FC = () => {
 					alignItems: 'center',
 					padding: '12px',
 					background: settings.enabled ? 'rgba(76, 175, 80, 0.08)' : undefined,
-					transition: 'background 0.3s ease'
+					transition: 'var(--halo-motion-transition, background 0.3s ease)'
 				}}>
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 						<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -85,9 +85,9 @@ export const SmoothScrollPanel: React.FC = () => {
 							{t('smoothScroll.enableDesc')}
 						</span>
 					</div>
-					<Toggle 
-						checked={settings.enabled} 
-						onChange={(checked) => updateSetting('enabled', checked)} 
+					<Toggle
+						checked={settings.enabled}
+						onChange={(checked) => updateSetting('enabled', checked)}
 					/>
 				</div>
 			</Card>

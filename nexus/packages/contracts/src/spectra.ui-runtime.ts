@@ -66,6 +66,7 @@ export const SPECTRA_UI_REQUEST_TYPES = [
 export type SpectraUiRequestType = (typeof SPECTRA_UI_REQUEST_TYPES)[number];
 
 export const SPECTRA_UI_EVENT_TYPES = [
+	'spectra.navigation.changed',
 	'spectra.control.snapshot.changed',
 	'spectra.settings.ui.changed',
 	'spectra.remote.session.changed',
@@ -146,7 +147,8 @@ function isRemoteSessionClosed(value: unknown): value is RemoteSessionClosedEven
 }
 
 function isVisibleTabs(value: unknown): boolean {
-	if (!isRecord(value) || !hasExact(value, ['tabs']) || !Array.isArray(value.tabs)) return false;
+	if (!isRecord(value) || !Object.keys(value).every((key) => key === 'tabs' || key === 'incomplete')
+		|| value.incomplete !== undefined && typeof value.incomplete !== 'boolean' || !Array.isArray(value.tabs)) return false;
 	return value.tabs.length <= 10_000
 		&& value.tabs.every((tabId) => isInteger(tabId, true))
 		&& new Set(value.tabs).size === value.tabs.length;
@@ -204,6 +206,12 @@ export function isSpectraUiEventEnvelope(
 		|| (value.tabId !== undefined && !isInteger(value.tabId, true))
 		|| (value.documentId !== undefined && !isBoundedString(value.documentId, 256))
 		|| (value.generation !== undefined && !isInteger(value.generation))) return false;
+	if (value.type === 'spectra.navigation.changed') {
+		if (!isInteger(value.tabId, true) || !isBoundedString(value.documentId, 256)
+			|| value.generation !== undefined || !isRecord(value.payload)
+			|| !hasExact(value.payload, ['url']) || !isBoundedString(value.payload.url, 8192)) return false;
+		try { new URL(value.payload.url); return true; } catch { return false; }
+	}
 	if (value.type === 'spectra.control.snapshot.changed') {
 		return isUiControlSnapshot(value.payload)
 			&& value.tabId === value.payload.tabId

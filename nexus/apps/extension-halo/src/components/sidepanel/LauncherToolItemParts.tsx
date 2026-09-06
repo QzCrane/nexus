@@ -63,8 +63,8 @@ export const StatusIndicators: React.FC<{
 				background: serviceState === 'active' ? '#4CAF50' : 'var(--halo-text-muted)',
 				boxShadow: serviceState === 'active' ? '0 0 5px #4CAF50' : 'none',
 				opacity: serviceState === 'active' ? 1 : 0.5,
-				animation: serviceState === 'active' ? 'halo-pulse 2s infinite' : 'none',
-				transition: 'all 0.3s ease'
+				animation: serviceState === 'active' ? 'var(--halo-motion-animation, halo-pulse 2s infinite)' : 'var(--halo-motion-animation, none)',
+				transition: 'var(--halo-motion-transition, all 0.3s ease)'
 			}} />
 		)}
 	</div>
@@ -94,7 +94,7 @@ export const PinOverlay: React.FC<{
 			borderRadius: '50%',
 			display: 'flex', alignItems: 'center', justifyContent: 'center',
 			zIndex: 2, cursor: 'pointer',
-			transition: 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+			transition: 'var(--halo-motion-transition, all 0.25s cubic-bezier(0.4, 0, 0.2, 1))',
 			background: isPinned ? '#fb7185' : 'rgba(255, 255, 255, 0.95)',
 			boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
 			border: '1px solid var(--halo-border)',
@@ -105,7 +105,7 @@ export const PinOverlay: React.FC<{
 			fontSize: isCompact ? '12px' : '14px',
 			opacity: isPinned ? 1 : (isPinHovered ? 1 : 0.8),
 			transform: (isPinned || isPinHovered) ? 'rotate(0deg)' : 'rotate(-45deg)',
-			transition: 'transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+			transition: 'var(--halo-motion-transition, transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275))',
 			display: 'inline-block'
 		}}>📌</span>
 	</button>

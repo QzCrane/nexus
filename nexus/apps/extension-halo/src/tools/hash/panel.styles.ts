@@ -25,7 +25,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	copyBtn: {
 		padding: '4px 8px', borderRadius: '4px', fontSize: '10px', flexShrink: 0,
 		background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)',
-		color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'all 0.15s',
+		color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	copyBtnSuccess: { background: 'var(--halo-accent)', color: '#fff', borderColor: 'var(--halo-accent)' },
 	dropZone: {

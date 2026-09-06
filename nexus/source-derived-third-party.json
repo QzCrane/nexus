@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "policy": "Known source-derived third-party code that enters a release must bind one local source owner to an exact upstream repository commit, reviewed upstream files, a concrete license expression, and a shipped notice. Repository presence alone is not evidence of first-party authorship.",
+  "entries": [
+    {
+      "product": "halo",
+      "id": "bilibili-enhancer",
+      "localPath": "apps/extension-halo/src/scripts/bilibili-enhancer/script.js",
+      "localMarker": "Source: 0xlau/biliplus",
+      "releaseEntry": "scripts/bilibili-enhancer/script.js",
+      "upstreamRepository": "https://github.com/0xlau/biliplus",
+      "upstreamCommit": "70b8d7ef5489d0ceba9e040173a9e458390f8549",
+      "upstreamFiles": [
+        "scripts/clean-home-page.js",
+        "scripts/hide-hot-search-list.js",
+        "scripts/stepless-video-rate.js"
+      ],
+      "licenseExpression": "MIT",
+      "noticePath": "apps/extension-halo/public/THIRD_PARTY_NOTICES.txt",
+      "noticeMarkers": [
+        "0xlau/biliplus",
+        "70b8d7ef5489d0ceba9e040173a9e458390f8549",
+        "Upstream license: MIT",
+        "Copyright (c) 2024 Timothy Lau"
+      ]
+    }
+  ]
+}

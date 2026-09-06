@@ -10,6 +10,7 @@ export const FR_FR: I18NDict = {
 	vizSub: 'Afficher les barres audio dynamiques',
 	vizDesc: "Désactiver économise les ressources sur les sites restreints en utilisant le mode Natif Lite jusqu'à ce que le volume dépasse 100%.",
 	langLabel: 'Langue',
+	mediaInventoryPartial: "Certains onglets multimédias n’ont pas pu être vérifiés à temps. Rouvrez la fenêtre contextuelle.",
 	noAudio: 'Pas de signal audio',
 	bgTitle: 'Arrière-plan',
 	paused: 'Amélioration audio en pause',

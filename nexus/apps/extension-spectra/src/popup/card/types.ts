@@ -1,7 +1,7 @@
 // goal: defines internal types, state interfaces, and configuration defaults for the popup tab card component
 
 import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
-import type { ControlFieldStates, ControlSnapshot } from '@nexus/contracts';
+import type { AudioRuntimeStatus, AudioSessionSnapshot, ControlFieldStates, ControlSnapshot } from '@nexus/contracts';
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/contracts';
 import type {
   AudioSessionError,
@@ -50,12 +50,22 @@ export interface PopupVisualizerFactories {
   createVizLoop: VizLoopFactory;
 }
 
+export interface CardSnapshot {
+  documentId: string;
+  status: AudioRuntimeStatus | null;
+  controlSnapshot: ControlSnapshot | null;
+  sessionSnapshot: AudioSessionSnapshot | null;
+  isRemoteActive: boolean | null;
+}
+
 export interface InitCardParams {
   container: HTMLElement;
   template: HTMLTemplateElement;
   tab: chrome.tabs.Tab;
   dict: I18NDict;
   getGlobalSettings: () => GlobalSettings;
+  getDictionary?: () => I18NDict;
+  onCardSetChanged?: () => void;
   isBackground?: boolean;
   loadVisualizer?: () => Promise<PopupVisualizerFactories>;
   registerCleanup?: (cleanup: () => void) => () => void;

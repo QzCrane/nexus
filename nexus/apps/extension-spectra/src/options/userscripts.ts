@@ -2,6 +2,7 @@
 
 import { t } from './i18n';
 import { showOptionsError } from './status';
+import { requestOptionalPermission } from '../shared/optional-permission-admission';
 
 let focusListener: (() => void) | null = null;
 
@@ -43,7 +44,27 @@ export async function initUserScriptsSection(): Promise<void> {
 	await updateStatusBadge();
 
 	const enableBtn = document.getElementById('userscripts-enable-btn');
-	if (enableBtn instanceof HTMLElement) enableBtn.onclick = openExtensionSettings;
+	if (enableBtn instanceof HTMLElement) {
+		let disposed = false;
+		let pending = false;
+		enableBtn.onclick = () => {
+			if (disposed || pending) return;
+			pending = true;
+			try {
+				void requestOptionalPermission('userScripts').then((granted) => {
+					if (disposed) return;
+					if (granted) openExtensionSettings();
+					else showOptionsError(new Error('User Scripts permission was not granted.'));
+				}).catch((error: unknown) => {
+					if (!disposed) showOptionsError(error);
+				}).finally(() => { pending = false; });
+			} catch (error) {
+				pending = false;
+				showOptionsError(error);
+			}
+		};
+		window.addEventListener('pagehide', () => { disposed = true; enableBtn.onclick = null; }, { once: true });
+	}
 
 	// note: re-check status when window regains focus (user may have enabled it)
 	focusListener = () => {

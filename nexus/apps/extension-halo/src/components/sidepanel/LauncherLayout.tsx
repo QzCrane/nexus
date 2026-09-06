@@ -55,7 +55,7 @@ export const LauncherLayout: React.FC<LayoutProps> = ({
 				width: '200%',
 				height: '100%',
 				transform: showPage2 ? 'translateX(-50%)' : 'translateX(0)',
-				transition: `transform ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT}`,
+				transition: `var(--halo-motion-transition, transform ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT})`,
 				minHeight: 0,
 			}}>
 				{/* PAGE 1: HOME remains mounted to preserve scroll/drag state. */}

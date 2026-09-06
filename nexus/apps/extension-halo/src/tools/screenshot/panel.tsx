@@ -21,7 +21,7 @@ const styles: Record<string, React.CSSProperties> = {
         padding: '12px', border: 'none', borderRadius: '8px',
         background: 'var(--halo-bg-secondary)', color: 'var(--halo-text)',
         cursor: 'pointer', display: 'flex', flexDirection: 'column',
-        alignItems: 'center', gap: '8px', fontSize: '12px', transition: 'all 0.2s',
+        alignItems: 'center', gap: '8px', fontSize: '12px', transition: 'var(--halo-motion-transition, all 0.2s)',
     },
     btnPrimary: { background: 'var(--halo-accent)', color: '#fff' },
     btnDisabled: { opacity: 0.5, cursor: 'not-allowed' },
@@ -29,7 +29,7 @@ const styles: Record<string, React.CSSProperties> = {
     label: { fontSize: '11px', fontWeight: 600, color: 'var(--halo-text-muted)', textTransform: 'uppercase' as const },
     delayBtn: {
         padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
-        cursor: 'pointer', transition: 'all 0.15s', border: '1px solid var(--halo-border)',
+        cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)', border: '1px solid var(--halo-border)',
         background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-secondary)',
     },
     delayActive: { background: 'var(--halo-accent)', color: '#fff', borderColor: 'var(--halo-accent)' },
@@ -63,7 +63,7 @@ export const ScreenshotPanel: React.FC = () => {
         if (loading) return;
         setLoading(true);
         setImage(null);
-        
+
         try {
             if (delay > 0) {
                 // Show countdown
@@ -119,12 +119,12 @@ export const ScreenshotPanel: React.FC = () => {
 
             {/* Capture Button */}
             <button type="button"
-                style={{...styles.btn, ...styles.btnPrimary, ...(loading ? styles.btnDisabled : {})}} 
+                style={{...styles.btn, ...styles.btnPrimary, ...(loading ? styles.btnDisabled : {})}}
                 onClick={handleCapture}
                 disabled={loading}
             >
                 <span style={{fontSize: '24px'}}>📸</span>
-                {loading 
+                {loading
                     ? (countdown !== null ? `${countdown}...` : t('screenshotPanel.capturing'))
                     : t('screenshotPanel.captureVisible')
                 }

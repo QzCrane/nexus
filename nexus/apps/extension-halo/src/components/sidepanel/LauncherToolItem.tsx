@@ -1,3 +1,4 @@
+import { isLaunchablePlugin } from '../../kernel';
 import type React from 'react';
 import { useState, memo } from 'react';
 import type { ToolId, ToolMeta, HaloSettings } from '../../kernel';
@@ -32,8 +33,8 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 	const [isHovered, setIsHovered] = useState(false);
 	const [isPinHovered, setIsPinHovered] = useState(false);
 	const { preload, cancelPreload } = useToolPreload();
-	
-	const isReady = tool.status === 'ready' || tool.status === 'beta';
+
+	const isReady = isLaunchablePlugin(tool);
 	const isPinned = settings?.pinnedTools?.includes(tool.id);
 	const isDragging = draggingId === tool.id;
 	const isScriptTool = tool.pluginType === 'script';
@@ -60,10 +61,10 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 				setIsHovered(false);
 				setIsPinHovered(false);
 			}}
-			style={{ 
+			style={{
 				position: 'relative', opacity: isDragging ? 0.4 : 1, width: '100%',
 				border: 0, margin: 0, padding: 0, minInlineSize: 0,
-				transition: 'opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+				transition: 'var(--halo-motion-transition, opacity 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1))',
 				zIndex: isHovered ? 10 : 1,
 				transform: isHovered && isReady ? 'translateY(-2px)' : 'translateY(0)',
 				willChange: isHovered && isReady ? 'transform' : 'auto',
@@ -95,7 +96,7 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 					border: isPinned ? `1.5px solid ${mainThemeColor}` : isHovered && isReady ? `1.5px solid ${mainThemeColor}44` : '1px solid var(--halo-border)',
 					background: isPinned ? `linear-gradient(135deg, var(--halo-bg-secondary), ${mainThemeColor}08)` : 'var(--halo-bg-tertiary)',
 					boxShadow: isPinned ? `0 4px 12px ${mainThemeColor}25` : isHovered && isReady ? '0 6px 20px rgba(0,0,0,0.35)' : 'none',
-					borderRadius: '12px', overflow: 'visible', transition: 'border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease', position: 'relative',
+					borderRadius: '12px', overflow: 'visible', transition: 'var(--halo-motion-transition, border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease)', position: 'relative',
 					outline: 'none',
 					backfaceVisibility: 'hidden',
 				}}
@@ -103,24 +104,24 @@ export const LauncherToolItem: React.FC<LauncherToolItemProps> = memo(({
 			>
 				<StatusIndicators toolId={tool.id} isRunning={isRunning} serviceState={serviceState} />
 
-				<div style={{ 
-					position: 'absolute', bottom: '6px', left: '25%', right: '25%', 
+				<div style={{
+					position: 'absolute', bottom: '6px', left: '25%', right: '25%',
 					height: '2.5px', borderRadius: '2px', background: mainThemeColor,
-					opacity: isHovered || isPinned ? 0.9 : 0.3, transition: 'opacity 0.2s',
+					opacity: isHovered || isPinned ? 0.9 : 0.3, transition: 'var(--halo-motion-transition, opacity 0.2s)',
 					boxShadow: isPinned || isHovered ? `0 0 6px ${mainThemeColor}66` : 'none'
 				}} />
 
-				<span style={{ 
-					...commonStyles.toolIcon as React.CSSProperties, 
+				<span style={{
+					...commonStyles.toolIcon as React.CSSProperties,
 					fontSize,
 					marginBottom: '4px',
-					transition: 'transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275)',
+					transition: 'var(--halo-motion-transition, transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275))',
 					transform: isHovered ? 'scale(1.15)' : 'scale(1)',
 					backfaceVisibility: 'hidden'
 				}}>{tool.icon}</span>
 
-				{showLabels && <span style={{ 
-					...commonStyles.toolLabel as React.CSSProperties, 
+				{showLabels && <span style={{
+					...commonStyles.toolLabel as React.CSSProperties,
 					fontSize: iconSize < 24 ? '10px' : '11px', color: isPinned ? 'var(--halo-text)' : 'var(--halo-text-muted)',
 					fontWeight: isPinned ? 600 : 400
 				}}>{t(`tools.${tool.id}.name`, { defaultValue: tool.name })}</span>}

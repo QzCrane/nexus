@@ -31,7 +31,7 @@ export const toolManagerStyles: Record<string, React.CSSProperties> = {
 		borderRadius: '6px',
 		color: 'var(--halo-text-secondary)',
 		cursor: 'pointer',
-		transition: 'background 0.15s',
+		transition: 'var(--halo-motion-transition, background 0.15s)',
 	},
 	searchInput: {
 		width: '100%',
@@ -56,7 +56,7 @@ export const toolManagerStyles: Record<string, React.CSSProperties> = {
 		borderRadius: '20px',
 		color: 'var(--halo-text-secondary)',
 		cursor: 'pointer',
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	filterChipActive: {
 		background: 'var(--halo-accent)',
@@ -112,7 +112,7 @@ export const toolManagerStyles: Record<string, React.CSSProperties> = {
 		borderRadius: '6px',
 		cursor: 'pointer',
 		fontSize: '14px',
-		transition: 'background 0.15s',
+		transition: 'var(--halo-motion-transition, background 0.15s)',
 	},
 	badge: {
 		fontSize: '9px',

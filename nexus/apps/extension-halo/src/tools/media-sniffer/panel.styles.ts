@@ -29,7 +29,7 @@ export const styles: Record<string, CSSProperties> = {
 		background: 'var(--halo-bg)',
 		cursor: 'pointer',
 		fontSize: '12px',
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	chipActive: {
 		background: 'var(--halo-accent)',

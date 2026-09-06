@@ -25,12 +25,14 @@ import { initializeContentRuntimeLoader } from './runtime-loader';
 import { initializeRuntimeRestartRecovery } from './runtime-restart-startup';
 import { initializeMainRuntimeManager } from './main-runtime-manager';
 import { initializeControlCoordinator } from './control-coordinator';
+import { initializeBackgroundDiagnostics } from './diagnostics';
 
 // eff: initialize all functional modules and start message routing
 initializeOffscreenCoordinator();
 initializeMainRuntimeManager();
 initializeContentRuntimeLoader();
 initializeControlCoordinator();
+initializeBackgroundDiagnostics();
 registerAudioHandlers();
 registerSettingsHandlers();
 registerCaptureHandlers();

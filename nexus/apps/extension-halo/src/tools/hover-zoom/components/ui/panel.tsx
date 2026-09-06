@@ -87,7 +87,7 @@ export const HoverZoomPanel: React.FC = () => {
         <div style={styles.wrapper}>
             {/* Master Toggle */}
             <Card variant="default" padding="none">
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: settings.enabled ? 'rgba(76,175,80,0.08)' : undefined, transition: 'background 0.3s' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px', background: settings.enabled ? 'rgba(76,175,80,0.08)' : undefined, transition: 'var(--halo-motion-transition, background 0.3s)' }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                             <span style={{ fontSize: '15px', fontWeight: 600, color: 'var(--halo-text)' }}>🔍 {t('hoverZoom.enable')}</span>
@@ -135,7 +135,7 @@ export const HoverZoomPanel: React.FC = () => {
                                 </div>
                             </div>
                             <p style={{ fontSize: '10px', color: 'var(--halo-text-secondary)', margin: '6px 0 0', lineHeight: '1.4' }}>
-                                {settings.altKeyMode === 'compat' 
+                                {settings.altKeyMode === 'compat'
                                     ? (t('hoverZoom.altKeyMode.compatDesc') || 'Only block browser menu when viewer is visible')
                                     : (t('hoverZoom.altKeyMode.blockDesc') || 'Always block browser menu when Alt is pressed')}
                             </p>

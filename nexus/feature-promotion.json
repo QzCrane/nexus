@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "legacyBaseline": [
+    "bilibili-enhancer",
+    "color-picker",
+    "hover-zoom",
+    "json-formatter",
+    "outline",
+    "qrcode",
+    "ruler",
+    "settings"
+  ],
+  "requirements": [
+    "correctness",
+    "failureBoundary",
+    "lifecycleRestart",
+    "permissionPrivacy",
+    "accessibility",
+    "runtimeResources",
+    "bundleClosure",
+    "browserCompatibility"
+  ],
+  "evidence": {}
+}

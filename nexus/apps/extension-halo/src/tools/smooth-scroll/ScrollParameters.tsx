@@ -63,7 +63,7 @@ export const ScrollParameters: React.FC<ScrollParametersProps> = ({ settings, up
 									border: 'none',
 									background: settings.easing === opt.value ? 'var(--halo-accent)' : 'transparent',
 									color: settings.easing === opt.value ? '#fff' : 'var(--halo-text-muted)',
-									padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: settings.enabled ? 'pointer' : 'not-allowed', transition: 'all 0.15s',
+									padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: settings.enabled ? 'pointer' : 'not-allowed', transition: 'var(--halo-motion-transition, all 0.15s)',
 									opacity: settings.enabled ? 1 : 0.5,
 								}}
 								onClick={() => settings.enabled && updateSetting('easing', opt.value)}

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES } from '../src/kernel/registry/_generated-release-admission';
 
 function source(relativePath: string): string {
 	return readFileSync(new URL(`../${relativePath}`, import.meta.url), 'utf8');
@@ -33,9 +34,8 @@ describe('HALO Hover Zoom lazy preview runtime', () => {
 		expect(runtimeLoader).toContain('import(runtimeUrl)');
 		expect(runtimeLoader).toContain('if (runtimePromise) return runtimePromise;');
 		expect(runtimeLoader).toContain('if (runtimePromise === pending) runtimePromise = null;');
-		expect(buildSource).toContain(
-			"{ entry: 'src/entry/content-hover-zoom-runtime.ts', out: 'tools/_hover-zoom/runtime.js', kind: 'module' }",
-		);
+		expect(buildSource).toContain('RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES.map');
+		expect(RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES).toContainEqual({ id: 'hover-zoom', entry: 'src/entry/content-hover-zoom-runtime.ts', output: 'tools/_hover-zoom/runtime.js' });
 	});
 
 	test('retires an in-flight preview when input or settings authority changes', () => {

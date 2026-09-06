@@ -125,7 +125,7 @@ export const OverlayPanel: React.FC<OverlayPanelProps> = ({
 				display: 'flex',
 				flexDirection: 'column',
 				transform: visible ? 'translateX(0)' : 'translateX(100%)',
-				transition: 'transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1)',
+				transition: 'var(--halo-motion-transition, transform 0.3s cubic-bezier(0.4, 0.0, 0.2, 1))',
 				pointerEvents: visible ? 'auto' : 'none',
 				boxShadow: visible ? '-5px 0 15px rgba(0,0,0,0.3)' : 'none',
 			}}

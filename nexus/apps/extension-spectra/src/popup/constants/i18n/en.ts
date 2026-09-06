@@ -10,6 +10,7 @@ export const EN_US: I18NDict = {
   vizSub: 'Show dynamic audio bars',
   vizDesc: 'Disabling this saves resources on restricted sites (e.g. Tiktok) by using Native Lite mode until volume > 100%.',
   langLabel: 'Language',
+  mediaInventoryPartial: "Some media tabs could not be checked in time. Reopen the popup to retry.",
   noAudio: 'No Audio Signal',
   bgTitle: 'Background',
   paused: 'Audio Enhancement Paused',

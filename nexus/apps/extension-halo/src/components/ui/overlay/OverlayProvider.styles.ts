@@ -13,10 +13,10 @@ export const styles = {
 		justifyContent: 'center',
 		padding: '24px',
 		// Animation for the overlay fade-in
-		animation: `haloFadeIn ${ANIMATION_CONSTANTS.DURATION.FAST}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT}`,
+		animation: `var(--halo-motion-animation, haloFadeIn ${ANIMATION_CONSTANTS.DURATION.FAST}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT})`,
 	},
 	modalContent: {
-		// Glassmorphism upgrade or solid panel based on preference? 
+		// Glassmorphism upgrade or solid panel based on preference?
 		// Modals usually need high contrast, so keep robust background but add premium shadow/border
 		background: 'var(--halo-bg-panel, #ffffff)',
 		borderRadius: '16px',
@@ -26,7 +26,7 @@ export const styles = {
 		boxShadow: '0 20px 40px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
 		border: '1px solid var(--halo-border, rgba(0,0,0,0.1))',
 		// Use SSOT animation for pop-in
-		animation: `haloPopIn ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.BOUNCE}`,
+		animation: `var(--halo-motion-animation, haloPopIn ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.BOUNCE})`,
 	},
 	title: {
 		fontSize: '18px',
@@ -54,7 +54,7 @@ export const styles = {
 		fontWeight: 600,
 		cursor: 'pointer',
 		border: 'none',
-		transition: 'all 0.15s cubic-bezier(0.4, 0, 0.2, 1)',
+		transition: 'var(--halo-motion-transition, all 0.15s cubic-bezier(0.4, 0, 0.2, 1))',
 	},
 	btnCancel: {
 		background: 'var(--halo-bg-tertiary, #f0f0f0)',
@@ -86,7 +86,7 @@ export const styles = {
 		boxShadow: '0 8px 24px rgba(0,0,0,0.2)',
 		backdropFilter: 'blur(16px)',
 		border: '1px solid rgba(255,255,255,0.1)',
-		animation: `haloSlideUp ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.BOUNCE}`,
+		animation: `var(--halo-motion-animation, haloSlideUp ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.BOUNCE})`,
 		display: 'flex',
 		alignItems: 'center',
 		gap: '10px',

@@ -25,7 +25,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		border: '1px solid var(--halo-border, #444)',
 		background: 'transparent',
 		color: 'var(--halo-text-muted, #888)',
-		transition: 'all 0.2s',
+		transition: 'var(--halo-motion-transition, all 0.2s)',
 		whiteSpace: 'nowrap',
 	},
 	filterChipActive: {
@@ -58,7 +58,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		padding: '8px 10px',
 		borderRadius: '8px',
 		cursor: 'pointer',
-		transition: 'background 0.2s',
+		transition: 'var(--halo-motion-transition, background 0.2s)',
 		border: '1px solid transparent',
 		position: 'relative',
 	},
@@ -109,7 +109,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		alignItems: 'center',
 		justifyContent: 'center',
 		fontSize: '14px',
-		transition: 'all 0.2s',
+		transition: 'var(--halo-motion-transition, all 0.2s)',
 		color: 'var(--halo-text-muted, #888)',
 	},
 	empty: {

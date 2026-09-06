@@ -35,7 +35,7 @@ const styles: Record<string, React.CSSProperties> = {
 	copyBtn: {
 		padding: '4px 8px', borderRadius: '4px', fontSize: '10px',
 		background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)',
-		color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'all 0.15s',
+		color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	copyBtnSuccess: { background: 'var(--halo-accent)', color: '#fff', borderColor: 'var(--halo-accent)' },
 	kvRow: { display: 'flex', borderBottom: '1px solid var(--halo-border)', padding: '6px 0', fontSize: '11px' },
@@ -65,22 +65,22 @@ export const URLPanel: React.FC = () => {
 	// Calculate all results simultaneously
 	const results = useMemo((): URLResults => {
 		if (!input.trim()) return { encoded: null, decoded: null, parsed: null, isURL: false };
-		
+
 		let encoded: string | null = null;
 		let decoded: string | null = null;
 		let parsed: Record<string, string> | null = null;
 		let isURL = false;
-		
+
 		// Always encode
 		try {
 			encoded = encode(input);
 		} catch { encoded = null; }
-		
+
 		// Always try to decode
 		try {
 			decoded = decode(input);
 		} catch { decoded = null; }
-		
+
 		// Try to parse as URL
 		try {
 			if (input.includes('://') || input.startsWith('/')) {
@@ -88,7 +88,7 @@ export const URLPanel: React.FC = () => {
 				isURL = true;
 			}
 		} catch { parsed = null; }
-		
+
 		return { encoded, decoded, parsed, isURL };
 	}, [input]);
 

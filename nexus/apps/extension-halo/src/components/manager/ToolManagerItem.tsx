@@ -1,3 +1,4 @@
+import { isLaunchablePlugin } from '../../kernel';
 // goal: Sub-component for ToolManager list items
 // eff: Extracted to reduce ToolManager.tsx size
 
@@ -22,7 +23,7 @@ export const ToolManagerItem: React.FC<ToolManagerItemProps> = ({
 }) => {
   const { t } = useTranslation();
   const isSettings = tool.id === 'settings';
-  const isReady = tool.status === 'ready' || tool.status === 'beta';
+  const isReady = isLaunchablePlugin(tool);
 
   return (
     <div style={styles.item}>

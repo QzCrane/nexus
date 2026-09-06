@@ -21,7 +21,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	},
 	noteActions: {
 		display: 'flex', gap: '4px', position: 'absolute', top: '8px', right: '8px', opacity: 0,
-		transition: 'opacity 0.15s',
+		transition: 'var(--halo-motion-transition, opacity 0.15s)',
 	},
 	colorDot: {
 		width: '16px', height: '16px', borderRadius: '50%', cursor: 'pointer', border: '2px solid transparent',

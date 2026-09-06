@@ -498,13 +498,15 @@ describe('extension-page DOM and idle contracts', () => {
 		const card = readFileSync(resolve(import.meta.dir, '../src/popup/card/init.ts'), 'utf8');
 		expect(presets).toContain('applyBtn.disabled = !canApply');
 		expect(presets).toContain('await target.apply(config)');
-		expect(popup).toContain('runBoundedCardBootstrap(backgroundTabs, 4');
+		expect(popup).toContain('runBoundedCardBootstrap(backgroundTabs, CARD_SNAPSHOT_CONCURRENCY');
+		const snapshot = readFileSync(resolve(import.meta.dir, '../src/popup/card/snapshot.ts'), 'utf8');
+		expect(snapshot).toContain('CARD_SNAPSHOT_CONCURRENCY = 4');
 		expect(boundedBootstrap).toContain(
 			'const workerCount = Math.min(Math.max(1, Math.floor(concurrency)), items.length);',
 		);
 		expect(boundedBootstrap).toContain('await Promise.all(Array.from({ length: workerCount }, () => worker()));');
 		expect(card).toContain('params.isBackground');
-		expect(card).toContain('? Promise.resolve(null)');
+		expect(snapshot).toContain('passive ? Promise.resolve(null)');
 	});
 
 	test('keeps Popup PiP single-click, native-only, and lifecycle-bound', () => {

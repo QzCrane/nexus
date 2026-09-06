@@ -1,3 +1,4 @@
+import { isLaunchablePlugin } from '../kernel';
 // goal: Global search bar component
 // eff: Fuzzy search with keyboard shortcuts
 
@@ -57,7 +58,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (!results.length) return;
-    
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActiveIndex((i) => (i + 1) % results.length);
@@ -67,7 +68,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const selected = results[activeIndex];
-      if (selected && (selected.status === 'ready' || selected.status === 'beta')) {
+      if (selected && (isLaunchablePlugin(selected))) {
         onSelect(selected.id);
         setQuery('');
         inputRef.current?.blur();
@@ -79,7 +80,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
   }, [results, activeIndex, onSelect]);
 
   const handleSelect = useCallback((tool: ToolMeta) => {
-    if (tool.status === 'ready' || tool.status === 'beta') {
+    if (isLaunchablePlugin(tool)) {
       onSelect(tool.id);
       setQuery('');
     }
@@ -131,7 +132,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, placeholder }) =
                   <div style={styles.itemName}>{t(`tools.${tool.id}.name`)}</div>
                   <div style={styles.itemDesc}>{t(`tools.${tool.id}.desc`)}</div>
                 </div>
-                {tool.status === 'coming' && (
+                {!isLaunchablePlugin(tool) && (
                   <span style={{
                     ...styles.itemStatus,
                     background: 'var(--halo-warning-alpha, rgba(245, 158, 11, 0.2))',

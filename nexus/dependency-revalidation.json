@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-08-19",
+  "policy": "Upstream observations retain their original observedAt date and are not a claim about the latest available version today. lockedVersion and lockObservedAt bind this integration review to the exact adopted main lock. Updates still require frozen install, source checks, production builds, browser replay and applicable artifact/runtime comparisons on the resulting lock.",
+  "entries": [
+    {
+      "dependency": "@playwright/test",
+      "packagePaths": [
+        "apps/extension-halo/package.json"
+      ],
+      "lockedVersion": "1.62.1",
+      "observedLatest": "1.62.1",
+      "source": "https://www.npmjs.com/package/@playwright/test",
+      "lane": "browser-tooling-epoch",
+      "risk": "high",
+      "reason": "The Playwright pair controls browser automation semantics and bundled browser expectations; update @playwright/test and playwright together and replay browser, visual and minimum-Chrome evidence."
+    },
+    {
+      "dependency": "playwright",
+      "packagePaths": [
+        "apps/extension-halo/package.json"
+      ],
+      "lockedVersion": "1.62.1",
+      "observedLatest": "1.62.1",
+      "source": "https://www.npmjs.com/package/playwright",
+      "lane": "browser-tooling-epoch",
+      "risk": "high",
+      "reason": "Must remain version-coupled with @playwright/test; browser revisions and screenshot behavior are evidence-bearing surfaces.",
+      "via": "@playwright/test"
+    },
+    {
+      "dependency": "esbuild",
+      "packagePaths": [
+        "apps/extension-halo/package.json",
+        "apps/extension-spectra/package.json"
+      ],
+      "lockedVersion": "0.28.2",
+      "observedLatest": "0.28.1",
+      "source": "https://www.npmjs.com/package/esbuild",
+      "lane": "production-build-epoch",
+      "risk": "high",
+      "reason": "Pre-1.0 minor movement can change build semantics; both products require exact production artifact and source-graph/finalizer replay before promotion."
+    },
+    {
+      "dependency": "@biomejs/biome",
+      "packagePaths": [
+        "package.json"
+      ],
+      "lockedVersion": "2.5.11",
+      "observedLatest": "2.5.7",
+      "source": "https://www.npmjs.com/package/@biomejs/biome",
+      "lane": "tooling-patch",
+      "risk": "medium",
+      "reason": "Patch update can still change diagnostics or formatter output; run repository lint coverage and confirm no generated/source churn beyond intended fixes."
+    },
+    {
+      "dependency": "turbo",
+      "packagePaths": [
+        "package.json"
+      ],
+      "lockedVersion": "2.10.12",
+      "observedLatest": "2.10.8",
+      "source": "https://www.npmjs.com/package/turbo",
+      "lane": "tooling-patch",
+      "risk": "medium",
+      "reason": "Task graph/cache behavior is repository infrastructure; verify filtered builds, dependency domains and closeout lanes."
+    },
+    {
+      "dependency": "terser",
+      "packagePaths": [
+        "apps/extension-spectra/package.json"
+      ],
+      "lockedVersion": "5.51.2",
+      "observedLatest": "5.49.0",
+      "source": "https://www.npmjs.com/package/terser",
+      "lane": "production-minifier",
+      "risk": "high",
+      "reason": "Minifier changes can alter executable behavior and bytes; require SPECTRA production artifact integrity, smoke and size/performance comparison."
+    },
+    {
+      "dependency": "darkreader",
+      "packagePaths": [
+        "apps/extension-halo/package.json"
+      ],
+      "lockedVersion": "4.9.128",
+      "observedLatest": "4.9.128",
+      "source": "https://www.npmjs.com/package/darkreader",
+      "lane": "feature-runtime",
+      "risk": "medium",
+      "reason": "Runtime behavior affects Dark Mode feature lifecycle and page mutation semantics; replay focused feature ownership tests before accepting."
+    },
+    {
+      "dependency": "jose",
+      "packagePaths": [
+        "apps/extension-halo/package.json"
+      ],
+      "lockedVersion": "6.2.10",
+      "observedLatest": "6.2.7",
+      "source": "https://www.npmjs.com/package/jose",
+      "lane": "security-runtime",
+      "risk": "high",
+      "reason": "Cryptographic/JWT behavior is security-sensitive; update only with focused crypto contracts plus production bundle and advisory replay."
+    },
+    {
+      "dependency": "pinyin-pro",
+      "packagePaths": [
+        "apps/extension-halo/package.json"
+      ],
+      "lockedVersion": "3.29.3",
+      "observedLatest": "3.28.2",
+      "source": "https://www.npmjs.com/package/pinyin-pro",
+      "lane": "feature-runtime",
+      "risk": "medium",
+      "reason": "Search/transliteration output can change user-visible ordering and matching; require deterministic search behavior replay."
+    },
+    {
+      "dependency": "typescript",
+      "packagePaths": [
+        "package.json",
+        "apps/extension-halo/package.json",
+        "apps/extension-spectra/package.json",
+        "packages/contracts/package.json",
+        "packages/features/audio-engine/package.json",
+        "packages/nexus-kernel/package.json",
+        "packages/ui-kit/package.json"
+      ],
+      "lockedVersion": "7.0.2",
+      "observedLatest": "7.0.2",
+      "source": "https://www.npmjs.com/package/typescript",
+      "lane": "TYPESCRIPT-7-EPOCH",
+      "risk": "epoch",
+      "reason": "This is a compiler-generation migration, not a dependency bump. It requires a dedicated diagnostic/build/runtime equivalence epoch and explicit removal or replacement of TypeScript 5 compatibility assumptions."
+    }
+  ],
+  "lockObservedAt": "2026-09-06",
+  "lockSha256": "780685c413c3d01e0fcc60b2f8e38399d5957e700e58adb3bb7da0e4fdd6aa01"
+}

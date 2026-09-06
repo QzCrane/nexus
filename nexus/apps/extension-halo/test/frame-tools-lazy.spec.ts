@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { Actions } from '@nexus/contracts';
+import { RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES } from '../src/kernel/registry/_generated-release-admission';
 import {
 	FRAME_TOOL_ANNOTATE_START,
 	FRAME_TOOL_ANNOTATE_STOP,
@@ -72,9 +73,9 @@ describe('HALO lazy all-frame tool runtime', () => {
 			resources?: string[];
 			use_dynamic_url?: boolean;
 		}>;
-		const toolsResource = resources.find((entry) => entry.resources?.includes('tools/*'));
+		const toolsResource = resources.find((entry) => entry.resources?.includes('tools/_frame-tools/runtime.js'));
 
-		expect(build).toContain("out: 'tools/_frame-tools/runtime.js', kind: 'module'");
+		expect(RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES).toContainEqual({ id: 'ruler', entry: 'src/entry/content-frame-tools-runtime.ts', output: 'tools/_frame-tools/runtime.js' });
 		expect(build).toMatch(/kind === 'module'[\s\S]*format: 'esm'/u);
 		expect(toolsResource).toMatchObject({
 			matches: ['<all_urls>'],

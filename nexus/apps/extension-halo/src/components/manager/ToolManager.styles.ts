@@ -37,7 +37,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		borderRadius: '8px',
 		color: 'var(--halo-text-secondary)',
 		cursor: 'pointer',
-		transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+		transition: 'var(--halo-motion-transition, all 0.2s cubic-bezier(0.4, 0, 0.2, 1))',
 	},
 
 	// Search Bar with Glassmorphism
@@ -63,7 +63,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		color: 'var(--halo-text)',
 		fontSize: '13px',
 		outline: 'none',
-		transition: 'border-color 0.2s, box-shadow 0.2s',
+		transition: 'var(--halo-motion-transition, border-color 0.2s, box-shadow 0.2s)',
 		boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
 	},
 
@@ -89,7 +89,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		display: 'flex',
 		alignItems: 'center',
 		gap: '6px',
-		transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+		transition: 'var(--halo-motion-transition, all 0.2s cubic-bezier(0.4, 0, 0.2, 1))',
 	},
 	filterChipActive: {
 		background: 'var(--halo-accent)',
@@ -131,11 +131,11 @@ export const styles: Record<string, React.CSSProperties> = {
 		gap: '12px',
 		padding: '10px 12px',
 		borderRadius: '10px',
-		transition: 'background 0.15s, transform 0.1s',
+		transition: 'var(--halo-motion-transition, background 0.15s, transform 0.1s)',
 		cursor: 'default',
 		border: '1px solid transparent',
 	},
-	// Pseudo-hover effect is handled by parent or CSS file usually, 
+	// Pseudo-hover effect is handled by parent or CSS file usually,
 	// but here we rely on standard React render.
 	// Ideally, move hover states to CSS modules or use CSS-in-JS libraries that support pseudo-classes.
 	// For now, we keep it simple.
@@ -181,7 +181,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		borderRadius: '8px',
 		cursor: 'pointer',
 		fontSize: '16px',
-		transition: 'background 0.15s, transform 0.1s',
+		transition: 'var(--halo-motion-transition, background 0.15s, transform 0.1s)',
 		color: 'var(--halo-text-muted)',
 	},
 	badge: {

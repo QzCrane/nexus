@@ -10,7 +10,7 @@ const styles = {
 	item: {
 		display: 'flex', alignItems: 'center', gap: '8px', padding: '12px',
 		background: 'var(--halo-bg-secondary)', borderRadius: '12px',
-		border: '1px solid var(--halo-border)', transition: 'all 0.2s',
+		border: '1px solid var(--halo-border)', transition: 'var(--halo-motion-transition, all 0.2s)',
 		minHeight: '64px', position: 'relative' as const, overflow: 'hidden' as const,
 	},
 	// Accent bar for scripts/apps
@@ -19,8 +19,8 @@ const styles = {
 		top: 0, left: 0, bottom: 0,
 		width: '4px',
 	},
-	icon: { 
-		fontSize: '24px', minWidth: '40px', textAlign: 'center' as const, 
+	icon: {
+		fontSize: '24px', minWidth: '40px', textAlign: 'center' as const,
 		borderRadius: '10px', padding: '8px', height: '40px', width: '40px',
 		display: 'flex', alignItems: 'center', justifyContent: 'center',
 		flexShrink: 0,
@@ -45,16 +45,16 @@ const styles = {
 	desc: { fontSize: '12px', color: 'var(--halo-text-muted)', lineHeight: '1.4', overflow: 'hidden' as const, whiteSpace: 'nowrap' as const, textOverflow: 'ellipsis' as const },
 	meta: { fontSize: '11px', color: 'var(--halo-text-muted)', display: 'flex', gap: '8px', alignItems: 'center' },
 	index: { fontSize: '10px', fontWeight: 500, color: 'var(--halo-text-muted)', minWidth: '12px', textAlign: 'center' as const },
-	
+
 	btn: {
 		padding: '6px 12px', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
-		cursor: 'pointer', border: 'none', transition: 'all 0.15s', minWidth: '80px',
+		cursor: 'pointer', border: 'none', transition: 'var(--halo-motion-transition, all 0.15s)', minWidth: '80px',
 	},
 	btnEnable: { background: 'var(--halo-accent)', color: '#fff' },
 	btnDisable: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', border: '1px solid var(--halo-border)' },
 	btnChanging: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', cursor: 'wait' },
 	btnCore: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)', fontSize: '10px', cursor: 'default', padding: '4px 8px', borderRadius: '4px' },
-	
+
 	badge: { fontSize: '10px', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 },
 	badgeCore: { background: 'var(--halo-accent-alpha)', color: 'var(--halo-accent)' },
 	badgeNew: { background: 'rgba(34, 197, 94, 0.2)', color: '#22c55e' },
@@ -84,7 +84,7 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 	const descKey = `tools.${module.id}.desc`;
 	const nameTranslation = t(nameKey);
 	const descTranslation = t(descKey);
-	
+
 	const displayName = String(nameTranslation) === nameKey ? (module.name || module.id) : String(nameTranslation);
 	const displayDesc = String(descTranslation) === descKey ? (module.description || '') : String(descTranslation);
 
@@ -117,7 +117,7 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 		return {};
 	};
 
-	const typeLabel = isSystem ? t('moduleStorePanel.filters.system') 
+	const typeLabel = isSystem ? t('moduleStorePanel.filters.system')
 		: isScript ? (isCSS ? 'CSS' : 'JS')
 		: t('moduleStorePanel.filters.app');
 
@@ -133,7 +133,7 @@ export const ModuleItem: React.FC<ModuleItemProps> = ({ module, index, status, i
 			)}
 
 			<span style={styles.index}>{index}</span>
-			
+
 			{/* Icon with type-based gradient */}
 			<span style={{
 				...styles.icon,

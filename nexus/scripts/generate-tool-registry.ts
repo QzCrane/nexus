@@ -1,10 +1,8 @@
 #!/usr/bin/env node
-// goal: Auto-generate HALO registry artifacts from manifest files
-// eff: Canonical UI registry plus minimal background/install projections
+// goal: Auto-generate HALO catalog and release-admitted runtime artifacts from manifest files
+// eff: Canonical UI registry plus minimal executable release projections
 
-import { readFileSync } from 'node:fs';
 import {
-	HALO_MANIFEST,
 	TOOLS_DIR,
 	SCRIPTS_DIR,
 	SYSTEM_DIR,
@@ -17,6 +15,13 @@ import {
 } from './registry-gen/gen-registry.ts';
 import { generateLoader } from './registry-gen/gen-loader.ts';
 import { generateI18n } from './registry-gen/gen-i18n.ts';
+import { generateReleaseManifest } from './registry-gen/gen-release-manifest.ts';
+import {
+	generateReleaseAdmissionProjection,
+	readReleaseAdmission,
+	releaseAdmissionMap,
+	validateReleaseAdmissionAgainstModules,
+} from './registry-gen/release-admission.ts';
 
 function main() {
 	const args = process.argv.slice(2);
@@ -44,10 +49,6 @@ function main() {
 	});
 
 	const validModules = allModules.filter((module) => manifestsMap.has(module.id));
-	const releaseVersion = JSON.parse(readFileSync(HALO_MANIFEST, 'utf8')).version;
-	if (typeof releaseVersion !== 'string' || !/^\d+\.\d+\.\d+$/u.test(releaseVersion)) {
-		throw new Error(`HALO manifest version is invalid: ${String(releaseVersion)}`);
-	}
 
 	for (const module of validModules) {
 		const manifest = manifestsMap.get(module.id);
@@ -81,16 +82,26 @@ function main() {
 		}
 	}
 
+	const admission = readReleaseAdmission();
+	validateReleaseAdmissionAgainstModules(admission, validModules, manifestsMap);
+	const admissionMap = releaseAdmissionMap(admission);
+	const releaseVersion = generateReleaseManifest(admission, mode);
+
 	const toolCount = validModules.filter((module) => module.pluginType === 'tool').length;
 	const scriptCount = validModules.filter((module) => module.pluginType === 'script').length;
 	const systemCount = validModules.filter((module) => module.pluginType === 'system').length;
+	const admittedCount = admission.modules.length;
 
-	console.log(`📦 Found: ${toolCount} Tools + ${scriptCount} Scripts + ${systemCount} System`);
+	console.log(
+		`📦 Catalog: ${toolCount} Tools + ${scriptCount} Scripts + ${systemCount} System; `
+		+ `release-admitted modules: ${admittedCount}`,
+	);
 
 	generateRegistry(validModules, manifestsMap, releaseVersion, mode);
-	generateBackgroundActiveProjection(validModules, manifestsMap, mode);
-	generateScriptRuntimeManifest(validModules, manifestsMap, mode);
-	generateLoader(validModules, mode);
+	generateReleaseAdmissionProjection(admission, mode);
+	generateBackgroundActiveProjection(validModules, manifestsMap, admissionMap, mode);
+	generateScriptRuntimeManifest(validModules, manifestsMap, admissionMap, mode);
+	generateLoader(validModules, admissionMap, mode);
 	generateI18n(validModules, mode);
 
 	console.log(`\n✨ Registry ${mode === 'check' ? 'check' : 'generation'} complete!`);

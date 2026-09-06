@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "minimumChromeMajor": 135,
+  "chromeForTestingVersion": "135.0.7049.114",
+  "linux64": {
+    "url": "https://storage.googleapis.com/chrome-for-testing-public/135.0.7049.114/linux64/chrome-linux64.zip",
+    "sha256": "dd86dbac5d1a362bf9d46818e21e4afe2e8b1b419e0810573d298842eef88b82",
+    "executable": "chrome-linux64/chrome"
+  },
+  "evidence": {
+    "channel": "stable",
+    "platform": "linux64",
+    "purpose": "Declared minimum Chrome product-compatibility replay for HALO and SPECTRA.",
+    "checksumReview": {
+      "date": "2026-09-06",
+      "reason": "The inherited checksum did not match the official archive. Two separate HTTPS downloads matched byte-for-byte, the local MD5 matched the GCS x-goog-hash header, and official per-version metadata names this exact URL. This does not claim an independent publisher signature.",
+      "previousSha256": "dd86dbace037a9b6c4bc993fc4e20ee768a804923850511e53255743760d8b82",
+      "upstreamMd5Base64": "WlE+VIjQ2U10BpfAgiYvUQ==",
+      "upstreamGeneration": "1745272936685820",
+      "sourceRun": 34015298201
+    }
+  }
+}

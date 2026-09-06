@@ -10,6 +10,7 @@ export const ZH_CN: I18NDict = {
 	vizSub: '显示可视化音频条',
 	vizDesc: '关闭后，受限网站 (如抖音) 将预设使用极其省电的原生模式，仅在音量超过100%时自动切换增强模式。',
 	langLabel: '语言 (Language)',
+	mediaInventoryPartial: "部分媒体标签页未能及时完成检查。请重新打开弹窗重试。",
 	noAudio: '无音频信号',
 	bgTitle: '后台播放',
 	paused: '增强已暂停',

@@ -3,9 +3,10 @@
 import {
 	audioSessionMatchesControlDocument,
 	isActiveCaptureLifecycle,
-  type AudioSessionSnapshot,
 } from '@nexus/contracts';
-import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { readCardSnapshot } from './snapshot';
+import { isCurrentTopDocument } from '../../shared/top-document';
 import { registerCardRenderCallback } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
 import {
@@ -48,10 +49,10 @@ function releasePopupObservation(tabId: number, lease: PopupObservationLease): v
   }).catch(() => undefined);
 }
 
-function observePopupTab(tabId: number): () => void {
+function observePopupTab(tabId: number, documentId: string): () => void {
   let disposed = false;
   let ownedLease: PopupObservationLease | null = null;
-  void acquirePopupObservation(tabId, () => disposed).then((lease) => {
+  void acquirePopupObservation(tabId, documentId, () => disposed).then((lease) => {
     ownedLease = lease;
   });
   return () => {
@@ -62,12 +63,14 @@ function observePopupTab(tabId: number): () => void {
 
 async function acquirePopupObservation(
   tabId: number,
+  documentId: string,
   isDisposed: () => boolean,
 ): Promise<PopupObservationLease | null> {
   if (observationLeases.has(tabId) || popupClosing) return null;
   const capability = `popup:${crypto.randomUUID()}`;
   const response = await sendSpectraRequest('spectra.content.runtime.ensure', {
     tabId,
+    documentId,
     reason: 'observation',
     capability,
   }).catch(() => null);
@@ -77,7 +80,7 @@ async function acquirePopupObservation(
     runtimeRevision: response.data.runtimeRevision,
     capability,
   };
-  if (popupClosing || isDisposed()) {
+  if (popupClosing || isDisposed() || lease.documentId !== documentId) {
     void sendSpectraRequest('spectra.content.runtime.release', {
       runtimeRevision: lease.runtimeRevision,
       tabId,
@@ -113,51 +116,20 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     container,
     template,
     tab,
-    dict,
+    dict: initialDictionary,
     getGlobalSettings,
     loadVisualizer,
     registerCleanup,
   } = params;
 
-  if (!tab.id) return false;
+  if (!tab.id || popupClosing) return false;
+  const dict = params.getDictionary?.() ?? initialDictionary;
   const tabId = tab.id;
 
-  // rule: status reads are side-effect free; an unreachable document is omitted
-  // until navigation or an explicit user operation installs the content runtime.
-  const getRuntimeStatus = async () => {
-    try {
-      const result = await sendSpectraTabRequest(tabId, 'spectra.audio.runtime.get', {});
-      return result.ok ? result.data : null;
-    } catch {
-      return null;
-    }
-  };
-
-	const [status, controlSnapshot] = await Promise.all([
-		getRuntimeStatus(),
-		// Background cards are passive list projections. Reading a full control
-		// snapshot performs the coordinator's actual-state read and can wake the
-		// heavy content runtime, so defer that read until the user opens a card.
-		params.isBackground
-			? Promise.resolve(null)
-			: sendSpectraRequest(
-				'spectra.control.snapshot.get',
-				{ tabId },
-				{ tabId },
-			).then((response) => response.ok ? response.data : null).catch(() => null),
-	]);
-
-  let acknowledgedSession: AudioSessionSnapshot | null = null;
-  try {
-    const response = await sendSpectraRequest(
-      'spectra.audio.session.get',
-      { tabId },
-      { tabId },
-    );
-    if (response.ok) acknowledgedSession = response.data;
-  } catch {
-    acknowledgedSession = null;
-  }
+  const snapshot = await readCardSnapshot(tabId, params.isBackground === true);
+  if (!snapshot || popupClosing) return false;
+  const { documentId, status, controlSnapshot, isRemoteActive } = snapshot;
+  let acknowledgedSession = snapshot.sessionSnapshot;
 
 	// Processor color is valid only when lifecycle and field-level actual state
 	// identify the same document. A direct runtime read may fill this role only
@@ -175,18 +147,6 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 		actualMode: lifecycle?.actualMode,
 		phase: lifecycle?.phase ?? 'idle',
 	});
-
-  let isRemoteActive = false;
-  try {
-    const remoteStatus = await sendSpectraRequest(
-      'spectra.remote.session.get',
-      { tabId },
-      { tabId },
-    );
-    isRemoteActive = remoteStatus.ok && remoteStatus.data.connected;
-  } catch {
-    isRemoteActive = false;
-  }
 
   const hasActiveMedia = tab.audible || isCaptureActive || status?.isPlaying === true;
 
@@ -225,6 +185,8 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     draggingField: null,
   };
 
+  // A document can retire after any asynchronous read; check again at the DOM commit boundary.
+  if (!await isCurrentTopDocument(tabId, documentId) || popupClosing) return false;
   const { ui, cardEl } = prepareCardDom({ template, container, tab, dict });
   const cleanupStack: Array<() => void> = [];
   let disposed = false;
@@ -244,6 +206,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   if (unregisterAttemptCleanup) cleanupStack.push(unregisterAttemptCleanup);
   window.addEventListener('pagehide', disposeCard, { once: true });
   cleanupStack.push(
+    () => params.onCardSetChanged?.(),
     () => window.removeEventListener('pagehide', disposeCard),
     () => cardEl.remove(),
   );
@@ -312,6 +275,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     getGlobalSettings,
   });
   render = () => {
+    if (disposed) return;
     reconcileVisualizer();
     renderCard();
     if (getCurrentPanelTabId() === tabId) syncSidePanelState(state.config);
@@ -319,6 +283,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   };
 
   const onControlError = (error: unknown): void => {
+    if (disposed) return;
     reportCardControlFailure(tabId, state, render, error);
   };
   const update = createUpdateFn(
@@ -363,7 +328,18 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     })));
   }
 
-  const cleanupMessaging = setupCardMessaging({ tabId, state, render });
+  const cleanupMessaging = setupCardMessaging({
+    tabId, documentId, state, render,
+    onDocumentReplaced: () => {
+      disposeCard();
+      void chrome.tabs.get(tabId).then(async (currentTab) => {
+        if (popupClosing) return;
+        await initCard({ ...params, tab: currentTab });
+      }).catch((error: unknown) => {
+        if (!popupClosing) showPopupToast(error instanceof Error ? error.message : 'Media tab is unavailable', 'error');
+      });
+    },
+  });
   cleanupStack.push(cleanupMessaging);
 
   cleanupStack.push(registerCardRenderCallback(() => {
@@ -376,8 +352,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // a document-scoped observation lease installs only event listeners/registry
   // state so page-side changes can flow back to Popup. It never admits MAIN,
   // AudioContext or offscreen processing by itself.
-  if (!params.isBackground) cleanupStack.push(observePopupTab(tabId));
+  if (!params.isBackground) cleanupStack.push(observePopupTab(tabId, documentId));
 
+  params.onCardSetChanged?.();
   return true;
   } catch (error) {
     disposeCard();

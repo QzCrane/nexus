@@ -26,7 +26,7 @@ export interface ScriptConfig {
 	world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
 }
 
-// Unified plugin metadata
+// Unified catalog metadata. Physical release admission is generated separately.
 export interface PluginMeta {
 	id: string;
 	icon: string;

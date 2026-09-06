@@ -1,3 +1,4 @@
+@layer spectra-product {
 :root {
   --w: #ffffff;
   --g0: #f8fafc;
@@ -2108,4 +2109,6 @@ input:checked + .slider-round:before {
 body .hidden,
 body [hidden] {
   display: none;
+}
+
 }

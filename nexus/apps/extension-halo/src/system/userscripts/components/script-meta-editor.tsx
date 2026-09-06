@@ -21,7 +21,7 @@ const segmentedStyles: Record<string, React.CSSProperties> = {
 		fontSize: '11px',
 		fontWeight: 500,
 		cursor: 'pointer',
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 		whiteSpace: 'nowrap',
 	},
 	buttonActive: {
@@ -106,7 +106,7 @@ export const ScriptMetaEditor: React.FC<ScriptMetaEditorProps> = ({ form, onUpda
 					))}
 				</div>
 			</div>
-			
+
 			{/* Description */}
 			<input
 				style={styles.input}
@@ -114,7 +114,7 @@ export const ScriptMetaEditor: React.FC<ScriptMetaEditorProps> = ({ form, onUpda
 				onChange={(e) => onUpdate('description', e.target.value)}
 				placeholder={t('userscripts.description', { defaultValue: 'Description (optional)' })}
 			/>
-			
+
 			{/* Matches (Multi-line) */}
 			<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 				<textarea
@@ -124,7 +124,7 @@ export const ScriptMetaEditor: React.FC<ScriptMetaEditorProps> = ({ form, onUpda
 					placeholder={t('userscripts.matchesPlaceholder', { defaultValue: '*://*.example.com/*\n*://*.another.com/*' })}
 				/>
 			</div>
-			
+
 			{/* Exclude matches (Multi-line) */}
 			<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 				<textarea

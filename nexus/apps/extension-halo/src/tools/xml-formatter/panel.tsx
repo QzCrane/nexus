@@ -36,7 +36,7 @@ const styles: Record<string, React.CSSProperties> = {
 	copyBtn: {
 		padding: '4px 8px', borderRadius: '4px', fontSize: '10px',
 		background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)',
-		color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'all 0.15s',
+		color: 'var(--halo-text-secondary)', cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	copyBtnSuccess: { background: 'var(--halo-accent)', color: '#fff', borderColor: 'var(--halo-accent)' },
 	error: { color: '#ef4444', fontSize: '11px', padding: '8px', background: 'rgba(239,68,68,0.1)', borderRadius: '6px' },
@@ -68,14 +68,14 @@ export const XmlFormatterPanel: React.FC = () => {
 	// Calculate both formatted and minified results
 	const results = useMemo(() => {
 		if (!input.trim()) return { formatted: null, minified: null, stats: null, error: null };
-		
+
 		const formatResult = formatXml(input, indent);
 		const minifyResult = minifyXml(input);
-		
+
 		if (!formatResult.valid) {
 			return { formatted: null, minified: null, stats: null, error: formatResult.error };
 		}
-		
+
 		return {
 			formatted: formatResult.formatted,
 			minified: minifyResult.formatted,
@@ -106,7 +106,7 @@ export const XmlFormatterPanel: React.FC = () => {
 										border: 'none',
 										background: indent === n ? 'var(--halo-accent)' : 'transparent',
 										color: indent === n ? '#fff' : 'var(--halo-text-muted)',
-										padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+										padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 									}}
 									onClick={() => setIndent(n)}
 								>

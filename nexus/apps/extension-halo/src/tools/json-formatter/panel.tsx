@@ -126,7 +126,7 @@ export const JSONFormatterPanel: React.FC = () => {
 									border: 'none',
 									background: options.indent === n ? 'var(--halo-accent)' : 'transparent',
 									color: options.indent === n ? '#fff' : 'var(--halo-text-muted)',
-									padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+									padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 								}}
 								onClick={() => setOptions(p => ({ ...p, indent: n as 2 | 4 }))}
 							>

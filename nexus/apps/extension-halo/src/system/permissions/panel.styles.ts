@@ -19,7 +19,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	requiredBy: { fontSize: '9px', color: 'var(--halo-accent)', marginTop: '4px' },
 	btn: {
 		padding: '6px 14px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, cursor: 'pointer',
-		border: 'none', transition: 'all 0.15s',
+		border: 'none', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	btnGrant: { background: 'var(--halo-accent)', color: '#fff' },
 	btnRevoke: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text)', border: '1px solid var(--halo-border)' },
