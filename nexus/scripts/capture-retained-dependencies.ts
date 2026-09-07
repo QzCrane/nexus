@@ -84,7 +84,15 @@ function nearestPackageJson(inputPath: string, projectDir: string): string | nul
 	const filesystemRoot = resolve(current, sep);
 	while (current !== filesystemRoot) {
 		const candidate = resolve(current, 'package.json');
-		if (existsSync(candidate) && pathContainsNodeModules(candidate)) return candidate;
+		if (existsSync(candidate) && pathContainsNodeModules(candidate)) {
+			// Some packages ship inner "island" package.json files without
+			// identity metadata (e.g. lossless-json/lib/esm). Those are not
+			// package roots; keep walking to the nearest root with a name.
+			const document = readPackageDocument(candidate);
+			if (typeof document.name === 'string' && document.name && typeof document.version === 'string' && document.version) {
+				return candidate;
+			}
+		}
 		const parent = dirname(current);
 		if (parent === current) break;
 		current = parent;
