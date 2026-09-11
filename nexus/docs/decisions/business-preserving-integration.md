@@ -303,3 +303,14 @@ media volume reaches zero, within a five-second failure boundary, then releases
 and verifies the unchanged final frame and absence of a release tail. Its actual
 volume assertion is strengthened from a timing-dependent range to exact zero;
 the burst lifecycle, production behavior and display-window deadlines are unchanged.
+
+A later Windows unit replay exposed a second static entry to the certificate
+engine in its admission test. The production certificate owner already imports
+the required metadata polyfill before the engine; the test also imported the
+CommonJS engine as a sibling dependency, allowing it to load before that side
+effect. The fixture now acquires its generator inside the asynchronous test,
+after production-owner initialization. Bare engine import reproduces the missing
+metadata error in a fresh process, while importing the production owner succeeds.
+There is no global test preload, second initialization owner, dependency change
+or production behavior change; Windows and Linux replay must verify the corrected
+entry graph.

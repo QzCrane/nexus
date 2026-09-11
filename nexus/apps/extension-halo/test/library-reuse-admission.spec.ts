@@ -7,7 +7,6 @@ import { minifyCode } from '../src/tools/code-formatter/core';
 import { decodeHtml, encodeHtmlAll, encodeHtmlNamed } from '../src/tools/html-entity/core';
 import { parseCertificate, parseCertificateStrict } from '../src/tools/ssl-cert/core';
 import { parseCron, getNextRuns } from '../src/tools/cron/core';
-import { X509CertificateGenerator, X509Certificate } from '@peculiar/x509';
 
 describe('PapaParse admission (R01)', () => {
 	test('multi-line quoted fields survive as one record', () => {
@@ -154,6 +153,9 @@ describe('@peculiar/x509 admission (R15)', () => {
 	});
 
 	test('a real self-signed certificate decodes its fields', async () => {
+		// The production certificate owner must initialize its metadata prerequisite
+		// before this fixture acquires the same CommonJS engine independently.
+		const { X509CertificateGenerator, X509Certificate } = await import('@peculiar/x509');
 		const algorithm = { hash: 'SHA-256', name: 'RSASSA-PKCS1-v1_5', publicExponent: new Uint8Array([1, 0, 1]), modulusLength: 2048, saltLength: 32 } as RsaHashedKeyGenParams;
 		const certificate = await X509CertificateGenerator.createSelfSigned({
 			serialNumber: '1234',
