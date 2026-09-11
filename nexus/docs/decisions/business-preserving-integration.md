@@ -275,3 +275,12 @@ cross-platform workflow can dispatch the canonical Linux platform recorder when
 local Docker is unavailable, eliminating one-off execution branches. Canonical
 atomic promotion and the already-enabled GitHub delete-on-merge setting own future
 candidate cleanup; no parallel branch sweeper or disposition database is added.
+
+The fresh hosted audit also detected [GHSA-2883-xcg3-v3hh](https://github.com/advisories/GHSA-2883-xcg3-v3hh),
+published to the advisory database on September 8, in the root commitlint ->
+cosmiconfig -> js-yaml chain. Bun's targeted update changes only that transitive
+lock entry from 4.3.1 to the compatible maintained fix 4.3.2. No direct dependency,
+product lock, override or advisory suppression is added. Actual root and product
+audit responses and commitlint's real configuration consumer are rechecked before
+freezing the replacement candidate. Earlier exact-head receipts remain historical
+and cannot authorize the changed tree.
