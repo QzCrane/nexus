@@ -37,9 +37,9 @@
 		"@nexus/kernel": "workspace:*"
 	},
 	"devDependencies": {
-		"chrome-types": "^0.1.440",
+		"chrome-types": "^0.1.443",
 		"esbuild": "^0.28.2",
-		"puppeteer": "25.9.0",
+		"puppeteer": "25.10.0",
 		"puppeteer-floor": "npm:puppeteer-core@24.7.2",
 		"sharp": "0.35.4",
 		"terser": "5.51.2",

@@ -33,6 +33,6 @@
 	},
 	"devDependencies": {
 		"typescript": "7.0.2",
-		"chrome-types": "^0.1.440"
+		"chrome-types": "^0.1.443"
 	}
 }
