@@ -293,3 +293,13 @@ synchronous Alt-block contract over empty space. The readiness probe must reques
 no heavy runtime; the subsequent first real image-hover gesture still owns lazy
 activation. No fixed sleep, gesture retry, force-click or product deadline change
 substitutes for either boundary.
+
+The second full product attempt exposed another timing assumption in the SPECTRA
+OSD smoke workload: 19 physical keydowns do not guarantee a particular number of
+completed writes before release. The existing burst owner intentionally discards
+unstarted repeat pulses at keyup, while the foreground target animation is a
+separate observation. The smoke now holds the same trusted key until native
+media volume reaches zero, within a five-second failure boundary, then releases
+and verifies the unchanged final frame and absence of a release tail. Its actual
+volume assertion is strengthened from a timing-dependent range to exact zero;
+the burst lifecycle, production behavior and display-window deadlines are unchanged.

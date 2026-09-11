@@ -225,6 +225,7 @@ interface OsdFeedbackFrame {
 
 interface OsdFeedbackSnapshot {
 	actual: number;
+	muted: boolean;
 	visible: boolean;
 	label: string;
 	width: number;
@@ -398,6 +399,7 @@ async function readOsdFeedback(
 			actual: actualMetric === 'volume'
 				? Math.round((media?.volume ?? -1) * 100)
 				: media?.playbackRate ?? -1,
+			muted: media?.muted ?? false,
 			visible: osd?.classList.contains('v') ?? false,
 			label: root?.getElementById('t')?.textContent ?? '',
 			width: fill ? Number.parseFloat(fill.style.width) : -1,
@@ -5549,11 +5551,29 @@ describe('SPECTRA built extension smoke', () => {
 				), { timeout: 5_000 })
 			), 6_000);
 			await startOsdFeedbackProbe(fixturePage, '%', true);
-			await holdDefaultShortcut(fixturePage, 'ArrowDown', 18, 0, 55);
+			// Release intentionally discards unstarted repeat pulses. A fixed count
+			// of keydowns cannot prove how many writes finished on a busy host.
+			// Hold until the real media reaches zero, then test the release boundary.
+			await fixturePage.keyboard.down('Alt');
+			await fixturePage.keyboard.down('ArrowDown');
+			try {
+				await eventually(async () => {
+					const actual = await fixturePage.evaluate(() => (
+						Math.round((document.querySelector<HTMLMediaElement>('video,audio')?.volume ?? -1) * 100)
+					));
+					if (actual === 0) return actual;
+					await new Promise((resolveWait) => setTimeout(resolveWait, 55));
+					await fixturePage.keyboard.down('ArrowDown');
+					return actual;
+				}, (actual) => actual === 0, 'held volume reaches acknowledged zero before release', 5_000);
+			} finally {
+				await fixturePage.keyboard.up('ArrowDown');
+				await fixturePage.keyboard.up('Alt');
+			}
 			const volumeAtRelease = await readOsdFeedback(fixturePage, 'volume');
-			expect(volumeAtRelease.actual).toBeGreaterThanOrEqual(0);
-			expect(volumeAtRelease.actual).toBeLessThanOrEqual(30);
+			expect(volumeAtRelease.actual).toBe(0);
 			expect(volumeAtRelease).toMatchObject({
+				muted: false,
 				visible: true,
 				label: '静音',
 				color: 'rgb(156, 163, 175)',
