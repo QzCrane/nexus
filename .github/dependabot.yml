@@ -8,22 +8,10 @@ updates:
       day: monday
       time: "04:00"
       timezone: Asia/Shanghai
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 7
-      semver-patch-days: 3
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 0
     rebase-strategy: auto
     commit-message:
       prefix: "chore(deps-root)"
-    groups:
-      root-governance-patch-minor:
-        patterns:
-          - "*"
-        update-types:
-          - patch
-          - minor
 
   - package-ecosystem: bun
     directory: /nexus
@@ -32,34 +20,10 @@ updates:
       day: monday
       time: "04:20"
       timezone: Asia/Shanghai
-    cooldown:
-      default-days: 7
-      semver-major-days: 30
-      semver-minor-days: 7
-      semver-patch-days: 3
-    open-pull-requests-limit: 6
+    open-pull-requests-limit: 0
     rebase-strategy: auto
     commit-message:
       prefix: "chore(deps)"
-    groups:
-      nexus-runtime-patch-minor:
-        dependency-type: production
-        patterns:
-          - "*"
-        update-types:
-          - patch
-          - minor
-      nexus-development-patch-minor:
-        dependency-type: development
-        patterns:
-          - "*"
-        update-types:
-          - patch
-          - minor
-    ignore:
-      - dependency-name: typescript
-        update-types:
-          - version-update:semver-major
 
   - package-ecosystem: github-actions
     directory: /
@@ -70,7 +34,7 @@ updates:
       timezone: Asia/Shanghai
     cooldown:
       default-days: 7
-    open-pull-requests-limit: 4
+    open-pull-requests-limit: 1
     rebase-strategy: auto
     commit-message:
       prefix: "chore(actions)"

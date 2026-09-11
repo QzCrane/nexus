@@ -1,30 +1,44 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 
-const config = readFileSync(new URL('../../.github/dependabot.yml', import.meta.url), 'utf8');
-
-function occurrences(value: string): number {
-	return config.split(value).length - 1;
+interface UpdateDomain {
+	'package-ecosystem': string;
+	directory: string;
+	'open-pull-requests-limit': number;
+	schedule: { interval: string };
+	groups?: Record<string, unknown>;
+	ignore?: unknown;
+	cooldown?: { 'default-days': number };
+	'target-branch'?: string;
 }
+
+const config = Bun.YAML.parse(readFileSync(
+	new URL('../../.github/dependabot.yml', import.meta.url), 'utf8',
+)) as { version: number; updates: UpdateDomain[] };
 
 describe('dependency update automation policy', () => {
 	test('owns both Bun lock domains and immutable GitHub Actions updates', () => {
-		expect(occurrences('package-ecosystem: bun')).toBe(2);
-		expect(config).toContain('directory: /\n');
-		expect(config).toContain('directory: /nexus');
-		expect(config).toContain('package-ecosystem: github-actions');
+		expect(config.version).toBe(2);
+		expect(config.updates.map((domain) => [domain['package-ecosystem'], domain.directory])).toEqual([
+			['bun', '/'], ['bun', '/nexus'], ['github-actions', '/'],
+		]);
 	});
 
-	test('makes release-age cooldown explicit instead of inheriting platform defaults', () => {
-		expect(occurrences('semver-major-days: 30')).toBe(2);
-		expect(occurrences('semver-minor-days: 7')).toBe(2);
-		expect(occurrences('semver-patch-days: 3')).toBe(2);
-		expect(occurrences('default-days: 7')).toBe(3);
+	test('keeps routine Bun proposals outside admission without suppressing security fixes', () => {
+		for (const domain of config.updates.filter((entry) => entry['package-ecosystem'] === 'bun')) {
+			expect(domain['open-pull-requests-limit']).toBe(0);
+			expect(domain.schedule.interval).toBe('weekly');
+			expect(domain.groups).toBeUndefined();
+			expect(domain.ignore).toBeUndefined();
+			expect(domain.cooldown).toBeUndefined();
+			expect(domain['target-branch']).toBeUndefined();
+		}
 	});
 
-	test('keeps the TypeScript major compiler epoch outside routine dependency bumps', () => {
-	const ignore = config.slice(config.indexOf('ignore:'));
-		expect(ignore).toContain('dependency-name: typescript');
-		expect(ignore).toContain('version-update:semver-major');
+	test('bounds immutable Actions updates to one reviewed proposal group', () => {
+		const actions = config.updates.find((domain) => domain['package-ecosystem'] === 'github-actions');
+		expect(actions?.['open-pull-requests-limit']).toBe(1);
+		expect(actions?.cooldown).toEqual({ 'default-days': 7 });
+		expect(actions?.groups).toEqual({ 'workflow-actions': { patterns: ['*'] } });
 	});
 });

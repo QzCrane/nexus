@@ -637,10 +637,12 @@ export function isExactPromotionProjection(
 	head: string,
 ): boolean {
 	if (pull.state !== 'closed') return false;
-	if (pull.merged_at || pull.merge_commit_sha) {
-		return Boolean(pull.merged_at) && pull.merge_commit_sha === head;
-	}
-	return true;
+	// Before a provider merge, merge_commit_sha may retain a synthetic test merge.
+	// Exact main/tree/ref readback separately proves a direct atomic promotion.
+	if (pull.merged_at === null || pull.merged_at === undefined) return true;
+	return typeof pull.merged_at === 'string'
+		&& pull.merged_at.length > 0
+		&& pull.merge_commit_sha === head;
 }
 
 export function assertSameRepositoryPull(headRepository: string, baseRepository: string): void {

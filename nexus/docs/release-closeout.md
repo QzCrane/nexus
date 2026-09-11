@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: repository-release-closeout
-last_reviewed: 2026-09-06
+last_reviewed: 2026-09-11
 ---
 
 # Release closeout authority
@@ -94,6 +94,37 @@ Every branch must end in exactly one semantic state before deletion:
 4. experiment discarded with no unique retained product work.
 
 Branch count is not product backlog. A ref already contained by `main`, a historical PR head, or a transport-only branch is cleanup work, not another merge candidate.
+
+## Bounded dependency proposals
+
+Routine Bun version proposals are disabled in both lock domains through
+[Dependabot's native version-PR limit](https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/manage-your-dependency-security/customizing-dependabot-security-prs).
+The bot changes manifests and locks but cannot supply the semantic review,
+toolchain-owner changes and exact lock revalidation required for admission.
+Splitting the same incomplete proposal into more groups would only multiply red
+checks. Select necessary upgrades through the current revalidation owner before
+creating a development candidate; never auto-refresh its hash as a substitute for
+review. PRs #37 and #38 were unselected routine proposals, not product backlog.
+The validated immutable Actions updates from #36 are retained, with future Actions
+proposals limited to one group and one open version PR.
+
+The existing two-domain advisory audit remains mandatory. A zero version-PR limit
+does not disable GitHub's separate security-update facility, but it does not
+enable that facility either. At this settlement, repository vulnerability alerts
+and automated security fixes were disabled; no change to those repository settings
+is implied. Obsolete Bun cooldown, grouping and ignore rules are removed so they
+cannot silently suppress a future separately enabled security fix.
+
+## Provider projection versus physical promotion
+
+GitHub's [`merge_commit_sha` field](https://docs.github.com/en/rest/pulls/pulls#get-a-pull-request)
+can retain a precomputed test-merge SHA when a directly promoted PR closes without
+a provider merge. Only a non-null `merged_at` selects the provider-merged branch,
+which must match the verified head; an empty timestamp is invalid. A null or
+missing timestamp selects the plain closed projection even if the preview SHA
+remains. PR head/base, remote main, complete commit tree and candidate-ref absence
+remain independent mandatory readbacks. PR #35 exposed this distinction after its
+atomic promotion succeeded; its original receipts and promoted tree stay immutable.
 
 ## Docker inspection compatibility
 

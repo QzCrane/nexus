@@ -25,6 +25,8 @@ import {
 } from './closeout-evidence';
 import { BUN_VERSION } from './toolchain-versions';
 
+// Two native version inspections each own a ten-second deadline; the harness
+// must allow both to settle instead of killing one at Bun's five-second default.
 test('closeout identity follows the explicit replay executable and rejects a missing override', async () => {
 	const previous = process.env.NEXUS_CHROME_EXECUTABLE;
 	try {
@@ -40,7 +42,7 @@ test('closeout identity follows the explicit replay executable and rejects a mis
 		if (previous === undefined) delete process.env.NEXUS_CHROME_EXECUTABLE;
 		else process.env.NEXUS_CHROME_EXECUTABLE = previous;
 	}
-});
+}, 30_000);
 
 const policy = JSON.parse(
 	readFileSync(new URL('../closeout-policy.json', import.meta.url), 'utf8'),
@@ -252,10 +254,25 @@ describe('exact-head closeout governance', () => {
 		expect(isExactPromotionProjection({ state: 'closed' }, head)).toBe(true);
 		expect(isExactPromotionProjection({
 			state: 'closed',
+			merged_at: null,
+			merge_commit_sha: 'b'.repeat(40),
+		}, head)).toBe(true);
+		expect(isExactPromotionProjection({
+			state: 'closed',
 			merged_at: '2026-08-13T00:00:00Z',
 			merge_commit_sha: head,
 		}, head)).toBe(true);
 		expect(isExactPromotionProjection({ state: 'open' }, head)).toBe(false);
+		expect(isExactPromotionProjection({
+			state: 'open',
+			merged_at: null,
+			merge_commit_sha: head,
+		}, head)).toBe(false);
+		expect(isExactPromotionProjection({
+			state: 'closed',
+			merged_at: '',
+			merge_commit_sha: head,
+		}, head)).toBe(false);
 		expect(isExactPromotionProjection({
 			state: 'closed',
 			merged_at: '2026-08-13T00:00:00Z',
