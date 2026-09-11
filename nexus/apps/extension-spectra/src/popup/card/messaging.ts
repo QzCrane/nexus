@@ -9,9 +9,12 @@ import { mergeControlSnapshot } from './types';
 import { projectAcknowledgedProcessorLifecycle } from './state';
 import { classifyControlSnapshot } from '../control-snapshot-order';
 import { subscribePopupTabUiEvents, type PopupUiEvent } from '../ui-event-hub';
+import { currentTopDocumentId } from '../../shared/top-document';
 
 export interface MessagingParams {
 	tabId: number;
+	documentId?: string;
+	onDocumentReplaced?: () => void;
 	state: CardInternalState;
 	render: () => void;
 }
@@ -90,11 +93,45 @@ export function applyControlSnapshot(
 // post: returns a cleanup function that removes the chrome.runtime.onMessage listener
 export function setupCardMessaging(params: MessagingParams): () => void {
   const { tabId, state, render } = params;
+  const documentId = params.documentId;
+  let disposed = false;
+  let retired = false;
+  let verification: Promise<void> | null = null;
+  const verifyReplacement = () => {
+    if (!documentId || verification || retired || disposed) return;
+    // One verification at a time; a never-settling Chrome read must not spawn
+    // unbounded replacement probes. Only actual top-document truth retires UI.
+    const pending = currentTopDocumentId(tabId).then((currentDocument) => {
+      if (disposed || retired || !currentDocument || currentDocument === documentId) return;
+      retired = true;
+      state.actualMode = 'bypass';
+      state.desiredMode = 'bypass';
+      state.phase = 'idle';
+      state.isCaptureActive = false;
+      state.audioDocumentId = null;
+      state.audioOrigin = null;
+      state.audioGeneration = -1;
+      state.audioConfigRevision = 0;
+      params.onDocumentReplaced?.();
+    }).catch((error: unknown) => {
+      if (!disposed) console.warn('[SPECTRA Popup] Document replacement verification failed:', error);
+    }).finally(() => { if (verification === pending) verification = null; });
+    verification = pending;
+  };
 
-	const onMessage = (rawMessage: PopupUiEvent): void => {
+	const onMessage = (rawMessage: PopupUiEvent, sender: chrome.runtime.MessageSender): void => {
+  if (disposed || retired) return;
+  if (rawMessage.type === 'spectra.navigation.changed') {
+    if (!sender.tab && documentId && rawMessage.documentId !== documentId) verifyReplacement();
+    return;
+  }
 	if (rawMessage.type === 'spectra.control.snapshot.changed') {
 		const snapshot = rawMessage.payload;
 		if (snapshot.tabId !== tabId) return;
+		if (documentId && snapshot.documentId !== documentId) {
+			if (!sender.tab && classifyControlSnapshot(state.controlSnapshot, snapshot) === 'accepted') verifyReplacement();
+			return;
+		}
 		applyControlSnapshot(state, snapshot, render);
 		return;
 	}
@@ -131,7 +168,8 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 	if (rawMessage.type === 'spectra.audio.capture.changed') return;
   };
 
-  return subscribePopupTabUiEvents(tabId, onMessage);
+  const unsubscribe = subscribePopupTabUiEvents(tabId, onMessage);
+  return () => { disposed = true; unsubscribe(); };
 }
 
 // eff: attempts to establish a long-lived port connection to the content script for high-frequency signaling

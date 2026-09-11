@@ -1,20 +1,17 @@
-// goal: Punycode core logic (using URL API for reliability)
-
-// Encode Unicode to Punycode
-export function encode(input: string): string {
-	try {
-		// Use browser's URL parser to handle IDN
-		const url = new URL(`https://${input}`);
-		return url.hostname;
-	} catch {
-		return 'Invalid domain';
-	}
+// goal: decode each IDNA domain label with canonical browser validation
+// RFC 3492 defines Punycode; URL handles the browser's IDNA mapping, not trust.
+function asciiDomain(input: string): string {
+	if (!input || /[\s/:@?#\\]/u.test(input)) throw new Error('Enter a domain, not a URL');
+	const domain = new URL(`https://${input}`).hostname;
+	if (domain.length > 254) throw new Error('Domain is too long');
+	const labels = domain.replace(/\.$/u, '').split('.');
+	if (labels.some((label) => label.length > 63 || !/^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/iu.test(label))) throw new Error('Invalid domain label');
+	return domain;
 }
 
-// Decode Punycode to Unicode (basic implementation since URL API doesn't expose decode directly usually)
-// For fully compliant implementation, we would need the full RFC3492 code.
-// However, since we want Zero Dependencies and lightweight, we can try a trick or include a minimal implementation.
-// Let's implement a minimal RFC3492 decoder as it's standard and stable.
+export function encode(input: string): string {
+	try { return asciiDomain(input); } catch { return 'Invalid domain'; }
+}
 
 const BASE = 36;
 const TMIN = 1;
@@ -27,7 +24,7 @@ const DELIMITER = '-';
 
 function adapt(delta: number, numPoints: number, firstTime: boolean): number {
 	let k = 0;
-	delta = firstTime ? Math.floor(delta / DAMP) : delta >> 1;
+	delta = firstTime ? Math.floor(delta / DAMP) : Math.floor(delta / 2);
 	delta += Math.floor(delta / numPoints);
 	for (; delta > ((BASE - TMIN) * TMAX) / 2; k += BASE) {
 		delta = Math.floor(delta / (BASE - TMIN));
@@ -36,26 +33,28 @@ function adapt(delta: number, numPoints: number, firstTime: boolean): number {
 }
 
 export function decode(input: string): string {
-	if (!input.startsWith('xn--')) {
-		// Not a punycode string, return as is or error? Let's just return key parts if it looks like a domain
-		// If it's a full domain, split dots
-		if (input.includes('.')) {
-			return input.split('.').map(part => decode(part)).join('.');
-		}
-		return input;
-	}
+	try {
+		const domain = asciiDomain(input);
+		return domain.split('.').map((label) => {
+			if (!/^xn--/iu.test(label)) return label;
+			const decoded = decodeLabel(label.slice(4));
+			if (asciiDomain(decoded).toLowerCase() !== label.toLowerCase()) throw new Error('Noncanonical Punycode');
+			return decoded;
+		}).join('.');
+	} catch { return 'Invalid domain'; }
+}
 
+function decodeLabel(asciiPart: string): string {
 	const output: number[] = [];
-	const asciiPart = input.replace('xn--', '');
 
 	// Find last delimiter
 	const lastDelim = asciiPart.lastIndexOf(DELIMITER);
 	let idx = 0;
 
-	if (lastDelim > 0) {
+	if (lastDelim >= 0) {
 		for (let j = 0; j < lastDelim; j++) {
 			const c = asciiPart.charCodeAt(j);
-			if (c >= 0x80) return 'Invalid input';
+			if (c >= 0x80) throw new Error('Invalid Punycode');
 			output.push(c);
 		}
 		idx = lastDelim + 1;
@@ -72,31 +71,34 @@ export function decode(input: string): string {
 		let w = 1;
 
 		for (let k = BASE; ; k += BASE) {
-			if (idx >= len) return 'Invalid input';
+			if (idx >= len) throw new Error('Truncated Punycode');
 
 			const charCode = asciiPart.charCodeAt(idx++);
-			const digit = charCode - 48 < 10 ? charCode - 22 : charCode - 65 < 26 ? charCode - 65 : charCode - 97 < 26 ? charCode - 97 : BASE;
+			const digit = charCode >= 48 && charCode <= 57 ? charCode - 22
+				: charCode >= 65 && charCode <= 90 ? charCode - 65
+					: charCode >= 97 && charCode <= 122 ? charCode - 97 : BASE;
 
-			if (digit >= BASE) return 'Invalid input';
+			if (digit >= BASE) throw new Error('Invalid Punycode');
 
-			if (digit > Math.floor((Number.MAX_SAFE_INTEGER - i) / w)) return 'Overflow';
+			if (digit > Math.floor((Number.MAX_SAFE_INTEGER - i) / w)) throw new Error('Punycode overflow');
 
 			i += digit * w;
 			const t = k <= bias ? TMIN : k >= bias + TMAX ? TMAX : k - bias;
 
 			if (digit < t) break;
 
-			if (w > Math.floor(Number.MAX_SAFE_INTEGER / (BASE - t))) return 'Overflow';
+			if (w > Math.floor(Number.MAX_SAFE_INTEGER / (BASE - t))) throw new Error('Punycode overflow');
 			w *= BASE - t;
 		}
 
 		const outLen = output.length + 1;
 		bias = adapt(i - oldI, outLen, oldI === 0);
 
-		if (Math.floor(i / outLen) > Number.MAX_SAFE_INTEGER - n) return 'Overflow';
+		if (Math.floor(i / outLen) > Number.MAX_SAFE_INTEGER - n) throw new Error('Punycode overflow');
 		n += Math.floor(i / outLen);
 		i %= outLen;
 
+		if (n > 0x10ffff || (n >= 0xd800 && n <= 0xdfff)) throw new Error('Invalid Unicode scalar');
 		output.splice(i++, 0, n);
 	}
 

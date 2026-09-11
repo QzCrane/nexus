@@ -33,28 +33,28 @@ const ScrollContainer: React.FC<{ children: React.ReactNode; style?: React.CSSPr
 	return <div ref={ref} style={{ ...styles.contentWrapper, overflowY: 'auto', ...style }}>{children}</div>;
 };
 
-export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({ 
-	activeTool, openTools, onSettingsChange, selectToolText 
+export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
+	activeTool, openTools, onSettingsChange, selectToolText
 }) => {
 	const prevToolRef = useRef<ToolId | null>(null);
-	
+
 	// Animation state: 'idle' | 'enter' | 'exit'
 	const [animState, setAnimState] = useState<'idle' | 'enter'>('idle');
 	const [renderedTool, setRenderedTool] = useState<ToolId | null>(activeTool);
-	
+
 	useEffect(() => {
 		const prev = prevToolRef.current;
 		prevToolRef.current = activeTool;
-		
+
 		// Skip if same tool or initial mount (null -> tool on first load)
 		if (prev === activeTool) return;
-		
+
 		// Animate all tool switches when coming from another tool (prev !== null)
 		if (activeTool && prev !== null) {
 			// Trigger slide-in animation for new tool
 			setAnimState('enter');
 			setRenderedTool(activeTool);
-			
+
 			const timer = setTimeout(() => setAnimState('idle'), ANIMATION_CONSTANTS.DURATION.DEFAULT);
 			return () => clearTimeout(timer);
 		} else {
@@ -63,7 +63,7 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 			setAnimState('idle');
 		}
 	}, [activeTool]);
-	
+
 	const fallbackUI = (
 		<div style={{ ...styles.placeholder, height: '100%', flex: 1 }}>
 			<div style={{ width: 'auto', maxWidth: '300px' }}>
@@ -83,9 +83,9 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 	// Build animation styles - applies to ALL tools now
 	const slideStyle: React.CSSProperties = {
 		position: 'absolute', top: 0, left: 0, width: '100%', height: '100%',
-		animation: animState === 'enter' 
-      ? `haloSlideIn ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT} forwards` 
-      : 'none',
+		animation: animState === 'enter'
+      ? `var(--halo-motion-animation, haloSlideIn ${ANIMATION_CONSTANTS.DURATION.DEFAULT}ms ${ANIMATION_CONSTANTS.EASING.DEFAULT} forwards)`
+      : 'var(--halo-motion-animation, none)',
 		background: 'var(--halo-bg)',
 	};
 
@@ -101,9 +101,9 @@ export const ToolPanelRenderer: React.FC<ToolPanelRendererProps> = ({
 				`}</style>
 				<div key={renderedTool} style={slideStyle}>
 					<ScrollContainer>
-						<LazyToolRenderer 
+						<LazyToolRenderer
 							toolId={renderedTool}
-							onSettingsChange={renderedTool === 'settings' ? onSettingsChange : undefined} 
+							onSettingsChange={renderedTool === 'settings' ? onSettingsChange : undefined}
 						/>
 					</ScrollContainer>
 				</div>

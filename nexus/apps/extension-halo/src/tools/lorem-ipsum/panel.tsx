@@ -58,7 +58,7 @@ export const LoremIpsumPanel: React.FC = () => {
 									border: 'none',
 									background: unit === opt.id ? 'var(--halo-accent)' : 'transparent',
 									color: unit === opt.id ? '#fff' : 'var(--halo-text-muted)',
-									padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+									padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 								}}
 								onClick={() => setUnit(opt.id)}
 							>

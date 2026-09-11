@@ -1,0 +1,205 @@
+name: Dependency update evidence
+
+on:
+  pull_request:
+    paths:
+      - 'nexus/bun.lock'
+      - '.github/workflows/dependency-update-evidence.yml'
+      - 'nexus/browser-floor.json'
+      - 'nexus/runtime-performance-policy.json'
+      - 'nexus/scripts/dependency-update-evidence.ts'
+      - 'nexus/scripts/product-artifact-snapshot.ts'
+      - 'nexus/scripts/runtime-performance.ts'
+      - 'nexus/apps/extension-halo/test/sidepanel-performance-playwright.spec.ts'
+      - 'nexus/apps/extension-spectra/test/performance.spec.ts'
+      - 'nexus/apps/extension-spectra/test/runtime-stress-performance.spec.ts'
+      - 'nexus/apps/extension-spectra/test/service-worker-wake-performance.spec.ts'
+      - 'nexus/apps/extension-spectra/test/runtime-long-session-performance.spec.ts'
+  workflow_dispatch:
+    inputs:
+      base_sha:
+        description: Optional exact base commit; defaults to origin/main
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dependency-update-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  compare:
+    name: base vs candidate artifact/runtime delta
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout exact candidate head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+
+      - name: Set up Bun 1.4.0
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+
+      - name: Resolve exact comparison identities
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          MANUAL_BASE_SHA: ${{ inputs.base_sha }}
+        run: |
+          set -euo pipefail
+          candidate_sha="${PR_HEAD_SHA:-$GITHUB_SHA}"
+          base_sha="${PR_BASE_SHA:-${MANUAL_BASE_SHA:-}}"
+          if [[ -z "$base_sha" ]]; then
+            base_sha="$(git rev-parse origin/main)"
+          fi
+          git cat-file -e "${base_sha}^{commit}"
+          git cat-file -e "${candidate_sha}^{commit}"
+          if [[ "$base_sha" == "$candidate_sha" ]]; then
+            echo "Dependency comparison requires distinct base/candidate commits" >&2
+            exit 1
+          fi
+          base_tree="$(git rev-parse "${base_sha}^{tree}")"
+          candidate_tree="$(git rev-parse "${candidate_sha}^{tree}")"
+          base_root="$RUNNER_TEMP/nexus-dependency-base"
+          evidence_root="$RUNNER_TEMP/nexus-dependency-evidence"
+          rm -rf "$base_root" "$evidence_root"
+          git worktree add --detach "$base_root" "$base_sha"
+          mkdir -p "$evidence_root/base/performance" "$evidence_root/candidate/performance"
+          {
+            echo "BASE_SHA=$base_sha"
+            echo "BASE_TREE=$base_tree"
+            echo "CANDIDATE_SHA=$candidate_sha"
+            echo "CANDIDATE_TREE=$candidate_tree"
+            echo "BASE_ROOT=$base_root"
+            echo "EVIDENCE_ROOT=$evidence_root"
+          } >> "$GITHUB_ENV"
+
+      - name: Install exact base and candidate dependency graphs
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun install --cwd "$BASE_ROOT/nexus" --frozen-lockfile
+          bun install --cwd nexus --frozen-lockfile
+
+      - name: Verify candidate comparison governance
+        run: bun --cwd nexus check:governance
+
+      - name: Build base and candidate production artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun run --cwd "$BASE_ROOT/nexus" build
+          bun run --cwd nexus build
+          for root in "$BASE_ROOT" "$GITHUB_WORKSPACE"; do
+            for product in halo spectra; do
+              test -s "$root/nexus/apps/extension-$product/dist/manifest.json"
+            done
+          done
+
+      - name: Snapshot exact production artifacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun nexus/scripts/product-artifact-snapshot.ts halo \
+            "$BASE_ROOT/nexus/apps/extension-halo/dist" \
+            "$EVIDENCE_ROOT/base/artifact-halo.json" "$BASE_SHA" "$BASE_TREE"
+          bun nexus/scripts/product-artifact-snapshot.ts spectra \
+            "$BASE_ROOT/nexus/apps/extension-spectra/dist" \
+            "$EVIDENCE_ROOT/base/artifact-spectra.json" "$BASE_SHA" "$BASE_TREE"
+          bun nexus/scripts/product-artifact-snapshot.ts halo \
+            "nexus/apps/extension-halo/dist" \
+            "$EVIDENCE_ROOT/candidate/artifact-halo.json" "$CANDIDATE_SHA" "$CANDIDATE_TREE"
+          bun nexus/scripts/product-artifact-snapshot.ts spectra \
+            "nexus/apps/extension-spectra/dist" \
+            "$EVIDENCE_ROOT/candidate/artifact-spectra.json" "$CANDIDATE_SHA" "$CANDIDATE_TREE"
+
+      - name: Install browser system dependencies
+        working-directory: nexus/apps/extension-halo
+        run: bunx playwright install-deps chromium
+
+      - name: Resolve canonical Chrome floor
+        shell: bash
+        run: bun nexus/scripts/browser-floor.ts github-env >> "$GITHUB_ENV"
+
+      - name: Download and verify canonical Chrome floor
+        id: chrome_floor
+        shell: bash
+        run: |
+          set -euo pipefail
+          chrome_root="$RUNNER_TEMP/chrome-floor"
+          archive="$RUNNER_TEMP/chrome-linux64.zip"
+          mkdir -p "$chrome_root"
+          curl --fail --location --retry 4 --retry-all-errors --output "$archive" "$CHROME_FLOOR_URL"
+          printf '%s  %s\n' "$CHROME_FLOOR_SHA256" "$archive" | sha256sum --check --strict
+          unzip -q "$archive" -d "$chrome_root"
+          executable="$chrome_root/$CHROME_FLOOR_EXECUTABLE"
+          test -x "$executable"
+          version_output="$($executable --version)"
+          case "$version_output" in
+            *"${CHROME_FLOOR_VERSION}"*) ;;
+            *) echo "Expected Chrome ${CHROME_FLOOR_VERSION}, got ${version_output}" >&2; exit 1 ;;
+          esac
+          echo "NEXUS_CHROME_EXECUTABLE=$executable" >> "$GITHUB_ENV"
+          # The verified Chrome archive carries its matching sandbox helper.
+          # Install it in a root-owned directory instead of disabling browser
+          # sandboxing or the host's AppArmor/user-namespace restrictions.
+          sandbox_source="$(dirname "$executable")/chrome_sandbox"
+          test -f "$sandbox_source" && test ! -L "$sandbox_source"
+          sandbox_dir="$(sudo mktemp -d /opt/nexus-chrome-sandbox.XXXXXX)"
+          sudo chmod 755 "$sandbox_dir"
+          sandbox_helper="$sandbox_dir/chrome-sandbox"
+          sudo install -o root -g root -m 4755 "$sandbox_source" "$sandbox_helper"
+          cmp "$sandbox_source" "$sandbox_helper"
+          test "$(stat -c '%u:%g:%a' "$sandbox_helper")" = '0:0:4755'
+          echo "CHROME_DEVEL_SANDBOX=$sandbox_helper" >> "$GITHUB_ENV"
+
+      - name: Measure base artifacts with candidate workload
+        id: base_measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NEXUS_PERFORMANCE_TARGET_HEAD="$BASE_SHA"
+          export NEXUS_PERFORMANCE_TARGET_TREE="$BASE_TREE"
+          export NEXUS_PERFORMANCE_OUTPUT_DIR="$EVIDENCE_ROOT/base/performance"
+          export HALO_EXTENSION_DIR="$BASE_ROOT/nexus/apps/extension-halo/dist"
+          export SPECTRA_EXTENSION_DIR="$BASE_ROOT/nexus/apps/extension-spectra/dist"
+          bun run --cwd nexus/apps/extension-halo test:performance 2>&1 | tee -a "$EVIDENCE_ROOT/base/workload.log"
+          bun run --cwd nexus/apps/extension-spectra test:performance 2>&1 | tee -a "$EVIDENCE_ROOT/base/workload.log"
+
+      - name: Measure candidate artifacts with the same workload
+        id: candidate_measurement
+        if: ${{ !cancelled() && steps.chrome_floor.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          export NEXUS_PERFORMANCE_TARGET_HEAD="$CANDIDATE_SHA"
+          export NEXUS_PERFORMANCE_TARGET_TREE="$CANDIDATE_TREE"
+          export NEXUS_PERFORMANCE_OUTPUT_DIR="$EVIDENCE_ROOT/candidate/performance"
+          export HALO_EXTENSION_DIR="$GITHUB_WORKSPACE/nexus/apps/extension-halo/dist"
+          export SPECTRA_EXTENSION_DIR="$GITHUB_WORKSPACE/nexus/apps/extension-spectra/dist"
+          bun run --cwd nexus/apps/extension-halo test:performance 2>&1 | tee -a "$EVIDENCE_ROOT/candidate/workload.log"
+          bun run --cwd nexus/apps/extension-spectra test:performance 2>&1 | tee -a "$EVIDENCE_ROOT/candidate/workload.log"
+
+      - name: Build exact dependency-update delta evidence
+        if: ${{ !cancelled() && steps.base_measurement.outcome == 'success' && steps.candidate_measurement.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          bun nexus/scripts/dependency-update-evidence.ts \
+            "$EVIDENCE_ROOT/base" "$EVIDENCE_ROOT/candidate" "$EVIDENCE_ROOT/comparison.json"
+
+      - name: Upload immutable comparison evidence
+        if: ${{ !cancelled() && env.EVIDENCE_ROOT != '' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dependency-update-evidence-${{ github.event.pull_request.number || github.run_id }}
+          path: ${{ env.EVIDENCE_ROOT }}
+          if-no-files-found: error
+          retention-days: 30

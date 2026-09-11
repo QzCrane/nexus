@@ -1,0 +1,84 @@
+{
+  "schemaVersion": 2,
+  "phase": "native-default",
+  "adoptedFromCommit": "664d0615f850c568a8840ac312ca7c92cb81ceee",
+  "validationScope": "Current executable package/config/API topology. This does not claim historical TS6/TS7 diagnostic-equivalence evidence.",
+  "nativeCli": {
+    "package": "typescript",
+    "version": "7.0.2",
+    "packagePaths": [
+      "package.json",
+      "apps/extension-halo/package.json",
+      "apps/extension-spectra/package.json",
+      "packages/contracts/package.json",
+      "packages/features/audio-engine/package.json",
+      "packages/nexus-kernel/package.json",
+      "packages/ui-kit/package.json"
+    ]
+  },
+  "compatibilityApi": {
+    "package": "typescript",
+    "version": "6.0.2",
+    "alias": "typescript-compiler-api",
+    "packagePath": "package.json",
+    "reason": "Build and governance scripts use the separately installed compiler API; all project typecheck/build commands retain the adopted native CLI identity."
+  },
+  "programmaticApiConsumers": [
+    {
+      "path": "apps/extension-halo/check-release-source-graph.ts",
+      "packagePath": "package.json",
+      "marker": "ts.createSourceFile",
+      "role": "HALO production source-graph admission",
+      "publicProjection": false
+    },
+    {
+      "path": "scripts/check-direct-dependencies.ts",
+      "packagePath": "package.json",
+      "marker": "ts.createSourceFile",
+      "role": "direct dependency source-import classification",
+      "publicProjection": false
+    },
+    {
+      "path": "scripts/check-typescript-7-epoch.ts",
+      "packagePath": "package.json",
+      "marker": "ts.createSourceFile",
+      "role": "Syntax-based compiler API consumer census",
+      "publicProjection": false
+    },
+    {
+      "path": "scripts/permission-capabilities.ts",
+      "packagePath": "package.json",
+      "marker": "ts.createSourceFile",
+      "role": "permission runtime syntax evidence",
+      "publicProjection": false
+    },
+    {
+      "path": "scripts/run-strict-biome.ts",
+      "packagePath": "package.json",
+      "marker": "ts.isParenthesizedExpression",
+      "role": "repository lint and no-op source analysis",
+      "publicProjection": true
+    }
+  ],
+  "ts6DeprecatedConfig": [
+    "baseUrl",
+    "downlevelIteration",
+    "moduleResolution=node",
+    "moduleResolution=node10",
+    "moduleResolution=classic",
+    "target=es5",
+    "module=amd",
+    "module=umd",
+    "module=system",
+    "outFile",
+    "esModuleInterop=false",
+    "allowSyntheticDefaultImports=false",
+    "alwaysStrict=false",
+    "ignoreDeprecations"
+  ],
+  "nextEpochRequirements": [
+    "Do not replace the programmatic API package merely because the native CLI is newer.",
+    "Changing API identity requires a fresh exact consumer census, focused semantic tests and public projection validation.",
+    "Compiler version updates require exact locked dependency, typecheck, build, runtime and artifact evidence; speed measurements cannot replace semantic correctness."
+  ]
+}

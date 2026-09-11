@@ -1,0 +1,111 @@
+{
+  "schemaVersion": 2,
+  "owners": {
+    "bilibili-enhancer": [
+      {
+        "path": "test/bilibili-enhancer-contract.spec.ts",
+        "focusMarkers": [
+          "../src/scripts/bilibili-enhancer/script.js",
+          "observer = new MutationObserver("
+        ]
+      }
+    ],
+    "bilibili-plus": [
+      {
+        "path": "test/legacy-business-preservation.spec.ts",
+        "focusMarkers": [
+          "../src/scripts/bilibili-plus/script.js",
+          "expect(observers).toBe(1)",
+          "30000"
+        ]
+      }
+    ],
+    "clipboard": [
+      {
+        "path": "test/legacy-business-preservation.spec.ts",
+        "focusMarkers": [
+          "../src/entry/content-clipboard.ts",
+          "host.change({ enabled: false })",
+          "host.sent"
+        ]
+      }
+    ],
+    "dom-selector": [
+      {
+        "path": "test/frame-tools-lazy.spec.ts",
+        "focusMarkers": [
+          "FRAME_TOOL_DOM_SELECTOR_START",
+          "../content/dom-selector"
+        ]
+      }
+    ],
+    "hover-zoom": [
+      {
+        "path": "test/hover-zoom-authority.spec.ts",
+        "focusMarkers": [
+          "../src/tools/hover-zoom/logic/engine",
+          "reconcileAntiHotlinkRules"
+        ]
+      },
+      {
+        "path": "test/hover-zoom-lazy.spec.ts",
+        "focusMarkers": [
+          "src/content/hover-zoom-runtime-loader.ts",
+          "tools/_hover-zoom/runtime.js"
+        ]
+      }
+    ],
+    "page-annotate": [
+      {
+        "path": "test/frame-tools-lazy.spec.ts",
+        "focusMarkers": [
+          "FRAME_TOOL_ANNOTATE_START",
+          "../content/page-annotate"
+        ]
+      }
+    ],
+    "qrcode": [
+      {
+        "path": "test/context-menu-activation.spec.ts",
+        "focusMarkers": [
+          "persistQrcodeActivation",
+          "QRCODE_MODE_STORAGE_KEY"
+        ]
+      }
+    ],
+    "ruler": [
+      {
+        "path": "test/frame-tools-lazy.spec.ts",
+        "focusMarkers": [
+          "FRAME_TOOL_RULER_START",
+          "../src/entry/content-frame-tools.ts"
+        ]
+      }
+    ],
+    "smooth-scroll": [
+      {
+        "path": "test/smooth-scroll-keyboard-contract.spec.ts",
+        "focusMarkers": [
+          "../src/content/smooth-scroll.ts",
+          "reconcileInputOwnership()"
+        ]
+      }
+    ],
+    "userscripts": [
+      {
+        "path": "test/user-scripts-readiness-races.spec.ts",
+        "focusMarkers": [
+          "../src/system/userscripts/registry",
+          "ensureUserScriptsRuntimeReady"
+        ]
+      },
+      {
+        "path": "test/user-scripts-storage-authority.spec.ts",
+        "focusMarkers": [
+          "../src/system/userscripts/storage-authority",
+          "subscribeUserScriptsStorage"
+        ]
+      }
+    ]
+  }
+}

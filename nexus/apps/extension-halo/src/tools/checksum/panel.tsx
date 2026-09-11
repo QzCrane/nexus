@@ -79,7 +79,7 @@ export const ChecksumPanel: React.FC = () => {
 								border: 'none',
 								background: algorithm === a ? 'var(--halo-accent)' : 'transparent',
 								color: algorithm === a ? '#fff' : 'var(--halo-text-muted)',
-								padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+								padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 							}}
 							onClick={() => handleAlgorithmChange(a)}
 						>

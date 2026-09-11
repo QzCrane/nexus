@@ -1,0 +1,1029 @@
+{
+  "schemaVersion": 1,
+  "audit": "docs/_archive/audits/2026-09-06-7230b68.json",
+  "preservedSourceHead": "7230b688718ef48e829dcaf05d4729ec88bb0b8d",
+  "preservedIntegrationHead": "49df809bd37672857c64189adfe4f7e69d68d38e",
+  "preservedSourceTree": "00ea207461eab5b34264a4949aebd25eabba60a4",
+  "semantics": "implemented means the named mechanism has code and focused regression evidence; it does not mean release certification. Open and partial items block a claim of complete remediation.",
+  "items": [
+    {
+      "id": "G01",
+      "title": "Windows 路径误判使真正发布失败，并漏检 tsconfig",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "scripts/check-typescript-7-epoch.ts",
+        "scripts/check-typescript-7-epoch.spec.ts"
+      ],
+      "verification": [
+        "scripts/check-typescript-7-epoch.spec.ts"
+      ]
+    },
+    {
+      "id": "G02",
+      "title": "普通 CI 与完整发布的操作系统覆盖不一致",
+      "priority": "P0",
+      "status": "awaiting-hosted-verification",
+      "changes": [
+        "../.github/workflows/cross-platform.yml"
+      ],
+      "verification": []
+    },
+    {
+      "id": "G03",
+      "title": "已验证 Bun 的发布链再次通过 bunx 获取运行时",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "package.json",
+        "scripts/check-typescript-7-epoch.spec.ts"
+      ],
+      "verification": [
+        "scripts/check-typescript-7-epoch.spec.ts"
+      ]
+    },
+    {
+      "id": "G04",
+      "title": "发布策略读取器只验证数量，未验证完整语义",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G05",
+      "title": "单次 receipt 验证边界接受缺失事实",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G06",
+      "title": "证据摘要证明字节一致，不证明执行来源",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G07",
+      "title": "canonical hosted 判断没有证明必需检查集合完整",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G08",
+      "title": "重跑与基础设施失败需要精确分类，不可挑绿色或永久卡历史",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G09",
+      "title": "PR head 与实际 checkout 需要显式区分",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G10",
+      "title": "单提交候选校验没有验证唯一父提交",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G11",
+      "title": "receipt 中的浏览器身份可能不是实际运行的浏览器",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G12",
+      "title": "最终 ZIP 的供应链证明没有完整接入 canonical release",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G13",
+      "title": "已存在的中间供应链文件不能代替新鲜性校验",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G14",
+      "title": "发布、合并、对外发布过度捆绑与反复候选重写",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G15",
+      "title": "历史已打包功能被错误归入未来晋升任务",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G16",
+      "title": "晋升证据和测试归属仍偏向文件存在/源码字符串",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G17",
+      "title": "视觉检查目前只是候选采集，不是已认证回归",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G18",
+      "title": "性能统计样本与业务负载不足以支持全面优化结论",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G19",
+      "title": "分支、执行来源与长期证据保全尚需独立防线",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "G20",
+      "title": "对话/PR 最终状态曾倒退到旧提交，交付观察需要单一事实来源",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "S01",
+      "title": "存储等待超时后迟到旧写入覆盖新值",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/storage/ledger.ts",
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "packages/nexus-kernel/src/storage/index.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Conditional ledger writes now carry a companion revision, verify after commit, and repair detected conflicts with a bounded remerge. This is optimistic concurrency for hook-mediated and reworked tool keys; it is still not a cross-window transaction, and plain unledgered writes remain unconditional overwrites."
+    },
+    {
+      "id": "S02",
+      "title": "读取失败与键不存在被合并为默认值",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
+    },
+    {
+      "id": "S03",
+      "title": "Timer 与 Pomodoro 的状态构造违反共享 JSON 合同",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts"
+      ],
+      "scope": "Physical mutation queue is bounded and per runtime/StorageArea, not cross-context CAS. Reads reject unavailable/timeout; hooks do not flush failed hydration. Timer/Pomodoro use validated nullable timestamps; background completion remains open. Mounted tool persistence failures are visible and retryable; other callers and compound data owners still require remediation. Pinned clipboard admission is preserved; cross-context history transactions remain open."
+    },
+    {
+      "id": "S04",
+      "title": "复杂工具状态只有容器种类检查，缺少领域 schema",
+      "priority": "P1",
+      "status": "partial",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts",
+        "apps/extension-halo/src/tools/clipboard/types.ts",
+        "apps/extension-halo/src/tools/session-manager/core.ts",
+        "apps/extension-halo/src/tools/archive/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts",
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Clipboard history, session list and archive metadata now have domain-owned parsers that drop malformed entries instead of shape-coercing. Remaining: equivalent owned schemas for the other complex persisted tools (sticky notes, todo list, code snippets, bookmarks, annotations) and versioned migration for their damaged data."
+    },
+    {
+      "id": "S05",
+      "title": "多个上下文的读改写可能丢更新",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/storage/ledger.ts",
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "packages/nexus-kernel/src/storage/index.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Shared keys written through the ledger (tool hooks, clipboard history, session list, archive metadata) use conditional read-modify-write: a concurrent change is detected and remerged instead of silently lost. Domains not yet on the ledger keep their previous behavior."
+    },
+    {
+      "id": "S06",
+      "title": "写入失败只留日志，用户无法判断是否保存",
+      "priority": "P1",
+      "status": "partial",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts",
+        "apps/extension-halo/src/tools/session-manager/panel.tsx",
+        "apps/extension-halo/src/tools/archive/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts",
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Session and archive panels now surface mutation failures as explicit status text and keep their view consistent; hook-mediated keys report rejected/unknown writes through the mounted banner. Remaining: direct chrome.storage callers outside these paths."
+    },
+    {
+      "id": "S07",
+      "title": "数量上限不能代替字节配额及保留策略",
+      "priority": "P1",
+      "status": "partial",
+      "changes": [
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/kernel/core/storage-health.ts",
+        "apps/extension-halo/src/components/sidepanel/StorageHealthBanner.tsx",
+        "apps/extension-halo/src/tools/timer/core.ts",
+        "apps/extension-halo/src/tools/pomodoro/core.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts",
+        "apps/extension-halo/src/tools/clipboard/types.ts",
+        "apps/extension-halo/src/tools/session-manager/core.ts",
+        "apps/extension-halo/src/tools/archive/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-settlement.spec.ts",
+        "apps/extension-halo/test/storage-boundaries.spec.ts",
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Clipboard history now enforces an encoded byte budget with pinned-preserving eviction; sessions enforce entry and byte ceilings that always keep the newest session; archive metadata caps entries and deletes trimmed blobs. Remaining: per-domain budgets and retention for sticky notes, todo list, snippets, bookmarks, annotations."
+    },
+    {
+      "id": "S08",
+      "title": "归档元数据与 Blob 不在同一事务，裁剪留下孤儿",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/archive/core.ts",
+        "apps/extension-halo/src/tools/archive/storage.ts",
+        "apps/extension-halo/src/tools/archive/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Capture stores blob then metadata and rolls the blob back when metadata cannot commit; trimming deletes trimmed blobs; a bounded orphan sweep runs on panel mount. IndexedDB and chrome.storage still cannot share one atomic transaction; consistency is enforced by order, rollback, and reconciliation."
+    },
+    {
+      "id": "S09",
+      "title": "IndexedDB 请求成功过早被当作事务已提交",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/archive/storage.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Archive IndexedDB helpers resolve only when the surrounding transaction completes; an abort after request success rejects."
+    },
+    {
+      "id": "S10",
+      "title": "剪贴板满额时仍会丢固定条目",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/storage/ledger.ts",
+        "packages/nexus-kernel/src/storage/safe-storage.ts",
+        "packages/nexus-kernel/src/storage/index.ts",
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/tools/clipboard/core.ts",
+        "apps/extension-halo/src/tools/clipboard/types.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Clipboard history mutations are conditional ledger writes whose intent is re-applied to the fresh stored list, so concurrent appends from panel and background converge and pinned entries survive. This is convergence through conditional writes, not a cross-window transaction."
+    },
+    {
+      "id": "S11",
+      "title": "Session Manager 保存两份会话列表，初始展示可能失真",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/session-manager/core.ts",
+        "apps/extension-halo/src/tools/session-manager/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "The persisted session list lives only in the core-owned key; the panel keeps a mount-scoped view refreshed from each mutation result. The duplicate persisted hook copy for the list is gone."
+    },
+    {
+      "id": "S12",
+      "title": "会话恢复丢 pinned 状态且无法表达部分成功",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/session-manager/core.ts",
+        "apps/extension-halo/src/tools/session-manager/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/storage-ledger.spec.ts"
+      ],
+      "scope": "Restore preserves pinned tabs in both current-window and new-window paths (window first tab pinned via tabs.update) and returns per-tab restored/failed results that the panel displays."
+    },
+    {
+      "id": "N01",
+      "title": "站点存储编辑时重新选择当前标签，可能写到别的站点",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/storage-editor/core.ts",
+        "apps/extension-halo/src/tools/storage-editor/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Storage edits bind to the tab id and origin captured at scan time; the bound tab is re-resolved and its current origin re-checked when the mutation is about to happen. A tab that left the scanned origin fails with an explicit rescan request instead of writing into another site."
+    },
+    {
+      "id": "N02",
+      "title": "站点存储编辑 UI 忽略写入/删除失败结果",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/storage-editor/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Set and delete failures now surface as panel status text; the local list only updates after the mutation really committed."
+    },
+    {
+      "id": "N03",
+      "title": "Cookie 身份丢失 store/partition/hostOnly，更新目标也可能漂移",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/cookie-manager/core.ts",
+        "apps/extension-halo/src/tools/cookie-manager/types.ts",
+        "apps/extension-halo/src/tools/cookie-manager/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Cookie operations carry full identity (storeId, partitionKey, hostOnly, session, scheme, domain, path). Updates target the cookie own origin; host-only cookies never gain a domain attribute. Deletion failures are surfaced."
+    },
+    {
+      "id": "N04",
+      "title": "内部消息路由并未统一区分可信 UI 与 Content 权限",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/entry/background.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Tab-originated internal messages (clipboard add, HoverZoom proxy, CSS injection) now require the extension tab sender category; UI-authority messages keep the sidepanel check. Message structure validity no longer substitutes for sender authorization."
+    },
+    {
+      "id": "N05",
+      "title": "私网主机字面量过滤既有漏判也有误封",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/kernel/utils/ssrf-guard.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "IPv4 literals are parsed per inet_aton/WHATWG forms (short, octal, hex, decimal, trailing dot) before pattern matching, so 127.1, 0177.0.0.1 and 0x7f.0.0.1 are blocked. The overbroad 198.x pattern was narrowed to the benchmark range, and names that merely start with digits (10.0.0.1.com) are no longer blocked on prefix. Literal-shaped garbage fails closed."
+    },
+    {
+      "id": "N06",
+      "title": "初始 URL 筛选不能证明重定向和 DNS 后的目标安全",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "Boundary note: isPrivateHost evaluates the initial URL literal only. Post-redirect and post-DNS target validation is not implemented and no code or doc may claim it; keep claims limited accordingly."
+    },
+    {
+      "id": "N07",
+      "title": "网络响应没有统一时间、字节和生命周期边界",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/kernel/utils/fetch-budget.ts",
+        "apps/extension-halo/src/entry/background.ts",
+        "apps/extension-halo/src/tools/api-tester/core.ts",
+        "apps/extension-halo/src/tools/api-tester/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "One fetch-budget owner supplies timeout, encoded-byte ceiling and cancellation. The HoverZoom worker proxy and the API tester both use it; proxy transfers abort when the requesting tab closes and the tester cancels on panel disposal. Oversized responses fail explicitly instead of truncating."
+    },
+    {
+      "id": "N08",
+      "title": "敏感输入默认跟随通用工具状态持久化",
+      "priority": "P0",
+      "status": "partial",
+      "changes": [
+        "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+        "apps/extension-halo/src/tools/totp/panel.tsx",
+        "apps/extension-halo/src/tools/api-tester/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts",
+        "apps/extension-halo/test/sidepanel-runtime-playwright.spec.ts"
+      ],
+      "remaining": "New TOTP import drafts are ephemeral. Existing account-secret storage, Crypto/API editors and opt-in migration require a separate explicit vault boundary; no historical secret was deleted.",
+      "scope": "Automatic local-to-session migration was rejected: it shortens saved-account retention to a browser session and can remove the source before destination confirmation. Saved TOTP accounts and API state retain their existing local owner; import drafts remain ephemeral. The real-browser restart regression protects retained data. An explicit vault and user-controlled migration remain unresolved."
+    },
+    {
+      "id": "N09",
+      "title": "选择 DeepL 翻译网页时被静默转给 Google",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/translate/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "DeepL full-page translation is refused explicitly instead of silently handing the page to Google; text translation still goes to the selected receiver and unknown engines fail closed."
+    },
+    {
+      "id": "N10",
+      "title": "生产日志直接记录 URL 片段，诊断脱敏不覆盖它",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/entry/background.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "The production proxy log records the target host only; URL paths and queries are never logged."
+    },
+    {
+      "id": "N11",
+      "title": "权限和目标必须在真正副作用发生时仍有效",
+      "priority": "P1",
+      "status": "partial",
+      "changes": [
+        "apps/extension-halo/src/tools/storage-editor/core.ts",
+        "apps/extension-halo/src/entry/background.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/network-targets.spec.ts"
+      ],
+      "scope": "Effect-time revalidation now covers storage-editor origin rebinding and proxy transfers cancelled at tab close. Remaining: the same at-effect recheck for the remaining injection and capture surfaces outside these paths."
+    },
+    {
+      "id": "D01",
+      "title": "物理并发有界但永久在途会导致后续发现饥饿",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D02",
+      "title": "超时观察者在未结束 Promise 上累积 reaction",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "packages/nexus-kernel/src/settlement-pool.ts"
+      ],
+      "verification": [
+        "apps/extension-spectra/test/settlement-pool.spec.ts"
+      ]
+    },
+    {
+      "id": "D03",
+      "title": "没有媒体与探测失败仍有被合并的路径",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D04",
+      "title": "冷启动的暂停 iframe 媒体不属于当前顶层探测覆盖",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D05",
+      "title": "媒体报告和共享扫描缓存的身份粒度需覆盖文档代际",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "D06",
+      "title": "多来源卡片快照应保留字段级未知，而非伪事务",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "J01",
+      "title": "Timer/Pomodoro 完成副作用仍由面板存活决定",
+      "priority": "P0",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "Designed mechanism: an alarms permission plus a background deadline owner that sets one alarm per running countdown and fires completion out of the panel lifetime. Blocked on a deliberate permission-set decision (manifest, privacy projection, store listings) rather than a code-only change."
+    },
+    {
+      "id": "J02",
+      "title": "计时完成“恰好一次”需定义崩溃语义",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "Exactly-once needs the J01 background owner plus a persisted completion marker written before the notification side effect; not implementable while completion lives only in the panel."
+    },
+    {
+      "id": "J03",
+      "title": "PDF 拆分只交付第一个结果",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/pdf/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "Every split range produces its own named download entry (split-1.pdf, split-2.pdf, ...); the panel no longer delivers only the first result."
+    },
+    {
+      "id": "J04",
+      "title": "PDF 页范围容错会把错误请求变成“成功但少内容”",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/pdf/structure-ops.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "Split ranges and extract pages are validated against the document up front; out-of-bounds requests fail with an explicit message instead of a success that quietly misses content."
+    },
+    {
+      "id": "J05",
+      "title": "PDF/图像任务缺少冻结输入、有界执行和统一取消",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "Strict input validation and single-flight processing exist; frozen-input snapshots, worker-side execution with bounded concurrency and a cancel surface remain open."
+    },
+    {
+      "id": "J06",
+      "title": "对象 URL 生命周期未与解码/预览/新标签绑定",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "Download paths revoke their object URLs; viewer paths must keep the URL alive for the new tab and need an ownership table with explicit retirement before this can close."
+    },
+    {
+      "id": "J07",
+      "title": "Gzip 解压缺少输出预算且 writer 错误未完整等待",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/gzip/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "One pump owner awaits the writer (no unhandled stream rejections), enforces a 64 MiB encoded output budget, and aborts the stream explicitly when the budget trips."
+    },
+    {
+      "id": "J08",
+      "title": "Diff 的完整 LCS 矩阵使内存随两边行数乘积增长",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/diff/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "Common prefix/suffix stripping plus a flat Int32Array LCS table capped at 16M cells; past the cap the middle region degrades to an explicit block replace that is still a correct edit script."
+    },
+    {
+      "id": "J09",
+      "title": "多哈希文件计算重复整文件读取，另有双份 MD5 实现",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/kernel/utils/md5.ts",
+        "apps/extension-halo/src/tools/checksum/core.ts",
+        "apps/extension-halo/src/tools/hash/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/heavy-task-bounds.spec.ts"
+      ],
+      "scope": "One MD5 owner with the hardcoded RFC 1321 constants; the checksum and hash tools delegate to it. calculateAllChecksums reads the file exactly once instead of once per algorithm."
+    },
+    {
+      "id": "J10",
+      "title": "多面板异步失败与迟到结果缺乏一致状态机",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "Stale-result fencing now exists in the touched tools (bound targets, single-flight writes); a unified cross-panel async result state machine is still open."
+    },
+    {
+      "id": "U01",
+      "title": "Unicode 正则的空匹配推进可无限循环",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/regex/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "Zero-length matches advance past one full code point (surrogates are not split in unicode mode) and collected matches are capped at 10000; invalid patterns surface as errors instead of an empty result. Exponential backtracking cost is a separate item (U02)."
+    },
+    {
+      "id": "U02",
+      "title": "正则回溯与逐匹配定位仍可阻塞 UI",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "Mitigation shipped: the match cap bounds pathological loops; exponential backtracking still runs on the UI thread and needs a worker admission (R32 Comlink) to close."
+    },
+    {
+      "id": "U03",
+      "title": "TOTP URI 丢算法、截断 issuer 并接受错误类型/参数",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/totp/core.ts",
+        "apps/extension-halo/src/tools/totp/types.ts",
+        "apps/extension-halo/src/tools/totp/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "U04",
+      "title": "JWT Base64URL 字节未按 UTF-8 解码",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/jwt-decoder/core.ts",
+        "apps/extension-halo/src/tools/crypto/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "U05",
+      "title": "CSV 多行引号字段被预先按换行拆坏",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/csv-to-json/core.ts",
+        "apps/extension-halo/src/tools/csv-viewer/core.ts",
+        "apps/extension-halo/src/tools/json-to-csv/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "All three CSV surfaces parse through PapaParse (R01): quoted fields spanning lines, escaped quotes and delimiter-in-cell parse as one record. Parse errors are surfaced, never treated as a complete conversion."
+    },
+    {
+      "id": "U06",
+      "title": "CSV/JSON 转换默认改值且对象数组校验不完整",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/csv-to-json/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "Conversion is fidelity-first: cells keep their text (007, big integers, true stay strings); numeric coercion is an explicit opt-in that only converts exact numbers."
+    },
+    {
+      "id": "U07",
+      "title": "表格文本导出存在公式语义边界",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "U08",
+      "title": "进制转换使用浮点数且接受部分非法输入",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/number-base/core.ts",
+        "apps/extension-halo/src/tools/number-base/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "U09",
+      "title": "Protobuf varint 被 32 位位运算截断",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/protobuf/core.ts",
+        "apps/extension-halo/src/tools/protobuf/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "U10",
+      "title": "JSONPath 不支持的语法被静默误解，且可读继承属性",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "R05 (@swaggerexpert/jsonpath) pilot deferred: the RFC 9535 compliance harness is a precondition and the measured lazy-chunk budget could not admit it this round; the package was removed and the previous tokenizer remains with its known misread limits."
+    },
+    {
+      "id": "U11",
+      "title": "Cron 解析未验证范围，固定七天搜索不能交付月度结果",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/cron/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "cron-parser (R29) owns range/dialect validation and schedule iteration: out-of-range fields are rejected and monthly schedules deliver real month-apart results instead of a seven-day window."
+    },
+    {
+      "id": "U12",
+      "title": "SQL 格式化修改字面量，验证器把无效语句判有效",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/sql-formatter/core.ts",
+        "apps/extension-halo/src/tools/code-formatter/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "sql-formatter (R06) owns layout with keywordCase preserve: string literals keep their case and content. Formatter errors surface with the input untouched; minify collapses whitespace outside literals; the validator checks quotes, parens and statement head lexically without claiming executability."
+    },
+    {
+      "id": "U13",
+      "title": "XML 重建/压缩可能丢转义和混合内容空白",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/xml-formatter/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/sidepanel-runtime-playwright.spec.ts"
+      ],
+      "scope": "Native DOMParser and whole-Document XMLSerializer replace hand-built tags and escaping. Existing text and CDATA are never removed; xml:space and mixed-content whitespace survive. Pretty layout only adds indentation to containers without text. The validated XML declaration is retained; DTD documents pass through unchanged with an explicit warning because native DOM omits internal subsets. Browser regressions cover document nodes, namespace/entity fidelity, declarations, mixed content and invalid input."
+    },
+    {
+      "id": "U14",
+      "title": "调色板量化可生成超出 255 的颜色分量",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/color-palette/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "U15",
+      "title": "密码生成的字符映射与强度评分需要准确语义",
+      "priority": "P2",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/password-gen/core.ts",
+        "apps/extension-halo/src/tools/password-gen/panel.tsx"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "U16",
+      "title": "JSON 格式化会舍入大整数，排序还丢 __proto__ 自有键",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/json-formatter/core.ts",
+        "apps/extension-halo/src/tools/code-formatter/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "jsonc-parser (R03) owns tokenizing/diagnostics; numbers recover their exact source spelling through the lossless-json LosslessNumber bridge (R04); objects are rebuilt on null prototypes so a __proto__ own key is data that survives sorting and round-trips."
+    },
+    {
+      "id": "U17",
+      "title": "YAML 极简解析器静默丢结构，JSON→YAML 改字符串类型",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/yaml/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "The yaml engine (R02) owns parsing/serialization: duplicate keys fail explicitly, integers beyond the safe range stay exact through the lossless bridge, and JSON-to-YAML quotes scalars YAML would reinterpret (true, 001)."
+    },
+    {
+      "id": "U18",
+      "title": "通用代码压缩会把后续 JS 语句变成注释",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/code-formatter/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "Minify removes comments with a string-aware scanner and keeps the following line break, so a JS statement can never become part of a removed comment; HTML minify only removes whitespace between tags; CSS compression is owned by CSSO (R09). The Terser admission (R08) for deeper JS minification stays deferred."
+    },
+    {
+      "id": "U19",
+      "title": "证书解析器把非 X.509 数据包装成证书结果",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/ssl-cert/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+      ],
+      "scope": "@peculiar/x509 (R15) owns DER/PEM decoding: subject, issuer, serial and validity are real decoded fields; input that is not a certificate returns null with an explicit panel message. Parsing success is never presented as trust or revocation state."
+    },
+    {
+      "id": "U20",
+      "title": "CSP 百分制不能代表有效安全策略",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": [],
+      "scope": "Routed through the reuse map; no CSP engine decision recorded yet."
+    },
+    {
+      "id": "U21",
+      "title": "UUID v7 的 48 位时间戳被 JS 32 位移位破坏",
+      "priority": "P0",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/uuid/core.ts",
+        "apps/extension-halo/src/tools/random-gen/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "U22",
+      "title": "Punycode 多标签域名解码错误且字符校验不足",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/punycode/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "U23",
+      "title": "URL 参数解析视图丢失重复 key",
+      "priority": "P1",
+      "status": "implemented",
+      "changes": [
+        "apps/extension-halo/src/tools/url/core.ts"
+      ],
+      "verification": [
+        "apps/extension-halo/test/identity-codecs.spec.ts"
+      ]
+    },
+    {
+      "id": "A01",
+      "title": "巨大单一 owner 需要内部拆分，但不能产生第二写入者",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "A02",
+      "title": "产物余量过低，不宜继续靠预算微调容纳重复实现",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "A03",
+      "title": "诊断应报告未知与必要故障计数，不新增默认遥测",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    },
+    {
+      "id": "A04",
+      "title": "标准、权限与功能宣称需要从实际能力导出",
+      "priority": "P1",
+      "status": "open",
+      "changes": [],
+      "verification": []
+    }
+  ]
+}

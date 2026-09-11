@@ -7,7 +7,7 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PomodoroConfig, PomodoroState } from './types';
 import { DEFAULT_CONFIG } from './types';
-import { formatTime, getPhaseDuration, getNextPhase, createInitialState, PHASE_COLORS } from './core';
+import { normalizePomodoroConfig, normalizePomodoroState, formatTime, getPhaseDuration, getNextPhase, createInitialState, PHASE_COLORS } from './core';
 import { styles } from './panel.styles';
 import { playCompletionTone, useToolState } from '../../kernel';
 
@@ -18,20 +18,20 @@ function projectedRemaining(state: PomodoroState, now: number): number {
 
 export const PomodoroPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useToolState<PomodoroConfig>('pomodoro-config', DEFAULT_CONFIG);
-	const [state, setState] = useToolState<PomodoroState>('pomodoro-state', () => createInitialState(config));
+	const [config, setConfig] = useToolState<PomodoroConfig>('pomodoro-config', DEFAULT_CONFIG, { normalize: normalizePomodoroConfig });
+	const [state, setState, stateReady] = useToolState<PomodoroState>('pomodoro-state', () => createInitialState(config), { normalize: normalizePomodoroState });
 	const [now, setNow] = useState(() => Date.now());
 	const stateRef = useRef(state);
 	stateRef.current = state;
 
 	// Compatibility repair for old persisted running states that predate endsAt.
 	useEffect(() => {
-		if (!state.isRunning || typeof state.endsAt === 'number') return;
+		if (!stateReady || !state.isRunning || typeof state.endsAt === 'number') return;
 		setState((current) => {
 			if (!current.isRunning || typeof current.endsAt === 'number') return current;
 			return { ...current, endsAt: Date.now() + current.remaining * 1000 };
 		});
-	}, [state.isRunning, state.endsAt, setState]);
+	}, [stateReady, state.isRunning, state.endsAt, setState]);
 
 	// One 1Hz owner handles both the whole-second display projection and phase
 	// completion. Every tick compares the latest persisted deadline against a
@@ -39,7 +39,7 @@ export const PomodoroPanel: React.FC = () => {
 	// strand an expired phase or fire an early tone. Persistent PomodoroState
 	// still changes only once at the real phase boundary.
 	useEffect(() => {
-		if (!state.isRunning || typeof state.endsAt !== 'number') return;
+		if (!stateReady || !state.isRunning || typeof state.endsAt !== 'number') return;
 
 		const tick = () => {
 			const observedNow = Date.now();
@@ -55,7 +55,7 @@ export const PomodoroPanel: React.FC = () => {
 			const next: PomodoroState = {
 				phase: nextPhase,
 				remaining: getPhaseDuration(nextPhase, config),
-				endsAt: undefined,
+				endsAt: null,
 				isRunning: false,
 				sessionsCompleted,
 			};
@@ -69,7 +69,7 @@ export const PomodoroPanel: React.FC = () => {
 		tick();
 		const intervalId = window.setInterval(tick, 1000);
 		return () => window.clearInterval(intervalId);
-	}, [state.isRunning, state.endsAt, config, setState]);
+	}, [stateReady, state.isRunning, state.endsAt, config, setState]);
 
 	const remaining = useMemo(() => projectedRemaining(state, now), [state, now]);
 
@@ -80,7 +80,7 @@ export const PomodoroPanel: React.FC = () => {
 				return {
 					...current,
 					remaining: projectedRemaining(current, timestamp),
-					endsAt: undefined,
+					endsAt: null,
 					isRunning: false,
 				};
 			}
@@ -104,7 +104,7 @@ export const PomodoroPanel: React.FC = () => {
 		setState({
 			phase: nextPhase,
 			remaining: getPhaseDuration(nextPhase, config),
-			endsAt: undefined,
+			endsAt: null,
 			isRunning: false,
 			sessionsCompleted,
 		});

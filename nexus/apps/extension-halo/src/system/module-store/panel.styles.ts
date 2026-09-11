@@ -9,7 +9,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	tab: {
 		padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
 		cursor: 'pointer', border: 'none', background: 'transparent',
-		color: 'var(--halo-text-muted)', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+		color: 'var(--halo-text-muted)', transition: 'var(--halo-motion-transition, all 0.2s cubic-bezier(0.4, 0, 0.2, 1))',
 	},
 	tabActive: {
 		background: 'var(--halo-card-bg)',
@@ -27,7 +27,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		border: '1px solid var(--halo-glass-border)',
 		backdropFilter: 'blur(12px)',
 		boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.02), 0 2px 4px -1px rgba(0, 0, 0, 0.02)',
-		transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+		transition: 'var(--halo-motion-transition, all 0.2s cubic-bezier(0.4, 0, 0.2, 1))',
 		cursor: 'default',
 	},
 	icon: {
@@ -43,7 +43,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	desc: { fontSize: '12px', color: 'var(--halo-text-secondary)', lineHeight: '1.4', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' },
 	btn: {
 		padding: '6px 14px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
-		cursor: 'pointer', border: '1px solid transparent', transition: 'all 0.2s ease', minWidth: '80px',
+		cursor: 'pointer', border: '1px solid transparent', transition: 'var(--halo-motion-transition, all 0.2s ease)', minWidth: '80px',
 	},
 	btnInstall: {
 		background: 'var(--halo-accent)', color: '#fff',
@@ -54,7 +54,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		border: '1px solid var(--halo-glass-border)', background: 'var(--halo-bg-secondary)',
 		color: 'var(--halo-text)', width: '38px', height: '38px',
 		display: 'flex', alignItems: 'center', justifyContent: 'center',
-		transition: 'all 0.2s ease',
+		transition: 'var(--halo-motion-transition, all 0.2s ease)',
 	},
 	badge: { fontSize: '10px', padding: '2px 8px', borderRadius: '20px', fontWeight: 600, border: '1px solid rgba(0,0,0,0.05)' },
 	badgeUpdate: { background: 'rgba(34, 197, 94, 0.15)', color: '#16a34a' },

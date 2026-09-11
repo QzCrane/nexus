@@ -1,4 +1,8 @@
-// goal: Diff core logic - simple line-based diff algorithm (no external deps)
+// goal: Diff core logic - line-based diff algorithm (no external deps)
+// rule: memory stays bounded. Common prefixes/suffixes are stripped first and
+// the LCS table is a flat Int32Array capped at MAX_LCS_CELLS cells; beyond the
+// cap the middle region degrades to an explicit block replace, which is still
+// a correct edit script instead of an unbounded allocation.
 
 import type { DiffResult, DiffStats } from './types';
 
@@ -10,39 +14,42 @@ function requireItem<T>(items: readonly T[], index: number, label: string): T {
 	return item;
 }
 
-function requireRow(matrix: number[][], index: number): number[] {
-	return requireItem(matrix, index, 'LCS row');
+/** ~64 MiB of Int32 table; far past every plausible interactive diff. */
+const MAX_LCS_CELLS = 16_000_000;
+
+function cellAt(matrix: Int32Array, row: number, columns: number, column: number): number {
+	return matrix[row * columns + column] ?? 0;
 }
 
-function getCell(matrix: number[][], row: number, column: number): number {
-	return requireItem(requireRow(matrix, row), column, 'LCS column');
+function setCell(matrix: Int32Array, row: number, columns: number, column: number, value: number): void {
+	matrix[row * columns + column] = value;
 }
 
-// Simple line-based diff using LCS (Longest Common Subsequence)
-export function diffLines(text1: string, text2: string): DiffResult[] {
-	const lines1 = text1.split('\n');
-	const lines2 = text2.split('\n');
-	const result: DiffResult[] = [];
+function blockReplace(a: string[], b: string[]): DiffResult[] {
+	return [
+		...a.map((value) => ({ type: 'delete' as const, value })),
+		...b.map((value) => ({ type: 'insert' as const, value })),
+	];
+}
 
-	// LCS matrix
-	const m = lines1.length;
-	const n = lines2.length;
-	const dp: number[][] = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
+function lcsDiff(a: string[], b: string[]): DiffResult[] {
+	const m = a.length;
+	const n = b.length;
+	const columns = n + 1;
+	const dp = new Int32Array((m + 1) * columns);
 
-	// Build LCS table
 	for (let i = 1; i <= m; i++) {
 		for (let j = 1; j <= n; j++) {
-			const row = requireRow(dp, i);
 			if (
-				requireItem(lines1, i - 1, 'left line')
-				=== requireItem(lines2, j - 1, 'right line')
+				requireItem(a, i - 1, 'left line')
+				=== requireItem(b, j - 1, 'right line')
 			) {
-				row[j] = getCell(dp, i - 1, j - 1) + 1;
+				setCell(dp, i, columns, j, cellAt(dp, i - 1, columns, j - 1) + 1);
 			} else {
-				row[j] = Math.max(
-					getCell(dp, i - 1, j),
-					getCell(dp, i, j - 1),
-				);
+				setCell(dp, i, columns, j, Math.max(
+					cellAt(dp, i - 1, columns, j),
+					cellAt(dp, i, columns, j - 1),
+				));
 			}
 		}
 	}
@@ -55,39 +62,62 @@ export function diffLines(text1: string, text2: string): DiffResult[] {
 		if (
 			i > 0
 			&& j > 0
-			&& requireItem(lines1, i - 1, 'left line')
-				=== requireItem(lines2, j - 1, 'right line')
+			&& requireItem(a, i - 1, 'left line')
+				=== requireItem(b, j - 1, 'right line')
 		) {
-			stack.push({
-				type: 'equal',
-				value: requireItem(lines1, i - 1, 'left line'),
-			});
+			stack.push({ type: 'equal', value: requireItem(a, i - 1, 'left line') });
 			i--;
 			j--;
 		} else if (
 			j > 0
-			&& (i === 0 || getCell(dp, i, j - 1) >= getCell(dp, i - 1, j))
+			&& (i === 0 || cellAt(dp, i, columns, j - 1) >= cellAt(dp, i - 1, columns, j))
 		) {
-			stack.push({
-				type: 'insert',
-				value: requireItem(lines2, j - 1, 'right line'),
-			});
+			stack.push({ type: 'insert', value: requireItem(b, j - 1, 'right line') });
 			j--;
 		} else {
-			stack.push({
-				type: 'delete',
-				value: requireItem(lines1, i - 1, 'left line'),
-			});
+			stack.push({ type: 'delete', value: requireItem(a, i - 1, 'left line') });
 			i--;
 		}
 	}
 
-	// Reverse to get correct order
+	const result: DiffResult[] = [];
 	while (stack.length) {
 		const item = stack.pop();
 		if (item) result.push(item);
 	}
+	return result;
+}
 
+// Simple line-based diff using LCS (Longest Common Subsequence)
+export function diffLines(text1: string, text2: string): DiffResult[] {
+	const lines1 = text1.split('\n');
+	const lines2 = text2.split('\n');
+
+	// Strip the common prefix and suffix; real edits rarely touch whole files.
+	let prefix = 0;
+	while (prefix < lines1.length && prefix < lines2.length && lines1[prefix] === lines2[prefix]) prefix++;
+	let suffix = 0;
+	while (
+		suffix < lines1.length - prefix
+		&& suffix < lines2.length - prefix
+		&& lines1[lines1.length - 1 - suffix] === lines2[lines2.length - 1 - suffix]
+	) suffix++;
+
+	const mid1 = lines1.slice(prefix, lines1.length - suffix);
+	const mid2 = lines2.slice(prefix, lines2.length - suffix);
+
+	const result: DiffResult[] = [];
+	for (let index = 0; index < prefix; index++) {
+		result.push({ type: 'equal', value: requireItem(lines1, index, 'left line') });
+	}
+	if ((mid1.length + 1) * (mid2.length + 1) > MAX_LCS_CELLS) {
+		result.push(...blockReplace(mid1, mid2));
+	} else {
+		result.push(...lcsDiff(mid1, mid2));
+	}
+	for (let index = 0; index < suffix; index++) {
+		result.push({ type: 'equal', value: requireItem(lines1, lines1.length - suffix + index, 'left line') });
+	}
 	return result;
 }
 

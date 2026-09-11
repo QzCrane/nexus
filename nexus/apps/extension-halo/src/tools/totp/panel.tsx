@@ -7,6 +7,7 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { TotpEntry, TotpCode } from './types';
 import {
+	base32ToBytes,
 	generateId,
 	generateTotp,
 	parseOtpAuthUri,
@@ -27,18 +28,21 @@ interface CachedTotpCode {
 }
 
 function cacheSignature(entry: TotpEntry): string {
-	return `${entry.secret}\u0000${entry.digits}\u0000${entry.period}`;
+	return `${entry.secret}\u0000${entry.digits}\u0000${entry.period}\u0000${entry.algorithm ?? 'SHA1'}`;
 }
 
 export const TotpPanel: React.FC = () => {
 	const { t } = useTranslation();
+	// Saved authenticator accounts must survive browser restarts. Import drafts
+	// remain ephemeral; changing saved-secret retention requires an explicit vault.
 	const [entries, setEntries] = useToolState<TotpEntry[]>('totp', []);
 	const [codes, setCodes] = useState<Record<string, TotpCode>>({});
 	const [codeErrors, setCodeErrors] = useState<Record<string, string>>({});
 	const [pollFailed, setPollFailed] = useState(false);
 	const [showAdd, setShowAdd] = useState(false);
-	const [secretInput, setSecretInput] = useToolState<string>('totp-secret', '');
-	const [nameInput, setNameInput] = useToolState<string>('totp-name', '');
+	const [secretInput, setSecretInput] = useState('');
+	const [addError, setAddError] = useState('');
+	const [nameInput, setNameInput] = useState('');
 	const { copy, copyFailed } = useOwnedClipboardCopy<string>();
 	const codeCacheRef = useRef(new Map<string, CachedTotpCode>());
 
@@ -60,12 +64,12 @@ export const TotpPanel: React.FC = () => {
 				const newErrors: Record<string, string> = {};
 				for (const entry of entries) {
 					const signature = cacheSignature(entry);
-					const counter = totpCounter(now, entry.period);
-					const cached = codeCacheRef.current.get(entry.id);
 					try {
+						const counter = totpCounter(now, entry.period);
+						const cached = codeCacheRef.current.get(entry.id);
 						let code = cached?.code;
 						if (!cached || cached.counter !== counter || cached.signature !== signature) {
-							const generated = await generateTotp(entry.secret, entry.digits, entry.period, now);
+							const generated = await generateTotp(entry.secret, entry.digits, entry.period, now, entry.algorithm ?? 'SHA1');
 							code = generated.code;
 							codeCacheRef.current.set(entry.id, { counter, signature, code });
 						}
@@ -108,19 +112,27 @@ export const TotpPanel: React.FC = () => {
 
 	const handleAdd = useCallback(() => {
 		const parsed = parseOtpAuthUri(secretInput);
+		if (/^otpauth:/iu.test(secretInput) && !parsed) {
+			setAddError('Invalid or unsupported authenticator URI; nothing was saved.');
+			return;
+		}
+		try { base32ToBytes(parsed?.secret ?? secretInput); }
+		catch { setAddError('Invalid Base32 secret; nothing was saved.'); return; }
+		setAddError('');
 		const newEntry: TotpEntry = {
 			id: generateId(),
 			name: parsed?.name || nameInput || 'Account',
 			issuer: parsed?.issuer || '',
 			secret: parsed?.secret || secretInput.replace(/\s/g, ''),
 			digits: parsed?.digits || 6,
-			period: parsed?.period || 30,
+			period: parsed?.period ?? 30,
+			algorithm: parsed?.algorithm ?? 'SHA1',
 		};
 		setEntries((current) => [...current, newEntry]);
 		setSecretInput('');
 		setNameInput('');
 		setShowAdd(false);
-	}, [secretInput, nameInput, setEntries, setSecretInput, setNameInput]);
+	}, [secretInput, nameInput, setEntries]);
 
 	const handleDelete = useCallback((id: string) => {
 		codeCacheRef.current.delete(id);
@@ -140,8 +152,9 @@ export const TotpPanel: React.FC = () => {
 			{showAdd && (
 				<Card variant="default" padding="sm">
 					<div style={styles.addForm}>
+						{addError && <div role="alert" style={styles.error}>{addError}</div>}
 						<input style={styles.input} value={nameInput} onChange={(e) => setNameInput(e.target.value)} placeholder={t('totp.name')} />
-						<input style={styles.input} value={secretInput} onChange={(e) => setSecretInput(e.target.value)} placeholder={t('totp.secretOrUri')} />
+						<input type="password" autoComplete="off" style={styles.input} value={secretInput} onChange={(e) => setSecretInput(e.target.value)} placeholder={t('totp.secretOrUri')} />
 						<button type="button" style={styles.btn} onClick={handleAdd} disabled={!secretInput}>{t('totp.add')}</button>
 					</div>
 				</Card>
@@ -167,6 +180,7 @@ export const TotpPanel: React.FC = () => {
 									<div>
 										<div style={styles.name}>{entry.name}</div>
 										{entry.issuer && <div style={styles.issuer}>{entry.issuer}</div>}
+										<div style={styles.issuer}>{entry.algorithm ?? 'Legacy SHA1 — reimport the original URI if the issuer uses another algorithm'}</div>
 									</div>
 									<div style={styles.row}>
 										<button type="button" style={styles.btnSecondary} onClick={() => code && handleCopy(entry.id, code.code)}>📋</button>

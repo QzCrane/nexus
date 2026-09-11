@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "policy": "Release-admitted source or assets derived from non-npm third parties require an exact local owner, upstream repository and commit, reviewed upstream file identities, SPDX license evidence, modification rationale, and a notice physically shipped with the product. A free-form Source comment is never sufficient release provenance.",
+  "entries": [
+    {
+      "product": "halo",
+      "moduleId": "bilibili-enhancer",
+      "localPath": "apps/extension-halo/src/scripts/bilibili-enhancer/script.js",
+      "relationship": "derived-reimplementation",
+      "sourceMarker": "Source: 0xlau/biliplus",
+      "upstream": {
+        "repository": "0xlau/biliplus",
+        "commit": "70b8d7ef5489d0ceba9e040173a9e458390f8549",
+        "files": [
+          {
+            "path": "scripts/clean-home-page.js",
+            "blobSha": "452ec073456163383e2b0a781fe340fbb8cf4418"
+          },
+          {
+            "path": "scripts/hide-hot-search-list.js",
+            "blobSha": "9c1535033fc687c799e179b01afb860e5d192a42"
+          },
+          {
+            "path": "scripts/stepless-video-rate.js",
+            "blobSha": "794d3d9307f88bb3e12ff150d54b4395d5f2c168"
+          }
+        ],
+        "license": {
+          "spdx": "MIT",
+          "path": "LICENSE",
+          "blobSha": "3f7f41054b45862f2fcf093c05cf7b6df5c50d33",
+          "copyright": "Copyright (c) 2024 Timothy Lau"
+        }
+      },
+      "modifications": [
+        "Clean Home and Hide Hot Search retain the upstream selector/behavior concepts but use HALO-owned state, class names, null guards and lifecycle integration.",
+        "Stepless Video Rate is a substantial reimplementation: the upstream draggable continuous slider was replaced by a bounded preset menu, and discovery now uses a coalesced MutationObserver/requestAnimationFrame lifecycle with timeout/pagehide cleanup.",
+        "Storage ownership moved from biliplus chrome.storage settings to HALO local configuration and the script was consolidated into one SaaT runtime."
+      ],
+      "noticePath": "apps/extension-halo/public/THIRD_PARTY_NOTICES.txt",
+      "verifiedAt": "2026-08-19"
+    }
+  ]
+}

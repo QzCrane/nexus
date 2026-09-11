@@ -21,7 +21,7 @@ export const BackgroundHelperItemComponent: React.FC<BackgroundHelperItemProps> 
 			borderRadius: '8px',
 			border: '1px solid var(--halo-border)',
 			gap: '12px',
-			transition: 'all 0.2s ease',
+			transition: 'var(--halo-motion-transition, all 0.2s ease)',
 			position: 'relative'
 		}}>
 			{/* Status Indicator (Left Top Corner) */}
@@ -34,7 +34,7 @@ export const BackgroundHelperItemComponent: React.FC<BackgroundHelperItemProps> 
 				borderRadius: '50%',
 				background: active ? '#4CAF50' : '#9ca3af',
 				boxShadow: active ? '0 0 6px #4CAF50' : 'none',
-				animation: active ? 'pulse 2s infinite' : 'none'
+				animation: active ? 'var(--halo-motion-animation, pulse 2s infinite)' : 'var(--halo-motion-animation, none)'
 			}} />
 
 			{/* Icon */}
@@ -91,7 +91,7 @@ export const BackgroundHelperItemComponent: React.FC<BackgroundHelperItemProps> 
 					bottom: 0,
 					background: enabled ? '#4CAF50' : '#ccc',
 					borderRadius: '20px',
-					transition: '0.3s',
+					transition: 'var(--halo-motion-transition, 0.3s)',
 					cursor: 'pointer'
 				}}>
 					<span style={{
@@ -102,7 +102,7 @@ export const BackgroundHelperItemComponent: React.FC<BackgroundHelperItemProps> 
 						bottom: '3px',
 						background: 'white',
 						borderRadius: '50%',
-						transition: '0.3s'
+						transition: 'var(--halo-motion-transition, 0.3s)'
 					}} />
 				</span>
 			</label>

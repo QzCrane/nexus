@@ -561,7 +561,7 @@ export interface SpectraRequestMap {
 	};
 	'spectra.video.ab.clear': {
 		payload: Record<string, never>;
-		response: { cleared: boolean };
+		response: { cleared: true };
 	};
 	'spectra.video.ab.get': {
 		payload: Record<string, never>;
@@ -589,7 +589,7 @@ export interface SpectraRequestMap {
 	};
 	'spectra.tab.visible.list': {
 		payload: Record<string, never>;
-		response: { tabs: number[] };
+		response: { tabs: number[]; incomplete?: boolean };
 	};
 	'spectra.tab.pinned.toggle': {
 		payload: Record<string, never>;
@@ -761,7 +761,7 @@ const OPENED_RESULT_KEYS = new Set(['opened']);
 const INJECTED_RESULT_KEYS = new Set(['injected']);
 const REPORTED_RESULT_KEYS = new Set(['reported']);
 const HANDLED_RESULT_KEYS = new Set(['handled']);
-const TABS_RESULT_KEYS = new Set(['tabs']);
+const TABS_RESULT_KEYS = new Set(['tabs', 'incomplete']);
 const PLAYING_RESULT_KEYS = new Set(['playing']);
 const ACTIVE_RESULT_KEYS = new Set(['active']);
 const MEDIA_STATE_RESULT_KEYS = new Set(['playing', 'speed', 'pipActive', 'preservePitch']);
@@ -1110,6 +1110,7 @@ function isVisibleTabsResult(
 ): value is SpectraResponseData<'spectra.tab.visible.list'> {
 	if (!isRecord(value)
 		|| !hasOnlyKeys(value, TABS_RESULT_KEYS)
+		|| value.incomplete !== undefined && typeof value.incomplete !== 'boolean'
 		|| !Array.isArray(value.tabs)
 		|| value.tabs.length > 10_000) return false;
 	const unique = new Set<number>();

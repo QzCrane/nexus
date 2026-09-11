@@ -36,7 +36,7 @@ export const PDFPanel: React.FC = () => {
 	}, [selectedOperation]);
 
 	const [dragActive, setDragActive] = useState(false);
-	const [result, setResult] = useState<{ blob: Blob; name: string } | null>(null);
+	const [result, setResult] = useState<{ blob: Blob; name: string }[]>([]);
 
 	const processFiles = useCallback(async (files: File[]) => {
 		try {
@@ -69,7 +69,7 @@ export const PDFPanel: React.FC = () => {
 	const handleRemoveFile = useCallback((id: string) => setState((prev) => ({ ...prev, files: prev.files.filter((f) => f.id !== id) })), []);
 	const handleSelectOp = useCallback((op: PDFOperation) => { 
 		setSelectedOperation(op);
-		setResult(null); 
+		setResult([]);
 		setState(prev => ({ ...prev, error: null }));
 	}, [setSelectedOperation]);
 
@@ -83,44 +83,46 @@ export const PDFPanel: React.FC = () => {
 	const handleExecute = useCallback(async () => {
 		if (!canExecute) return;
 		setState((prev) => ({ ...prev, processing: true, error: null }));
-		setResult(null);
+		setResult([]);
 		try {
 			const { selectedOperation, files } = state;
 			const firstFile = files[0];
 			if (!selectedOperation || !firstFile) {
 				throw new Error('Select an operation and at least one file');
 			}
-			let output: ArrayBuffer | null = null;
-			let outputName = 'output.pdf';
+			let outputs: { blob: Blob; name: string }[] = [];
 
 			if (selectedOperation === 'merge') {
 				const res = await mergePDFs({ documents: files.map((f) => f.data) });
-				if (res.success) { output = res.data; outputName = 'merged.pdf'; } else throw new Error(res.error);
+				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'merged.pdf' }]; } else throw new Error(res.error);
 			} else if (selectedOperation === 'split') {
 				const ranges = parseRanges(config.splitRanges);
 				if (ranges.length === 0) throw new Error('Invalid page ranges');
 				const res = await splitPDF({ document: firstFile.data, ranges });
 				if (!res.success) throw new Error(res.error);
-				const firstSplit = res.data[0];
-				if (!firstSplit) throw new Error('The selected ranges produced no PDF output');
-				output = firstSplit;
-				outputName = 'split.pdf';
+				if (res.data.length === 0) throw new Error('The selected ranges produced no PDF output');
+				// rule: every split range produces its own download; dropping all
+				// but the first would silently discard the requested results.
+				outputs = res.data.map((part, index) => ({
+					blob: new Blob([part], { type: 'application/pdf' }),
+					name: res.data.length === 1 ? 'split.pdf' : `split-${index + 1}.pdf`,
+				}));
 			} else if (selectedOperation === 'extract') {
 				const pages = parsePages(config.extractPages);
 				if (pages.length === 0) throw new Error('Invalid page numbers');
 				const res = await extractPages({ document: firstFile.data, pages });
-				if (res.success) { output = res.data; outputName = 'extracted.pdf'; } else throw new Error(res.error);
+				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'extracted.pdf' }]; } else throw new Error(res.error);
 			} else if (selectedOperation === 'rotate') {
 				const res = await rotatePages({ document: firstFile.data, pages: [], degrees: config.rotateDegrees });
-				if (res.success) { output = res.data; outputName = 'rotated.pdf'; } else throw new Error(res.error);
+				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'rotated.pdf' }]; } else throw new Error(res.error);
 			} else if (selectedOperation === 'watermark') {
 				const res = await addWatermark({ document: firstFile.data, text: config.watermarkText, opacity: config.watermarkOpacity });
-				if (res.success) { output = res.data; outputName = 'watermarked.pdf'; } else throw new Error(res.error);
+				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'watermarked.pdf' }]; } else throw new Error(res.error);
 			} else if (selectedOperation === 'images-to-pdf') {
 				const res = await imagesToPDF({ images: files.map((f) => f.data), pageSize: config.pageSize });
-				if (res.success) { output = res.data; outputName = 'images.pdf'; } else throw new Error(res.error);
+				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'images.pdf' }]; } else throw new Error(res.error);
 			}
-			if (output) setResult({ blob: new Blob([output], { type: 'application/pdf' }), name: outputName });
+			if (outputs.length > 0) setResult(outputs);
 		} catch (err) {
 			setState((prev) => ({ ...prev, error: (err as Error).message }));
 		} finally {
@@ -129,10 +131,15 @@ export const PDFPanel: React.FC = () => {
 	}, [state, config, canExecute]);
 
 	const handleDownload = useCallback(() => {
-		if (!result) return;
-		const url = URL.createObjectURL(result.blob);
-		const a = document.createElement('a'); a.href = url; a.download = result.name; a.click();
-		URL.revokeObjectURL(url);
+		// Sequential small delays keep multi-part downloads from being swallowed
+		// by the browser's multiple-download guard.
+		result.forEach((part, index) => {
+			setTimeout(() => {
+				const url = URL.createObjectURL(part.blob);
+				const a = document.createElement('a'); a.href = url; a.download = part.name; a.click();
+				URL.revokeObjectURL(url);
+			}, index * 200);
+		});
 	}, [result]);
 
 	return (
@@ -193,10 +200,12 @@ export const PDFPanel: React.FC = () => {
 			<ConfigPanel operation={state.selectedOperation} config={config} setConfig={setConfig} t={t} />
 
 			{state.error && <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px', fontSize: '12px', color: '#ef4444' }}>⚠️ {state.error}</div>}
-			{result && <div style={{ padding: '10px 12px', background: 'rgba(34,197,94,0.1)', borderRadius: '8px', fontSize: '12px', color: '#22c55e' }}>✅ {t('pdfPanel.ready')} - {result.name} ({formatSize(result.blob.size)})</div>}
+			{result.map((part) => (
+				<div key={part.name} style={{ padding: '10px 12px', background: 'rgba(34,197,94,0.1)', borderRadius: '8px', fontSize: '12px', color: '#22c55e' }}>✅ {t('pdfPanel.ready')} - {part.name} ({formatSize(part.blob.size)})</div>
+			))}
 
 			<div style={{ display: 'flex', gap: '8px' }}>
-				{result ? (
+				{result.length > 0 ? (
 					<button type="button" style={styles.actionBtn} onClick={handleDownload}>⬇️ {t('pdfPanel.buttons.download')}</button>
 				) : (
 					<button type="button" style={{ ...styles.actionBtn, ...(canExecute ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }} onClick={handleExecute} disabled={!canExecute}>

@@ -93,38 +93,32 @@ describe('UserScripts async lifecycle', () => {
 });
 
 describe('shared async lifecycle owners', () => {
-	test('merges initial runtime status without overwriting event-owned fields', () => {
+	test('merges generated service hydration without overwriting event-owned ids', () => {
 		const current: ActiveServiceStorageState = {
 			ready: false,
-			clipboardEnabled: false,
-			hoverZoomEnabled: false,
-			userscriptsEnabled: false,
-			smoothScrollEnabled: true,
-			userScripts: [{ id: 'live-script', enabled: true }],
-			saatScripts: [],
+			enabledById: {
+				'hover-zoom': false,
+				'smooth-scroll': true,
+			},
 		};
 		const initial: ActiveServiceStorageState = {
 			ready: true,
-			clipboardEnabled: true,
-			hoverZoomEnabled: true,
-			userscriptsEnabled: true,
-			smoothScrollEnabled: false,
-			userScripts: [{ id: 'stale-script', enabled: false }],
-			saatScripts: [{ id: 'saat', enabled: true, saatToolId: 'tool' }],
+			enabledById: {
+				'hover-zoom': true,
+				'smooth-scroll': false,
+			},
 		};
 
 		expect(mergeInitialActiveServiceStorageState(
 			current,
 			initial,
-			new Set(['smoothScrollEnabled', 'userScripts']),
+			new Set(['smooth-scroll']),
 		)).toEqual({
 			ready: true,
-			clipboardEnabled: true,
-			hoverZoomEnabled: true,
-			userscriptsEnabled: true,
-			smoothScrollEnabled: true,
-			userScripts: [{ id: 'live-script', enabled: true }],
-			saatScripts: [{ id: 'saat', enabled: true, saatToolId: 'tool' }],
+			enabledById: {
+				'hover-zoom': true,
+				'smooth-scroll': true,
+			},
 		});
 	});
 

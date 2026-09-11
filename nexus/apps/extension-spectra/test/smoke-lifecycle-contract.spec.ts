@@ -42,3 +42,21 @@ describe('SPECTRA smoke lifecycle barriers', () => {
 		));
 	});
 });
+
+
+test('capture-restart observations do not reopen an effectful Popup', () => {
+	const scenario = sourceWindow(
+		"test('restores active capture across worker restart and shares one host with authenticated remote'",
+		"test('cleans active capture on immediate navigation",
+	);
+	expect(scenario).toContain("openExtensionClient('options.html')");
+	expect(scenario).toContain('const recovered = await readCurrentAudioSession(tabId);');
+	const reader = sourceWindow('async function readCurrentAudioSession', 'async function readExtensionSettings');
+	expect(reader).toContain("type: 'spectra.audio.session.current'");
+	expect(reader).toContain("world: 'ISOLATED'");
+	expect(reader).not.toContain('sendFromActionPopup');
+	expect(scenario).toContain('content.generation === audio.data.generation');
+	expect(scenario).toContain('processor?.generation === audio.data.generation');
+	expect(scenario).toContain('data: { generation: captureGeneration, phase:');
+	expect(scenario).toContain('processorStates).toEqual(physicalBeforeRestart.processorStates)');
+});

@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>SPECTRA Options</title>
     <link rel="stylesheet" href="options.css" />
+    <link id="spectra-accessibility-policy" rel="stylesheet" href="accessibility.css" />
   </head>
   <body>
     <div id="app">
@@ -60,13 +61,13 @@
             Custom hotkeys for specific websites. Disabled by default.
           </p>
           <div id="legacy-hotkeys-warning" class="form-warning" role="status" aria-live="polite" hidden></div>
-          
+
           <!-- Add new site -->
           <div class="site-add-row">
             <input type="text" id="site-input" class="site-input" data-i18n-placeholder="opt_site_placeholder" placeholder="Enter domain (e.g. youtube.com)" aria-label="Site domain" />
             <button type="button" id="site-add-btn" class="btn btn-small" data-i18n="opt_site_add_btn">Add</button>
           </div>
-          
+
           <!-- Existing sites selector -->
           <div class="site-selector">
             <label for="site-select" data-i18n="opt_site_select_label">Select site:</label>
@@ -115,6 +116,20 @@
           <button type="button" id="userscripts-enable-btn" class="btn btn-secondary" data-i18n="opt_userscripts_enable">
             Enable in Chrome Settings
           </button>
+        </section>
+
+        <!-- Local diagnostics: explicit export only, never remote telemetry -->
+        <section id="diagnostics-section" class="section">
+          <div class="section-header">
+            <h2>🧪 Local Diagnostics</h2>
+          </div>
+          <p class="section-desc">
+            Export a redacted local JSON snapshot for troubleshooting. It excludes page URLs, titles, storage values, media, remote secrets and tokens, and sends nothing automatically.
+          </p>
+          <button type="button" id="diagnostics-export-btn" class="btn btn-secondary">
+            Export diagnostic JSON
+          </button>
+          <p id="diagnostics-status" class="section-desc" role="status" aria-live="polite"></p>
         </section>
       </main>
     </div>

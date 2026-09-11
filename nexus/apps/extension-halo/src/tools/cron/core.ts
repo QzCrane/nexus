@@ -1,8 +1,12 @@
-// goal: Cron core logic - parse and describe cron expressions
+// goal: Cron adapter over the maintained `cron-parser` engine (R29)
+// rule: the engine owns range/dialect validation and schedule iteration, so
+// ranges are verified and monthly schedules deliver real results instead of a
+// fixed seven-day window. This adapter owns the tool's parts/description shape.
 
+import { CronExpressionParser } from 'cron-parser';
 import type { CronParts, CronPreset } from './types';
 
-// Parse cron expression into parts
+// Parse cron expression into parts, validated by the engine
 export function parseCron(cron: string): CronParts | null {
 	const parts = cron.trim().split(/\s+/);
 	if (parts.length !== 5) return null;
@@ -14,6 +18,12 @@ export function parseCron(cron: string): CronParts | null {
 		|| month === undefined
 		|| dayOfWeek === undefined
 	) {
+		return null;
+	}
+	// The engine rejects out-of-range fields and unsupported syntax.
+	try {
+		CronExpressionParser.parse(cron);
+	} catch {
 		return null;
 	}
 	return {
@@ -103,60 +113,18 @@ function describeDayOfWeek(field: string): string {
 	return DAYS[parseInt(field, 10)] || field;
 }
 
-// Get next N run times
+// Get next N run times from the engine's real schedule iteration
 export function getNextRuns(cron: string, count = 5): Date[] {
-	const parts = parseCron(cron);
-	if (!parts) return [];
-
-	const runs: Date[] = [];
-	const now = new Date();
-	let candidate = new Date(now);
-	candidate.setSeconds(0, 0);
-
-	// Simple simulation - check each minute
-	for (let i = 0; i < 60 * 24 * 7 && runs.length < count; i++) {
-		candidate = new Date(candidate.getTime() + 60000);
-		if (matchesCron(candidate, parts)) {
-			runs.push(new Date(candidate));
+	try {
+		const expression = CronExpressionParser.parse(cron, { currentDate: new Date() });
+		const runs: Date[] = [];
+		for (let index = 0; index < count && expression.hasNext(); index++) {
+			runs.push(expression.next().toDate());
 		}
+		return runs;
+	} catch {
+		return [];
 	}
-
-	return runs;
-}
-
-function matchesCron(date: Date, parts: CronParts): boolean {
-	return matchField(date.getMinutes(), parts.minute) &&
-		matchField(date.getHours(), parts.hour) &&
-		matchField(date.getDate(), parts.dayOfMonth) &&
-		matchField(date.getMonth() + 1, parts.month) &&
-		matchField(date.getDay(), parts.dayOfWeek);
-}
-
-function matchField(value: number, field: string): boolean {
-	if (field === '*') return true;
-	if (field.includes('/')) {
-		const [range, step] = field.split('/');
-		if (step === undefined) return false;
-		const stepNum = parseInt(step, 10);
-		if (!Number.isInteger(stepNum) || stepNum <= 0) return false;
-		if (range === '*') return value % stepNum === 0;
-	}
-	if (field.includes('-')) {
-		const [start, end] = field.split('-').map(Number);
-		if (
-			start === undefined
-			|| end === undefined
-			|| !Number.isFinite(start)
-			|| !Number.isFinite(end)
-		) {
-			return false;
-		}
-		return value >= start && value <= end;
-	}
-	if (field.includes(',')) {
-		return field.split(',').map(Number).includes(value);
-	}
-	return parseInt(field, 10) === value;
 }
 
 // Common presets

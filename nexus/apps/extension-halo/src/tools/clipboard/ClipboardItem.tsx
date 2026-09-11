@@ -25,12 +25,12 @@ export const ClipboardItem: React.FC<ClipboardItemProps> = ({
 	const { t } = useTranslation();
 
 	return (
-		<div 
+		<div
 			style={{
 				...styles.item,
 				...(item.pinned ? styles.pinnedItem : {}),
-				...(isNew ? { 
-					animation: 'flash-green 2s ease-out',
+				...(isNew ? {
+					animation: 'var(--halo-motion-animation, flash-green 2s ease-out)',
 					borderLeft: '3px solid #4CAF50',
 					background: 'rgba(76, 175, 80, 0.08)'
 				} : {})
@@ -53,21 +53,21 @@ export const ClipboardItem: React.FC<ClipboardItemProps> = ({
 				</div>
 				<div style={styles.actions}>
 					<button type="button"
-						style={styles.actionBtn} 
+						style={styles.actionBtn}
 						onClick={() => onPin(item.id)}
 						title={item.pinned ? t('clipboardPanel.unpin') : t('clipboardPanel.pin')}
 					>
 						{item.pinned ? '📍' : '📌'}
 					</button>
 					<button type="button"
-						style={styles.actionBtn} 
+						style={styles.actionBtn}
 						onClick={() => onDelete(item.id)}
 						title={t('clipboardPanel.delete')}
 					>
 						🗑️
 					</button>
 					<button type="button"
-						style={{ ...styles.actionBtn, ...styles.copyBtn }} 
+						style={{ ...styles.actionBtn, ...styles.copyBtn }}
 						onClick={() => onCopy(item.text)}
 					>
 						📋 {t('clipboardPanel.copy')}

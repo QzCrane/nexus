@@ -660,6 +660,7 @@ async function reprojectBadgeForCurrentDocument(tabId: number): Promise<void> {
 }
 
 interface PreparedControlIntent {
+	audioVolume?: ControlApplyAck['audioVolume'];
 	intent: ControlIntent;
 	baseline: ControlSnapshot;
 	ackTarget: MediaTarget | null;
@@ -699,6 +700,7 @@ async function prepareIntent(
 		: await applyChromeFields(intent);
 	let fields: ControlFieldStates = { ...chromeResult.fields };
 	let ackTarget = intent.target;
+	let audioVolume: ControlApplyAck['audioVolume'];
 	let activeMedia = snapshot.activeMedia;
 	let activeVideo = snapshot.activeVideo;
 	if (pageObservation) {
@@ -798,6 +800,7 @@ async function prepareIntent(
 			throw new Error('Content runtime returned a stale control ACK');
 		}
 		ackTarget = response.data.target;
+		audioVolume = response.data.audioVolume;
 		({ activeMedia, activeVideo } = projectControlTarget(
 			snapshot,
 			Object.keys(routedPatch) as ControlCapability[],
@@ -815,7 +818,7 @@ async function prepareIntent(
 		|| baseline.revision !== intent.baseRevision) {
 		throw new Error('Control ACK arrived after the document or revision changed');
 	}
-	return { intent, baseline, ackTarget, activeMedia, activeVideo, fields };
+	return { intent, baseline, ackTarget, activeMedia, activeVideo, fields, ...(audioVolume ? { audioVolume } : {}) };
 }
 
 async function commitControlFields(
@@ -911,7 +914,7 @@ async function executeIntent(
 			sessionScope: controlSessionScopeForSource(intent.source),
 		},
 	);
-	const audioVolume = resolveControlAudioVolume(committed.fields);
+	const audioVolume = prepared.audioVolume ?? resolveControlAudioVolume(committed.fields);
 	return {
 		intentId: intent.intentId,
 		tabId: intent.tabId,
@@ -1461,7 +1464,15 @@ async function executeFieldOperation(
 				// merely to repeat the rejected probe would interrupt visualizer/DSP and
 				// may require a fresh user-activation admission if the owner is Capture.
 				const verdictDomain = normalizeHostname(baseline.origin) ?? '';
-				let scaleSupported = verdictDomain
+				// A hostname verdict is only a discovery hint: a player can mount
+				// after its initial negative probe. Current exact-target readback or
+				// an applied page-native ACK outranks that older shared observation.
+				// The amplified write still needs its own matching actual ACK below.
+				const currentPageWriter = observedFields.volumeBase?.strategy === 'page-native'
+					|| (target !== null && sameMediaTarget(target, baseline.activeMedia)
+						&& baseline.fields.volumeBase?.phase === 'applied'
+						&& baseline.fields.volumeBase.strategy === 'page-native');
+				let scaleSupported = currentPageWriter ? true : verdictDomain
 					? await settingsRepository.getPageNativeScale(verdictDomain)
 					: null;
 				if (scaleSupported === null && verdictDomain) {

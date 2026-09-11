@@ -63,7 +63,7 @@ export const BASE_STYLES = `
     border: 3px solid rgba(255,255,255,0.25);
     border-radius: 50%;
     border-top-color: rgba(100,150,255,0.95);
-    animation: halo-hz-spin 0.7s linear infinite;
+    animation: var(--halo-motion-animation, halo-hz-spin 0.7s linear infinite);
 }
 
 @keyframes halo-hz-spin { to { transform: rotate(360deg); } }

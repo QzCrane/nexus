@@ -1,11 +1,11 @@
 // goal: Archive panel UI - save and manage page snapshots
 
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ArchiveEntry } from './types';
-import { captureCurrentPage, downloadArchive, openInViewer, saveEntryMeta, getStoredEntries, deleteEntry } from './core';
+import { captureCurrentPage, downloadArchive, openInViewer, getStoredEntries, deleteEntry, reconcileArchiveOrphans } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -20,21 +20,36 @@ const formatDate = (ts: number): string => new Date(ts).toLocaleString();
 
 export const ArchivePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [entries, setEntries] = useToolState<ArchiveEntry[]>('archive', []);
+	// The persisted metadata list lives only in core-owned storage; this state
+	// is a mount-scoped view refreshed from every mutation's returned list.
+	const [entries, setEntries] = useState<ArchiveEntry[]>([]);
+	const [loadError, setLoadError] = useState<string | null>(null);
 	const [isCapturing, setIsCapturing] = useState(false);
 	const [lastCaptured, setLastCaptured] = useToolState<ArchiveEntry | null>('archive-last', null);
 
+	useEffect(() => {
+		let disposed = false;
+		void getStoredEntries()
+			.then((loaded) => { if (!disposed) setEntries(loaded); })
+			.catch((error) => { if (!disposed) setLoadError(String(error)); });
+		void reconcileArchiveOrphans().catch((error) => {
+			console.error('[HALO:Archive] Orphan reconciliation failed:', error);
+		});
+		return () => { disposed = true; };
+	}, []);
 
 	const handleCapture = useCallback(async () => {
 		setIsCapturing(true);
-		const entry = await captureCurrentPage();
-		if (entry) {
-			setLastCaptured(entry);
-			await saveEntryMeta(entry);
-			setEntries(await getStoredEntries());
+		try {
+			const entry = await captureCurrentPage();
+			if (entry) {
+				setLastCaptured(entry);
+				setEntries(await getStoredEntries());
+			}
+		} finally {
+			setIsCapturing(false);
 		}
-		setIsCapturing(false);
-	}, [setEntries, setLastCaptured]);
+	}, [setLastCaptured]);
 
 	const handleDownload = useCallback(async () => {
 		if (lastCaptured) await downloadArchive(lastCaptured);
@@ -45,16 +60,23 @@ export const ArchivePanel: React.FC = () => {
 	}, []);
 
 	const handleDelete = useCallback(async (id: string) => {
-		await deleteEntry(id);
-		setEntries(await getStoredEntries());
-		if (lastCaptured?.id === id) setLastCaptured(null);
-	}, [lastCaptured, setLastCaptured, setEntries]);
+		setLoadError(null);
+		try {
+			await deleteEntry(id);
+			setEntries(await getStoredEntries());
+			if (lastCaptured?.id === id) setLastCaptured(null);
+		} catch (error) {
+			setLoadError(String(error));
+		}
+	}, [lastCaptured, setLastCaptured]);
 
 	return (
 		<div style={styles.wrapper}>
 			<button type="button" style={styles.btn} onClick={handleCapture} disabled={isCapturing}>
 				{isCapturing ? '⏳' : '📥'} {isCapturing ? t('archive.capturing') : t('archive.capture')}
 			</button>
+
+			{loadError && <div style={{ color: '#d33', fontSize: '12px', padding: '4px 0' }}>{loadError}</div>}
 
 			{lastCaptured && (
 				<Card variant="default" padding="sm">

@@ -3,7 +3,7 @@
 
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import type { HaloSettings, ToolId } from '../../kernel';
-import { loadSettings, getThemeColors, applyTheme, TOOL_REGISTRY, saveSettings } from '../../kernel';
+import { loadSettings, getThemeColors, applyTheme, TOOL_REGISTRY, saveSettings, isLaunchablePlugin } from '../../kernel';
 import { useModuleManager } from '../../kernel';
 import { useOpenTools } from './hooks/use-open-tools';
 import {
@@ -42,17 +42,12 @@ export const useSidePanelState = () => {
 		[enabledModules],
 	);
 	const isEnabledSnapshot = useCallback(
-		(id: string) => enabledToolIds.has(id),
+		(id: string) => enabledToolIds.has(id) && TOOL_REGISTRY.some((tool) => tool.id === id && isLaunchablePlugin(tool)),
 		[enabledToolIds],
 	);
 	const visibleTools = useMemo(() => {
-		if (modulesLoading) return TOOL_REGISTRY;
-		return TOOL_REGISTRY
-			.filter((tool) => enabledToolIds.has(tool.id))
-			.map(tool => ({
-				...tool,
-				status: tool.status === 'available' ? 'ready' : tool.status
-			}));
+		if (modulesLoading) return TOOL_REGISTRY.filter(isLaunchablePlugin);
+		return TOOL_REGISTRY.filter((tool) => enabledToolIds.has(tool.id) && isLaunchablePlugin(tool));
 	}, [modulesLoading, enabledToolIds]);
 
 	// Settings/theme are independent of module-manager hydration. Load them once
@@ -91,7 +86,7 @@ export const useSidePanelState = () => {
 
 	const handleToolSelect = useCallback(async (toolId: ToolId) => {
 		const tool = TOOL_REGISTRY.find(t => t.id === toolId);
-		if (tool?.status === 'coming') return;
+		if (!tool || !isLaunchablePlugin(tool)) return;
 		if (!tool?.builtIn && !enabledToolIds.has(toolId)) return;
 		await baseToolSelect(toolId);
 	}, [baseToolSelect, enabledToolIds]);

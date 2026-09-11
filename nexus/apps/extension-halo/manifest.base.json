@@ -1,0 +1,62 @@
+{
+  "manifest_version": 3,
+  "name": "HALO - Local Utility SidePanel",
+  "version": "0.6.2",
+  "minimum_chrome_version": "135",
+  "description": "Local-first SidePanel utilities with no ads or telemetry and explicit, user-invoked network tools.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "sidePanel",
+    "contextMenus",
+    "tabs",
+    "declarativeNetRequest"
+  ],
+  "optional_permissions": [
+    "pageCapture",
+    "clipboardRead",
+    "clipboardWrite",
+    "cookies",
+    "downloads",
+    "history",
+    "bookmarks",
+    "tabGroups",
+    "userScripts",
+    "management"
+  ],
+  "optional_host_permissions": [
+    "*://*/*"
+  ],
+  "action": {
+    "default_title": "Open HALO Toolbox",
+    "default_icon": {
+      "16": "icon16.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "icons": {
+    "16": "icon16.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
+  }
+}

@@ -105,19 +105,21 @@ describe('HALO release tooling', () => {
 		expect(engine).not.toContain('chrome.scripting.executeScript({');
 	});
 
-	test('locks content-script ownership to the smallest required frame and lifecycle scope', () => {
+	test('generates only release-admitted content and exact web-accessible resources', () => {
 		const manifest = readJson('../public/manifest.json');
+		const baseManifest = readJson('../manifest.base.json');
 		const contentScripts = manifest.content_scripts as ContentScriptManifestEntry[];
 		const byEntry = new Map(
 			contentScripts.map((entry) => [entry.js?.[0], entry]),
 		);
 
+		expect(baseManifest.web_accessible_resources).toBeUndefined();
 		expect([...byEntry.keys()]).toEqual([
 			'content.js',
-			'content-smooth-scroll.js',
-			'content-frame-tools.js',
-			'content-hover-zoom.js',
 			'content-clipboard.js',
+			'content-hover-zoom.js',
+			'content-frame-tools.js',
+			'content-smooth-scroll.js',
 		]);
 		expect(byEntry.get('content.js')).toMatchObject({
 			run_at: 'document_start',
@@ -135,25 +137,87 @@ describe('HALO release tooling', () => {
 			run_at: 'document_idle',
 			all_frames: false,
 		});
-		expect(byEntry.get('content-clipboard.js')).toMatchObject({
-			run_at: 'document_idle',
-			all_frames: true,
-		});
+		expect(byEntry.get('content-clipboard.js')).toMatchObject({ run_at: 'document_idle', all_frames: true });
+
+		expect(manifest.web_accessible_resources).toEqual([{
+			resources: [
+				'tools/_frame-tools/runtime.js',
+				'tools/_hover-zoom/runtime.js',
+			],
+			matches: ['<all_urls>'],
+			use_dynamic_url: true,
+		}]);
+		const manifestGenerator = readFileSync(
+			new URL('../../../scripts/registry-gen/gen-release-manifest.ts', import.meta.url),
+			'utf8',
+		);
+		expect(manifestGenerator).toContain('release admission owns them');
+		expect(manifestGenerator).not.toContain("'tools/*'");
+		expect(manifestGenerator).not.toContain("'scripts/*'");
 	});
 
-	test('keeps the standard build production-grade and SidePanel lazy loading physical', () => {
+	test('keeps the standard build production-grade, measured, physically release-admitted, and dependency-evidenced', () => {
 		const packageJson = readJson('../package.json');
 		const scripts = packageJson.scripts as Record<string, string>;
 		const sidepanelHtml = readFileSync(
 			new URL('../public/sidepanel.html', import.meta.url),
 			'utf8',
 		);
+		const build = readFileSync(new URL('../build.ts', import.meta.url), 'utf8');
+		const finalizer = readFileSync(
+			new URL('../finalize-release-payload.ts', import.meta.url),
+			'utf8',
+		);
 
-		expect(scripts.build).toBe('bun build.ts');
-		expect(scripts['build:prod']).toBe('bun build.ts');
+		expect(scripts.build).toBe(
+			'bun check-release-source-graph.ts && bun build.ts --analyze && bun finalize-release-payload.ts',
+		);
+		expect(scripts['build:prod']).toBe(
+			'bun check-release-source-graph.ts && bun build.ts --analyze && bun ../../scripts/capture-retained-dependencies.ts halo --keep-analysis && bun ../../scripts/artifact-provenance.ts halo --keep-analysis && bun finalize-release-payload.ts',
+		);
 		expect(scripts['build:dev']).toBe('bun build.ts --dev');
 		expect(scripts.dev).toContain('generate-tool-registry.ts');
+		expect(scripts['build:prod']).toContain('capture-retained-dependencies.ts halo --keep-analysis');
+		expect(scripts['build:prod']).toContain('artifact-provenance.ts halo --keep-analysis');
+		expect(build).toContain('const scriptBuildAnalyses = []');
+		expect(build).toContain('metafile: isAnalyze');
+		expect(build).toContain('inputs: detail.inputs');
+		expect(build).toContain('scriptBuildAnalyses');
 		expect(sidepanelHtml).toContain('<script type="module" src="sidepanel.js"></script>');
+		expect(finalizer).toContain('sidepanelActivationClosures');
+		expect(finalizer).toContain('RELEASE_PANEL_IDS');
+		expect(finalizer).toContain('RELEASE_SCRIPT_RUNTIME_IDS');
+		expect(finalizer).toContain('RELEASE_CONTENT_SCRIPTS');
+		expect(finalizer).toContain('RELEASE_WEB_ACCESSIBLE_RESOURCES');
+		expect(finalizer).toContain('catalog-only implementation entered SidePanel production closures');
+		expect(finalizer).toContain('built manifest content_scripts differ from release admission');
+		expect(finalizer).toContain("rmSync(analysisPath, { force: true })");
+	});
+
+	test('keeps catalog metadata and physical release admission as separate authorities', () => {
+		const admission = readJson('../release-admission.json');
+		const projection = readFileSync(
+			new URL('../src/kernel/registry/_generated-release-admission.ts', import.meta.url),
+			'utf8',
+		);
+		const loader = readFileSync(
+			new URL('../src/components/_generated-tool-loader.ts', import.meta.url),
+			'utf8',
+		);
+		const scriptRuntime = readFileSync(
+			new URL('../public/script-plugin-runtime.json', import.meta.url),
+			'utf8',
+		);
+
+		expect(admission.schemaVersion).toBe(1);
+		expect(projection).toContain('RELEASE_ADMITTED_PLUGIN_IDS');
+		expect(projection).toContain('RELEASE_PANEL_IDS');
+		expect(projection).toContain('RELEASE_CONTENT_SCRIPTS');
+		expect(projection).toContain('RELEASE_WEB_ACCESSIBLE_RESOURCES');
+		expect(loader).toContain("import('../tools/pdf/panel')");
+		expect(loader).toContain("import('../tools/clipboard/panel')");
+		expect(scriptRuntime).toContain('"bilibili-enhancer"');
+		expect(scriptRuntime).toContain('"bilibili-plus"');
 	});
 
 	test('keeps install-only SaaT metadata out of the ordinary service-worker code graph', () => {
@@ -195,6 +259,8 @@ describe('HALO release tooling', () => {
 		expect(compactProjection).not.toContain('sourceFile');
 		expect(compactProjection).not.toContain('sourceAnchor');
 		expect(compactProjection).not.toContain('sourceDetail');
+		expect(compactProjection).toContain('"clipboard"');
+		expect(compactProjection).toContain('"timer"');
 		expect(activeServices).toContain("from '../../kernel/registry/_generated-background-active'");
 		expect(activeServices).not.toContain('BACKGROUND_PROFILES_MAP');
 		expect(categorizedTools).toContain("from '../../../kernel/registry/_generated-background-active'");

@@ -13,7 +13,7 @@ export const cardStyles: Record<string, CSSProperties> = {
 		borderWidth: '1px',
 		borderStyle: 'solid',
 		borderColor: 'var(--halo-border)',
-		transition: 'all 0.2s ease',
+		transition: 'var(--halo-motion-transition, all 0.2s ease)',
 		cursor: 'pointer',
 		position: 'relative',
 		overflow: 'hidden',

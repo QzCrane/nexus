@@ -128,7 +128,7 @@ The catalog defines exactly what executable code fulfills a capability. Verifica
 | `ALG-037` | Baseline warm handoff| lifecycle-orchestration| Remembers owned native fields. | Restore is O(owned). |
 | `ALG-038` | Native fast path | native-control | Direct play/PiP/fullscreen on activation. | One native call, no polling. |
 | `ALG-039` | Three-owner DSP handoff | lifecycle-orchestration| Verified MediaElement WebAudio/Capture candidate actual before switch. | Serialized transition with compensation. |
-| `ALG-040` | Popup observation | lifecycle-orchestration| Foreground event observation. | Released on pagehide. |
+| `ALG-040` | Popup observation | lifecycle-orchestration| One background-minted document token per admitted foreground card port. | Browser port disconnect releases the token, including late acquisition; 15s acquisition deadline. |
 | `ALG-041` | UI actual projection | observation-only | `ControlSnapshot` owns fields. | One render per domain revision. |
 | `ALG-042` | Remote observation | lifecycle-orchestration| Fixed tab observation. | Event-driven snapshot push. |
 | `ALG-043` | Visualizer source reconciliation | lifecycle-orchestration | Trusted Popup + active exact document; Content owns subscriber tokens and Background admits Capture only if page coverage fails. | Bounded lease/tombstone map and bounded release retry; final subscriber retires transient work. |

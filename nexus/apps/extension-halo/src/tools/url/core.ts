@@ -20,10 +20,8 @@ export function decode(input: string): string {
 export function parseURL(input: string): Record<string, string> {
 	try {
 		const url = new URL(input);
-		const params: Record<string, string> = {};
-		url.searchParams.forEach((value, key) => {
-			params[key] = value;
-		});
+		// An ordered sequence preserves repeated names, order, empty keys and values.
+		const params = Array.from(url.searchParams, ([name, value]) => ({ name, value }));
 
 		return {
 			Protocol: url.protocol,

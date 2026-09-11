@@ -34,6 +34,6 @@ export const styles: Record<string, React.CSSProperties> = {
 		fontSize: '12px', color: 'var(--halo-text-muted)',
 	},
 	progress: { flex: 1, height: '4px', borderRadius: '2px', background: 'var(--halo-bg-tertiary)', overflow: 'hidden' },
-	progressBar: { height: '100%', background: 'var(--halo-accent)', transition: 'width 1s linear' },
+	progressBar: { height: '100%', background: 'var(--halo-accent)', transition: 'var(--halo-motion-transition, width 1s linear)' },
 	empty: { padding: '32px', textAlign: 'center', color: 'var(--halo-text-muted)', fontSize: '13px' },
 };

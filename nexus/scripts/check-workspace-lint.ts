@@ -246,31 +246,38 @@ function validateStrictRunnerCommand(
 }
 
 function validatePrivateHookSource(hookSource) {
-	const normalizedHookSource = hookSource.replaceAll('\r\n', '\n');
-	const runCommands = [
-		...normalizedHookSource.matchAll(/^\s*run:\s*(.+?)\s*$/gmu),
-	].map((match) => match[1]);
+	const parsed = Bun.YAML.parse(hookSource) as Record<string, {
+		commands?: Record<string, Record<string, unknown>>;
+		skip?: unknown;
+		only?: unknown;
+	}>;
+	const runCommands = Object.values(parsed ?? {}).flatMap((hook) => (
+		Object.values(hook.commands ?? {}).map((command) => command.run)
+	));
 	const stagedCommand = 'bun scripts/run-strict-biome.ts {staged_files}';
 	if (
+		parsed?.['pre-commit']?.commands?.['biome-check']?.run !== stagedCommand ||
 		runCommands.filter((command) => command === stagedCommand).length !== 1 ||
 		runCommands.some(
 			(command) =>
-				command !== stagedCommand &&
+				typeof command === 'string' && command !== stagedCommand &&
 				/(?:@biomejs\/biome|\bbiome\b)/u.test(command),
 		)
 	) {
 		throw new Error('The staged-file Biome hook must use the zero-diagnostic strict runner');
 	}
-	const repositoryLintBlocks = [
-		...normalizedHookSource.matchAll(
-			/^\s*repository-lint:\s*\n\s*run:\s*(.+?)\s*$/gmu,
-		),
-	];
-	if (
-		repositoryLintBlocks.length !== 1 ||
-		repositoryLintBlocks[0][1] !== 'bun run lint'
-	) {
+	if (parsed?.['pre-push']?.commands?.['repository-lint']?.run !== 'bun run lint') {
 		throw new Error('The pre-push hook must run the complete repository lint owner');
+	}
+	// Parse the hook that actually executes; a matching string under another
+	// lifecycle or a skipped command cannot protect the remote push boundary.
+	const push = parsed?.['pre-push'];
+	const revalidation = push?.commands?.['dependency-revalidation'];
+	const command = 'bun --cwd nexus check:dependency-revalidation';
+	if (push?.skip !== undefined || push?.only !== undefined
+		|| !revalidation || Object.keys(revalidation).length !== 1 || revalidation.run !== command
+		|| Object.values(push.commands ?? {}).filter((entry) => entry.run === command).length !== 1) {
+		throw new Error('The pre-push hook must run the dependency revalidation owner exactly once without filters');
 	}
 }
 

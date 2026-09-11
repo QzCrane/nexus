@@ -1,9 +1,16 @@
+import { generateULID as canonicalULID } from '../uuid/core';
+
 // goal: Random Generator core logic
 
 // Generate cryptographically strong random bytes
 export function getRandomBytes(length: number): Uint8Array {
+	if (!Number.isSafeInteger(length) || length < 0 || length > 16 * 1024 * 1024) {
+		throw new RangeError('Random output must be between zero and 16 MiB');
+	}
 	const arr = new Uint8Array(length);
-	crypto.getRandomValues(arr);
+	for (let offset = 0; offset < arr.length; offset += 65_536) {
+		crypto.getRandomValues(arr.subarray(offset, offset + 65_536));
+	}
 	return arr;
 }
 
@@ -26,10 +33,7 @@ export function generateUUID(): string {
 	return crypto.randomUUID();
 }
 
-// Generate ULID-like (Timestamp + Random)
+// Use the same canonical Crockford Base32 ULID layout as the UUID tool.
 export function generateULID(): string {
-	// Simplified implementation for uniqueness sorting
-	const time = Date.now();
-	const random = generateHex(16);
-	return `${time.toString(36).toUpperCase()}${random.toUpperCase()}`;
+	return canonicalULID();
 }

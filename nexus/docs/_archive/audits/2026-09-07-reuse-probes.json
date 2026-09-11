@@ -1,0 +1,23 @@
+{
+  "scope": "Source snapshot 7230b688; both probed files unchanged in the 46-path comparison from the same-tree integration checkpoint to 93edb5d. No candidate package is installed or tested by this probe.",
+  "markdownFencedCode": {
+    "input": "```js\nconst s = \"**literal**\";\n```",
+    "actual": "<pre><code class=\"language-js\">const s = \"<strong>literal</strong>\";</code></pre>",
+    "invariant": "Fenced code content must not become Markdown strong markup"
+  },
+  "markdownQuote": {
+    "input": "> quote",
+    "actual": "<p>&gt; quote</p>",
+    "invariant": "Common Markdown block quote should not remain an escaped paragraph"
+  },
+  "entityEncode": {
+    "input": "😀",
+    "actual": "&#55357;",
+    "expected": "&#128512;"
+  },
+  "entityDecode": {
+    "input": "&#x1F600;",
+    "actualCodePoint": 62976,
+    "expectedCodePoint": 128512
+  }
+}

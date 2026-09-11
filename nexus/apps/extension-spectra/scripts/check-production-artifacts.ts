@@ -14,7 +14,10 @@ export const SPECTRA_PRODUCTION_BUDGETS = Object.freeze({
 	popupPossibleScript: 152 * 1024,
 	contentRuntimePossibleScript: 177 * 1024,
 	contentVideoEffectsPossibleScript: 12 * 1024,
-	optionsPossibleScript: 40 * 1024,
+	// Reviewed integration cost: strict local diagnostic validation and retired
+	// permission-intent fencing measure 41,392 bytes with Bun 1.4.0. Other
+	// ceilings are unchanged; this is feature admission, not a speed claim.
+	optionsPossibleScript: 41 * 1024,
 	javascriptTotal: 680 * 1024,
 	distTotal: 780 * 1024,
 });

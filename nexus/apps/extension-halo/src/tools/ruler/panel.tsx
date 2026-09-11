@@ -95,7 +95,7 @@ export const RulerPanel: React.FC = () => {
 									border: 'none',
 									background: unit === u ? 'var(--halo-accent)' : 'transparent',
 									color: unit === u ? '#fff' : 'var(--halo-text-muted)',
-									padding: '4px 12px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+									padding: '4px 12px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 								}}
 								onClick={() => setUnit(u)}
 							>

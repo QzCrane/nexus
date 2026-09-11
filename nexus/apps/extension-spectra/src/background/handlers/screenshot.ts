@@ -115,6 +115,20 @@ async function captureAndSave(
 	}
 }
 
+async function captureAndSaveWithGrantedPermission(
+	tab: chrome.tabs.Tab,
+	payload: ScreenshotCapturePayload,
+	verifyTarget: () => Promise<void>,
+): Promise<ScreenshotResult> {
+	const granted = await chrome.permissions.contains({ permissions: ['downloads'] });
+	if (!granted) {
+		throw new Error(
+			'Screenshot saving needs Downloads permission. Grant it from the Popup Screenshot button or while saving a Screenshot hotkey in Options.',
+		);
+	}
+	return captureAndSave(tab, payload, verifyTarget);
+}
+
 export function registerScreenshotHandler(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (!message || typeof message !== 'object') return false;
@@ -160,7 +174,7 @@ export function registerScreenshotHandler(): void {
 					: response.error.message);
 			}
 		};
-		void captureAndSave(tab, message.payload, verifyTarget).then(
+		void captureAndSaveWithGrantedPermission(tab, message.payload, verifyTarget).then(
 			(result) => sendResponse(rpcSuccess(result)),
 			(error) => sendResponse(rpcFailure(
 				'screenshot_capture_failed',
@@ -172,4 +186,7 @@ export function registerScreenshotHandler(): void {
 	});
 }
 
-export const screenshotHandlerTestApi = { captureAndSave };
+export const screenshotHandlerTestApi = {
+	captureAndSave,
+	captureAndSaveWithGrantedPermission,
+};

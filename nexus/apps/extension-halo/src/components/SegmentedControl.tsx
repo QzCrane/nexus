@@ -31,7 +31,7 @@ const baseStyles: Record<string, React.CSSProperties> = {
 		color: 'var(--halo-text-muted)',
 		cursor: 'pointer',
 		fontWeight: 500,
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 		whiteSpace: 'nowrap',
 	},
 	buttonActive: {

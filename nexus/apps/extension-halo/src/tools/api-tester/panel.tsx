@@ -1,7 +1,7 @@
 // goal: API Tester panel UI - send HTTP requests and view responses
 
 import type React from 'react';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import type { HttpMethod, RequestConfig, ResponseData, Header } from './types';
 import { executeRequest, formatBody, formatSize, createHeader, normalizeHeaders, DEFAULT_CONFIG } from './core';
@@ -13,6 +13,8 @@ const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 
 
 export const ApiTesterPanel: React.FC = () => {
 	const { t } = useTranslation();
+	// Preserve saved requests across browser restarts. A future secret vault
+	// requires an explicit retention choice, not an automatic storage-area move.
 	const [config, setConfig] = useToolState<RequestConfig>('api-tester-config', { ...DEFAULT_CONFIG });
 	const [response, setResponse] = useToolState<ResponseData | null>('api-tester-res', null);
 	const [loading, setLoading] = useState(false);
@@ -24,15 +26,21 @@ export const ApiTesterPanel: React.FC = () => {
 		if (headers !== config.headers) setConfig({ ...config, headers });
 	}, [config, setConfig]);
 
+	// An in-flight request is cancelled when the panel is disposed.
+	const abortRef = useRef<AbortController | null>(null);
+	useEffect(() => () => abortRef.current?.abort(), []);
+
 	// Send request
 	const handleSend = useCallback(async () => {
 		if (!config.url.trim()) return;
+		const controller = new AbortController();
+		abortRef.current = controller;
 		setLoading(true);
 		setError('');
 		setResponse(null);
 		try {
 			const url = config.url.startsWith('http') ? config.url : `https://${config.url}`;
-			const res = await executeRequest({ ...config, url });
+			const res = await executeRequest({ ...config, url }, { signal: controller.signal });
 			setResponse(res);
 		} catch (err) {
 			setError(err instanceof Error ? err.message : t('apiTester.error', { defaultValue: 'Request failed' }));

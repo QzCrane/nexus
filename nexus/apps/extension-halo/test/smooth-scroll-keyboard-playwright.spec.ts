@@ -1,3 +1,6 @@
+import { extensionWorker } from './helpers/extension-worker';
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
+const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -249,10 +252,7 @@ async function repeatArrowStream(
 }
 
 async function enableSmoothScroll(context: BrowserContext): Promise<string> {
-	let [serviceWorker] = context.serviceWorkers();
-	if (!serviceWorker) {
-		serviceWorker = await context.waitForEvent('serviceworker', { timeout: 10_000 });
-	}
+	const serviceWorker = await extensionWorker(context);
 	const extensionId = new URL(serviceWorker.url()).hostname;
 	if (!extensionId) throw new Error(`HALO service worker has no extension id: ${serviceWorker.url()}`);
 	const grantedOrigins = await serviceWorker.evaluate(async () => {
@@ -308,10 +308,11 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 			const fixture = await startFixtureServer();
 			server = fixture.server;
 			context = await chromium.launchPersistentContext(profilePath, {
-				channel: 'chromium',
+				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 				headless: true,
 				viewport: { width: 1_100, height: 700 },
 				args: [
+					...browserReplayPolicy(process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(), EXPLICIT_CHROME, process.platform).args,
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],

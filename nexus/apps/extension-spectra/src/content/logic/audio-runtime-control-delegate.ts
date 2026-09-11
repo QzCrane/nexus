@@ -2,6 +2,8 @@
 
 import {
 	resolveAudioVolume,
+	compileEffectiveVolume,
+	resolveAudioVolumeState,
 	requiresAudioProcessor,
 	type ControlActualContext,
 	type ControlDirectField,
@@ -213,6 +215,13 @@ export function createAudioRuntimeControlDelegate(
 	return {
 		apply,
 		read,
+		readAudioVolume(volumeBase, muted) {
+			const volume = compileEffectiveVolume(volumeBase, resolveAudioVolume(state.appliedConfig).boost);
+			return {
+				effectiveVolume: volume,
+				volumeState: resolveAudioVolumeState({ volume, muted, actualMode: state.actualMode, phase: state.phase }),
+			};
+		},
 		synchronizeNative,
 		...(fullscreenHandoff
 			? { runFullscreenTransition: fullscreenHandoff.run.bind(fullscreenHandoff) }

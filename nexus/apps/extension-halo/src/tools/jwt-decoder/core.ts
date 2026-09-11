@@ -2,13 +2,7 @@
 
 import type { JwtParts } from './types';
 
-// Base64URL decode
-function base64UrlDecode(str: string): string {
-	const base64 = str.replace(/-/g, '+').replace(/_/g, '/');
-	const pad = base64.length % 4;
-	const padded = pad ? base64 + '='.repeat(4 - pad) : base64;
-	return atob(padded);
-}
+import { decodeJwt as decodePayload, decodeProtectedHeader } from 'jose';
 
 // Decode JWT
 export function decodeJwt(token: string): JwtParts | null {
@@ -18,15 +12,17 @@ export function decodeJwt(token: string): JwtParts | null {
 		const [headerPart, payloadPart, signature = ''] = parts;
 		if (headerPart === undefined || payloadPart === undefined) return null;
 
-		const header = JSON.parse(base64UrlDecode(headerPart));
-		const payload = JSON.parse(base64UrlDecode(payloadPart));
+		const header = decodeProtectedHeader(token.trim());
+		const payload = decodePayload(token.trim());
+		if (typeof header.alg !== 'string' || !header.alg) return null;
 
 		// Check expiration
 		let isExpired = false;
 		let expiresAt: Date | undefined;
+		if (payload.exp !== undefined && (typeof payload.exp !== 'number' || !Number.isFinite(payload.exp) || !Number.isFinite(new Date(payload.exp * 1000).getTime()))) return null;
 		if (typeof payload.exp === 'number') {
 			expiresAt = new Date(payload.exp * 1000);
-			isExpired = expiresAt < new Date();
+			isExpired = expiresAt <= new Date();
 		}
 
 		return { header, payload, signature, isExpired, expiresAt };

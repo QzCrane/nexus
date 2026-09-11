@@ -25,7 +25,7 @@ export const editorStyles: Record<string, CSSProperties> = {
 		color: TEXT,
 		fontSize: '13px',
 		outline: 'none',
-		transition: 'border-color 0.15s ease',
+		transition: 'var(--halo-motion-transition, border-color 0.15s ease)',
 	},
 	inputFocus: {
 		borderColor: ACCENT,
@@ -39,7 +39,7 @@ export const editorStyles: Record<string, CSSProperties> = {
 		color: TEXT,
 		fontSize: '13px',
 		outline: 'none',
-		transition: 'border-color 0.15s ease',
+		transition: 'var(--halo-motion-transition, border-color 0.15s ease)',
 		minHeight: '80px',
 		resize: 'vertical',
 		fontFamily: 'Monaco, Consolas, monospace',

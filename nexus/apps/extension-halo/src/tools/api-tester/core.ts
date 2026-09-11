@@ -2,12 +2,20 @@
 
 import type { RequestConfig, ResponseData, Header, SavedRequest } from './types';
 import { isPrivateHost } from '../../kernel/utils/ssrf-guard';
+import { boundedFetchSignal, readBodyCapped, DEFAULT_FETCH_MAX_BYTES, DEFAULT_FETCH_TIMEOUT_MS } from '../../kernel/utils/fetch-budget';
 
 const HISTORY_KEY = 'halo_api_history';
 const MAX_HISTORY = 20;
 
-/** Execute HTTP request */
-export async function executeRequest(config: RequestConfig): Promise<ResponseData> {
+export interface ExecuteRequestOptions {
+	/** Cancel the in-flight request when the owning surface is disposed. */
+	signal?: AbortSignal;
+	timeoutMs?: number;
+	maxBytes?: number;
+}
+
+/** Execute HTTP request with bounded time and response bytes */
+export async function executeRequest(config: RequestConfig, options: ExecuteRequestOptions = {}): Promise<ResponseData> {
 	const start = performance.now();
 	const headers: Record<string, string> = {};
 	config.headers.filter((h) => h.enabled && h.key).forEach((h) => { headers[h.key] = h.value; });
@@ -53,8 +61,12 @@ export async function executeRequest(config: RequestConfig): Promise<ResponseDat
 		};
 	}
 
-	const res = await fetch(config.url, init);
-	const body = await res.text();
+	const res = await fetch(config.url, {
+		...init,
+		signal: boundedFetchSignal({ signal: options.signal, timeoutMs: options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS }),
+	});
+	const bytes = await readBodyCapped(res, options.maxBytes ?? DEFAULT_FETCH_MAX_BYTES);
+	const body = new TextDecoder().decode(bytes);
 	const time = Math.round(performance.now() - start);
 
 	// Parse response headers
@@ -67,7 +79,7 @@ export async function executeRequest(config: RequestConfig): Promise<ResponseDat
 		headers: resHeaders,
 		body,
 		time,
-		size: new Blob([body]).size,
+		size: bytes.byteLength,
 	};
 }
 

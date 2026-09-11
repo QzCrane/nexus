@@ -2,6 +2,7 @@
 // eff: Direct re-export of PLUGIN_REGISTRY with status enrichment
 
 import type { PluginMeta } from '../core/tool-registry-types';
+import { normalizeReleaseStatus } from './release-admission';
 import { PLUGIN_REGISTRY, type PluginMeta as GeneratedPluginMeta } from './_generated';
 
 // Bundled-module enablement status. No packaged bytes are installed or removed.
@@ -27,7 +28,7 @@ export interface ModuleManagerState {
 function enrichWithStatus(plugin: GeneratedPluginMeta): PluginMeta {
 	return {
 		...plugin,
-		status: plugin.builtIn ? 'ready' : 'available',
+		status: normalizeReleaseStatus(plugin.status),
 	};
 }
 

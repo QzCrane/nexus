@@ -13,7 +13,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	item: {
 		display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 12px',
 		background: 'var(--halo-bg-secondary)', borderRadius: '8px',
-		cursor: 'pointer', transition: 'background 0.15s',
+		cursor: 'pointer', transition: 'var(--halo-motion-transition, background 0.15s)',
 	},
 	favicon: { width: '20px', height: '20px', borderRadius: '4px', flexShrink: 0 },
 	info: { flex: 1, minWidth: 0, overflow: 'hidden' },
@@ -37,7 +37,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	tabs: { display: 'flex', gap: '4px' },
 	tab: {
 		flex: 1, padding: '8px', textAlign: 'center', borderRadius: '6px', fontSize: '11px', fontWeight: 600,
-		cursor: 'pointer', border: 'none', transition: 'all 0.15s',
+		cursor: 'pointer', border: 'none', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	active: { background: 'var(--halo-accent)', color: '#fff' },
 	inactive: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)' },

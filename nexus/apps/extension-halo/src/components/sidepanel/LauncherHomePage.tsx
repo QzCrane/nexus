@@ -42,9 +42,9 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	const [draggingCat, setDraggingCat] = useState<string | null>(null);
 	const [tempCats, setTempCats] = useState<Record<string, ToolMeta[]> | null>(null);
 	const [tempCatOrder, setTempCatOrder] = useState<string[] | null>(null);
-	
+
 	useSmoothWheel(scrollRef, 'y');
-	
+
 	const SAFE_DEFAULTS = { spacing: 12, iconSize: 24 };
 	const rawSpacing = settings?.spacing;
 	const legacyCompactMode = settings !== null
@@ -53,7 +53,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 	const spacing = typeof rawSpacing === 'number'
 		? rawSpacing
 		: legacyCompactMode ? 4 : SAFE_DEFAULTS.spacing;
-	
+
 	const rawIconSize: unknown = settings?.iconSize;
 	let iconSize = typeof rawIconSize === 'number' ? rawIconSize : SAFE_DEFAULTS.iconSize;
 	if (typeof rawIconSize === 'string') {
@@ -120,7 +120,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 		if (tempCatOrder) onReorderCategories(tempCatOrder);
 		setDraggingCat(null); setTempCatOrder(null);
 	};
-	
+
 	const minColWidth = Math.max(64, iconSize + 48);
 
 	return (
@@ -134,24 +134,24 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 				{catOrder.map(cat => {
 					const tools = categorizedTools[cat];
 					if (!tools || tools.length === 0) return null;
-					
+
 					const isActiveCat = cat === 'active';
 					const isScriptsCat = cat === 'scripts';
 					const isSystemCat = cat === 'system';
 					const isSpecialCat = isActiveCat || isScriptsCat || isSystemCat;
 					const colors = SPECIAL_CATEGORY_COLORS[cat as keyof typeof SPECIAL_CATEGORY_COLORS];
 					const dotColor = colors && 'dot' in colors ? colors.dot : undefined;
-					
+
 					return (
 						<div key={cat} style={{ ...commonStyles.categorySection, gap: `${Math.max(4, spacing / 2)}px` }}>
 						<button
 							type="button"
 							draggable onDragStart={(e) => onCatDragStart(e, cat)} onDragEnter={() => onCatDragEnter(cat)} onDragOver={(e) => e.preventDefault()} onDrop={onCatDrop}
-							style={{ 
+							style={{
 								...commonStyles.categoryTitle,
-								display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
-								cursor: 'pointer', padding: '4px', 
-								borderLeft: isSpecialCat && colors ? `3px solid ${colors.border}` : 'none', 
+								display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+								cursor: 'pointer', padding: '4px',
+								borderLeft: isSpecialCat && colors ? `3px solid ${colors.border}` : 'none',
 								background: isSpecialCat && colors ? colors.bg : 'transparent',
 								width: '100%', borderTop: 'none', borderRight: 'none', borderBottom: 'none',
 								color: 'inherit', textAlign: 'left',
@@ -159,7 +159,7 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 							onClick={() => toggleCategory(cat)}
 						>
 							<span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-								<span style={{ transform: collapsedCategories[cat] ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'transform 0.2s', fontSize: '10px', opacity: 0.6 }}>▼</span>
+								<span style={{ transform: collapsedCategories[cat] ? 'rotate(-90deg)' : 'rotate(0deg)', transition: 'var(--halo-motion-transition, transform 0.2s)', fontSize: '10px', opacity: 0.6 }}>▼</span>
 								<span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
 									{isSpecialCat && dotColor && <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: dotColor, boxShadow: `0 0 6px ${dotColor}` }}></span>}
 									<span style={{ color: isSpecialCat && colors ? colors.text : 'inherit', fontWeight: isSpecialCat ? 700 : 600 }}>{t(`categories.${cat}`)}</span>
@@ -173,15 +173,15 @@ export const LauncherHomePage: React.FC<LauncherHomePageProps> = ({
 										const isActiveService = activeServices.has(tool.id);
 										const isBackgroundCapable = backgroundToolIds.has(tool.id);
 										const serviceState = isActiveService ? 'active' : (isBackgroundCapable ? 'inactive' : undefined);
-										
+
 										return (
-											<LauncherToolItem 
+											<LauncherToolItem
 												key={tool.id} tool={tool} settings={settings} iconSize={iconSize} spacing={spacing}
 												showLabels={settings?.showToolLabels ?? true} draggingId={draggingId} onSelect={onSelectTool}
 												onTogglePin={onTogglePin} onDragStart={onDragStart}
 												onDragOver={(e) => { e.preventDefault(); onDragEnter(cat, tool.id); }}
 												onDrop={(e) => onDrop(e, cat)}
-												isRunning={tool.pluginType !== 'system' && openToolIds.has(tool.id as ToolId)} 
+												isRunning={tool.pluginType !== 'system' && openToolIds.has(tool.id as ToolId)}
 												serviceState={serviceState} onEditScript={onEditScript}
 											/>
 										);

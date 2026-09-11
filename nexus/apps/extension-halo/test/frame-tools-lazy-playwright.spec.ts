@@ -1,3 +1,6 @@
+import { extensionWorker } from './helpers/extension-worker';
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
+const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -78,12 +81,6 @@ async function closeServer(server: Server | null): Promise<void> {
 	});
 }
 
-async function extensionWorker(context: BrowserContext): Promise<Worker> {
-	const existing = context.serviceWorkers()[0];
-	if (existing) return existing;
-	return context.waitForEvent('serviceworker', { timeout: 10_000 });
-}
-
 async function sendFrameTool(worker: Worker, type: string): Promise<FrameToolResponse> {
 	return worker.evaluate(async (messageType) => {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -113,10 +110,11 @@ test.describe('HALO lazy frame tools in Chromium', () => {
 			const fixture = await startFixtureServer();
 			server = fixture.server;
 			context = await chromium.launchPersistentContext(profilePath, {
-				channel: 'chromium',
+				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 				headless: true,
 				viewport: { width: 1_000, height: 700 },
 				args: [
+					...browserReplayPolicy(process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(), EXPLICIT_CHROME, process.platform).args,
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],

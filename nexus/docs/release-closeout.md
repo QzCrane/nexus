@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: repository-release-closeout
-last_reviewed: 2026-08-13
+last_reviewed: 2026-09-06
 ---
 
 # Release closeout authority
@@ -18,6 +18,10 @@ Ubuntu or Windows runner parity is additionally required only when the changed m
 
 GitHub-hosted jobs are an independent replay surface. `runner_id=0`, empty steps, and a billing/spending-limit annotation mean `INFRA_UNAVAILABLE`; they are neither product failure nor product success. The closeout policy deliberately does not make paid runner allocation the repository trust root.
 
+## Policy identity
+
+The production policy reader verifies the digest-pinned Bun image against the current `BUN_VERSION` exported by [`../scripts/toolchain-versions.ts`](../scripts/toolchain-versions.ts), not a second hard-coded version. That source is part of the receipt tool-hash closure. The current policy and stale/unpinned image counterexamples are tested through the same reader invoked by record and merge; passing receipt-shape fixtures alone does not validate the executable entrypoint. This changes no attempt, platform, artifact or promotion requirement.
+
 ## Exact-head evidence
 
 Before recording evidence, the candidate is normalized to one squash-equivalent commit whose sole parent is the exact remote `main` base. After that candidate is pushed, first record the second-OS tooling lane from the exact committed tree. This lane extracts the repository-root `git archive HEAD` inside a digest-pinned Linux Bun image, performs a frozen install with Playwright/Puppeteer browser downloads explicitly disabled, and reruns the Git-independent platform-contract unit suite plus toolchain/governance/generator/archive tests without claiming that the extension product itself runs on Ubuntu. The index-aware `check-platform-contract.ts` owner runs on the Windows Git checkout before push; it is intentionally not invoked inside a source archive, which has neither `.git` nor an index. Browser installation and behavior remain owned by the Windows installed-Chromium release lanes. Platform and attempt records use exact-head-qualified filenames and exclusive creation. A valid existing exact slot is a semantic idempotent success; invalid or different content fails closed instead of overwriting history.
@@ -25,6 +29,23 @@ Before recording evidence, the candidate is normalized to one squash-equivalent 
 ```powershell
 bun scripts/closeout-evidence.ts platform-record
 ```
+
+When the local Linux container host is unavailable, the existing Cross-platform
+quality workflow can run this same command on its Docker-enabled Ubuntu host:
+dispatch the candidate ref with `closeout-platform=true`, then download the
+`closeout-platform-<head>` artifact into `nexus/artifacts/`. The workflow checks
+out the exact dispatched commit and records the same digest-pinned image, source
+archive and policy lanes. Other quality jobs are skipped for this explicit
+receipt-only dispatch; ordinary PR quality remains unchanged. The verifier still
+requires the receipt's head, tree, policy and tool digests to match locally.
+No temporary execution branch, source-patch transport or alternative receipt
+format is needed.
+
+Product lanes may select an already-installed Chrome using
+`NEXUS_CHROME_EXECUTABLE`; the closeout host identity fingerprints that same
+executable for both drivers. Without an explicit path, each driver's normal
+installed-browser resolution remains authoritative. A missing executable fails;
+unused browser-cache contents never stand in for the browser actually exercised.
 
 Then, when the PR base is the current remote `main`, record two complete Windows installed-Chromium attempts:
 
@@ -73,3 +94,48 @@ Every branch must end in exactly one semantic state before deletion:
 4. experiment discarded with no unique retained product work.
 
 Branch count is not product backlog. A ref already contained by `main`, a historical PR head, or a transport-only branch is cleanup work, not another merge candidate.
+
+## Docker inspection compatibility
+
+The image lock is still a repository/version plus an immutable registry digest.
+The Docker identity owner reads the standard JSON array from `docker image
+inspect`, requires exactly one Linux image with a valid local image ID, and
+matches the exact `oven/bun` repository digest. It does not accept a substring,
+an unrelated repository sharing the same text, malformed output, or a different
+OS. Existing platform receipts are rechecked at this same identity boundary.
+
+A real hosted replay on Docker 28.0.4 exposed that `join .RepoDigests` in a Go
+template can reject the engine's `[]interface{}` value even after a successful
+pull. Re-pulling cannot repair a formatter failure. The JSON reader avoids that
+formatter dependency; bounded command deadlines and inspection stderr preserve
+the actual failure instead of reporting every inspection error as a missing
+image. The pinned image, two product attempts, exact commit/tree, artifact hashes,
+and atomic promotion requirements are unchanged.
+
+
+## Git-free immutable source verification
+
+The locked Bun image verifies a `git archive` snapshot, not a repository clone;
+neither Git nor `.git` is part of that environment. Toolchain reference discovery
+therefore scans the source filesystem in archive mode, including hidden workflow
+and skill owners, with the same current-file predicate used for a Git checkout.
+Installed dependencies, build output and historical archives are not current
+source authority. Symlinks are rejected rather than followed outside the source.
+A real checkout still requires a successful Git index read: missing Git or an
+index failure never silently becomes an archive-mode pass. The scanner and
+reference checker are included in the receipt's tool hashes. This changes no
+platform lane, pinned image or required release attempt.
+
+
+## Platform-complete runtime checks
+
+Package and TypeScript-config classification normalizes the logical filename
+before filtering. Filesystem I/O still uses the original native path. The quality
+workflow executes the governance, toolchain and dependency checks on Windows as
+well as Linux, not only the product build matrix. Release commands invoke the
+installed Bun whose exact version each release owner validates; they do not
+resolve a second runtime through an online package-execution step.
+
+The dated audit is retained in `_archive/audits/2026-09-06-7230b68.json`.
+`../remediation-status.json` tracks implementation and evidence separately;
+neither an audit finding nor a focused unit pass is a release receipt.

@@ -22,7 +22,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		resize: 'vertical',
 		lineHeight: 1.6,
 		outline: 'none',
-		transition: 'border-color 0.2s, box-shadow 0.2s',
+		transition: 'var(--halo-motion-transition, border-color 0.2s, box-shadow 0.2s)',
 	},
 	errorArea: {
 		borderColor: '#ef4444',
@@ -42,7 +42,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		fontSize: '11px',
 		fontWeight: 500,
 		cursor: 'pointer',
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 		display: 'flex',
 		alignItems: 'center',
 		gap: '6px',
@@ -103,6 +103,6 @@ export const styles: Record<string, React.CSSProperties> = {
 		color: '#fff',
 		zIndex: 1000,
 		boxShadow: '0 4px 16px rgba(0,0,0,0.3)',
-		animation: 'fadeInUp 0.3s ease-out',
+		animation: 'var(--halo-motion-animation, fadeInUp 0.3s ease-out)',
 	},
 };

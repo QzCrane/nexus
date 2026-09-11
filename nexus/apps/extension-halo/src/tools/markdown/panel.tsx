@@ -1,7 +1,7 @@
 // goal: Markdown panel UI - split view editor with live preview
 
 import type React from 'react';
-import { useMemo, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import { parseMarkdown, getPreviewStyles } from './core';
 import { styles } from './panel.styles';
@@ -43,8 +43,15 @@ export const MarkdownPanel: React.FC = () => {
 	const [viewMode, setViewMode] = useToolState<ViewMode>('markdown-view', 'split');
 
 
-	// Parse markdown to HTML
-	const html = useMemo(() => parseMarkdown(input), [input]);
+	// Parse markdown to sanitized HTML (async: the sanitizing pass is DOM-bound)
+	const [html, setHtml] = useState('');
+	useEffect(() => {
+		let alive = true;
+		void parseMarkdown(input)
+			.then((rendered) => { if (alive) setHtml(rendered); })
+			.catch((renderError) => { if (alive) setHtml(`<p class="md-error">${String(renderError)}</p>`); });
+		return () => { alive = false; };
+	}, [input]);
 	const previewStyles = useMemo(() => getPreviewStyles(), []);
 
 	// Copy HTML
@@ -88,7 +95,7 @@ export const MarkdownPanel: React.FC = () => {
 				{viewMode !== 'edit' && (
 					<div style={styles.preview}>
 						<style>{previewStyles}</style>
-						{/* biome-ignore lint/security/noDangerouslySetInnerHtml: parseMarkdown escapes all source text and emits only validated, attribute-escaped markup; test/markdown.spec.ts owns the hostile-input boundary. */}
+						{/* biome-ignore lint/security/noDangerouslySetInnerHtml: the rendered string is DOMPurify output (R11/R12); the sanitizer is the hostile-input boundary and its semantics are verified in the browser lane. */}
 						<div dangerouslySetInnerHTML={{ __html: html }} />
 					</div>
 				)}

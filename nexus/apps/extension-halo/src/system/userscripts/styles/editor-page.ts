@@ -11,7 +11,7 @@ export const pageStyles: Record<string, CSSProperties> = {
 		background: 'var(--halo-bg)',
 		overflow: 'hidden',
 		// Slide-in animation from right
-		animation: 'slideInFromRight 0.28s cubic-bezier(0.4, 0, 0.2, 1)',
+		animation: 'var(--halo-motion-animation, slideInFromRight 0.28s cubic-bezier(0.4, 0, 0.2, 1))',
 	},
 	header: {
 		display: 'flex',
@@ -34,7 +34,7 @@ export const pageStyles: Record<string, CSSProperties> = {
 		color: 'var(--halo-text)',
 		fontSize: '14px',
 		cursor: 'pointer',
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 		flexShrink: 0,
 	},
 	title: {
@@ -172,7 +172,7 @@ export const pageStyles: Record<string, CSSProperties> = {
 		fontSize: '12px',
 		fontWeight: 600,
 		cursor: 'pointer',
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 		display: 'flex',
 		alignItems: 'center',
 		gap: '4px',

@@ -14,7 +14,7 @@ export interface PomodoroState {
 	/** Remaining whole seconds committed while paused or at a phase boundary. */
 	remaining: number;
 	/** Absolute wall-clock deadline while running; absent on old state and while paused. */
-	endsAt?: number;
+	endsAt?: number | null;
 	isRunning: boolean;
 	sessionsCompleted: number;
 }

@@ -1,3 +1,6 @@
+import { extensionWorker } from './helpers/extension-worker';
+import { browserReplayPolicy } from '../../../scripts/browser-replay';
+const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -441,17 +444,17 @@ test.describe('HALO smooth scroll in Chromium', () => {
 		try {
 			({ server, url: fixtureUrl } = await startFixtureServer());
 			context = await chromium.launchPersistentContext(profilePath, {
-				channel: 'chromium',
+				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 				headless: true,
 				viewport: { width: 1_100, height: 700 },
 				args: [
+					...browserReplayPolicy(process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(), EXPLICIT_CHROME, process.platform).args,
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],
 			});
 
-			const background = context.serviceWorkers()[0] ??
-				await context.waitForEvent('serviceworker', { timeout: 10_000 });
+			const background = await extensionWorker(context);
 			const extensionId = new URL(background.url()).host;
 			const sidepanel = await context.newPage();
 			const sidepanelErrors: string[] = [];

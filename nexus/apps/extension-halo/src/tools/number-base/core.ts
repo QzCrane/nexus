@@ -4,42 +4,40 @@ import type { Base, BaseConvertResult } from './types';
 
 // Convert from any base to all bases
 export function convertBase(input: string, fromBase: Base): BaseConvertResult | null {
-	try {
-		// Parse to decimal first
-		const decimal = parseInt(input, fromBase);
-		if (Number.isNaN(decimal)) return null;
-
-		return {
-			binary: decimal.toString(2),
-			octal: decimal.toString(8),
-			decimal: decimal.toString(10),
-			hex: decimal.toString(16).toUpperCase(),
-		};
-	} catch {
-		return null;
-	}
-}
-
-// Validate input for a specific base
-export function isValidForBase(input: string, base: Base): boolean {
-	if (!input) return false;
-	const patterns: Record<Base, RegExp> = {
-		2: /^[01]+$/,
-		8: /^[0-7]+$/,
-		10: /^-?\d+$/,
-		16: /^[0-9A-Fa-f]+$/,
+	if (!isValidForBase(input, fromBase)) return null;
+	const text = input.trim();
+	const negative = text.startsWith('-');
+	const unsigned = text.replace(/^[+-]/u, '');
+	const prefix = { 2: '0b', 8: '0o', 10: '', 16: '0x' }[fromBase];
+	const digits = unsigned.replace(fromBase === 2 ? /^0b/iu : fromBase === 8 ? /^0o/iu : fromBase === 16 ? /^0x/iu : /$^/u, '');
+	const value = BigInt(prefix + digits) * (negative ? -1n : 1n);
+	return {
+		binary: value.toString(2), octal: value.toString(8),
+		decimal: value.toString(10), hex: value.toString(16).toUpperCase(),
 	};
-	return patterns[base].test(input);
 }
 
-// Format with grouping (for readability)
+// A finite interactive input contract avoids unbounded BigInt parsing work.
+export function isValidForBase(input: string, base: Base): boolean {
+	if (input.length > 65_536) return false;
+	const patterns: Record<Base, RegExp> = {
+		2: /^[+-]?(?:0b)?[01]+$/iu,
+		8: /^[+-]?(?:0o)?[0-7]+$/iu,
+		10: /^[+-]?\d+$/u,
+		16: /^[+-]?(?:0x)?[0-9a-f]+$/iu,
+	};
+	return patterns[base]?.test(input.trim()) ?? false;
+}
+
 export function formatWithGrouping(value: string, groupSize: number): string {
-	const reversed = value.split('').reverse();
+	if (!Number.isSafeInteger(groupSize) || groupSize < 1) throw new RangeError('Invalid grouping size');
+	const sign = /^[+-]/u.test(value) ? value.charAt(0) : '';
+	const digits = value.slice(sign.length);
 	const groups: string[] = [];
-	for (let i = 0; i < reversed.length; i += groupSize) {
-		groups.push(reversed.slice(i, i + groupSize).reverse().join(''));
+	for (let end = digits.length; end > 0; end -= groupSize) {
+		groups.push(digits.slice(Math.max(0, end - groupSize), end));
 	}
-	return groups.reverse().join(' ');
+	return sign + groups.reverse().join(' ');
 }
 
 // Base labels

@@ -1,9 +1,15 @@
-// goal: Code Formatter core logic - format various code types (no external deps)
+// goal: Code Formatter adapter (R03 jsonc/lossless JSON, R06 sql-formatter,
+// R09 CSSO; js/html formatting and minify remain glue until R07/R08 admission)
+// rule: generic engines own the algorithms they are admitted for; this adapter
+// owns option plumbing, failure reporting, and the input-original contract.
+// Heavy engines load on demand so the panel's activation closure stays inside
+// its production budget.
 
 import type { CodeLanguage, FormatConfig } from './types';
+import { parse as losslessParse, stringify as losslessStringify } from 'lossless-json';
 
 // Main format function
-export function formatCode(code: string, config: FormatConfig): string {
+export async function formatCode(code: string, config: FormatConfig): Promise<string> {
 	const { language, indentSize, useTabs } = config;
 	const indent = useTabs ? '\t' : ' '.repeat(indentSize);
 
@@ -24,11 +30,11 @@ export function formatCode(code: string, config: FormatConfig): string {
 	}
 }
 
-// JSON formatter (using native JSON)
+// JSON formatter through the lossless engine: numbers keep their exact digits.
 function formatJson(code: string, indent: string): string {
 	try {
-		const parsed = JSON.parse(code);
-		return JSON.stringify(parsed, null, indent);
+		const parsed = losslessParse(code);
+		return losslessStringify(parsed, undefined, indent.length) ?? code;
 	} catch {
 		throw new Error('Invalid JSON');
 	}
@@ -91,7 +97,7 @@ function formatJs(code: string, indent: string): string {
 	let current = '';
 
 	for (let i = 0; i < code.length; i++) {
-		const char = code[i];
+		const char = code[i] ?? '';
 		const prev = code[i - 1];
 
 		// Track strings
@@ -130,36 +136,125 @@ function formatJs(code: string, indent: string): string {
 	return result.trim();
 }
 
-// SQL formatter (basic keywords on new lines)
-function formatSql(code: string, indent: string): string {
-	const keywords = ['SELECT', 'FROM', 'WHERE', 'AND', 'OR', 'ORDER BY', 'GROUP BY', 'HAVING', 'JOIN', 'LEFT JOIN', 'RIGHT JOIN', 'INNER JOIN', 'ON', 'INSERT', 'UPDATE', 'DELETE', 'SET', 'VALUES', 'LIMIT', 'OFFSET'];
-
-	let result = code.toUpperCase();
-	for (const kw of keywords) {
-		result = result.replace(new RegExp(`\\b${kw}\\b`, 'gi'), `\n${kw}`);
+// SQL formatter through the sql-formatter engine, loaded on demand; errors
+// surface explicitly.
+async function formatSql(code: string, indent: string): Promise<string> {
+	const trimmed = code.trim();
+	if (!trimmed) return code;
+	try {
+		const { format: formatSqlEngine } = await import('sql-formatter');
+		return formatSqlEngine(trimmed, {
+			keywordCase: 'preserve',
+			tabWidth: indent.length,
+			useTabs: indent.startsWith('\t'),
+			expressionWidth: 80,
+		});
+	} catch (e) {
+		if (e instanceof Error && e.message.startsWith('SQL formatting failed:')) throw e;
+		throw new Error(`SQL formatting failed: ${e instanceof Error ? e.message : String(e)}`);
 	}
-
-	// Indent after certain keywords
-	const lines = result.split('\n').map((l) => l.trim()).filter(Boolean);
-	result = '';
-	let level = 0;
-
-	for (const line of lines) {
-		if (line.startsWith('FROM') || line.startsWith('WHERE') || line.startsWith('SET')) {
-			level = 1;
-		} else if (line.startsWith('SELECT') || line.startsWith('INSERT') || line.startsWith('UPDATE')) {
-			level = 0;
-		}
-
-		const prefix = line.match(/^(AND|OR)\b/) ? indent.repeat(level + 1) : indent.repeat(level);
-		result += `${prefix + line}\n`;
-	}
-
-	return result.trim();
 }
 
 // Minify code (opposite of format)
-export function minifyCode(code: string, language: CodeLanguage): string {
+// rule: minification never merges a line comment with the code that follows it
+// and never edits the contents of a string literal. Comments are removed by a
+// character scanner that tracks string/template state; whitespace collapsing
+// runs only outside literals.
+
+interface ScanState {
+	inString: boolean;
+	stringChar: string;
+}
+
+function stripCommentsPreservingStrings(code: string, language: CodeLanguage): string {
+	let result = '';
+	let i = 0;
+	const state: ScanState = { inString: false, stringChar: '' };
+	const lineComment = language === 'sql' ? '--' : '//';
+	while (i < code.length) {
+		const char = code[i] ?? '';
+		const prev = code[i - 1];
+		if (state.inString) {
+			result += char;
+			if (char === state.stringChar && prev !== '\\') state.inString = false;
+			i++;
+			continue;
+		}
+		if ((char === '"' || char === "'" || char === '`') && language !== 'sql') {
+			state.inString = true;
+			state.stringChar = char;
+			result += char;
+			i++;
+			continue;
+		}
+		if (char === "'" && language === 'sql') {
+			state.inString = true;
+			state.stringChar = char;
+			result += char;
+			i++;
+			continue;
+		}
+		if (code.startsWith(lineComment, i)) {
+			// Drop the comment but keep the line break so the next statement
+			// can never become part of the removed comment.
+			while (i < code.length && code[i] !== '\n') i++;
+			continue;
+		}
+		if (language !== 'sql' && code.startsWith('/*', i)) {
+			const end = code.indexOf('*/', i + 2);
+			i = end === -1 ? code.length : end + 2;
+			result += ' ';
+			continue;
+		}
+		result += char;
+		i++;
+	}
+	return result;
+}
+
+function collapseWhitespaceOutsideStrings(code: string, language: CodeLanguage): string {
+	let result = '';
+	let inString = false;
+	let stringChar = '';
+	for (let i = 0; i < code.length; i++) {
+		const char = code[i] ?? '';
+		const prev = code[i - 1];
+		if (inString) {
+			result += char;
+			if (char === stringChar && prev !== '\\') inString = false;
+			continue;
+		}
+		if ((char === '"' || char === "'" || char === '`') && language !== 'sql') {
+			inString = true;
+			stringChar = char;
+			result += char;
+			continue;
+		}
+		if (char === "'" && language === 'sql') {
+			inString = true;
+			stringChar = char;
+			result += char;
+			continue;
+		}
+		if (/\s/.test(char)) {
+			// A whitespace run outside a string becomes one space; newline runs
+			// keep a newline so line-oriented syntax stays parseable.
+			let j = i;
+			let sawNewline = false;
+			while (j < code.length && /\s/.test(code[j] ?? ' ')) {
+				if (code[j] === '\n') sawNewline = true;
+				j++;
+			}
+			result += sawNewline ? '\n' : ' ';
+			i = j - 1;
+			continue;
+		}
+		result += char;
+	}
+	return result;
+}
+
+export async function minifyCode(code: string, language: CodeLanguage): Promise<string> {
 	switch (language) {
 		case 'json':
 			try {
@@ -169,13 +264,17 @@ export function minifyCode(code: string, language: CodeLanguage): string {
 			}
 		case 'html':
 		case 'xml':
-			return code.replace(/>\s+</g, '><').replace(/\s+/g, ' ').trim();
+			// Only whitespace between tags is removed; text nodes keep their
+			// rendering-relevant spacing.
+			return code.replace(/>\s+</g, '><').trim();
 		case 'css':
-			return code.replace(/\s+/g, ' ').replace(/\s*{\s*/g, '{').replace(/\s*}\s*/g, '}').replace(/\s*;\s*/g, ';').replace(/\s*:\s*/g, ':').trim();
+			// CSSO owns CSS compression (R09); unknown syntax and raw nodes are
+			// its documented pass-through behavior.
+			return (await import('csso')).minify(code).css;
 		case 'js':
-			return code.replace(/\s+/g, ' ').replace(/\s*([{}();,:])\s*/g, '$1').trim();
+			return collapseWhitespaceOutsideStrings(stripCommentsPreservingStrings(code, 'js'), 'js').trim();
 		case 'sql':
-			return code.replace(/\s+/g, ' ').trim();
+			return collapseWhitespaceOutsideStrings(stripCommentsPreservingStrings(code, 'sql'), 'sql').trim();
 		default:
 			return code;
 	}

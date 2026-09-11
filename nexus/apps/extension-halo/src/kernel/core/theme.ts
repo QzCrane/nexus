@@ -1,5 +1,6 @@
 // goal: Theme system with CSS variables
 
+import { THEME_SURFACES } from './theme-palette';
 import type { ThemeMode, HaloSettings } from './settings';
 import { DEFAULT_SETTINGS, SETTINGS_STORAGE_KEY } from './settings';
 import { safeStorageGet, safeStorageSet } from './safe-storage';
@@ -23,13 +24,7 @@ export interface ThemeColors {
 }
 
 const DARK_THEME: ThemeColors = {
-	bg: '#1a1a1a',
-	bgSecondary: '#242424',
-	bgTertiary: '#2a2a2a',
-	text: '#f0f0f0',
-	textSecondary: '#b0b0b0',
-	textMuted: '#666666',
-	border: '#333333',
+	...THEME_SURFACES.dark,
 	accent: '#7c3aed',
 	accentHover: '#8b5cf6',
 	success: '#22c55e',
@@ -40,13 +35,7 @@ const DARK_THEME: ThemeColors = {
 };
 
 const LIGHT_THEME: ThemeColors = {
-	bg: '#ffffff',
-	bgSecondary: '#f5f5f5',
-	bgTertiary: '#eeeeee',
-	text: '#1a1a1a',
-	textSecondary: '#555555',
-	textMuted: '#888888',
-	border: '#e5e5e5',
+	...THEME_SURFACES.light,
 	accent: '#7c3aed',
 	accentHover: '#6d28d9',
 	success: '#16a34a',
@@ -127,6 +116,8 @@ export async function loadSettings(): Promise<HaloSettings> {
 export async function saveSettings(settings: Partial<HaloSettings>): Promise<HaloSettings> {
 	const current = await loadSettings();
 	const updated = { ...current, ...settings };
-	await safeStorageSet({ [SETTINGS_STORAGE_KEY]: updated }, { area: 'sync' });
+	if (!await safeStorageSet({ [SETTINGS_STORAGE_KEY]: updated }, { area: 'sync' })) {
+		throw new Error('Settings write was not confirmed; keep the current draft');
+	}
 	return updated;
 }

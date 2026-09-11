@@ -28,7 +28,7 @@ const ToolButton: React.FC<ToolButtonProps> = memo(({ id, icon, label, isActive,
 		padding: '8px 6px', borderRadius: '10px', cursor: 'pointer',
 		background: isActive ? 'var(--halo-accent)' : 'transparent',
 		color: isActive ? '#fff' : 'var(--halo-text-muted)',
-		border: 'none', transition: 'all 0.15s ease',
+		border: 'none', transition: 'var(--halo-motion-transition, all 0.15s ease)',
 		transform: isActive ? 'scale(1.05)' : 'scale(1)',
 		position: 'relative', minWidth: '44px',
 	};
@@ -75,7 +75,7 @@ const styles: Record<string, React.CSSProperties> = {
 		padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
 		background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)',
 		color: 'var(--halo-text-muted)', fontSize: '12px',
-		marginLeft: 'auto', transition: 'all 0.15s',
+		marginLeft: 'auto', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	divider: {
 		width: '1px', height: '24px', background: 'var(--halo-border)', margin: '0 4px',

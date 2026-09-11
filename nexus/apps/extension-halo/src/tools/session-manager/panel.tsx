@@ -1,9 +1,9 @@
 // goal: Session Manager panel UI
 
 import type React from 'react';
-import { useState, } from 'react';
+import { useEffect, useState, } from 'react';
 import { useTranslation } from '../../i18n';
-import { saveSession, getSessions, deleteSession, restoreSession, type Session } from './core';
+import { saveSession, getSessions, deleteSession, restoreSession, type RestoreReport, type Session } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -11,31 +11,55 @@ import { useToolState } from '../../kernel';
 export const SessionManagerPanel: React.FC = () => {
     const { t } = useTranslation();
     const [name, setName] = useToolState<string>('session-name', '');
-    const [sessions, setSessions] = useToolState<Session[]>('session-manager', []);
-
+    // The persisted list lives only in core-owned storage; this state is a
+    // mount-scoped view refreshed from every mutation's returned list.
+    const [sessions, setSessions] = useState<Session[]>([]);
+    const [restoreReport, setRestoreReport] = useState<RestoreReport | null>(null);
+    const [error, setError] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
 
-
+    useEffect(() => {
+        let disposed = false;
+        void getSessions()
+            .then((loaded) => { if (!disposed) setSessions(loaded); })
+            .catch((loadError) => { if (!disposed) setError(String(loadError)); });
+        return () => { disposed = true; };
+    }, []);
 
     const handleSave = async () => {
         setLoading(true);
-        await saveSession(name);
-        setName('');
-        setSessions(await getSessions());
-        setLoading(false);
+        setError(null);
+        try {
+            const { sessions: saved } = await saveSession(name);
+            setSessions(saved);
+            setName('');
+        } catch (saveError) {
+            setError(String(saveError));
+        } finally {
+            setLoading(false);
+        }
     };
 
 
     const handleDelete = async (id: string) => {
         if (confirm('Delete this session?')) {
-            await deleteSession(id);
-            setSessions(await getSessions());
+            setError(null);
+            try {
+                setSessions(await deleteSession(id));
+            } catch (deleteError) {
+                setError(String(deleteError));
+            }
         }
     };
 
 
     const handleRestore = async (session: Session, newWindow: boolean) => {
-        await restoreSession(session, newWindow);
+        setError(null);
+        try {
+            setRestoreReport(await restoreSession(session, newWindow));
+        } catch (restoreError) {
+            setError(String(restoreError));
+        }
     };
 
     return (
@@ -51,6 +75,18 @@ export const SessionManagerPanel: React.FC = () => {
                     💾 {t('sessionManager.save', { defaultValue: 'Save' })}
                 </button>
             </div>
+
+            {error && <div style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px', padding: '4px 0' }}>{error}</div>}
+            {restoreReport && (
+                <div style={{ fontSize: '12px', padding: '4px 0', color: 'var(--halo-text-muted)' }}>
+                    {t('sessionManager.restoreResult', {
+                        defaultValue: 'Restored {{restored}} tabs ({{pinned}} pinned); {{failed}} failed.',
+                        restored: restoreReport.restored,
+                        pinned: restoreReport.pinned,
+                        failed: restoreReport.failed.length,
+                    })}
+                </div>
+            )}
 
             <div style={styles.list}>
                 {sessions.length === 0 ? (

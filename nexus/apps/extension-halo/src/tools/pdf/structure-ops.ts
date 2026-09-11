@@ -27,16 +27,32 @@ export const mergePDFs = async (options: MergeOptions): Promise<PDFProcessResult
 	}
 };
 
-// Split PDF by page ranges
+// Split PDF by page ranges (0-based, inclusive)
 export const splitPDF = async (options: SplitOptions): Promise<PDFProcessResult<ArrayBuffer[]>> => {
 	try {
 		const source = await PDFDocument.load(options.document);
+		const pageCount = source.getPageCount();
+		if (options.ranges.length === 0) {
+			return { success: false, error: 'No page ranges were provided.' };
+		}
+		// rule: an out-of-bounds range must fail explicitly — clamping would
+		// turn a bad request into a success that quietly misses content.
+		for (const range of options.ranges) {
+			const valid = Number.isInteger(range.start)
+				&& Number.isInteger(range.end)
+				&& range.start >= 0
+				&& range.end >= range.start
+				&& range.end < pageCount;
+			if (!valid) {
+				return { success: false, error: `Invalid page range ${range.start + 1}-${range.end + 1}: the document has ${pageCount} pages.` };
+			}
+		}
 		const results: ArrayBuffer[] = [];
 
 		for (const range of options.ranges) {
 			const newDoc = await PDFDocument.create();
 			const pageIndices: number[] = [];
-			for (let i = range.start; i <= range.end && i < source.getPageCount(); i++) {
+			for (let i = range.start; i <= range.end; i++) {
 				pageIndices.push(i);
 			}
 			const pages = await newDoc.copyPages(source, pageIndices);
@@ -56,9 +72,15 @@ export const splitPDF = async (options: SplitOptions): Promise<PDFProcessResult<
 export const extractPages = async (options: ExtractOptions): Promise<PDFProcessResult> => {
 	try {
 		const source = await PDFDocument.load(options.document);
+		const pageCount = source.getPageCount();
+		const invalid = options.pages.filter((p) => !Number.isInteger(p) || p < 0 || p >= pageCount);
+		if (invalid.length > 0) {
+			// 0-based input coming from parsePages is 1-based to the user.
+			const listed = invalid.map((p) => p + 1).join(', ');
+			return { success: false, error: `Invalid page numbers: ${listed}; the document has ${pageCount} pages.` };
+		}
 		const newDoc = await PDFDocument.create();
-		const validPages = options.pages.filter((p) => p >= 0 && p < source.getPageCount());
-		const pages = await newDoc.copyPages(source, validPages);
+		const pages = await newDoc.copyPages(source, options.pages);
 		pages.forEach((page) => {
 			newDoc.addPage(page);
 		});

@@ -5,7 +5,7 @@ import type React from 'react';
 export const styles: Record<string, React.CSSProperties> = {
 	wrapper: { display: 'flex', flexDirection: 'column', gap: '12px' },
 	tabs: { display: 'flex', gap: '4px', background: 'var(--halo-bg-secondary)', borderRadius: '10px', padding: '4px' },
-	tab: { flex: 1, padding: '10px', border: 'none', borderRadius: '8px', background: 'transparent', color: 'var(--halo-text-secondary)', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s' },
+	tab: { flex: 1, padding: '10px', border: 'none', borderRadius: '8px', background: 'transparent', color: 'var(--halo-text-secondary)', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)' },
 	tabActive: { background: 'var(--halo-accent)', color: '#fff' },
 	textarea: { width: '100%', minHeight: '60px', padding: '12px', border: '1px solid var(--halo-border)', borderRadius: '10px', background: 'var(--halo-bg-secondary)', color: 'var(--halo-text)', fontSize: '13px', resize: 'vertical', fontFamily: 'inherit', outline: 'none' },
 	optionsRow: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' },

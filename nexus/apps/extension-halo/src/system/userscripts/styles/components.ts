@@ -10,7 +10,7 @@ export const componentStyles: Record<string, CSSProperties> = {
 		borderRadius: '10px',
 		background: BG_CARD,
 		border: `1px solid ${BORDER}`,
-		transition: 'all 0.2s ease',
+		transition: 'var(--halo-motion-transition, all 0.2s ease)',
 	},
 	masterCardActive: {
 		background: 'rgba(76, 175, 80, 0.12)',
@@ -23,7 +23,7 @@ export const componentStyles: Record<string, CSSProperties> = {
 		borderRadius: '8px',
 		background: BG_CARD,
 		border: `1px solid ${BORDER}`,
-		transition: 'all 0.15s ease',
+		transition: 'var(--halo-motion-transition, all 0.15s ease)',
 		cursor: 'pointer',
 	},
 	scriptCardHover: {
@@ -84,7 +84,7 @@ export const componentStyles: Record<string, CSSProperties> = {
 		background: BORDER,
 		position: 'relative',
 		cursor: 'pointer',
-		transition: 'background 0.2s ease',
+		transition: 'var(--halo-motion-transition, background 0.2s ease)',
 	},
 	toggleActive: {
 		background: ACCENT,
@@ -96,7 +96,7 @@ export const componentStyles: Record<string, CSSProperties> = {
 		height: '16px',
 		borderRadius: '50%',
 		background: '#fff',
-		transition: 'left 0.2s ease',
+		transition: 'var(--halo-motion-transition, left 0.2s ease)',
 		boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
 	},
 	modal: {

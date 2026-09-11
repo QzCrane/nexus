@@ -7,7 +7,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	row: { display: 'flex', gap: '8px', alignItems: 'center' },
 	btn: {
 		padding: '10px 20px', borderRadius: '8px', fontSize: '14px', fontWeight: 600, cursor: 'pointer',
-		background: 'var(--halo-accent)', color: '#fff', border: 'none', transition: 'opacity 0.15s',
+		background: 'var(--halo-accent)', color: '#fff', border: 'none', transition: 'var(--halo-motion-transition, opacity 0.15s)',
 		display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'center',
 	},
 	btnSecondary: {

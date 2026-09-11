@@ -7,18 +7,19 @@ import {
 } from '@nexus/contracts/ui-runtime';
 
 export type PopupUiEvent = SpectraEventEnvelope<SpectraUiEventType>;
-type PopupUiEventSubscriber = (message: PopupUiEvent) => void;
+type PopupUiEventSubscriber = (message: PopupUiEvent, sender: chrome.runtime.MessageSender) => void;
 
 const subscribersByTab = new Map<number, Set<PopupUiEventSubscriber>>();
 let installedOwner: typeof chrome.runtime.onMessage | null = null;
 
-const runtimeListener = (message: unknown): false => {
+const runtimeListener = (message: unknown, sender: chrome.runtime.MessageSender = {}): false => {
+	if (sender.id && sender.id !== chrome.runtime.id) return false;
 	if (!isSpectraUiEventEnvelope(message) || typeof message.tabId !== 'number') return false;
 	const subscribers = subscribersByTab.get(message.tabId);
 	if (!subscribers) return false;
 	for (const subscriber of [...subscribers]) {
 		try {
-			subscriber(message);
+			subscriber(message, sender);
 		} catch (error) {
 			console.error('[SPECTRA Popup] UI event subscriber failed:', error);
 		}

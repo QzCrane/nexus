@@ -44,7 +44,7 @@ export const UI_STYLES = `
     display: flex;
     gap: 6px;
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: var(--halo-motion-transition, opacity 0.2s ease);
     pointer-events: auto;
 }
 
@@ -61,7 +61,7 @@ export const UI_STYLES = `
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.15s ease, transform 0.15s ease;
+    transition: var(--halo-motion-transition, background 0.15s ease, transform 0.15s ease);
     backdrop-filter: blur(10px);
 }
 
@@ -79,7 +79,7 @@ export const UI_STYLES = `
     font-size: 12px;
     font-weight: 500;
     opacity: 0;
-    transition: opacity 0.2s ease;
+    transition: var(--halo-motion-transition, opacity 0.2s ease);
     pointer-events: none;
 }
 
@@ -104,7 +104,7 @@ export const UI_STYLES = `
     border-radius: 4px;
     z-index: 10;
     pointer-events: auto;
-    transition: background 0.15s, transform 0.15s;
+    transition: var(--halo-motion-transition, background 0.15s, transform 0.15s);
 }
 .halo-hz-close-btn:hover { background: #ff4040; transform: scale(1.1); }
 
@@ -118,6 +118,6 @@ export const UI_STYLES = `
 
 .halo-hz-viewer.pinned .halo-hz-actions { opacity: 1; }
 .halo-hz-viewer.resizing img, .halo-hz-viewer.resizing video {
-    transition: none;
+    transition: var(--halo-motion-transition, none);
 }
 `;

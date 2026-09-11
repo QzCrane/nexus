@@ -36,7 +36,7 @@ export const styles: Record<string, CSSProperties> = {
 		color: 'var(--halo-text-muted)',
 		fontSize: '12px',
 		cursor: 'pointer',
-		transition: 'all 0.2s',
+		transition: 'var(--halo-motion-transition, all 0.2s)',
 	},
 	filterBtnActive: {
 		background: 'var(--halo-accent)',
@@ -58,7 +58,7 @@ export const styles: Record<string, CSSProperties> = {
 		borderRadius: '10px',
 		background: 'var(--halo-bg-secondary)',
 		border: '1px solid var(--halo-border)',
-		transition: 'all 0.2s',
+		transition: 'var(--halo-motion-transition, all 0.2s)',
 	},
 	extCardDisabled: {
 		opacity: 0.5,
@@ -112,7 +112,7 @@ export const styles: Record<string, CSSProperties> = {
 		color: 'var(--halo-text-muted)',
 		fontSize: '12px',
 		cursor: 'pointer',
-		transition: 'all 0.15s',
+		transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	permBadge: {
 		padding: '2px 6px',
@@ -152,6 +152,6 @@ export const styles: Record<string, CSSProperties> = {
 		color: '#fff',
 		fontSize: '12px',
 		cursor: 'pointer',
-		transition: 'opacity 0.2s',
+		transition: 'var(--halo-motion-transition, opacity 0.2s)',
 	},
 };

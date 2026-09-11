@@ -1,7 +1,9 @@
 // goal: Popup/Options smooth scroll with boundary bubbling (based on Halo sidepanel-init)
 // inv: when child element reaches scroll boundary, scroll propagates to parent
+// inv: reduced-motion preference disables and cancels the custom rAF scroll engine
 
 type EasingFn = (t: number) => number;
+type ScrollRoot = Document | HTMLElement;
 
 // ===== Scroll Engine (queue-based) =====
 interface ScrollCommand {
@@ -21,18 +23,32 @@ interface EngineState {
 	easing: EasingFn;
 }
 
+interface RootBinding {
+	query: MediaQueryList | null;
+	onPreferenceChange: ((event: MediaQueryListEvent) => void) | null;
+	wheelAttached: boolean;
+}
+
 const engine: EngineState = {
 	que: [], pending: null, target: null, direction: { x: 0, y: 0 },
 	animationTime: 300, easing: (t) => 1 - (1 - t) ** 4
 };
+const rootBindings = new WeakMap<ScrollRoot, RootBinding>();
+
+function cancelPendingScroll(): void {
+	if (engine.pending !== null) cancelAnimationFrame(engine.pending);
+	engine.pending = null;
+	engine.que.length = 0;
+	engine.target = null;
+}
 
 function directionCheck(x: number, y: number): void {
-	const dx = x > 0 ? 1 : -1;
-	const dy = y > 0 ? 1 : -1;
+	const dx = Math.sign(x);
+	const dy = Math.sign(y);
 	if (engine.direction.x !== dx || engine.direction.y !== dy) {
 		engine.direction.x = dx; engine.direction.y = dy;
 		engine.que.length = 0; // eff: clear without alloc
-		if (engine.pending) { cancelAnimationFrame(engine.pending); engine.pending = null; }
+		if (engine.pending !== null) { cancelAnimationFrame(engine.pending); engine.pending = null; }
 	}
 }
 
@@ -80,7 +96,7 @@ function scrollTo(target: Element, deltaY: number): void {
 		lastY: deltaY < 0 ? 0.99 : -0.99,
 		start: Date.now(),
 	});
-	if (!engine.pending) {
+	if (engine.pending === null) {
 		engine.pending = requestAnimationFrame(scrollStep);
 	}
 }
@@ -156,16 +172,56 @@ function handleWheel(e: WheelEvent): void {
 	scrollTo(target, deltaY);
 }
 
-// ===== Export =====
-export function enableSmoothScroll(root: Document | HTMLElement = document): void {
+function attachWheel(root: ScrollRoot, binding: RootBinding): void {
+	if (binding.wheelAttached) return;
 	root.addEventListener('wheel', handleWheel as EventListener, { passive: false });
+	binding.wheelAttached = true;
 }
 
-export function disableSmoothScroll(root: Document | HTMLElement = document): void {
+function detachWheel(root: ScrollRoot, binding: RootBinding): void {
+	if (!binding.wheelAttached) return;
 	root.removeEventListener('wheel', handleWheel as EventListener);
-	if (engine.pending) {
-		cancelAnimationFrame(engine.pending);
-		engine.pending = null;
+	binding.wheelAttached = false;
+}
+
+function applyMotionPreference(root: ScrollRoot, binding: RootBinding): void {
+	if (binding.query?.matches) {
+		detachWheel(root, binding);
+		cancelPendingScroll();
+		return;
 	}
-	engine.que = [];
+	attachWheel(root, binding);
+}
+
+// ===== Export =====
+export function enableSmoothScroll(root: ScrollRoot = document): void {
+	if (rootBindings.has(root)) return;
+	const query = typeof matchMedia === 'function'
+		? matchMedia('(prefers-reduced-motion: reduce)')
+		: null;
+	const binding: RootBinding = {
+		query,
+		onPreferenceChange: null,
+		wheelAttached: false,
+	};
+	if (query) {
+		binding.onPreferenceChange = () => applyMotionPreference(root, binding);
+		query.addEventListener('change', binding.onPreferenceChange);
+	}
+	rootBindings.set(root, binding);
+	applyMotionPreference(root, binding);
+}
+
+export function disableSmoothScroll(root: ScrollRoot = document): void {
+	const binding = rootBindings.get(root);
+	if (binding) {
+		detachWheel(root, binding);
+		if (binding.query && binding.onPreferenceChange) {
+			binding.query.removeEventListener('change', binding.onPreferenceChange);
+		}
+		rootBindings.delete(root);
+	} else {
+		root.removeEventListener('wheel', handleWheel as EventListener);
+	}
+	cancelPendingScroll();
 }

@@ -1,0 +1,504 @@
+{
+  "schemaVersion": 1,
+  "reviewedHead": "93edb5dccdd47f16f0a93899054a4aeb8569068f",
+  "decisions": "docs/decisions/library-reuse.md",
+  "rationale": "docs/decisions/reuse-first-execution.md",
+  "audit": "docs/_archive/audits/2026-09-06-7230b68.json",
+  "implementationStatusOwner": "remediation-status.json",
+  "semantics": "This is a many-to-many implementation-route map, not a second task-status ledger. Selecting a library never closes an audit finding. Exact package versions, licensing, advisories, CSP, host compatibility, data preservation and production cost remain admission requirements.",
+  "routes": [
+    {
+      "auditIds": [
+        "G01",
+        "G02",
+        "G03"
+      ],
+      "reuseDecisionIds": [
+        "R54"
+      ],
+      "retainedDuty": "保留现有路径/运行时修复，按真实平台与脚本入口复验。"
+    },
+    {
+      "auditIds": [
+        "G04",
+        "G05"
+      ],
+      "reuseDecisionIds": [
+        "R31",
+        "R53"
+      ],
+      "retainedDuty": "结构校验可复用；必需命令、材料和产物的语义仍由发布 owner 决定。"
+    },
+    {
+      "auditIds": [
+        "G06",
+        "G07",
+        "G08",
+        "G09",
+        "G10",
+        "G11"
+      ],
+      "reuseDecisionIds": [
+        "R53",
+        "R54"
+      ],
+      "retainedDuty": "请求胶水可复用；执行来源、完整检查集合、重跑、父提交、实际浏览器身份必须独立验证。"
+    },
+    {
+      "auditIds": [
+        "G12",
+        "G13"
+      ],
+      "reuseDecisionIds": [
+        "R52",
+        "R54"
+      ],
+      "retainedDuty": "标准供应链清单与实际构建图结合，绑定当前最终 ZIP，不能用安装图代替产物闭包。"
+    },
+    {
+      "auditIds": [
+        "G14",
+        "G19",
+        "G20"
+      ],
+      "reuseDecisionIds": [
+        "R53",
+        "R54"
+      ],
+      "retainedDuty": "单一实施分支；冻结候选才做完整收口；精确回读交付状态与归档引用。"
+    },
+    {
+      "auditIds": [
+        "G15",
+        "G16"
+      ],
+      "reuseDecisionIds": [
+        "R48",
+        "R49",
+        "R50",
+        "R51"
+      ],
+      "retainedDuty": "实际已发布能力决定验收责任；真实挂载、事务和负例代替仅文件存在。"
+    },
+    {
+      "auditIds": [
+        "G17",
+        "G18"
+      ],
+      "reuseDecisionIds": [
+        "R49",
+        "R51",
+        "R54"
+      ],
+      "retainedDuty": "保留原始视觉/性能条件与样本；候选采集不等于批准或全面提速。"
+    },
+    {
+      "auditIds": [
+        "S01",
+        "S02"
+      ],
+      "reuseDecisionIds": [
+        "R30",
+        "R33"
+      ],
+      "retainedDuty": "保留物理完成顺序与失败语义，补跨上下文写入协议；队列和 IDB 包装不自动提供 chrome.storage CAS。"
+    },
+    {
+      "auditIds": [
+        "S03",
+        "S04"
+      ],
+      "reuseDecisionIds": [
+        "R31",
+        "R34"
+      ],
+      "retainedDuty": "保留可空时间戳修复，补领域 schema 和版本迁移。"
+    },
+    {
+      "auditIds": [
+        "S05",
+        "S06",
+        "S07",
+        "S08",
+        "S09",
+        "S10",
+        "S11",
+        "S12"
+      ],
+      "reuseDecisionIds": [
+        "R30",
+        "R31",
+        "R48",
+        "R50"
+      ],
+      "retainedDuty": "领域 owner 决定事务、冲突、未保存提示、容量、置顶、Blob 和会话恢复，按实际事务确认。"
+    },
+    {
+      "auditIds": [
+        "N01",
+        "N02",
+        "N03",
+        "N04",
+        "N11"
+      ],
+      "reuseDecisionIds": [
+        "R31",
+        "R44"
+      ],
+      "retainedDuty": "保留浏览器提供的发送者与文档/目标身份；结构合法不能代替授权和当前副作用许可。"
+    },
+    {
+      "auditIds": [
+        "N05",
+        "N06",
+        "N07"
+      ],
+      "reuseDecisionIds": [
+        "R21",
+        "R33",
+        "R44"
+      ],
+      "retainedDuty": "规范地址解析，单独定义 DNS/重定向可观察边界及时间/字节/取消策略。"
+    },
+    {
+      "auditIds": [
+        "N08"
+      ],
+      "reuseDecisionIds": [
+        "R16",
+        "R17",
+        "R31",
+        "R44"
+      ],
+      "retainedDuty": "标准加密/OTP 库不提供秘密保险库；默认临时、明确长期保存选择并保护历史迁移。"
+    },
+    {
+      "auditIds": [
+        "N09",
+        "N10"
+      ],
+      "reuseDecisionIds": [
+        "R44"
+      ],
+      "retainedDuty": "实际服务接收方和日志隐私属于产品合同，不能靠通用 SDK 宣称解决。"
+    },
+    {
+      "auditIds": [
+        "D01",
+        "D02"
+      ],
+      "reuseDecisionIds": [
+        "R33",
+        "R44"
+      ],
+      "retainedDuty": "保留物理完成 owner 和一次完成处理器，补公平性与受阻恢复，不把等待超时当完成。"
+    },
+    {
+      "auditIds": [
+        "D03",
+        "D04",
+        "D05",
+        "D06"
+      ],
+      "reuseDecisionIds": [
+        "R31",
+        "R44",
+        "R48"
+      ],
+      "retainedDuty": "明确未知、暂停 iframe 覆盖、文档代际与字段一致性；查询框架不能替代领域证据。"
+    },
+    {
+      "auditIds": [
+        "J01",
+        "J02"
+      ],
+      "reuseDecisionIds": [
+        "R31",
+        "R34"
+      ],
+      "retainedDuty": "后台持久 deadline 与完成副作用去重；面板只展示，明确崩溃语义。"
+    },
+    {
+      "auditIds": [
+        "J03",
+        "J04"
+      ],
+      "reuseDecisionIds": [
+        "R27"
+      ],
+      "retainedDuty": "保留 pdf-lib，修全部 outputs 与严格范围，不为适配错误另换文档引擎。"
+    },
+    {
+      "auditIds": [
+        "J05",
+        "J06",
+        "J10"
+      ],
+      "reuseDecisionIds": [
+        "R24",
+        "R27",
+        "R32",
+        "R33"
+      ],
+      "retainedDuty": "冻结任务输入，定义资源/字节所有权、取消和结果退休；库负责算法而非自动生命周期。"
+    },
+    {
+      "auditIds": [
+        "J07"
+      ],
+      "reuseDecisionIds": [
+        "R25",
+        "R26",
+        "R32"
+      ],
+      "retainedDuty": "按实际压缩格式选一个 owner，补输出预算、背压和完整流错误处理。"
+    },
+    {
+      "auditIds": [
+        "J08"
+      ],
+      "reuseDecisionIds": [
+        "R28",
+        "R32"
+      ],
+      "retainedDuty": "替换完整 LCS 矩阵，预算退出明确表示未完成。"
+    },
+    {
+      "auditIds": [
+        "J09"
+      ],
+      "reuseDecisionIds": [
+        "R19"
+      ],
+      "retainedDuty": "复用摘要引擎和一次文件读取，保留公共向量与分块等价。"
+    },
+    {
+      "auditIds": [
+        "U01",
+        "U02"
+      ],
+      "reuseDecisionIds": [
+        "R32",
+        "R42"
+      ],
+      "retainedDuty": "正确 Unicode 空匹配推进及可终止 worker；RE2 仅作有明确语法差异的模式，不透明替换 JS RegExp。"
+    },
+    {
+      "auditIds": [
+        "U03"
+      ],
+      "reuseDecisionIds": [
+        "R17"
+      ],
+      "retainedDuty": "保留已修 OTP 参数及标准向量；通过具体包准入后再替换算法。"
+    },
+    {
+      "auditIds": [
+        "U04"
+      ],
+      "reuseDecisionIds": [
+        "R16"
+      ],
+      "retainedDuty": "收敛到现有 jose，保留 UTF-8 和解码/验签/授权区分。"
+    },
+    {
+      "auditIds": [
+        "U05",
+        "U06",
+        "U07"
+      ],
+      "reuseDecisionIds": [
+        "R01",
+        "R04"
+      ],
+      "retainedDuty": "三入口统一 CSV 适配，默认数据保真，类型转换与公式安全模式显式选择。"
+    },
+    {
+      "auditIds": [
+        "U08",
+        "U22",
+        "U23"
+      ],
+      "reuseDecisionIds": [
+        "R42"
+      ],
+      "retainedDuty": "保留已修 BigInt、域名/URL 语义；基础操作优先原生，不为统一而引入重框架。"
+    },
+    {
+      "auditIds": [
+        "U09"
+      ],
+      "reuseDecisionIds": [
+        "R20"
+      ],
+      "retainedDuty": "wire/schema 分层与64位保真，保留反例并核查 browser/CSP 构建。"
+    },
+    {
+      "auditIds": [
+        "U10"
+      ],
+      "reuseDecisionIds": [
+        "R05",
+        "R04"
+      ],
+      "retainedDuty": "明确 JSONPath 标准或方言，无代码执行并保留数值精度。"
+    },
+    {
+      "auditIds": [
+        "U11"
+      ],
+      "reuseDecisionIds": [
+        "R29"
+      ],
+      "retainedDuty": "明确 Cron 方言/时区/DST，保留完整结果数量与日期边界。"
+    },
+    {
+      "auditIds": [
+        "U12"
+      ],
+      "reuseDecisionIds": [
+        "R06"
+      ],
+      "retainedDuty": "使用方言格式化引擎，保护字面量与注释，不冒充数据库执行验证。"
+    },
+    {
+      "auditIds": [
+        "U13"
+      ],
+      "reuseDecisionIds": [
+        "R10"
+      ],
+      "retainedDuty": "保护 XML 混合内容、实体与命名空间，文本保真与结构等价分别声明。"
+    },
+    {
+      "auditIds": [
+        "U14",
+        "U15"
+      ],
+      "reuseDecisionIds": [
+        "R24",
+        "R42"
+      ],
+      "retainedDuty": "保留已修颜色范围与安全随机映射；专业重采样或强度解释按实际需求。"
+    },
+    {
+      "auditIds": [
+        "U16"
+      ],
+      "reuseDecisionIds": [
+        "R03",
+        "R04"
+      ],
+      "retainedDuty": "格式编辑不先转浮点；排序/转换使用无损数值及安全自有键。"
+    },
+    {
+      "auditIds": [
+        "U17"
+      ],
+      "reuseDecisionIds": [
+        "R02",
+        "R04"
+      ],
+      "retainedDuty": "替換 YAML 手写解析，显式处理 JSON 无法表示的类型。"
+    },
+    {
+      "auditIds": [
+        "U18"
+      ],
+      "reuseDecisionIds": [
+        "R07",
+        "R08",
+        "R09"
+      ],
+      "retainedDuty": "格式化与压缩分开；按语法引擎执行，不用空白替换改程序。"
+    },
+    {
+      "auditIds": [
+        "U19"
+      ],
+      "reuseDecisionIds": [
+        "R15"
+      ],
+      "retainedDuty": "真正解析 X.509；解析、验签和信任政策分层。"
+    },
+    {
+      "auditIds": [
+        "U20"
+      ],
+      "reuseDecisionIds": [
+        "R31",
+        "R44"
+      ],
+      "retainedDuty": "输出 CSP 具体限制和条件，不返回未经校准的安全分。"
+    },
+    {
+      "auditIds": [
+        "U21"
+      ],
+      "reuseDecisionIds": [
+        "R18"
+      ],
+      "retainedDuty": "保留 UUID 时间/版本/variant 向量和历史 ID，再审多版本库。"
+    },
+    {
+      "auditIds": [
+        "A01"
+      ],
+      "reuseDecisionIds": [
+        "R31",
+        "R34",
+        "R43",
+        "R44",
+        "R47"
+      ],
+      "retainedDuty": "拆纯逻辑与通用图分析，不产生第二写入者或音频资源 owner。"
+    },
+    {
+      "auditIds": [
+        "A02"
+      ],
+      "reuseDecisionIds": [
+        "R37",
+        "R38",
+        "R39",
+        "R45",
+        "R46",
+        "R54"
+      ],
+      "retainedDuty": "按真实生产闭包测量，条件引入重库并删除被接管旧代码，不删除业务压预算。"
+    },
+    {
+      "auditIds": [
+        "A03",
+        "A04"
+      ],
+      "reuseDecisionIds": [
+        "R31",
+        "R44",
+        "R51",
+        "R52"
+      ],
+      "retainedDuty": "能力、未知和宣称基于实际合同与执行证据；不新增默认遥测。"
+    }
+  ],
+  "additionalObservedRegressions": [
+    {
+      "id": "LR01",
+      "reuseDecisionIds": [
+        "R11",
+        "R12"
+      ],
+      "evidence": "docs/_archive/audits/2026-09-07-reuse-probes.json",
+      "description": "Markdown fenced-code content is reparsed and block quotes are not recognized; retain both vectors for the new parser and final HTML sanitizer."
+    },
+    {
+      "id": "LR02",
+      "reuseDecisionIds": [
+        "R14"
+      ],
+      "evidence": "docs/_archive/audits/2026-09-07-reuse-probes.json",
+      "description": "Non-BMP HTML numeric entity encoding/decoding truncates code points; preserve original text and context-specific entity modes."
+    }
+  ],
+  "backlogRule": "The two additional regression groups are not silently counted inside the original 86. UI, build and optional-platform candidates without an audit ID remain conditional opportunities in R01-R56, not artificial defect counts."
+}

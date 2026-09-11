@@ -12,7 +12,7 @@ export const SriPanel: React.FC = () => {
     const { t } = useTranslation();
     const [url, setUrl] = useToolState<string>('subresource-url', '');
     const [content, setContent] = useToolState<string>('subresource-content', '');
-    const [hashOnly, setHashOnly] = useState(''); 
+    const [hashOnly, setHashOnly] = useState('');
     const [tag, setTag] = useState('');
     const [alg, setAlg] = useToolState<Algo>('subresource-alg', 'sha384');
 
@@ -67,11 +67,11 @@ export const SriPanel: React.FC = () => {
 
             <div>
                 <div style={styles.label}>{t('subresource.pasteCode', { defaultValue: 'Content (Paste code here)' })}</div>
-                <textarea 
-                    style={styles.textarea} 
-                    value={content} 
-                    onChange={(e) => setContent(e.target.value)} 
-                    placeholder={t('subresource.placeholderContent', { defaultValue: 'function() { ... }' })} 
+                <textarea
+                    style={styles.textarea}
+                    value={content}
+                    onChange={(e) => setContent(e.target.value)}
+                    placeholder={t('subresource.placeholderContent', { defaultValue: 'function() { ... }' })}
                 />
             </div>
 
@@ -86,7 +86,7 @@ export const SriPanel: React.FC = () => {
                                 border: 'none',
                                 background: alg === a ? 'var(--halo-accent)' : 'transparent',
                                 color: alg === a ? '#fff' : 'var(--halo-text-muted)',
-                                padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+                                padding: '4px 10px', fontSize: '11px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
                             }}
                             onClick={() => setAlg(a)}
                         >

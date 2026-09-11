@@ -10,6 +10,7 @@ import { LauncherLayout } from './LauncherLayout';
 import { useSidePanelState } from './use-sidepanel-state';
 import { EngineStatusProvider } from './EngineStatusProvider';
 import { ActiveServicesProvider } from './ActiveServicesContext';
+import { StorageHealthBanner } from './StorageHealthBanner';
 import { OverlayProvider } from '../ui/overlay';
 
 export const SidePanel: React.FC = () => {
@@ -54,6 +55,7 @@ export const SidePanel: React.FC = () => {
 							hideBorder={hasDock}
 						/>
 
+						<StorageHealthBanner />
 						<DockTabBar
 							openTools={state.openTools}
 							activeTool={state.activeTool}

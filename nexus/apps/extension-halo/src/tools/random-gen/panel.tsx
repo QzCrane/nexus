@@ -55,7 +55,7 @@ export const RandomGenPanel: React.FC = () => {
                                     border: 'none',
                                     background: type === opt.value ? 'var(--halo-accent)' : 'transparent',
                                     color: type === opt.value ? '#fff' : 'var(--halo-text-muted)',
-                                    padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+                                    padding: '4px 8px', fontSize: '10px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
                                 }}
                                 onClick={() => setType(opt.value)}
                             >
@@ -64,7 +64,7 @@ export const RandomGenPanel: React.FC = () => {
                         ))}
                     </div>
                  </div>
-                 
+
                  {(type === 'Hex' || type === 'Base64') && (
                      <div>
                         <span style={styles.label}>{t('randomGen.length', { defaultValue: 'Length' })}</span>

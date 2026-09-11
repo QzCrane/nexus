@@ -19,6 +19,7 @@ Do not treat this file as a second copy of the rules. It is the agent entrypoint
 - Runtime and package manager: the repository-pinned Bun toolchain.
 - Use repository scripts rather than inventing parallel commands.
 - Generated files are changed through their source/generator.
+- Before writing or repairing a generic engine, invoke [reuse/dependency selection](.agents/skills/add-dependency/SKILL.md), even when no new package is proposed.
 - Before editing a shared symbol, inspect callers, identities, lifecycle ownership, failure paths, tests, and release projections.
 - Close behavior through contract, implementation, tests, owner documentation, and applicable privacy/release evidence.
 - A roadmap, proposal, research note, redirect, or archived report is never implementation authority.
@@ -30,7 +31,7 @@ The source of truth is [`.agents/skills/`](.agents/skills/). `bun run sync:skill
 <!-- nexus:skills-start -->
 | Skill | Description | Triggers |
 |---|---|---|
-| `add-dependency` | 引入、替换或升级依赖时，核实必要性、唯一 owner、当前版本、安全与真实验证。 | add dependency, install package, upgrade package, 加依赖 |
+| `add-dependency` | 在手写通用能力之前及引入、替换或升级依赖时，先比较平台、现有库与成熟实现，核实 owner、成本和真实验证。 | add dependency, install package, upgrade package, 加依赖, 手写解析器, 复用选型, 通用算法 |
 | `compress-docs` | 精简 Markdown 文档而不损失 authority、因果、契约、锚点或历史证据。 | compress docs, 文档压缩, 压缩md, 无损压缩 |
 | `finish-feature` | 完成功能或修复时，核对真实闭环、适用门禁、文档投影与授权交付边界。 | finish feature, ship it, end task, 完工, 交付 |
 | `lint` | 路由到 NEXUS 当前代码、文档和工具链静态门禁，并解释真实 owner 失败。 | lint, biome, 代码风格, 文档检查 |

@@ -3,8 +3,10 @@
 import { $, isRestrictedUrl } from './utils';
 import { initNavigation } from './views/navigation';
 import { initSettings, type SettingsState } from './views/settings';
-import { initCard } from './card';
-import { enableSmoothScroll } from '../shared/smooth-scroll';
+import { initCard, CARD_SNAPSHOT_CONCURRENCY } from './card';
+import { installAccessibilityPolicy } from '../shared/accessibility';
+import { installPopupOptionalPermissionAdmission } from './optional-permission-ui';
+import { disableSmoothScroll, enableSmoothScroll } from '../shared/smooth-scroll';
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { clearPopupStartupError, showPopupStartupError } from './startup-error';
 import { runBoundedCardBootstrap } from './bounded-card-bootstrap';
@@ -13,6 +15,7 @@ type PopupVisualizerModule = typeof import('./visualizer/loop');
 
 let visualizerLoad: Promise<PopupVisualizerModule> | null = null;
 const popupAttemptDisposers = new Set<() => void>();
+let popupRetired = false;
 
 async function loadPopupVisualizer(): Promise<PopupVisualizerModule> {
   const pending = visualizerLoad ?? import('./visualizer/loop');
@@ -26,11 +29,13 @@ async function loadPopupVisualizer(): Promise<PopupVisualizerModule> {
 }
 
 function registerPopupAttemptDisposer(dispose: () => void): () => void {
+  if (popupRetired) { dispose(); return () => undefined; }
   popupAttemptDisposers.add(dispose);
   return () => popupAttemptDisposers.delete(dispose);
 }
 
 function disposePopupAttempt(): void {
+  delete document.documentElement.dataset.spectraReady;
   for (const dispose of popupAttemptDisposers) {
     try {
       dispose();
@@ -48,11 +53,19 @@ async function reloadPopup(): Promise<void> {
   window.location.reload();
 }
 
+// Intrinsic Action-popup sizing must not be determined by its transient initial
+// viewport; a tab-hosted extension page, unlike that popup, may reflow narrowly.
+document.documentElement.dataset.spectraSurface = chrome.extension.getViews({ type: 'popup' })
+  .some((view) => view === window) ? 'action-popup' : 'extension-page';
+
 // eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
 async function main(): Promise<void> {
   disposePopupAttempt();
   clearPopupStartupError();
+  await installAccessibilityPolicy();
+  if (popupRetired) return;
   enableSmoothScroll();
+  registerPopupAttemptDisposer(disableSmoothScroll);
 
   let activeTab: chrome.tabs.Tab | null = null;
   try {
@@ -71,6 +84,8 @@ async function main(): Promise<void> {
 
   const settings: SettingsState = await initSettings();
   registerPopupAttemptDisposer(settings.dispose);
+  if (popupRetired) return;
+  registerPopupAttemptDisposer(installPopupOptionalPermissionAdmission());
 
   // eff: lazy load side panel only when needed
   try {
@@ -107,6 +122,13 @@ async function main(): Promise<void> {
     throw new Error('Required Popup DOM elements are missing');
   }
 
+  const reconcileCardInventory = (): void => {
+    if (popupRetired) return;
+    if (bgBadge) bgBadge.innerText = String(bgStack.children.length);
+    bgHeader?.classList.toggle('hidden', bgStack.children.length === 0);
+    emptyState.classList.toggle('hidden', mainStage.children.length > 0 || bgStack.children.length > 0);
+  };
+
   // rule: main-stage is reserved for the current active tab only
   const activeTabId = activeTab?.id;
   if (activeTab && typeof activeTabId === 'number' && !isRestrictedUrl(activeTab.url)) {
@@ -128,6 +150,8 @@ async function main(): Promise<void> {
       tab: activeTab,
       dict: settings.dict,
       getGlobalSettings,
+      getDictionary: () => settings.dict,
+      onCardSetChanged: reconcileCardInventory,
       loadVisualizer: loadPopupVisualizer,
       registerCleanup: registerPopupAttemptDisposer,
     });
@@ -140,10 +164,16 @@ async function main(): Promise<void> {
   let hasBgAudio = false;
 
   try {
-    // goal: render cards for other tabs that were recently audibly active to allow multi-tab management
+    // goal: render discovered media tabs while retaining the configured display-retention policy
     const result = await sendSpectraRequest('spectra.tab.visible.list', {});
     if (!result.ok) throw new Error(result.error.message);
     const visibleTabIds = result.data.tabs;
+    document.documentElement.dataset.mediaInventory = result.data.incomplete ? 'partial' : 'complete';
+    const inventoryStatus = document.getElementById('media-inventory-status');
+    if (inventoryStatus) {
+      inventoryStatus.hidden = !result.data.incomplete;
+      inventoryStatus.textContent = result.data.incomplete ? settings.dict.mediaInventoryPartial : '';
+    }
     const allTabs = await chrome.tabs.query({});
     const tabMap = new Map(allTabs.map(t => [t.id, t]));
 
@@ -157,12 +187,14 @@ async function main(): Promise<void> {
       // Bound card bootstrap work so a large visible-tab list cannot serialize
       // dozens of status probes or create an unbounded burst of DOM/visualizer
       // work. Every item settles before badge/empty-state reconciliation.
-      const summary = await runBoundedCardBootstrap(backgroundTabs, 4, async (tab) => initCard({
+      const summary = await runBoundedCardBootstrap(backgroundTabs, CARD_SNAPSHOT_CONCURRENCY, async (tab) => initCard({
         container: bgStack,
         template,
         tab,
         dict: settings.dict,
         getGlobalSettings,
+        getDictionary: () => settings.dict,
+        onCardSetChanged: reconcileCardInventory,
         loadVisualizer: loadPopupVisualizer,
         registerCleanup: registerPopupAttemptDisposer,
         isBackground: true,
@@ -174,25 +206,17 @@ async function main(): Promise<void> {
       }
     }
   } catch (error) {
+    document.documentElement.dataset.mediaInventory = 'unavailable';
+    const inventoryStatus = document.getElementById('media-inventory-status');
+    if (inventoryStatus) { inventoryStatus.hidden = false; inventoryStatus.textContent = settings.dict.mediaInventoryPartial; }
     console.warn('[SPECTRA Popup] Visible tab list unavailable.', error);
   }
 
-  if (bgBadge) {
-    bgBadge.innerText = String(bgStack.children.length);
-  }
-
-  const hasMainCard = mainStage.children.length > 0;
-  const hasAnyCard = hasMainCard || hasBgAudio;
-
-  // post: toggle empty state UI if no manageable media tabs were discovered
-  if (!hasAnyCard) {
-    emptyState.classList.remove('hidden');
-  } else {
-    emptyState.classList.add('hidden');
-  }
+  reconcileCardInventory();
 
   const { updateCardsI18n } = await import('./views/i18n-apply');
   updateCardsI18n(settings.dict, settings.gSettings.visualizerEnabled);
+  document.documentElement.dataset.spectraReady = 'true';
 }
 
 function startPopup(): void {
@@ -207,5 +231,5 @@ function startPopup(): void {
   });
 }
 
-window.addEventListener('pagehide', disposePopupAttempt, { once: true });
+window.addEventListener('pagehide', () => { popupRetired = true; disposePopupAttempt(); }, { once: true });
 document.addEventListener('DOMContentLoaded', startPopup);

@@ -201,8 +201,9 @@ describe('portable automation contract', () => {
 			"if: needs.scope.outputs.spectra == 'true' || needs.scope.outputs.halo == 'true'",
 		);
 		expect(crossPlatformWorkflow).toContain('run: bun run build');
-		expect(crossPlatformWorkflow).toContain('run: bun --cwd nexus run build:spectra');
-		expect(crossPlatformWorkflow).toContain('run: bun --cwd nexus run build:halo');
+		expect(crossPlatformWorkflow).toContain('run: bun run --cwd nexus build:spectra');
+		expect(crossPlatformWorkflow).toContain('run: bun run --cwd nexus build:halo');
+		expect(crossPlatformWorkflow).not.toContain('run: bun --cwd nexus run ');
 		expect(crossPlatformWorkflow).toContain("if: needs.scope.outputs.spectra == 'true'");
 		expect(crossPlatformWorkflow).toContain("if: needs.scope.outputs.halo == 'true'");
 	});

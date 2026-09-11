@@ -19,7 +19,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		border: '1px solid var(--halo-border)',
 		borderRadius: '12px',
 		boxShadow: '0 2px 8px rgba(0,0,0,0.02)',
-		transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+		transition: 'var(--halo-motion-transition, all 0.2s cubic-bezier(0.4, 0, 0.2, 1))',
 	},
 	inputWrapperFocus: {
 		borderColor: 'var(--halo-accent)',
@@ -67,7 +67,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		overflowY: 'auto',
 		zIndex: 1000,
 		boxShadow: '0 8px 24px rgba(0,0,0,0.2), 0 2px 8px rgba(0,0,0,0.1)',
-		animation: 'haloFadeIn 0.15s cubic-bezier(0.0, 0.0, 0.2, 1)',
+		animation: 'var(--halo-motion-animation, haloFadeIn 0.15s cubic-bezier(0.0, 0.0, 0.2, 1))',
 		padding: '4px',
 	},
 	item: {
@@ -77,7 +77,7 @@ export const styles: Record<string, React.CSSProperties> = {
 		padding: '10px 12px',
 		cursor: 'pointer',
 		borderRadius: '8px',
-		transition: 'background 0.15s, transform 0.1s',
+		transition: 'var(--halo-motion-transition, background 0.15s, transform 0.1s)',
 		margin: '2px 0',
 	},
 	itemActive: {

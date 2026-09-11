@@ -74,7 +74,7 @@ export const DockItem: React.FC<DockItemProps> = ({
 			bottom: 0,
 			width: `${baseSize}px`,
 			height: `${baseSize}px`,
-			transition: 'transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1)',
+			transition: 'var(--halo-motion-transition, transform 0.12s cubic-bezier(0.34, 1.56, 0.64, 1))',
 			transform: `scale(${scale})`,
 			transformOrigin: 'center bottom',
 		}}>

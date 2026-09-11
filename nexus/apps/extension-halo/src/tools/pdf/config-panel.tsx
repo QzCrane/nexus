@@ -74,7 +74,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ operation, config, set
 										border: 'none',
 										background: config.rotateDegrees === deg ? 'var(--halo-accent)' : 'transparent',
 										color: config.rotateDegrees === deg ? '#fff' : 'var(--halo-text-muted)',
-										padding: '6px 12px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+										padding: '6px 12px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 									}}
 									onClick={() => setConfig((c) => ({ ...c, rotateDegrees: deg as 90 | 180 | 270 }))}
 								>
@@ -110,7 +110,7 @@ export const ConfigPanel: React.FC<ConfigPanelProps> = ({ operation, config, set
 										border: 'none',
 										background: config.pageSize === size ? 'var(--halo-accent)' : 'transparent',
 										color: config.pageSize === size ? '#fff' : 'var(--halo-text-muted)',
-										padding: '6px 12px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'all 0.15s',
+										padding: '6px 12px', fontSize: '12px', fontWeight: 500, cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)',
 									}}
 									onClick={() => setConfig((c) => ({ ...c, pageSize: size }))}
 								>

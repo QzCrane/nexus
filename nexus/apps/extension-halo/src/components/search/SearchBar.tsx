@@ -1,3 +1,4 @@
+import { isLaunchablePlugin } from '../../kernel';
 // goal: Global search bar component
 // eff: Fuzzy search with keyboard shortcuts. Logic extracted to search-utils.ts and styles to SearchBar.styles.ts
 
@@ -62,7 +63,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
       return;
     }
     if (!results.length) return;
-    
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       setActiveIndex((i) => (i + 1) % results.length);
@@ -72,8 +73,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
     } else if (e.key === 'Enter') {
       e.preventDefault();
       const selected = results[activeIndex];
-      const isSystem = selected?.pluginType === 'system';
-      if (selected && (selected.status === 'ready' || selected.status === 'beta' || isSystem)) {
+      if (selected && (isLaunchablePlugin(selected))) {
         onSelect(selected.id);
         setQuery('');
         inputRef.current?.blur();
@@ -82,8 +82,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
   }, [results, activeIndex, onSelect]);
 
   const handleSelect = useCallback((tool: ToolMeta) => {
-    const isSystem = tool.pluginType === 'system';
-    if (tool.status === 'ready' || tool.status === 'beta' || isSystem) {
+    if (isLaunchablePlugin(tool)) {
       onSelect(tool.id);
       setQuery('');
     }
@@ -114,7 +113,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
           <button
             type="button"
             onClick={() => onSelect(suggestedTool.id)}
-            style={{ 
+            style={{
               position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)',
               padding: '2px 8px', borderRadius: '4px', background: 'var(--halo-primary-alpha, rgba(16, 185, 129, 0.15))',
               color: 'var(--halo-primary, #10b981)', fontSize: '10px', fontWeight: 600, cursor: 'pointer',
@@ -149,7 +148,7 @@ export const SearchBar: React.FC<SearchBarProps> = ({ onSelect, visibleTools, pl
                   <div style={styles.itemName}>{t(`tools.${tool.id}.name`)}</div>
                   <div style={styles.itemDesc}>{t(`tools.${tool.id}.desc`)}</div>
                 </div>
-                {tool.status === 'coming' && (
+                {!isLaunchablePlugin(tool) && (
                   <span style={{
                     ...styles.itemStatus,
                     background: 'var(--halo-warning-alpha, rgba(245, 158, 11, 0.2))',

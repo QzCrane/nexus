@@ -4,6 +4,7 @@
 import type { ToolCategory } from '../../i18n/types';
 import type { PluginMeta, ToolPrefs } from '../core/tool-registry-types';
 import { ALL_MODULES } from './module-registry';
+export { isLaunchablePlugin } from './release-admission';
 import { getToolPlugins, getScriptPlugins, getSystemPlugins } from './_generated';
 
 // TOOL_REGISTRY is ALL_MODULES (unified)

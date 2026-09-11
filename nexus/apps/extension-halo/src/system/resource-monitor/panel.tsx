@@ -21,7 +21,7 @@ const styles = {
 	container: { padding: '16px', display: 'flex', flexDirection: 'column' as const, gap: '16px', height: '100%', overflowY: 'auto' as const },
 	section: { display: 'flex', flexDirection: 'column' as const, gap: '8px' },
 	header: { fontSize: '12px', fontWeight: 600, color: 'var(--halo-text-muted)', textTransform: 'uppercase' as const, letterSpacing: '0.5px', borderBottom: '1px solid var(--halo-border)', paddingBottom: '4px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' },
-	card: { background: 'var(--halo-bg-secondary)', borderRadius: '10px', padding: '10px 12px', border: '1px solid var(--halo-border)', cursor: 'pointer', transition: 'all 0.15s' },
+	card: { background: 'var(--halo-bg-secondary)', borderRadius: '10px', padding: '10px 12px', border: '1px solid var(--halo-border)', cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)' },
 	cardExpanded: { background: 'var(--halo-bg-tertiary)' },
 	toolRow: { display: 'flex', alignItems: 'center', gap: '10px' },
 	icon: { fontSize: '18px', width: '32px', height: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'var(--halo-bg-tertiary)', borderRadius: '6px', flexShrink: 0 },
@@ -46,11 +46,11 @@ export const ResourceMonitorPanel: React.FC = () => {
 			const profile = BACKGROUND_PROFILES_MAP[id] as BackgroundProfile;
 			const meta = PLUGIN_REGISTRY.find(app => app.id === id);
 			if (!profile || !meta) return null;
-			
+
 			// Determine category: system > script > tool
 			// Category from pluginType (new unified schema)
 			const category = meta.pluginType as 'tool' | 'system' | 'script';
-			
+
 			return {
 				id,
 				name: t(`tools.${id}.name`, { defaultValue: id }),
@@ -85,7 +85,7 @@ export const ResourceMonitorPanel: React.FC = () => {
 		const mechIcon = MECHANISM_ICONS[p.mechanism as ConsumptionMechanism] || '❓';
 		// Use generic mechanism i18n key, frequency comes from manifest
 		const mechKey = `impact.mechanism.${p.mechanism}`;
-		
+
 		return (
 			<div style={styles.detailRow}>
 				<span>{mechIcon} {t(mechKey, { defaultValue: p.mechanism })}</span>
@@ -101,8 +101,8 @@ export const ResourceMonitorPanel: React.FC = () => {
 		const catStyle = CATEGORY_STYLES[item.category] || CATEGORY_STYLES.tool;
 
 		return (
-			<div 
-				key={item.id} 
+			<div
+				key={item.id}
 				style={{ ...styles.card, ...(isExpanded ? styles.cardExpanded : {}) }}
 			>
 				<button

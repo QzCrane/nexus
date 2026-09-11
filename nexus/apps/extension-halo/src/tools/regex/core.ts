@@ -26,50 +26,55 @@ function getLineAndColumn(text: string, index: number): { line: number; column: 
 	};
 }
 
+/** Upper bound on collected matches; protects the UI from pathological input. */
+const MAX_MATCHES = 10_000;
+
 /**
  * Execute regex and return matches
  */
 export function executeRegex(pattern: string, testString: string, flags: RegexFlags): RegexMatch[] {
 	if (!pattern || !testString) return [];
 
-	try {
-		const flagStr = buildFlagsString(flags);
-		const regex = new RegExp(pattern, flagStr);
-		const matches: RegexMatch[] = [];
+	const flagStr = buildFlagsString(flags);
+	// Let invalid patterns surface as errors instead of an empty result.
+	const regex = new RegExp(pattern, flagStr);
+	const matches: RegexMatch[] = [];
 
-		if (flags.global) {
-			let match = regex.exec(testString);
-			while (match !== null) {
-				const pos = getLineAndColumn(testString, match.index);
-				matches.push({
-					index: match.index,
-					text: match[0],
-					groups: match.groups || null,
-					line: pos.line,
-					column: pos.column,
-				});
-				// Prevent infinite loop for zero-length matches
-				if (match[0].length === 0) regex.lastIndex++;
-				match = regex.exec(testString);
+	if (flags.global) {
+		let match = regex.exec(testString);
+		while (match !== null) {
+			const pos = getLineAndColumn(testString, match.index);
+			matches.push({
+				index: match.index,
+				text: match[0],
+				groups: match.groups || null,
+				line: pos.line,
+				column: pos.column,
+			});
+			if (matches.length >= MAX_MATCHES) break;
+			// Prevent infinite loops for zero-length matches: advance past one
+			// full code point (surrogates must not be split in unicode mode).
+			if (match[0].length === 0) {
+				const codePoint = testString.codePointAt(match.index) ?? 0;
+				regex.lastIndex = match.index + (codePoint > 0xffff ? 2 : 1);
 			}
-		} else {
-			const match = regex.exec(testString);
-			if (match) {
-				const pos = getLineAndColumn(testString, match.index);
-				matches.push({
-					index: match.index,
-					text: match[0],
-					groups: match.groups || null,
-					line: pos.line,
-					column: pos.column,
-				});
-			}
+			match = regex.exec(testString);
 		}
-
-		return matches;
-	} catch {
-		return [];
+	} else {
+		const match = regex.exec(testString);
+		if (match) {
+			const pos = getLineAndColumn(testString, match.index);
+			matches.push({
+				index: match.index,
+				text: match[0],
+				groups: match.groups || null,
+				line: pos.line,
+				column: pos.column,
+			});
+		}
 	}
+
+	return matches;
 }
 
 /**

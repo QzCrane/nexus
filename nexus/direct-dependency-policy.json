@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "acceptedNonSourceRuntimeUse": [
+    {
+      "packagePath": "apps/extension-halo/package.json",
+      "dependency": "preact",
+      "evidencePath": "apps/extension-halo/build.ts",
+      "marker": "react: 'preact/compat'",
+      "reason": "HALO source is React-compatible while the production SidePanel renderer is aliased to one Preact compat runtime by the build owner.",
+      "replacesSourceRuntimeDependencies": [
+        "react",
+        "react-dom"
+      ]
+    }
+  ],
+  "knownDebt": []
+}

@@ -33,7 +33,7 @@ const styles: Record<string, React.CSSProperties> = {
 	list: { maxHeight: '300px', overflowY: 'auto' },
 	item: {
 		display: 'flex', alignItems: 'center', gap: '12px',
-		padding: '12px 16px', cursor: 'pointer', transition: 'background 0.1s',
+		padding: '12px 16px', cursor: 'pointer', transition: 'var(--halo-motion-transition, background 0.1s)',
 	},
 	itemActive: { background: 'var(--halo-accent)', color: '#fff' },
 	icon: { fontSize: '18px', width: '28px', textAlign: 'center' },

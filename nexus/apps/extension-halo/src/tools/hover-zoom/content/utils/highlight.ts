@@ -14,7 +14,7 @@ const HIGHLIGHT_STYLE = `
     height: 0px;
     padding: 0;
     margin: 0;
-    transition: all .1s cubic-bezier(0, 1, 0.3, 1), opacity .1s ease-in;
+    transition: var(--halo-motion-transition, all .1s cubic-bezier(0, 1, 0.3, 1), opacity .1s ease-in);
     /* Default highlight style - like Imagus Reborn */
     padding: 1px;
     outline: rgb(255, 120, 120) dashed 2px;

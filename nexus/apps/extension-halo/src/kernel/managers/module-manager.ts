@@ -3,6 +3,7 @@
 
 import { ALL_MODULES, OPTIONAL_MODULES, type ModuleState } from '../registry/module-registry';
 import type { ModuleMeta } from '../core/tool-registry-types';
+import { isReleaseAdmittedPlugin } from '../registry/_generated-release-admission';
 import { readOptionalPackagedModuleEnabled } from '../core/module-installation-runtime';
 import {
 	isPackagedModuleMetaEnabled,
@@ -57,7 +58,7 @@ export interface ModuleManagerSnapshot {
 	disabledModules: readonly ModuleMeta[];
 }
 
-const BUILTIN_MODULES = Object.freeze(ALL_MODULES.filter((module) => module.builtIn));
+const BUILTIN_MODULES = Object.freeze(ALL_MODULES.filter((module) => module.builtIn && isReleaseAdmittedPlugin(module.id)));
 const INITIAL_SNAPSHOT: ModuleManagerSnapshot = Object.freeze({
 	revision: 0,
 	degraded: true,
@@ -252,7 +253,7 @@ export class ModuleManager {
 
 	isEnabled(id: string): boolean {
 		const meta = ALL_MODULES.find((module) => module.id === id);
-		return Boolean(meta && (meta.builtIn || !this.degraded && !this.disabled.has(id)));
+		return Boolean(meta && isReleaseAdmittedPlugin(id) && (meta.builtIn || !this.degraded && !this.disabled.has(id)));
 	}
 
 	getEnabledModules(): ModuleMeta[] { return [...this.snapshot.enabledModules]; }
@@ -262,6 +263,7 @@ export class ModuleManager {
 		return this.serializeMutation(id, async () => {
 			const meta = ALL_MODULES.find((module) => module.id === id);
 			if (!meta) throw new Error(`Module ${id} not found`);
+			if (!isReleaseAdmittedPlugin(id)) throw new Error(`Module ${id} is not included in this release`);
 			if (meta.builtIn) return;
 			await this.persistence.setEnabled(id, true);
 			this.applyEnabled(id, await this.persistence.readEnabled(id));

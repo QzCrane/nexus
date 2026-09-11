@@ -1,0 +1,104 @@
+@layer spectra-product, spectra-accessibility;
+
+@layer spectra-accessibility {
+/* Shared SPECTRA extension-page accessibility policy.
+ * Product CSS may choose visuals, but it may not erase keyboard focus, force
+ * motion after the user requests reduced motion, regress readable muted text,
+ * or force horizontal scrolling at narrow reflow widths. */
+
+/* Light-surface focus ring is >4.5:1 against white/f5 backgrounds. Dark mode
+ * switches to a lighter ring that remains >3:1 against the darkest and card
+ * surfaces. This does not depend on the focused element's own currentColor. */
+:root {
+  --spectra-focus-ring: #2563eb;
+  --text-muted: #8f8f8f;
+}
+
+[data-theme="dark"] {
+  --spectra-focus-ring: #60a5fa;
+}
+
+[data-theme="light"] {
+  --spectra-focus-ring: #2563eb;
+  --text-muted: #666666;
+}
+
+:where(
+  button,
+  a[href],
+  input,
+  select,
+  textarea,
+  summary,
+  [tabindex]:not([tabindex="-1"])
+):focus-visible {
+  outline: 2px solid var(--spectra-focus-ring);
+  outline-offset: 2px;
+}
+
+/* Keep authored placeholder colors at their computed contrast. A user-agent
+ * opacity multiplier would otherwise turn a just-over-AA muted token into a
+ * rendered contrast failure even though the color token itself is compliant. */
+input::placeholder,
+textarea::placeholder {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto;
+    animation-duration: 0.001ms;
+    animation-iteration-count: 1;
+    transition-duration: 0.001ms;
+    transition-delay: 0ms;
+  }
+}
+
+/* Tab-hosted extension pages reflow. A real Action popup keeps its intrinsic
+ * width; its initially narrow sizing probe must not collapse the product. */
+@media (max-width: 389px) {
+  html:not([data-spectra-surface="action-popup"]),
+  html:not([data-spectra-surface="action-popup"]).side-panel-open,
+  html:not([data-spectra-surface="action-popup"]) body,
+  html:not([data-spectra-surface="action-popup"]) .app-wrapper {
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  html:not([data-spectra-surface="action-popup"]) body:has(.app-wrapper) {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  html:not([data-spectra-surface="action-popup"]) .app-wrapper,
+  html:not([data-spectra-surface="action-popup"]) .view-container,
+  html:not([data-spectra-surface="action-popup"]) #view-main,
+  html:not([data-spectra-surface="action-popup"]) #view-settings,
+  html:not([data-spectra-surface="action-popup"]) #app,
+  html:not([data-spectra-surface="action-popup"]) .main,
+  html:not([data-spectra-surface="action-popup"]) .section {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  html:not([data-spectra-surface="action-popup"]) #app {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+
+  html:not([data-spectra-surface="action-popup"]) .header,
+  html:not([data-spectra-surface="action-popup"]) .header-actions,
+  html:not([data-spectra-surface="action-popup"]) .section-header {
+    flex-wrap: wrap;
+  }
+
+  html:not([data-spectra-surface="action-popup"]) input,
+  html:not([data-spectra-surface="action-popup"]) select,
+  html:not([data-spectra-surface="action-popup"]) textarea {
+    max-width: 100%;
+  }
+}
+
+}

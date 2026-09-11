@@ -4,7 +4,8 @@
 import type { ToolCategory } from '../../i18n/types';
 import type { PluginType, ScriptType } from '../registry/taxonomy';
 
-export type ToolStatus = 'ready' | 'beta' | 'coming' | 'disabled' | 'available';
+// Product maturity only. Availability belongs to the generated release graph.
+export type ToolStatus = 'ready' | 'beta' | 'coming' | 'disabled' | 'unclassified';
 
 /**
  * Unified plugin metadata (used by PLUGIN_REGISTRY)
@@ -37,8 +38,9 @@ export interface PluginMeta {
 		excludeMatches?: string[];
 		world?: 'ISOLATED' | 'MAIN' | 'USER_SCRIPT';
 	};
-	// Runtime-only fields (not from manifest)
+	// Product maturity is preserved from the manifest; absent legacy values are unclassified.
 	status?: ToolStatus;
+	// Runtime-only display fields
 	name?: string;
 	description?: string;
 	version?: string;

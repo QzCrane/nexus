@@ -21,7 +21,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	},
 	btn: {
 		padding: '8px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-		background: 'var(--halo-accent)', color: '#fff', border: 'none', transition: 'opacity 0.15s',
+		background: 'var(--halo-accent)', color: '#fff', border: 'none', transition: 'var(--halo-motion-transition, opacity 0.15s)',
 	},
 	btnSecondary: {
 		padding: '6px 12px', borderRadius: '6px', fontSize: '11px', cursor: 'pointer',

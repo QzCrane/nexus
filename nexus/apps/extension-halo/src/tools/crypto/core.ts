@@ -22,12 +22,13 @@ function splitJWT(token: string): [string, string, string] {
 // Decode JWT without verification (base64 parsing only)
 export function decodeJWT(token: string): JWTDecodeResult {
 	try {
-		const [headerPart, payloadPart, signature] = splitJWT(token);
+		const [, , signature] = splitJWT(token);
 
-		const header = JSON.parse(atob(headerPart.replace(/-/g, '+').replace(/_/g, '/')));
-		const payload = JSON.parse(atob(payloadPart.replace(/-/g, '+').replace(/_/g, '/')));
+		const header = jose.decodeProtectedHeader(token);
+		const payload = jose.decodeJwt(token);
 
-		return { header, payload, signature };
+		if (typeof header.alg !== 'string' || !header.alg) throw new Error('JWT algorithm is missing');
+		return { header: { ...header, alg: header.alg }, payload, signature };
 	} catch (error) {
 		return {
 			header: { alg: 'unknown' },

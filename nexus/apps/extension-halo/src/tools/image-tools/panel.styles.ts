@@ -6,7 +6,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	wrapper: { display: 'flex', flexDirection: 'column', gap: '12px' },
 	dropzone: {
 		padding: '32px', textAlign: 'center', border: '2px dashed var(--halo-border)',
-		borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s',
+		borderRadius: '12px', cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.2s)',
 		background: 'var(--halo-bg-secondary)', color: 'var(--halo-text-muted)',
 	},
 	preview: {

@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "app": "spectra",
+  "permissions": {
+    "tabs": {
+      "decision": "required",
+      "capability": "Enumerate and address the exact active/background tabs that own media control sessions.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/background/handlers/tab-state.ts",
+          "marker": "chrome.tabs"
+        }
+      ],
+      "narrowing": "The permission is app-wide because Popup, Background recovery and multi-tab control all address tabs before a per-feature grant could be requested."
+    },
+    "alarms": {
+      "decision": "required",
+      "capability": "Own MV3-safe deadlines and recovery work across service-worker suspension.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/background/offscreen-coordinator.ts",
+          "marker": "chrome.alarms"
+        }
+      ],
+      "narrowing": "Alarm ownership is lifecycle infrastructure, not a user-invoked optional feature."
+    },
+    "webNavigation": {
+      "decision": "required",
+      "capability": "Observe top-document navigation boundaries so runtime/document ownership cannot leak across navigations.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/background/lifecycle.ts",
+          "marker": "chrome.webNavigation"
+        }
+      ],
+      "narrowing": "Navigation identity is part of the safety fence for every supported media tab."
+    },
+    "storage": {
+      "decision": "required",
+      "capability": "Persist and reconcile settings, route state and control authority across extension-context restarts.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/shared/safe-storage.ts",
+          "marker": "chrome.storage"
+        }
+      ],
+      "narrowing": "Persistent product state is required before any optional feature-specific admission occurs."
+    },
+    "downloads": {
+      "decision": "optional",
+      "capability": "Save an explicitly requested screenshot through Chrome's download manager.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/popup/optional-permission-ui.ts",
+          "marker": "permission: 'downloads'"
+        },
+        {
+          "path": "apps/extension-spectra/src/options/optional-permission-ui.ts",
+          "marker": "permission: 'downloads'"
+        },
+        {
+          "path": "apps/extension-spectra/src/shared/optional-permission-admission.ts",
+          "marker": "chrome.permissions.request"
+        },
+        {
+          "path": "apps/extension-spectra/src/background/handlers/screenshot.ts",
+          "marker": "chrome.permissions.contains({ permissions: ['downloads'] })"
+        },
+        {
+          "path": "apps/extension-spectra/src/background/handlers/screenshot.ts",
+          "marker": "chrome.downloads"
+        }
+      ],
+      "narrowing": "Downloads is requested only from the Popup Screenshot click or the Options Save gesture for a Screenshot hotkey; Background never requests it and refuses screenshot persistence when the grant is absent."
+    },
+    "tabCapture": {
+      "decision": "required",
+      "capability": "Provide full-output DSP when the effective site route selects Capture or safe complete page processing is unavailable.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/background/control-coordinator.ts",
+          "marker": "mintCaptureAdmission"
+        },
+        {
+          "path": "apps/extension-spectra/src/background/capture-admission.ts",
+          "marker": "consumeCaptureAdmission"
+        },
+        {
+          "path": "apps/extension-spectra/src/background/handlers/capture.ts",
+          "marker": "chrome.tabCapture"
+        }
+      ],
+      "narrowing": "Core full-output processing uses a bounded one-shot Capture ticket bound to the current foreground document, operation and worker epoch. The selected per-site route may explicitly require Capture; otherwise safe page processing is preferred. The API permission alone never authorizes starting capture, and Background never requests it."
+    },
+    "offscreen": {
+      "decision": "required",
+      "capability": "Host browser-owned audio Capture and remote transport work outside the MV3 service worker.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/background/offscreen-coordinator.ts",
+          "marker": "chrome.offscreen"
+        }
+      ],
+      "narrowing": "The offscreen document is a shared lifecycle owner for multiple admitted runtime capabilities; it is not itself an independently exposed user permission flow."
+    },
+    "userScripts": {
+      "decision": "optional",
+      "capability": "Execute user-authored scripts only after the user explicitly enables the User Scripts feature.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/options/userscripts.ts",
+          "marker": "requestOptionalPermission('userScripts')"
+        },
+        {
+          "path": "apps/extension-spectra/src/shared/optional-permission-admission.ts",
+          "marker": "chrome.permissions.request"
+        },
+        {
+          "path": "apps/extension-spectra/src/background/handlers/user-scripts.ts",
+          "marker": "chrome.userScripts"
+        }
+      ],
+      "narrowing": "The optional permission is requested from the Options feature-enable click before Chrome's separate Developer Mode or Allow User Scripts platform gate is checked."
+    },
+    "scripting": {
+      "decision": "required",
+      "capability": "Inject and retire exact-document control/runtime surfaces after the minimal static bootstrap hands ownership to Background.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/background/main-runtime-manager.ts",
+          "marker": "chrome.scripting"
+        }
+      ],
+      "narrowing": "Dynamic runtime acquisition is a core control path and is intentionally distinct from optional user-authored scripts."
+    },
+    "favicon": {
+      "decision": "required",
+      "capability": "Render browser-provided tab favicons in the multi-tab Popup without fetching site icons directly.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/popup/utils/dom.ts",
+          "marker": "_favicon/"
+        }
+      ],
+      "narrowing": "The Chrome favicon endpoint avoids independent network fetching and is used by the core tab-management surface."
+    },
+    "activeTab": {
+      "decision": "required",
+      "capability": "Bind browser-mediated capture to the current user-invoked foreground document.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/src/background/capture-admission.ts",
+          "marker": "consumeCaptureAdmission"
+        },
+        {
+          "path": "apps/extension-spectra/src/background/control-coordinator.ts",
+          "marker": "mintCaptureAdmission"
+        }
+      ],
+      "narrowing": "activeTab is a temporary user-invoked grant, not a durable host allowlist. Capture still requires an exact current-document one-shot ticket."
+    }
+  },
+  "hostPermissions": {
+    "<all_urls>": {
+      "decision": "required",
+      "capability": "Run the minimal media/bootstrap bridges on arbitrary user-selected web pages and address those exact documents later.",
+      "evidence": [
+        {
+          "path": "apps/extension-spectra/public/manifest.json",
+          "marker": "<all_urls>"
+        }
+      ],
+      "narrowing": "SPECTRA's product scope is media control on arbitrary sites; narrowing to a static domain allowlist would change that product contract. Runtime heavy work remains lease/lazy-gated after this broad host admission."
+    }
+  }
+}

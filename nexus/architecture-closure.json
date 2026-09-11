@@ -1,0 +1,549 @@
+{
+  "schemaVersion": 1,
+  "issue": 32,
+  "branch": "codex/nexus-business-preserving-integration",
+  "priorityPolicy": {
+    "order": [
+      "P0",
+      "P1",
+      "P2"
+    ],
+    "haloFeatureInternals": "P2",
+    "rule": "Repository, NEXUS, SPECTRA, release, toolchain and shared HALO architecture close before individual HALO feature optimization unless a feature defect blocks release correctness."
+  },
+  "tasks": [
+    {
+      "id": "SPECTRA-MEDIA-TAB-INVENTORY",
+      "priority": "P0",
+      "area": "spectra",
+      "owner": "spectra-runtime",
+      "status": "active",
+      "acceptance": [
+        "Popup discovers paused and muted media tabs beyond the recent-activity window.",
+        "Discovery does not acquire the heavy Content Runtime merely to enumerate media tabs.",
+        "Service-worker restart reconstructs inventory from live documents.",
+        "Probe fan-out is bounded and receiver failures are isolated.",
+        "Unit and installed-browser evidence cover multiple tabs."
+      ],
+      "evidence": [
+        "apps/extension-spectra/src/background/handlers/tab-state.ts",
+        "apps/extension-spectra/test/tab-visibility.spec.ts",
+        "apps/extension-spectra/test/tab-visibility-chrome.spec.ts"
+      ]
+    },
+    {
+      "id": "HALO-RELEASE-ADMISSION",
+      "priority": "P0",
+      "area": "halo-shared",
+      "owner": "halo-build",
+      "status": "active",
+      "acceptance": [
+        "Every executable release surface is explicitly admitted as ready, beta, support, or fixed-baseline legacy; source presence and user enablement alone cannot admit it.",
+        "All panels, packaged scripts, shared frame tools and explicitly enabled content hosts from the frozen main baseline remain reachable without changing their persistence identities.",
+        "New unclassified modules fail closed, and legacy admission never promotes declared maturity or authorizes unrelated newly added modules.",
+        "Production source-graph, generated-resource and artifact tests reject unadmitted implementation while proving the preserved baseline is complete."
+      ],
+      "evidence": [
+        "apps/extension-halo/release-admission.json",
+        "scripts/registry-gen/release-admission.ts",
+        "apps/extension-halo/check-release-source-graph.ts",
+        "apps/extension-halo/build.ts",
+        "apps/extension-halo/finalize-release-payload.ts",
+        "apps/extension-halo/test/release-source-graph.spec.ts",
+        "apps/extension-halo/test/release-admission-build.spec.ts"
+      ]
+    },
+    {
+      "id": "HALO-EXPLICIT-RELEASE-STAGE",
+      "priority": "P0",
+      "area": "halo-shared",
+      "owner": "halo-registry",
+      "status": "active",
+      "acceptance": [
+        "Every plugin has an explicit release stage; missing status cannot silently mean coming or shipped.",
+        "Source presence, catalog visibility, payload admission and runtime enablement are distinct generated facts.",
+        "Registry generation fails closed on ambiguous release state."
+      ],
+      "evidence": [
+        "apps/extension-halo/release-admission.json",
+        "apps/extension-halo/src/kernel/registry/_generated-release-admission.ts",
+        "apps/extension-halo/test/registry-generation.spec.ts"
+      ]
+    },
+    {
+      "id": "HALO-GENERATED-RESOURCE-SURFACES",
+      "priority": "P0",
+      "area": "halo-shared",
+      "owner": "halo-build",
+      "status": "active",
+      "acceptance": [
+        "Web-accessible resources and runtime/content entry surfaces are generated from admitted capabilities.",
+        "Release build rejects broad orphan resource exposure, catalog-only transitive imports and source/projection drift."
+      ],
+      "evidence": [
+        "scripts/registry-gen/gen-release-manifest.ts",
+        "apps/extension-halo/public/manifest.json",
+        "apps/extension-halo/check-release-source-graph.ts",
+        "apps/extension-halo/build.ts",
+        "apps/extension-halo/finalize-release-payload.ts",
+        "apps/extension-halo/test/release-tooling.spec.ts",
+        "apps/extension-halo/test/release-source-graph.spec.ts"
+      ]
+    },
+    {
+      "id": "BACKLOG-SSOT",
+      "priority": "P0",
+      "area": "repository",
+      "owner": "repository-governance",
+      "status": "active",
+      "acceptance": [
+        "Authoritative roadmap work has one machine-readable owner and cannot coexist with a misleading zero-backlog projection.",
+        "GitHub issue/project projections are derived or reconciled from that owner."
+      ],
+      "evidence": [
+        "architecture-closure.json",
+        "scripts/render-architecture-closure.ts",
+        ".github/workflows/architecture-closure-sync.yml"
+      ]
+    },
+    {
+      "id": "ARCHITECTURE-CLOSURE-MANIFEST",
+      "priority": "P0",
+      "area": "repository",
+      "owner": "repository-governance",
+      "status": "active",
+      "acceptance": [
+        "Every retained closure item has id, priority, owner, status and acceptance evidence requirements.",
+        "CI validates schema, unique ids, terminal evidence and the HALO feature P2 priority rule."
+      ],
+      "evidence": [
+        "architecture-closure.json",
+        "scripts/check-architecture-closure.ts",
+        "scripts/architecture-closure.spec.ts",
+        "docs/architecture-closure.md"
+      ]
+    },
+    {
+      "id": "CONTINUOUS-GREEN-REPLAY",
+      "priority": "P0",
+      "area": "ci",
+      "owner": "repository-ci",
+      "status": "blocked",
+      "acceptance": [
+        "At least one stable independent replay lane executes repository code continuously and is expected green on main.",
+        "Exact-head local product evidence remains independent rather than being weakened or replaced."
+      ],
+      "evidence": [
+        ".github/workflows/cross-platform.yml",
+        ".github/workflows/halo-keyboard-browser.yml",
+        ".github/workflows/minimum-chrome.yml",
+        ".github/workflows/dependency-update-evidence.yml"
+      ],
+      "blocker": "Integration changes require fresh exact-head local and hosted validation. Historical runner failures are not current product results."
+    },
+    {
+      "id": "MINIMUM-CHROME-EVIDENCE",
+      "priority": "P0",
+      "area": "release",
+      "owner": "browser-compatibility",
+      "status": "active",
+      "acceptance": [
+        "The declared minimum Chrome version is exercised by a pinned browser lane, or the manifest floor is raised to the continuously proven version.",
+        "Current-Chrome and minimum-Chrome evidence are reported separately."
+      ],
+      "evidence": [
+        "browser-floor.json",
+        "scripts/browser-floor.ts",
+        ".github/workflows/minimum-chrome.yml",
+        "apps/extension-halo/test/minimum-chrome-playwright.spec.ts",
+        "apps/extension-spectra/test/tab-visibility-chrome.spec.ts"
+      ]
+    },
+    {
+      "id": "RUNTIME-PERFORMANCE-SLOS",
+      "priority": "P0",
+      "area": "performance",
+      "owner": "performance-governance",
+      "status": "active",
+      "acceptance": [
+        "Exact-head evidence measures cold interactive latency, hotkey end-to-end latency and service-worker wake latency.",
+        "Long-task, CPU, heap/leak and tab/media-scale stress workloads have reproducible evidence before budgets are admitted.",
+        "Runtime SLO evidence is release-bound and distinct from bundle byte ceilings; hard budgets cannot be invented before at least two independent baseline runs."
+      ],
+      "evidence": [
+        "runtime-performance-policy.json",
+        "scripts/runtime-performance.ts",
+        "scripts/runtime-performance.spec.ts",
+        "scripts/check-runtime-performance-policy.ts",
+        "scripts/check-runtime-performance-policy.spec.ts",
+        "apps/extension-halo/test/sidepanel-performance-playwright.spec.ts",
+        "apps/extension-spectra/test/performance.spec.ts",
+        "apps/extension-spectra/test/runtime-stress-performance.spec.ts",
+        "apps/extension-spectra/test/service-worker-wake-performance.spec.ts",
+        "apps/extension-spectra/test/runtime-long-session-performance.spec.ts"
+      ]
+    },
+    {
+      "id": "FEATURE-PROMOTION-GATE",
+      "priority": "P0",
+      "area": "governance",
+      "owner": "release-governance",
+      "status": "active",
+      "acceptance": [
+        "Promotion to ready requires correctness, failure-boundary, lifecycle/restart, permission/privacy, accessibility, runtime resource, bundle and browser evidence.",
+        "Promotion is rejected mechanically when an applicable evidence owner is absent."
+      ],
+      "evidence": [
+        "feature-promotion.json",
+        "scripts/check-feature-promotion.ts",
+        "scripts/check-feature-promotion.spec.ts"
+      ]
+    },
+    {
+      "id": "DEPENDENCY-DEAD-DIRECTS",
+      "priority": "P1",
+      "area": "dependencies",
+      "owner": "dependency-governance",
+      "status": "active",
+      "acceptance": [
+        "Unused and production-misclassified direct dependencies are machine-detected and removed or reclassified only with regenerated lock plus full build/test proof.",
+        "Current retained debt includes HALO file-saver, jszip, @types/file-saver, runtime-misclassified @types/qrcode, and React/ReactDOM declarations that production build evidence proves are replaced by Preact; stale or newly introduced debt fails governance."
+      ],
+      "evidence": [
+        "direct-dependency-policy.json",
+        "scripts/check-direct-dependencies.ts",
+        "scripts/check-direct-dependencies.spec.ts",
+        "apps/extension-halo/build.ts",
+        "apps/extension-halo/package.json",
+        "bun.lock"
+      ]
+    },
+    {
+      "id": "DEPENDENCY-LIFECYCLE-POLICY",
+      "priority": "P1",
+      "area": "dependencies",
+      "owner": "dependency-governance",
+      "status": "active",
+      "acceptance": [
+        "Dependency governance covers vulnerability, freshness, maintenance health, license, bundle contribution, direct-use classification and replacement value.",
+        "A clean advisory audit cannot be reported as complete dependency lifecycle health, and every executable lock domain is audited independently."
+      ],
+      "evidence": [
+        "dependency-domains.json",
+        "dependency-revalidation.json",
+        "direct-dependency-policy.json",
+        "scripts/dependency-audit.ts",
+        "scripts/dependency-audit.spec.ts",
+        "scripts/check-dependency-revalidation.ts",
+        "scripts/check-direct-dependencies.ts",
+        "scripts/generate-sbom.ts",
+        "scripts/release-supply-chain.ts",
+        ".github/dependabot.yml"
+      ]
+    },
+    {
+      "id": "DEPENDENCY-UPDATE-AUTOMATION",
+      "priority": "P1",
+      "area": "dependencies",
+      "owner": "dependency-governance",
+      "status": "active",
+      "acceptance": [
+        "Automated update PRs exist for package dependencies and GitHub Actions pins.",
+        "Low-risk update promotion includes tests plus exact base/candidate production artifact and runtime-performance deltas produced by one fixed candidate workload."
+      ],
+      "evidence": [
+        ".github/dependabot.yml",
+        ".github/workflows/dependency-update-evidence.yml",
+        "runtime-performance-policy.json",
+        "scripts/runtime-performance.ts",
+        "scripts/product-artifact-snapshot.ts",
+        "scripts/product-artifact-snapshot.spec.ts",
+        "scripts/dependency-update-evidence.ts",
+        "scripts/dependency-update-evidence.spec.ts",
+        "scripts/dependency-update-workflow.spec.ts"
+      ]
+    },
+    {
+      "id": "TYPESCRIPT-7-EPOCH",
+      "priority": "P1",
+      "area": "toolchain",
+      "owner": "toolchain-governance",
+      "status": "active",
+      "acceptance": [
+        "Preserve main's TypeScript 7.0.2 native CLI and the separately named TypeScript 6.0.2 compatibility API without restoring the obsolete 5.9 preparation phase.",
+        "Every programmatic compiler consumer imports the compatibility API identity and is inventoried with its dependency owner.",
+        "Compiler package identities, lock records, configuration and public build projections remain consistent; changes require exact-head regression evidence."
+      ],
+      "evidence": [
+        "typescript-7-epoch.json",
+        "scripts/check-typescript-7-epoch.ts",
+        "scripts/check-typescript-7-epoch.spec.ts",
+        "tsconfig.base.json"
+      ]
+    },
+    {
+      "id": "DIRECT-DEPENDENCY-REVALIDATION",
+      "priority": "P1",
+      "area": "dependencies",
+      "owner": "dependency-governance",
+      "status": "active",
+      "acceptance": [
+        "Direct dependency versions are revalidated against current stable upstream releases and repository compatibility without making online freshness a nondeterministic build gate.",
+        "Playwright, esbuild, Biome, Turbo, Terser, darkreader, jose, pinyin-pro and the TypeScript compiler epoch are explicitly reconciled against the exact current lock."
+      ],
+      "evidence": [
+        "dependency-revalidation.json",
+        "scripts/check-dependency-revalidation.ts",
+        "scripts/check-dependency-revalidation.spec.ts",
+        "bun.lock"
+      ]
+    },
+    {
+      "id": "LOCK-DOMAIN-AUTHORITY",
+      "priority": "P1",
+      "area": "toolchain",
+      "owner": "toolchain-governance",
+      "status": "active",
+      "acceptance": [
+        "Root and nexus lock/resolution domains are either intentionally separate with independent frozen-install evidence or converged to one authority.",
+        "No unverified dependency universe exists outside CI/release ownership."
+      ],
+      "evidence": [
+        "dependency-domains.json",
+        "scripts/check-dependency-domains.ts",
+        "scripts/check-dependency-domains.spec.ts",
+        "scripts/dependency-audit.ts",
+        "closeout-policy.json",
+        "../.github/workflows/cross-platform.yml"
+      ]
+    },
+    {
+      "id": "IMMUTABLE-ACTIONS",
+      "priority": "P1",
+      "area": "supply-chain",
+      "owner": "supply-chain",
+      "status": "active",
+      "acceptance": [
+        "Third-party GitHub Actions are pinned to immutable commit SHAs.",
+        "Automated dependency ownership updates those SHAs without returning to mutable tags."
+      ],
+      "evidence": [
+        "scripts/check-workflow-actions.ts",
+        "scripts/workflow-actions.spec.ts",
+        "../.github/dependabot.yml",
+        "../.github/workflows/cross-platform.yml",
+        "../.github/workflows/dependency-update-evidence.yml"
+      ]
+    },
+    {
+      "id": "SBOM-LICENSE-PROVENANCE",
+      "priority": "P1",
+      "area": "supply-chain",
+      "owner": "supply-chain",
+      "status": "active",
+      "acceptance": [
+        "Each release emits a machine-readable SBOM and third-party license inventory whose current workspace-installed-graph scope is stated explicitly rather than misrepresented as an artifact-retained closure.",
+        "Build provenance binds source, product build/manifest/policy inputs, builder/tool identity and resulting artifact digest; product-retained dependency closure remains a required refinement before artifactScoped may become true."
+      ],
+      "evidence": [
+        "scripts/generate-sbom.ts",
+        "scripts/generate-sbom.spec.ts",
+        "scripts/release-supply-chain.ts",
+        "scripts/release-supply-chain.spec.ts",
+        "package.json"
+      ]
+    },
+    {
+      "id": "LEAST-PRIVILEGE-PROOF",
+      "priority": "P1",
+      "area": "security",
+      "owner": "permission-governance",
+      "status": "active",
+      "acceptance": [
+        "Permission verification distinguishes declared-and-used from required-at-install.",
+        "SPECTRA required permissions and host scope have machine-readable least-privilege rationale or are moved to narrower optional/capability-bound admission."
+      ],
+      "evidence": [
+        "apps/extension-spectra/public/manifest.json",
+        "apps/extension-spectra/permission-policy.json",
+        "scripts/check-spectra-least-privilege.ts",
+        "scripts/check-spectra-least-privilege.spec.ts",
+        "apps/extension-spectra/src/shared/optional-permission-admission.ts",
+        "apps/extension-spectra/src/shared/optional-permission-click-gate.ts",
+        "apps/extension-spectra/src/options/userscripts.ts",
+        "apps/extension-spectra/src/popup/optional-permission-ui.ts",
+        "apps/extension-spectra/src/options/optional-permission-ui.ts",
+        "apps/extension-spectra/test/optional-permission-admission.spec.ts",
+        "apps/extension-spectra/test/tab-capture-permission-contract.spec.ts",
+        "apps/extension-spectra/test/screenshot-handler.spec.ts"
+      ]
+    },
+    {
+      "id": "LOCAL-DIAGNOSTIC-BUNDLE",
+      "priority": "P1",
+      "area": "observability",
+      "owner": "diagnostics",
+      "status": "active",
+      "acceptance": [
+        "Users can explicitly export a redacted bounded diagnostic bundle without default remote telemetry, polling, continuous log capture or diagnostic storage.",
+        "SPECTRA Background exposes an extension-UI-only observation port whose collection does not create/reconcile offscreen authority; bundles include version/browser/permission/runtime scalar facts while proving URL/title/token/storage values cannot leak."
+      ],
+      "evidence": [
+        "packages/nexus-kernel/src/diagnostics.ts",
+        "scripts/diagnostics-contract.spec.ts",
+        "apps/extension-spectra/src/background/diagnostics.ts",
+        "apps/extension-spectra/src/options/diagnostics.ts",
+        "apps/extension-spectra/test/diagnostics-chrome.spec.ts",
+        "apps/extension-halo/src/system/settings/panel.tsx",
+        "apps/extension-halo/test/sidepanel-diagnostics-playwright.spec.ts"
+      ]
+    },
+    {
+      "id": "ACCESSIBILITY-GATE",
+      "priority": "P1",
+      "area": "quality",
+      "owner": "ui-quality",
+      "status": "active",
+      "acceptance": [
+        "Critical SPECTRA Popup/Options and HALO SidePanel paths have automated keyboard, focus and accessible-name/state checks.",
+        "Narrow reflow, dynamic reduced-motion, contrast-sensitive states and custom scroll ownership have explicit installed-browser evidence."
+      ],
+      "evidence": [
+        "apps/extension-halo/public/sidepanel.html",
+        "apps/extension-halo/test/sidepanel-accessibility-playwright.spec.ts",
+        "apps/extension-spectra/public/accessibility.css",
+        "apps/extension-spectra/src/shared/accessibility.ts",
+        "apps/extension-spectra/src/shared/smooth-scroll.ts",
+        "apps/extension-spectra/test/accessibility-contract.spec.ts",
+        "apps/extension-spectra/test/accessibility-chrome.spec.ts"
+      ]
+    },
+    {
+      "id": "VISUAL-REGRESSION-GATE",
+      "priority": "P1",
+      "area": "quality",
+      "owner": "ui-quality",
+      "status": "active",
+      "acceptance": [
+        "Critical UI states have deterministic visual capture owners pinned to browser, viewport, locale, theme and reduced-motion state; ordinary tests cannot overwrite baselines.",
+        "The policy remains baseline-required until pinned Chrome baselines are explicitly re-recorded and reviewed, after which exact SHA comparison may be enforced without invented fuzzy thresholds."
+      ],
+      "evidence": [
+        "visual-regression-policy.json",
+        "scripts/check-visual-regression-policy.ts",
+        "scripts/check-visual-regression-policy.spec.ts",
+        "apps/extension-halo/test/store-assets.spec.ts",
+        "apps/extension-halo/scripts/capture-store-assets.ts",
+        "apps/extension-spectra/test/visual-baseline.spec.ts",
+        "apps/extension-spectra/scripts/capture-visual-baseline.ts"
+      ]
+    },
+    {
+      "id": "PROPERTY-MUTATION-TESTING",
+      "priority": "P1",
+      "area": "quality",
+      "owner": "test-governance",
+      "status": "active",
+      "acceptance": [
+        "Property or mutation testing is applied selectively to parsers, protocol guards and state machines where it finds failures ordinary examples miss.",
+        "HALO release-admission fuzz properties and SPECTRA protocol structural mutations prove closed-world rejection without substituting a global vanity coverage percentage."
+      ],
+      "evidence": [
+        "apps/extension-halo/test/release-admission-properties.spec.ts",
+        "scripts/registry-gen/release-admission.ts",
+        "apps/extension-spectra/test/protocol-mutation.spec.ts",
+        "packages/contracts/src/spectra.protocol.ts"
+      ]
+    },
+    {
+      "id": "RISK-WEIGHTED-TEST-OWNERSHIP",
+      "priority": "P1",
+      "area": "quality",
+      "owner": "test-governance",
+      "status": "active",
+      "acceptance": [
+        "Large or high-risk activation/runtime closures cannot be promoted without focused behavior contracts.",
+        "Release tooling detects admitted high-risk modules that have no registered focused test owner."
+      ],
+      "evidence": [
+        "apps/extension-halo/release-test-owners.json",
+        "scripts/check-release-test-owners.ts",
+        "scripts/check-release-test-owners.spec.ts",
+        "apps/extension-halo/test/bilibili-enhancer-contract.spec.ts"
+      ]
+    },
+    {
+      "id": "HALO-GENERATED-CONTENT-ENTRY",
+      "priority": "P1",
+      "area": "halo-shared",
+      "owner": "halo-runtime",
+      "status": "active",
+      "acceptance": [
+        "Content execution requirements are generated from plugin capability metadata rather than parallel manual lists/imports.",
+        "Generator and transitive production source-graph drift fail repository verification."
+      ],
+      "evidence": [
+        "apps/extension-halo/release-admission.json",
+        "apps/extension-halo/src/kernel/registry/_generated-release-admission.ts",
+        "apps/extension-halo/check-release-source-graph.ts",
+        "apps/extension-halo/build.ts",
+        "apps/extension-halo/finalize-release-payload.ts",
+        "apps/extension-halo/test/release-source-graph.spec.ts"
+      ]
+    },
+    {
+      "id": "HALO-GENERATED-ACTIVE-SERVICES",
+      "priority": "P1",
+      "area": "halo-shared",
+      "owner": "halo-runtime",
+      "status": "active",
+      "acceptance": [
+        "Active service projection derives from owned lifecycle contracts rather than a manual storage-key/service list.",
+        "Every projected service has an owner, readiness semantics and disposer."
+      ],
+      "evidence": [
+        "apps/extension-halo/release-admission.json",
+        "apps/extension-halo/src/kernel/registry/_generated-release-admission.ts",
+        "apps/extension-halo/src/components/sidepanel/ActiveServicesContext.tsx",
+        "apps/extension-halo/test/ui-interaction-semantics.spec.ts"
+      ]
+    },
+    {
+      "id": "HALO-BACKGROUND-DEADLINES",
+      "priority": "P2",
+      "area": "halo-feature",
+      "owner": "halo-timers",
+      "status": "queued",
+      "acceptance": [
+        "A Timer or Pomodoro feature cannot be promoted from catalog-only status until work expected to survive an unmounted SidePanel uses persisted deadline state plus Background/alarm ownership.",
+        "Any future promoted timer proves restart, duplicate/late alarm and completion side-effect idempotence before release admission."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-PDF-CLOSURE",
+      "priority": "P2",
+      "area": "halo-feature",
+      "owner": "halo-pdf",
+      "status": "queued",
+      "acceptance": [
+        "Every requested split range is preserved in the user-visible result.",
+        "File/count/page/aggregate byte limits, cancellation and bounded execution prevent unbounded SidePanel memory/CPU use.",
+        "Heavy PDF work is isolated from the UI owner and has focused correctness/resource tests before ready promotion."
+      ],
+      "evidence": []
+    },
+    {
+      "id": "HALO-FEATURE-TAIL-AUDIT",
+      "priority": "P2",
+      "area": "halo-feature",
+      "owner": "halo-product",
+      "status": "queued",
+      "acceptance": [
+        "Remaining individual feature internals are audited only after shared release-admission, lifecycle, dependency and evidence gates are established.",
+        "Any promoted feature defect discovered earlier may preempt this order only when it blocks release correctness."
+      ],
+      "evidence": []
+    }
+  ]
+}

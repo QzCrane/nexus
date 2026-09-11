@@ -1,0 +1,2315 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-09-06",
+  "scope": "Branch-change disposition, not a second task/status register. Architecture task status remains architecture-closure.json.",
+  "sources": {
+    "main": "664d0615f850c568a8840ac312ca7c92cb81ceee",
+    "architecture": "7d4bf273130d73dbf63348affc3a258fcdac4627",
+    "total": "4b14658c107f33778bc5d48505609cafd58a0aec"
+  },
+  "mergeBase": "24fd7631e6417bfe6416745c2eefcc4b950656f4",
+  "candidatePathCount": 175,
+  "paths": [
+    {
+      "path": ".github/dependabot.yml",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "4db2502e5691b842d84080d1c514e973400443b5",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": ".github/workflows/architecture-closure-sync.yml",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "21d6ea2cb6e253b98deb718b828853a9d2bd0aad",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": ".github/workflows/cross-platform.yml",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "4119e5080a115fb0b7ecd87c70fa36696f8c094a",
+        "architecture": "3f3818d1a67e4ceb1360a533ce9929dfb503c446",
+        "total": "cff6e47f5940a0fda0f0466d3486aa5349190e6a"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": ".github/workflows/dependency-update-evidence.yml",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "fd68ce09d64a0e5ee0822dfed48b062def859931",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": ".github/workflows/documentation.yml",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "7f776d202c1e1645627b85ec22a40618c843f4e4",
+        "architecture": "3fd71afdcdcb366886ce48abef6e97e6f1cc4247",
+        "total": "f8c6721736947aa6a4d16a21e11b508faec82a15"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": ".github/workflows/halo-keyboard-browser.yml",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "ab7d3085dc2d740a306aa1e1cd0e3e8d5fb4d531",
+        "architecture": "176765422a17560ebc292992ebafebd83b446100",
+        "total": "47f93ef5cfbbdaf2a449a930c823ad7de1366d39"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": ".github/workflows/minimum-chrome.yml",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "11fa607ee13940754cb6ad1ffd9092b5c3d5af44",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": ".github/workflows/sync-public.yml",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "87398b05726e2d14452db3111ffcb284c8db2b93",
+        "architecture": "915a15df4ce54655aaad92f3724eb32dfc53ebbd",
+        "total": "d73f0020f26342ea0609128d814fd3a9241b4765"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/apps/extension-halo/build.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "87fbc2f04a86d9ae4a5467c6a9a17db373374227",
+        "architecture": "9e48a81a571f093e756e124c9ff3f228fc86152c",
+        "total": "4d9f062dd1fca9a6eae440a8c3a71b1ece49c0f9"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/check-release-source-graph.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "f711d5cc7c7ebaa7f12200d9400a510eba5e4e74",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/finalize-release-payload.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "951bca1a2ad6117a929c4aa88daf570863c89fa6",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/manifest.base.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "39c0234ec9106e0656765972990689140cf1cd5b",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/package.json",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "b1ec1df48412cb2349be8e04f7b3b30bac777efd",
+        "architecture": "26926e4d9457aac6cae831faee5b9840cb045818",
+        "total": "96312e7c9c5d018ef6a832f1cc40428b2e5d69f1"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/apps/extension-halo/public/THIRD_PARTY_NOTICES.txt",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "dec069513778dd84f183c581905b93e306294ae2",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/public/manifest.json",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "9f748cc0a79e5743052b88c62926138a568c8763",
+        "architecture": "00077a382edcab2bb66ee71dc47425a6d8d656a6",
+        "total": "6370f3d90b821195faf16dcb8cddb16edfa734cd"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/public/script-plugin-runtime.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "1783e482c9a51e02ae44a078b0cc18cc7f69be9f",
+        "architecture": "2fd06085a9b73dc13cf890e4d1c8d6d30fec9bcb",
+        "total": "1783e482c9a51e02ae44a078b0cc18cc7f69be9f"
+      },
+      "decision": "retain-current-main",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/public/sidepanel.html",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "aa8e2e17b953fa49b1ecef115632d06d85e0147e",
+        "architecture": "b44750734e55a0b630a93d9e28733d5ec43eba9a",
+        "total": "aa8e2e17b953fa49b1ecef115632d06d85e0147e"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-halo/release-admission.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "47842561de5c8ac254e5d2fba1cd7ee9bb48bb4b",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/release-test-owners.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "0eb058c7cefccc63fb42f0b7dd2afcccbbad41a8",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/scripts/capture-store-assets.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "e19890741756b382f90fa4c7b0ea0c1c287089a5",
+        "architecture": "d88321ff00439764b7f361cefbea5dbd0a717a25",
+        "total": "e19890741756b382f90fa4c7b0ea0c1c287089a5"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/components/_generated-tool-loader.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "57289d7e3ab1e9fa7eb3c3592918d40ce63cd40b",
+        "architecture": "f4f8a4511930e2da418dfdaf5cb6c84e13bd7b41",
+        "total": "e5222204886e1d3fd07e808114803b496007d082"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/components/sidepanel/ActiveServicesContext.tsx",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "365fa9ff123d58942a17a6a4c2487b0c81636fbf",
+        "architecture": "a53ada0729a7dc192dd367ae3c0b2fd916218694",
+        "total": "365fa9ff123d58942a17a6a4c2487b0c81636fbf"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Generate observation adapters from admitted service owners, preserve dynamic user-script entries and distinguish projected enablement from confirmed browser execution."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/components/sidepanel/use-sidepanel-state.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "3f16c63f2e7fccf709a441240f6b6a2e0e33b58c",
+        "architecture": "3f16c63f2e7fccf709a441240f6b6a2e0e33b58c",
+        "total": "58acd6166d1dbdf3adc17a930e47db80831ab406"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt total-branch separation of product maturity and user enablement, but do not treat every future missing status as ready. Historical availability is authorized by the bounded legacy baseline."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/entry/background.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "4286923067145b2d2065c27f675108ae5a213d93",
+        "architecture": "17a7509ca50cdd7a15ea048919f5f15a99c2c827",
+        "total": "4286923067145b2d2065c27f675108ae5a213d93"
+      },
+      "decision": "retain-current-main",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/entry/content-frame-tools-runtime.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "6c8c53f353c00ce035cec2c8a2805eabaf100435",
+        "architecture": "a6cbe94727658592f09cb852b36d82b8912aaa36",
+        "total": "6c8c53f353c00ce035cec2c8a2805eabaf100435"
+      },
+      "decision": "retain-current-main",
+      "reason": "Reject Ruler-only product shrink; retain the original ruler/DOM-selector/annotation execution graph and lazy all-frame host. Admission generates physical resources, not feature deletion."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/entry/content-frame-tools.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "557f4ff0a2e6a031de51250e241c6c6d751fd009",
+        "architecture": "f57eacaa27ee681265f3b623aaab7b3f0e3f05a5",
+        "total": "557f4ff0a2e6a031de51250e241c6c6d751fd009"
+      },
+      "decision": "retain-current-main",
+      "reason": "Reject Ruler-only product shrink; retain the original ruler/DOM-selector/annotation execution graph and lazy all-frame host. Admission generates physical resources, not feature deletion."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/kernel/core/tool-registry-types.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "cc35fcb8b9f2fff176f791ad71997cdfd4fc3064",
+        "architecture": "cc35fcb8b9f2fff176f791ad71997cdfd4fc3064",
+        "total": "2947c6abd5ea9d66620917893b09c6979dcc2869"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt total-branch separation of product maturity and user enablement, but do not treat every future missing status as ready. Historical availability is authorized by the bounded legacy baseline."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/kernel/registry/_generated-background-active.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "b5a8b3a16f178d408df5672bf5480c1b35d02854",
+        "architecture": "5f9aaae61727d3cbee425525840ba97f5d7924d7",
+        "total": "a3515e841c05eb2cde9b387cae9b9f9de7efd807"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/kernel/registry/_generated-release-admission.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "24211d42d058654e42048d4a2cdd3e3a514e28b8",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/kernel/registry/module-registry.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "83de0adb4ebdcf3cc7c12d7cd5b979c03796b6f1",
+        "architecture": "83de0adb4ebdcf3cc7c12d7cd5b979c03796b6f1",
+        "total": "23b89d62db458a52429bbb41bf6d867797c3ac41"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt total-branch separation of product maturity and user enablement, but do not treat every future missing status as ready. Historical availability is authorized by the bounded legacy baseline."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/kernel/registry/release-admission.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": null,
+        "total": "8cae0cf43905a8af340ddec63cf66a47e5937203"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/system/settings/panel.tsx",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "487e81a041b62e4bf9d4314669b3db438af78540",
+        "architecture": "5d1c8bb3ef16a9519a302313d6e0c9a6b35c7a2b",
+        "total": "487e81a041b62e4bf9d4314669b3db438af78540"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/tools/uuid/index.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "bc7d2b29a2075ff36057a3cead569d4955e807d6",
+        "architecture": "bc7d2b29a2075ff36057a3cead569d4955e807d6",
+        "total": "16918dd4bd0a33b52db3387f9f28fa1d2e7bcb92"
+      },
+      "decision": "adopt-total-exact",
+      "reason": "Retain total-branch UUID export identity fix with compatibility alias and unchanged persisted state keys."
+    },
+    {
+      "path": "nexus/apps/extension-halo/src/tools/uuid/panel.tsx",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "1918472118be3f7baa3f7f1751a95200281f3fe2",
+        "architecture": "1918472118be3f7baa3f7f1751a95200281f3fe2",
+        "total": "6368c794c8eef3541bd3aead10f916b4d5bece6e"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain total-branch UUID export identity fix with compatibility alias and unchanged persisted state keys."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/active-services-contract.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "08f751b4f15c5ca800e2759097103ea3f66de058",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Generate observation adapters from admitted service owners, preserve dynamic user-script entries and distinguish projected enablement from confirmed browser execution."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/bilibili-enhancer-contract.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "e8d3bb583c01a613b7653a7681393eba697a1ec2",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/build-runtime-surfaces.spec.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "8f6c3f35ad42bb9d1ba4f57319aa5d1afdb94495",
+        "architecture": "8f6c3f35ad42bb9d1ba4f57319aa5d1afdb94495",
+        "total": "6281a8694df5bbf3665f6b3b45b68659874c8fb4"
+      },
+      "decision": "retain-current-main",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/frame-tools-lazy.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "d057277e4fac41fbe0bcc158d7388ed10c6505c0",
+        "architecture": "aabcfe2d301e7f436d51802bf8f08386467baa30",
+        "total": "d057277e4fac41fbe0bcc158d7388ed10c6505c0"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reject Ruler-only product shrink; retain the original ruler/DOM-selector/annotation execution graph and lazy all-frame host. Admission generates physical resources, not feature deletion."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/minimum-chrome-playwright.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "912da3ef98135cb2e4aa896d2804a4ba9ab044e1",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain Chrome 135 product floor. Correct the inherited archive checksum only after duplicate official downloads, GCS MD5 and version metadata agree; record exact provenance."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/registry-generation.spec.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "c42afee7ea10d89ff483c0bba07d4b570d1c07f4",
+        "architecture": "8aea265731023c58e0490ed63d8237427e4e8896",
+        "total": "3a7557f02d6b72e8650bec5592aa980002a6d99f"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/release-admission-build.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "02b5bffc7ddd2daee2d288f9b53c8d95baf0f8ba",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/release-admission-properties.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "b8ab243b4dc735517c8c68e80f9f8b8de6a578d9",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/release-source-graph.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "fcc104f5d1690dffb65d573d80a393e0537f0981",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/release-tooling.spec.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "dd9d98870797ea44b9051c944150afef7cec4115",
+        "architecture": "66dd94ce78a5145b0625b129a3de31d0f25380d8",
+        "total": "3e68b944a1d0ad1d78c74f9495f5c51e450fcbd8"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/sidepanel-accessibility-playwright.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "b40ab8d6093dc70285e479fe2655f1fbe80fa32e",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/sidepanel-diagnostics-playwright.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "a888b50bac8191311dff0202c0bfa7b220333447",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt local-only bounded diagnostic schema with current main owner adapters, strict response validation, port deadlines, explicit unknown facts and retired-consumer fencing."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/sidepanel-performance-playwright.spec.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "ce08d446fd9badda9ae21ba6efb92b956a919271",
+        "total": "ca51904aaa03277eac89676ea674beba606caa02"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/sidepanel-runtime-playwright.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "5fa2d360817b9a37b73b8002c8fb45c4d5debfde",
+        "architecture": "2fc0b034428591769742606b8c6e36cf8da1aa89",
+        "total": "5fa2d360817b9a37b73b8002c8fb45c4d5debfde"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/store-assets.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "6de33f1880503f687c297fe6615b137a061e977d",
+        "architecture": "ae97397dc85cbd568e55ee528cc6bbf3985a9203",
+        "total": "6de33f1880503f687c297fe6615b137a061e977d"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/apps/extension-halo/test/ui-interaction-semantics.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "5039ae6e130e917f32920d792fe4b49c10687818",
+        "architecture": "f6b0c689322c8698c153c04afb6cd00274be8664",
+        "total": "5039ae6e130e917f32920d792fe4b49c10687818"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/package.json",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "356b814fbf5de10847e8671d77619d11cef4216c",
+        "architecture": "1cc130a186db18c1932e3776960e56aafcedc4e3",
+        "total": "2c56c2aef7476902d8b5897b3bb685e5961153e0"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/permission-policy.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "5b0aeae55a15a3f3c3f5e6fda981d054acafcf7f",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/public/accessibility.css",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "93ad26634c19a8206a93cbf961efa77b9392c52d",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/public/manifest.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "9d73a5ea22d6569671b9b4d93cd306a5dbdd2e2a",
+        "architecture": "7ec94a9ec9876cc2ed320db95fcdbb1746cabe47",
+        "total": "a9275c68701b9f3517068b79a20c2bbdbf8e1939"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/public/options.html",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "901c9c6fd7587e5356814ac82cae71661c1e053e",
+        "architecture": "044427fa9d87f89a45a30e09c67d1924e279168e",
+        "total": "901c9c6fd7587e5356814ac82cae71661c1e053e"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/scripts/capture-visual-baseline.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "737668ca740a730cd461c44fbd1feb9dd4cae10a",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/scripts/run-tests.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "327eb78a629b1410ac7be399bf8db6d788277436",
+        "architecture": "6ac03ec313a2ba4ce36fecf9ea50331f9e752cf7",
+        "total": "f75679b709b42c3df0627c7062f832564bd0fda3"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/background/diagnostics.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "78817b2a48cdd0fd1f9a4133f4a4c8379c9b42de",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt local-only bounded diagnostic schema with current main owner adapters, strict response validation, port deadlines, explicit unknown facts and retired-consumer fencing."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/background/handlers/screenshot.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "5906a879365f6333a68dbc1b52d08d5d5a67850e",
+        "architecture": "186a842badc6a6e051d4d56ef3b7fce442313980",
+        "total": "ac0eacda42103efe99ce7b5734b7d7dbe875abed"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/background/handlers/tab-state.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "845adc3848bb9d2ce181414f2b95bb781365927c",
+        "architecture": "0699109e89f34fa629bdbbdfa30c96e4aa66ded2",
+        "total": "3d4df2dae598da3920d35e480cb8c027b4db9bb0"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Port complete passive media discovery into main RPC contracts; bind exact documents, limit physical in-flight requests, retain permits after timeout, and report partial inventory explicitly."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/background/index.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "43b2aa3dfa9b506e8c6c820a27e82eaab86af993",
+        "architecture": "f76e32a9995996546eaa9a15b83c974cb4c61848",
+        "total": "68426fcc0046fbdbe744bb8575c74572d2e2c2dc"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/background/lifecycle.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "54baa8a94f23364aff7a1aab2293bbcf463bfe34",
+        "architecture": "3f34c00bc60e862b083e33a0b799ef0fef859553",
+        "total": "86bc5f3d7696bceaab6ab467a7175325bbe8297f"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/background/state.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "c7b142e3eed05de62cbf3146ae8727347ca1fb2f",
+        "architecture": "4270fcf2f7e520e0930acfca26a2b9da79d6aea3",
+        "total": "fc7063e095737566d9ba94b94243ac323cfccdce"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/options/diagnostics.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "80774b0d188b1ae544a96620f7a953b37fcf5fa3",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt local-only bounded diagnostic schema with current main owner adapters, strict response validation, port deadlines, explicit unknown facts and retired-consumer fencing."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/options/index.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "b978873e4d347ae0f31500a22f7dc9fd06373c33",
+        "architecture": "9409826263a59e074252631219bea795412a5ebf",
+        "total": "13a5f30a654395563829e752ae865a5ddfec169f"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/options/optional-permission-ui.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "f1a1b6d7c22c7d6afae1a92b7e77a06623bcd7e1",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/options/userscripts.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "91401c1d5ee83437539672d6336ea53911797556",
+        "architecture": "07c1327e0e534235e95474500f0c3b6dfcfc64e9",
+        "total": "501b31a54814517df5b01b01792b7cabb2c1164b"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/popup/card/index.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "67f20690a9e678c8a5fbbc03202df9ca3aa4ad58",
+        "architecture": "6634865a6a8b58a3a0275e06c51a373f1a28933c",
+        "total": "67f20690a9e678c8a5fbbc03202df9ca3aa4ad58"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve main event hub, generation/revision ordering, passive background reads, current disposal and dictionary ownership; add document-bound reads and isolated card retirement rather than whole-popup reload."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/popup/card/init.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "cf4c4377402f016bb755330ce425ed9106b3141a",
+        "architecture": "bedde49cdea930064dce710942896ce58bcd4ff3",
+        "total": "5ec429fc1d28b959769c1d2a174a5282a292b3d4"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve main event hub, generation/revision ordering, passive background reads, current disposal and dictionary ownership; add document-bound reads and isolated card retirement rather than whole-popup reload."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/popup/card/messaging.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "b495e131206c10ed13b5d4ee9e301096647f3e3f",
+        "architecture": "b046fe56fc6ab7eafe63fc959d6f47ca28d24bf6",
+        "total": "5b8d409c24913c7c4844d72b706da0d0987ad375"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve main event hub, generation/revision ordering, passive background reads, current disposal and dictionary ownership; add document-bound reads and isolated card retirement rather than whole-popup reload."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/popup/card/snapshot.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "d49e4a3f41e27d61b4ce1d0752aefe63ce367494",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve main event hub, generation/revision ordering, passive background reads, current disposal and dictionary ownership; add document-bound reads and isolated card retirement rather than whole-popup reload."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/popup/card/types.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "bf97bef89697c1b0104a9b30f6807cf6fcff5aea",
+        "architecture": "108f016a0da5fcdd12c19c56a4c960db5b7fa7ee",
+        "total": "6991dc71f203572b4d7a6c2f7c8681cd7e0a26ba"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve main event hub, generation/revision ordering, passive background reads, current disposal and dictionary ownership; add document-bound reads and isolated card retirement rather than whole-popup reload."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/popup/index.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "3f6671a45ca0a0c653a6c71837651f0f784d22b7",
+        "architecture": "d729dae3f5f9012e916bd39c1ed57dd228b2b9b7",
+        "total": "a93e87dd969bb183c240b932b764ec1e6dc4b11e"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve main event hub, generation/revision ordering, passive background reads, current disposal and dictionary ownership; add document-bound reads and isolated card retirement rather than whole-popup reload."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/popup/optional-permission-ui.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "5251ef5fcad2562a8e8b0ac39e7526852898a283",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/shared/accessibility.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "58f3b479def6f90f03bd086600cde688bbfc24f1",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/shared/optional-permission-admission.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "98dfeba04088fade2d07e8f15abadb55c3cd3723",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/shared/optional-permission-click-gate.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "d598d77785e0753cb3b2cde70e13e30ec11d6b2c",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/shared/smooth-scroll.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "b9ced91ff585f9fb6a7a058b4bfac64a1267b096",
+        "architecture": "c2f2654f636dce63c2db7cc0cfa7cbc2badf186c",
+        "total": "b9ced91ff585f9fb6a7a058b4bfac64a1267b096"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/src/shared/top-document.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "09ac1cd90c790c8c7a64368770f6444317e84d1e",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/store-listings/privacy-justifications.md",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "81fe9c67af5a4e5140477bcd4a9b30eca7ac71d9",
+        "architecture": "98963002022a8732cf647f13a2ab985fecefb8a2",
+        "total": "8c14f41783b0d02cfbf485710c2fdce1dad645ca"
+      },
+      "decision": "retain-current-main",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/accessibility-chrome.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "5ccee8fae1d9e21071fbbb403e3b6dd8083a975c",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/accessibility-contract.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "1c0631978b16326c81aa774f264aba31274c1246",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep existing controls and complete tool surface; use inherited motion preference variables for inline styles instead of ineffective/forbidden important overrides, and retain focus/keyboard/reflow checks."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/diagnostics-chrome.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "2e90f4b46dfdb6fe15b4b5deea466b1d79005f75",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Adopt local-only bounded diagnostic schema with current main owner adapters, strict response validation, port deadlines, explicit unknown facts and retired-consumer fencing."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/optional-permission-admission.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "70d5c62fbb3a0ec2bbb8a49ef71c66bd45c66c48",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/performance.spec.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "422c25328421e3643df4fd0437658a1ce7d1e694",
+        "total": "f659eacdb38824fa69250f7dd8f03f0107571f45"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/popup-document-projection.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "2317bf113c73af017d5c296cd9eddbb4459beeae",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve main event hub, generation/revision ordering, passive background reads, current disposal and dictionary ownership; add document-bound reads and isolated card retirement rather than whole-popup reload."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/protocol-mutation.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "63324341ce58fc379cc72249aade8f71cd499f82",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/runtime-long-session-performance.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "469dc47f2e163357e8d0a2c7960de6ffe6947189",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/runtime-stress-performance.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "0c4cfeeb6b4a4d39bd623ba46fd214d1c2bc20ee",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/screenshot-handler.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "510bbc78f012cf5e52f07a889d4beb276b6f54df",
+        "architecture": "ddee29cd702e941fe8a9308333745013a70c7e50",
+        "total": "510bbc78f012cf5e52f07a889d4beb276b6f54df"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/service-worker-wake-performance.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "fbadb4016446441ed6c4bd654314fb932d34eac8",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/tab-capture-permission-contract.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "fffebb5f04e5dab46a0fd4c8c62354952135fedb",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Keep capability/data paths and main capture tickets. Optional grants preserve the immediate user gesture; duplicate clicks, detached pages and retargeted intents cannot replay obsolete work."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/tab-visibility-chrome.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "8aeaa412304de5a68885fd1a783d2878adfbd39f",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Port complete passive media discovery into main RPC contracts; bind exact documents, limit physical in-flight requests, retain permits after timeout, and report partial inventory explicitly."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/tab-visibility.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "38747bf95180fab11ba412f572cedf70fa438a51",
+        "architecture": "06a24a423033dd283cb27efbf7a4f9a796127fd9",
+        "total": "38747bf95180fab11ba412f572cedf70fa438a51"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Port complete passive media discovery into main RPC contracts; bind exact documents, limit physical in-flight requests, retain permits after timeout, and report partial inventory explicitly."
+    },
+    {
+      "path": "nexus/apps/extension-spectra/test/visual-baseline.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "b30915fc6be46d3f5231e7a622b1b9196d69a395",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/architecture-closure.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "b1699da746f4c7527a0b8e457559ec5f61848ca7",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/browser-floor.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "65f7ea2e02887a119c16fe2677d428b71ee6a34b",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain Chrome 135 product floor. Correct the inherited archive checksum only after duplicate official downloads, GCS MD5 and version metadata agree; record exact provenance."
+    },
+    {
+      "path": "nexus/closeout-policy.json",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "96ad9af5eca8d159a115de6c66ddd29e584728c4",
+        "architecture": "d14da9470299c2cdc43efe7faaf0e59d41f60748",
+        "total": "7fc190eb632b68c361a1ef34a61b55b205dfd980"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/dependency-domains.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "54d84626635e68bb3862864dc1dbdeb56c02d5e5",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/dependency-revalidation.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "0bd7e5e72e8101ce5d371674178fc7a409055284",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/direct-dependency-policy.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "4b5a71b39e8bccf917def40468d89abadbed593e",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/docs/architecture-closure.md",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "8f5693af5dfd0e4545950981e9081694b1e62b0d",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/feature-promotion.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "5bcbfdab5a6767dc6b17b0d6939df2a6c16b5b5b",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/license-adjudication.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "03203bedabd58af1b6e2b51d189715390418dbae",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/package.json",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "fca51388cef96e4090658e5eda1539db00cf94f7",
+        "architecture": "10bc81f750eac3ac3e851a141984c752edab04d4",
+        "total": "e6f43e00d3d5c746524083f2b92dd5cab598a82e"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/packages/contracts/src/spectra.protocol.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "775961533750a4df86e5a3367556c5eb0ab467c1",
+        "architecture": "29ea7ee209b52bf5aa6db8fe3f9a3e935aa06b1d",
+        "total": "b37d3843fcdcabcaae46376c7b9e637ddd7f39fe"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/packages/nexus-kernel/src/diagnostics.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "4077e6e914333a5ec078e3918d4f0114d3f8fbb4",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt local-only bounded diagnostic schema with current main owner adapters, strict response validation, port deadlines, explicit unknown facts and retired-consumer fencing."
+    },
+    {
+      "path": "nexus/packages/nexus-kernel/src/index.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "17fe22ba8a807ea4d91c07575c6a0de0621a3873",
+        "architecture": "475ae136250cb637f70628f3b6f521b5db9238b0",
+        "total": "17fe22ba8a807ea4d91c07575c6a0de0621a3873"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt local-only bounded diagnostic schema with current main owner adapters, strict response validation, port deadlines, explicit unknown facts and retired-consumer fencing."
+    },
+    {
+      "path": "nexus/runtime-performance-policy.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "2d4ce875f10e318e4ffbdca4f29f8d126e1082ae",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/scripts/architecture-closure.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "51b2d53dc39cc98cd9e8a3a2a7f6bdb202749fbe",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/scripts/artifact-provenance.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "1de224b26edc7fbabaaaecfed6a9c84b5b42a4b1",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/artifact-provenance.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "b585e7434d745b722430630ad5bb3d4ba702646c",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/browser-floor.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "959984f62604ff58ff0c374464bf04962fa30ab8",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain Chrome 135 product floor. Correct the inherited archive checksum only after duplicate official downloads, GCS MD5 and version metadata agree; record exact provenance."
+    },
+    {
+      "path": "nexus/scripts/browser-floor.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "38f2156ec6be1e5b274a4784a2b3fbf334a90e85",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain Chrome 135 product floor. Correct the inherited archive checksum only after duplicate official downloads, GCS MD5 and version metadata agree; record exact provenance."
+    },
+    {
+      "path": "nexus/scripts/capture-retained-dependencies.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "e0779e7c16865e64a03760157bdd020436fb8ae8",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/capture-retained-dependencies.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "7f4ef6ff217f55bd03af14854b39c696a34778d3",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/check-architecture-closure.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "bfb2f4bc71ca00178dc99e45d58ed2530fb7e0d2",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/scripts/check-dependency-domains.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "4fac2982ef7ecfed479ce960e3b36344ea11499d",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/check-dependency-domains.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "b0246aa06e0cdbdae70142a9320a9620e6f3b7b2",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/check-dependency-revalidation.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "01322f6dffde0a4b06ab99d0bd39f509cece28a1",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/check-dependency-revalidation.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "e3691448f38990888f95ced94e41c483d780de47",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/check-direct-dependencies.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "94865dc8456e2de3dec202f55115b9df8fc3e0d7",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/check-direct-dependencies.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "d0298274431d15fc203d619b56c9f09d63cd0865",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/check-feature-promotion.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "c3984cfefe997816fed11e86d0118c3b0bd9fc9f",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/scripts/check-feature-promotion.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "7a75ec7ac2aea0e58ef5dac34c730257d8bea1c7",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/scripts/check-release-test-owners.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "0096170831544da102b0a64f999e38a4c78f40b4",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/check-release-test-owners.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "edc263e80e0138b56c208774bd15b3312885b93d",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/check-runtime-performance-policy.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "2ab52bca52d12519a23c15dcf14201d4d6734f3a",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/scripts/check-runtime-performance-policy.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "ece905de9f104ec6e9331798cc87554c23c09279",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/scripts/check-source-derived-third-party.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "1f460d9940aeec99278e8a2a7f2d5a1bdc7a8eab",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/check-source-derived-third-party.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "9d161cec04962e95655222d2f9b020127383a7b1",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/check-spectra-least-privilege.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "45d0d7aa0cda602bedbe4a4e9dc96b72bf7ee50c",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/check-spectra-least-privilege.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "cc98a8ee969ed321766f805aff52a9cd1cdcb51d",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/check-third-party-source-provenance.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "2f130f21b0d84b4104ad662e499e28ab80ac39fb",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/check-third-party-source-provenance.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "8751b9b0b8672a66c9338ca0515300570f88ba75",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/check-typescript-7-epoch.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "2d1b6afcdd17995f38f3596fad6b19778cd470bf",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Main already adopted native TypeScript 7.0.2 and the separate TypeScript 6.0.2 API. Reconcile to actual compiler owners; reject the obsolete compatibility-prep plan."
+    },
+    {
+      "path": "nexus/scripts/check-typescript-7-epoch.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "d2357646fe1119624941a74a5b6f7f847a39d708",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Main already adopted native TypeScript 7.0.2 and the separate TypeScript 6.0.2 API. Reconcile to actual compiler owners; reject the obsolete compatibility-prep plan."
+    },
+    {
+      "path": "nexus/scripts/check-visual-regression-policy.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "e09e01f2f3875a142dc0adbf48eaf439c0fbfa8e",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/scripts/check-visual-regression-policy.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "d4803c94ba45e1ac1fa4979579e192d8370493af",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/scripts/check-workflow-actions.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "1e31126214d3ffc941e14e494e254869b2f554b9",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/dependency-audit.spec.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "93fbd8421f73c46a47af9dc531eb396426ec93d8",
+        "architecture": "f82dcece1d353d3d0997553ad8a2774031475a65",
+        "total": "38451c60d9f54d07810b36e08d2ac72d72652884"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/dependency-audit.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "857094239ed725d0ec408cc4c46ac6b2d7d03e66",
+        "architecture": "580c9c94b6cecbb2a8c8a13bf817ce55cf65254c",
+        "total": "e1b6434ea1c2252dac7c563a296c071327d3f0a6"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/dependency-automation.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "313277c11d4fb1db627c19b37128f253277f5fac",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/dependency-update-evidence.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "c591e9e87986ed7561931bb71a296a9bbb93a007",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/dependency-update-evidence.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "5b5ae71257e7bef7bcae797520329cee90ee99a5",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/dependency-update-workflow.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "8e7b5fecc7ed72e4cf8f81c25b6896659621260d",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/diagnostics-contract.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "34e479faa8d8cb49d9171f84427bed009519ae5c",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Adopt local-only bounded diagnostic schema with current main owner adapters, strict response validation, port deadlines, explicit unknown facts and retired-consumer fencing."
+    },
+    {
+      "path": "nexus/scripts/generate-sbom.spec.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "9eeaf0a49fae0c3cf7d08091499f7d514f019266",
+        "total": "9eeaf0a49fae0c3cf7d08091499f7d514f019266"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/generate-sbom.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "7977a127a7e51b6332a065477ef2fdef04b575e1",
+        "total": "7977a127a7e51b6332a065477ef2fdef04b575e1"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Preserve current locked runtime/API identities and business scripts; add executable governance without resurrecting removed dependencies, stale debt or Bun 1.3.14. Exact duplicate supply-chain implementations have a single owner."
+    },
+    {
+      "path": "nexus/scripts/generate-tool-registry.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "22f72d196ab5fbece0666ffe350d6b2b3191e0c6",
+        "architecture": "943861cd3232244cc4817c1c88a914894af21062",
+        "total": "a9c94593dc05c17f2b7ef89c61367e118107a091"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/license-adjudication.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "bc4066f7b69edd711334f9981f28750e5eab2213",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/product-artifact-snapshot.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "e27f886ebe4e59c4ba06e95f36fb839a873b17a3",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/product-artifact-snapshot.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "26d55e3e4307dce045febee26dcc795057834a83",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/registry-gen/config.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "a6776f6fafb79b09c22b0dc23f5751f329c2aee8",
+        "architecture": "801fde2c955ab207c2ee030728c4655645f42d73",
+        "total": "a6776f6fafb79b09c22b0dc23f5751f329c2aee8"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/scripts/registry-gen/gen-loader.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "e241f2d0c73d5d045bfaa718f6c7b8ddfd723e3a",
+        "architecture": "27c6cdadf18e2a259f8c8e7b54d7ea1d37014bcb",
+        "total": "a8aa25d7a5a2ce4a510b90d8569cf8ef8434001b"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/scripts/registry-gen/gen-registry.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "1fd8e23040407a1a062e440da4098d5287814de4",
+        "architecture": "e6857248f7b76da013398aadbc1cb243aba22d6d",
+        "total": "c8806d68085caf8f6d37f1049bb2aca20ca0991c"
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/scripts/registry-gen/gen-release-manifest.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "905895c681b8ee7e55c820ca6ced90abe9cd8e8b",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/scripts/registry-gen/release-admission.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "914fe08da035478b078713d4805ef5e9cc9fcb71",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Adopt explicit physical admission/generation while retaining the frozen 88-panel, two-script main baseline, clipboard, DOM selector and annotation. Catalog maturity is independent of physical release and user enablement."
+    },
+    {
+      "path": "nexus/scripts/release-artifact-provenance.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "8d49c60f3652adfc10849e5afff845c10368460c",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/release-artifact-provenance.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "080b4b3e950784b2dd604d67f332733e2d99ee19",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/scripts/release-supply-chain.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "8c8e024c4bd656197d483fdae56bdcea22d9bb13",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/release-supply-chain.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "79913b9285b85e19a5d377977e78d42ebdb64a52",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/scripts/render-architecture-closure.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "22aafa62ae26a382e634bf5b8d3f5da91ed67796",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Preserve all 29 task identities and evidence requirements; integration is not proof all product tasks completed. Fixed baseline exceptions cannot expand silently."
+    },
+    {
+      "path": "nexus/scripts/runtime-performance.spec.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "eb274b6561f7e80ef4da798278fd94ebc19fffcd",
+        "total": "2f151670d8d8d7995c8ac26161e05d11998093d4"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/scripts/runtime-performance.ts",
+      "candidateBranches": [
+        "architecture",
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "0c53bbe8123bf0e143fed5228d2c49a757d8d2fc",
+        "total": "41ec541ba2fa12a5272e25a92c9afb8b720c9875"
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/scripts/verify-architecture.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "d7cfdd6c290b7f12b81a405c70fa84b26d6f53e5",
+        "architecture": "d7cfdd6c290b7f12b81a405c70fa84b26d6f53e5",
+        "total": "5889e35461642a53920b3219ad8a4533e3e837c4"
+      },
+      "decision": "retain-current-main",
+      "reason": "Keep current main architecture verification; immutable workflow checks have one owner in check-workflow-actions.ts instead of a second overlapping check-misc implementation."
+    },
+    {
+      "path": "nexus/scripts/verify-visual-regression-candidate.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "8e2d7a0fd8501efe10cee3954606090cfc736c50",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    },
+    {
+      "path": "nexus/scripts/verify/check-misc.spec.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": null,
+        "total": "8be86d491d913fee787fe4bb6e3dbe50c4d99350"
+      },
+      "decision": "retain-current-main",
+      "reason": "Keep current main architecture verification; immutable workflow checks have one owner in check-workflow-actions.ts instead of a second overlapping check-misc implementation."
+    },
+    {
+      "path": "nexus/scripts/verify/check-misc.ts",
+      "candidateBranches": [
+        "total"
+      ],
+      "sourceBlobs": {
+        "main": "c0b573bcb5242254ed296480b87efc170acaebcf",
+        "architecture": "c0b573bcb5242254ed296480b87efc170acaebcf",
+        "total": "4ad370d1e78e0c31a2568f34f1566e3b80efe588"
+      },
+      "decision": "retain-current-main",
+      "reason": "Keep current main architecture verification; immutable workflow checks have one owner in check-workflow-actions.ts instead of a second overlapping check-misc implementation."
+    },
+    {
+      "path": "nexus/scripts/workflow-actions.spec.ts",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "b5340dadc81e49c7288e277fe65e3f85661521cd",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Reconcile branch change with current main owner and consumers; retain non-duplicated contracts/evidence, reject obsolete implementation or unsupported feature removal. The integration ADR defines acceptance and remaining blockers."
+    },
+    {
+      "path": "nexus/source-derived-third-party.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "9dbc747293561a8d4dd7fef4b48a4c85077a20ec",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/third-party-source-policy.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "d34e19d74ecf5226f125e778084c34cf36b0254b",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain exact source/lock/artifact provenance and notices, distinguish copied third-party bytes from repository location and never equate workspace inventory with shipped code."
+    },
+    {
+      "path": "nexus/tsconfig.base.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": "dc68c133af5b8b7a4cf176557cdc91034b0e8b34",
+        "architecture": "edef7a63374dd9b0bf02761a5e924d1e7405a190",
+        "total": "f77a7c59115d7a8fc043021b733194f20b17acb9"
+      },
+      "decision": "retain-current-main",
+      "reason": "Main already adopted native TypeScript 7.0.2 and the separate TypeScript 6.0.2 API. Reconcile to actual compiler owners; reject the obsolete compatibility-prep plan."
+    },
+    {
+      "path": "nexus/typescript-7-epoch.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "0a8feff9383c7d7e690b526a70aad5aee75b9636",
+        "total": null
+      },
+      "decision": "reconciled-implementation",
+      "reason": "Main already adopted native TypeScript 7.0.2 and the separate TypeScript 6.0.2 API. Reconcile to actual compiler owners; reject the obsolete compatibility-prep plan."
+    },
+    {
+      "path": "nexus/visual-regression-policy.json",
+      "candidateBranches": [
+        "architecture"
+      ],
+      "sourceBlobs": {
+        "main": null,
+        "architecture": "d9c9a1e9ae52ad69f2b5272d87ba3f7156b92068",
+        "total": null
+      },
+      "decision": "adopt-architecture-exact",
+      "reason": "Retain executable workload and baseline-capture machinery. No speed claim from feature deletion; new integration still requires independent same-feature runtime samples and reviewed visual baselines."
+    }
+  ]
+}

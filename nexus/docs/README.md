@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: contributor
 owner: repository-documentation
-last_reviewed: 2026-08-13
+last_reviewed: 2026-09-07
 ---
 
 # NEXUS documentation
@@ -21,7 +21,7 @@ Canonical entrypoint organizing NEXUS documentation by **authority and lifecycle
 
 ## Key Owners & Navigation
 
-- **Core & Governance**: [Engineering Principles](engineering/README.md) · [Release Closeout](release-closeout.md) · [Portfolio Roadmap](product/roadmap.md) · [Business Model](product/business-model.md) · [Research Index](research/README.md) · [AI Hooks](../scripts/hooks/README.md) · [Skills](../../.agents/skills/README.md) · [Repository Rules](../../rules.md)
+- **Core & Governance**: [Engineering Principles](engineering/README.md) · [Release Closeout](release-closeout.md) · [Architecture Closure](architecture-closure.md) · [Portfolio Roadmap](product/roadmap.md) · [Business Model](product/business-model.md) · [Research Index](research/README.md) · [AI Hooks](../scripts/hooks/README.md) · [Skills](../../.agents/skills/README.md) · [Repository Rules](../../rules.md)
 - **SPECTRA**: [Docs Entrypoint](../apps/extension-spectra/docs/README.md) · [Control Architecture](../apps/extension-spectra/docs/control/README.md) · [Runtime Architecture](../apps/extension-spectra/docs/architecture/runtime.md) · [Protocols](../apps/extension-spectra/docs/reference/protocols.md) · [Remote Security](../apps/extension-spectra/docs/security/remote-control.md) · [Roadmap](../apps/extension-spectra/docs/roadmap.md) · [Privacy](../apps/extension-spectra/PRIVACY.md) · [Store Listings](../apps/extension-spectra/store-listings/README.md)
 - **HALO**: [Docs Entrypoint](../apps/extension-halo/docs/README.md) · [Architecture](../apps/extension-halo/docs/architecture.md) · [Roadmap](../apps/extension-halo/docs/roadmap.md) · [Research](../apps/extension-halo/docs/research/README.md) · [Proposals](../apps/extension-halo/docs/proposals/README.md) · [Privacy](../apps/extension-halo/PRIVACY.md) · [Store Listings](../apps/extension-halo/store-listings/README.md)
 
@@ -37,3 +37,10 @@ Canonical entrypoint organizing NEXUS documentation by **authority and lifecycle
 
 - **Statuses**: `stable` (current), `draft` (unresolved), `archived` (immutable historical), `deprecated` (has `redirect_to` + date deadline).
 - Enforced by `bun run docs:check`.
+
+## Integration decisions
+
+- [Business-preserving branch integration](decisions/business-preserving-integration.md) — source identities, business/data invariants, retained and rejected mechanisms, costs and evidence boundaries.
+- [Library reuse decisions](decisions/library-reuse.md) — all 56 selection directions, 82 tool-directory mappings, retained duties, sources and admission/acceptance limits; not a claim that candidate packages are installed.
+- [Reuse-first execution and rework assessment](decisions/reuse-first-execution.md) — proactive selection boundary, preserved work, avoidable rework, implementation sequence and branch disposition.
+- [Audit-to-reuse routing](../reuse-remediation-map.json) — complete mapping of the original 86 findings to reuse decisions and retained domain duties; [remediation status](../remediation-status.json) remains the only implementation-status owner.

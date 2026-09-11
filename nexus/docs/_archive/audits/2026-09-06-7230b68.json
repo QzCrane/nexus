@@ -1,0 +1,3546 @@
+{
+  "snapshot": {
+    "repository": "QzCrane/nexus",
+    "auditDateUTC": "2026-09-06",
+    "reportGeneratedAtUTC": "2026-09-06T14:44:31.825364+00:00",
+    "sourceHead": "7230b688718ef48e829dcaf05d4729ec88bb0b8d",
+    "sourceTree": "00ea207461eab5b34264a4949aebd25eabba60a4",
+    "mainBase": "664d0615f850c568a8840ac312ca7c92cb81ceee",
+    "integrationHead": "49df809bd37672857c64189adfe4f7e69d68d38e",
+    "references": {
+      "main": "664d0615f850c568a8840ac312ca7c92cb81ceee",
+      "codex/nexus-architecture-closure": "7d4bf273130d73dbf63348affc3a258fcdac4627",
+      "codex/nexus-total-closure": "4b14658c107f33778bc5d48505609cafd58a0aec",
+      "codex/nexus-business-preserving-integration": "49df809bd37672857c64189adfe4f7e69d68d38e",
+      "codex/nexus-verified-release-candidate": "7230b688718ef48e829dcaf05d4729ec88bb0b8d",
+      "codex/nexus-closeout-execution": "3682a09b7cbd6211cac541acff3f0f7aa88167ca"
+    },
+    "trackedBlobCount": 1742,
+    "platformConstraints": [
+      {
+        "id": "CHROME-135-ALARMS",
+        "minimumChrome": 135,
+        "constraint": "Alarm is an eventually delivered wake signal, not an exact timer; at most once per 30 seconds in normal installed mode, no device wake. Unpacked mode removes the rate limit. persistAcrossSessions requires Chrome 150; AlarmCreateInfo.name requires Chrome 152. Retain the older separate-name create argument and reconcile persisted deadlines on startup.",
+        "reference": "EXT-ALARMS"
+      },
+      {
+        "id": "CHROME-135-MESSAGE-REPLIES",
+        "minimumChrome": 135,
+        "constraint": "Keep literal true plus sendResponse for asynchronous onMessage replies. Promise-returning listeners are documented from Chrome 148 with staged availability; new behavior must not be assumed at the product floor.",
+        "reference": "EXT-MESSAGING"
+      },
+      {
+        "id": "MV3-SW-LOADING",
+        "constraint": "Extension service workers do not support dynamic import(); use supported static imports or a genuinely separate runtime boundary, not a lazy import proposed solely to hide startup bytes.",
+        "reference": "EXT-SW"
+      },
+      {
+        "id": "STORAGE-ACCESS-BOUNDARY",
+        "constraint": "Chrome storage.local and sync are exposed to content scripts by default. Restrict trusted-only access where needed; this does not itself encrypt disk or prove ordinary web-page access.",
+        "reference": "EXT-STORAGE"
+      }
+    ],
+    "admittedModules": [
+      {
+        "id": "api-tester",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable api-tester surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "archive",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable archive surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "base64",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable base64 surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "bilibili-enhancer",
+        "stage": "beta",
+        "surfaces": [
+          "script-runtime"
+        ],
+        "reason": "Explicit beta packaged script."
+      },
+      {
+        "id": "bilibili-plus",
+        "stage": "legacy",
+        "surfaces": [
+          "script-runtime"
+        ],
+        "reason": "Preserve the executable bilibili-plus surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "bookmark-manager",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable bookmark-manager surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "checksum",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable checksum surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "clipboard",
+        "stage": "legacy",
+        "surfaces": [
+          "panel",
+          "content-runtime",
+          "background-runtime"
+        ],
+        "reason": "Preserve the executable clipboard surface from the frozen main migration baseline without claiming ready/beta maturity.",
+        "contentScript": {
+          "entry": "src/entry/content-clipboard.ts",
+          "js": "content-clipboard.js",
+          "runAt": "document_idle",
+          "allFrames": true
+        },
+        "activeService": {
+          "kind": "storage-enabled",
+          "area": "local",
+          "key": "halo_tool_clipboard_settings",
+          "defaultEnabled": false,
+          "owner": "content-clipboard",
+          "readiness": "validated explicit persisted enablement observed",
+          "disposer": "disable or document retirement detaches the copy listener"
+        }
+      },
+      {
+        "id": "code-formatter",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable code-formatter surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "code-snippets",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable code-snippets surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "color-palette",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable color-palette surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "color-picker",
+        "stage": "ready",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Explicit ready user-facing panel."
+      },
+      {
+        "id": "cookie-manager",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable cookie-manager surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "cron",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable cron surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "crypto",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable crypto surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "csp-analyzer",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable csp-analyzer surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "csv-to-json",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable csv-to-json surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "csv-viewer",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable csv-viewer surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "diff",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable diff surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "dom-selector",
+        "stage": "legacy",
+        "surfaces": [
+          "panel",
+          "content-runtime"
+        ],
+        "reason": "Preserve the executable dom-selector surface from the frozen main migration baseline without claiming ready/beta maturity.",
+        "contentRuntimeOwner": "ruler"
+      },
+      {
+        "id": "emoji-picker",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable emoji-picker surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "exif-reader",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable exif-reader surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "extension-manager",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable extension-manager surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "font-inspector",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable font-inspector surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "gzip",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable gzip surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "hash",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable hash surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "headers-viewer",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable headers-viewer surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "hex-dump",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable hex-dump surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "history-search",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable history-search surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "hover-zoom",
+        "stage": "ready",
+        "surfaces": [
+          "panel",
+          "content-runtime",
+          "background-runtime"
+        ],
+        "contentScript": {
+          "entry": "src/entry/content-hover-zoom.ts",
+          "js": "content-hover-zoom.js",
+          "runAt": "document_idle",
+          "allFrames": false
+        },
+        "webAccessibleRuntimes": [
+          {
+            "entry": "src/entry/content-hover-zoom-runtime.ts",
+            "output": "tools/_hover-zoom/runtime.js"
+          }
+        ],
+        "activeService": {
+          "kind": "storage-enabled",
+          "area": "local",
+          "key": "halo_hover_zoom_settings",
+          "defaultEnabled": true,
+          "owner": "content-hover-zoom",
+          "readiness": "storage snapshot hydrated or later change observed",
+          "disposer": "settings disable/page retirement disposes the page runtime"
+        },
+        "reason": "Ready panel plus the shipped lightweight content host and Background DNR reconciliation owner."
+      },
+      {
+        "id": "html-entity",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable html-entity surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "http-status",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable http-status surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "image-tools",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable image-tools surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "ip-lookup",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable ip-lookup surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "json-formatter",
+        "stage": "ready",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Explicit ready user-facing panel."
+      },
+      {
+        "id": "json-path",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable json-path surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "json-to-csv",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable json-to-csv surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "jwt-decoder",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable jwt-decoder surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "lorem-ipsum",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable lorem-ipsum surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "markdown",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable markdown surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "media-sniffer",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable media-sniffer surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "mock-data",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable mock-data surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "module-store",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable module-store surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "morse",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable morse surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "network",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable network surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "number-base",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable number-base surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "outline",
+        "stage": "ready",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Explicit ready user-facing panel."
+      },
+      {
+        "id": "page-annotate",
+        "stage": "legacy",
+        "surfaces": [
+          "panel",
+          "content-runtime"
+        ],
+        "reason": "Preserve the executable page-annotate surface from the frozen main migration baseline without claiming ready/beta maturity.",
+        "contentRuntimeOwner": "ruler"
+      },
+      {
+        "id": "password-gen",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable password-gen surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "pdf",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable pdf surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "permissions",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable permissions surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "pomodoro",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable pomodoro surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "protobuf",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable protobuf surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "punycode",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable punycode surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "qrcode",
+        "stage": "ready",
+        "surfaces": [
+          "panel",
+          "background-runtime"
+        ],
+        "reason": "Ready panel and context-menu activation delivery owner."
+      },
+      {
+        "id": "random-gen",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable random-gen surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "reader-mode",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable reader-mode surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "regex",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable regex surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "resource-monitor",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable resource-monitor surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "rot13",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable rot13 surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "ruler",
+        "stage": "ready",
+        "surfaces": [
+          "panel",
+          "content-runtime"
+        ],
+        "contentScript": {
+          "entry": "src/entry/content-frame-tools.ts",
+          "js": "content-frame-tools.js",
+          "runAt": "document_start",
+          "allFrames": true
+        },
+        "webAccessibleRuntimes": [
+          {
+            "entry": "src/entry/content-frame-tools-runtime.ts",
+            "output": "tools/_frame-tools/runtime.js"
+          }
+        ],
+        "reason": "Ready panel and shared Frame Tools host; DOM Selector and Page Annotate are preserved admitted consumers of this physical runtime."
+      },
+      {
+        "id": "screenshot",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable screenshot surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "session-manager",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable session-manager surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "settings",
+        "stage": "ready",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Core ready settings panel."
+      },
+      {
+        "id": "shortcuts",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable shortcuts surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "smooth-scroll",
+        "stage": "legacy",
+        "surfaces": [
+          "content-runtime",
+          "panel"
+        ],
+        "contentScript": {
+          "entry": "src/entry/content-smooth-scroll.ts",
+          "js": "content-smooth-scroll.js",
+          "runAt": "document_start",
+          "allFrames": false
+        },
+        "activeService": {
+          "kind": "storage-enabled",
+          "area": "sync",
+          "key": "HALO_SMOOTH_SCROLL_SETTINGS",
+          "defaultEnabled": true,
+          "owner": "content-smooth-scroll",
+          "readiness": "storage snapshot hydrated or later change observed",
+          "disposer": "settings disable/page retirement removes input ownership"
+        },
+        "reason": "Preserve the existing settings panel and top-document runtime, independently of module maturity."
+      },
+      {
+        "id": "sql-formatter",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable sql-formatter surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "ssl-cert",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable ssl-cert surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "sticky-notes",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable sticky-notes surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "storage-editor",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable storage-editor surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "subresource",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable subresource surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "tab-group",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable tab-group surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "table-extractor",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable table-extractor surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "tabs",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable tabs surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "tech-stack",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable tech-stack surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "text-to-speech",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable text-to-speech surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "text-tools",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable text-tools surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "timer",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable timer surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "timestamp",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable timestamp surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "todo-list",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable todo-list surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "totp",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable totp surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "translate",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable translate surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "unit-converter",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable unit-converter surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "url",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable url surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "user-agent",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable user-agent surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "userscripts",
+        "stage": "legacy",
+        "surfaces": [
+          "panel",
+          "background-runtime"
+        ],
+        "activeService": {
+          "kind": "userscripts-authority",
+          "owner": "system/userscripts/storage-authority",
+          "readiness": "user-script storage authority hydrated",
+          "disposer": "subscription disposer retires SidePanel observation"
+        },
+        "reason": "Runtime and editor support required by admitted packaged/user scripts; support admission is independent from catalog maturity status."
+      },
+      {
+        "id": "uuid",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable uuid surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "xml-formatter",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable xml-formatter surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "xor",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable xor surface from the frozen main migration baseline without claiming ready/beta maturity."
+      },
+      {
+        "id": "yaml",
+        "stage": "legacy",
+        "surfaces": [
+          "panel"
+        ],
+        "reason": "Preserve the executable yaml surface from the frozen main migration baseline without claiming ready/beta maturity."
+      }
+    ],
+    "moduleCount": 90,
+    "ciObservation": [
+      {
+        "name": "Documentation architecture",
+        "runId": 34036239095,
+        "status": "success"
+      },
+      {
+        "name": "HALO browser contracts",
+        "runId": 34036239220,
+        "status": "success"
+      },
+      {
+        "name": "Minimum Chrome compatibility",
+        "runId": 34036239114,
+        "status": "success"
+      },
+      {
+        "name": "Cross-platform quality",
+        "runId": 34036239189,
+        "status": "success"
+      },
+      {
+        "name": "Dependency update evidence",
+        "runId": 34036239102,
+        "status": "success"
+      }
+    ],
+    "closeout": {
+      "runId": 34036272590,
+      "windowsJobId": 101494941390,
+      "linuxPlatform": "success",
+      "windowsAttempt1": "failure at HALO governance TypeScript native CLI package owner census",
+      "windowsAttempt2": "skipped",
+      "finalVerify": "skipped",
+      "successfulCompleteReceipts": 0
+    },
+    "preservedCorrectWork": [
+      {
+        "id": "P01",
+        "name": "精确历史和候选树",
+        "invariant": "integration 49df809 与 candidate 7230b68 保留完整后续修复；main 664d0615 不动；architecture/total 不动；本轮未写远端、未修改冻结源码。"
+      },
+      {
+        "id": "P02",
+        "name": "业务能力范围",
+        "invariant": "88 个 panel、两个 Bilibili script；Ruler/DOM Selector/Annotate 的跨 frame 执行链；模块 ID、配置与用户数据保留。"
+      },
+      {
+        "id": "P03",
+        "name": "状态分离",
+        "invariant": "成熟度、物理发布准入、用户开关、当前可执行能力是独立事实。新增未分类能力不能自动打包；历史保留不是成熟认证。"
+      },
+      {
+        "id": "P04",
+        "name": "Spectra 单一行为权威",
+        "invariant": "Remote v3、自有 PeerJS、捕获票据、站点路由/刻度、generation/revision、当前精确目标与真实 ACK；拒绝恢复过期协议或第二条控制通道。"
+      },
+      {
+        "id": "P05",
+        "name": "被动观察与物理并发",
+        "invariant": "不通过媒体盘点唤醒重型控制运行时；等待超时不伪释放物理请求名额。补活性/观察者清理，而不是破坏有界性。"
+      },
+      {
+        "id": "P06",
+        "name": "已修生命周期",
+        "invariant": "权限意图失效 fencing、端口断连的观察租约释放、当前 Content 被动会话读取、物理 processor 不变断言、九个 HALO 测试共用 native-binding readiness。"
+      },
+      {
+        "id": "P07",
+        "name": "已修实际产品问题",
+        "invariant": "中文静音反馈、Popup 固有宽度、HALO 对比度、合法 Options 诊断、当前播放器能力优先于旧 hostname 负缓存。"
+      },
+      {
+        "id": "P08",
+        "name": "正确工具链与供应链",
+        "invariant": "Bun 1.4.0、TypeScript 7 CLI/6.x API 分离、实际双依赖域 audit、已审查安全锁、Chrome 135 驱动与移除 extract-zip 路径。"
+      },
+      {
+        "id": "P09",
+        "name": "精确发布保护",
+        "invariant": "Docker JSON 精确仓库摘要验证、Git-free 归档扫描、单候选材料绑定、当前两次发布要求、原子 base/head lease 及恢复回读。漏洞点补强，不能临时跳过。"
+      },
+      {
+        "id": "P10",
+        "name": "数据和算术的正确子集",
+        "invariant": "JSON-safe guard、正确的 SHA-1 TOTP 标准向量、crypto.randomUUID/getRandomValues、原生压缩 API、原有安全 URL scheme 筛选、现有 ZIP 确定性和 bundle hard limits。"
+      }
+    ],
+    "mutationBoundary": {
+      "remoteWritesThisTurn": false,
+      "frozenSourceModified": false,
+      "mainPromoted": false,
+      "storePublished": false,
+      "sourceBranchesDeleted": false
+    },
+    "coverage": "1742 tracked blobs inventoried; targeted source/call-path review and isolated probes. This is not every-line formal verification or a fresh complete browser suite.",
+    "probeCount": 33,
+    "probeControls": "Includes a passing SHA-1 TOTP control; a probe is not one vulnerability. Some probes emulate platform API ordering or state normalization rather than mount a UI.",
+    "proofOfSource": {
+      "gitBundleArtifactId": 9990265122,
+      "zipSha256": "4b16459ffaaa200719bee4180862f854ad130e07c6f1fd247975d5ecb15ebe84"
+    },
+    "tool": {
+      "name": "Bun",
+      "version": "1.4.0",
+      "binarySha256": "33d56b070be6a9e3da0ab013038b43d1645d0534ca811ecdba4472599117eb4b"
+    },
+    "classification": {
+      "R": "隔离反例已复现",
+      "S": "源码可定位缺陷/缺口，未全部浏览器复验",
+      "H": "满足明确前提的条件性风险",
+      "D": "当前设计/证据债务，不等同运行时 bug"
+    },
+    "priorityDefinition": {
+      "P0": "合并/发布前应关闭的已知正确性、用户数据、安全或必要发布阻断；不是 CVSS 分数",
+      "P1": "本修复周期内解决的边界、验证和韧性问题；条件风险按前提验证",
+      "P2": "保留但排在数据正确性后的低权重改进"
+    },
+    "findingCount": 86,
+    "countsByStatus": {
+      "R": 29,
+      "S": 34,
+      "D": 10,
+      "H": 13
+    },
+    "countsByGroup": {
+      "发布与证据": 20,
+      "持久化与用户数据": 12,
+      "权限、网络与秘密": 11,
+      "媒体发现与运行时": 6,
+      "后台作业与资源": 10,
+      "工具语义与数据保真": 23,
+      "架构与可验证性": 4
+    }
+  },
+  "findings": [
+    {
+      "id": "G01",
+      "group": "发布与证据",
+      "status": "R",
+      "priority": "P0",
+      "title": "Windows 路径误判使真正发布失败，并漏检 tsconfig",
+      "sources": [
+        {
+          "path": "nexus/scripts/check-typescript-7-epoch.ts",
+          "firstLine": 100,
+          "lastLine": 113,
+          "blobSha": "c599f86f3f0021885572f4ef306cb962abf84d4a",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/check-typescript-7-epoch.ts#L100-L113"
+        },
+        {
+          "path": "nexus/scripts/check-typescript-7-epoch.ts",
+          "firstLine": 134,
+          "lastLine": 146,
+          "blobSha": "c599f86f3f0021885572f4ef306cb962abf84d4a",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/check-typescript-7-epoch.ts#L134-L146"
+        }
+      ],
+      "evidence": "Windows closeout 34036272590 在 HALO 治理阶段失败；相同包路径的隔离计算在 POSIX 得到 7 个 owner，在 Windows 得到 0；Windows tsconfig 也不匹配。",
+      "mechanism": "先对物理路径应用仅识别 / 的后缀和正则，再做斜杠规范化，顺序已经太晚。",
+      "design": "分开物理路径与仓库逻辑路径：文件读取使用原生路径；分类使用 basename 或先规范化的 POSIX 相对 ID。对 package.json、tsconfig、API consumer 清单使用同一身份规则。错误报告显示缺少/多出的具体 owner。",
+      "acceptance": "Windows/POSIX/混合输入产生相同 7 个 owner；注入 Windows 路径的废弃 tsconfig 必须失败；真实 Windows CLI 和 Linux 归档路径都执行成功。",
+      "boundary": "保留 TypeScript 7 CLI 与 6.x API 分离，不修改期望为 0，不取消扫描。此错误是治理实现，不是编译器已经退回旧版本。",
+      "probeIds": [
+        "windows-source-classification"
+      ]
+    },
+    {
+      "id": "G02",
+      "group": "发布与证据",
+      "status": "S",
+      "priority": "P0",
+      "title": "普通 CI 与完整发布的操作系统覆盖不一致",
+      "sources": [
+        {
+          "path": ".github/workflows/cross-platform.yml",
+          "firstLine": 62,
+          "lastLine": 93,
+          "blobSha": "2ef84471217b101dfd065a1a51f8a95c11a381ad",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/.github/workflows/cross-platform.yml#L62-L93"
+        },
+        {
+          "path": ".github/workflows/cross-platform.yml",
+          "firstLine": 122,
+          "lastLine": 179,
+          "blobSha": "2ef84471217b101dfd065a1a51f8a95c11a381ad",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/.github/workflows/cross-platform.yml#L122-L179"
+        }
+      ],
+      "evidence": "治理、工具链和完整类型检查的 quality job 只在 Ubuntu；Windows build-and-test 主要执行构建和产品测试。",
+      "mechanism": "工作流总体同时出现两种 OS，不能推出每个跨平台脚本都已在两种 OS 执行。G01 因此在最后发布才暴露。",
+      "design": "用一份机制—执行入口—平台矩阵定义覆盖；文件系统、路径、归档、子进程及实际治理入口在 Windows/Linux 验证。浏览器行为另列，避免全套任务无条件重复。",
+      "acceptance": "改变路径分类器时两种 OS 都会执行实际入口；故意恢复 G01 时 Windows 在普通 CI 即失败；没有仅靠包名或测试标题认领覆盖。",
+      "boundary": "不把 Windows 上 Chrome 产品行为换成纯 Node 单元；也不把每项网络/UI 测试机械复制到全部 OS。",
+      "probeIds": []
+    },
+    {
+      "id": "G03",
+      "group": "发布与证据",
+      "status": "S",
+      "priority": "P1",
+      "title": "已验证 Bun 的发布链再次通过 bunx 获取运行时",
+      "sources": [
+        {
+          "path": "nexus/package.json",
+          "firstLine": 32,
+          "lastLine": 37,
+          "blobSha": "22bef77594f086a4750d726d34ae4ba2fc95d6eb",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/package.json#L32-L37"
+        },
+        {
+          "path": "nexus/scripts/release-halo.ts",
+          "firstLine": 212,
+          "lastLine": 225,
+          "blobSha": "681e3de7d68985481e06a3ddfb7ddeb70d5dfcb3",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/release-halo.ts#L212-L225"
+        }
+      ],
+      "evidence": "release:halo / release:spectra 通过 bunx bun@1.4.0 调用，最新日志出现二次下载和解析；外层其实已运行在 Bun 1.4.0。",
+      "mechanism": "相同版本号不等于不需要第二次解析；冻结构建平白增加新的联网失败点和运行时身份核对面。",
+      "design": "启动前验证实际 Bun 的版本/修订及可执行文件身份，子步骤沿 process.execPath 执行。需要安装运行时时由独立 bootstrap 层完成，不能混入已冻结的发布 lane。",
+      "acceptance": "网络关闭但依赖和运行时已准备时仍能启动发布；每个子 lane 的可执行文件身份一致；错误版本在执行前失败。",
+      "boundary": "此项不声称当前下载已被污染；保留精确工具链锁，不改为宿主 PATH 任意 bun。",
+      "probeIds": []
+    },
+    {
+      "id": "G04",
+      "group": "发布与证据",
+      "status": "R",
+      "priority": "P1",
+      "title": "发布策略读取器只验证数量，未验证完整语义",
+      "sources": [
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 128,
+          "lastLine": 152,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L128-L152"
+        }
+      ],
+      "evidence": "把两条 release lane 改成打印字符串，readPolicy 仍接受；产品 key、命令、路径和工具列表也缺少完整闭合校验。",
+      "mechanism": "“有两条命令”和“执行两个真正产品发布门禁”不是同一约束。策略自己的声明不能自动为自己提供可信性。",
+      "design": "严格解析 policy：确切产品集合、允许的执行 owner、参数结构、工作区内路径、去重完整工具输入、允许状态和镜像身份；复用 canonical entrypoint 描述，不复制两套命令文本。",
+      "acceptance": "篡改任一发布命令、产品名、绝对路径、跨目录路径、重复工具项或缺失工具项，都在真实 record/verify 入口之前被拒绝。",
+      "boundary": "这是可信仓库内的治理防错缺口，不是证明任意外部人已能修改策略或绕过完整 merge。",
+      "probeIds": [
+        "policy-command-weakening"
+      ]
+    },
+    {
+      "id": "G05",
+      "group": "发布与证据",
+      "status": "R",
+      "priority": "P1",
+      "title": "单次 receipt 验证边界接受缺失事实",
+      "sources": [
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 648,
+          "lastLine": 681,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L648-L681"
+        }
+      ],
+      "evidence": "带正确自算摘要但缺少 artifacts、host、platform、toolSha256，且日期无效、duration 为负的对象能通过该函数。",
+      "mechanism": "TypeScript 类型断言不执行运行时结构校验；摘要只是对给出的对象求散列。",
+      "design": "receipt 使用完整运行时 schema，约束哈希长度、时间格式、非负耗时、必需产物、工具键集合和平台结构；单次文档、跨尝试一致性及当前环境验证分层但共用 schema。",
+      "acceptance": "缺字段、额外非法字段、负耗时、非有限数、错产品和空哈希分别在应有层被拒绝；同时测试完整 verify，避免仅测 shape 函数。",
+      "boundary": "完整 verify 当前另有平台、工具和产物核对；本反例仅证明单次文档校验不足，不等于已完成伪造合并。",
+      "probeIds": [
+        "receipt-shape"
+      ]
+    },
+    {
+      "id": "G06",
+      "group": "发布与证据",
+      "status": "D",
+      "priority": "P1",
+      "title": "证据摘要证明字节一致，不证明执行来源",
+      "sources": [
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 105,
+          "lastLine": 114,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L105-L114"
+        },
+        {
+          "path": "nexus/scripts/release-artifact-provenance.ts",
+          "firstLine": 1,
+          "lastLine": 151,
+          "blobSha": "080b4b3e950784b2dd604d67f332733e2d99ee19",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/release-artifact-provenance.ts#L1-L151"
+        }
+      ],
+      "evidence": "receipt 的 SHA-256 是可由同一写入者重新计算的无密钥摘要；它不是执行者签名或独立审计证明。",
+      "mechanism": "内容完整性、来源认证、执行真实性是不同命题；同一方可以同时制造结果和摘要。",
+      "design": "保留摘要作为内容寻址，增加构建者身份、run/job/attempt、执行 checkout、工具和日志引用；适用时使用受信任构建身份的签名/attestation。明确本地自证与托管重放的证据等级。",
+      "acceptance": "复制旧结果改 head 并重算摘要仍因来源或材料绑定失败；合法离线本地证据被正确标成自证而非伪称平台认证。",
+      "boundary": "不要求所有开发动作都依赖付费云；也不把普通 Git 提交签名误认为产品测试成功。",
+      "probeIds": []
+    },
+    {
+      "id": "G07",
+      "group": "发布与证据",
+      "status": "S",
+      "priority": "P1",
+      "title": "canonical hosted 判断没有证明必需检查集合完整",
+      "sources": [
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 525,
+          "lastLine": 594,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L525-L594"
+        }
+      ],
+      "evidence": "查询最多 100 条 runs；没有 runs 返回 NOT_APPLICABLE；只要返回的 runs 全 success/skipped 就可记 SUCCESS，未从 canonical policy 证明应有的五条及内部必需 jobs。",
+      "mechanism": "对已看见项目做全称判断，不能证明未看见的必需项目存在；旁路工作流按五个名称等待也不自动强化 merge owner。",
+      "design": "一个 canonical 检查计划同时供 CI、record、merge 使用；分页读全，绑定 workflow/app/job 身份及适用性；skip/无 run 只有在变更范围证明不适用时才接受。",
+      "acceptance": "漏一条必需 workflow、全 skip、空返回、分页第二页失败、同名伪 workflow 和未完成 job 都不能产生完整成功。",
+      "boundary": "保留真正不适用与基础设施不可用状态，不把它们重新命名为测试通过。",
+      "probeIds": []
+    },
+    {
+      "id": "G08",
+      "group": "发布与证据",
+      "status": "H",
+      "priority": "P1",
+      "title": "重跑与基础设施失败需要精确分类，不可挑绿色或永久卡历史",
+      "sources": [
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 550,
+          "lastLine": 603,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L550-L603"
+        }
+      ],
+      "evidence": "当前把 exact head 的返回 runs 一起判定，billing 分支只筛 failure jobs；独立旧 run、cancelled、timed_out 与有效重跑的关系没有明确 supersession 合同。",
+      "mechanism": "把所有历史失败永久并入结果可能阻断已纠正重跑；反过来只看绿色又会隐去仍有效的反证。",
+      "design": "按 workflow、event、被测身份和 attempt 定义合法替代关系，保留原失败及解释。基础设施不可用必须逐个相关 job 证明未分配 runner、无步骤且存在对应平台注记；其他状态失败关闭。",
+      "acceptance": "同 run 新 attempt、不同 event 的独立失败、取消、超时、混合账单/产品失败均按合同分类；不能通过新建绿色 run 淹没失败。",
+      "boundary": "并未声称当前 GitHub 同一 run 的重跑必然永久被阻断；这里是跨 run/混合状态的条件性缺口。",
+      "probeIds": []
+    },
+    {
+      "id": "G09",
+      "group": "发布与证据",
+      "status": "S",
+      "priority": "P1",
+      "title": "PR head 与实际 checkout 需要显式区分",
+      "sources": [
+        {
+          "path": ".github/workflows/cross-platform.yml",
+          "firstLine": 24,
+          "lastLine": 33,
+          "blobSha": "2ef84471217b101dfd065a1a51f8a95c11a381ad",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/.github/workflows/cross-platform.yml#L24-L33"
+        },
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 504,
+          "lastLine": 529,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L504-L529"
+        }
+      ],
+      "evidence": "部分 PR jobs 使用默认 checkout，日志 checkout 的是 GitHub 生成的 merge commit；元数据 head_sha 仍标识 PR head。依赖比较 job 则显式使用候选 head。",
+      "mechanism": "“关联该 PR head”不等于“执行该 commit”；即便当前 merge tree 与候选 tree 相同，也必须核实而不能从名称推断。",
+      "design": "每项证据记录 advertised head、executed commit/tree、base；纯 head lane 固定 head，整合 lane 固定 merge 身份。允许相同 tree 的证据复用时，验证完整输入闭包等价并如实标注。",
+      "acceptance": "基线移动、merge tree 不同、仅 metadata 匹配、源码相同但执行工具不同的证据均不能误绑定。",
+      "boundary": "不把目前可能同树的 merge checkout 扣成已发生业务回归；修正的是证据身份。",
+      "probeIds": []
+    },
+    {
+      "id": "G10",
+      "group": "发布与证据",
+      "status": "R",
+      "priority": "P1",
+      "title": "单提交候选校验没有验证唯一父提交",
+      "sources": [
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 699,
+          "lastLine": 712,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L699-L712"
+        }
+      ],
+      "evidence": "临时 Git 仓库构造第一父为 base、第二父为 base 祖先的 merge commit：base..head 数量仍为 1，现有断言接受，但父提交实际有两个。",
+      "mechanism": "第一父和提交计数不能推出父向量长度恰为一。",
+      "design": "读取候选全部 parents，要求精确等于 [base]；保留 base/head 的原子 lease 与恢复后独立回读。",
+      "acceptance": "零父、两父、第二父为祖先、第一父不匹配、并发 main/head 移动都拒绝；真正单父候选通过。",
+      "boundary": "探针只在临时仓库构造对象，没有改变 Nexus refs；不是当前 7230 候选已经有多父。",
+      "probeIds": [
+        "single-parent-assertion"
+      ]
+    },
+    {
+      "id": "G11",
+      "group": "发布与证据",
+      "status": "H",
+      "priority": "P1",
+      "title": "receipt 中的浏览器身份可能不是实际运行的浏览器",
+      "sources": [
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 588,
+          "lastLine": 620,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L588-L620"
+        },
+        {
+          "path": "nexus/scripts/browser-replay.ts",
+          "firstLine": 1,
+          "lastLine": 12,
+          "blobSha": "76f150c8acb1e19a118e1b39260e9209e783cff7",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/browser-replay.ts#L1-L12"
+        }
+      ],
+      "evidence": "host identity 从默认 Playwright/Puppeteer executablePath 获取；浏览器重放另支持显式 executable 环境覆盖。文档的 Windows 约束也不等于所有 schema 层严格限制了 host。",
+      "mechanism": "安装了某浏览器与实际以某驱动、某 flags 执行测试不是同一事实。",
+      "design": "由实际 launch owner 输出使用的二进制摘要/版本、驱动、参数、profile 和 OS，再由 recorder 收集；运行前后验证工具不漂移，候选最低版本和当前版本分别记账。",
+      "acceptance": "设置显式浏览器 override 后 receipt 必须显示实际版本；默认二进制存在但未使用不能被认作测试对象；两次尝试不允许混宿主。",
+      "boundary": "保留 Chrome 135 支持和已匹配驱动；本项未证明已有 receipt 实际被错绑，当前完整 receipt 尚未产生。",
+      "probeIds": []
+    },
+    {
+      "id": "G12",
+      "group": "发布与证据",
+      "status": "S",
+      "priority": "P0",
+      "title": "最终 ZIP 的供应链证明没有完整接入 canonical release",
+      "sources": [
+        {
+          "path": "nexus/scripts/release-halo.ts",
+          "firstLine": 193,
+          "lastLine": 218,
+          "blobSha": "681e3de7d68985481e06a3ddfb7ddeb70d5dfcb3",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/release-halo.ts#L193-L218"
+        },
+        {
+          "path": "nexus/scripts/release-spectra.ts",
+          "firstLine": 101,
+          "lastLine": 134,
+          "blobSha": "62fe32a5d23def38db0ba25c4b35e17200c694bb",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/release-spectra.ts#L101-L134"
+        },
+        {
+          "path": "nexus/apps/extension-spectra/package.json",
+          "firstLine": 8,
+          "lastLine": 13,
+          "blobSha": "22af54a71beab2a0eab0c80341fc10192b465d4d",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/package.json#L8-L13"
+        },
+        {
+          "path": "nexus/scripts/release-supply-chain.ts",
+          "firstLine": 1,
+          "lastLine": 410,
+          "blobSha": "79913b9285b85e19a5d377977e78d42ebdb64a52",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/release-supply-chain.ts#L1-L410"
+        }
+      ],
+      "evidence": "实际双域依赖 audit 会生成 SBOM，HALO build:prod 也已生成 retained/artifact 输入证据；但最终 release-supply-chain 与 release-artifact-provenance CLI 没接入两个最终 release owner，SPECTRA build:prod 仍只是 build。",
+      "mechanism": "工具、单元测试和可生成中间证据存在，不等于本次最终 ZIP 已取得许可证、保留依赖与来源闭包。",
+      "design": "在唯一发布 DAG 串接 production analysis → 双域 audit/SBOM → retained-license 校验 → ZIP → 解包字节比对 → 最终 provenance/attestation → receipt；所有输出绑定同一 head/tree/lock/input/ZIP 摘要，缺一失败。",
+      "acceptance": "删除、替换或重用过期 retained/provenance 任一文件，实际发布必须拒绝；验证 SPECTRA 与 HALO 都走真实入口，ZIP 生成后不可再静默改变内容。",
+      "boundary": "不错误宣称“SBOM 完全没生成”；保留已经接入的 audit 和 HALO 分析，仅补缺失最终边。",
+      "probeIds": []
+    },
+    {
+      "id": "G13",
+      "group": "发布与证据",
+      "status": "H",
+      "priority": "P1",
+      "title": "已存在的中间供应链文件不能代替新鲜性校验",
+      "sources": [
+        {
+          "path": "nexus/scripts/release-supply-chain.ts",
+          "firstLine": 1,
+          "lastLine": 410,
+          "blobSha": "79913b9285b85e19a5d377977e78d42ebdb64a52",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/release-supply-chain.ts#L1-L410"
+        },
+        {
+          "path": "nexus/scripts/release-artifact-provenance.ts",
+          "firstLine": 1,
+          "lastLine": 151,
+          "blobSha": "080b4b3e950784b2dd604d67f332733e2d99ee19",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/release-artifact-provenance.ts#L1-L151"
+        },
+        {
+          "path": "nexus/scripts/capture-retained-dependencies.ts",
+          "firstLine": 1,
+          "lastLine": 221,
+          "blobSha": "5ffb44df74a58d73b34fc00aa718900a5ee2438a",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/capture-retained-dependencies.ts#L1-L221"
+        }
+      ],
+      "evidence": "部分 evidence owner 以中间文件是否存在决定复用；完整来源身份必须跨所有读取路径核对，不能只比较单个局部散列。",
+      "mechanism": "旧文件自洽但属于旧锁文件或旧产物时，局部完整性仍可能成立。",
+      "design": "给中间证据统一的材料标识：source tree、锁、分析输入、产物文件集、schema 和生成器摘要；不匹配则重新生成或拒绝，不把现存文件当信任缓存。",
+      "acceptance": "交换两个同版本不同 tree 的中间报告必须失败；新增/删掉一个产物条目也失败；确实相同输入可安全复用。",
+      "boundary": "这是跨 owner 的条件性陈旧输入风险，不能据此声称当前已经发布带错许可证的 ZIP。",
+      "probeIds": []
+    },
+    {
+      "id": "G14",
+      "group": "发布与证据",
+      "status": "D",
+      "priority": "P1",
+      "title": "发布、合并、对外发布过度捆绑与反复候选重写",
+      "sources": [
+        {
+          "path": "nexus/docs/release-closeout.md",
+          "firstLine": 1,
+          "lastLine": 110,
+          "blobSha": "76801fd363bbbfe354c4f15b6525ebe17b2b7b70",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/docs/release-closeout.md#L1-L110"
+        },
+        {
+          "path": "nexus/scripts/closeout-evidence.ts",
+          "firstLine": 707,
+          "lastLine": 764,
+          "blobSha": "9e73f906191d14884161f5099e5d76f55a714f81",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/closeout-evidence.ts#L707-L764"
+        }
+      ],
+      "evidence": "同一候选要求两次完整 release 并以单提交晋升；每次修复、文档或工作流调整引起新 head，又重走大部分链。",
+      "mechanism": "正确的精确绑定保护需要保留，但若不区分材料变化与仅观察变化，会产生昂贵且易失真的反复“收口”。",
+      "design": "先把修复完整保存在追加历史的 integration，再形成候选；把源码、工具、产物、运行、发布动作分开描述。只在有输入闭包等价证明时复用证据；合并与商店/公共仓库发布保持不同授权。",
+      "acceptance": "必要材料变化必重验；纯外部 PR 状态更新不改产品候选；旧证据不能仅改 head 重用；双次尝试仍在现行规则下执行。",
+      "boundary": "这是后续经过审查的流程改进，不授权临时删掉两次发布要求来通过本候选。",
+      "probeIds": []
+    },
+    {
+      "id": "G15",
+      "group": "发布与证据",
+      "status": "S",
+      "priority": "P0",
+      "title": "历史已打包功能被错误归入未来晋升任务",
+      "sources": [
+        {
+          "path": "nexus/architecture-closure.json",
+          "firstLine": 510,
+          "lastLine": 547,
+          "blobSha": "63e4ab6d1628ec9a44d8f06e3c3c583449aa281e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/architecture-closure.json#L510-L547"
+        },
+        {
+          "path": "nexus/apps/extension-halo/release-admission.json",
+          "firstLine": 1,
+          "lastLine": 806,
+          "blobSha": "4b8b4fd486d554450410eaee0b42c10df61adc7a",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/release-admission.json#L1-L806"
+        },
+        {
+          "path": "nexus/scripts/check-feature-promotion.ts",
+          "firstLine": 1,
+          "lastLine": 119,
+          "blobSha": "7a75ec7ac2aea0e58ef5dac34c730257d8bea1c7",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/check-feature-promotion.ts#L1-L119"
+        }
+      ],
+      "evidence": "Timer/Pomodoro/PDF 属于保留的历史发布集合，但任务写成 catalog-only/ready 晋升之前再做；尾部工具排在共享治理之后。",
+      "mechanism": "成熟度标签不能替代物理发布事实；已在用户手中的数据错误不会因为叫 legacy 就变成未来需求。",
+      "design": "任务优先级由 shipped × consequence × reachable-condition 决定。对全部已打包模块实行最低数据完整性/安全/可退出门槛，仍明确它们未获新的成熟认证。修正既有 task，而不是复制第二个总账。",
+      "acceptance": "Timer 状态、PDF 输出丢失、跨站写入在无晋升动作时也阻断受影响发布；原 29 项逐条标清已实现、已验证、仍欠证据。",
+      "boundary": "保留 88 面板和两个脚本的业务目标；不回到八面板方案，也不把所有历史功能批量标为 ready。",
+      "probeIds": []
+    },
+    {
+      "id": "G16",
+      "group": "发布与证据",
+      "status": "S",
+      "priority": "P1",
+      "title": "晋升证据和测试归属仍偏向文件存在/源码字符串",
+      "sources": [
+        {
+          "path": "nexus/scripts/check-feature-promotion.ts",
+          "firstLine": 1,
+          "lastLine": 119,
+          "blobSha": "7a75ec7ac2aea0e58ef5dac34c730257d8bea1c7",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/check-feature-promotion.ts#L1-L119"
+        },
+        {
+          "path": "nexus/scripts/check-release-test-owners.ts",
+          "firstLine": 1,
+          "lastLine": 127,
+          "blobSha": "edc263e80e0138b56c208774bd15b3312885b93d",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/check-release-test-owners.ts#L1-L127"
+        },
+        {
+          "path": "nexus/apps/extension-halo/test/hot-path-lifecycle.spec.ts",
+          "firstLine": 1,
+          "lastLine": 99,
+          "blobSha": "9903821a47041d8a726d3b323c84aa631cb335a7",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/test/hot-path-lifecycle.spec.ts#L1-L99"
+        }
+      ],
+      "evidence": "证据维度常以 path 存在认领；测试 owner 依赖脚本 token/源码 marker。Timer 的结构性生命周期检查没有发现真实 state codec 组合失败。",
+      "mechanism": "文件存在和源码包含某词，只证明布线的一部分，不能证明用户操作真的成功。",
+      "design": "保留静态布线检查，再让证据指向具体行为、输入、结果与被测材料。至少给每个已发布面板添加真实挂载、首读、首写、失败、卸载组合契约；高风险工具再补独立语义向量和故障注入。",
+      "acceptance": "用空测试替换真实操作或把错误 normalizer 接回去时门禁失败；“测试很多”不能代替具体不变量覆盖。",
+      "boundary": "不把所有静态测试都删掉，不按测试数量或覆盖率百分比发成熟证书。",
+      "probeIds": []
+    },
+    {
+      "id": "G17",
+      "group": "发布与证据",
+      "status": "D",
+      "priority": "P1",
+      "title": "视觉检查目前只是候选采集，不是已认证回归",
+      "sources": [
+        {
+          "path": "nexus/visual-regression-policy.json",
+          "firstLine": 1,
+          "lastLine": 45,
+          "blobSha": "d9c9a1e9ae52ad69f2b5272d87ba3f7156b92068",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/visual-regression-policy.json#L1-L45"
+        },
+        {
+          "path": "nexus/scripts/check-visual-regression-policy.ts",
+          "firstLine": 1,
+          "lastLine": 198,
+          "blobSha": "aea16aaa43009c126ce030536f1362416c5785d8",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/check-visual-regression-policy.ts#L1-L198"
+        }
+      ],
+      "evidence": "phase 为 baseline-required，基线摘要未认证，只有两个关键视图状态。",
+      "mechanism": "图片产出成功与“当前 UI 与已审查基线一致”是两件事，空态也不能覆盖实际媒体卡/错误/授权流程。",
+      "design": "固定浏览器、字体、主题、locale、viewport、数据与 motion；补两产品真实关键状态，人工审查一次后进入受控基线；普通测试不能覆盖基线。布局/无障碍语义断言与像素断言分别存在。",
+      "acceptance": "中文、浅色、320px、焦点、权限拒绝、真实多卡及错误态都有状态 ID；一个像素变化与无关截图替换都不能被误签成通过。",
+      "boundary": "不要拍脑袋加入模糊容差；若选择容差，必须有字体/渲染差异实验和明确不掩盖的缺陷范围。",
+      "probeIds": []
+    },
+    {
+      "id": "G18",
+      "group": "发布与证据",
+      "status": "D",
+      "priority": "P1",
+      "title": "性能统计样本与业务负载不足以支持全面优化结论",
+      "sources": [
+        {
+          "path": "nexus/runtime-performance-policy.json",
+          "firstLine": 1,
+          "lastLine": 65,
+          "blobSha": "2d4ce875f10e318e4ffbdca4f29f8d126e1082ae",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/runtime-performance-policy.json#L1-L65"
+        },
+        {
+          "path": "nexus/scripts/runtime-performance.ts",
+          "firstLine": 1,
+          "lastLine": 207,
+          "blobSha": "52eff55c1d2e5b44e690555d4b151dad3a31bde7",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/scripts/runtime-performance.ts#L1-L207"
+        }
+      ],
+      "evidence": "当前每项至少 20 个样本，nearest-rank p99 在 20 个样本上就是最大值；phase 仍为 baseline，并要求更多独立运行后再设预算。",
+      "mechanism": "样本尾部不稳定、测量顺序和冷暖状态可影响结果；更完整媒体发现做了更多业务，不能只用平均数或不同负载比较。",
+      "design": "保留原始样本和业务功能核对；交错基线/候选顺序，分冷启动/热启动、少量/大量标签、后台受限/常态；按决策所需误差决定样本，报告分布和不确定性，先定位热点再定 SLO。",
+      "acceptance": "不同浏览器或工作负载不能混算；不能从一轮 p50 改善推出所有更快；p99 的样本量和含义必须显示。",
+      "boundary": "保留已有绝对产物预算，不用未来统计研究阻止立即修复确定的数据错误。",
+      "probeIds": []
+    },
+    {
+      "id": "G19",
+      "group": "发布与证据",
+      "status": "D",
+      "priority": "P1",
+      "title": "分支、执行来源与长期证据保全尚需独立防线",
+      "sources": [
+        {
+          "path": "nexus/docs/release-closeout.md",
+          "firstLine": 1,
+          "lastLine": 110,
+          "blobSha": "76801fd363bbbfe354c4f15b6525ebe17b2b7b70",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/docs/release-closeout.md#L1-L110"
+        },
+        {
+          "path": ".github/workflows/cross-platform.yml",
+          "firstLine": 1,
+          "lastLine": 179,
+          "blobSha": "2ef84471217b101dfd065a1a51f8a95c11a381ad",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/.github/workflows/cross-platform.yml#L1-L179"
+        }
+      ],
+      "evidence": "远端分支列表显示 protected=false；rulesets 读取返回 403（平台要求升级/公开仓库以启用该功能），未取得有效规则清单；执行证明 artifact 有 7/30 天到期时间；临时执行分支不属于产品候选。",
+      "mechanism": "本地门禁无法独立阻止有写权限的主体直推；短期 artifact URL 也不能担任永久证据库。",
+      "design": "审计实际 rulesets 后设置与所需操作匹配的保护；测试令牌只读，晋升写入短生命周期且绑定 exact refs；保留 Git 全历史/材料摘要，并按用途保留必要日志与产物，不把秘密和巨大历史测试复制到源码。",
+      "acceptance": "独立核实 rulesets 和实际权限；未验候选不能走维护流程晋升；证据过期有显式状态和可恢复来源，清理不得触碰用户数据或唯一成果。",
+      "boundary": "protected=false 本身不能证明组织级 ruleset 不存在；此项是待核的治理加固，不是已发生越权。",
+      "probeIds": []
+    },
+    {
+      "id": "G20",
+      "group": "发布与证据",
+      "status": "S",
+      "priority": "P1",
+      "title": "对话/PR 最终状态曾倒退到旧提交，交付观察需要单一事实来源",
+      "sources": [
+        {
+          "path": "nexus/docs/decisions/business-preserving-integration.md",
+          "firstLine": 1,
+          "lastLine": 120,
+          "blobSha": "4478feabec77ce4335f57ca88689f35c502e8946",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/docs/decisions/business-preserving-integration.md#L1-L120"
+        }
+      ],
+      "evidence": "前一条最终回复回报 64a18b6，但本次重新读取已有 49df809 integration 与同树 7230 候选。",
+      "mechanism": "长工作链中手写摘要和工具调用失败容易把旧状态当当前状态；这会诱发覆盖正确后续成果。",
+      "design": "生成一次带 as-of 的交付快照：ref/head/tree/base/run/attempt/结果/未完成项；PR 正文和最终报告从同一快照投影。取不到新状态时标未知，不能把老状态升级为当前事实。",
+      "acceptance": "每次继续均先读真实 refs；文档中清楚区分检查点、最终候选与运行头；工具失败不能撤销已确认提交。",
+      "boundary": "这是已经出现的交付可靠性问题，不意味着后续修复代码丢失。",
+      "probeIds": []
+    },
+    {
+      "id": "S01",
+      "group": "持久化与用户数据",
+      "status": "R",
+      "priority": "P0",
+      "title": "存储等待超时后迟到旧写入覆盖新值",
+      "sources": [
+        {
+          "path": "nexus/packages/nexus-kernel/src/storage/safe-storage.ts",
+          "firstLine": 1,
+          "lastLine": 113,
+          "blobSha": "c3e8b26e07b888ebd1e7b1272ed987d49ec38767",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/packages/nexus-kernel/src/storage/safe-storage.ts#L1-L113"
+        }
+      ],
+      "evidence": "原 safeStorageSet：旧写超时返回 false，新写成功后，旧底层 Promise 完成能把值改回 old。",
+      "mechanism": "Promise.race 的计时超时不取消 chrome.storage 的物理写；把逻辑等待结束等同物理结束破坏写入顺序。",
+      "design": "每个持久 key 由唯一物理写入 owner 串行管理；超时返回 outcome=indeterminate，不开启能被旧写倒盖的并发写。允许新意图排队/合并，物理完成后读回并按 revision 收敛。跨上下文需要同一后台 owner 或事务，不能仅每个 Hook 一把锁。",
+      "acceptance": "旧写超时→新意图→旧写迟到、重试重排、worker 重启和断连反例都不丢最新确认状态；只有真正确认才能显示已保存。",
+      "boundary": "绝不伪造取消。若物理操作永久不结束，只能明确降级/隔离并保留待写输入；不能同时保证无限推进和严格无重叠。",
+      "probeIds": [
+        "late-storage-write"
+      ]
+    },
+    {
+      "id": "S02",
+      "group": "持久化与用户数据",
+      "status": "S",
+      "priority": "P0",
+      "title": "读取失败与键不存在被合并为默认值",
+      "sources": [
+        {
+          "path": "nexus/packages/nexus-kernel/src/storage/safe-storage.ts",
+          "firstLine": 1,
+          "lastLine": 113,
+          "blobSha": "c3e8b26e07b888ebd1e7b1272ed987d49ec38767",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/packages/nexus-kernel/src/storage/safe-storage.ts#L1-L113"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+          "firstLine": 1,
+          "lastLine": 22,
+          "blobSha": "7ab647bd8de27bef5dead726e60edad0f23c1e1b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/kernel/hooks/use-tool-state.ts#L1-L22"
+        }
+      ],
+      "evidence": "通用读 API 重试失败返回 fallback；调用者无法区分无历史状态和暂时没读到状态。",
+      "mechanism": "失败时展示默认值后再持久化，可能把真实已有值覆盖成默认值；日志不能弥补状态语义丢失。",
+      "design": "读取返回 found/missing/unavailable/invalid 的显式结果；只有 missing 才初始化。unavailable 进入可重试只读态，invalid 保留原始字节供修复/导出，禁止自动清空。",
+      "acceptance": "模拟 quota/上下文失效/异常/慢读时不写默认值；恢复后加载原数据；首次安装的 missing 正常初始化。",
+      "boundary": "不让所有旧键改名迁移造成兼容断层；保留当前默认配置作为首次使用默认，不把它当故障恢复依据。",
+      "probeIds": []
+    },
+    {
+      "id": "S03",
+      "group": "持久化与用户数据",
+      "status": "R",
+      "priority": "P0",
+      "title": "Timer 与 Pomodoro 的状态构造违反共享 JSON 合同",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/timer/panel.tsx",
+          "firstLine": 11,
+          "lastLine": 24,
+          "blobSha": "560c58d166934b0ca2892fb825fec598f2000c64",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/timer/panel.tsx#L11-L24"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/pomodoro/panel.tsx",
+          "firstLine": 56,
+          "lastLine": 69,
+          "blobSha": "eb9f923b155ff3b3e78d27f623c1eb245e558e39",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/pomodoro/panel.tsx#L56-L69"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+          "firstLine": 91,
+          "lastLine": 108,
+          "blobSha": "7ab647bd8de27bef5dead726e60edad0f23c1e1b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/kernel/hooks/use-tool-state.ts#L91-L108"
+        }
+      ],
+      "evidence": "Timer 初始 startedAt:undefined 使实际 normalizer 抛异常；Pomodoro 从运行切换暂停的 endsAt:undefined 被拒后返回旧 running 状态。",
+      "mechanism": "JSON-safe 防线本身正确；调用者使用可选 TypeScript 字段却显式存入 undefined，静态类型没有验证实际存储编码。",
+      "design": "Timer/Pomodoro 建立显式状态 codec：可选字段确实省略或统一 nullable；运行/暂停/完成各有合法形态和版本。统一修正初始化、暂停、重置、完成、兼容修复路径。",
+      "acceptance": "真实面板挂载、启动、暂停、恢复、完成、关开面板、旧数据迁移均通过；非法 undefined 被测试捕获，暂停不能回退成运行。",
+      "boundary": "本轮探针调用实际 normalizer，但没有在浏览器挂载 React；这是源码可达的组合故障，不宣称已在用户设备观察到崩溃。保留 JSON guard，不能放开所有未知对象。",
+      "probeIds": [
+        "timer-initial-state",
+        "pomodoro-pause-guard"
+      ]
+    },
+    {
+      "id": "S04",
+      "group": "持久化与用户数据",
+      "status": "S",
+      "priority": "P1",
+      "title": "复杂工具状态只有容器种类检查，缺少领域 schema",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+          "firstLine": 75,
+          "lastLine": 94,
+          "blobSha": "7ab647bd8de27bef5dead726e60edad0f23c1e1b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/kernel/hooks/use-tool-state.ts#L75-L94"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/session-manager/panel.tsx",
+          "firstLine": 12,
+          "lastLine": 21,
+          "blobSha": "2bd873c844ce5f3656a61cfec863997fead11562",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/session-manager/panel.tsx#L12-L21"
+        }
+      ],
+      "evidence": "默认 normalizer 对普通对象/数组只验证 JSON-safe 和容器种类；rich state 需显式 normalize，但多个复杂面板未提供。",
+      "mechanism": "[] 是数组不意味着每项都有合法 id/url/secret/phase；旧版本或损坏数据会越过 generic floor。",
+      "design": "领域定义 versioned codec 与迁移，检查枚举、数字范围、记录身份、嵌套界限；generic floor 仅供简单值。坏数据隔离保留，不吞掉并覆盖。",
+      "acceptance": "对每个复杂 state 注入 wrong fields、NaN、深嵌套、重复 ID、未知版本；UI 给出可恢复状态，不抛出渲染错误、不保存坏值。",
+      "boundary": "不是重新手写一套通用 schema 语言；复用当前合同比较/规范化机制，领域规则由领域 owner 提供。",
+      "probeIds": []
+    },
+    {
+      "id": "S05",
+      "group": "持久化与用户数据",
+      "status": "H",
+      "priority": "P0",
+      "title": "多个上下文的读改写可能丢更新",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/session-manager/core.ts",
+          "firstLine": 25,
+          "lastLine": 46,
+          "blobSha": "79e59260e7bdb817e0d9f63f8a981c82d37ce0dd",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/session-manager/core.ts#L25-L46"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/archive/core.ts",
+          "firstLine": 65,
+          "lastLine": 78,
+          "blobSha": "2eb734f5eb083c7f13701261c5510b41c1c2b089",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/archive/core.ts#L65-L78"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/clipboard/core.ts",
+          "firstLine": 1,
+          "lastLine": 121,
+          "blobSha": "e6da4e58262241ed085448df01505332437b028b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/clipboard/core.ts#L1-L121"
+        }
+      ],
+      "evidence": "会话、归档和剪贴板采用读取整表→改数组→写整表；Hook 的 local revision 并不是持久化层 CAS。",
+      "mechanism": "两个 SidePanel/后台实例从同一旧值出发写入，各自成功仍可能丢另一方的新记录。",
+      "design": "把跨上下文持久修改路由到唯一领域写入者，操作传稳定 ID 和 expectedRevision；需要多记录事务的数据放入现有 IndexedDB transaction。只合并可交换操作，不随意拼接用户编辑。",
+      "acceptance": "并发 add/delete/edit、两个窗口和 worker 重启的排列测试确认无静默丢失；冲突可见且原记录可恢复。",
+      "boundary": "这是可达并发风险，不声称当前已经观察到真实用户记录丢失。仅在一个函数内串 Promise 不足以关闭跨上下文问题。",
+      "probeIds": []
+    },
+    {
+      "id": "S06",
+      "group": "持久化与用户数据",
+      "status": "S",
+      "priority": "P1",
+      "title": "写入失败只留日志，用户无法判断是否保存",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
+          "firstLine": 436,
+          "lastLine": 482,
+          "blobSha": "7ab647bd8de27bef5dead726e60edad0f23c1e1b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/kernel/hooks/use-tool-state.ts#L436-L482"
+        }
+      ],
+      "evidence": "通用 Hook 的失败路径能记录错误，但公开返回状态不足以表达 saving/failed/indeterminate 及最后确认 revision。",
+      "mechanism": "乐观界面保留了新值，用户可能以为持久化成功；关闭面板后才发现失去改动。",
+      "design": "在不破坏现有调用入口的前提下提供保存状态与重试动作；高价值编辑保留未确认草稿和可导出结果；只有后端确认匹配 revision 后显示 saved。",
+      "acceptance": "模拟 latest write 失败、旧写迟到、网络/上下文错误：界面不能显示误导性成功；重试不重复删除或覆盖用户更新。",
+      "boundary": "不通过自动无限重试撑住界面；保存状态不是第二份业务事实 owner。",
+      "probeIds": []
+    },
+    {
+      "id": "S07",
+      "group": "持久化与用户数据",
+      "status": "S",
+      "priority": "P1",
+      "title": "数量上限不能代替字节配额及保留策略",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/clipboard/core.ts",
+          "firstLine": 1,
+          "lastLine": 121,
+          "blobSha": "e6da4e58262241ed085448df01505332437b028b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/clipboard/core.ts#L1-L121"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/api-tester/core.ts",
+          "firstLine": 1,
+          "lastLine": 151,
+          "blobSha": "84c4a9ae16c52a0d9ef95fbe98d488bec44f71a3",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/api-tester/core.ts#L1-L151"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/todo-list/core.ts",
+          "firstLine": 1,
+          "lastLine": 71,
+          "blobSha": "2e4178e5e54d45a711720a457aa0bd71b59f5b63",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/todo-list/core.ts#L1-L71"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/session-manager/core.ts",
+          "firstLine": 1,
+          "lastLine": 73,
+          "blobSha": "79e59260e7bdb817e0d9f63f8a981c82d37ce0dd",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/session-manager/core.ts#L1-L73"
+        }
+      ],
+      "evidence": "API 历史和剪贴板有记录数量界限，单项文本/响应可能很大；会话和用户列表也没有一致的总量约束。",
+      "mechanism": "共享存储 quota 由总字节决定；一个工具耗尽空间会影响另一个工具保存密码、计时或设置。",
+      "design": "区分临时历史与用户明确保留记录，定义单项/领域/总字节预算和可见使用量；可清理历史用明确策略，固定/用户创建数据需拒绝新写、导出或用户授权清理，不静默删旧。",
+      "acceptance": "超大单项、许多小项、quotaExceeded、pinned 全满和并发增长下都保留已承诺数据；失败说明真实受限维度。",
+      "boundary": "具体阈值依据目标设备与产品需求测量，不凭空以某 MB 数值宣称性能已证明。",
+      "probeIds": []
+    },
+    {
+      "id": "S08",
+      "group": "持久化与用户数据",
+      "status": "S",
+      "priority": "P0",
+      "title": "归档元数据与 Blob 不在同一事务，裁剪留下孤儿",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/archive/core.ts",
+          "firstLine": 65,
+          "lastLine": 87,
+          "blobSha": "2eb734f5eb083c7f13701261c5510b41c1c2b089",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/archive/core.ts#L65-L87"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/archive/storage.ts",
+          "firstLine": 38,
+          "lastLine": 53,
+          "blobSha": "cccf852df266a5c2fa6743f25ff85e0f39f7fdc6",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/archive/storage.ts#L38-L53"
+        }
+      ],
+      "evidence": "先存 Blob 后存元数据，列表超过 50 时只 pop 元数据；删除先改元数据再删 Blob。",
+      "mechanism": "任一中间步骤失败或容量裁剪，就会出现不可见 Blob 或指向不存在实体的元数据；并发又放大不一致。",
+      "design": "把归档 metadata/blob 放在同一 DB 的事务中，历史 chrome.storage 元数据经幂等迁移后保留旧副本到核验完成。只清理已证明无引用且属于本工具的对象，提供恢复/导出视图。",
+      "acceptance": "在每个事务步骤注入失败，重启后不存在半条已确认记录；超过数量策略时 Blob 与列表同步；旧孤儿可枚举并经授权处置。",
+      "boundary": "不能为了空间直接清空 archive DB；元数据改动与二进制删除需要明确用户保留政策。",
+      "probeIds": []
+    },
+    {
+      "id": "S09",
+      "group": "持久化与用户数据",
+      "status": "S",
+      "priority": "P0",
+      "title": "IndexedDB 请求成功过早被当作事务已提交",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/archive/storage.ts",
+          "firstLine": 38,
+          "lastLine": 54,
+          "blobSha": "cccf852df266a5c2fa6743f25ff85e0f39f7fdc6",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/archive/storage.ts#L38-L54"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/archive/storage.ts",
+          "firstLine": 62,
+          "lastLine": 77,
+          "blobSha": "cccf852df266a5c2fa6743f25ff85e0f39f7fdc6",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/archive/storage.ts#L62-L77"
+        }
+      ],
+      "evidence": "save/delete Promise 在 request.onsuccess resolve，未等待 tx.oncomplete，也没有统一处理 transaction abort。",
+      "mechanism": "单个 request 成功后，事务仍可能中止；上层已报告成功就会与持久事实冲突。",
+      "design": "写操作在 transaction complete 才确认；request/transaction error 与 abort 统一失败路径；DB 打开采用共享 in-flight Promise，versionchange 关闭正确连接并停止新事务。",
+      "acceptance": "request success 后主动 abort 时上层必须失败；多次并发 open/升级/关闭不泄漏旧连接；已确认写重启后可读。",
+      "boundary": "实际 DB 崩溃持久性还受平台约束，应清楚区分逻辑提交与极端断电保证；本项未运行真实浏览器 IDB 故障注入。",
+      "probeIds": []
+    },
+    {
+      "id": "S10",
+      "group": "持久化与用户数据",
+      "status": "R",
+      "priority": "P0",
+      "title": "剪贴板满额时仍会丢固定条目",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/clipboard/core.ts",
+          "firstLine": 1,
+          "lastLine": 121,
+          "blobSha": "e6da4e58262241ed085448df01505332437b028b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/clipboard/core.ts#L1-L121"
+        }
+      ],
+      "evidence": "100 个 pinned 条目加入一个新 unpinned 后只剩 99 个 pinned；原注释想保护固定项但排序/截断组合不满足。",
+      "mechanism": "先加入新项再整体截断，不能保证“不删 pinned”的不变量。",
+      "design": "先分固定与可淘汰记录；固定容量占满时拒绝新自动历史或明确请求用户释放容量。固定条目编辑/取消固定与容量变化使用同一事务。",
+      "acceptance": "全固定、部分固定、重复内容、并发 capture 及大字节场景都不丢固定记录；拒绝必须可见而非无声失败。",
+      "boundary": "不能通过扩大列表到无界来修补；保留自动历史能力及用户 pin 的强语义。",
+      "probeIds": [
+        "pinned-clipboard-eviction"
+      ]
+    },
+    {
+      "id": "S11",
+      "group": "持久化与用户数据",
+      "status": "S",
+      "priority": "P1",
+      "title": "Session Manager 保存两份会话列表，初始展示可能失真",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/session-manager/core.ts",
+          "firstLine": 36,
+          "lastLine": 51,
+          "blobSha": "79e59260e7bdb817e0d9f63f8a981c82d37ce0dd",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/session-manager/core.ts#L36-L51"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/session-manager/panel.tsx",
+          "firstLine": 12,
+          "lastLine": 30,
+          "blobSha": "2bd873c844ce5f3656a61cfec863997fead11562",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/session-manager/panel.tsx#L12-L30"
+        }
+      ],
+      "evidence": "core 的 halo_sessions 是一份，面板 session-manager tool state 又是一份；面板没有初始读取 core，主要在本面板保存/删除后同步。",
+      "mechanism": "重复权威使外部更新或旧数据只存在于其中一份时，UI 显示过期或空列表。",
+      "design": "以一个持久会话 owner 为准，面板仅存搜索/展开状态；初始查询并订阅更新。迁移两份数据按稳定 ID 比较，冲突保留双版本供用户选择。",
+      "acceptance": "已有会话首次打开即可看到；另一窗口修改实时一致；迁移不按“最近读到的那份”直接覆盖另一份。",
+      "boundary": "不删掉用户现有 key 后假称一致；旧 key 退役必须有验证过的迁移和回滚窗口。",
+      "probeIds": []
+    },
+    {
+      "id": "S12",
+      "group": "持久化与用户数据",
+      "status": "S",
+      "priority": "P1",
+      "title": "会话恢复丢 pinned 状态且无法表达部分成功",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/session-manager/core.ts",
+          "firstLine": 58,
+          "lastLine": 73,
+          "blobSha": "79e59260e7bdb817e0d9f63f8a981c82d37ce0dd",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/session-manager/core.ts#L58-L73"
+        }
+      ],
+      "evidence": "newWindow 只传 URL 列表，不恢复保存的 pinned；逐标签恢复中间失败不返回各项结果。",
+      "mechanism": "恢复会话是多副作用操作，不是一个布尔成功；部分开页后重试可能重复创建。",
+      "design": "冻结恢复计划，按已验证 URL 创建有界批次，并按返回 tab ID 恢复 pinned；每项记录成功/拒绝/失败，重试只做未完成项，支持取消剩余任务。",
+      "acceptance": "新窗口和当前窗口恢复都保持 pinned；部分权限/URL 不支持时准确列出跳过项；重复点击不产生两份已完成标签。",
+      "boundary": "浏览器开页不支持跨 API 原子事务，不承诺全部成功或全部回滚；保留已有安全 scheme 筛选并校准现实支持范围。",
+      "probeIds": []
+    },
+    {
+      "id": "N01",
+      "group": "权限、网络与秘密",
+      "status": "R",
+      "priority": "P0",
+      "title": "站点存储编辑时重新选择当前标签，可能写到别的站点",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/storage-editor/core.ts",
+          "firstLine": 16,
+          "lastLine": 49,
+          "blobSha": "9708c79d89c03141e0e325612aa055d3d22962a8",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/storage-editor/core.ts#L16-L49"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/storage-editor/core.ts",
+          "firstLine": 55,
+          "lastLine": 81,
+          "blobSha": "9708c79d89c03141e0e325612aa055d3d22962a8",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/storage-editor/core.ts#L55-L81"
+        }
+      ],
+      "evidence": "隔离 Chrome stub：在 Tab1 读取 A，切换 Tab2 后保存，Tab2 被写入 edited A，而 Tab1 不变。",
+      "mechanism": "read 与 write 各自 query active tab，没有将编辑意图绑定到第一次读到的 document/origin。",
+      "design": "加载返回 tab/window/frame/document/origin、storageKind 和原值 revision；编辑保存使用冻结目标，在实际注入时验证仍是该文档并对原值做冲突检查。导航/切换不能自动重定向写入。",
+      "acceptance": "切换窗口、换标签、同标签跨域导航、同 origin 新文档、页内值被网站改动时，保存要么写原目标且经验证，要么明确失败；不能污染新目标。",
+      "boundary": "仅以 tabId 绑定还不足以防导航串页；目标检查不能把先后两次读取冒充原子性。",
+      "probeIds": [
+        "storage-editor-target-race"
+      ]
+    },
+    {
+      "id": "N02",
+      "group": "权限、网络与秘密",
+      "status": "S",
+      "priority": "P0",
+      "title": "站点存储编辑 UI 忽略写入/删除失败结果",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/storage-editor/panel.tsx",
+          "firstLine": 1,
+          "lastLine": 98,
+          "blobSha": "619d350ce1f9cbbc34920c6c8e568550f281a02b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/storage-editor/panel.tsx#L1-L98"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/storage-editor/core.ts",
+          "firstLine": 1,
+          "lastLine": 102,
+          "blobSha": "9708c79d89c03141e0e325612aa055d3d22962a8",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/storage-editor/core.ts#L1-L102"
+        }
+      ],
+      "evidence": "core 用 false/空列表表达异常，面板的更新/删除流程没有完整按真实结果决定呈现。",
+      "mechanism": "本地 UI 去掉一行并不证明网站存储删除了它；读失败也不能证明网站没有数据。",
+      "design": "站点存储读写返回来源绑定的 typed result，失败保留当前编辑和原始行；成功必须以同目标的实际 readback 更新 UI，并显示冲突、拒绝和未知。",
+      "acceptance": "拒绝 scripting、文档消失、存储异常、delete 返回失败时不显示成功；读失败不显示误导性空存储。",
+      "boundary": "不提供无条件重试删除全部站点值；可重试操作必须仍绑定原目标。",
+      "probeIds": []
+    },
+    {
+      "id": "N03",
+      "group": "权限、网络与秘密",
+      "status": "S",
+      "priority": "P0",
+      "title": "Cookie 身份丢失 store/partition/hostOnly，更新目标也可能漂移",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/cookie-manager/core.ts",
+          "firstLine": 1,
+          "lastLine": 82,
+          "blobSha": "c2b764668f500ae6caebbc3df865a757ce868eb9",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/cookie-manager/core.ts#L1-L82"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/cookie-manager/types.ts",
+          "firstLine": 1,
+          "lastLine": 12,
+          "blobSha": "7b00a862a9dda2a7f2f1b9eff5ea353a73b0ad6a",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/cookie-manager/types.ts#L1-L12"
+        }
+      ],
+      "evidence": "CookieInfo 投影未保留 storeId、partitionKey、hostOnly；getAll 主要按 domain，set 再查询当前 tab URL；remove 未验证返回的删除结果。",
+      "mechanism": "name/domain/path 不足以标识所有浏览器 Cookie。丢 hostOnly 后回写 domain 还可能扩大作用范围；换当前标签后 mutation 的 URL 与被编辑记录不一致。",
+      "design": "Cookie key 保留 storeId、partitionKey、name/domain/path 及必要 origin/hostOnly 事实；按原 Cookie 精确 set/remove，hostOnly 时不能人为附加 domain。校验返回值并回读同一 key。",
+      "acceptance": "普通/隐身 store、同名多 path、分区 Cookie、hostOnly、secure、当前页导航和 remove 返回 null 全部有负例；导入导出保持身份。",
+      "boundary": "这是源码确定的身份信息缺口，未在真实多分区浏览器上完成复验；保留已修复的 secure scheme 处理。",
+      "probeIds": []
+    },
+    {
+      "id": "N04",
+      "group": "权限、网络与秘密",
+      "status": "H",
+      "priority": "P0",
+      "title": "内部消息路由并未统一区分可信 UI 与 Content 权限",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-spectra/src/background/handlers/settings.ts",
+          "firstLine": 33,
+          "lastLine": 64,
+          "blobSha": "515628d7229212b96873dec95d516c2a6180c492",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/handlers/settings.ts#L33-L64"
+        },
+        {
+          "path": "nexus/apps/extension-spectra/src/background/handlers/tab-state.ts",
+          "firstLine": 79,
+          "lastLine": 118,
+          "blobSha": "f8fa3e348cb4c48b6ea15084770bebf208066e72",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/handlers/tab-state.ts#L79-L118"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/entry/background.ts",
+          "firstLine": 329,
+          "lastLine": 384,
+          "blobSha": "4286923067145b2d2065c27f675108ae5a213d93",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/entry/background.ts#L329-L384"
+        }
+      ],
+      "evidence": "部分 handler 只排除不同 extension id，未进一步限定 UI/当前 Content/特定 frame 的能力；HALO 通用代理、剪贴板与 CSS 路径的校验深度也不同。",
+      "mechanism": "同一扩展的内容脚本与可信扩展页面不是相同信任域；一个受影响 Content 不应取得全局设置或任意 tab 操作权。",
+      "design": "按 canonical 消息合同建立 capability matrix，输入先 schema 校验，再验证 sender.id、URL 来源、frame/document 和 target 归属。Content 仅能观察/操作自己被授予的范围，全局变更要求可信 UI 的具体操作意图。",
+      "acceptance": "用真实来源类别和伪造 payload 测试跨 tab、过期文档、子 frame、无 ID、外部扩展、权限撤销；既有合法热键和 Popup 流程不受损。",
+      "boundary": "风险前提是受影响的扩展 Content/内部调用者，不等于普通网页可直接调用所有 Chrome 扩展 API；没有声称已经发生远程入侵。",
+      "probeIds": []
+    },
+    {
+      "id": "N05",
+      "group": "权限、网络与秘密",
+      "status": "R",
+      "priority": "P0",
+      "title": "私网主机字面量过滤既有漏判也有误封",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/kernel/utils/ssrf-guard.ts",
+          "firstLine": 1,
+          "lastLine": 56,
+          "blobSha": "02a0b6e3429243dcb8c042ecdbdcead90bd87a35",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/kernel/utils/ssrf-guard.ts#L1-L56"
+        }
+      ],
+      "evidence": "IPv4-mapped IPv6 的标准化十六进制写法 ::ffff:7f00:1 没被拦；fe81::1 链路本地地址漏拦；198.20.0.1 反被过宽规则拦截。",
+      "mechanism": "手写字符串前缀不能代替 IP 地址规范化和 CIDR 分类，URL parser 还会把字面量变成另一种等价表示。",
+      "design": "统一解析 IP 结构后按准确网段判断，覆盖映射地址、回环、链路本地与保留范围；公网误封要恢复正常业务。另设显式本地开发访问模式，而不是把绕过与正常授权混在一起。",
+      "acceptance": "等价 IPv4/IPv6 表示分类相同，127.0.0.1/映射回环/fe80::/10 正确处理，公网 198.20.0.1 不误封；畸形输入拒绝。",
+      "boundary": "探针未访问任何内网地址；该工具运行在浏览器扩展，不等同传统服务器 SSRF，但其高权限请求代理同样需要防止被滥用。",
+      "probeIds": [
+        "literal-host-filter"
+      ]
+    },
+    {
+      "id": "N06",
+      "group": "权限、网络与秘密",
+      "status": "H",
+      "priority": "P1",
+      "title": "初始 URL 筛选不能证明重定向和 DNS 后的目标安全",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/entry/background.ts",
+          "firstLine": 342,
+          "lastLine": 421,
+          "blobSha": "4286923067145b2d2065c27f675108ae5a213d93",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/entry/background.ts#L342-L421"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/kernel/utils/ssrf-guard.ts",
+          "firstLine": 1,
+          "lastLine": 56,
+          "blobSha": "02a0b6e3429243dcb8c042ecdbdcead90bd87a35",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/kernel/utils/ssrf-guard.ts#L1-L56"
+        }
+      ],
+      "evidence": "请求路径会使用普通 fetch，最初主机检查无法独立约束后续重定向或域名解析到的地址。",
+      "mechanism": "域名字符串不是最终网络端点；允许公网 URL 后自动跟随另一来源，可能超出原授权。",
+      "design": "高权限代理限定来源能力与目标协议，检查可观察重定向链；无法可靠检查时拒绝该跳转而非自动扩大权限。敏感请求不跨来源转发认证头，私网访问必须显式授权。",
+      "acceptance": "公网→回环、跨来源 redirect、认证头继承、DNS 变化、manual redirect 无法读 Location 等场景有明确失败/授权行为。",
+      "boundary": "浏览器 JS 通常不能完整证明 DNS 的最终 IP，不能宣传“已实现绝对 SSRF 防护”；需要诚实的权限边界与平台限制。",
+      "probeIds": []
+    },
+    {
+      "id": "N07",
+      "group": "权限、网络与秘密",
+      "status": "S",
+      "priority": "P1",
+      "title": "网络响应没有统一时间、字节和生命周期边界",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/api-tester/core.ts",
+          "firstLine": 54,
+          "lastLine": 91,
+          "blobSha": "84c4a9ae16c52a0d9ef95fbe98d488bec44f71a3",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/api-tester/core.ts#L54-L91"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/entry/background.ts",
+          "firstLine": 342,
+          "lastLine": 421,
+          "blobSha": "4286923067145b2d2065c27f675108ae5a213d93",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/entry/background.ts#L342-L421"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/ip-lookup/core.ts",
+          "firstLine": 1,
+          "lastLine": 61,
+          "blobSha": "cda14a459daefb15e1f34f436bcf861e4cf42d55",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/ip-lookup/core.ts#L1-L61"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/headers-viewer/core.ts",
+          "firstLine": 1,
+          "lastLine": 78,
+          "blobSha": "fba0b75ca45f4f35e8e15e1352fecdd92b8030bf",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/headers-viewer/core.ts#L1-L78"
+        }
+      ],
+      "evidence": "API Tester 等请求缺少完整 abort/response-size 合同；代理可整包 arrayBuffer 后再 base64；部分 headers fallback 发 GET。",
+      "mechanism": "等待、读取响应、解码和存储是不同资源阶段。只限制请求数量仍可被单个大响应或永不结束响应占住。",
+      "design": "复用一个受控 fetch owner：总截止、流读取字节上限、取消 body、上下文退休、响应类型/schema、跨来源重定向政策和明确错误。HEAD fallback 的 GET 若只取头必须释放 body。",
+      "acceptance": "慢头、无限流、大 body、错误编码、权限撤销、面板退出及新请求替换旧请求不会继续写 UI/历史，也不隐瞒超限。",
+      "boundary": "AbortSignal 对 fetch 有实际取消语义，但不能推广为所有 Chrome RPC 都可强制取消；响应历史需脱敏和容量控制。",
+      "probeIds": []
+    },
+    {
+      "id": "N08",
+      "group": "权限、网络与秘密",
+      "status": "S",
+      "priority": "P0",
+      "title": "敏感输入默认跟随通用工具状态持久化",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/totp/panel.tsx",
+          "firstLine": 18,
+          "lastLine": 29,
+          "blobSha": "298a11b8f38e08ccc8e5188ac6fba522d803e3d4",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/totp/panel.tsx#L18-L29"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/crypto/aes-panel.tsx",
+          "firstLine": 6,
+          "lastLine": 21,
+          "blobSha": "97ebabfb6c128a9ed57b568e204df4b2d4d5f990",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/crypto/aes-panel.tsx#L6-L21"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/crypto/jwt-panel.tsx",
+          "firstLine": 7,
+          "lastLine": 22,
+          "blobSha": "126ac86abb262963eeb95736adcdd5bf3c55fc50",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/crypto/jwt-panel.tsx#L7-L22"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/crypto/rsa-panel.tsx",
+          "firstLine": 7,
+          "lastLine": 20,
+          "blobSha": "e108ae3ef281ac178b2164275800379dd9462e82",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/crypto/rsa-panel.tsx#L7-L20"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/api-tester/panel.tsx",
+          "firstLine": 7,
+          "lastLine": 22,
+          "blobSha": "40385ffbf77aa3c5c034c472ffa30427a564c260",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/api-tester/panel.tsx#L7-L22"
+        }
+      ],
+      "evidence": "TOTP secret/输入框、AES 内容/密钥、JWT secret、RSA 私钥及 API 参数/历史使用持久工具状态。当前树没有 storage.setAccessLevel 的调用。",
+      "mechanism": "“仅本地”不等于最小暴露；默认持久化扩大保留时间，扩展 Content 访问存储的默认边界也与可信 UI 不同。",
+      "design": "字段分级：密码、私钥、令牌默认内存/session，不进入通用历史；持久化需明确选择。可信扩展存储与 Content 分离，先清点消费者，再设置访问范围或由可信 owner 提供最小 RPC。旧秘密只做可恢复迁移，先导出/确认再删除。",
+      "acceptance": "关闭/重启后默认不残留新秘密；Content 无法遍历秘密仓库；正常工具设置仍可访问；迁移中断不能丢已有 TOTP 或私钥。",
+      "boundary": "没有发现泄露事件，也不能只把加密 key 和密文放在一起就称安全。可选加密需独立用户秘密/可信密钥来源和恢复设计。",
+      "probeIds": []
+    },
+    {
+      "id": "N09",
+      "group": "权限、网络与秘密",
+      "status": "S",
+      "priority": "P1",
+      "title": "选择 DeepL 翻译网页时被静默转给 Google",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/translate/core.ts",
+          "firstLine": 1,
+          "lastLine": 20,
+          "blobSha": "e26f5e002c704bbcec411a02eb86b619fd265243",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/translate/core.ts#L1-L20"
+        }
+      ],
+      "evidence": "page translation 的 DeepL 分支落入 default，返回 Google URL。",
+      "mechanism": "服务能力不支持不能以未说明的另一数据接收者代替用户选择；这是授权语义而不只是文案。",
+      "design": "服务能力矩阵区分文本/网页模式，选中的 provider 不支持时显式提示并让用户改选；最终提交前展示实际目标来源。",
+      "acceptance": "对每个 provider × 模式断言实际 URL；DeepL 网页不自动打开 Google；无额外对外请求。",
+      "boundary": "不依据源码注释推断 DeepL 当下所有产品能力；这里只裁定当前代码的静默替换，能力说明上线前再查官方。",
+      "probeIds": []
+    },
+    {
+      "id": "N10",
+      "group": "权限、网络与秘密",
+      "status": "S",
+      "priority": "P1",
+      "title": "生产日志直接记录 URL 片段，诊断脱敏不覆盖它",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/entry/background.ts",
+          "firstLine": 342,
+          "lastLine": 423,
+          "blobSha": "4286923067145b2d2065c27f675108ae5a213d93",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/entry/background.ts#L342-L423"
+        },
+        {
+          "path": "nexus/packages/nexus-kernel/src/diagnostics.ts",
+          "firstLine": 1,
+          "lastLine": 345,
+          "blobSha": "e520f1f7df3227f41b9c2149fa5784fe940ed654",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/packages/nexus-kernel/src/diagnostics.ts#L1-L345"
+        }
+      ],
+      "evidence": "代理相关日志可记录 URL 截断片段；URL 前几十个字符仍可能包含 query/token。现有诊断包有专门脱敏，并不能消除另一路 console 日志。",
+      "mechanism": "字符串截短不是脱敏；默认不上传遥测也不等于本地日志不会暴露敏感值。",
+      "design": "生产只记稳定事件码、来源类别、长度/耗时/计数；调试细节显式开启且清除认证字段、查询值、片段和用户正文。归档/测试失败截图采用同一敏感字段规则。",
+      "acceptance": "带 token 的合成 URL、Cookie/Authorization/secret 输入不能出现在生产日志、诊断包和默认 artifact；错误仍可定位到 owner。",
+      "boundary": "不把现有诊断包本身说成已泄露，保留其有界无遥测设计。",
+      "probeIds": []
+    },
+    {
+      "id": "N11",
+      "group": "权限、网络与秘密",
+      "status": "H",
+      "priority": "P1",
+      "title": "权限和目标必须在真正副作用发生时仍有效",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/screenshot/core.ts",
+          "firstLine": 1,
+          "lastLine": 44,
+          "blobSha": "a3638a35d7993ed45dffc35c745331f6b2adfea1",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/screenshot/core.ts#L1-L44"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/entry/background.ts",
+          "firstLine": 1,
+          "lastLine": 430,
+          "blobSha": "4286923067145b2d2065c27f675108ae5a213d93",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/entry/background.ts#L1-L430"
+        },
+        {
+          "path": "nexus/apps/extension-spectra/src/shared/optional-permission-click-gate.ts",
+          "firstLine": 1,
+          "lastLine": 84,
+          "blobSha": "91fe3d118bae546d200d997a53623516aa708386",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/shared/optional-permission-click-gate.ts#L1-L84"
+        }
+      ],
+      "evidence": "当前严格的 Spectra 意图门控已修复，但通用 CSS/截图等路径尚未形成同一 target-at-action 合同。截图尤其会读取窗口当前可见页。",
+      "mechanism": "权限批准与目标文档仍存在、当前活动页仍相同是不同状态；延迟点击/抓图可能改变实际对象。",
+      "design": "复用已验证的 intent/disposer 模式，为每类操作明确“点击时目标”或“执行时当前页”语义；副作用前校验文档、功能启用和权限，结果必须归属于同一有效操作。",
+      "acceptance": "权限等待中导航、换窗口、撤销、重复按键、销毁 UI，均不会把旧操作施加到新页；需要重新选择时明确交互。",
+      "boundary": "截图 API 不是任意文档原子抓拍，前后检查也非原子事务；未证实发生串页的路径标为条件性风险。",
+      "probeIds": []
+    },
+    {
+      "id": "D01",
+      "group": "媒体发现与运行时",
+      "status": "H",
+      "priority": "P1",
+      "title": "物理并发有界但永久在途会导致后续发现饥饿",
+      "sources": [
+        {
+          "path": "nexus/packages/nexus-kernel/src/settlement-pool.ts",
+          "firstLine": 1,
+          "lastLine": 41,
+          "blobSha": "6e9e50edcd09d891cac21667c61d5a89248b78c3",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/packages/nexus-kernel/src/settlement-pool.ts#L1-L41"
+        },
+        {
+          "path": "nexus/apps/extension-spectra/src/background/media-tab-discovery.ts",
+          "firstLine": 1,
+          "lastLine": 91,
+          "blobSha": "2608e9f4e40847d0806dc2ec54bfb47fde2756a1",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/media-tab-discovery.ts#L1-L91"
+        }
+      ],
+      "evidence": "实际请求占用名额直到完成是正确做法；但多个永久不结束请求可占满 pool，新一轮按类似顺序扫描还会不公平。",
+      "mechanism": "安全上界与系统活性是两个性质。不能用逻辑超时伪释放名额来换取表面进度。",
+      "design": "保留物理名额，新增 pending 年龄/终止事实/公平队列和 degraded 状态。新文档使用独立身份；只有 Chrome 文档已销毁等可验证终止或底层真取消后回收。无法证明终止则展示覆盖不完整。",
+      "acceptance": "8 个挂起、部分完成、导航、数百标签与重复打开面板时内存/请求数有界，未检查的页不会被假报没有媒体，公平轮转可观察。",
+      "boundary": "不可取消的永久请求下不可能同时保证有限并发与无条件无限推进；方案明确这个瓶颈而不伪造成功。",
+      "probeIds": []
+    },
+    {
+      "id": "D02",
+      "group": "媒体发现与运行时",
+      "status": "R",
+      "priority": "P1",
+      "title": "超时观察者在未结束 Promise 上累积 reaction",
+      "sources": [
+        {
+          "path": "nexus/packages/nexus-kernel/src/settlement-pool.ts",
+          "firstLine": 30,
+          "lastLine": 41,
+          "blobSha": "6e9e50edcd09d891cac21667c61d5a89248b78c3",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/packages/nexus-kernel/src/settlement-pool.ts#L30-L41"
+        }
+      ],
+      "evidence": "同一未完成物理 Promise 被 observeWithin 观察 20 次并超时后，累计注册 20 个 then reaction。",
+      "mechanism": "清理定时器不能解绑已注册 Promise reaction；底层 pool 小也可能有无界的订阅者残留。",
+      "design": "每个物理操作只注册一次 completion handler；观察者在显式订阅集合中登记，超时/退出能删除；完成后统一通知当前有效订阅者并清空引用。",
+      "acceptance": "对永不结束操作进行多轮观察/退出，活动观察者与保留回调数不随历史调用增长；晚完成不得通知已退出者。",
+      "boundary": "计数探针证明 reaction 登记增长，不是实际浏览器 heap profiling 数字；修复不能释放仍在执行的物理名额。",
+      "probeIds": [
+        "unsettled-promise-observers"
+      ]
+    },
+    {
+      "id": "D03",
+      "group": "媒体发现与运行时",
+      "status": "S",
+      "priority": "P1",
+      "title": "没有媒体与探测失败仍有被合并的路径",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-spectra/src/background/media-tab-discovery.ts",
+          "firstLine": 1,
+          "lastLine": 91,
+          "blobSha": "2608e9f4e40847d0806dc2ec54bfb47fde2756a1",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/media-tab-discovery.ts#L1-L91"
+        }
+      ],
+      "evidence": "文档读取/RPC 异常或无有效响应有路径变成 null/false；上层可能把它当作确切的无媒体结论。",
+      "mechanism": "否定证据需要成功观察；超时、权限拒绝或文档变化只说明未知，不说明不存在。",
+      "design": "探测返回 found/no-media/denied/stale/unknown，附 examined/pending/failed coverage；只有有效同文档响应可给 no-media。保留现有部分结果 UI 并准确传播 reason。",
+      "acceptance": "被禁止页、丢 worker、无接收者、迟到响应、错误 payload、同标签导航不产生完整列表的虚假声明。",
+      "boundary": "不为追求完整列表唤醒重型控制运行时；错误语义修复优先于性能数字。",
+      "probeIds": []
+    },
+    {
+      "id": "D04",
+      "group": "媒体发现与运行时",
+      "status": "S",
+      "priority": "P1",
+      "title": "冷启动的暂停 iframe 媒体不属于当前顶层探测覆盖",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-spectra/src/background/media-tab-discovery.ts",
+          "firstLine": 1,
+          "lastLine": 91,
+          "blobSha": "2608e9f4e40847d0806dc2ec54bfb47fde2756a1",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/media-tab-discovery.ts#L1-L91"
+        },
+        {
+          "path": "nexus/apps/extension-spectra/src/content/core/bootstrap.ts",
+          "firstLine": 1,
+          "lastLine": 495,
+          "blobSha": "67deda09ac787c049e77c259c400ee58efc11fa7",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/content/core/bootstrap.ts#L1-L495"
+        }
+      ],
+      "evidence": "被动探测绑定顶层 document；基础探测查询本 document 的 video/audio，并非所有子 frame。发声/近期报告可覆盖一些播放场景，不能证明冷的暂停 iframe 场景。",
+      "mechanism": "tab 不是 document；顶层无 video 不推出子文档无媒体。",
+      "design": "在已授权范围内做有界 frame/document census 与轻量探测，按 tab 汇总并保留 frame 身份；不允许访问的 frame 显示覆盖边界。闭合 Shadow DOM 等不可见对象不能被宣称扫描完整。",
+      "acceptance": "顶层空、同源/跨源 iframe 暂停媒体、frame 导航/消失、无权限和大量 frame 场景有浏览器证据；不得激活重型音频控制。",
+      "boundary": "本轮为源码覆盖结论，尚未新增实际 iframe 浏览器重放；不是说所有 iframe 播放页现在都漏。",
+      "probeIds": []
+    },
+    {
+      "id": "D05",
+      "group": "媒体发现与运行时",
+      "status": "H",
+      "priority": "P1",
+      "title": "媒体报告和共享扫描缓存的身份粒度需覆盖文档代际",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-spectra/src/background/handlers/tab-state.ts",
+          "firstLine": 1,
+          "lastLine": 118,
+          "blobSha": "f8fa3e348cb4c48b6ea15084770bebf208066e72",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/handlers/tab-state.ts#L1-L118"
+        },
+        {
+          "path": "nexus/apps/extension-spectra/src/background/media-tab-discovery.ts",
+          "firstLine": 1,
+          "lastLine": 91,
+          "blobSha": "2608e9f4e40847d0806dc2ec54bfb47fde2756a1",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/media-tab-discovery.ts#L1-L91"
+        }
+      ],
+      "evidence": "部分 media report/扫描共享以 tab 为单位；迟到旧文档或子 frame 报告若参与汇总，会与新文档产生冲突。",
+      "mechanism": "tabId 可跨导航保持，旧 frame 的肯定/否定状态不应直接覆盖新 document 的事实。",
+      "design": "事件以 tab/frame/document/sourceRevision 为 key 验证归属；聚合是活跃文档事实的派生视图；导航退休旧事实，历史最近发声只作 heuristic。",
+      "acceptance": "旧文档报告迟到、子 frame 报空、同时导航和扫描等排列不污染新页；重复报告幂等，集合有界。",
+      "boundary": "不废除已有 generation/revision；补齐未进入同一身份模型的观察路径。",
+      "probeIds": []
+    },
+    {
+      "id": "D06",
+      "group": "媒体发现与运行时",
+      "status": "D",
+      "priority": "P1",
+      "title": "多来源卡片快照应保留字段级未知，而非伪事务",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-spectra/src/popup/card/snapshot.ts",
+          "firstLine": 1,
+          "lastLine": 37,
+          "blobSha": "24a23b004687fc7430d1e446134f767038eda75e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/popup/card/snapshot.ts#L1-L37"
+        }
+      ],
+      "evidence": "现有代码保留前后文档检查并并行读取多个 owner，单项失败可返回 null；它本就不是跨来源原子事务。",
+      "mechanism": "文档相同不能推出状态版本同时相同，字段失败也不应让整张卡片显示默认成功状态。",
+      "design": "保留文档 fence，对字段附来源/版本/已知状态；只在需要的字段齐备时开放对应操作。跨来源强一致确有必要时由拥有变更权的协调者提供 snapshot，而不是前端 Promise.all 自称事务。",
+      "acceptance": "错序、部分超时、一个 owner 恢复和其他 owner 更新并行时，UI 不倒退、不误显示已确认状态、不全局重载无关卡片。",
+      "boundary": "这是展示和合同加固，不把已经正确写明非原子性的实现重新扣成“原子性 bug”。",
+      "probeIds": []
+    },
+    {
+      "id": "J01",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P0",
+      "title": "Timer/Pomodoro 完成副作用仍由面板存活决定",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/timer/panel.tsx",
+          "firstLine": 9,
+          "lastLine": 16,
+          "blobSha": "560c58d166934b0ca2892fb825fec598f2000c64",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/timer/panel.tsx#L9-L16"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/pomodoro/panel.tsx",
+          "firstLine": 3,
+          "lastLine": 14,
+          "blobSha": "eb9f923b155ff3b3e78d27f623c1eb245e558e39",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/pomodoro/panel.tsx#L3-L14"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/kernel/utils/wall-clock-deadline.ts",
+          "firstLine": 1,
+          "lastLine": 47,
+          "blobSha": "7093d13fd83f05f8e982f39ce3bcd5f19bc4619e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/kernel/utils/wall-clock-deadline.ts#L1-L47"
+        }
+      ],
+      "evidence": "时间锚点持久化、tick 隔离已有正确实现；完成判断与提示音仍由面板 effect/watch 所有，卸载就清理 watcher。",
+      "mechanism": "应跨面板存在的倒计时任务不能依赖 UI 是否挂载；只保存 deadline 还没交付后台完成语义。",
+      "design": "后台 owner 持有 versioned Job(id, revision, deadline, phase, completionId)，alarm 只作唤醒提示；启动/唤醒统一 reconcile，暂停/重置通过 revision 退休旧 alarm。UI 精细刷新只计算显示，不拥有任务完成。",
+      "acceptance": "面板关闭、浏览器重启、休眠、时钟跳变、重复/迟到 alarm、暂停后旧 alarm 到达均符合合同；只创建必要最近唤醒，不常驻高频轮询。",
+      "boundary": "Chrome alarm 不保证精确秒级且不唤醒休眠设备；floor135 不能直接依赖仅较新版本提供的持久 alarm 参数。保持业务但准确说明延迟语义。",
+      "probeIds": []
+    },
+    {
+      "id": "J02",
+      "group": "后台作业与资源",
+      "status": "H",
+      "priority": "P1",
+      "title": "计时完成“恰好一次”需定义崩溃语义",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/timer/panel.tsx",
+          "firstLine": 8,
+          "lastLine": 15,
+          "blobSha": "560c58d166934b0ca2892fb825fec598f2000c64",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/timer/panel.tsx#L8-L15"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/pomodoro/panel.tsx",
+          "firstLine": 10,
+          "lastLine": 17,
+          "blobSha": "eb9f923b155ff3b3e78d27f623c1eb245e558e39",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/pomodoro/panel.tsx#L10-L17"
+        }
+      ],
+      "evidence": "提示音等外部效果与持久完成状态不在一个事务内；未来迁到后台也不会自动获得 exactly-once。",
+      "mechanism": "先响后记账会重放，先记账后响可能漏响；崩溃窗口不能靠普通布尔标志消失。",
+      "design": "把状态完成做到幂等，用稳定 completionId 与可替换 notification ID 达到可观测 effectively-once；声音采用明示的恢复策略，不在醒来后重放过多历史提示。记录缺失/重试状态而非伪称恰好一次。",
+      "acceptance": "在持久标记和副作用前后各切断进程，状态不重复推进、不会连环响；明确哪些窗口可能没有声音。",
+      "boundary": "这是设计不可绕过的副作用边界，不能许诺任意崩溃条件下声音既不重复又绝不丢失。",
+      "probeIds": []
+    },
+    {
+      "id": "J03",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P0",
+      "title": "PDF 拆分只交付第一个结果",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/pdf/panel.tsx",
+          "firstLine": 102,
+          "lastLine": 115,
+          "blobSha": "02b9636e0ae63814ce371b6ebc40153ce71262ed",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/pdf/panel.tsx#L102-L115"
+        }
+      ],
+      "evidence": "splitPDF 返回多个结果后，面板只取 res.data[0] 并命名 split.pdf。",
+      "mechanism": "底层成功计算并不等于交付全部请求输出；结果模型只有一个 blob，把多输出需求压扁了。",
+      "design": "结果改为带 range、页数、文件名和摘要的 outputs 数组，每个请求范围都有对应输出；提供单个下载与明确全部下载方式，不能只选第一份。",
+      "acceptance": "两个/重叠/单页范围均有可见独立结果，名称稳定，所有范围的页内容核对；空输出明确报错。",
+      "boundary": "保留现有 pdf-lib 运算，不为修复多输出就无证据恢复废弃大依赖；总输出超限时提示拆批而非静默截断。",
+      "probeIds": []
+    },
+    {
+      "id": "J04",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P1",
+      "title": "PDF 页范围容错会把错误请求变成“成功但少内容”",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/pdf/panel.tsx",
+          "firstLine": 1,
+          "lastLine": 211,
+          "blobSha": "02b9636e0ae63814ce371b6ebc40153ce71262ed",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/pdf/panel.tsx#L1-L211"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/pdf/core.ts",
+          "firstLine": 1,
+          "lastLine": 23,
+          "blobSha": "9c332ba5814d08d07726add8a734c12c5b58bab0",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/pdf/core.ts#L1-L23"
+        }
+      ],
+      "evidence": "范围输入经 parseInt/展开和底层过滤/收敛，有非法、越界或部分范围被截掉后仍成功的路径。",
+      "mechanism": "容错只有在用户看见并确认修正时才合理；否则输入语义与输出不一致。",
+      "design": "完整语法解析并在实际页数已知后验证；先做区间代数而非无界数组展开；非法/反向/越界显式报出，任何自动规范化展示给用户。",
+      "acceptance": "尾随 junk、0、负数、反向区间、超出页数、巨大范围和重复范围有精确定义；结果不会少页却标全成功。",
+      "boundary": "不要把所有越界都盲目 clamp；合法重复页/重叠范围是否保留由明确工具语义决定。",
+      "probeIds": []
+    },
+    {
+      "id": "J05",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P1",
+      "title": "PDF/图像任务缺少冻结输入、有界执行和统一取消",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/pdf/panel.tsx",
+          "firstLine": 1,
+          "lastLine": 211,
+          "blobSha": "02b9636e0ae63814ce371b6ebc40153ce71262ed",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/pdf/panel.tsx#L1-L211"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/image-tools/panel.tsx",
+          "firstLine": 1,
+          "lastLine": 128,
+          "blobSha": "98e04ba794d209f30e78df81ce2e1a2e7fa12179",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/image-tools/panel.tsx#L1-L128"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/image-tools/core.ts",
+          "firstLine": 1,
+          "lastLine": 111,
+          "blobSha": "799267b4c63148ab1b5c4372d33d4178fa6f540e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/image-tools/core.ts#L1-L111"
+        }
+      ],
+      "evidence": "面板读取完整文件并执行重活，输出模型与当前可变文件/配置耦合；文件字节、页数、解码像素与输出总量没有完整约束。",
+      "mechanism": "一个任务可在 UI 换文件后完成，旧结果使用新文件名或格式；内存开销也不是仅由输入文件大小决定。",
+      "design": "Job 使用冻结输入列表/配置/输出 MIME，worker 按 generation 执行，取消后拒绝提交旧结果；输入总量、解码页/像素、worker 并发和输出累计字节分别有界。",
+      "acceptance": "A 慢→B 快、退出、改格式、取消后完成、损坏大图、混合 PDF/image 输入时不混结果/名称、不锁 UI；每个任务结束释放资源。",
+      "boundary": "worker 隔离不是无限内存许可证；不可取消库由终止 worker 实现取消，而不是把结果隐藏后继续耗算。",
+      "probeIds": []
+    },
+    {
+      "id": "J06",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P1",
+      "title": "对象 URL 生命周期未与解码/预览/新标签绑定",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/image-tools/core.ts",
+          "firstLine": 9,
+          "lastLine": 22,
+          "blobSha": "799267b4c63148ab1b5c4372d33d4178fa6f540e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/image-tools/core.ts#L9-L22"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/color-palette/core.ts",
+          "firstLine": 54,
+          "lastLine": 67,
+          "blobSha": "9948ee51d70107f294428bbb91eff9c87cd89136",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/color-palette/core.ts#L54-L67"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/archive/core.ts",
+          "firstLine": 54,
+          "lastLine": 69,
+          "blobSha": "2eb734f5eb083c7f13701261c5510b41c1c2b089",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/archive/core.ts#L54-L69"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/archive/storage.ts",
+          "firstLine": 89,
+          "lastLine": 99,
+          "blobSha": "cccf852df266a5c2fa6743f25ff85e0f39f7fdc6",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/archive/storage.ts#L89-L99"
+        }
+      ],
+      "evidence": "图像解码、palette 和归档查看存在 createObjectURL 后无成对回收；部分下载又在 click 后立即 revoke，生命周期语义分散。",
+      "mechanism": "Blob URL 占有底层数据引用；离开旧 UI 不自动等于所有引用已释放，太早 revoke 也可能影响消费方。",
+      "design": "一个对象 URL lease owner 区分 decode、preview、download、viewer：decode onload/onerror 回收，预览替换/销毁回收，viewer 绑定目标标签寿命；下载按完成/安全消费策略处理。",
+      "acceptance": "反复选择/失败解码/关闭预览/关闭查看标签后引用数不线性增长；下载不偶发空文件；无重复 revoke 引起使用已退休对象。",
+      "boundary": "不把所有 URL 都统一 click 后立即撤销；回收时点必须由真实消费者生命周期决定。",
+      "probeIds": []
+    },
+    {
+      "id": "J07",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P1",
+      "title": "Gzip 解压缺少输出预算且 writer 错误未完整等待",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/gzip/core.ts",
+          "firstLine": 1,
+          "lastLine": 74,
+          "blobSha": "a7e13c4ec43dd080ddcaf3ee84d0c3a3bb76e422",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/gzip/core.ts#L1-L74"
+        }
+      ],
+      "evidence": "输入经 DecompressionStream 聚合全部 chunks；write/close 的 Promise 未形成完整错误/终止合同。",
+      "mechanism": "压缩字节小不代表输出小，解压输出和中间副本可耗尽面板；未等待写端失败可能挂住或产生未处理 rejection。",
+      "design": "流式读取时按绝对输出字节预算中止，同时关闭读写两端；等待写端错误，支持取消，文本与二进制模式分开。压缩比仅作辅助，不能替代绝对上限。",
+      "acceptance": "畸形流、超大展开、小块无限流、writer reject、reader cancel 和 UI 退出全部终止且返回明确状态。",
+      "boundary": "保留原生 Compression/DecompressionStream；不为了限内存默默截断输出并标成功。",
+      "probeIds": []
+    },
+    {
+      "id": "J08",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P1",
+      "title": "Diff 的完整 LCS 矩阵使内存随两边行数乘积增长",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/diff/core.ts",
+          "firstLine": 28,
+          "lastLine": 44,
+          "blobSha": "10f7ccdb0395e8837d84c29483ac30dc4aa71730",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/diff/core.ts#L28-L44"
+        }
+      ],
+      "evidence": "diffLines 分配 (m+1)×(n+1) 个单元并填表；两边各一万行就是约一亿个单元，而非两万行的线性工作量。",
+      "mechanism": "行数乘积的状态空间才是控制瓶颈；普通单次文件大小限制未必约束这个乘积。",
+      "design": "采用经过校验的差分实现或线性空间重建方案，先剥离相同前后缀；明确最坏工作量/输出预算，放在可终止 worker 中。大差异允许明确降级结果，不伪称最小编辑序列。",
+      "acceptance": "相同大文本、全部不同、重复行、超长单行及取消均有边界测试；输出重放可重建原两边内容。",
+      "boundary": "不能承诺所有输入都线性时间；选择算法应兼顾最小差分要求和最坏资源边界。",
+      "probeIds": []
+    },
+    {
+      "id": "J09",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P1",
+      "title": "多哈希文件计算重复整文件读取，另有双份 MD5 实现",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/checksum/core.ts",
+          "firstLine": 37,
+          "lastLine": 48,
+          "blobSha": "10288b95a190c69d9329ab71cc2a1a29dfb7cd1e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/checksum/core.ts#L37-L48"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/checksum/core.ts",
+          "firstLine": 21,
+          "lastLine": 48,
+          "blobSha": "10288b95a190c69d9329ab71cc2a1a29dfb7cd1e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/checksum/core.ts#L21-L48"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/hash/core.ts",
+          "firstLine": 1,
+          "lastLine": 209,
+          "blobSha": "423e7d87dcdaaccf8c322e41c53f7760ca262893",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/hash/core.ts#L1-L209"
+        }
+      ],
+      "evidence": "calculateAllChecksums 并行调用四个算法，各自 file.arrayBuffer；MD5 又分配填充副本，文本与文件工具有两套实现。",
+      "mechanism": "同一大文件的多份完整副本叠加，且重复密码算法 owner 增加语义漂移面。",
+      "design": "一份受限读取/共享不可变字节输入服务多个摘要；大文件使用经向量验证的增量实现与有界 worker。MD5 单一字节实现，文本先明确 UTF-8 编码；保留 legacy 校验功能并说明不是抗碰撞认证。",
+      "acceptance": "空文件、RFC/标准向量、跨块边界、二进制、Unicode 文本及取消一致；不能把文件 MD5 与字符串不同编码混为同结果。",
+      "boundary": "没有把源码 Math.sin 注释当成已证实的当前错误；确定问题是重复输入/实现与资源成本，不伪报所有 MD5 已算错。",
+      "probeIds": []
+    },
+    {
+      "id": "J10",
+      "group": "后台作业与资源",
+      "status": "S",
+      "priority": "P1",
+      "title": "多面板异步失败与迟到结果缺乏一致状态机",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/image-tools/panel.tsx",
+          "firstLine": 1,
+          "lastLine": 128,
+          "blobSha": "98e04ba794d209f30e78df81ce2e1a2e7fa12179",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/image-tools/panel.tsx#L1-L128"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/session-manager/panel.tsx",
+          "firstLine": 1,
+          "lastLine": 90,
+          "blobSha": "2bd873c844ce5f3656a61cfec863997fead11562",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/session-manager/panel.tsx#L1-L90"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/color-palette/panel.tsx",
+          "firstLine": 1,
+          "lastLine": 91,
+          "blobSha": "4f160a9052c62e0244f66368dc100d1a93d953c3",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/color-palette/panel.tsx#L1-L91"
+        }
+      ],
+      "evidence": "读取/生成任务的 catch/finally、loading 清理和新旧请求身份处理分散；Session save 失败可留下 loading，图像旧请求可晚于新请求完成。",
+      "mechanism": "局部函数成功/失败并不等于当前视图仍拥有提交结果的权利；仅取消 setState 也不回收底层任务。",
+      "design": "共用轻量 async UI task 生命周期：idle/running/succeeded/failed/cancelled，job ID、冻结输入、提交前意图验证与 disposer；领域错误保持原类型，不吞掉所有异常。",
+      "acceptance": "所有 active panels 用 A慢B快、reject、退出、重复触发、权限撤销测试；loading 能结束，旧结果不占新槽位，资源按实际任务结束回收。",
+      "boundary": "不建立控制所有业务的万能中央状态机；共享的是提交/取消协议，领域算法和数据仍由原 owner 管理。",
+      "probeIds": []
+    },
+    {
+      "id": "U01",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "Unicode 正则的空匹配推进可无限循环",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/regex/core.ts",
+          "firstLine": 50,
+          "lastLine": 66,
+          "blobSha": "663d7cc4dc5360d033645c7c93285d9173cfada6",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/regex/core.ts#L50-L66"
+        }
+      ],
+      "evidence": "原 executeRegex 在 global+unicode 下用空模式匹配 emoji，隔离子进程 500ms 仍不终止，被超时终止。",
+      "mechanism": "空匹配后 lastIndex 加 1 进入代理对中间；unicode 引擎可能回到同一 code point，再次空匹配。",
+      "design": "按 ECMAScript AdvanceStringIndex 的 code point 规则推进空匹配；保留匹配索引为 UTF-16 单位的标准语义，明确输出。",
+      "acceptance": "空字符串、空模式、组合 emoji、BMP/非 BMP、g/u 不同组合和末尾空匹配都终止且匹配数量/位置正确。",
+      "boundary": "不能靠删掉空匹配结果或禁用 unicode 改变业务；本 probe 是真实函数的受限执行，不是完整浏览器性能测量。",
+      "probeIds": [
+        "unicode-empty-regex"
+      ]
+    },
+    {
+      "id": "U02",
+      "group": "工具语义与数据保真",
+      "status": "H",
+      "priority": "P1",
+      "title": "正则回溯与逐匹配定位仍可阻塞 UI",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/regex/core.ts",
+          "firstLine": 1,
+          "lastLine": 105,
+          "blobSha": "663d7cc4dc5360d033645c7c93285d9173cfada6",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/regex/core.ts#L1-L105"
+        }
+      ],
+      "evidence": "用户模式在同步 JS regex 上执行；结果定位逐次扫描前缀，有灾难回溯、海量匹配和二次扫描风险。",
+      "mechanism": "修正空匹配死循环并不能消除合法模式的最坏时间复杂度；主线程超时回调无法打断同步回溯。",
+      "design": "原生 JS regex 在可终止 worker 执行，设总时限和结果/输入边界，预计算换行位置以定位；错误、超时与无匹配分开。若提供非回溯引擎，必须是显式不同语义模式。",
+      "acceptance": "恶性回溯、百万空匹配、长行、取消和新请求替换旧请求时界面仍可交互；终止后没有结果提交。",
+      "boundary": "不是声称每个正则都危险；不无声切换引擎后丢掉 backreference/lookaround 支持。",
+      "probeIds": []
+    },
+    {
+      "id": "U03",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "TOTP URI 丢算法、截断 issuer 并接受错误类型/参数",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/totp/core.ts",
+          "firstLine": 1,
+          "lastLine": 113,
+          "blobSha": "33ddc835f8a7d645c5fd177337b110b8d89f2726",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/totp/core.ts#L1-L113"
+        }
+      ],
+      "evidence": "Acme:alice 被解析成 issuer cme；algorithm=SHA256 被丢，HOTP URI 和 period=0 被接受。SHA-1 标准向量通过，但 SHA-256 向量得到 97599872 而非 46119246。",
+      "mechanism": "URI pathname 处理多切一个字符；解析模型没有算法/类型强约束，生成路径固定 SHA-1。",
+      "design": "严格 otpauth/totp parser：完整解码 label、issuer 参数一致性、Base32、digits、period、algorithm；明确 SHA-1/256/512 支持，HOTP 另有计数器合同或显式拒绝。账户 schema 记录原算法，不能依靠 secret 猜测。",
+      "acceptance": "RFC 6238 多时间点和三算法向量、带/不带 issuer、编码冒号/Unicode label、畸形 Base32、HOTP、零/负 period 和非法位数都有结果。",
+      "boundary": "保留已正确的 SHA-1 算法路径。历史已经丢失的算法/issuer 不能凭空重建，原 URI 不在时需标记不确定，不能批量猜改现有账户。",
+      "probeIds": [
+        "totp-uri",
+        "totp-rfc-sha1",
+        "totp-rfc-sha256"
+      ]
+    },
+    {
+      "id": "U04",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P1",
+      "title": "JWT Base64URL 字节未按 UTF-8 解码",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/jwt-decoder/core.ts",
+          "firstLine": 1,
+          "lastLine": 55,
+          "blobSha": "ef991d393c615ac3be5bf010d5d1fadec0ba57b1",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/jwt-decoder/core.ts#L1-L55"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/crypto/core.ts",
+          "firstLine": 7,
+          "lastLine": 45,
+          "blobSha": "8cef15d3c878b444e38c8cd7aa8c8d567718c2c8",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/crypto/core.ts#L7-L45"
+        }
+      ],
+      "evidence": "JWT payload 的中文变为 ä¸­æ；两处 decoder 都使用 atob 后直接 JSON.parse。",
+      "mechanism": "atob 得到字节字符串而非 Unicode 文本；它与 JSON 的 UTF-8 字节编码不是同一层。",
+      "design": "统一 Base64URL→Uint8Array→严格 UTF-8→JSON 的 decoder；签名校验继续使用已有 jose，区分 decode、signature valid、claims policy valid，不用解码成功替代认证。",
+      "acceptance": "中文、emoji、无 padding、畸形 base64、非法 UTF-8、错误签名、过期、算法/issuer/audience 不符合选定策略分别表现正确。",
+      "boundary": "工具可以允许用户只做签名校验，但界面须说明没有额外业务 claim 策略；不把所有 decoded JWT 标为可信。",
+      "probeIds": [
+        "jwt-utf8-decoding"
+      ]
+    },
+    {
+      "id": "U05",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "CSV 多行引号字段被预先按换行拆坏",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/csv-to-json/core.ts",
+          "firstLine": 1,
+          "lastLine": 79,
+          "blobSha": "389697e09ddbd1589ac8478cf64d26f2697a9960",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/csv-to-json/core.ts#L1-L79"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/csv-viewer/core.ts",
+          "firstLine": 1,
+          "lastLine": 74,
+          "blobSha": "759271ab6ca36bc1e7d68708aec7cd848fd8355b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/csv-viewer/core.ts#L1-L74"
+        }
+      ],
+      "evidence": "Alice,\"first\nsecond\" 变成两行记录，第二行只含 name=second；两工具都有独立的简化行解析。",
+      "mechanism": "引号内换行是字段内容，必须先知道词法状态才能判行界；split newline 放在 quote 解析之前不可修补完整语义。",
+      "design": "共享流式 CSV 状态机或成熟解析器，处理 quoted field、双引号转义、CRLF、空字段、BOM 和选定 delimiter；错误给出行列，禁止部分解析后全成功。",
+      "acceptance": "多行、转义引号、逗号、空尾列、无末尾换行、UTF-8、重复表头和畸形引号均有往返/错误向量。",
+      "boundary": "CSV Viewer 与转换器可有不同显示，但必须共用数据模型；保留原文本供导出/修复。",
+      "probeIds": [
+        "csv-multiline"
+      ]
+    },
+    {
+      "id": "U06",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "CSV/JSON 转换默认改值且对象数组校验不完整",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/csv-to-json/core.ts",
+          "firstLine": 1,
+          "lastLine": 79,
+          "blobSha": "389697e09ddbd1589ac8478cf64d26f2697a9960",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/csv-to-json/core.ts#L1-L79"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/json-to-csv/core.ts",
+          "firstLine": 1,
+          "lastLine": 56,
+          "blobSha": "0b391b212f02bf2d7a7392a8970bd36363d0c354",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/json-to-csv/core.ts#L1-L56"
+        }
+      ],
+      "evidence": "001 转成 1；9007199254740993 转成 9007199254740992；含 null 的对象数组被 parse 接受却在转换时抛错。",
+      "mechanism": "自动 Number 推断破坏标识符和大整数；“外层是数组”不证明每项可用作记录。",
+      "design": "默认保留字符串；类型转换采用用户可见 schema/预览，整数超范围采用十进制字面量或明示字符串。JSON→CSV 校验每项，嵌套对象、重复键和缺列定义明确。",
+      "acceptance": "前导零、大整数、空字符串、null、false、嵌套数组/对象均保持选定语义；错误不生成看似成功的截断 CSV。",
+      "boundary": "原始数值一旦已经舍入，无法靠新代码恢复；只能从原文件重做，不自动猜回。",
+      "probeIds": [
+        "csv-identifier-and-number",
+        "json-csv-null-array-item"
+      ]
+    },
+    {
+      "id": "U07",
+      "group": "工具语义与数据保真",
+      "status": "H",
+      "priority": "P1",
+      "title": "表格文本导出存在公式语义边界",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/json-to-csv/core.ts",
+          "firstLine": 1,
+          "lastLine": 56,
+          "blobSha": "0b391b212f02bf2d7a7392a8970bd36363d0c354",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/json-to-csv/core.ts#L1-L56"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/table-extractor/core.ts",
+          "firstLine": 1,
+          "lastLine": 86,
+          "blobSha": "7224a944797fe6ffdc17990f9590151ccc4ab33e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/table-extractor/core.ts#L1-L86"
+        }
+      ],
+      "evidence": "文本字段可能以 =、+、-、@ 等开头；转换器输出与用户后来用表格软件打开时的执行语义不同。",
+      "mechanism": "合法 CSV 字符串在下游表格应用可能被解释成公式；普通引号转义不一定改变这种解释。",
+      "design": "区分原始保真导出与明确的 spreadsheet-safe 导出，后者按目标软件规则转义危险前缀并说明内容变化；不得暗改原始数据。",
+      "acceptance": "公式样式的合成内容在安全模式按文字处理；原始模式保持字节/字段语义并给明确提示；不实际打开有危险公式的文件。",
+      "boundary": "这是用户在下游软件打开时的条件性风险，不是当前网页导出时就执行了公式。",
+      "probeIds": []
+    },
+    {
+      "id": "U08",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "进制转换使用浮点数且接受部分非法输入",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/number-base/core.ts",
+          "firstLine": 1,
+          "lastLine": 51,
+          "blobSha": "45a52a9bb81cfd845c79889ad028b4169daeed91",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/number-base/core.ts#L1-L51"
+        }
+      ],
+      "evidence": "9007199254740993 原样十进制转换变成 9007199254740992；12junk 被接受为 12。",
+      "mechanism": "parseInt 返回 Number，只检查可解析前缀；它不是无损任意长度整数解析器。",
+      "design": "完整语法和 base digit 验证，整数用 BigInt，符号/前缀/大小写/补码模式各自明示；设置输入位数和输出预算防资源滥用。",
+      "acceptance": "2^53±1、64/128 位边界、负数、base2/8/10/16、非法尾缀、空值及超长输入均精确且有界。",
+      "boundary": "不把安全整数范围外结果四舍五入后称精确；既有合法短整数行为保持。",
+      "probeIds": [
+        "number-base-precision"
+      ]
+    },
+    {
+      "id": "U09",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "Protobuf varint 被 32 位位运算截断",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/protobuf/core.ts",
+          "firstLine": 1,
+          "lastLine": 167,
+          "blobSha": "279e709ef6dcf7391abef19ab090b04317eefd2e",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/protobuf/core.ts#L1-L167"
+        }
+      ],
+      "evidence": "field1 的 varint 4294967296 被解成 0。",
+      "mechanism": "JavaScript Number 的位运算只处理 32 位；Protobuf 的整数编码可跨越该位宽，长度/截断检查也需与解释分开。",
+      "design": "varint 使用 BigInt，限制 10 字节和 64 位合法范围；tag/length/offset 严格验证，zigzag/有符号解释显式选择。无 schema 的 nested/text 只能作为候选解释，原始字节始终可见。",
+      "acceptance": "0、2^32、2^53、2^64−1、截断 varint、非法 field0、越界 length、非法 UTF-8 与嵌套深度超限得到精确值或明确错误。",
+      "boundary": "不把所有 length-delimited 数据都当字符串或嵌套消息；没有 .proto 时不能承诺恢复字段真实业务类型。",
+      "probeIds": [
+        "protobuf-64bit-varint"
+      ]
+    },
+    {
+      "id": "U10",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P1",
+      "title": "JSONPath 不支持的语法被静默误解，且可读继承属性",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/json-path/core.ts",
+          "firstLine": 1,
+          "lastLine": 90,
+          "blobSha": "7ed1fdc240965b325eaf511ec51ae8110c4c2774",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/json-path/core.ts#L1-L90"
+        }
+      ],
+      "evidence": "$..x 对嵌套 x 返回空；$.constructor 对空对象返回继承的 function。",
+      "mechanism": "按少数分隔符切词不是 JSONPath 语法解析；in 操作符遍历到了非 JSON 自有成员。",
+      "design": "明确采用完整标准还是严格子集；不支持语法必须 error，不得等同 no matches。只访问 JSON own properties，限制递归/结果数，维护数组与数字键对象的区别。",
+      "acceptance": "递归下降、通配、括号、转义键、过滤、数组负索引按支持合同测试；prototype/constructor 不从原型链取值。",
+      "boundary": "继承函数被读出不等于当前工具执行了任意代码；风险是语义与边界失真。",
+      "probeIds": [
+        "jsonpath-recursive-and-prototype"
+      ]
+    },
+    {
+      "id": "U11",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P1",
+      "title": "Cron 解析未验证范围，固定七天搜索不能交付月度结果",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/cron/core.ts",
+          "firstLine": 1,
+          "lastLine": 171,
+          "blobSha": "d148f1ee3bef5e041d462b59242d34f1e0e5b513",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/cron/core.ts#L1-L171"
+        }
+      ],
+      "evidence": "99 99 99 99 99 被接受；月度 preset 请求五次运行，七天视窗不可能找齐五个月度时刻。",
+      "mechanism": "字段个数不等于 Cron 合法性；逐分钟盲搜有限窗与产品承诺的未来 N 次不一致。",
+      "design": "定义 Unix 五字段或其他 dialect、时区、DOM/DOW 联合规则、range/step 起点；采用按字段跳转的 next-occurrence 算法，结果分 found/no-occurrence/truncated/invalid。",
+      "acceptance": "月度、闰日、月底、夏令时跳过/重复、范围步长、非法数字、不可达日期和请求 count 都得到正确解释。",
+      "boundary": "不能用延长到极大盲搜窗口代替算法；不同 cron dialect 的差异需要显式配置，不强行当一个标准。",
+      "probeIds": [
+        "cron-acceptance"
+      ]
+    },
+    {
+      "id": "U12",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "SQL 格式化修改字面量，验证器把无效语句判有效",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/sql-formatter/core.ts",
+          "firstLine": 1,
+          "lastLine": 70,
+          "blobSha": "f1d9d8e5c7a0f367385af82d266b3fd40ea45b31",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/sql-formatter/core.ts#L1-L70"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/code-formatter/core.ts",
+          "firstLine": 132,
+          "lastLine": 165,
+          "blobSha": "e8d83151fa96140c9bea495486195804c4e640a4",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/code-formatter/core.ts#L132-L165"
+        }
+      ],
+      "evidence": "select 'from  x' as note 被改成 SELECT 'FROM x' AS note；minify 把 'a  b' 改成 'a b'；SELECT FROM 被标 valid。通用 formatter 的 SQL 分支甚至整体 toUpperCase。",
+      "mechanism": "关键字/空白替换发生在词法分析之前，字符串、注释和 quoted identifier 与代码被混在一起。",
+      "design": "采用识别方言的 tokenizer/parser formatter，只改 token 间可安全改变的空白；保留字面量原值、注释和引用标识符。语法验证未做全解析前只能标“有限检查”，不能叫完整 valid。",
+      "acceptance": "含关键词字符串、转义、dollar quote、注释、大小写敏感标识符、无效语句、不同方言都有 token/解析树等价测试。",
+      "boundary": "格式化不是代码重写功能；不要为了快速通过把错误结果仍称“基础格式化即可”。",
+      "probeIds": [
+        "sql-semantic-mutation"
+      ]
+    },
+    {
+      "id": "U13",
+      "group": "工具语义与数据保真",
+      "status": "S",
+      "priority": "P0",
+      "title": "XML 重建/压缩可能丢转义和混合内容空白",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/xml-formatter/core.ts",
+          "firstLine": 1,
+          "lastLine": 91,
+          "blobSha": "be150c4b5ede79396253c387b19637ff169ce140",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/xml-formatter/core.ts#L1-L91"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/code-formatter/core.ts",
+          "firstLine": 36,
+          "lastLine": 65,
+          "blobSha": "e8d83151fa96140c9bea495486195804c4e640a4",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/code-formatter/core.ts#L36-L65"
+        }
+      ],
+      "evidence": "XML 通过 DOM 读后手工重建属性/文本，trim 与换行处理不区分 mixed content；通用 HTML/XML formatter 同样改标签间空白。",
+      "mechanism": "解码后的 &/引号重新写回 XML 需要转义；文本空白在 mixed content 和 xml:space 场景可能有业务意义。",
+      "design": "使用正确 DOM 序列化/保留 token 的 formatter；mixed content 不插删文本节点空白，保留 CDATA/PI/namespace 语义；格式不支持时拒绝而非破坏输出。",
+      "acceptance": "带 &quot;/&amp; 属性、混合文本、CDATA、命名空间、xml:space、处理指令和多编码输入在真实 DOM 环境验证语义往返。",
+      "boundary": "本轮未跑真实 DOM/XML 浏览器反例，标源码缺口而非已观测每种输入都坏；不会宣称 DOM 序列化必然保留原字节格式。",
+      "probeIds": []
+    },
+    {
+      "id": "U14",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P1",
+      "title": "调色板量化可生成超出 255 的颜色分量",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/color-palette/core.ts",
+          "firstLine": 1,
+          "lastLine": 67,
+          "blobSha": "9948ee51d70107f294428bbb91eff9c87cd89136",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/color-palette/core.ts#L1-L67"
+        }
+      ],
+      "evidence": "白色像素 255 经 round/32 量化得到 256，输出 #100100100 和 rgb(256,256,256)。",
+      "mechanism": "量化 bin 的边界没有映射回合法分量范围。",
+      "design": "采用合法区间内的 bin 代表值/均值并 clamp，统一六位 hex 编码；透明像素按明示策略跳过或 alpha 加权。保留现有下采样减少分析成本。",
+      "acceptance": "0、255、每个 bin 边界、全透明和小图都生成合法颜色；百分比合计与实际采样口径一致。",
+      "boundary": "不能仅截 hex 字符串掩盖错误数值；归一化需从颜色模型修正。",
+      "probeIds": [
+        "palette-channel-overflow"
+      ]
+    },
+    {
+      "id": "U15",
+      "group": "工具语义与数据保真",
+      "status": "H",
+      "priority": "P2",
+      "title": "密码生成的字符映射与强度评分需要准确语义",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/password-gen/core.ts",
+          "firstLine": 1,
+          "lastLine": 93,
+          "blobSha": "4c98510ce5045b1f74d17348ca8ae43f5423d918",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/password-gen/core.ts#L1-L93"
+        }
+      ],
+      "evidence": "已使用 crypto.getRandomValues，应保留；取模映射和重复自定义字符会影响分布，UTF-16 字符池可能拆代理对；强度评分主要按长度/字符类别。",
+      "mechanism": "可靠随机源不自动保证字符均匀分布；外观复杂也不能证明用户自选密码的实际熵或抗猜解强度。",
+      "design": "字符池按 code point 去重、拒绝非法/空集合，用 rejection sampling 消除取模偏差；自生成密码熵与任意输入的结构评分分开标注，不显示无依据破解时间。",
+      "acceptance": "重复字符、emoji、空池、过长请求和规定字符类别均有测试；固定随机输入的映射可验证，真实输出不使用 Math.random 降级。",
+      "boundary": "32 位取模偏差通常很小，不夸大成已破解漏洞；此项低于实际数据损坏修复，但保留独立设计。",
+      "probeIds": []
+    },
+    {
+      "id": "U16",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "JSON 格式化会舍入大整数，排序还丢 __proto__ 自有键",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/json-formatter/core.ts",
+          "firstLine": 7,
+          "lastLine": 30,
+          "blobSha": "56e76031c8790be5ef72da77985a5b3c05f03d8b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/json-formatter/core.ts#L7-L30"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/json-formatter/core.ts",
+          "firstLine": 32,
+          "lastLine": 59,
+          "blobSha": "56e76031c8790be5ef72da77985a5b3c05f03d8b",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/json-formatter/core.ts#L32-L59"
+        }
+      ],
+      "evidence": "数字 9007199254740993 输出成 9007199254740992；sortKeys 时输入自有 __proto__ 键消失。",
+      "mechanism": "JSON.parse→Number→stringify 无法保留所有数字字面量；把键写入普通 {} 会触发 __proto__ setter 而非普通键赋值。",
+      "design": "格式化/压缩采用保留 token 和数字 lexeme 的模型；排序用无原型映射或安全 own-property 定义，明确重复键处理。另提供显式 canonicalization 模式，不与单纯排版混淆。",
+      "acceptance": "大整数、指数形式、-0、重复键、__proto__/constructor、深嵌套和转义字符串保持选定语义；默认格式化不改值。",
+      "boundary": "单纯把对象改为 Object.create(null) 只修键问题，不修数字舍入；已被舍入的旧输出无法凭空恢复。",
+      "probeIds": [
+        "json-format-exact-values"
+      ]
+    },
+    {
+      "id": "U17",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "YAML 极简解析器静默丢结构，JSON→YAML 改字符串类型",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/yaml/core.ts",
+          "firstLine": 1,
+          "lastLine": 190,
+          "blobSha": "be0335320769737023aef72302d6536221279752",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/yaml/core.ts#L1-L190"
+        }
+      ],
+      "evidence": "对象 {x:\"true\",y:\"001\"} 转 YAML 再解析得到 boolean true 和 number 1；序列中的映射 - a:1 / b:2 被简化成字符串并丢掉 b。",
+      "mechanism": "无完整词法/缩进模型却报告 success；输出字符串未按 YAML schema 引号策略编码。",
+      "design": "选择受控 YAML 1.2 数据 schema 的成熟 parser/stringifier或明确严格子集；不支持 anchors/tags/multi-document 等语法时明确错误。别名展开、嵌套、输出量有界；字符串与数值类型严格保持。",
+      "acceptance": "布尔样式字符串、前导零、引号转义、块标量、嵌套序列映射、空集合、别名/标签及多文档有标准向量；不允许跳过不认识的行后成功。",
+      "boundary": "不为“零依赖”保留静默损坏的自研解析；也不默认启用能构造任意运行时对象的危险 tag。",
+      "probeIds": [
+        "yaml-roundtrip-and-unsupported-syntax"
+      ]
+    },
+    {
+      "id": "U18",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "通用代码压缩会把后续 JS 语句变成注释",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/code-formatter/core.ts",
+          "firstLine": 160,
+          "lastLine": 182,
+          "blobSha": "e8d83151fa96140c9bea495486195804c4e640a4",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/code-formatter/core.ts#L160-L182"
+        }
+      ],
+      "evidence": "let x=1; // comment 换行 x=2; 压缩后变成 let x=1;// comment x=2;；CSS content:\"a  b\" 也被改成一个空格。",
+      "mechanism": "删除换行/空白必须知道词法上下文和 ASI；全局正则替换无法保证代码语义。",
+      "design": "JS/CSS/HTML/XML 路由到对应语法 owner；可用已有成熟工具在该工具的 lazy/worker 边界执行，不把构建期依赖直接塞进全部面板启动闭包。格式化与压缩都保留语义并严格拒绝不支持输入。",
+      "acceptance": "行/块注释、正则字面量、模板插值、转义反斜杠、ASI、CSS 字符串/url/calc、HTML pre/script 文本均有等价测试。",
+      "boundary": "不能声称只有美观问题；本例改变了执行效果。不要用补几个正则例外继续承担通用语法承诺。",
+      "probeIds": [
+        "code-minifier-semantic-mutation"
+      ]
+    },
+    {
+      "id": "U19",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "证书解析器把非 X.509 数据包装成证书结果",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/ssl-cert/core.ts",
+          "firstLine": 15,
+          "lastLine": 52,
+          "blobSha": "92de9c2b0d3b8585e18e4e78325a26553e23c1ff",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/ssl-cert/core.ts#L15-L52"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/ssl-cert/core.ts",
+          "firstLine": 48,
+          "lastLine": 86,
+          "blobSha": "92de9c2b0d3b8585e18e4e78325a26553e23c1ff",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/ssl-cert/core.ts#L48-L86"
+        }
+      ],
+      "evidence": "Base64(\"hello\") 返回非 null CertificateInfo，subject/serial/fingerprint 是占位值；当前实现只是扫描可打印字符和日期样式。",
+      "mechanism": "Base64 可解码不等于 DER/ASN.1 结构合法，更不等于有效证书。日期正则不能识别 TBSCertificate 的真实字段。",
+      "design": "使用经过验证的本地 X.509/ASN.1 解析 owner，严格 DER 长度/结构检查，提取真实 issuer/subject/SAN/validity/serial，计算实际指纹。解析、签名校验、信任链、吊销状态分别展示，不擅自联网上传证书。",
+      "acceptance": "非 DER、随机字节、截断、超深 ASN.1、多个 PEM 块、真实证书、长 serial、不同时间编码都有向量；任何占位值不能冒充字段。",
+      "boundary": "没有信任根/时间/吊销证据就不能宣称证书可信；不从字数限制推导必须保留半成品 parser。",
+      "probeIds": [
+        "certificate-nonder-accepted"
+      ]
+    },
+    {
+      "id": "U20",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P1",
+      "title": "CSP 百分制不能代表有效安全策略",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/csp-analyzer/core.ts",
+          "firstLine": 57,
+          "lastLine": 69,
+          "blobSha": "d73721bf7e5bc3c081ed12d2782153250e3f1f2d",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/csp-analyzer/core.ts#L57-L69"
+        }
+      ],
+      "evidence": "空 CSP 解析结果得到 100 分；评分仅按若干关键词扣分，忽略 directive 上下文和多策略语义。",
+      "mechanism": "未发现坏关键词不等于存在防护；data: 用于 img 与 script 的含义也不相同。",
+      "design": "改为可解释的结构分析：是否存在/生效、enforce 或 report-only、directive fallback、重复指令、多 header 交集、nonce/hash/strict-dynamic 关系。无可靠模型不输出总体安全分。",
+      "acceptance": "空策略不得显示完备防护；宽泛 script 策略、仅 report-only、合法 image data:、nonce 配合 unsafe-inline 及多策略都有解释测试。",
+      "boundary": "此项证明评分误导，并非页面必然存在可利用漏洞；工具不能代替实际攻击面审计。",
+      "probeIds": [
+        "csp-empty-policy-score"
+      ]
+    },
+    {
+      "id": "U21",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P0",
+      "title": "UUID v7 的 48 位时间戳被 JS 32 位移位破坏",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/uuid/core.ts",
+          "firstLine": 67,
+          "lastLine": 92,
+          "blobSha": "07b604fd9b39b9615cad8f9c8c50e3a166394ed1",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/uuid/core.ts#L67-L92"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/random-gen/core.ts",
+          "firstLine": 28,
+          "lastLine": 35,
+          "blobSha": "30c7cadec6b93492d3a8417fad1a15319c5d612f",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/random-gen/core.ts#L28-L35"
+        }
+      ],
+      "evidence": "固定时间 1700000000000，期望前缀 018bcfe56800，实际 6800cfe56800；提取出 114352697206784。另一个 random-gen 返回 ULID-like，与真正 ULID owner 并存。",
+      "mechanism": ">>40/>>32 不执行期望的 48 位移位；JS 先截为 32 位并取移位余数。外形像标准 ID 不证明编码字段正确。",
+      "design": "v7 用 BigInt 或安全除法写 48 位大端 timestamp；保留版本/variant 和 CSPRNG，定义同毫秒与时钟回退的排序承诺。ULID 使用唯一标准实现，若保留类似格式明确另名。",
+      "acceptance": "RFC 位布局、固定时间向量、毫秒边界、同毫秒批量、时间回退和 overflow 均符合公开合同；跨工具相同标准不分叉。",
+      "boundary": "UUID v4 的 crypto.randomUUID 正确路径保留。格式修正不自动改写用户已存 ID，否则破坏引用；旧 ID 保留原值并标明格式来源。",
+      "probeIds": [
+        "uuid-v7-timestamp"
+      ]
+    },
+    {
+      "id": "U22",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P1",
+      "title": "Punycode 多标签域名解码错误且字符校验不足",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/punycode/core.ts",
+          "firstLine": 1,
+          "lastLine": 104,
+          "blobSha": "3f82f3a55d95655ee35f5ef56b5114ea64b39c0a",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/punycode/core.ts#L1-L104"
+        }
+      ],
+      "evidence": "encode(\"例子.测试\") 返回 xn--fsqu00a.xn--0zwm56d，但 decode 同一串输出乱码；起始 xn-- 使整域被误当一个标签解码。",
+      "mechanism": "Punycode 作用于 label，不能把点分隔符吞进同一状态机；digit 范围与大小写/Unicode scalar 校验也需完整。",
+      "design": "先分域名标签，对 ACE label 独立解码，严格合法字符/标量/长度及重编码一致性；优先采用受测试的 IDNA/Punycode owner，区分编码与域名安全同形异义提示。",
+      "acceptance": "中文多标签、ASCII 混合、大小写 ACE 前缀、非法点/数字、溢出及 RFC 向量往返一致；非法输入不输出似真的乱码域名。",
+      "boundary": "不能承诺 IDNA 编码就消除同形异义域名风险；不修改用户原 URL，只提供明确结果/错误。",
+      "probeIds": [
+        "punycode-domain-decoding"
+      ]
+    },
+    {
+      "id": "U23",
+      "group": "工具语义与数据保真",
+      "status": "R",
+      "priority": "P1",
+      "title": "URL 参数解析视图丢失重复 key",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/url/core.ts",
+          "firstLine": 18,
+          "lastLine": 39,
+          "blobSha": "ad44450719134c43668c3cb6fe1c0b5461ab8eee",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/url/core.ts#L18-L39"
+        }
+      ],
+      "evidence": "?a=1&a=2 的原始 Query 仍完整，但 Params 普通对象只剩 a=2。",
+      "mechanism": "查询参数是有序多值序列，不是天然单值对象。",
+      "design": "Params 展示为有序 entries 或 key→values，保留重复、空值、空 key 和编码原文；原始 URL 与解码视图分开，重建时保留选定排序。",
+      "acceptance": "重复 key、+ 与 %20、%2F、Unicode、片段与空值有解析/重建向量，不让用户误认为参数只有一份。",
+      "boundary": "本问题是结构化视图有损，不能夸大为原始 URL 字符串已经被覆盖。",
+      "probeIds": [
+        "url-parameter-multiplicity"
+      ]
+    },
+    {
+      "id": "A01",
+      "group": "架构与可验证性",
+      "status": "D",
+      "priority": "P1",
+      "title": "巨大单一 owner 需要内部拆分，但不能产生第二写入者",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-spectra/src/background/control-coordinator.ts",
+          "firstLine": 1,
+          "lastLine": 2604,
+          "blobSha": "e8ec16f440e4721f78b03700b76df2e105e62c05",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/control-coordinator.ts#L1-L2604"
+        },
+        {
+          "path": "nexus/apps/extension-spectra/src/content/logic/native-media-executor.ts",
+          "firstLine": 1,
+          "lastLine": 1863,
+          "blobSha": "d870ae099568dd977544191ac500ac405dafeec3",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/content/logic/native-media-executor.ts#L1-L1863"
+        },
+        {
+          "path": "nexus/docs/engineering/README.md",
+          "firstLine": 1,
+          "lastLine": 51,
+          "blobSha": "0bef02eb95aaf32e8cc64c694cecae0fccb6fa43",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/docs/engineering/README.md#L1-L51"
+        }
+      ],
+      "evidence": "control coordinator 超过登记 review signal；它同时处理多种操作、选择策略、版本和执行确认。",
+      "mechanism": "单一业务写入权是正确约束，但单个文件承担全部纯计算并不是该约束的必然要求；仅按行数拆文件也不会自动降包体。",
+      "design": "保留每个资源唯一协调者/actor；提取纯 route policy、值规范化、确认验证和 snapshot 投影模块，依赖只朝 owner 的稳定合同，不创造旁路 mutation。以调用图和实际产物闭包衡量改进。",
+      "acceptance": "所有旧入口仍经同一协调者；负例证明不能绕过 ticket/generation/document/ACK；拆分前后行为与产物预算同条件核对。",
+      "boundary": "LOC 是审查信号不是已证实运行时缺陷；禁止为压行数挤代码、降低解释质量或在 MV3 SW 上盲目使用动态 import。",
+      "probeIds": []
+    },
+    {
+      "id": "A02",
+      "group": "架构与可验证性",
+      "status": "D",
+      "priority": "P1",
+      "title": "产物余量过低，不宜继续靠预算微调容纳重复实现",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-spectra/scripts/check-production-artifacts.ts",
+          "firstLine": 1,
+          "lastLine": 882,
+          "blobSha": "0aaa47f8f2bafe302c7d8e8aa16ad5dc9b124cd2",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/scripts/check-production-artifacts.ts#L1-L882"
+        },
+        {
+          "path": "nexus/apps/extension-halo/build.ts",
+          "firstLine": 1,
+          "lastLine": 538,
+          "blobSha": "4eb3a7e32e24de93996a7fef4c5cf01a3d6362cf",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/build.ts#L1-L538"
+        }
+      ],
+      "evidence": "已读取构建记录中 content-runtime 可能闭包 181099/181248 字节，仅 149 字节余量；Options 与总体产物也接近现有限额。",
+      "mechanism": "门禁通过只说明未越硬上限，不证明增长余量、低端设备启动或最坏运行时成本足够。",
+      "design": "按真实 bundle attribution 优化重复解析、数据投影和首用时机；UI 工具重依赖在可支持的 lazy/worker 边界隔离。验证同业务产物、解析/启动/操作延迟和堆占用，保持现有硬上限。",
+      "acceptance": "每次提案说明减少的是哪个实际闭包及字节；不能以删除功能、移到另一统计桶或少做媒体探测制造改进。",
+      "boundary": "上述数字来自本轮读到的已执行构建记录，不是声称本轮重跑完整生产构建；最终修复后的数值必须重新测量。",
+      "probeIds": []
+    },
+    {
+      "id": "A03",
+      "group": "架构与可验证性",
+      "status": "D",
+      "priority": "P1",
+      "title": "诊断应报告未知与必要故障计数，不新增默认遥测",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-spectra/src/background/diagnostics.ts",
+          "firstLine": 1,
+          "lastLine": 78,
+          "blobSha": "ea6b40343194763ac888496f873e8c0ac482cc1d",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-spectra/src/background/diagnostics.ts#L1-L78"
+        },
+        {
+          "path": "nexus/packages/nexus-kernel/src/diagnostics.ts",
+          "firstLine": 1,
+          "lastLine": 345,
+          "blobSha": "e520f1f7df3227f41b9c2149fa5784fe940ed654",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/packages/nexus-kernel/src/diagnostics.ts#L1-L345"
+        }
+      ],
+      "evidence": "现有诊断刻意被动、有界、不建 offscreen，这些正确；局部异常会转 null，部分 event buffer 没有实际记录入口。",
+      "mechanism": "如果结果把 unknown 解释成 0/无问题，用户失去根因线索；反过来持续全量日志又扩大隐私和资源成本。",
+      "design": "只增加必要的 owner 状态码、失败/拒绝/超时计数与 coverage，不记录 URL/正文/secret，不轮询。自由字符串 token 不能作为“绝不含隐私”的证明，优先静态枚举。",
+      "acceptance": "诊断本身不唤醒重型运行时、不修改业务状态；失败被标 unknown，数据包仍有界；合成秘密不能被夹带。",
+      "boundary": "空事件表若符合“无默认日志”的产品意图不是 bug；此项是有明确限制的诊断改进，不借机加入遥测平台。",
+      "probeIds": []
+    },
+    {
+      "id": "A04",
+      "group": "架构与可验证性",
+      "status": "D",
+      "priority": "P1",
+      "title": "标准、权限与功能宣称需要从实际能力导出",
+      "sources": [
+        {
+          "path": "nexus/apps/extension-halo/src/tools/ssl-cert/manifest.json",
+          "firstLine": 1,
+          "lastLine": 8,
+          "blobSha": "45147a4d6b29a0a0f053bc6c84191a90715e3ced",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/ssl-cert/manifest.json#L1-L8"
+        },
+        {
+          "path": "nexus/apps/extension-halo/src/tools/code-formatter/manifest.json",
+          "firstLine": 1,
+          "lastLine": 8,
+          "blobSha": "dba49f21d9a745f825201c9fdd16f4ab05e31eea",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/apps/extension-halo/src/tools/code-formatter/manifest.json#L1-L8"
+        },
+        {
+          "path": "nexus/docs/README.md",
+          "firstLine": 1,
+          "lastLine": 43,
+          "blobSha": "f21272a9e9a07c37cf5f11366c8f1b5cead03f38",
+          "url": "https://github.com/QzCrane/nexus/blob/7230b688718ef48e829dcaf05d4729ec88bb0b8d/nexus/docs/README.md#L1-L43"
+        }
+      ],
+      "evidence": "多个工具的泛化名称/界面覆盖面大于当前实现：证书、格式化、JSONPath、Cron 和“已保留模块”尤其明显。",
+      "mechanism": "声明、打包、可打开、功能正确、经过验证是不同层。仅按产品名称验收会系统性漏掉语义缺陷。",
+      "design": "每个工具提供精确 operation contract：支持语法/输入域、输出保真规则、副作用、未知/错误、资源上限、证据维度；帮助文案和运行准入从同一能力描述派生。",
+      "acceptance": "不支持语法返回 unsupported 而非 success；入口存在不能给成熟认证；过去错误产物保留输入和说明，不自动不可逆纠正。",
+      "boundary": "这不是再造一门意图编程语言；只建立有限的操作边界和验证合同，复用现有模块/manifest owner。",
+      "probeIds": []
+    }
+  ],
+  "publicReferences": [
+    {
+      "id": "EXT-ALARMS",
+      "name": "Chrome alarms：休眠、延迟、跨会话和版本边界",
+      "url": "https://developer.chrome.com/docs/extensions/reference/api/alarms"
+    },
+    {
+      "id": "EXT-STORAGE",
+      "name": "Chrome storage：访问范围与敏感数据",
+      "url": "https://developer.chrome.com/docs/extensions/reference/api/storage"
+    },
+    {
+      "id": "EXT-MESSAGING",
+      "name": "Chrome messaging：Content 信任、异步回复与版本",
+      "url": "https://developer.chrome.com/docs/extensions/develop/concepts/messaging"
+    },
+    {
+      "id": "EXT-SW",
+      "name": "Extension service worker：加载约束",
+      "url": "https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/basics"
+    },
+    {
+      "id": "EXT-COOKIES",
+      "name": "Chrome cookies：store 与 partition 身份",
+      "url": "https://developer.chrome.com/docs/extensions/reference/api/cookies"
+    },
+    {
+      "id": "RFC6238",
+      "name": "TOTP 算法和公开向量",
+      "url": "https://www.rfc-editor.org/rfc/rfc6238"
+    },
+    {
+      "id": "RFC9562",
+      "name": "UUID v7 48 位时间戳",
+      "url": "https://www.rfc-editor.org/rfc/rfc9562"
+    },
+    {
+      "id": "RFC5280",
+      "name": "X.509 证书结构",
+      "url": "https://www.rfc-editor.org/rfc/rfc5280"
+    },
+    {
+      "id": "RFC3492",
+      "name": "Punycode label 编码",
+      "url": "https://www.rfc-editor.org/rfc/rfc3492"
+    },
+    {
+      "id": "RFC9535",
+      "name": "JSONPath 查询语法",
+      "url": "https://www.rfc-editor.org/rfc/rfc9535"
+    },
+    {
+      "id": "PROTOBUF",
+      "name": "Protocol Buffers 编码",
+      "url": "https://protobuf.dev/programming-guides/encoding/"
+    },
+    {
+      "id": "GH-EVENT",
+      "name": "GitHub PR 事件与实际 checkout SHA",
+      "url": "https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request"
+    }
+  ]
+}

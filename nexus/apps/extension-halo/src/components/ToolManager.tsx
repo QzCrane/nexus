@@ -1,3 +1,4 @@
+import { isLaunchablePlugin } from '../kernel';
 // goal: Tool manager panel UI
 // eff: Enable/disable, pin/unpin, category filter, search
 
@@ -98,7 +99,7 @@ export const ToolManagerPanel: React.FC<ToolManagerProps> = ({
             filteredTools.map((tool) => {
               const toolPrefs = getPrefs(tool.id);
               const isSettings = tool.id === 'settings';
-              const isReady = tool.status === 'ready' || tool.status === 'beta';
+              const isReady = isLaunchablePlugin(tool);
 
               return (
                 <div key={tool.id} style={styles.item}>

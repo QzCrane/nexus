@@ -1,11 +1,14 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import type { ToolId } from '../core/types';
-import { safeStorageGet, safeStorageSet } from '../core/safe-storage';
+import { safeStorageGet } from '../core/safe-storage';
+import { conditionalLedgerWrite, ledgerRevisionKey } from '../core/safe-storage';
+import type { LedgerWriteOutcome } from '../core/safe-storage';
+import { reportStorageHealth } from '../core/storage-health';
 import { subscribeHaloStorageChanges } from '../core/storage-change-bus';
 
 export interface UseToolStateOptions<T = unknown> {
-	/** Storage area: 'local' (default) or 'sync' */
-	area?: 'local' | 'sync';
+	/** Storage area: 'local' (default) or 'session' */
+	area?: 'local' | 'sync' | 'session';
 	/** Debounce delay for writes (default: 300ms) */
 	debounceMs?: number;
 	/** Custom storage key override */
@@ -392,12 +395,20 @@ export function useToolState<T>(
 		identity: string;
 		controller: UseToolStatePendingAuthority<T>;
 		lifecycle: UseToolStateLifecycleEpoch;
+		hydrated: boolean;
+		baseRevision: number;
+		revisionGeneration: number;
+		healthOwner: symbol;
 	} | null>(null);
 	if (pendingAuthorityRef.current?.identity !== authorityIdentity) {
 		pendingAuthorityRef.current = {
 			identity: authorityIdentity,
 			controller: new UseToolStatePendingAuthority(stateRef.current),
 			lifecycle: new UseToolStateLifecycleEpoch(),
+			hydrated: false,
+			baseRevision: 0,
+			revisionGeneration: 0,
+			healthOwner: Symbol("tool-state-storage-health"),
 		};
 	}
 	const authorityEpoch = pendingAuthorityRef.current;
@@ -408,54 +419,109 @@ export function useToolState<T>(
 	const normalizeValueRef = useRef(normalizeValue);
 	useEffect(() => { normalizeValueRef.current = normalizeValue; }, [normalizeValue]);
 
-	useEffect(() => {
-		let isMounted = true;
-		const requestedRevision = pendingAuthority.authorityRevision;
-		const initialValue = initialValueRef.current();
-		const baseValue = normalizeValueRef.current(initialValue, initialValue);
-		setIsReady(false);
-		void safeStorageGet([storageKey], { [storageKey]: baseValue }, { area })
-			.then((res) => {
-				if (!isMounted) return;
-				setIsReady(true);
-				const storedValue = res[storageKey];
-				const loaded = normalizeValueRef.current(
-					storedValue !== undefined ? storedValue : baseValue,
-					baseValue,
-				);
-				if (!pendingAuthority.acceptLoaded(loaded, requestedRevision)) return;
-				stateRef.current = loaded;
-				setState(loaded);
-			})
-			.catch((error: unknown) => {
-				if (!isMounted) return;
-				setIsReady(true);
-				console.error(`[HALO:useToolState] Failed to load ${storageKey}`, error);
-			});
-		return () => { isMounted = false; };
-	}, [storageKey, area, pendingAuthority]);
-
 	const persistNextState = useCallback(function persistNextForEpoch(): void {
+		if (!authorityEpoch.hydrated) return;
 		const request = pendingAuthority.beginNextWrite();
 		if (!request) return;
 		void (async () => {
-			let saved = false;
+			let outcome: LedgerWriteOutcome;
 			try {
-				saved = await safeStorageSet(
-					{ [storageKey]: request.value },
-					{ area },
-				);
-				if (!saved) throw new Error(`Storage rejected state for ${storageKey}`);
-			} catch (error: unknown) {
-				console.error(
-					`[HALO:useToolState] Failed to persist ${storageKey}`,
-					error,
-				);
+				outcome = await conditionalLedgerWrite(storageKey, {
+					area,
+					baseRevision: authorityEpoch.baseRevision,
+					value: request.value,
+					remerge: (_current, attempt) => {
+						// Concede to the stored value unless a newer local edit exists;
+						// then revalidate against the fresh revision with that intent.
+						if (attempt >= 2 || storageValuesEqual(stateRef.current, request.value)) return null;
+						try { return normalizeValueRef.current(stateRef.current, request.value); }
+						catch { return null; }
+					},
+				});
+			} catch {
+				outcome = { kind: 'rejected' };
 			}
-			pendingAuthority.completeWrite(saved);
+			if (outcome.kind === 'committed') {
+				authorityEpoch.baseRevision = outcome.revision;
+				authorityEpoch.revisionGeneration++;
+				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, null));
+			} else if (outcome.kind === 'external') {
+				authorityEpoch.baseRevision = outcome.revision;
+				authorityEpoch.revisionGeneration++;
+				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, null));
+				let stored: T | null = null;
+				try { stored = normalizeValueRef.current(outcome.value, stateRef.current); }
+				catch { stored = null; }
+				if (stored !== null) {
+					const decision = pendingAuthority.observeStorage(stored);
+					if (decision.kind === 'external') {
+						stateRef.current = decision.value;
+						setState(decision.value);
+					}
+				}
+			} else if (outcome.kind === 'unknown') {
+				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, 'write-unknown'));
+			}
+			// Keep this authority busy until actual completion, including after
+			// an observation timeout. A timeout cannot authorize an overlapping write.
+			pendingAuthority.completeWrite(outcome.kind === 'committed');
+			if (outcome.kind === 'rejected') {
+				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(
+					authorityEpoch.healthOwner, 'write-error', () => {
+						const retry = pendingAuthority.stageLocal(stateRef.current);
+						pendingAuthority.flushPending(retry.token);
+						persistNextForEpoch();
+					},
+				));
+			}
 			persistNextForEpoch();
 		})();
-	}, [storageKey, area, pendingAuthority]);
+	}, [storageKey, area, authorityEpoch, pendingAuthority]);
+
+	const [loadAttempt, setLoadAttempt] = useState(0);
+	useEffect(() => {
+		let isMounted = true;
+		const requestedRevision = 0;
+		const requestedGeneration = authorityEpoch.revisionGeneration;
+		const initialValue = initialValueRef.current();
+		const baseValue = normalizeValueRef.current(initialValue, initialValue);
+		authorityEpoch.hydrated = false;
+		setIsReady(false);
+		void (async () => {
+			try {
+				const res = await safeStorageGet(
+					[storageKey, ledgerRevisionKey(storageKey)],
+					{ [storageKey]: baseValue },
+					{ area },
+				);
+				if (!isMounted) return;
+				const raw = res[storageKey];
+				const loaded = normalizeValueRef.current(raw !== undefined ? raw : baseValue, baseValue);
+				authorityEpoch.hydrated = true;
+				setIsReady(true);
+				reportStorageHealth(authorityEpoch.healthOwner, null);
+				// A local draft rejects the old value, but still needs its ledger base.
+				// Only a newer storage observation can supersede that read's revision.
+				if (authorityEpoch.revisionGeneration === requestedGeneration) {
+					authorityEpoch.baseRevision = typeof res[ledgerRevisionKey(storageKey)] === 'number'
+						&& Number.isSafeInteger(res[ledgerRevisionKey(storageKey)])
+						&& (res[ledgerRevisionKey(storageKey)] as number) >= 0
+							? (res[ledgerRevisionKey(storageKey)] as number)
+							: 0;
+				}
+				if (pendingAuthority.acceptLoaded(loaded, requestedRevision)) {
+					stateRef.current = loaded;
+					setState(loaded);
+				}
+				persistNextState();
+			} catch {
+				if (!isMounted) return;
+				// Never convert a failed read into an empty initialized record.
+				reportStorageHealth(authorityEpoch.healthOwner, 'read-error', () => setLoadAttempt(loadAttempt + 1));
+			}
+		})();
+		return () => { isMounted = false; };
+	}, [storageKey, area, pendingAuthority, authorityEpoch, persistNextState, loadAttempt]);
 
 	const flushPendingState = useCallback((expectedToken?: number) => {
 		if (pendingAuthority.flushPending(expectedToken)) persistNextState();
@@ -482,25 +548,39 @@ export function useToolState<T>(
 			const candidate = typeof action === 'function'
 				? (action as (prev: T) => T)(previous)
 				: action;
-			const next = normalizeValueRef.current(candidate, previous);
+			let next: T;
+			try { next = normalizeValueRef.current(candidate, previous); }
+			catch {
+				reportStorageHealth(authorityEpoch.healthOwner, 'write-error');
+				return;
+			}
 			stateRef.current = next;
 			setState(next);
 			saveState(next);
 		});
 	}, [authorityEpoch, saveState]);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		authorityEpoch.lifecycle.open();
 		const unsubscribeStorageChanges = subscribeHaloStorageChanges((
 			changes: Record<string, chrome.storage.StorageChange>,
 			changedArea: string,
 		) => {
+			if (changedArea !== area) return;
+			const revisionChange = changes[ledgerRevisionKey(storageKey)];
+			if (revisionChange) {
+				const revision = revisionChange.newValue;
+				authorityEpoch.baseRevision = typeof revision === 'number' && Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+				authorityEpoch.revisionGeneration++;
+			}
 			const change = changes[storageKey];
-			if (changedArea !== area || !change) return;
-			const next = normalizeValueRef.current(
-				change.newValue,
-				stateRef.current,
-			);
+			if (!change) return;
+			let next: T;
+			try { next = normalizeValueRef.current(change.newValue, stateRef.current); }
+			catch {
+				reportStorageHealth(authorityEpoch.healthOwner, 'read-error');
+				return;
+			}
 			const decision = pendingAuthority.observeStorage(next);
 			if (decision.kind === 'external') {
 				stateRef.current = decision.value;
@@ -510,6 +590,7 @@ export function useToolState<T>(
 		return () => {
 			authorityEpoch.lifecycle.seal();
 			unsubscribeStorageChanges();
+			reportStorageHealth(authorityEpoch.healthOwner, null);
 			flushPendingState();
 		};
 	}, [storageKey, area, authorityEpoch, pendingAuthority, flushPendingState]);

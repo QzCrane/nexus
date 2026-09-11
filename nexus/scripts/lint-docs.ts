@@ -25,6 +25,10 @@ const IGNORED_DIRECTORIES = new Set([
 	'coverage',
 	'dist',
 	'node_modules',
+	// Generated browser failure reports and evidence are not authored documentation.
+	'test-results',
+	'playwright-report',
+	'artifacts',
 	// Third-party reference code (hoverzoom-plus / imagus-reborn / photoshow).
 	'reference',
 	// sync-nexus generated public-repo candidates; their READMEs are completed

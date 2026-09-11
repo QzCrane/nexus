@@ -59,9 +59,9 @@ function startLazyPreload(toolId: LoadableToolId): void {
 const LoadingSkeleton: React.FC = () => (
 	<Card variant="default" padding="md">
 		<div style={{ display: 'flex', flexDirection: 'column', gap: '12px', alignItems: 'center', padding: '24px' }}>
-			<div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--halo-bg-tertiary)', animation: 'pulse 1.5s infinite' }} />
-			<div style={{ width: '120px', height: '12px', borderRadius: '6px', background: 'var(--halo-bg-tertiary)', animation: 'pulse 1.5s infinite' }} />
-			<div style={{ width: '180px', height: '10px', borderRadius: '5px', background: 'var(--halo-bg-tertiary)', animation: 'pulse 1.5s infinite', opacity: 0.6 }} />
+			<div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--halo-bg-tertiary)', animation: 'var(--halo-motion-animation, pulse 1.5s infinite)' }} />
+			<div style={{ width: '120px', height: '12px', borderRadius: '6px', background: 'var(--halo-bg-tertiary)', animation: 'var(--halo-motion-animation, pulse 1.5s infinite)' }} />
+			<div style={{ width: '180px', height: '10px', borderRadius: '5px', background: 'var(--halo-bg-tertiary)', animation: 'var(--halo-motion-animation, pulse 1.5s infinite)', opacity: 0.6 }} />
 		</div>
 		<style>{`
 			@keyframes pulse {

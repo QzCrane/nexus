@@ -7,7 +7,7 @@ export const styles: Record<string, React.CSSProperties> = {
 	tabs: { display: 'flex', gap: '4px', flexWrap: 'wrap' },
 	tab: {
 		padding: '6px 10px', borderRadius: '6px', fontSize: '11px', fontWeight: 500,
-		cursor: 'pointer', border: 'none', transition: 'all 0.15s',
+		cursor: 'pointer', border: 'none', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	active: { background: 'var(--halo-accent)', color: '#fff' },
 	inactive: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)' },

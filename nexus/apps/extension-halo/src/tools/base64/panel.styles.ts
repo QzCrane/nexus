@@ -14,14 +14,14 @@ export const styles: Record<string, React.CSSProperties> = {
 	label: { fontSize: '11px', fontWeight: 600, color: 'var(--halo-text-muted)', textTransform: 'uppercase' as const },
 	modeBtn: {
 		flex: 1, padding: '10px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
-		cursor: 'pointer', transition: 'all 0.15s', border: '1px solid var(--halo-border)',
+		cursor: 'pointer', transition: 'var(--halo-motion-transition, all 0.15s)', border: '1px solid var(--halo-border)',
 	},
 	active: { background: 'var(--halo-accent)', color: '#fff', borderColor: 'var(--halo-accent)' },
 	inactive: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-secondary)' },
 	checkbox: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' },
 	actionBtn: {
 		padding: '8px 16px', borderRadius: '6px', fontSize: '12px', fontWeight: 500,
-		cursor: 'pointer', border: 'none', transition: 'all 0.15s',
+		cursor: 'pointer', border: 'none', transition: 'var(--halo-motion-transition, all 0.15s)',
 	},
 	primaryBtn: { background: 'var(--halo-accent)', color: '#fff' },
 	secondaryBtn: { background: 'var(--halo-bg-secondary)', color: 'var(--halo-text)', border: '1px solid var(--halo-border)' },

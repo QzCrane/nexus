@@ -22,14 +22,14 @@ export const ClipboardHeader: React.FC<ClipboardHeaderProps> = ({
 
 	return (
 		<Card variant="default" padding="none">
-			<div style={{ 
+			<div style={{
 				display: 'flex',
 				justifyContent: 'space-between',
 				alignItems: 'center',
-				padding: '12px', 
+				padding: '12px',
 				borderBottom: '1px solid var(--halo-border)',
 				background: enabled ? 'rgba(76, 175, 80, 0.08)' : undefined,
-				transition: 'background 0.3s ease'
+				transition: 'var(--halo-motion-transition, background 0.3s ease)'
 			}}>
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
 					<div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -41,7 +41,7 @@ export const ClipboardHeader: React.FC<ClipboardHeaderProps> = ({
 				<Toggle checked={enabled} onChange={onToggle} />
 			</div>
 			<div style={{ ...styles.searchBar, padding: '8px 12px' }}>
-				<input 
+				<input
 					style={styles.input}
 					placeholder={t('clipboardPanel.searchPlaceholder')}
 					value={search}

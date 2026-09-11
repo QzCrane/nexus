@@ -173,30 +173,58 @@ describe('workspace lint path boundary', () => {
 
 	test('requires one strict staged owner and the complete lint owner before push', () => {
 		const valid = [
-			'run: bun scripts/run-strict-biome.ts {staged_files}',
-			'repository-lint:',
+			'pre-commit:',
+			'  commands:',
+			'    biome-check:',
+			'      run: bun scripts/run-strict-biome.ts {staged_files}',
+			'pre-push:',
+			'  commands:',
+			'    repository-lint:',
 			'      run: bun run lint',
+			'    dependency-revalidation:',
+			'      run: bun --cwd nexus check:dependency-revalidation',
 		].join('\n');
 		expect(() => validatePrivateHookSource(valid)).not.toThrow();
 		expect(() =>
 			validatePrivateHookSource(
-				'run: bun scripts/run-strict-biome.ts {staged_files}',
+				valid.replace('bun run lint', 'echo lint'),
 			),
 		).toThrow('pre-push');
 		expect(() =>
 			validatePrivateHookSource(
-				`${valid}\nrun: bunx @biomejs/biome check`,
+				`${valid}\n    other:\n      run: bunx @biomejs/biome check`,
 			),
 		).toThrow('staged-file');
 		expect(() =>
 			validatePrivateHookSource(
-				`${valid}\nrun: bun x --bun biome check`,
+				`${valid}\n    other:\n      run: bun x --bun biome check`,
 			),
 		).toThrow('staged-file');
 		expect(() =>
 			validatePrivateHookSource(
-				`${valid}\nrun: bun scripts/run-strict-biome.ts {staged_files}`,
+				`${valid}\n    other:\n      run: bun scripts/run-strict-biome.ts {staged_files}`,
 			),
 		).toThrow('staged-file');
+	});
+
+	test('dependency observation must execute once at the unconditional push boundary', () => {
+		const current = readFileSync(resolve(workspaceDir, '../lefthook.yml'), 'utf8');
+		expect(() => validatePrivateHookSource(current)).not.toThrow();
+		const variants = ['missing', 'misplaced', 'duplicate', 'skipped', 'filtered', 'hook-skipped'];
+		for (const variant of variants) {
+			const hook = Bun.YAML.parse(current) as Record<string, {
+				commands: Record<string, Record<string, unknown>>;
+				skip?: unknown;
+			}>;
+			const commands = hook['pre-push'].commands;
+			const command = commands['dependency-revalidation'];
+			if (variant === 'missing' || variant === 'misplaced') delete commands['dependency-revalidation'];
+			if (variant === 'misplaced') hook['post-merge'].commands['dependency-revalidation'] = command;
+			if (variant === 'duplicate') commands['second-lock-check'] = { ...command };
+			if (variant === 'skipped') command.skip = true;
+			if (variant === 'filtered') command.glob = '*.lock';
+			if (variant === 'hook-skipped') hook['pre-push'].skip = true;
+			expect(() => validatePrivateHookSource(Bun.YAML.stringify(hook, null, 2))).toThrow('pre-push');
+		}
 	});
 });

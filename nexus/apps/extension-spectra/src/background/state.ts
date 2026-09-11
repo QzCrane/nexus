@@ -26,16 +26,15 @@ export const captureStates = new Map<number, boolean>();
 // tabId -> BadgeInfo
 export const badgeState = new Map<number, BadgeInfo>();
 
-// goal: tracks tab eligibility for UI prioritization and management
+// goal: tracks bounded media/audio eligibility for Popup prioritization
 export interface TabAudioState {
 	hasMediaElement: boolean;
 	// lastAudibleTime: timestamp when the tab last produced sound
 	lastAudibleTime: number;
+	// lastActivatedTime is meaningful only after a media/audio state exists. A
+	// generic browser tab activation must never create a synthetic media lease.
 	lastActivatedTime: number;
 	isAudible: boolean;
-	// Telemetry only. Visibility is derived exclusively from Chrome-owned active,
-	// audible and bounded recent timestamps.
-	userManuallyActivated: boolean;
 }
 
 // currentSessionId: unique identifier for the current service worker execution context
@@ -52,16 +51,18 @@ export function getOrCreateTabAudioState(tabId: number): TabAudioState {
 		lastAudibleTime: 0,
 		lastActivatedTime: 0,
 		isAudible: false,
-		userManuallyActivated: false,
 	};
 	tabAudioStates.set(tabId, state);
 	return state;
 }
 
 export function markTabActivated(tabId: number, now = Date.now()): void {
-	const state = getOrCreateTabAudioState(tabId);
+	// Activation is only a bounded grace signal for an already known media/audio
+	// tab. Worker restart or first discovery reconstructs unknown media via the
+	// exact-document probe rather than by treating every active browser tab as media.
+	const state = tabAudioStates.get(tabId);
+	if (!state) return;
 	state.lastActivatedTime = now;
-	state.userManuallyActivated = true;
 }
 
 export function markTabAudible(tabId: number, audible: boolean, now = Date.now()): void {
@@ -74,7 +75,7 @@ export function markTabAudible(tabId: number, audible: boolean, now = Date.now()
 	state.lastAudibleTime = now;
 }
 
-// TAB_VISIBLE_THRESHOLD_MS: cutoff for considering a tab as "recently active" (60s)
+// TAB_VISIBLE_THRESHOLD_MS: cutoff for bounded media/audio grace after activity
 export const TAB_VISIBLE_THRESHOLD_MS = 60 * 1000;
 
 // eff: clears all volatile in-memory state associated with a tabId

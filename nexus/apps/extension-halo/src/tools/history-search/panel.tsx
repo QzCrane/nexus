@@ -76,15 +76,15 @@ export const HistorySearchPanel: React.FC = () => {
 							</div>
 							<button type="button"
 								onClick={request}
-								style={{ 
-									padding: '8px 24px', 
-									background: 'var(--halo-accent)', 
-									color: '#fff', 
-									border: 'none', 
-									borderRadius: '6px', 
+								style={{
+									padding: '8px 24px',
+									background: 'var(--halo-accent)',
+									color: '#fff',
+									border: 'none',
+									borderRadius: '6px',
 									cursor: 'pointer',
 									fontWeight: 500,
-									transition: 'opacity 0.2s'
+									transition: 'var(--halo-motion-transition, opacity 0.2s)'
 								}}
 							>
 								{t('common.grantPermission')}

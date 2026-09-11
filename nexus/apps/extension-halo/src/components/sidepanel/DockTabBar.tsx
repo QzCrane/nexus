@@ -22,7 +22,7 @@ const BASE_SIZE = 38;
 const MAX_SCALE = 1.4;
 const EFFECT_DISTANCE = 70;
 // 增加冗余高度至 30px，确保红色删除按钮和图标放大后完全显示
-const MAGNIFY_HEADROOM = 30; 
+const MAGNIFY_HEADROOM = 30;
 const TOOLTIP_DELAY = 100;
 
 import { useActiveServices } from './ActiveServicesContext';
@@ -102,12 +102,12 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					content: '';
 					margin: auto;
 					flex-shrink: 0;
-					width: 16px; 
+					width: 16px;
 				}
 				.halo-dock-close-button {
 					opacity: 0;
 					pointer-events: none;
-					transition: opacity 0.12s ease;
+					transition: var(--halo-motion-transition, opacity 0.12s ease);
 				}
 				[data-dock-item]:hover .halo-dock-close-button,
 				[data-dock-item]:focus-within .halo-dock-close-button {
@@ -115,7 +115,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					pointer-events: auto;
 				}
 			`}</style>
-			
+
 			{/* biome-ignore lint/a11y/noStaticElementInteractions: This surface only tracks pointer proximity for dock magnification; activation belongs to child buttons. */}
 			<div
 				ref={scrollRef}
@@ -154,7 +154,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 				{dockTools.map((toolId, index) => {
 					const tool = visibleTools.find((m) => m.id === toolId);
 					if (!tool) return null;
-					
+
 					const isActiveService = activeServices.has(toolId);
 					const isBackgroundCapable = bgToolIds.includes(toolId);
 					const serviceState = isActiveService ? 'active' : (isBackgroundCapable ? 'inactive' : undefined);
@@ -198,7 +198,7 @@ export const DockTabBar: React.FC<DockTabBarProps> = ({
 					pointerEvents: 'none',
 					zIndex: 999999,
 					boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
-					animation: 'dockTooltipFadeIn 0.08s ease-out forwards',
+					animation: 'var(--halo-motion-animation, dockTooltipFadeIn 0.08s ease-out forwards)',
 					border: '1px solid rgba(255, 255, 255, 0.1)',
 				}}>
 					{tooltip.text}

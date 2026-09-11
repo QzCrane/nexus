@@ -206,6 +206,7 @@ function createUiEvents(): Record<SpectraUiEventType, SpectraEventEnvelope> {
 	const snapshot = createControlSnapshot();
 	const session = createAudioSession();
 	return {
+		'spectra.navigation.changed': { protocolVersion: SPECTRA_PROTOCOL_VERSION, type: 'spectra.navigation.changed', tabId, documentId, payload: { url: 'https://media.example.com/watch?v=two' } },
 		'spectra.control.snapshot.changed': {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.control.snapshot.changed',
@@ -261,7 +262,7 @@ describe('restricted extension UI protocol facade', () => {
 	test('owns one unique closed request and event allowlist', () => {
 		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(18);
 		expect(new Set(SPECTRA_UI_REQUEST_TYPES).size).toBe(SPECTRA_UI_REQUEST_TYPES.length);
-		expect(SPECTRA_UI_EVENT_TYPES).toHaveLength(6);
+		expect(SPECTRA_UI_EVENT_TYPES).toHaveLength(7);
 		expect(new Set(SPECTRA_UI_EVENT_TYPES).size).toBe(SPECTRA_UI_EVENT_TYPES.length);
 		for (const type of SPECTRA_UI_REQUEST_TYPES) expect(isSpectraUiRequestType(type)).toBe(true);
 		for (const type of SPECTRA_UI_EVENT_TYPES) expect(isSpectraUiEventType(type)).toBe(true);
@@ -428,13 +429,6 @@ describe('restricted extension UI protocol facade', () => {
 				protocolVersion: SPECTRA_PROTOCOL_VERSION,
 				type: 'spectra.hotkeys.changed',
 				payload: settings.hotkeySettings,
-			},
-			{
-				protocolVersion: SPECTRA_PROTOCOL_VERSION,
-				type: 'spectra.navigation.changed',
-				tabId,
-				documentId,
-				payload: { url: 'https://media.example.com/watch?v=two' },
 			},
 		];
 		for (const event of internalEvents) {

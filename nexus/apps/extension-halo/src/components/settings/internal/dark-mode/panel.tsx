@@ -45,7 +45,7 @@ const Slider = ({ label, value, min, max, onChange }: {
 					width: 14px; height: 14px; border-radius: 50%;
 					background: var(--halo-accent);
 					box-shadow: 0 0 0 2px var(--halo-bg), 0 2px 4px rgba(0,0,0,0.1);
-					cursor: pointer; transition: transform 0.1s;
+					cursor: pointer; transition: var(--halo-motion-transition, transform 0.1s);
 				}
 				.halo-range::-webkit-slider-thumb:hover { transform: scale(1.1); }
 				.halo-range::-webkit-slider-thumb:active { transform: scale(0.95); }
@@ -59,17 +59,17 @@ const ColorInput = ({ label, value, onChange }: {
 	label: string; value: string; onChange: (v: string) => void;
 }) => (
 	<div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px', padding: '4px 0' }}>
-		<div style={{ 
-			width: '32px', height: '32px', borderRadius: '8px', overflow: 'hidden', 
+		<div style={{
+			width: '32px', height: '32px', borderRadius: '8px', overflow: 'hidden',
 			border: '1px solid var(--halo-border)', position: 'relative',
 			boxShadow: '0 2px 4px rgba(0,0,0,0.05)'
 		}}>
 			<input
 				type="color" value={value}
 				onChange={(e) => onChange(e.target.value)}
-				style={{ 
-					width: '150%', height: '150%', border: 'none', padding: 0, margin: '-25%', 
-					cursor: 'pointer', background: 'none' 
+				style={{
+					width: '150%', height: '150%', border: 'none', padding: 0, margin: '-25%',
+					cursor: 'pointer', background: 'none'
 				}}
 			/>
 		</div>
@@ -104,7 +104,7 @@ export const DarkModePanel: React.FC<Props> = ({
 						dim: t('darkMode.presetDim', { defaultValue: 'Dim' }),
 					};
 					// Simple heuristic to check if current config roughly matches preset
-					const isSelected = mergedConfig.brightness === DARK_MODE_PRESETS[key].brightness && 
+					const isSelected = mergedConfig.brightness === DARK_MODE_PRESETS[key].brightness &&
 									   mergedConfig.contrast === DARK_MODE_PRESETS[key].contrast &&
 									   mergedConfig.sepia === DARK_MODE_PRESETS[key].sepia;
 
@@ -114,12 +114,12 @@ export const DarkModePanel: React.FC<Props> = ({
 						onClick={() => onPresetSelect(key)}
 						style={{
 							padding: '6px 12px', fontSize: '11px', fontWeight: 600,
-							border: isSelected ? '1px solid var(--halo-accent)' : '1px solid var(--halo-border)', 
+							border: isSelected ? '1px solid var(--halo-accent)' : '1px solid var(--halo-border)',
 							borderRadius: '20px',
-							background: isSelected ? 'var(--halo-accent-alpha, rgba(99, 102, 241, 0.15))' : 'transparent', 
-							color: isSelected ? 'var(--halo-accent)' : 'var(--halo-text-secondary)', 
+							background: isSelected ? 'var(--halo-accent-alpha, rgba(99, 102, 241, 0.15))' : 'transparent',
+							color: isSelected ? 'var(--halo-accent)' : 'var(--halo-text-secondary)',
 							cursor: 'pointer',
-							transition: 'all 0.2s ease',
+							transition: 'var(--halo-motion-transition, all 0.2s ease)',
 						}}
 					>
 						{labels[key]}
@@ -143,11 +143,11 @@ export const DarkModePanel: React.FC<Props> = ({
 				onClick={() => setShowAdvanced(!showAdvanced)}
 				style={{
 					width: '100%', padding: '10px', marginTop: '12px',
-					fontSize: '11px', fontWeight: 500, color: 'var(--halo-text-muted)', 
-					background: 'transparent', border: '1px dashed var(--halo-border)', 
+					fontSize: '11px', fontWeight: 500, color: 'var(--halo-text-muted)',
+					background: 'transparent', border: '1px dashed var(--halo-border)',
 					borderRadius: '8px', cursor: 'pointer',
 					display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
-					transition: 'all 0.2s',
+					transition: 'var(--halo-motion-transition, all 0.2s)',
 				}}
 			>
 				<span>{showAdvanced ? '▲' : '▼'}</span>
@@ -178,8 +178,8 @@ export const DarkModePanel: React.FC<Props> = ({
 						onChange={(e) => onFixesChange({ ...fixes, css: e.target.value })}
 						style={{
 							width: '100%', height: '80px', fontSize: '11px', fontFamily: 'monospace',
-							background: 'var(--halo-bg-secondary)', color: 'var(--halo-text)', 
-							border: '1px solid var(--halo-border)', borderRadius: '8px', 
+							background: 'var(--halo-bg-secondary)', color: 'var(--halo-text)',
+							border: '1px solid var(--halo-border)', borderRadius: '8px',
 							padding: '10px', resize: 'vertical', outline: 'none',
 						}}
 					/>
