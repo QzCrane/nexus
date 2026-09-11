@@ -258,10 +258,16 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 				await expect(page.getByText('Retained account', { exact: true })).toBeVisible();
 				await page.locator('[data-dock-item]').first().hover();
 				await page.locator('[data-dock-item]').first().locator('button').nth(1).click();
+				await expect(page.getByRole('heading', { name: 'HALO', exact: true })).toBeVisible();
 				await test.step('open saved API request', () => page.locator('button[data-tool-id="api-tester"]').click({ timeout: 5_000 }), { timeout: 6_000 });
 				await expect(page.locator('input[placeholder*="https://"]')).toHaveValue('https://example.invalid/retained');
 				await page.locator('[data-dock-item]').first().hover();
 				await page.locator('[data-dock-item]').first().locator('button').nth(1).click();
+				await expect(page.getByRole('heading', { name: 'HALO', exact: true })).toBeVisible();
+				// Closing a panel renders Home before its passive persistence effect
+				// settles. Restart only after that navigation is physically retained.
+				await expect.poll(() => worker.evaluate(() => chrome.storage.local.get(['halo_open_tools', 'halo_active_tool'])))
+					.toEqual({ halo_open_tools: [], halo_active_tool: 'HALO_LAUNCHER' });
 				await test.step('read physical storage owners', async () => {
 					expect(await worker.evaluate((keys) => chrome.storage.local.get(keys), Object.keys(saved))).toEqual(saved);
 					expect(await worker.evaluate((keys) => chrome.storage.session.get(keys), Object.keys(saved))).toEqual({});

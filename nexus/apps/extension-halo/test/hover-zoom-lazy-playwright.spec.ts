@@ -91,6 +91,22 @@ async function settleRenderedTasks(page: Page): Promise<void> {
 	}));
 }
 
+async function waitForEnabledInputHost(page: Page): Promise<void> {
+	// load does not await document_idle or the extension's storage hydration.
+	// Probe block-mode admission over empty page space, without a preview target;
+	// keyup retires the probe before the first real image-hover gesture.
+	await page.mouse.move(900, 600);
+	await expect.poll(() => page.evaluate(() => {
+		const admitted = !document.dispatchEvent(new KeyboardEvent('keydown', {
+			key: 'Alt', code: 'AltLeft', altKey: true, bubbles: true, cancelable: true,
+		}));
+		document.dispatchEvent(new KeyboardEvent('keyup', {
+			key: 'Alt', code: 'AltLeft', bubbles: true, cancelable: true,
+		}));
+		return admitted;
+	})).toBe(true);
+}
+
 async function installViewerVisibilityProbe(page: Page): Promise<void> {
 	await page.evaluate(({ visibleSelector }) => {
 		const root = document.documentElement;
@@ -145,6 +161,10 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 			});
 
 			const browserErrors: string[] = [];
+			let runtimeRequests = 0;
+			context.on('request', (request) => {
+				if (isHoverRuntimeUrl(request.url())) runtimeRequests += 1;
+			});
 			context.on('weberror', (error) => browserErrors.push(String(error.error())));
 			const worker = await extensionWorker(context);
 			await setHoverZoom(worker, true);
@@ -155,10 +175,12 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 				if (message.type() === 'error') browserErrors.push(message.text());
 			});
 			await page.goto(fixture.url, { waitUntil: 'load' });
+			await waitForEnabledInputHost(page);
 			await expect(page.locator('#preview-target')).toBeVisible();
 
 			// The static document_idle input host must not construct the heavy viewer.
 			await expect(page.locator(VIEWER)).toHaveCount(0);
+			expect(runtimeRequests).toBe(0);
 
 			// Existing semantics allow the pointer to arrive before the modifier.
 			// The very first trusted Alt gesture must survive the lazy import.
@@ -219,6 +241,8 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 			// Force key release before dynamic import can settle: both DOM events are
 			// dispatched in one browser task, while import() necessarily resolves later.
 			await page.goto(fixture.url, { waitUntil: 'load' });
+			await waitForEnabledInputHost(page);
+			expect(runtimeRequests).toBe(0);
 			await page.locator('#preview-target').hover();
 			await installViewerVisibilityProbe(page);
 			const runtimeFinished = context.waitForEvent('requestfinished', {
@@ -261,6 +285,10 @@ test.describe('HALO lazy Hover Zoom runtime in Chromium', () => {
 			// the same first trusted gesture without needing a warm-up interaction.
 			await setHoverZoom(worker, true);
 			await page.reload({ waitUntil: 'load' });
+			const requestsBeforeEnabledProbe = runtimeRequests;
+			await waitForEnabledInputHost(page);
+			expect(runtimeRequests).toBe(requestsBeforeEnabledProbe);
+			await expect(page.locator(VIEWER)).toHaveCount(0);
 			await page.locator('#preview-target').hover();
 			await page.keyboard.down('Alt');
 			await expectRealPreview(page);

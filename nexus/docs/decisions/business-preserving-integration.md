@@ -284,3 +284,12 @@ product lock, override or advisory suppression is added. Actual root and product
 audit responses and commitlint's real configuration consumer are rechecked before
 freezing the replacement candidate. Earlier exact-head receipts remain historical
 and cannot authorize the changed tree.
+
+Repeated browser replay exposed two missing test preconditions. Browser restart
+now waits for both Home rendering and the navigation owner's physical storage
+readback before closing Chrome. Hover Zoom's enabled-page checks wait for its
+document-idle input listener and settings hydration through the existing
+synchronous Alt-block contract over empty space. The readiness probe must request
+no heavy runtime; the subsequent first real image-hover gesture still owns lazy
+activation. No fixed sleep, gesture retry, force-click or product deadline change
+substitutes for either boundary.
