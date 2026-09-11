@@ -157,10 +157,18 @@ const SAFE_SCHEMES = ['http:', 'https:', 'ftp:'];
  */
 export async function restoreSession(session: Session, newWindow = false): Promise<RestoreReport> {
 	const report: RestoreReport = { sessionId: session.id, restored: 0, pinned: 0, failed: [] };
-	const safeTabs = session.tabs.filter(t => {
-		try { return SAFE_SCHEMES.includes(new URL(t.url).protocol); }
-		catch { return false; }
-	});
+	const safeTabs: TabData[] = [];
+	for (const tab of session.tabs) {
+		try {
+			if (SAFE_SCHEMES.includes(new URL(tab.url).protocol)) {
+				safeTabs.push(tab);
+			} else {
+				report.failed.push({ url: tab.url, title: tab.title, reason: 'URL scheme is not allowed' });
+			}
+		} catch {
+			report.failed.push({ url: tab.url, title: tab.title, reason: 'URL is invalid' });
+		}
+	}
 
 	if (newWindow) {
 		const firstTab = safeTabs[0];

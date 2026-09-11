@@ -81,6 +81,7 @@ export const XmlFormatterPanel: React.FC = () => {
 			minified: minifyResult.formatted,
 			stats: formatResult.stats,
 			error: null,
+			warning: formatResult.warning,
 		};
 	}, [input, indent]);
 
@@ -129,6 +130,7 @@ export const XmlFormatterPanel: React.FC = () => {
 
 			{/* Error */}
 			{results.error && <div style={styles.error}>⚠️ {results.error}</div>}
+			{results.warning && <div role="status">{results.warning}</div>}
 
 			{/* Stats */}
 			{results.stats && (

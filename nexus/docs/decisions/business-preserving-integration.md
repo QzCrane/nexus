@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: contributor
 owner: branch-integration-decision
-last_reviewed: 2026-09-06
+last_reviewed: 2026-09-11
 ---
 
 # Business-preserving branch integration
@@ -186,9 +186,11 @@ own origin rather than the active tab. One fetch-budget owner bounds wall-clock
 time and encoded response bytes and supports cancellation; the worker proxy and
 the API tester use it, proxy transfers abort when their tab closes, and the
 tester cancels on panel disposal. The proxy log records target hosts only.
-Sensitive tool state (TOTP secrets, API tester config and responses) is
-session-scoped by default with a one-time legacy migration off disk that never
-destroys data. The SSRF guard parses IPv4 literals per WHATWG forms before
+Saved TOTP accounts, API tester config and responses retain their existing local
+persistence. Automatic migration to session storage was rejected during branch
+consolidation because browser restart would erase saved data; a future vault
+requires an explicit retention and migration contract. Import drafts remain
+ephemeral. The SSRF guard parses IPv4 literals per WHATWG forms before
 pattern matching, narrows the overbroad benchmark range, and never blocks a
 hostname for starting with numeric text. The guard still only evaluates the
 initial URL literal; redirect and DNS-target safety is explicitly not claimed.
@@ -216,3 +218,60 @@ with per-line accounting in build.ts: the growth is admitted engine weight and
 reviewed security repairs, not silent drift. Per-chunk and activation ceilings
 are unchanged. DOMPurify sanitizing semantics are verified in the real-browser
 lane because a synthetic DOM does not faithfully resolve template parsing.
+
+## Branch consolidation execution, 2026-09-11
+
+The authorized delivery is to resolve useful work across the current Nexus
+branches and merge the verified result into main. The initial clean implementation
+head is `14e1dd67e470e6c0bc8226a77cc96958b338253b`; remote main remains
+`664d0615f850c568a8840ac312ca7c92cb81ceee`. The source identities and historical
+disposition in [reuse-first execution](reuse-first-execution.md) remain the
+starting inventory, subject to fresh ancestry and content checks. This work does
+not mark the separate remediation backlog complete.
+
+Execution order: finish the branch-content census and independent review; repair
+confirmed merge blockers on the implementation line; preserve its complete
+history; normalize the final tree to the closeout owner's single-commit candidate;
+run the required platform and two product attempts; then promote through the
+canonical closeout command and read back remote main, PRs and local state.
+
+The first local governance replay reproduced the current hosted failure: the
+reuse-engine commit changed `bun.lock` without refreshing its exact observation in
+`dependency-revalidation.json`. Refresh only that observed lock identity and date;
+the older upstream observations keep their original date. The existing stale-lock
+and stale-version regressions remain mandatory. Current toolchain and strict
+documentation checks pass. All four initial hosted failures share this cause;
+the repaired local governance suite passes 149 tests. Formal release status belongs
+only to the closeout receipts for the final head; this document cannot waive them.
+
+The branch census found no missing product work: architecture and total are
+ancestors of the implementation head; the old candidate's complete tree
+`00ea207461eab5b34264a4949aebd25eabba60a4` already appears at implementation
+commit `49df809bd37672857c64189adfe4f7e69d68d38e`. The execution branch contains
+only 20 transport files (2,321 lines across 26 commits); all five source trees
+carried by those transports already appear in implementation history. Those
+transport files are excluded from the delivered tree. Superseded refs are not
+additional product work.
+
+Independent review also rejected automatic session-only secret migration,
+repaired missing restore-failure entries and storage-event revision adoption,
+and replaced the custom XML serializer with the native full-document owner.
+DTD input is preserved unchanged with a visible limitation; no hand-written DTD
+parser is added. The XML choice follows the [DOM serialization contract](https://www.w3.org/TR/DOM-Parsing/)
+and existing R10 selection. Real-browser tests cover saved data across restart,
+cross-context revisions, delayed hydration followed by durable draft writes,
+and XML fidelity including BOM prefixes. Ledger revisions belong to the same
+key/area epoch as pending writes; stale-value rejection cannot discard the
+revision needed by a newer local draft, or replace a newer storage observation.
+N08 remains partial in the existing
+remediation ledger; preserving retention is not a claim of an implemented vault.
+
+Prevention stays in the current owners: pre-push executes the focused dependency
+revalidation command, and the existing hook contract rejects missing, misplaced,
+duplicated or filtered versions of that command. Hook structure uses
+[Bun's native YAML parser](https://bun.sh/reference/bun/YAML/parse), replacing
+text-only hook discovery. Lock observations are never auto-certified. The existing
+cross-platform workflow can dispatch the canonical Linux platform recorder when
+local Docker is unavailable, eliminating one-off execution branches. Canonical
+atomic promotion and the already-enabled GitHub delete-on-merge setting own future
+candidate cleanup; no parallel branch sweeper or disposition database is added.

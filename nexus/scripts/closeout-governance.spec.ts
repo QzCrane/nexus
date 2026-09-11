@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import {
 	assertPlatformEvidenceSnapshot,
+	browserHostIdentity,
 	assertSameRepositoryPull,
 	assertDockerImageIdentity,
 	parseDockerImageInspection,
@@ -23,6 +24,23 @@ import {
 	type CloseoutReceipt,
 } from './closeout-evidence';
 import { BUN_VERSION } from './toolchain-versions';
+
+test('closeout identity follows the explicit replay executable and rejects a missing override', async () => {
+	const previous = process.env.NEXUS_CHROME_EXECUTABLE;
+	try {
+		// This checks path selection, not browser behavior. Product lanes still
+		// must launch Chrome before any release receipt can be issued.
+		process.env.NEXUS_CHROME_EXECUTABLE = process.execPath;
+		const identity = await browserHostIdentity();
+		const browsers = identity.browsers as Record<string, { sha256: string }>;
+		expect(browsers.playwrightChromium.sha256).toBe(browsers.puppeteerChrome.sha256);
+		process.env.NEXUS_CHROME_EXECUTABLE = `${process.execPath}.missing-closeout-test`;
+		await expect(browserHostIdentity()).rejects.toThrow('browser executable is missing');
+	} finally {
+		if (previous === undefined) delete process.env.NEXUS_CHROME_EXECUTABLE;
+		else process.env.NEXUS_CHROME_EXECUTABLE = previous;
+	}
+});
 
 const policy = JSON.parse(
 	readFileSync(new URL('../closeout-policy.json', import.meta.url), 'utf8'),

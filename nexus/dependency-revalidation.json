@@ -132,6 +132,6 @@
       "reason": "This is a compiler-generation migration, not a dependency bump. It requires a dedicated diagnostic/build/runtime equivalence epoch and explicit removal or replacement of TypeScript 5 compatibility assumptions."
     }
   ],
-  "lockObservedAt": "2026-09-06",
-  "lockSha256": "fba0d34f8429f269a7859bfb191f6e6fb3934c6ce9ce6be93aabd8c2ccb1c25c"
+  "lockObservedAt": "2026-09-11",
+  "lockSha256": "1f7d53fd32b98a0d5bb1aafaf7a8fc2b1f4cddcebf157168f38ca64bd00186dd"
 }

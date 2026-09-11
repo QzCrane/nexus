@@ -339,7 +339,9 @@ interface BrowserOwner {
 }
 
 async function inspectBrowser(owner: string, browserOwner: BrowserOwner): Promise<Record<string, unknown>> {
-	const path = await browserOwner.executablePath();
+	// Product replay already supports an explicit installed Chrome. Record the
+	// executable those lanes actually launch, rather than an unused driver cache.
+	const path = process.env.NEXUS_CHROME_EXECUTABLE?.trim() || await browserOwner.executablePath();
 	if (!existsSync(path)) throw new Error(`${owner} browser executable is missing`);
 	const version = process.platform === 'win32'
 		? run('powershell.exe', [

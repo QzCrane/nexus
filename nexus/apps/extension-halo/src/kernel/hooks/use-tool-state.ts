@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import type { ToolId } from '../core/types';
-import { safeStorageGet, safeStorageRemove } from '../core/safe-storage';
+import { safeStorageGet } from '../core/safe-storage';
 import { conditionalLedgerWrite, ledgerRevisionKey } from '../core/safe-storage';
 import type { LedgerWriteOutcome } from '../core/safe-storage';
 import { reportStorageHealth } from '../core/storage-health';
@@ -15,13 +15,6 @@ export interface UseToolStateOptions<T = unknown> {
 	storageKey?: string;
 	/** Normalize values at every storage and local-update boundary */
 	normalize?: (value: unknown) => T;
-	/**
-	 * Session-scoped sensitive state: hydrates from the session key, and when
-	 * that is absent adopts a legacy 'local' copy once — writing it to the
-	 * session area and removing the long-term copy — so secrets stop resting
-	 * on disk without destroying the user's data.
-	 */
-	migrateLegacyLocal?: boolean;
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -158,11 +151,6 @@ interface OwnWriteEcho<T> {
 }
 
 const MAX_RECENT_OWN_WRITE_ECHOES = 4;
-
-/** Read the long-term copy of a session-scoped key; null when unavailable. */
-function readLegacyLocalCopy(storageKey: string): Promise<Record<string, unknown> | null> {
-	return safeStorageGet([storageKey], {}, { area: 'local' });
-}
 
 /**
  * Mount-scoped admission for setters captured by asynchronous consumers.
@@ -382,7 +370,6 @@ export function useToolState<T>(
 		debounceMs = 300,
 		storageKey: customKey,
 		normalize,
-		migrateLegacyLocal,
 	} = options;
 
 	const getInitialValue = useCallback(() => {
@@ -403,13 +390,14 @@ export function useToolState<T>(
 	const [isReady, setIsReady] = useState(false);
 	const stateRef = useRef(state);
 	const storageKey = customKey ?? `halo_tool_state_${toolId}`;
-	const baseRevisionRef = useRef(0);
 	const authorityIdentity = `${area}\u0000${storageKey}`;
 	const pendingAuthorityRef = useRef<{
 		identity: string;
 		controller: UseToolStatePendingAuthority<T>;
 		lifecycle: UseToolStateLifecycleEpoch;
 		hydrated: boolean;
+		baseRevision: number;
+		revisionGeneration: number;
 		healthOwner: symbol;
 	} | null>(null);
 	if (pendingAuthorityRef.current?.identity !== authorityIdentity) {
@@ -418,6 +406,8 @@ export function useToolState<T>(
 			controller: new UseToolStatePendingAuthority(stateRef.current),
 			lifecycle: new UseToolStateLifecycleEpoch(),
 			hydrated: false,
+			baseRevision: 0,
+			revisionGeneration: 0,
 			healthOwner: Symbol("tool-state-storage-health"),
 		};
 	}
@@ -438,7 +428,7 @@ export function useToolState<T>(
 			try {
 				outcome = await conditionalLedgerWrite(storageKey, {
 					area,
-					baseRevision: baseRevisionRef.current,
+					baseRevision: authorityEpoch.baseRevision,
 					value: request.value,
 					remerge: (_current, attempt) => {
 						// Concede to the stored value unless a newer local edit exists;
@@ -452,10 +442,12 @@ export function useToolState<T>(
 				outcome = { kind: 'rejected' };
 			}
 			if (outcome.kind === 'committed') {
-				baseRevisionRef.current = outcome.revision;
+				authorityEpoch.baseRevision = outcome.revision;
+				authorityEpoch.revisionGeneration++;
 				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, null));
 			} else if (outcome.kind === 'external') {
-				baseRevisionRef.current = outcome.revision;
+				authorityEpoch.baseRevision = outcome.revision;
+				authorityEpoch.revisionGeneration++;
 				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, null));
 				let stored: T | null = null;
 				try { stored = normalizeValueRef.current(outcome.value, stateRef.current); }
@@ -490,6 +482,7 @@ export function useToolState<T>(
 	useEffect(() => {
 		let isMounted = true;
 		const requestedRevision = 0;
+		const requestedGeneration = authorityEpoch.revisionGeneration;
 		const initialValue = initialValueRef.current();
 		const baseValue = normalizeValueRef.current(initialValue, initialValue);
 		authorityEpoch.hydrated = false;
@@ -502,40 +495,23 @@ export function useToolState<T>(
 					{ area },
 				);
 				if (!isMounted) return;
-				let legacyRaw: unknown;
-				if (migrateLegacyLocal && area === 'session' && res[storageKey] === undefined) {
-					// A failed legacy read keeps the session defaults; nothing is deleted.
-					const legacy = await readLegacyLocalCopy(storageKey).catch(() => null);
-					if (legacy?.[storageKey] !== undefined) legacyRaw = legacy[storageKey];
-				}
-				const raw = res[storageKey] !== undefined ? res[storageKey] : legacyRaw;
+				const raw = res[storageKey];
 				const loaded = normalizeValueRef.current(raw !== undefined ? raw : baseValue, baseValue);
-				baseRevisionRef.current = typeof res[ledgerRevisionKey(storageKey)] === 'number'
-					&& Number.isSafeInteger(res[ledgerRevisionKey(storageKey)])
-					&& (res[ledgerRevisionKey(storageKey)] as number) >= 0
-					? (res[ledgerRevisionKey(storageKey)] as number)
-					: 0;
 				authorityEpoch.hydrated = true;
 				setIsReady(true);
 				reportStorageHealth(authorityEpoch.healthOwner, null);
+				// A local draft rejects the old value, but still needs its ledger base.
+				// Only a newer storage observation can supersede that read's revision.
+				if (authorityEpoch.revisionGeneration === requestedGeneration) {
+					authorityEpoch.baseRevision = typeof res[ledgerRevisionKey(storageKey)] === 'number'
+						&& Number.isSafeInteger(res[ledgerRevisionKey(storageKey)])
+						&& (res[ledgerRevisionKey(storageKey)] as number) >= 0
+							? (res[ledgerRevisionKey(storageKey)] as number)
+							: 0;
+				}
 				if (pendingAuthority.acceptLoaded(loaded, requestedRevision)) {
 					stateRef.current = loaded;
 					setState(loaded);
-				}
-				if (legacyRaw !== undefined) {
-					// Move the adopted legacy value into the session area and clear
-					// the long-term copy. Removal failure is surfaced, never silent.
-					const migration = pendingAuthority.stageLocal(loaded);
-					pendingAuthority.flushPending(migration.token);
-					persistNextState();
-					void safeStorageRemove(storageKey, { area: 'local' }).then((removed) => {
-						if (removed) return;
-						authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(
-							authorityEpoch.healthOwner,
-							'write-error',
-							() => void safeStorageRemove(storageKey, { area: 'local' }),
-						));
-					});
 				}
 				persistNextState();
 			} catch {
@@ -545,7 +521,7 @@ export function useToolState<T>(
 			}
 		})();
 		return () => { isMounted = false; };
-	}, [storageKey, area, pendingAuthority, authorityEpoch, persistNextState, loadAttempt, migrateLegacyLocal]);
+	}, [storageKey, area, pendingAuthority, authorityEpoch, persistNextState, loadAttempt]);
 
 	const flushPendingState = useCallback((expectedToken?: number) => {
 		if (pendingAuthority.flushPending(expectedToken)) persistNextState();
@@ -584,14 +560,21 @@ export function useToolState<T>(
 		});
 	}, [authorityEpoch, saveState]);
 
-	useEffect(() => {
+	useLayoutEffect(() => {
 		authorityEpoch.lifecycle.open();
 		const unsubscribeStorageChanges = subscribeHaloStorageChanges((
 			changes: Record<string, chrome.storage.StorageChange>,
 			changedArea: string,
 		) => {
+			if (changedArea !== area) return;
+			const revisionChange = changes[ledgerRevisionKey(storageKey)];
+			if (revisionChange) {
+				const revision = revisionChange.newValue;
+				authorityEpoch.baseRevision = typeof revision === 'number' && Number.isSafeInteger(revision) && revision >= 0 ? revision : 0;
+				authorityEpoch.revisionGeneration++;
+			}
 			const change = changes[storageKey];
-			if (changedArea !== area || !change) return;
+			if (!change) return;
 			let next: T;
 			try { next = normalizeValueRef.current(change.newValue, stateRef.current); }
 			catch {

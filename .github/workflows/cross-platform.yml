@@ -6,6 +6,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      closeout-platform:
+        description: Record the canonical exact-head Linux closeout lane only
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -16,6 +21,7 @@ concurrency:
 
 jobs:
   scope:
+    if: inputs.closeout-platform != true
     name: product scope (ubuntu)
     runs-on: ubuntu-latest
     timeout-minutes: 3
@@ -62,6 +68,7 @@ jobs:
             --paths-z-file "$paths_file" >> "$GITHUB_OUTPUT"
 
   quality:
+    if: inputs.closeout-platform != true
     name: quality (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
@@ -127,6 +134,37 @@ jobs:
       - name: Bound Turbo cache snapshot
         if: always()
         run: node nexus/scripts/prune-turbo-cache.mjs nexus/.turbo/cache
+
+  closeout-platform:
+    if: github.event_name == 'workflow_dispatch' && inputs.closeout-platform == true
+    name: exact-head Linux closeout receipt
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      PUPPETEER_SKIP_DOWNLOAD: 'true'
+    steps:
+      - name: Checkout the dispatched commit
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: ${{ github.sha }}
+      - name: Set up Bun 1.4.0
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.0
+      - name: Materialize the frozen tooling owners
+        run: |
+          bun install --frozen-lockfile --ignore-scripts
+          bun install --cwd nexus --frozen-lockfile
+      - name: Record through the canonical closeout owner
+        run: bun nexus/scripts/closeout-evidence.ts platform-record
+      - name: Retain the immutable receipt
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: closeout-platform-${{ github.sha }}
+          path: nexus/artifacts/closeout-platform-linux.${{ github.sha }}.json
+          if-no-files-found: error
+          retention-days: 30
 
   build-and-test:
     name: build-and-test (${{ matrix.os }})

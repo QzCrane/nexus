@@ -13,10 +13,10 @@ const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 
 
 export const ApiTesterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	// Requests can carry Authorization headers and tokens: the config and the
-	// response are session-scoped, with a one-time legacy migration off disk.
-	const [config, setConfig] = useToolState<RequestConfig>('api-tester-config', { ...DEFAULT_CONFIG }, { area: 'session', migrateLegacyLocal: true });
-	const [response, setResponse] = useToolState<ResponseData | null>('api-tester-res', null, { area: 'session', migrateLegacyLocal: true });
+	// Preserve saved requests across browser restarts. A future secret vault
+	// requires an explicit retention choice, not an automatic storage-area move.
+	const [config, setConfig] = useToolState<RequestConfig>('api-tester-config', { ...DEFAULT_CONFIG });
+	const [response, setResponse] = useToolState<ResponseData | null>('api-tester-res', null);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string>('');
 	const [activeTab, setActiveTab] = useToolState<'headers' | 'body'>('api-tester-tab', 'headers');

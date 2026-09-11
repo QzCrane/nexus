@@ -331,7 +331,7 @@ describe('session manager single-list authority', () => {
 		expect(pinUpdates).toEqual([{ tabId: 900, pinned: true }]);
 	});
 
-	test('unsafe schemes never open and count as explicit failures in current window', async () => {
+	test.each([false, true])('unsafe and invalid URLs report failures; newWindow=%s', async (newWindow) => {
 		const created: { url: string; pinned: boolean }[] = [];
 		installWindowsForRestore({ created, pinUpdates: [] });
 		const session: Session = {
@@ -340,13 +340,18 @@ describe('session manager single-list authority', () => {
 			createdAt: 1,
 			tabs: [
 				{ url: 'javascript:alert(1)', title: 'evil', pinned: false },
+				{ url: 'invalid', title: 'broken', pinned: false },
 				{ url: 'https://ok', title: 'ok', pinned: true },
 			],
 		};
-		const report = await restoreSession(session, false);
+		const report = await restoreSession(session, newWindow);
 		expect(report.restored).toBe(1);
 		expect(report.pinned).toBe(1);
-		expect(created).toEqual([{ url: 'https://ok', pinned: true }]);
+		expect(report.failed).toEqual([
+			{ url: 'javascript:alert(1)', title: 'evil', reason: 'URL scheme is not allowed' },
+			{ url: 'invalid', title: 'broken', reason: 'URL is invalid' },
+		]);
+		expect(created).toEqual(newWindow ? [] : [{ url: 'https://ok', pinned: true }]);
 	});
 });
 

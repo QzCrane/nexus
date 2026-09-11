@@ -69,4 +69,3 @@ export function parseClipboardHistory(value: unknown): ClipboardItem[] {
 export function clipboardHistoryBytes(history: ClipboardItem[]): number {
 	return new TextEncoder().encode(JSON.stringify(history)).byteLength;
 }
-

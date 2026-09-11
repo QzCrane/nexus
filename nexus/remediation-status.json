@@ -492,17 +492,18 @@
       "id": "N08",
       "title": "敏感输入默认跟随通用工具状态持久化",
       "priority": "P0",
-      "status": "implemented",
+      "status": "partial",
       "changes": [
         "apps/extension-halo/src/kernel/hooks/use-tool-state.ts",
         "apps/extension-halo/src/tools/totp/panel.tsx",
         "apps/extension-halo/src/tools/api-tester/panel.tsx"
       ],
       "verification": [
-        "apps/extension-halo/test/network-targets.spec.ts"
+        "apps/extension-halo/test/network-targets.spec.ts",
+        "apps/extension-halo/test/sidepanel-runtime-playwright.spec.ts"
       ],
       "remaining": "New TOTP import drafts are ephemeral. Existing account-secret storage, Crypto/API editors and opt-in migration require a separate explicit vault boundary; no historical secret was deleted.",
-      "scope": "Sensitive state (TOTP account secrets, API tester request config with Authorization headers, response bodies) is session-scoped by default. The hook migrates a legacy long-term copy once: it hydrates the value into the session area and removes the on-disk copy, surfacing removal failures. No persisted data is destroyed silently."
+      "scope": "Automatic local-to-session migration was rejected: it shortens saved-account retention to a browser session and can remove the source before destination confirmation. Saved TOTP accounts and API state retain their existing local owner; import drafts remain ephemeral. The real-browser restart regression protects retained data. An explicit vault and user-controlled migration remain unresolved."
     },
     {
       "id": "N09",
@@ -864,9 +865,9 @@
         "apps/extension-halo/src/tools/xml-formatter/core.ts"
       ],
       "verification": [
-        "apps/extension-halo/test/library-reuse-admission.spec.ts"
+        "apps/extension-halo/test/sidepanel-runtime-playwright.spec.ts"
       ],
-      "scope": "Rebuilt output re-escapes text and attribute values through the DOM own values and keeps mixed content inline; minify removes only whitespace-only text nodes, so character data survives (R10 native DOMParser/XMLSerializer)."
+      "scope": "Native DOMParser and whole-Document XMLSerializer replace hand-built tags and escaping. Existing text and CDATA are never removed; xml:space and mixed-content whitespace survive. Pretty layout only adds indentation to containers without text. The validated XML declaration is retained; DTD documents pass through unchanged with an explicit warning because native DOM omits internal subsets. Browser regressions cover document nodes, namespace/entity fidelity, declarations, mixed content and invalid input."
     },
     {
       "id": "U14",

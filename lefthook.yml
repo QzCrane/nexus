@@ -29,6 +29,8 @@ pre-push:
       run: bun run check:platform
     toolchain:
       run: bun --cwd nexus check:toolchain
+    dependency-revalidation:
+      run: bun --cwd nexus check:dependency-revalidation
     documentation-architecture:
       run: bun run docs:check
     public-projections:

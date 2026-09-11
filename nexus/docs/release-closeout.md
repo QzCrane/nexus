@@ -30,6 +30,23 @@ Before recording evidence, the candidate is normalized to one squash-equivalent 
 bun scripts/closeout-evidence.ts platform-record
 ```
 
+When the local Linux container host is unavailable, the existing Cross-platform
+quality workflow can run this same command on its Docker-enabled Ubuntu host:
+dispatch the candidate ref with `closeout-platform=true`, then download the
+`closeout-platform-<head>` artifact into `nexus/artifacts/`. The workflow checks
+out the exact dispatched commit and records the same digest-pinned image, source
+archive and policy lanes. Other quality jobs are skipped for this explicit
+receipt-only dispatch; ordinary PR quality remains unchanged. The verifier still
+requires the receipt's head, tree, policy and tool digests to match locally.
+No temporary execution branch, source-patch transport or alternative receipt
+format is needed.
+
+Product lanes may select an already-installed Chrome using
+`NEXUS_CHROME_EXECUTABLE`; the closeout host identity fingerprints that same
+executable for both drivers. Without an explicit path, each driver's normal
+installed-browser resolution remains authoritative. A missing executable fails;
+unused browser-cache contents never stand in for the browser actually exercised.
+
 Then, when the PR base is the current remote `main`, record two complete Windows installed-Chromium attempts:
 
 ```powershell
