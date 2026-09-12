@@ -43,6 +43,12 @@ function wav(): Uint8Array {
 	return bytes;
 }
 
+// post: captures one deterministic PNG and verifies it equals the rendered CSS
+// viewport. The Action-popup window is sized by the browser (extension popup
+// targets reject device-metrics emulation), so its natural height depends on
+// platform font metrics; `--force-device-scale-factor=1` pins the physical
+// capture to the CSS viewport on every host, and comparing against the actual
+// rendered viewport keeps the gate deterministic outside the certifying CI host.
 async function capture(
 	page: Page,
 	state: (typeof states)[keyof typeof states],
@@ -64,8 +70,9 @@ async function capture(
 	const screenshotPath = updateBaseline ? baselinePath : candidatePath;
 	mkdirSync(dirname(screenshotPath), { recursive: true });
 	const png = Buffer.from(await page.screenshot({ type: 'png', captureBeyondViewport: false }));
-	if (png.readUInt32BE(16) !== state.width || png.readUInt32BE(20) !== state.height) {
-		throw new Error(`${state.id}: physical PNG dimensions differ from ${state.width}x${state.height}`);
+	const rendered = await page.evaluate(() => ({ w: window.innerWidth, h: window.innerHeight }));
+	if (png.readUInt32BE(16) !== rendered.w || png.readUInt32BE(20) !== rendered.h) {
+		throw new Error(`${state.id}: physical PNG dimensions ${png.readUInt32BE(16)}x${png.readUInt32BE(20)} differ from rendered viewport ${rendered.w}x${rendered.h}`);
 	}
 	writeFileSync(screenshotPath, png);
 	const verification = verifyVisualRegressionCandidate({ stateId: state.id, candidatePath, baselinePath, updateBaseline });
@@ -89,7 +96,7 @@ test('captures real media data, startup error and acknowledged dynamic SPECTRA s
 		browser = await launchPuppeteerBrowser({
 			...(explicitChrome ? { executablePath: explicitChrome } : {}), headless: true, userDataDir: profileDir,
 			defaultViewport: { width: 390, height: 600, deviceScaleFactor: 1 },
-			args: [`--disable-extensions-except=${EXTENSION_DIR}`, `--load-extension=${EXTENSION_DIR}`, '--lang=en-US', '--autoplay-policy=no-user-gesture-required', '--no-sandbox', '--disable-setuid-sandbox'],
+			args: [`--disable-extensions-except=${EXTENSION_DIR}`, `--load-extension=${EXTENSION_DIR}`, '--lang=en-US', '--autoplay-policy=no-user-gesture-required', '--no-sandbox', '--disable-setuid-sandbox', '--force-device-scale-factor=1'],
 		}, { owner: 'apps/extension-spectra/test/visual-baseline.spec.ts', profile: { kind: 'temporary', prefix: 'spectra-visual-', isolated: true } });
 		const browserVersion = await browser.version();
 		if (expectedChrome) expect(browserVersion).toContain(expectedChrome);

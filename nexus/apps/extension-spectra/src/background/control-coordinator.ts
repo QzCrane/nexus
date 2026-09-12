@@ -676,6 +676,19 @@ interface CommitControlProjection {
 	sessionScope?: TabControlSessionScope | 'none';
 }
 
+// post: distinguishes a rejected base revision (retryable after a snapshot
+// refresh) from persistent control failures so UI callers can recover the
+// user's explicit intent instead of dropping it on a content-runtime race.
+export class StaleControlRevisionError extends Error {
+	readonly expectedRevision: number;
+
+	constructor(expectedRevision: number) {
+		super(`Stale control revision: expected ${expectedRevision}`);
+		this.name = 'StaleControlRevisionError';
+		this.expectedRevision = expectedRevision;
+	}
+}
+
 async function prepareIntent(
 	request: RoutedControlSubmitRequest,
 	contextSnapshot?: ControlSnapshot,
@@ -683,7 +696,7 @@ async function prepareIntent(
 ): Promise<PreparedControlIntent> {
 	const snapshot = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
 	if (request.baseRevision !== undefined && request.baseRevision !== snapshot.revision) {
-		throw new Error(`Stale control revision: expected ${snapshot.revision}`);
+		throw new StaleControlRevisionError(snapshot.revision);
 	}
 	if (request.target && request.target.documentId !== snapshot.documentId) {
 		throw new Error('The selected media target belongs to a stale document');
@@ -1769,7 +1782,7 @@ async function executeControlOperation(
 ): Promise<ControlOperationAck> {
 	const snapshot = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
 	if (request.baseRevision !== undefined && request.baseRevision !== snapshot.revision) {
-		throw new Error(`Stale control revision: expected ${snapshot.revision}`);
+		throw new StaleControlRevisionError(snapshot.revision);
 	}
 	if (request.target && request.target.documentId !== snapshot.documentId) {
 		throw new Error('The selected media target belongs to a stale document');
@@ -2503,9 +2516,11 @@ export function initializeControlCoordinator(): void {
 		void operation.then(
 			(ack) => sendResponse(rpcSuccess(ack)),
 			(error) => sendResponse(rpcFailure(
-				message.type === 'spectra.control.operation.submit'
-					? 'control_operation_failed'
-					: 'control_apply_failed',
+				error instanceof StaleControlRevisionError
+					? 'control_stale_revision'
+					: message.type === 'spectra.control.operation.submit'
+						? 'control_operation_failed'
+						: 'control_apply_failed',
 				error instanceof Error ? error.message : String(error),
 				true,
 			)),

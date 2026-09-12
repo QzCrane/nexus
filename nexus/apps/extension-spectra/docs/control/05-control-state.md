@@ -30,6 +30,7 @@ interface ControlFieldState<T> {
 ```
 
 - **Echo Correlation Token**: `{ intentId, fieldRevision, expectedValue, tolerance }`（禁止时间窗口布尔标记）。
+- **Stale-base-revision recovery**: Background 拒绝 `baseRevision` 与权威快照 revision 不一致的 intent/operation，返回 `control_stale_revision`。Popup 的 `submitControlIntent`/`submitControlOperation` 携带当前卡片 revision 提交，收到该错误码时先拉取快照刷新投影，再以新 revision 重放一次；并发广播永远不会静默丢弃显式用户意图。
 - **Processor Handoff (three-owner)**: 无双重增益/DSP，无虚假 active ACK。MediaElement WebAudio/Capture 候选必须先得到 running/readback ACK；旧 owner 先中性化，候选验证成功后才释放，失败则恢复最后一个已确认 owner。
 
 ## §11 Volume and mute

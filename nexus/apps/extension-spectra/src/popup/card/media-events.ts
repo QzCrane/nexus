@@ -8,7 +8,7 @@ import type {
 	MediaTarget,
 } from '@nexus/contracts';
 import { clampControlValue } from '@nexus/contracts/ui-runtime';
-import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { submitControlIntent, submitControlOperation } from './intent-recovery';
 import { syncSidePanelSpeed } from '../side-panel/controls';
 import { getHotkeyTarget, setHotkeyTarget } from '../../shared/hotkey-target-client';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
@@ -221,18 +221,10 @@ async function reportControlFailure(
 	showPopupToast(failure.message, 'error');
 }
 
-async function submitMutation(tabId: number, state: CardInternalState, mutation: ControlMutation) {
-	const response = await sendSpectraRequest(
-		'spectra.control.intent.submit',
-		{
-			tabId,
-			source: 'popup',
-			requestedCoverage: 'active-target',
-			target: state.controlSnapshot?.activeMedia ?? null,
-			baseRevision: state.controlRevision,
-			mutations: [mutation],
-		},
-		{ tabId },
+async function submitMutation(tabId: number, state: CardInternalState, render: () => void, mutation: ControlMutation) {
+	const response = await submitControlIntent(
+		{ tabId, state, render },
+		{ requestedCoverage: 'active-target', mutations: [mutation] },
 	);
 	if (!response.ok) throw new ControlUiError(response.error);
 	const field = response.data.fields[mutation.field];
@@ -253,21 +245,14 @@ export function bindMediaControls(
 	tabId: number,
 	state: CardInternalState,
 	update: ConfigUpdateFn,
+	render: () => void,
 	onError?: ConfigErrorHandler,
 ): void {
 	if (ui.btnPause) {
 		ui.btnPause.onclick = () => {
-			void update.runControl(() => sendSpectraRequest(
-				'spectra.control.operation.submit',
-				{
-					tabId,
-					source: 'popup',
-					target: state.controlSnapshot?.activeMedia ?? null,
-					baseRevision: state.controlRevision,
-					operation: 'playback-toggle',
-					payload: {},
-				},
-				{ tabId },
+			void update.runControl(() => submitControlOperation(
+				{ tabId, state, render },
+				{ operation: 'playback-toggle', payload: {} },
 			)).then((response) => {
 				if (!response.ok) throw new ControlUiError(response.error);
 				const acknowledgement = response.data as ControlOperationAck<'playback-toggle'>;
@@ -306,7 +291,7 @@ export function bindMediaControls(
 	}
 
 	const submitSpeed = (operation: 'set' | 'delta', value: number) => {
-		void update.runControl(() => submitMutation(tabId, state, {
+		void update.runControl(() => submitMutation(tabId, state, render, {
 			field: 'speed', operation, value,
 		}))
 			.then((ack) => {

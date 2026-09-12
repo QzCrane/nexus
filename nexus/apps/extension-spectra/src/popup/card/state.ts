@@ -13,6 +13,7 @@ import {
 import { resolveAcknowledgedProcessorLifecycle } from '@nexus/contracts/ui-runtime';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { submitControlIntent, submitControlOperation } from './intent-recovery';
 
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;
@@ -143,17 +144,9 @@ export function createUpdateFn(
 		inFlight = serializeControl(async () => {
 			if (effectiveVolume !== null) {
 				try {
-					const response = await sendSpectraRequest(
-						'spectra.control.operation.submit',
-						{
-							tabId,
-							source: 'popup',
-							target: state.controlSnapshot?.activeMedia ?? null,
-							baseRevision: state.controlRevision,
-							operation: 'effective-volume',
-							payload: { operation: 'set', value: effectiveVolume },
-						},
-						{ tabId },
+					const response = await submitControlOperation(
+						{ tabId, state, render },
+						{ operation: 'effective-volume', payload: { operation: 'set', value: effectiveVolume } },
 					);
 					if (!response.ok) {
 						state.lastError = response.error;
@@ -181,35 +174,27 @@ export function createUpdateFn(
 				const group = groups[groupIndex];
 				if (!group) continue;
 				try {
-				const response = await sendSpectraRequest(
-					'spectra.control.intent.submit',
-					{
-						tabId,
-						source: 'popup',
-						requestedCoverage: group.requestedCoverage,
-						target: state.controlSnapshot?.activeMedia ?? null,
-						baseRevision: state.controlRevision,
-						patch: group.patch,
-					},
-					{ tabId },
-				);
-				if (!response.ok) {
-					state.lastError = response.error;
-					throw new Error(response.error.message);
-				}
-				state.controlRevision = Math.max(state.controlRevision, response.data.revision);
-				state.controlGeneration = Math.max(
-					state.controlGeneration,
-					response.data.generation,
-				);
-				const applied = Object.values(response.data.fields);
-				const failed = applied.find((field) => field?.lastError)?.lastError ?? null;
-				if (failed) {
-					state.lastError = failed;
-					throw new Error(failed.message);
-				}
-				state.stableConfig = mergeControlFields(state.stableConfig, response.data.fields);
-				projectAcknowledgedProcessorLifecycle(state, response.data.fields);
+					const response = await submitControlIntent(
+						{ tabId, state, render },
+						{ requestedCoverage: group.requestedCoverage, patch: group.patch },
+					);
+					if (!response.ok) {
+						state.lastError = response.error;
+						throw new Error(response.error.message);
+					}
+					state.controlRevision = Math.max(state.controlRevision, response.data.revision);
+					state.controlGeneration = Math.max(
+						state.controlGeneration,
+						response.data.generation,
+					);
+					const applied = Object.values(response.data.fields);
+					const failed = applied.find((field) => field?.lastError)?.lastError ?? null;
+					if (failed) {
+						state.lastError = failed;
+						throw new Error(failed.message);
+					}
+					state.stableConfig = mergeControlFields(state.stableConfig, response.data.fields);
+					projectAcknowledgedProcessorLifecycle(state, response.data.fields);
 				} catch (error) {
 					const unsent: ControlPatch = {};
 					for (const next of groups.slice(groupIndex)) Object.assign(unsent, next.patch);

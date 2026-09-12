@@ -9,6 +9,7 @@ import { getDomain } from '../utils/dom';
 import { bindMediaControls } from './media-events';
 import { patchSettings } from '../../shared/settings-client';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { submitControlIntent } from './intent-recovery';
 import { mergeAudioConfig, mergeControlFields } from './types';
 import { showPopupToast } from '../toast';
 
@@ -83,17 +84,9 @@ export function bindCardEvents(params: EventsParams): void {
 
 	const submitToggle = async (field: 'mediaMuted'): Promise<void> => {
 		await update.runControl(async () => {
-			const response = await sendSpectraRequest(
-				'spectra.control.intent.submit',
-				{
-					tabId,
-					source: 'popup',
-					requestedCoverage: 'active-target',
-					target: state.controlSnapshot?.activeMedia ?? null,
-					baseRevision: state.controlRevision,
-					mutations: [{ field, operation: 'toggle' }],
-				},
-				{ tabId },
+			const response = await submitControlIntent(
+				{ tabId, state, render },
+				{ requestedCoverage: 'active-target', mutations: [{ field, operation: 'toggle' }] },
 			);
 			if (!response.ok) {
 				state.lastError = response.error;
@@ -273,5 +266,5 @@ export function bindCardEvents(params: EventsParams): void {
 	});
   };
 
-  bindMediaControls(ui, tabId, state, update, onError);
+  bindMediaControls(ui, tabId, state, update, render, onError);
 }
