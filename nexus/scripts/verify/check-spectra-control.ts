@@ -932,6 +932,18 @@ function checkPolicyOwner(root) {
 		path.join(root, APP_PATH, 'src/background/control-coordinator-values.ts'),
 		'utf8',
 	);
+	const coordinatorAck = fs.readFileSync(
+		path.join(root, APP_PATH, 'src/background/control-coordinator-ack.ts'),
+		'utf8',
+	);
+	if (!coordinator.includes('controlApplyAckMatches(response.data, intent)')
+		|| !coordinator.includes('controlOperationAckMatches(ack, intent)')
+		|| !coordinatorAck.includes('export function controlApplyAckMatches(')
+		|| !coordinatorAck.includes('export function controlOperationAckMatches(')
+		|| /\b(?:chrome|browser)\s*\./u.test(coordinatorAck)
+		|| /\b(?:storage|persist|publish)\s*\(/u.test(coordinatorAck)) {
+		error('SCTRL-006/SCTRL-034: extracted ACK admission must remain pure and the coordinator must remain its only effect consumer');
+	}
 	const submitKeys = contracts.match(
 		/const submitKeys = new Set<keyof ControlSubmitRequest>\(\[(.*?)\]\);/su,
 	)?.[1] ?? '';
@@ -1560,6 +1572,11 @@ function checkRetiredPaths(root) {
 		path.join(root, SOURCE_PATH, 'content/logic/native-media-async.ts'),
 		'utf8',
 	);
+	if (!nativeMediaAsync.includes('export function nativeValuesMatch(')
+		|| nativeExecutor.includes('function valuesMatch(')
+		|| nativeExecutor.includes('private matches(')) {
+		error('SCTRL-003/SCTRL-034: native comparison semantics must have one owner in native-media-async');
+	}
 	if (!nativeExecutor.includes('target: resolved?.target ?? null')) {
 		error('SCTRL-005/SCTRL-006: field ACK must report the actually resolved media target');
 	}

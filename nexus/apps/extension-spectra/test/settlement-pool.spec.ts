@@ -9,6 +9,21 @@ function deferred<T>() {
 }
 
 describe('physical settlement capacity', () => {
+	test('exposes pending age without releasing an unsettled permit', async () => {
+		const pool = createSettlementPool<string, number>(1);
+		const pending = deferred<number>();
+		const operation = pool.getOrStart('document:old', () => pending.promise);
+		if (!operation) throw new Error('initial permit missing');
+		expect(pool.getPending('document:old')?.operation).toBe(operation);
+		expect(pool.readPending()).toEqual([
+			expect.objectContaining({ key: 'document:old', startedAt: expect.any(Number) }),
+		]);
+		expect(pool.getOrStart('document:new', async () => 2)).toBeNull();
+		pending.resolve(1);
+		await operation;
+		expect(pool.pendingCount).toBe(0);
+	});
+
 	test('deduplicates a key and claims capacity before invoking the operation', async () => {
 		const pool = createSettlementPool<string, number>(1);
 		const pending = deferred<number>();

@@ -856,6 +856,8 @@ describe('one-time release receipt', () => {
 
 	test('freezes only the SPECTRA source closure for release cleanliness', () => {
 		expect(SPECTRA_RELEASE_PATHS).toContain('nexus/packages/contracts');
+		expect(SPECTRA_RELEASE_PATHS).toContain('nexus/scripts/release-supply-chain.ts');
+		expect(SPECTRA_RELEASE_PATHS).toContain('nexus/source-derived-third-party.json');
 		expect(SPECTRA_RELEASE_PATHS).not.toContain('nexus/apps/extension-halo');
 		const calls: string[][] = [];
 		const gitIdentity = (dirtyPath: string) => readReleaseTreeIdentity({
@@ -902,6 +904,7 @@ describe('release gate orchestration', () => {
 			'documentation architecture',
 			'platform contract',
 			'repository governance contracts',
+			'closeout evidence contracts',
 			'public projection contract',
 			'frozen dependency install',
 			'toolchain verify',
@@ -910,23 +913,32 @@ describe('release gate orchestration', () => {
 			'TypeScript check',
 			'unit and contract tests',
 			'production build',
+			'retained dependency capture',
+			'whole-artifact provenance capture',
 			'production Chrome integration',
 			'dependency audit',
 			'remote-site live deployment',
 			'deterministic staging ZIP',
 			'extracted ZIP Chrome smoke and promotion',
+			'final release supply-chain evidence',
 		]);
-		expect(RELEASE_REQUIRED_GATE_LABELS).toEqual(RELEASE_STEPS.slice(0, -1).map((step) => step.label));
-		expect(RELEASE_STEPS.at(-1)?.requiresReceipt).toBe(true);
+		const promotionIndex = RELEASE_STEPS.findIndex((step) => step.requiresReceipt);
+		expect(RELEASE_REQUIRED_GATE_LABELS).toEqual(RELEASE_STEPS.slice(0, promotionIndex).map((step) => step.label));
+		expect(RELEASE_STEPS.at(-2)?.requiresReceipt).toBe(true);
+		expect(RELEASE_STEPS.at(-1)?.label).toBe('final release supply-chain evidence');
 		expect(RELEASE_STEPS.find((step) => step.label === 'remote-site live deployment')?.args).toEqual([
 			'scripts/check-spectra-remote-live.ts',
 			'--base-url',
 			PRODUCTION_REMOTE_SITE_BASE_URL,
 		]);
-		expect(RELEASE_STEPS.at(-1)?.args).toEqual([
+		expect(RELEASE_STEPS.at(-2)?.args).toEqual([
 			'apps/extension-spectra/scripts/smoke-release.ts',
 			'--stage',
 			'--promote',
+		]);
+		expect(RELEASE_STEPS.at(-1)?.args).toEqual([
+			'scripts/release-artifact-provenance.ts',
+			'spectra',
 		]);
 
 		const packageJson = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8'));
@@ -940,6 +952,21 @@ describe('release gate orchestration', () => {
 			'--cwd',
 			'apps/extension-spectra',
 			'test:unit',
+		]);
+		expect(RELEASE_STEPS.find((step) => step.label === 'production build')?.args).toEqual([
+			'run',
+			'--cwd',
+			'apps/extension-spectra',
+			'build:analyze',
+		]);
+		expect(RELEASE_STEPS.find((step) => step.label === 'retained dependency capture')?.args).toEqual([
+			'scripts/capture-retained-dependencies.ts',
+			'spectra',
+			'--keep-analysis',
+		]);
+		expect(RELEASE_STEPS.find((step) => step.label === 'whole-artifact provenance capture')?.args).toEqual([
+			'scripts/artifact-provenance.ts',
+			'spectra',
 		]);
 		expect(RELEASE_STEPS.find((step) => step.label === 'production Chrome integration')?.args).toEqual([
 			'run',

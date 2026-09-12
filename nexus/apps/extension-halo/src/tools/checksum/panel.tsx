@@ -7,25 +7,32 @@ import type { HashAlgorithm } from './core';
 import { calculateChecksum, verifyChecksum, formatFileSize } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+
+const checksumAlgorithmCodec: ToolStateCodec<HashAlgorithm> = {
+	decode: (value) => value === 'MD5' || value === 'SHA-1' || value === 'SHA-256' || value === 'SHA-512'
+		? { kind: 'valid', value } : { kind: 'invalid', reason: 'Checksum algorithm is invalid.' },
+	encode: (value) => value,
+};
 
 
 export const ChecksumPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [file, setFile] = useState<File | null>(null);
-	const [algorithm, setAlgorithm] = useToolState<HashAlgorithm>('checksum-alg', 'SHA-256');
+	const [algorithm, setAlgorithm, , algorithmRecovery] = useToolState<HashAlgorithm>('checksum-alg', 'SHA-256', { codec: checksumAlgorithmCodec });
 	const [hash, setHash] = useState('');
 	const [expected, setExpected] = useToolState<string>('checksum-verify', '');
 
-	const [loading, setLoading] = useState(false);
+	const task = useOwnedAsyncTask();
 
 	// Handle file select
 	const handleFile = useCallback(async (f: File) => {
 		setFile(f);
-		setLoading(true);
-		const result = await calculateChecksum(f, algorithm);
-		setHash(result.hash);
-		setLoading(false);
-	}, [algorithm]);
+		const outcome = await task.run(() => calculateChecksum(f, algorithm));
+		if (outcome.kind === 'succeeded') setHash(outcome.value.hash);
+	}, [algorithm, task.run]);
 
 	// Handle drop
 	const handleDrop = useCallback((e: React.DragEvent) => {
@@ -38,12 +45,10 @@ export const ChecksumPanel: React.FC = () => {
 	const handleAlgorithmChange = useCallback(async (alg: HashAlgorithm) => {
 		setAlgorithm(alg);
 		if (file) {
-			setLoading(true);
-			const result = await calculateChecksum(file, alg);
-			setHash(result.hash);
-			setLoading(false);
+			const outcome = await task.run(() => calculateChecksum(file, alg));
+			if (outcome.kind === 'succeeded') setHash(outcome.value.hash);
 		}
-	}, [file, setAlgorithm]);
+	}, [file, setAlgorithm, task.run]);
 
 	// Copy hash
 	const handleCopy = useCallback(() => {
@@ -54,6 +59,7 @@ export const ChecksumPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={algorithmRecovery} emptyValue="SHA-256" exportName="halo-checksum-algorithm-damaged.json" />
 			{/* Dropzone */}
 			<label style={styles.dropzone} onDragOver={(e) => e.preventDefault()} onDrop={handleDrop}>
 				{file ? (
@@ -92,9 +98,10 @@ export const ChecksumPanel: React.FC = () => {
 			{/* Hash result */}
 			{hash && (
 				<button type="button" style={{ ...styles.hash, textAlign: 'left', cursor: 'pointer' }} onClick={handleCopy}>
-					{loading ? '⏳ Calculating...' : hash}
+					{task.phase === 'running' ? '⏳ Calculating...' : hash}
 				</button>
 			)}
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
 
 			{/* Verify */}
 			{hash && (

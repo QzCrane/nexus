@@ -8,14 +8,20 @@ import type { Base, BaseConvertResult } from './types';
 import { convertBase, isValidForBase, formatWithGrouping, BASE_LABELS } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const BASES: Base[] = [2, 8, 10, 16];
+const baseCodec: ToolStateCodec<Base> = {
+	decode(value) { return BASES.includes(value as Base) ? { kind: 'valid', value: value as Base } : { kind: 'invalid', reason: 'Number base is unsupported.' }; },
+	encode(value) { return value; },
+};
 
 export const NumberBasePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [input, setInput] = useToolState<string>('number-base', '');
-	const [fromBase, setFromBase] = useToolState<Base>('number-base-from', 10);
+	const [fromBase, setFromBase, , baseRecovery] = useToolState<Base>('number-base-from', 10, { codec: baseCodec });
 
 
 	// Compute result in real-time
@@ -33,6 +39,7 @@ export const NumberBasePanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={baseRecovery} emptyValue={10} exportName="halo-number-base-damaged.json" />
 			{/* Input */}
 			<Card variant="default" padding="sm">
 				<div style={styles.row}>

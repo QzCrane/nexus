@@ -4,17 +4,19 @@ import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { HeaderInfo } from './types';
-import { fetchHeaders, getCurrentTabUrl, CATEGORY_COLORS } from './core';
+import { fetchHeaders, getCurrentTabUrl, CATEGORY_COLORS, headerListCodec } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
 
 
 export const HeadersViewerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [url, setUrl] = useToolState<string>('headers-viewer-url', '');
-	const [headers, setHeaders] = useToolState<HeaderInfo[]>('headers-viewer-list', []);
-
-	const [loading, setLoading] = useState(false);
+	const [headers, setHeaders] = useToolState<HeaderInfo[]>('headers-viewer-list', [], { codec: headerListCodec });
+	const [error, setError] = useState<string | null>(null);
+	const task = useOwnedAsyncTask();
+	const loading = task.phase === 'running';
 
 	// Load current tab URL
 	useEffect(() => {
@@ -26,11 +28,16 @@ export const HeadersViewerPanel: React.FC = () => {
 	// Fetch headers
 	const handleFetch = useCallback(async () => {
 		if (!url) return;
-		setLoading(true);
-		const result = await fetchHeaders(url);
-		setHeaders(result);
-		setLoading(false);
-	}, [url, setHeaders]);
+		setError(null);
+		const controller = new AbortController();
+		const outcome = await task.run(() => ({
+			promise: fetchHeaders(url, { signal: controller.signal }),
+			dispose: () => controller.abort(),
+		}), 31_000);
+		if (outcome.kind === 'succeeded') setHeaders(outcome.value);
+		else if (outcome.kind === 'failed') setError(outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
+		else if (outcome.reason === 'deadline') setError('Header request deadline exceeded');
+	}, [url, setHeaders, task.run]);
 
 	// Copy all headers
 	const handleCopy = useCallback(() => {
@@ -40,6 +47,7 @@ export const HeadersViewerPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			{error && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{error}</div>}
 			{/* URL Input */}
 			<div style={styles.row}>
 				<input

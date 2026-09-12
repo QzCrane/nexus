@@ -11,6 +11,8 @@ import {
 	generateId,
 	generateTotp,
 	parseOtpAuthUri,
+	TOTP_LEGACY_STORAGE_KEY,
+	totpEntriesCodec,
 	totpCounter,
 	totpRemaining,
 } from './core';
@@ -18,8 +20,9 @@ import { styles } from './panel.styles';
 import {
 	createSerializedAsyncPoller,
 	useOwnedClipboardCopy,
-	useToolState,
 } from '../../kernel';
+import { useSensitiveVaultState } from '../../kernel/hooks/use-sensitive-vault';
+import { SensitiveVaultControls } from '../../components/sidepanel/SensitiveVaultControls';
 
 interface CachedTotpCode {
 	counter: number;
@@ -33,9 +36,11 @@ function cacheSignature(entry: TotpEntry): string {
 
 export const TotpPanel: React.FC = () => {
 	const { t } = useTranslation();
-	// Saved authenticator accounts must survive browser restarts. Import drafts
-	// remain ephemeral; changing saved-secret retention requires an explicit vault.
-	const [entries, setEntries] = useToolState<TotpEntry[]>('totp', []);
+	// Import drafts and edits stay in memory. Existing local accounts remain
+	// readable until the user explicitly saves to the vault and later deletes them.
+	const [entries, setEntries, vaultControls] = useSensitiveVaultState<TotpEntry[]>({
+		vaultId: 'totp-accounts', legacyKeys: [TOTP_LEGACY_STORAGE_KEY], initialValue: [], codec: totpEntriesCodec,
+	});
 	const [codes, setCodes] = useState<Record<string, TotpCode>>({});
 	const [codeErrors, setCodeErrors] = useState<Record<string, string>>({});
 	const [pollFailed, setPollFailed] = useState(false);
@@ -145,6 +150,7 @@ export const TotpPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<SensitiveVaultControls controls={vaultControls} exportName="halo-totp-legacy.json" />
 			<button type="button" style={styles.btn} onClick={() => setShowAdd(!showAdd)}>
 				{showAdd ? '✕' : '＋'} {showAdd ? t('totp.cancel') : t('totp.addAccount')}
 			</button>

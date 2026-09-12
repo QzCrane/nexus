@@ -3,10 +3,10 @@
 // scope: module
 
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import { captureVisible, downloadScreenshot, copyToClipboard } from './core';
+import { bindVisibleCaptureTarget, captureBoundVisible, downloadScreenshot, copyToClipboard, screenshotDelayCodec } from './core';
 import { useToolState } from '../../kernel';
 import { useToast } from '../../components/ToastProvider';
 
@@ -56,18 +56,31 @@ export const ScreenshotPanel: React.FC = () => {
     const { showToast } = useToast();
     const [image, setImage] = useState<string | null>(null);
     const [loading, setLoading] = useState(false);
-    const [delay, setDelay] = useToolState<number>('screenshot-delay', 0);
+    const [delay, setDelay] = useToolState<number>('screenshot-delay', 0, { codec: screenshotDelayCodec });
     const [countdown, setCountdown] = useState<number | null>(null);
+    const operationRef = useRef(0);
+    const mountedRef = useRef(true);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        return () => {
+            mountedRef.current = false;
+            operationRef.current++;
+        };
+    }, []);
 
     const handleCapture = useCallback(async () => {
         if (loading) return;
+        const operation = ++operationRef.current;
         setLoading(true);
         setImage(null);
 
         try {
+            const target = await bindVisibleCaptureTarget();
             if (delay > 0) {
                 // Show countdown
                 for (let i = delay; i > 0; i--) {
+                    if (!mountedRef.current || operationRef.current !== operation) return;
                     setCountdown(i);
                     await new Promise(r => setTimeout(r, 1000));
                 }
@@ -75,15 +88,21 @@ export const ScreenshotPanel: React.FC = () => {
             }
             // Small delay to ensure UI is hidden/settled
             await new Promise(r => setTimeout(r, 100));
-            const dataUrl = await captureVisible();
+            if (!mountedRef.current || operationRef.current !== operation) return;
+            const dataUrl = await captureBoundVisible(target);
+            if (!mountedRef.current || operationRef.current !== operation) return;
             setImage(dataUrl);
             showToast(t('screenshotPanel.captured') || 'Captured!');
         } catch (err) {
             console.error('Capture failed', err);
-            showToast(t('screenshotPanel.captureFailed'));
+            if (mountedRef.current && operationRef.current === operation) {
+                showToast(err instanceof Error ? err.message : t('screenshotPanel.captureFailed'));
+            }
         } finally {
-            setLoading(false);
-            setCountdown(null);
+            if (mountedRef.current && operationRef.current === operation) {
+                setLoading(false);
+                setCountdown(null);
+            }
         }
     }, [delay, loading, showToast, t]);
 

@@ -1,18 +1,40 @@
 // goal: Sticky Notes panel UI - create and manage notes
 
 import type React from 'react';
-import { useCallback } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { Note } from './types';
 import { NOTE_COLORS } from './types';
-import { createNote, getColorConfig } from './core';
+import { createNote, getColorConfig, stickyNotesCodec, STICKY_NOTES_STORAGE_KEY, LEGACY_STICKY_NOTES_STORAGE_KEY, STICKY_NOTES_QUOTA_POLICY, stickyNoteItemBytes } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 export const StickyNotesPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [notes, setNotes] = useToolState<Note[]>('sticky-notes', []);
+	const [notes, setNotes, , recovery] = useToolState<Note[]>('sticky-notes', [], {
+		storageKey: STICKY_NOTES_STORAGE_KEY,
+		codec: stickyNotesCodec,
+		quota: STICKY_NOTES_QUOTA_POLICY,
+		quotaItemBytes: stickyNoteItemBytes,
+	});
+	const [legacyNotes, setLegacyNotes] = useState<{ raw: unknown; value: Note[] | null } | null>(null);
+	useEffect(() => {
+		let active = true;
+		void chrome.storage.local.get(LEGACY_STICKY_NOTES_STORAGE_KEY).then((stored) => {
+			if (!active || stored[LEGACY_STICKY_NOTES_STORAGE_KEY] === undefined) return;
+			const raw = stored[LEGACY_STICKY_NOTES_STORAGE_KEY];
+			const decoded = stickyNotesCodec.decode(raw);
+			setLegacyNotes({ raw, value: decoded.kind === 'valid' ? decoded.value : null });
+		});
+		return () => { active = false; };
+	}, []);
+	const exportLegacy = useCallback(() => {
+		if (!legacyNotes) return;
+		const url = URL.createObjectURL(new Blob([JSON.stringify(legacyNotes.raw, null, 2)], { type: 'application/json' }));
+		const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'halo-sticky-notes-legacy.json'; anchor.click(); URL.revokeObjectURL(url);
+	}, [legacyNotes]);
 
 
 	// Add new note
@@ -42,6 +64,12 @@ export const StickyNotesPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={recovery} emptyValue={[]} exportName="halo-sticky-notes-recovery.json" />
+			{legacyNotes && <div role="status" style={{ padding: 8, border: '1px solid var(--halo-border)', borderRadius: 6 }}>
+				An older sticky-note copy was found and left unchanged.
+				<button type="button" onClick={exportLegacy}>Export older copy</button>
+				{legacyNotes.value && <button type="button" onClick={() => recovery.invalid ? recovery.replaceInvalid(legacyNotes.value ?? []) : setNotes(legacyNotes.value ?? [])}>Import copy and retain original</button>}
+			</div>}
 			{/* Header */}
 			<div style={styles.header}>
 				<span style={styles.title}>📝 {t('stickyNotes.title')}</span>

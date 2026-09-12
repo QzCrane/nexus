@@ -34,9 +34,11 @@ Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge
 | `packages/features/audio-engine/src/AudioGraphRouter.ts` | Offscreen Capture 使用的稀疏图、参数 ACK 与订阅式分析器 |
 | `src/background/control-coordinator.ts` | 生命周期/意图串行、代际 Revision、持久化、发布、补偿与 Capture 准入门禁 |
 | `src/background/control-coordinator-values.ts` | 无 Chrome/storage 副作用的 target scope、mutation、ACK、reset 与 session projection 纯值能力 |
+| `src/background/control-coordinator-ack.ts` | 无副作用的完整 intent/operation ACK 身份准入；不能提交、持久化或发布 |
 | `src/background/settings-value-normalization.ts` | Global/Hotkey/Site/Preset/Audio 的纯 canonical value 与旧数据修复 |
 | `src/background/settings-repository.ts` | revision/CAS、容量、迁移元数据与 durable storage 事务 |
 | `src/background/runtime-loader.ts` | 文档级重级 Runtime Lease 与 READY 握手 |
+| `src/background/media-tab-discovery.ts` | 文档代际化、有界且公平轮转的媒体发现与被动 coverage 诊断 |
 | `src/background/main-runtime-manager.ts` | 幂等注入 Fullscreen V1 与 Page-Media V2 bridges |
 | `src/content/core/media-registry.ts` | `mediaId`、`sourceRevision`、缓存可见性与 Sticky Active Target 追踪 |
 | `src/content/logic/native-media-async.ts` | 唯一物理 DOM 标准媒体异步写/事件+getter ACK、source cancellation 与 frame cadence cache |
@@ -48,6 +50,11 @@ Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge
 | `src/popup/control-snapshot-order.ts` | generation-first identity admission 与 same-generation revision 单调性 |
 | `src/popup/bounded-card-bootstrap.ts` | cap-4 all-settled card worker；失败隔离后统一 badge/empty reconciliation |
 | `src/remote/operation-queue.ts` | Remote 每 key 有界串行队列；不拥有 session/auth/protocol 状态 |
+
+结构拆分不得制造第二个 effect owner。协调者仍是 commit/persist/publish 唯一入口；
+ACK 模块只做值验证。原生字段的相等判定由 `native-media-async.ts` 统一提供，
+Executor 不再维护第二份数值/结构比较实现。产物调整必须在同一功能和探测负载下
+比较真实 metafile closure；现有硬预算不可上调，零字节或把内容移到另一统计桶不算优化。
 
 ### §17.1 Implementation status ledger (All landed)
 

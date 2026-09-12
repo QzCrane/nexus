@@ -1,90 +1,49 @@
-// goal: JSONPath core logic - query JSON with path expressions
+// goal: RFC 9535 JSONPath evaluation with explicit admission bounds
 
-// Simple JSONPath implementation
-export function queryJsonPath(data: unknown, path: string): unknown[] {
-	const results: unknown[] = [];
+import { evaluate, JSONPathError, JSONPathParseError } from '@swaggerexpert/jsonpath';
+import type { JsonPathResponse } from './worker-contract';
 
-	if (!path.startsWith('$')) return results;
+export const JSON_PATH_LIMITS = Object.freeze({ inputBytes: 1_048_576, queryCharacters: 4_096, nodes: 100_000, depth: 128, results: 10_000 });
 
-	const tokens = tokenizePath(path.slice(1));
-	traverse(data, tokens, 0, results);
+class JsonPathBudgetError extends Error {}
 
-	return results;
-}
-
-// Tokenize path
-function tokenizePath(path: string): string[] {
-	const tokens: string[] = [];
-	let current = '';
-	let inBracket = false;
-
-	for (const char of path) {
-		if (char === '[') {
-			if (current) tokens.push(current);
-			current = '';
-			inBracket = true;
-		} else if (char === ']') {
-			if (current) tokens.push(current);
-			current = '';
-			inBracket = false;
-		} else if (char === '.' && !inBracket) {
-			if (current) tokens.push(current);
-			current = '';
-		} else {
-			current += char;
-		}
-	}
-
-	if (current) tokens.push(current);
-	return tokens.filter((t) => t);
-}
-
-// Traverse JSON
-function traverse(data: unknown, tokens: string[], index: number, results: unknown[]): void {
-	if (index >= tokens.length) {
-		results.push(data);
-		return;
-	}
-
-	const token = tokens[index];
-	if (token === undefined) return;
-
-	if (token === '*') {
-		// Wildcard
-		if (Array.isArray(data)) {
-			data.forEach((item) => {
-				traverse(item, tokens, index + 1, results);
-			});
-		} else if (typeof data === 'object' && data !== null) {
-			Object.values(data).forEach((value) => {
-				traverse(value, tokens, index + 1, results);
-			});
-		}
-	} else if (/^\d+$/.test(token)) {
-		// Array index
-		if (Array.isArray(data)) {
-			const i = parseInt(token, 10);
-			if (i < data.length) traverse(data[i], tokens, index + 1, results);
-		}
-	} else if (token.startsWith("'") || token.startsWith('"')) {
-		// Quoted key
-		const key = token.slice(1, -1);
-		if (typeof data === 'object' && data !== null && key in data) {
-			traverse((data as Record<string, unknown>)[key], tokens, index + 1, results);
-		}
-	} else {
-		// Property
-		if (typeof data === 'object' && data !== null && token in data) {
-			traverse((data as Record<string, unknown>)[token], tokens, index + 1, results);
+function assertDocumentBounds(value: unknown): void {
+	const stack: Array<{ depth: number; value: unknown }> = [{ depth: 0, value }];
+	let nodes = 0;
+	while (stack.length > 0) {
+		const current = stack.pop();
+		if (!current) break;
+		nodes += 1;
+		if (nodes > JSON_PATH_LIMITS.nodes) throw new JsonPathBudgetError('JSON document exceeds the node limit');
+		if (current.depth > JSON_PATH_LIMITS.depth) throw new JsonPathBudgetError('JSON document exceeds the nesting limit');
+		if (current.value && typeof current.value === 'object') {
+			for (const child of Object.values(current.value)) stack.push({ depth: current.depth + 1, value: child });
 		}
 	}
 }
 
-// Example paths
-export const EXAMPLE_PATHS = [
-	'$.store.book[*].author',
-	'$[0].name',
-	'$.users[*].email',
-	'$.data.items[0]',
-	'$.*',
-];
+export function evaluateJsonPath(json: string, expression: string): JsonPathResponse {
+	if (new TextEncoder().encode(json).byteLength > JSON_PATH_LIMITS.inputBytes) return { ok: false, kind: 'budget', message: 'JSON input exceeds the 1 MiB limit' };
+	if (expression.length > JSON_PATH_LIMITS.queryCharacters) return { ok: false, kind: 'budget', message: 'JSONPath expression exceeds the 4096 character limit' };
+	let data: unknown;
+	try {
+		data = JSON.parse(json);
+	} catch {
+		return { ok: false, kind: 'invalid-json', message: 'Invalid JSON' };
+	}
+	try {
+		assertDocumentBounds(data);
+		const normalizedPaths: string[] = [];
+		const results = evaluate(data, expression, { callback: (_value, normalizedPath) => {
+			if (normalizedPaths.length >= JSON_PATH_LIMITS.results) throw new JsonPathBudgetError('JSONPath result exceeds the 10000 match limit');
+			normalizedPaths.push(normalizedPath);
+		} });
+		return { ok: true, results, normalizedPaths };
+	} catch (error) {
+		if (error instanceof JsonPathBudgetError) return { ok: false, kind: 'budget', message: error.message };
+		if (error instanceof JSONPathParseError || error instanceof JSONPathError) return { ok: false, kind: 'invalid-query', message: error.message };
+		throw error;
+	}
+}
+
+export const EXAMPLE_PATHS = ['$.store.book[*].author', '$..author', '$.users[?@.active == true].email', '$[\'quoted.key\']', '$[-1]'];

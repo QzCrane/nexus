@@ -5,11 +5,11 @@
 export const BACKGROUND_ACTIVE_ONLY_MAP: Readonly<Record<string, boolean>> = Object.freeze({
     "clipboard": false,
     "hover-zoom": false,
-    "pomodoro": true,
+    "pomodoro": false,
     "smooth-scroll": true,
     "tab-group": true,
     "text-to-speech": true,
-    "timer": true,
+    "timer": false,
     "timestamp": true,
     "totp": true,
     "bilibili-enhancer": false,

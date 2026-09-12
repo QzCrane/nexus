@@ -1,12 +1,16 @@
 // goal: EXIF Reader panel UI - display image metadata
 
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import type { ExifData } from './types';
-import { parseExif, readFileAsArrayBuffer, formatFileSize } from './core';
+import { formatFileSize } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { ObjectUrlSlot } from '../../kernel/utils/object-url-lease';
+import { extensionWorkerFactory, oneShotWorker } from '../../kernel/utils/one-shot-worker';
+import { IMAGE_TASK_DEADLINE_MS, IMAGE_WORKER_PATH, type ImageWorkerRequest, type ImageWorkerResponse } from '../image-tools/worker-contract';
 
 
 export const ExifReaderPanel: React.FC = () => {
@@ -17,19 +21,29 @@ export const ExifReaderPanel: React.FC = () => {
 
 	const [fileSize, setFileSize] = useState(0);
 	const [isDragging, setIsDragging] = useState(false);
+	const [error, setError] = useState<string | null>(null);
+	const previewSlot = useRef<ObjectUrlSlot | null>(null);
+	if (!previewSlot.current) previewSlot.current = new ObjectUrlSlot();
+	const task = useOwnedAsyncTask();
+	const workerFactory = useMemo(() => extensionWorkerFactory(IMAGE_WORKER_PATH), []);
+	useEffect(() => () => previewSlot.current?.clear(), []);
 
 	// Process file
 	const processFile = useCallback(async (file: File) => {
-		if (!file.type.startsWith('image/')) return;
-
+		setError(null);
+		const request: ImageWorkerRequest = { type: 'exif', file };
+		const outcome = await task.run(
+			() => oneShotWorker<ImageWorkerRequest, ImageWorkerResponse>(workerFactory, request),
+			IMAGE_TASK_DEADLINE_MS,
+		);
+		if (outcome.kind !== 'succeeded') return;
+		if (outcome.value.ok === false) { setError(outcome.value.error); return; }
+		if (outcome.value.type !== 'exif') return;
 		setFileName(file.name);
 		setFileSize(file.size);
-		setPreview(URL.createObjectURL(file));
-
-		const buffer = await readFileAsArrayBuffer(file);
-		const data = parseExif(buffer);
-		setExif(data);
-	}, [setFileName]);
+		setPreview(previewSlot.current?.replace(file) ?? '');
+		setExif(outcome.value.data);
+	}, [setFileName, task.run, workerFactory]);
 
 	// Handle drop
 	const handleDrop = useCallback((e: React.DragEvent) => {
@@ -71,6 +85,7 @@ export const ExifReaderPanel: React.FC = () => {
 				)}
 				<input type="file" accept="image/*" style={{ display: 'none' }} onChange={handleSelect} />
 			</label>
+			{(error !== null || task.error !== null) && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{error ?? String(task.error)}</div>}
 
 			{/* File Name */}
 			{fileName && <div style={{ fontSize: '12px', color: 'var(--halo-text-muted)' }}>{fileName}</div>}

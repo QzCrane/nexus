@@ -1,12 +1,13 @@
 // goal: DOM Selector panel UI
 
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import { startSelection, stopSelection } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 import { isDomSelectedMessage } from './types';
+import { matchesFrameToolSession, type FrameToolSession } from '../../content/frame-tool-messages';
 
 
 export const DomSelectorPanel: React.FC = () => {
@@ -14,24 +15,31 @@ export const DomSelectorPanel: React.FC = () => {
     const [selecting, setSelecting] = useState(false);
     const [css, setCss] = useToolState<string>('dom-selector-css', '');
     const [xpath, setXpath] = useToolState<string>('dom-selector-xpath', '');
+    const sessionRef = useRef<FrameToolSession | null>(null);
 
 
     const toggleSelection = useCallback(async () => {
         if (selecting) {
-            await stopSelection();
+            const session = sessionRef.current;
+            sessionRef.current = null;
+            if (session) await stopSelection(session);
             setSelecting(false);
         } else {
-            await startSelection();
+            sessionRef.current = await startSelection();
             setSelecting(true);
         }
     }, [selecting]);
 
     // Listen for selection event
     useEffect(() => {
-        const listener = (message: unknown): undefined => {
-            if (isDomSelectedMessage(message)) {
+        const listener = (message: unknown, sender: chrome.runtime.MessageSender): undefined => {
+            const session = sessionRef.current;
+            if (isDomSelectedMessage(message)
+				&& matchesFrameToolSession(session, message.operationId, sender.tab?.id)) {
                 setCss(message.payload.css);
                 setXpath(message.payload.xpath);
+                sessionRef.current = null;
+                void stopSelection(session).catch(() => undefined);
                 setSelecting(false); // Auto stop
             }
             return undefined;
@@ -42,7 +50,11 @@ export const DomSelectorPanel: React.FC = () => {
 
     // Cleanup on unmount
     useEffect(() => {
-        return () => { stopSelection(); };
+		return () => {
+			const session = sessionRef.current;
+			sessionRef.current = null;
+			if (session) void stopSelection(session).catch(() => undefined);
+		};
     }, []);
 
     return (

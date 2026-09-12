@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { conditionalLedgerWrite, ledgerRevisionKey, readLedgerEntry, scheduleStorageSet } from '../../../packages/nexus-kernel/src/storage';
+import { conditionalLedgerRemove, conditionalLedgerWrite, ledgerRevisionKey, readLedgerEntry, scheduleStorageSet } from '../../../packages/nexus-kernel/src/storage';
 import { saveToClipboardHistory, getClipboardHistory, togglePin, deleteItem } from '../src/tools/clipboard/core';
 import { MAX_HISTORY, MAX_HISTORY_BYTES, parseClipboardHistory, STORAGE_KEY, clipboardHistoryBytes, type ClipboardItem } from '../src/tools/clipboard/types';
 import { parseSessions, restoreSession, saveSession, getSessions, deleteSession, admitSessions, SESSIONS_STORAGE_KEY, type Session } from '../src/tools/session-manager/core';
@@ -33,6 +33,9 @@ function installStorage(initial: Record<string, unknown> = {}) {
 					},
 					set: async (data: Record<string, unknown>) => {
 						for (const [key, value] of Object.entries(data)) store[key] = structuredClone(value);
+					},
+					remove: async (keys: string | string[]) => {
+						for (const key of typeof keys === 'string' ? [keys] : keys) delete store[key];
 					},
 				},
 			},
@@ -194,6 +197,14 @@ describe('storage ledger conditional writes', () => {
 		store[ledgerRevisionKey('present')] = 4;
 		expect(await readLedgerEntry('present')).toEqual({ value: 'v', revision: 4 });
 		expect(await readLedgerEntry('absent')).toEqual({ value: undefined, revision: 0 });
+	});
+
+	test('conditional removal preserves tombstone absence and advances its revision', async () => {
+		const { store } = installStorage({ module: false, [ledgerRevisionKey('module')]: 4 });
+		const outcome = await conditionalLedgerRemove('module', { baseRevision: 4 });
+		expect(outcome).toEqual({ kind: 'committed', revision: 5, value: undefined });
+		expect(store.module).toBeUndefined();
+		expect(store[ledgerRevisionKey('module')]).toBe(5);
 	});
 });
 
@@ -379,9 +390,23 @@ describe('archive metadata and blob consistency', () => {
 				pageCapture: { saveAsMHTML: async () => new Blob(['mhtml-bytes'], { type: 'multipart/related' }) },
 			},
 		});
-		const entry = await captureCurrentPage();
-		expect(entry).toBeNull();
+		await expect(captureCurrentPage()).rejects.toThrow('not committed');
 		expect(blobs.size).toBe(0);
+	});
+
+	test('a failed capture rollback reports both failures and preserves the orphan for reconciliation', async () => {
+		const blobs = new Map<string, unknown>();
+		installFakeArchiveDB(blobs, { abortDeletes: true });
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				storage: { local: { get: async () => ({}), set: async () => { throw new Error('metadata rejected'); } } },
+				tabs: { query: async () => [{ id: 1, url: 'https://page', title: 'Page' }] },
+				pageCapture: { saveAsMHTML: async () => new Blob(['mhtml-bytes'], { type: 'multipart/related' }) },
+			},
+		});
+		await expect(captureCurrentPage()).rejects.toThrow('blob rollback failed');
+		expect(blobs.size).toBe(1);
 	});
 
 	test('a blob transaction that aborts after request success rejects', async () => {
@@ -422,7 +447,7 @@ describe('archive metadata and blob consistency', () => {
  * Minimal IndexedDB double: requests succeed in a microtask and the owning
  * transaction completes afterwards, matching the real success ordering.
  */
-function installFakeArchiveDB(blobs: Map<string, unknown>, options: { abortPuts?: boolean } = {}): void {
+function installFakeArchiveDB(blobs: Map<string, unknown>, options: { abortPuts?: boolean; abortDeletes?: boolean } = {}): void {
 	const db = {
 		addEventListener: () => undefined,
 		close: () => undefined,
@@ -430,9 +455,9 @@ function installFakeArchiveDB(blobs: Map<string, unknown>, options: { abortPuts?
 			// The tx object itself carries the completion callbacks that
 			// transactionDone() assigns after the requests are issued.
 			const tx: Record<string, unknown> = {};
-			const complete = (after: () => void) => queueMicrotask(() => {
+			const complete = (after: () => void, abort = false) => queueMicrotask(() => {
 				after();
-				if (options.abortPuts) {
+				if (abort) {
 					tx.error = new Error('forced abort');
 					(tx.onabort as (() => void) | null)?.();
 					return;
@@ -446,15 +471,15 @@ function installFakeArchiveDB(blobs: Map<string, unknown>, options: { abortPuts?
 						complete(() => {
 							if (!options.abortPuts) blobs.set(record.id, record);
 							(request.onsuccess as (() => void) | null)?.();
-						});
+						}, options.abortPuts);
 						return request;
 					},
 					delete: (id: string) => {
 						const request: Record<string, unknown> = {};
 						complete(() => {
-							if (!options.abortPuts) blobs.delete(id);
+							if (!options.abortDeletes) blobs.delete(id);
 							(request.onsuccess as (() => void) | null)?.();
-						});
+						}, options.abortDeletes);
 						return request;
 					},
 					get: (id: string) => {

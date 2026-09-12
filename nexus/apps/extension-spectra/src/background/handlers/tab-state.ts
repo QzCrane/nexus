@@ -3,6 +3,7 @@
 import {
 	getOrCreateTabAudioState,
 	tabAudioStates,
+	tabDocumentGeneration,
 	TAB_VISIBLE_THRESHOLD_MS,
 } from '../state';
 import { injectContentScriptOnDemand } from '../upgrade-manager';
@@ -10,16 +11,35 @@ import { swLog } from '../../shared/logger';
 import {
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
-import { createMediaTabDiscovery } from '../media-tab-discovery';
+import { createMediaTabDiscovery, type MediaProbeResult } from '../media-tab-discovery';
 import { currentTopDocumentId } from '../../shared/top-document';
-import { isBackgroundRequestEnvelope, isBackgroundResponse, rpcFailure, rpcSuccess } from '../background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
+
+export type MediaReportOrdering =
+	| { status: 'ordered'; revision: number }
+	| { status: 'legacy-unversioned' };
+
+export function classifyMediaReport(
+	payload: { reportRevision?: number },
+): MediaReportOrdering {
+	return payload.reportRevision === undefined
+		? { status: 'legacy-unversioned' }
+		: { status: 'ordered', revision: payload.reportRevision };
+}
 
 export function recordMediaState(
 	tabId: number,
-	payload: { hasMediaElement: boolean; userInteracted: boolean },
+	documentId: string,
+	payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number },
 ): { reported: true } {
-	const state = getOrCreateTabAudioState(tabId);
+	// v2 legacy producers have no ordering token. Accept the additive wire shape,
+	// but never let an unordered report create or replace a current media fact.
+	const ordering = classifyMediaReport(payload);
+	if (ordering.status === 'legacy-unversioned') return { reported: true };
+	const state = getOrCreateTabAudioState(tabId, documentId);
+	if (ordering.revision <= state.reportRevision) return { reported: true };
 	state.hasMediaElement = payload.hasMediaElement;
+	state.reportRevision = ordering.revision;
 
 	swLog.debug(`[SPECTRA] Tab ${tabId} reported media: ${payload.hasMediaElement}`);
 	return { reported: true };
@@ -29,20 +49,43 @@ function isRecent(timestamp: number, now: number): boolean {
 	return timestamp > 0 && now >= timestamp && now - timestamp < TAB_VISIBLE_THRESHOLD_MS;
 }
 
-async function hasNativeMedia(tabId: number): Promise<boolean> {
-	const documentId = await currentTopDocumentId(tabId);
-	if (!documentId) return false;
-	// Send directly: the normal UI client may acquire the heavy runtime for an
-	// actual.read fallback, which is not allowed merely to enumerate media.
-	const response: unknown = await chrome.tabs.sendMessage(tabId, {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: crypto.randomUUID(),
-		type: 'spectra.control.actual.read',
-		payload: { fields: ['playing'], target: null },
-		tabId,
-	}, { documentId });
-	if (!(isBackgroundResponse('spectra.control.actual.read', response) && response.ok)) return false;
-	return await currentTopDocumentId(tabId) === documentId;
+async function hasNativeMedia(tabId: number, generation: number): Promise<MediaProbeResult> {
+	type FrameResult = { frameId: number; documentId?: string; url?: string };
+	let before: FrameResult[];
+	try { before = await chrome.webNavigation.getAllFrames({ tabId }) as unknown as FrameResult[] ?? []; }
+	catch { return { outcome: 'unknown', documentId: null }; }
+	const top = before.find((frame) => frame.frameId === 0);
+	if (!top?.documentId || generation !== tabDocumentGeneration(tabId)) {
+		return { outcome: 'stale', documentId: top?.documentId ?? null };
+	}
+	let execution: chrome.scripting.InjectionResult[];
+	try {
+		execution = await chrome.scripting.executeScript({
+			target: { tabId, allFrames: true },
+			func: () => document.querySelector('video,audio') !== null,
+		});
+	} catch {
+		return { outcome: 'denied', documentId: top.documentId };
+	}
+	let after: FrameResult[];
+	try { after = await chrome.webNavigation.getAllFrames({ tabId }) as unknown as FrameResult[] ?? []; }
+	catch { return { outcome: 'unknown', documentId: top.documentId }; }
+	if (generation !== tabDocumentGeneration(tabId)) return { outcome: 'stale', documentId: top.documentId };
+	const identity = (frame: Pick<FrameResult, 'frameId' | 'documentId'>) => (
+		`${frame.frameId}:${frame.documentId ?? ''}`
+	);
+	const beforeIds = new Set(before.map(identity));
+	const afterIds = new Set(after.map(identity));
+	if (beforeIds.size !== afterIds.size || [...beforeIds].some((value) => !afterIds.has(value))) {
+		return { outcome: 'stale', documentId: top.documentId };
+	}
+	const observed = new Set(execution
+		.filter((result) => typeof result.documentId === 'string')
+		.map((result) => `${result.frameId}:${result.documentId ?? ''}`));
+	if (execution.some((result) => result.result === true)) return { outcome: 'found', documentId: top.documentId };
+	if ([...beforeIds].some((value) => !observed.has(value))) return { outcome: 'denied', documentId: top.documentId };
+	if (execution.every((result) => result.result === false)) return { outcome: 'no-media', documentId: top.documentId };
+	return { outcome: 'unknown', documentId: top.documentId };
 }
 
 function seedVisibleMedia(allTabs: readonly chrome.tabs.Tab[], now: number): Set<number> {
@@ -67,6 +110,7 @@ function seedVisibleMedia(allTabs: readonly chrome.tabs.Tab[], now: number): Set
 export const resolveVisibleTabs = createMediaTabDiscovery({
 	queryTabs: () => chrome.tabs.query({}),
 	seed: seedVisibleMedia,
+	documentGeneration: tabDocumentGeneration,
 	probe: hasNativeMedia,
 });
 
@@ -93,7 +137,11 @@ function registerTabStateV2Listener(): void {
 				if (!tabId || (message.tabId !== undefined && message.tabId !== tabId)) {
 					throw new Error('Media report requires its content-script tab');
 				}
-				return recordMediaState(tabId, message.payload);
+				if (sender.frameId !== 0 || !sender.documentId
+					|| await currentTopDocumentId(tabId) !== sender.documentId) {
+					throw new Error('Media report belongs to a stale or non-top-level document');
+				}
+				return recordMediaState(tabId, sender.documentId, message.payload);
 			}
 			if (message.type === 'spectra.content.inject') {
 				return { injected: await injectContentScriptOnDemand(message.payload.tabId) };

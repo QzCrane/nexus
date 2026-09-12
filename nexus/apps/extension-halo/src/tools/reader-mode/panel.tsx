@@ -1,39 +1,42 @@
 // goal: Reader Mode panel UI - extract and display readable content
 
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ReaderConfig, ArticleContent } from './types';
-import { extractArticle, DEFAULT_CONFIG, THEMES, FONTS, sanitizeHtml } from './core';
+import { articleContentCodec, extractArticle, DEFAULT_CONFIG, FONTS, readerConfigCodec, sanitizeHtml, THEMES } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 export const ReaderModePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [config, setConfig] = useToolState<ReaderConfig>('reader-mode-config', DEFAULT_CONFIG);
-	const [article, setArticle] = useToolState<ArticleContent | null>('reader-mode-article', null);
+	const [config, setConfig, , configRecovery] = useToolState<ReaderConfig>('reader-mode-config', DEFAULT_CONFIG, { codec: readerConfigCodec });
+	const [article, setArticle, , articleRecovery] = useToolState<ArticleContent | null>('reader-mode-article', null, { codec: articleContentCodec });
 
-	const [loading, setLoading] = useState(false);
+	const task = useOwnedAsyncTask();
 
 	// Extract article
 	const handleExtract = useCallback(async () => {
-		setLoading(true);
-		const content = await extractArticle();
-		setArticle(content);
-		setLoading(false);
-	}, [setArticle]);
+		const outcome = await task.run(() => extractArticle());
+		if (outcome.kind === 'succeeded') setArticle(outcome.value);
+	}, [setArticle, task.run]);
 
 	// Get theme colors
 	const theme = THEMES[config.theme];
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={configRecovery} emptyValue={DEFAULT_CONFIG} exportName="halo-reader-config-damaged.json" />
+			<StorageRecoveryActions recovery={articleRecovery} emptyValue={null} exportName="halo-reader-article-damaged.json" />
 			{/* Extract Button */}
-			<button type="button" style={styles.btn} onClick={handleExtract} disabled={loading}>
-				{loading ? '⏳' : '📖'} {t('readerMode.extract')}
+			<button type="button" style={styles.btn} onClick={handleExtract} disabled={task.phase === 'running'}>
+				{task.phase === 'running' ? '⏳' : '📖'} {t('readerMode.extract')}
 			</button>
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
 
 			{/* Config */}
 			<Card variant="default" padding="sm">
@@ -108,7 +111,7 @@ export const ReaderModePanel: React.FC = () => {
 				</div>
 			)}
 
-			{!article && !loading && (
+			{!article && task.phase !== 'running' && (
 				<div style={styles.empty}>
 					📝 {t('readerMode.clickToExtract')}
 				</div>

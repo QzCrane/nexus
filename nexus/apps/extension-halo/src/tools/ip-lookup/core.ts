@@ -1,17 +1,32 @@
 // goal: IP Lookup core logic - query IP information
 
 import type { IpInfo } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+const IP_INFO_FIELDS = ['ip', 'hostname', 'city', 'region', 'country', 'loc', 'org', 'timezone'] as const;
+export const ipInfoCodec: ToolStateCodec<IpInfo | null> = {
+	decode(value) {
+		if (value === null) return { kind: 'valid', value: null };
+		if (typeof value !== 'object' || Array.isArray(value)) return { kind: 'invalid', reason: 'Stored IP information is not a record.' };
+		const row = value as Record<string, unknown>;
+		if (typeof row.ip !== 'string' || row.ip.length > 128 || IP_INFO_FIELDS.some((key) => row[key] !== undefined && (typeof row[key] !== 'string' || (row[key] as string).length > 512))) {
+			return { kind: 'invalid', reason: 'Stored IP information has invalid or oversized fields.' };
+		}
+		return { kind: 'valid', value: Object.fromEntries(IP_INFO_FIELDS.flatMap((key) => row[key] === undefined ? [] : [[key, row[key]]])) as unknown as IpInfo };
+	},
+	encode: (value) => value,
+};
 
 // Get current IP info (using free API)
-export async function getMyIpInfo(): Promise<IpInfo | null> {
+export async function getMyIpInfo(signal?: AbortSignal): Promise<IpInfo | null> {
 	try {
-		const response = await fetch('https://ipinfo.io/json');
+		const response = await fetch('https://ipinfo.io/json', { signal });
 		if (!response.ok) throw new Error('API error');
 		return await response.json();
 	} catch {
 		// Fallback to IP only
 		try {
-			const r = await fetch('https://api.ipify.org?format=json');
+			const r = await fetch('https://api.ipify.org?format=json', { signal });
 			const data = await r.json();
 			return { ip: data.ip };
 		} catch {
@@ -21,13 +36,13 @@ export async function getMyIpInfo(): Promise<IpInfo | null> {
 }
 
 // Lookup specific IP
-export async function lookupIp(ip: string): Promise<IpInfo | null> {
+export async function lookupIp(ip: string, signal?: AbortSignal): Promise<IpInfo | null> {
 	// rule: validate input before constructing URL — without this, a malformed `ip`
 	// (e.g. `../some/path`) could be path-injected into the ipinfo.io URL.
 	if (!isValidIp(ip)) return null;
 	const safeIp = encodeURIComponent(ip);
 	try {
-		const response = await fetch(`https://ipinfo.io/${safeIp}/json`);
+		const response = await fetch(`https://ipinfo.io/${safeIp}/json`, { signal });
 		if (!response.ok) throw new Error('API error');
 		return await response.json();
 	} catch {

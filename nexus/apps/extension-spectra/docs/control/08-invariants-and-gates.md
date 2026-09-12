@@ -29,7 +29,7 @@ last_reviewed: 2026-08-28
 - `SCTRL-015`: MAIN cannot bypass user activation, CORS, DRM or inaccessible media.
 - `SCTRL-016`: product UX exposes outcomes, not implementation modes; records exact 28 persistent snapshot fields plus 23 momentary operations inventory.
 - `SCTRL-017`: a page-native observation is admitted by the pure coordinator-value owner, commits actual state once, and never echoes a second write.
-- `SCTRL-018`: top-level-only scope is explicit; bootstrap observation order is bounded and yields to heavy runtime.
+- `SCTRL-018`: control target scope is top-level-only; passive inventory separately performs a bounded document-fenced frame census, preserves unknown coverage, never loads the heavy runtime, and maps legacy v2 responses without coverage to unknown rather than complete.
 - `SCTRL-019`: one visualizer IPC owns the next schedule.
 - `SCTRL-020`: Popup fields project only `ControlSnapshot`; audio session data owns lifecycle only.
 - `SCTRL-021`: visualizer ownership is per subscriber and exact document; it expires abnormal exits, retains a bounded generation tombstone, compensates ambiguous enable/release ACKs, and cannot persist transient Capture demand across worker/session restoration.
@@ -45,7 +45,7 @@ last_reviewed: 2026-08-28
 - `SCTRL-031`: operations executing no media writer acknowledge `target: null`.
 - `SCTRL-032`: processor configuration exposes only `boostGain: 1–8`; page volume/mute cannot cross the Capture processor boundary.
 - `SCTRL-033`: Background control consumers invoke serialized coordinator directly without SW self-RPC.
-- `SCTRL-034`: default content bootstrap uses minimal contract; MV3 SW is self-contained ESM; build has zero redundancy; extracted pure value/queue/async capabilities are direct owners rather than aliases or re-export shims.
+- `SCTRL-034`: default content bootstrap uses minimal contract; MV3 SW is self-contained ESM; build has zero redundancy; extracted pure value/ACK/queue/async capabilities are direct owners rather than aliases or re-export shims, while coordinator commit/persist/publish remains the sole effect writer.
 - `SCTRL-035`: native event-driven writes install bounded listener before setter and ACK after quiet getter boundary.
 - `SCTRL-036`: strategy escalation consumes canonical failure codes; security/activation failures are terminal.
 - `SCTRL-037`: processor actual state comes only from normalized graph/host readback (`graphSignature`).

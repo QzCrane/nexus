@@ -3,9 +3,10 @@
 import type React from 'react';
 import { useCallback, useMemo } from 'react';
 import { useTranslation } from '../../i18n';
-import { EMOJI_CATEGORIES } from './core';
+import { EMOJI_CATEGORIES, emojiCategoryCodec, recentEmojiCodec, type EmojiCategory } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -15,8 +16,8 @@ const CATEGORY_ICONS: Record<string, string> = {
 export const EmojiPickerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [search, setSearch] = useToolState<string>('emoji-search', '');
-	const [category, setCategory] = useToolState<keyof typeof EMOJI_CATEGORIES>('emoji-category', 'smileys');
-	const [recent, setRecent] = useToolState<string[]>('emoji-recent', []);
+	const [category, setCategory, , categoryRecovery] = useToolState<EmojiCategory>('emoji-category', 'smileys', { codec: emojiCategoryCodec });
+	const [recent, setRecent, , recentRecovery] = useToolState<string[]>('emoji-recent', [], { codec: recentEmojiCodec });
 
 
 	// Filter emojis
@@ -34,6 +35,8 @@ export const EmojiPickerPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={categoryRecovery} emptyValue="smileys" exportName="halo-emoji-category-damaged.json" />
+			<StorageRecoveryActions recovery={recentRecovery} emptyValue={[]} exportName="halo-emoji-recent-damaged.json" />
 			{/* Search */}
 			<input
 				style={styles.search}
@@ -60,7 +63,7 @@ export const EmojiPickerPanel: React.FC = () => {
 					<button type="button"
 						key={cat}
 						style={{ ...styles.tab, background: category === cat ? 'var(--halo-bg-secondary)' : 'transparent' }}
-						onClick={() => setCategory(cat as keyof typeof EMOJI_CATEGORIES)}
+						onClick={() => setCategory(cat as EmojiCategory)}
 					>
 						{CATEGORY_ICONS[cat]}
 					</button>

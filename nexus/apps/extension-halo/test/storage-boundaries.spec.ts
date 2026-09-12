@@ -9,6 +9,23 @@ import {
 	normalizeFilterConfig,
 	normalizeScanResult,
 } from '../src/tools/media-sniffer/types';
+import { stickyNotesCodec } from '../src/tools/sticky-notes/core';
+import { todoListCodec } from '../src/tools/todo-list/core';
+import { codeSnippetsCodec, snippetFilterCodec } from '../src/tools/code-snippets/core';
+import { totpEntriesCodec } from '../src/tools/totp/core';
+import { apiSensitiveCodec } from '../src/tools/api-tester/core';
+import { cryptoSensitiveCodec } from '../src/tools/crypto/sensitive-state';
+import { diffDraftCodec } from '../src/tools/diff/core';
+import { emojiCategoryCodec, recentEmojiCodec } from '../src/tools/emoji-picker/core';
+import { colorHistoryCodec } from '../src/tools/color-picker/core';
+import { formatOptionsCodec } from '../src/tools/json-formatter/core';
+import { mockCountCodec, mockFieldsCodec, mockFormatCodec } from '../src/tools/mock-data/core';
+import { ttsSettingsCodec } from '../src/tools/text-to-speech/core';
+import { passwordConfigCodec } from '../src/tools/password-gen/core';
+import { curlLanguageCodec, networkModeCodec } from '../src/tools/network/core';
+import { screenshotDelayCodec } from '../src/tools/screenshot/core';
+import { rulerRemBaseCodec, rulerUnitCodec } from '../src/tools/ruler/core';
+import { timerMinutesCodec, timerSecondsCodec } from '../src/tools/timer/core';
 
 function jsonStorageModelRoundTrip(value: unknown): unknown {
 	return JSON.parse(JSON.stringify(value));
@@ -357,5 +374,42 @@ describe('HALO storage boundaries', () => {
 			timestamp: Number.NaN,
 			url: 'https://example.test',
 		})).toBeNull();
+	});
+
+	test('domain codecs reject damaged identities, enums and nested fields without coercion', () => {
+		const note = { id: 'n1', content: '保留🙂', color: 'yellow', createdAt: 1, updatedAt: 2 };
+		expect(stickyNotesCodec.decode([note]).kind).toBe('valid');
+		expect(stickyNotesCodec.decode([note, note]).kind).toBe('invalid');
+		expect(todoListCodec.decode([{ id: 't1', text: 'task', completed: false, createdAt: 1, priority: 'urgent' }]).kind).toBe('invalid');
+		expect(codeSnippetsCodec.decode([{ id: 's1', title: 'x', code: 'y', language: 'typescript', tags: ['a', 'a'], createdAt: 1, updatedAt: 1 }]).kind).toBe('invalid');
+		expect(snippetFilterCodec.decode({ search: '', language: 'unknown', tag: '' }).kind).toBe('invalid');
+	});
+
+	test('sensitive codecs accept legacy TOTP but reject malformed vault records', () => {
+		expect(totpEntriesCodec.decode([{ id: 'a', name: 'Account', issuer: '', secret: 'JBSWY3DPEHPK3PXP', digits: 6, period: 30 }]).kind).toBe('valid');
+		expect(totpEntriesCodec.decode([{ id: 'a', name: 'Account', issuer: '', secret: 'invalid!', digits: 6, period: 30 }]).kind).toBe('invalid');
+		expect(apiSensitiveCodec.decode({ version: 2, value: {} }).kind).toBe('invalid');
+		expect(cryptoSensitiveCodec.decode({ version: 1, value: { aesKey: 7 } }).kind).toBe('invalid');
+	});
+
+	test('tool domain codecs reject damaged structured and bounded state', () => {
+		expect(diffDraftCodec.decode({ text1: 'a', text2: 2 }).kind).toBe('invalid');
+		expect(emojiCategoryCodec.decode('unknown').kind).toBe('invalid');
+		expect(recentEmojiCodec.decode(['🙂', '🙂']).kind).toBe('invalid');
+		expect(colorHistoryCodec.decode(['#fff', 'not-a-color']).kind).toBe('invalid');
+		expect(formatOptionsCodec.decode({ indent: 3, sortKeys: false, showTree: false }).kind).toBe('invalid');
+		expect(mockFieldsCodec.decode([{ id: 'x', name: 'field', type: 'unknown' }]).kind).toBe('invalid');
+		expect(mockCountCodec.decode(0).kind).toBe('invalid');
+		expect(mockFormatCodec.decode('yaml').kind).toBe('invalid');
+		expect(ttsSettingsCodec.decode({ rate: 11, pitch: 1, volume: 1, voiceUri: '' }).kind).toBe('invalid');
+		expect(passwordConfigCodec.decode({ length: 16, uppercase: true }).kind).toBe('invalid');
+		expect(curlLanguageCodec.decode('ruby').kind).toBe('invalid');
+		expect(networkModeCodec.decode('dns').kind).toBe('invalid');
+		expect(screenshotDelayCodec.decode(4).kind).toBe('invalid');
+		expect(rulerUnitCodec.decode('em').kind).toBe('invalid');
+		expect(rulerRemBaseCodec.decode(0).kind).toBe('invalid');
+		expect(timerMinutesCodec.decode(-1).kind).toBe('invalid');
+		expect(timerSecondsCodec.decode(60).kind).toBe('invalid');
+		expect(timerSecondsCodec.decode(59).kind).toBe('valid');
 	});
 });

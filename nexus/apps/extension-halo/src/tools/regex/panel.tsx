@@ -2,14 +2,18 @@
 // eff: Styles extracted to reduce file size
 
 import type React from 'react';
-import { useMemo, useCallback } from 'react';
+import { useMemo, useCallback, useEffect, useState } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import { executeRegex, validatePattern, replaceMatches, buildFlagsString } from './core';
-import type { RegexFlags } from './types';
+import { buildFlagsString, REGEX_MAX_PATTERN_UNITS, regexFlagsCodec } from './core';
+import type { RegexFlags, RegexMatch } from './types';
 import { DEFAULT_FLAGS, PRESETS } from './types';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { extensionWorkerFactory, oneShotWorker } from '../../kernel/utils/one-shot-worker';
+import { REGEX_TASK_DEADLINE_MS, REGEX_WORKER_PATH, type RegexWorkerRequest, type RegexWorkerResponse } from './worker-contract';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 export const RegexPanel: React.FC = () => {
@@ -17,19 +21,54 @@ export const RegexPanel: React.FC = () => {
 	const [pattern, setPattern] = useToolState<string>('regex', '');
 	const [testString, setTestString] = useToolState<string>('regex-test', '');
 	const [replacement, setReplacement] = useToolState<string>('regex-replace', '');
-	const [flags, setFlags] = useToolState<RegexFlags>('regex-flags', DEFAULT_FLAGS);
+	const [flags, setFlags, , flagsRecovery] = useToolState<RegexFlags>('regex-flags', DEFAULT_FLAGS, { codec: regexFlagsCodec });
 	const [showReplace, setShowReplace] = useToolState<boolean>('regex-show-replace', false);
+	const [matches, setMatches] = useState<RegexMatch[]>([]);
+	const [replaced, setReplaced] = useState('');
+	const [workerError, setWorkerError] = useState<string | null>(null);
+	const task = useOwnedAsyncTask();
+	const workerFactory = useMemo(() => extensionWorkerFactory(REGEX_WORKER_PATH), []);
 
-
-	const validation = useMemo(() => validatePattern(pattern), [pattern]);
-	const matches = useMemo(
-		() => (validation.valid ? executeRegex(pattern, testString, flags) : []),
-		[pattern, testString, flags, validation.valid]
-	);
-	const replaced = useMemo(
-		() => (showReplace && validation.valid ? replaceMatches(pattern, testString, replacement, flags) : ''),
-		[pattern, testString, replacement, flags, showReplace, validation.valid]
-	);
+	const patternError = pattern.length > REGEX_MAX_PATTERN_UNITS
+		? `Pattern exceeds the ${REGEX_MAX_PATTERN_UNITS}-character limit.`
+		: null;
+	useEffect(() => {
+		if (patternError !== null || !pattern || !testString) {
+			task.cancel();
+			setMatches([]);
+			setReplaced('');
+			setWorkerError(null);
+			return;
+		}
+		const request: RegexWorkerRequest = {
+			pattern,
+			testString,
+			replacement,
+			flags: structuredClone(flags),
+			includeReplacement: showReplace,
+		};
+		const timer = setTimeout(() => {
+			void task.run(
+				() => oneShotWorker<RegexWorkerRequest, RegexWorkerResponse>(workerFactory, request),
+				REGEX_TASK_DEADLINE_MS,
+			).then((outcome) => {
+				if (outcome.kind !== 'succeeded') return;
+				if (outcome.value.ok === false) {
+					setMatches([]);
+					setReplaced('');
+					setWorkerError(outcome.value.error);
+					return;
+				}
+				setMatches(outcome.value.matches);
+				setReplaced(outcome.value.replaced);
+				setWorkerError(null);
+			});
+		}, 150);
+		return () => {
+			clearTimeout(timer);
+			task.cancel();
+		};
+	}, [pattern, testString, replacement, flags, showReplace, patternError, task.run, task.cancel, workerFactory]);
 
 	const toggleFlag = useCallback((key: keyof RegexFlags) => {
 		setFlags((prev) => ({ ...prev, [key]: !prev[key] }));
@@ -48,6 +87,7 @@ export const RegexPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={flagsRecovery} emptyValue={DEFAULT_FLAGS} exportName="halo-regex-flags-damaged.json" />
 			{/* Pattern Input */}
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -61,7 +101,8 @@ export const RegexPanel: React.FC = () => {
 						/>
 						<span style={styles.label}>/{buildFlagsString(flags)}</span>
 					</div>
-					{!validation.valid && <div style={styles.error}>⚠️ {validation.error}</div>}
+					{patternError !== null && <div style={styles.error}>⚠️ {patternError}</div>}
+					{(workerError !== null || task.error !== null) && <div style={styles.error}>⚠️ {workerError ?? String(task.error)}</div>}
 
 					{/* Flags */}
 					<div style={styles.row}>
@@ -136,10 +177,10 @@ export const RegexPanel: React.FC = () => {
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
 					<div style={styles.row}>
 						<span style={styles.label}>{t('regex.matches') || 'Matches'}</span>
-						<span style={styles.count}>{matches.length}</span>
+						<span style={styles.count}>{task.phase === 'running' ? '…' : matches.length}</span>
 					</div>
 					<div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '200px', overflow: 'auto' }}>
-						{matches.length === 0 && pattern && validation.valid && (
+						{matches.length === 0 && pattern && patternError === null && task.phase !== 'running' && workerError === null && (
 							<div style={{ color: 'var(--halo-text-muted)', fontSize: '11px' }}>{t('regex.noMatches')}</div>
 						)}
 						{matches.map((m) => (

@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: halo-architecture
-last_reviewed: 2026-08-13
+last_reviewed: 2026-09-12
 ---
 
 # HALO architecture
@@ -74,7 +74,8 @@ tools/<id>/
 
 ## State, Background Work & User-script registration
 
-- **State**: Persistent background work uses SW events, alarms, and lifecycle tokens. `useToolState` coordinates storage sync with bounded write queues.
+- **State**: Persistent background work uses SW events, alarms, and lifecycle tokens. `useToolState` coordinates storage sync through one ledger-backed, bounded latest-intent queue. Complex values and finite enums carry a domain `ToolStateCodec`; an invalid persisted value stays untouched and produces an explicit export/replace recovery surface instead of silently becoming a default. Quota admission uses the browser-reported storage-area limit and retains shared reserve rather than treating item counts as byte budgets.
+- **Sensitive state**: API request bodies, authorization material, TOTP secrets and other sensitive drafts remain memory-only by default. `useSensitiveVaultState` moves the complete domain value into the extension-origin IndexedDB vault only after an explicit user save, verifies the committed value by readback, and requires a separately confirmed deletion of a legacy Chrome-storage copy. The vault narrows extension-context exposure; it is not encryption-at-rest or protection from a compromised extension origin.
 - **Event-driven status**: a relevant storage-change payload is delivered once by the SidePanel storage-change bus and updates the owning in-memory projection directly; it must not trigger a second full read of the same keys. Initial async hydration cannot overwrite a newer event-owned field.
 - **Context-menu activation**: Background captures the SidePanel-open user gesture immediately, then serializes one typed `storage.session` activation envelope with a monotonic generation. Runtime and storage delivery share one monotonic admission owner. The QR consumer commits generation, id, mode, and text through one serialized latest-wins queue and reads the physical value back before it may ACK the exact activation id; an already-mounted panel receives the newer payload without remounting, delayed delivery or write completion cannot roll it back, and a rejected or stalled write leaves the Background envelope recoverable.
 - **Hover Zoom physical rules**: Background is the sole owner of the declarative-net-request rule set. Install, startup, relevant storage changes, and explicit UI requests all reconcile the complete owned rule id set against normalized settings. UI state is a receipt of that physical reconciliation, never an optimistic copy of the requested toggle.
@@ -87,10 +88,10 @@ tools/<id>/
 - **Hover Zoom MSE**: Session creation returns `{ ready, dispose }` synchronously; retired sessions cannot clear newer video sources.
 - **Hover Zoom input**: when enabled, the static `document_idle` host owns only light settings hydration, pointer/key tracking, exact trigger matching/highlight, and synchronous Alt ownership. The first still-valid preview intent imports one document-local `tools/_hover-zoom/runtime.js` promise and then invokes the resolver/viewer implementation. Failed imports clear the promise so a later real intent can retry. Key release, pointer retirement, disablement, or settings-authority replacement invalidates the current preview generation so a late module load cannot resurrect stale UI. When disabled, Hover Zoom removes its mouse/key listeners, pending trigger timer, viewer ownership, pending preview intent, and pending preload; only the low-frequency settings subscription remains for re-enablement.
 - **Frame tools**: every matching frame retains only the minimal `content-frame-tools.js` command bootstrap. The first Ruler, DOM Selector, or Annotate activation imports `tools/_frame-tools/runtime.js` through `chrome.runtime.getURL()` and caches that document-local module promise. A failed import clears the promise so a later explicit activation can retry. STOP/CANCEL before first activation is a zero-work no-op and must not load the runtime. The static bootstrap preserves existing cross-origin iframe coverage without widening host permissions.
-- **Timer**: persistent authority is `elapsed + startedAt`; rAF updates only the visible time projection. A bounded wall-clock deadline watcher rechecks at most once per second so clock jumps cannot strand or prematurely complete a countdown; persistent Timer state is not rewritten on those checks.
-- **Pomodoro**: persistent authority is a paused `remaining` value or running absolute `endsAt`; one 1Hz owner updates only ephemeral display time until the latest wall-clock sample reaches the deadline, then commits the phase boundary exactly once. There is no independent one-shot completion timeout.
+- **Timer and Pomodoro**: `kernel/core/deadline-jobs/coordinator.ts` is the single Background authority for commands, persistent revisions, absolute deadlines, `chrome.alarms`, cold-start reconciliation and replaceable completion effects. Per-job queues serialize state transitions; alarm wake and startup both reconcile idempotently, while a persisted completion id records pending/delivered disposition. Mounted panels send typed commands and project current time locally; their animation frame or 1Hz display ticks never own completion and panel unmount cannot strand a running deadline.
 - **TTS**: speech state follows `SpeechSynthesisUtterance` lifecycle events; no periodic `speechSynthesis` polling. The tool panel owns its browser speech lifecycle and cancels any surviving utterance when the panel unmounts, so navigation cannot orphan speech without controls.
 - **TOTP**: the UI may update remaining seconds at 1Hz, but HMAC output is cached for each entry/counter epoch and recomputed only when the counter or code-defining parameters change. Epoch recomputation remains sequential so account count cannot create an unbounded WebCrypto burst.
+- **Panel async work**: `OwnedAsyncTask` owns one generation, deadline and disposer for panel-started work. A new run supersedes the prior generation; deadline, cancellation and unmount dispose its physical resource and prevent late results from mutating retired UI. `oneShotWorker` applies that contract to one-request static module workers and always terminates them after message, error, cancellation or deadline. Regex, PDF, Image Tools and RFC 9535 JSONPath use distinct packaged worker entries; Code Formatter and Table Extractor use the same result-admission lifecycle for their promise work without inventing another worker framework.
 
 ## Permissions, Localization & Performance
 
@@ -99,7 +100,7 @@ tools/<id>/
 - **Localization**: Local plugin locale sources compile into generated runtime aggregates.
 - **Performance**: Inactive plugins allocate 0 recurring work. Disabled high-frequency features detach their hot listeners. SidePanel hidden/inactive surfaces must not poll. Browser-owned work started by a tool panel must either transfer to another explicit owner or dispose when that panel unmounts.
 - **Build evidence**: production build derives all-frame/top-frame `document_start` and `document_idle` membership from the source manifest, then charges each declared JS entry by its complete static esbuild closure. SidePanel static startup closure, Background worker bundle, eventual lazy bytes, largest chunk, and every dynamic tool activation's transitive static closure remain separately measured. Packaged on-demand modules that are not declared in `content_scripts` are not startup bytes.
-- **Audited 2026-08-13 production ceilings**: `background <= 32KiB`, `all-frame@document_start <= 1KiB`, `top-frame@document_start <= 26KiB`, `all-frame@document_idle <= 2KiB`, `top-frame@document_idle <= 14KiB`, `SidePanel startup <= 36KiB`, `Frame Tools runtime <= 8KiB`, `Hover Zoom runtime <= 52KiB`, `SidePanel eventual chunks <= 1850KiB`, `largest SidePanel chunk <= 500KiB`, and `largest single tool activation closure <= 1100KiB`. The current heaviest boundary is the PDF tool because its complete PDF engine closure is charged together rather than hidden behind per-file limits. `build.ts` fails on every surface, enforces Preact-only SidePanel runtime inputs, and rejects intentional growth until this owner and the executable budget change together.
+- **Historical 2026-08-13 production ceilings**: the former `background <= 32KiB` and `SidePanel eventual chunks <= 1850KiB` limits, together with the other limits measured below, describe the v0.6.2 candidate only. They are retained as dated baseline evidence and are no longer current admission values. [`build.ts`](../build.ts) is the executable owner of current per-surface, aggregate worker, largest-worker, eventual-chunk and activation-closure budgets. The current worker-budget adjustment has only a pre-integration measurement; final production build evidence is pending and this document does not claim that the frozen candidate passes.
 - **Measured Windows production surfaces (2026-08-13, v0.6.2 candidate)**: `all-frame@document_start = 1KiB`, `top-frame@document_start = 26KiB`, `all-frame@document_idle = 2KiB`, `top-frame@document_idle = 13KiB`, `SidePanel startup = 34KiB`, `background = 32KiB`, `Frame Tools runtime = 7KiB`, `Hover Zoom runtime = 48KiB`, `SidePanel eventual chunks = 1802KiB`, and largest activation `PDF = 1061KiB/10 files`. The 3KiB document-idle increase is the executable, fail-closed Hover Zoom settings schema replacing unchecked storage casts; startup/document-start surfaces remain unchanged. The SidePanel renderer remains Preact-only. The Background delta pays for durable activation, exact user-script admission, and physical Hover Zoom rule reconciliation rather than content startup. Future conclusions require repeatable exact-head artifact measurements; OS parity is additionally required only when the changed mechanism crosses filesystem, archive, process, or other platform-sensitive boundaries.
 - **Module identity and size**: bundled modules project the extension's generated release version. `ModuleManager` exposes only enable/disable semantics because these operations do not add or remove packaged bytes; the Module Store labels them as bundled and never presents installation/download size. Production closure measurements remain the only size evidence.
 - **Cross-origin and lazy-runtime browser evidence**: the production Chromium gate loads HALO on a top document at `127.0.0.1` with a child frame at `127.0.0.2`, proves a cold Ruler CANCEL leaves the heavy Frame Tools runtime unloaded, then proves one tab-wide START lazy-loads the packaged runtime and creates the Ruler overlay in both origins before CANCEL removes both. The same browser gate proves a cold Hover Zoom page has no Viewer DOM, then preserves pointer-before-Alt semantics: the first valid Alt gesture loads the packaged preview runtime, resolves and displays the image, and key release retires the viewer. Smooth Scroll keyboard ownership remains covered in the same Chromium installation.
@@ -159,9 +160,48 @@ these are explicit product admission bounds, not hardware performance claims.
 Corrupt trailing fields are errors, not successful partial results. Users can
 select Hex or Base64 explicitly when auto-detection would be ambiguous.
 
+CSV output has one Papa Parse serialization owner. Raw mode is the fidelity
+default; spreadsheet-safe mode is an explicit user choice because it prefixes
+formula-like fields and changes their exported text. JSON-to-CSV and Table
+Extractor share that policy rather than maintaining separate escaping rules.
+
+JSONPath uses `@swaggerexpert/jsonpath` for RFC 9535 parsing and evaluation in
+a bounded one-shot worker. Invalid syntax is distinct from a valid query with
+no matches, JSON object traversal uses own properties, custom executable
+functions are not exposed, and input/node/depth/result limits are enforced.
+CSP analysis uses `csp_evaluator` to show per-policy parsing and findings. It
+distinguishes enforced and Report-Only headers, reports ignored duplicate
+directives and the intersection of multiple enforced policies, and never emits
+an aggregate security score or a claim that the analyzed site is secure.
+
+Extension-initiated HTTP(S) work passes each observable URL and redirect hop
+through `ssrf-guard.ts`. Unsupported schemes, embedded credentials, private or
+internal literal hosts and unadmitted cross-origin redirects fail closed. A
+cross-origin opaque redirect is rejected because its next target cannot be
+inspected. Browser JavaScript does not expose authoritative DNS resolution, so
+a public hostname remains DNS-unknown; URL admission must not be described as
+proof against DNS rebinding or a later private destination.
+
 Password generation samples a deduplicated Unicode scalar pool using rejection
 sampling and the existing cryptographic random source. Complexity labels are
 heuristics, not entropy certification. URL parameter views preserve duplicate
 names and order; palette extraction excludes fully transparent pixels and keeps
 quantized channels within the actual eight-bit gamut. These tool contracts are
 executed by the default unit lane, not only ad-hoc probes.
+
+## Actual browser launch evidence
+
+Every HALO Playwright launch is owned by `scripts/browser-driver.ts`. After the
+browser starts, that owner reads the runtime product/version and the browser
+command line through CDP. A formal release run writes one receipt per physical
+launch with the exact head, tree, run, attempt, stable execution sequence,
+driver, platform, architecture, sanitized arguments and profile-construction
+metadata. Temporary profile paths are never retained. The executable is
+fingerprinted only when the browser-returned command line supplies a readable
+executable path; a missing path remains typed `unknown`.
+
+`collectDefaultReleaseBrowserOwners()` derives the required launch consumers
+from the maintained package-script graph using the repository's package-token
+owner and the pinned TypeScript Compiler API. Adding a direct Playwright launch
+or keeping a browser test outside the default release graph is therefore an
+owner-boundary regression.

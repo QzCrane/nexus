@@ -60,15 +60,20 @@ describe('HALO hot-path lifecycle ownership', () => {
 		expect(clearCount).toBe(0);
 	});
 
-	test('Timer and Pomodoro use self-correcting completion checks without persistent tick writes', () => {
+	test('Timer and Pomodoro panels only project time while Background owns completion', () => {
 		const timer = readSource('../src/tools/timer/panel.tsx');
 		const pomodoro = readSource('../src/tools/pomodoro/panel.tsx');
+		const coordinator = readSource('../src/kernel/core/deadline-jobs/coordinator.ts');
 
-		expect(timer).toContain('watchWallClockDeadline(deadline');
+		expect(timer).not.toContain('watchWallClockDeadline');
+		expect(timer).not.toContain('playCompletionTone');
 		expect(timer).not.toContain('window.setTimeout');
 		expect(pomodoro).toContain('window.setInterval(tick, 1000)');
 		expect(pomodoro).not.toContain('window.setTimeout');
-		expect(pomodoro).toContain('if (current.endsAt > observedNow) return;');
+		expect(pomodoro).not.toContain('playCompletionTone');
+		expect(coordinator).toContain('chrome.alarms.create(TIMER_ALARM');
+		expect(coordinator).toContain('chrome.alarms.create(POMODORO_ALARM');
+		expect(coordinator).toContain('chrome.notifications.create(state.completion.id');
 	});
 
 	test('TOTP caches by counter without unbounded per-account crypto fan-out', () => {

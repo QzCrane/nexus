@@ -25,6 +25,35 @@ describe('runtime performance policy', () => {
 		expect(() => checkRuntimePerformancePolicy(mutated)).toThrow('at least two independent baseline runs');
 	});
 
+	test('requires raw immutable evidence and a pinned browser owner', () => {
+		const missingRaw = structuredClone(current);
+		missingRaw.evidence.samples = 'summary-only';
+		expect(() => checkRuntimePerformancePolicy(missingRaw)).toThrow('retain raw samples');
+		const missingBrowser = structuredClone(current);
+		missingBrowser.browserOwner = 'package.json';
+		expect(() => checkRuntimePerformancePolicy(missingBrowser)).toThrow('pinned Chrome');
+	});
+
+	test('requires representative workload and business-assertion registration', () => {
+		const mutated = structuredClone(current);
+		mutated.products.halo.workloads[0].businessAssertions = [];
+		expect(() => checkRuntimePerformancePolicy(mutated)).toThrow('representative workload');
+	});
+
+	test('keeps diagnostic metrics evidence-only until a reasoned SLO exists', () => {
+		const missingReason = structuredClone(current);
+		delete missingReason.products.spectra.workloads[3].evidenceOnlyReason;
+		expect(() => checkRuntimePerformancePolicy(missingReason)).toThrow('explain evidence-only');
+		const invented = structuredClone(current);
+		invented.phase = 'budgeted';
+		invented.budgets = Object.fromEntries([
+			...invented.products.spectra.workloads,
+			...invented.products.halo.workloads,
+		].flatMap((workload: { metrics: string[] }) => workload.metrics)
+			.map((metric: string) => [metric, { p95Max: 100 }]));
+		expect(() => checkRuntimePerformancePolicy(invented)).toThrow();
+	});
+
 	test('rejects a workload that disappears from the product performance command', () => {
 		const mutated = structuredClone(current);
 		mutated.products.spectra.script = 'test:smoke';

@@ -17,6 +17,7 @@ export const RELEASE_SURFACES = [
 	'script-runtime',
 	'content-runtime',
 	'background-runtime',
+	'extension-worker',
 ] as const;
 export type HaloReleaseSurface = typeof RELEASE_SURFACES[number];
 
@@ -59,6 +60,7 @@ export interface ReleaseAdmissionModule {
 	contentScript?: ReleaseContentScript;
 	contentRuntimeOwner?: string;
 	webAccessibleRuntimes?: ReleaseWebAccessibleRuntime[];
+	extensionWorkers?: ReleaseWebAccessibleRuntime[];
 	activeService?: ReleaseActiveService;
 	reason: string;
 }
@@ -229,6 +231,16 @@ export function parseReleaseAdmission(value: unknown): ReleaseAdmission {
 		}
 		const contentScript = parseContentScript(raw.contentScript, raw.id);
 		const webAccessibleRuntimes = parseWebAccessibleRuntimes(raw.webAccessibleRuntimes, raw.id);
+		let extensionWorkers: ReleaseWebAccessibleRuntime[] | undefined;
+		if (raw.extensionWorkers !== undefined) {
+			if (!Array.isArray(raw.extensionWorkers) || raw.extensionWorkers.length !== 1) throw new Error(`${raw.id}: extensionWorkers must identify the one owned Worker entry`);
+			const worker = raw.extensionWorkers[0];
+			if (!isRecord(worker) || Object.keys(worker).sort().join(',') !== 'entry,output'
+				|| worker.entry !== `src/tools/${raw.id}/worker.ts` || worker.output !== `workers/${raw.id}.js`
+				|| !existsSync(resolve(HALO_APP_ROOT, String(worker.entry)))) throw new Error(`${raw.id}: extension worker must use its exact owned source and output`);
+			extensionWorkers = [{ entry: String(worker.entry), output: String(worker.output) }];
+		}
+		if (raw.surfaces.includes('extension-worker') !== Boolean(extensionWorkers)) throw new Error(`${raw.id}: extension-worker admission and entry must agree`);
 		const activeService = parseActiveService(raw.activeService, raw.id);
 		const contentRuntimeOwner = raw.contentRuntimeOwner;
 		if (contentRuntimeOwner !== undefined && (!isNonEmptyString(contentRuntimeOwner) || contentScript)) {
@@ -262,6 +274,7 @@ export function parseReleaseAdmission(value: unknown): ReleaseAdmission {
 			...(contentScript ? { contentScript } : {}),
 			...(contentRuntimeOwner ? { contentRuntimeOwner: String(contentRuntimeOwner) } : {}),
 			...(webAccessibleRuntimes ? { webAccessibleRuntimes } : {}),
+			...(extensionWorkers ? { extensionWorkers } : {}),
 			...(activeService ? { activeService } : {}),
 			reason: raw.reason,
 		};
@@ -352,7 +365,7 @@ export function validateReleaseAdmissionAgainstModules(
 			contentOutputs.add(entry.contentScript.js);
 			sourceEntries.add(entry.contentScript.entry);
 		}
-		for (const runtime of entry.webAccessibleRuntimes ?? []) {
+		for (const runtime of [...(entry.webAccessibleRuntimes ?? []), ...(entry.extensionWorkers ?? [])]) {
 			if (runtimeOutputs.has(runtime.output)) {
 				throw new Error(`web-accessible runtime output has multiple owners: ${runtime.output}`);
 			}
@@ -407,6 +420,7 @@ export function generateReleaseAdmissionProjection(
 		})))
 		.sort((left, right) => left.output.localeCompare(right.output));
 	const webAccessibleResources = webAccessibleRuntimeEntries.map((entry) => entry.output);
+	const extensionWorkers = admission.modules.flatMap((entry) => (entry.extensionWorkers ?? []).map((runtime) => ({ id: entry.id, ...runtime })));
 	const activeServices = admission.modules.flatMap((entry) => entry.activeService
 		? [{ id: entry.id, ...entry.activeService }]
 		: []);
@@ -423,6 +437,7 @@ export const RELEASE_CONTENT_RUNTIME_IDS = Object.freeze(${JSON.stringify(bySurf
 export const RELEASE_BACKGROUND_RUNTIME_IDS = Object.freeze(${JSON.stringify(bySurface['background-runtime'], null, 2)} as const);
 export const RELEASE_CONTENT_SCRIPTS = Object.freeze(${JSON.stringify(contentScripts, null, 2)} as const);
 export const RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES = Object.freeze(${JSON.stringify(webAccessibleRuntimeEntries, null, 2)} as const);
+export const RELEASE_EXTENSION_WORKER_ENTRIES = Object.freeze(${JSON.stringify(extensionWorkers, null, 2)} as const);
 export const RELEASE_WEB_ACCESSIBLE_RESOURCES = Object.freeze(${JSON.stringify(webAccessibleResources, null, 2)} as const);
 export const RELEASE_ACTIVE_SERVICE_CONTRACTS = Object.freeze(${JSON.stringify(activeServices, null, 2)} as const);
 export const RELEASE_STAGE_BY_ID = Object.freeze(${JSON.stringify(stages, null, 2)} as const);

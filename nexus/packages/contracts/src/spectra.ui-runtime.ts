@@ -147,8 +147,27 @@ function isRemoteSessionClosed(value: unknown): value is RemoteSessionClosedEven
 }
 
 function isVisibleTabs(value: unknown): boolean {
-	if (!isRecord(value) || !Object.keys(value).every((key) => key === 'tabs' || key === 'incomplete')
-		|| value.incomplete !== undefined && typeof value.incomplete !== 'boolean' || !Array.isArray(value.tabs)) return false;
+	if (!isRecord(value)
+		|| !(hasExact(value, ['tabs']) || hasExact(value, ['tabs', 'coverage']))
+		|| !Array.isArray(value.tabs)) return false;
+	if (!Object.hasOwn(value, 'coverage')) return value.tabs.length <= 10_000
+		&& value.tabs.every((tabId) => isInteger(tabId, true))
+		&& new Set(value.tabs).size === value.tabs.length;
+	if (!isRecord(value.coverage)
+		|| !hasExact(value.coverage, ['status', 'total', 'examined', 'pending', 'failed', 'denied', 'stale', 'unknown'])
+		|| value.coverage.status !== 'complete' && value.coverage.status !== 'degraded') return false;
+	for (const key of ['total', 'examined', 'pending', 'failed', 'denied', 'stale', 'unknown'] as const) {
+		if (!isInteger(value.coverage[key], false) || Number(value.coverage[key]) > 10_000) return false;
+	}
+	const total = Number(value.coverage.total);
+	const examined = Number(value.coverage.examined);
+	const pending = Number(value.coverage.pending);
+	const failed = Number(value.coverage.failed);
+	const denied = Number(value.coverage.denied);
+	const stale = Number(value.coverage.stale);
+	const unknown = Number(value.coverage.unknown);
+	if (examined + failed !== total || pending + denied + stale + unknown !== failed
+		|| (value.coverage.status === 'complete') !== (failed === 0)) return false;
 	return value.tabs.length <= 10_000
 		&& value.tabs.every((tabId) => isInteger(tabId, true))
 		&& new Set(value.tabs).size === value.tabs.length;

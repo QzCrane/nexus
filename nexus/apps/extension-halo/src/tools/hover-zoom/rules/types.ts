@@ -2,6 +2,8 @@
 // goal: Unified type definitions for Hover Zoom rule system
 // eff: Core types + proxy types for backward compatibility
 
+import type { HoverZoomProxyCapability } from './network-capabilities';
+
 // ==========================================
 // Core Rule Types
 // ==========================================
@@ -11,6 +13,7 @@ export interface ResolveContext {
 	element: Element;
 	host: string;
 	match: RegExpMatchArray | null;
+	proxyCapability?: HoverZoomProxyCapability;
 	fetchHtml: (url: string) => Promise<string>;
 	fetchJson: <T = unknown>(url: string, headers?: Record<string, string>) => Promise<T>;
 	getCookie: (name: string) => string;
@@ -33,6 +36,7 @@ export interface RuleResult {
 	type?: 'image' | 'video' | 'audio';
 	caption?: string;
 	metadata?: RuleMetadata;
+	proxyCapability?: HoverZoomProxyCapability;
 }
 
 export type Resolver = (ctx: ResolveContext) => Promise<string | RuleResult | null>;
@@ -50,6 +54,7 @@ export interface SiteRule {
 	match?: RegExp | string;
 	triggers?: string[];  // Async trigger selectors
 	resolve: RuleConfig;
+	proxyCapability?: HoverZoomProxyCapability;
 }
 
 // ==========================================
@@ -61,6 +66,7 @@ export interface ProxyFetchOptions {
 	headers?: Record<string, string>;
 	body?: string;
 	responseType?: 'json' | 'text' | 'document';
+	proxyCapability?: HoverZoomProxyCapability;
 }
 
 export interface ZoomResult {
@@ -78,11 +84,12 @@ export interface ProxyAjaxRequest {
 	method?: 'GET' | 'POST';
 	headers?: Record<string, string>;
 	body?: string;
+	proxyCapability: HoverZoomProxyCapability;
 }
 
 export interface ProxyAjaxResponse {
 	success: boolean;
 	data?: string;
 	error?: string;
+	code?: string;
 }
-

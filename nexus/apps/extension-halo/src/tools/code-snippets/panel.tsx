@@ -1,28 +1,27 @@
 // goal: Code Snippets panel UI - create, edit, and manage code snippets
 
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { Snippet, Language, SnippetFilter } from './types';
-import { getSnippets, createSnippet, updateSnippet, deleteSnippet, filterSnippets, copyToClipboard, LANGUAGES } from './core';
+import { CODE_SNIPPETS_STORAGE_KEY, CODE_SNIPPETS_QUOTA_POLICY, codeSnippetsCodec, snippetFilterCodec, snippetItemBytes, createSnippet, filterSnippets, copyToClipboard, LANGUAGES } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 export const CodeSnippetsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [snippets, setSnippets] = useState<Snippet[]>([]);
-	const [filter, setFilter] = useToolState<SnippetFilter>('code-snippets-filter', { search: '', language: 'all', tag: '' });
+	const [snippets, setSnippets, , recovery] = useToolState<Snippet[]>('code-snippets', [], {
+		storageKey: CODE_SNIPPETS_STORAGE_KEY,
+		codec: codeSnippetsCodec,
+		quota: CODE_SNIPPETS_QUOTA_POLICY,
+		quotaItemBytes: snippetItemBytes,
+	});
+	const [filter, setFilter] = useToolState<SnippetFilter>('code-snippets-filter', { search: '', language: 'all', tag: '' }, { codec: snippetFilterCodec });
 	const [editing, setEditing] = useState<Snippet | null>(null);
 	const [isNew, setIsNew] = useState(false);
 
-
-	// Load snippets
-	const loadSnippets = useCallback(async () => {
-		setSnippets(await getSnippets());
-	}, []);
-
-	useEffect(() => { loadSnippets(); }, [loadSnippets]);
 
 	// Open editor for new snippet
 	const handleNew = () => {
@@ -37,22 +36,22 @@ export const CodeSnippetsPanel: React.FC = () => {
 	};
 
 	// Save snippet (create or update)
-	const handleSave = async () => {
+	const handleSave = () => {
 		if (!editing?.title.trim() || !editing.code.trim()) return;
 		if (isNew) {
-			await createSnippet({ title: editing.title, code: editing.code, language: editing.language, tags: editing.tags });
+			setSnippets((current) => [createSnippet({ title: editing.title, code: editing.code, language: editing.language, tags: editing.tags }), ...current]);
 		} else {
-			await updateSnippet(editing.id, { title: editing.title, code: editing.code, language: editing.language, tags: editing.tags });
+			setSnippets((current) => current.map((snippet) => snippet.id === editing.id
+				? { ...snippet, title: editing.title, code: editing.code, language: editing.language, tags: editing.tags, updatedAt: Date.now() }
+				: snippet));
 		}
 		setEditing(null);
-		loadSnippets();
 	};
 
 	// Delete snippet
-	const handleDelete = async (id: string) => {
+	const handleDelete = (id: string) => {
 		if (!confirm(t('codeSnippets.deleteConfirm'))) return;
-		await deleteSnippet(id);
-		loadSnippets();
+		setSnippets((current) => current.filter((snippet) => snippet.id !== id));
 	};
 
 	// Copy snippet code
@@ -65,6 +64,7 @@ export const CodeSnippetsPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={recovery} emptyValue={[]} exportName="halo-code-snippets-recovery.json" />
 			{/* Header */}
 			<div style={styles.header}>
 				<input

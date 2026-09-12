@@ -1,29 +1,37 @@
 // goal: QR Code utilities (History, Clipboard, Download)
 
 import { STORAGE_KEY, MAX_HISTORY } from './types';
+import { conditionalLedgerWrite, readLedgerEntry } from '../../kernel/core/safe-storage';
+
+function parseHistory(value: unknown): string[] {
+	return Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === 'string') : [];
+}
+import { downloadBlob } from '../../kernel/utils/object-url-lease';
 
 export async function saveToHistory(text: string): Promise<string[]> {
-	const result = await chrome.storage.local.get([STORAGE_KEY]);
-	const history: string[] = result[STORAGE_KEY] || [];
+	const base = await readLedgerEntry(STORAGE_KEY, { area: 'local' });
+	const history = parseHistory(base.value);
 	const updated = [text, ...history.filter(h => h !== text)].slice(0, MAX_HISTORY);
-	await chrome.storage.local.set({ [STORAGE_KEY]: updated });
-	return updated;
+	const outcome = await conditionalLedgerWrite(STORAGE_KEY, {
+		area: 'local', baseRevision: base.revision, value: updated,
+		remerge: (current) => [text, ...parseHistory(current).filter((entry) => entry !== text)].slice(0, MAX_HISTORY),
+	});
+	if (outcome.kind !== 'committed') throw new Error('QR history update was not committed');
+	return parseHistory(outcome.value);
 }
 
 export async function loadHistory(): Promise<string[]> {
-	return (await chrome.storage.local.get([STORAGE_KEY]))[STORAGE_KEY] || [];
+	return parseHistory((await readLedgerEntry(STORAGE_KEY, { area: 'local' })).value);
 }
 
 export async function clearHistory(): Promise<void> {
-	await chrome.storage.local.remove([STORAGE_KEY]);
+	const base = await readLedgerEntry(STORAGE_KEY, { area: 'local' });
+	const outcome = await conditionalLedgerWrite(STORAGE_KEY, { area: 'local', baseRevision: base.revision, value: [], remerge: () => [] });
+	if (outcome.kind !== 'committed') throw new Error('QR history clear was not committed');
 }
 
 export function downloadQRCode(blob: Blob, filename: string): void {
-	const url = URL.createObjectURL(blob);
-	const link = document.createElement('a');
-	link.href = url; link.download = filename;
-	link.click();
-	URL.revokeObjectURL(url);
+	downloadBlob(blob, filename);
 }
 
 export async function copyImageToClipboard(dataUrl: string): Promise<boolean> {

@@ -6,13 +6,15 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { generateRSAKeyPair } from './core';
 import { styles } from './panel.styles';
-import { useToolState } from '../../kernel';
+import { useCryptoSensitiveState } from './sensitive-state';
 
 
 export const RSAPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [publicKey, setPublicKey] = useToolState<string>('crypto-rsa-pub', '');
-	const [privateKey, setPrivateKey] = useToolState<string>('crypto-rsa-priv', '');
+	const { state, update } = useCryptoSensitiveState();
+	const { rsaPublicKey: publicKey, rsaPrivateKey: privateKey } = state;
+	const setPublicKey = useCallback((value: string) => update({ rsaPublicKey: value }), [update]);
+	const setPrivateKey = useCallback((value: string) => update({ rsaPrivateKey: value }), [update]);
 
 	const [loading, setLoading] = useState(false);
 

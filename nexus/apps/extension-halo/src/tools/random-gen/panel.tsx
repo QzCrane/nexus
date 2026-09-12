@@ -3,18 +3,32 @@
 import type React from 'react';
 import { useCallback } from 'react';
 import { useTranslation } from '../../i18n';
-import { generateHex, generateBase64, generateUUID, generateULID } from './core';
+import { generateHex, generateBase64, generateUUID, generateULID, MAX_RANDOM_BYTE_LENGTH } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
-type Type = 'UUID' | 'Heterogenous' | 'Hex' | 'Base64' | 'ULID';
+type Type = 'UUID' | 'Hex' | 'Base64' | 'ULID';
+const randomTypeCodec: ToolStateCodec<Type> = {
+	decode(value) { return value === 'UUID' || value === 'Hex' || value === 'Base64' || value === 'ULID' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Random generator type is unsupported.' }; },
+	encode(value) { return value; },
+};
+const randomLengthCodec: ToolStateCodec<number> = {
+	decode(value) { return Number.isSafeInteger(value) && (value as number) >= 0 && (value as number) <= MAX_RANDOM_BYTE_LENGTH ? { kind: 'valid', value: value as number } : { kind: 'invalid', reason: 'Random output length is outside the generator byte boundary.' }; },
+	encode(value) { return value; },
+};
+const randomCountCodec: ToolStateCodec<number> = {
+	decode(value) { return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 1000 ? { kind: 'valid', value: value as number } : { kind: 'invalid', reason: 'Random output count must be an integer from 1 to 1000.' }; },
+	encode(value) { return value; },
+};
 
 export const RandomGenPanel: React.FC = () => {
 	const { t } = useTranslation();
-    const [type, setType] = useToolState<Type>('random-gen-type', 'UUID');
-    const [length, setLength] = useToolState<number>('random-gen-len', 32);
-    const [count, setCount] = useToolState<number>('random-gen-count', 1);
+    const [type, setType, , typeRecovery] = useToolState<Type>('random-gen-type', 'UUID', { codec: randomTypeCodec });
+    const [length, setLength, , lengthRecovery] = useToolState<number>('random-gen-len', 32, { codec: randomLengthCodec });
+    const [count, setCount, , countRecovery] = useToolState<number>('random-gen-count', 1, { codec: randomCountCodec });
     const [output, setOutput] = useToolState<string>('random-gen', '');
 
 
@@ -38,6 +52,9 @@ export const RandomGenPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={typeRecovery} emptyValue="UUID" exportName="halo-random-type-damaged.json" />
+			<StorageRecoveryActions recovery={lengthRecovery} emptyValue={32} exportName="halo-random-length-damaged.json" />
+			<StorageRecoveryActions recovery={countRecovery} emptyValue={1} exportName="halo-random-count-damaged.json" />
             <div style={styles.toolbar}>
                  <div>
                     <span style={styles.label}>{t('randomGen.type', { defaultValue: 'Type' })}</span>

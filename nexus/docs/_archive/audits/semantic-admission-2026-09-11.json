@@ -1,0 +1,99 @@
+{
+  "schemaVersion": 1,
+  "capturedOn": "2026-09-11",
+  "scope": ["U10-jsonpath", "U20-csp-analyzer"],
+  "jsonPath": {
+    "decision": "admitted",
+    "package": {
+      "name": "@swaggerexpert/jsonpath",
+      "version": "4.0.4",
+      "source": "https://github.com/swaggerexpert/jsonpath",
+      "tarball": "https://registry.npmjs.org/@swaggerexpert/jsonpath/-/jsonpath-4.0.4.tgz",
+      "license": "Apache-2.0",
+      "noticePresent": true,
+      "tarballSha256": "08c106137f90c8612200f8842ad75ba5ae9224faecadc28b415a5779e6e8d2fe"
+    },
+    "runtimeDependency": {
+      "name": "apg-lite",
+      "version": "1.0.5",
+      "tarball": "https://registry.npmjs.org/apg-lite/-/apg-lite-1.0.5.tgz",
+      "license": "BSD-2-Clause",
+      "tarballSha256": "4c939f96c7b482f0830748eb6e0254dad7abaf9664f444c59f798a5d5986c1a0"
+    },
+    "compliance": {
+      "suite": "JSONPath Compliance Test Suite",
+      "source": "https://github.com/jsonpath-standard/jsonpath-compliance-test-suite",
+      "commit": "afefcaa256fb9ed224e9dbffb28ec2262182e498",
+      "license": "BSD-2-Clause",
+      "fixtureBytes": 233853,
+      "fixtureSha256": "f0932266a108d7b927f9a3fcc56e857f96c2bcd65c2acc25b70f3666b1dce7c3",
+      "passed": 704,
+      "failed": 0
+    },
+    "browserProbe": {
+      "status": "passed",
+      "browser": "Chrome 152.0.7977.54",
+      "csp": "default-src 'none'; script-src 'self'",
+      "bundleBytes": 81248,
+      "bundleSha256": "c6c52cca300d34aeafa57057ab169738e1c615710781b02c7daa418422cadb76",
+      "observations": { "$..x": [2, 1], "$.constructor": [], "consoleErrors": 0 },
+      "boundary": "Temporary isolated engine bundle; final production-extension build and UI replay are separate gates."
+    },
+    "runtimeBoundary": {
+      "worker": "static MV3 module worker",
+      "deadlineMs": 5000,
+      "inputBytes": 1048576,
+      "queryCharacters": 4096,
+      "nodes": 100000,
+      "depth": 128,
+      "results": 10000,
+      "customFunctions": false
+    }
+  },
+  "csp": {
+    "decision": "admitted",
+    "package": {
+      "name": "csp_evaluator",
+      "version": "1.1.8",
+      "source": "https://github.com/google/csp-evaluator",
+      "tarball": "https://registry.npmjs.org/csp_evaluator/-/csp_evaluator-1.1.8.tgz",
+      "license": "Apache-2.0",
+      "noticePresent": false,
+      "tarballSha256": "2b4f2a30ed67a39908708c05ba559accbad0b5a6c0fa29f1761a641a342fd904"
+    },
+    "bundleProbe": {
+      "evaluatorBytes": 33391,
+      "evaluatorSha256": "7ef4c619ed0f2a6e5e83db899854ab0d9251c120e512ef848b6168abf3630bb9",
+      "parserBytes": 8911,
+      "parserSha256": "9c22c9bbd92b85a10713c6ca48aeb5a9db006121f618a834545b5ee8d269b5ed",
+      "combinedBytes": 35163,
+      "combinedSha256": "89840b54ea4388cb445d23ef9d7226575798d7e2aa84c96e3b3139688bc39fab"
+    },
+    "browserProbe": {
+      "status": "unverified",
+      "reason": "The combined browser probe timed out and emitted no result.",
+      "boundary": "No browser-pass claim is made; final production-extension UI replay remains required."
+    },
+    "semanticProbes": {
+      "emptyPolicy": "missing script-src and object-src are high findings",
+      "contextualDataSource": "img-src data: with default-src 'none' does not produce a data-source finding",
+      "unsafeInlineWithNonce": "unsafe-inline is reported as ignored effective behavior",
+      "duplicateDirective": "first directive wins and later duplicates are ignored"
+    },
+    "runtimeBoundary": {
+      "output": "per-policy facts and findings; no aggregate security score",
+      "dispositions": ["enforce", "report-only"],
+      "multipleEnforcedPolicies": "intersection: a load must satisfy every policy",
+      "totalCharacters": 65536,
+      "policyCharacters": 16384,
+      "policies": 8
+    }
+  },
+  "temporaryEvidence": {
+    "path": "C:\\Users\\QzCrane\\AppData\\Local\\Temp\\nexus-halo-semantic-audit-20260911",
+    "insideWorkspace": false,
+    "fileCount": 313,
+    "retained": true,
+    "cleanup": "Two deletion tool calls were rejected by execution policy; no further deletion was attempted."
+  }
+}

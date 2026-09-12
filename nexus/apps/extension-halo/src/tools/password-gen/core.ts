@@ -1,6 +1,20 @@
 // goal: Password Generator core logic - generate and evaluate passwords
 
 import type { PasswordConfig, PasswordStrength } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export const passwordConfigCodec: ToolStateCodec<PasswordConfig> = {
+	decode(value) {
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return { kind: 'invalid', reason: 'Password settings must be an object.' };
+		const config = value as Record<string, unknown>;
+		if (!Number.isSafeInteger(config.length) || (config.length as number) < 6 || (config.length as number) > 128
+			|| typeof config.uppercase !== 'boolean' || typeof config.lowercase !== 'boolean' || typeof config.numbers !== 'boolean'
+			|| typeof config.symbols !== 'boolean' || typeof config.excludeAmbiguous !== 'boolean' || typeof config.customSymbols !== 'string'
+			|| config.customSymbols.length > 4096) return { kind: 'invalid', reason: 'Password settings contain an invalid length, flag, or character pool.' };
+		return { kind: 'valid', value: config as unknown as PasswordConfig };
+	},
+	encode(value) { return value; },
+};
 
 const UPPERCASE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
 const LOWERCASE = 'abcdefghijklmnopqrstuvwxyz';

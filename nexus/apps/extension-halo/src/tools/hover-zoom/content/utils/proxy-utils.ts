@@ -13,7 +13,8 @@ export async function fetchWithProxy<T = unknown>(
 	url: string,
 	opts: ProxyFetchOptions = {}
 ): Promise<T> {
-	const { method = 'GET', headers, body, responseType = 'json' } = opts;
+	const { method = 'GET', headers, body, responseType = 'json', proxyCapability } = opts;
+	if (!proxyCapability) throw new Error('Proxy capability is required');
 
 	try {
 		const response = await chrome.runtime.sendMessage({
@@ -21,7 +22,8 @@ export async function fetchWithProxy<T = unknown>(
 			url,
 			method,
 			headers,
-			body
+			body,
+			proxyCapability,
 		}) as ProxyAjaxResponse;
 
 		if (!response?.success) {
@@ -65,7 +67,8 @@ export function getCookie(name: string): string {
  */
 export async function fetchArrayBufferWithProxy(
 	url: string,
-	headers?: Record<string, string>
+	headers: Record<string, string> | undefined,
+	proxyCapability: import('../../rules/network-capabilities').HoverZoomProxyCapability,
 ): Promise<ArrayBuffer> {
 	try {
 		const response = await chrome.runtime.sendMessage({
@@ -73,6 +76,7 @@ export async function fetchArrayBufferWithProxy(
 			url,
 			method: 'GET',
 			headers,
+			proxyCapability,
 			responseType: 'arraybuffer'
 		}) as ProxyAjaxResponse;
 
@@ -89,4 +93,3 @@ export async function fetchArrayBufferWithProxy(
 		throw new Error(`Proxy arraybuffer failed: ${e instanceof Error ? e.message : String(e)}`);
 	}
 }
-

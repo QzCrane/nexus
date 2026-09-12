@@ -21,4 +21,8 @@ export const styles: Record<string, React.CSSProperties> = {
 	},
 	result: { padding: '12px', background: 'var(--halo-bg-secondary)', borderRadius: '8px' },
 	count: { fontSize: '11px', color: 'var(--halo-text-muted)', marginBottom: '8px' },
+	boundary: { padding: '8px', borderRadius: '6px', fontSize: '11px', color: 'var(--halo-text-muted)', background: 'var(--halo-bg-secondary)' },
+	status: { fontSize: '11px', color: 'var(--halo-text-muted)' },
+	error: { color: '#ef4444', fontSize: '12px' },
+	pre: { margin: 0, fontSize: '11px', fontFamily: 'monospace', color: 'var(--halo-text)', whiteSpace: 'pre-wrap' },
 };

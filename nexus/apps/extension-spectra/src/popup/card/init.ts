@@ -7,7 +7,7 @@ import {
 } from '@nexus/contracts';
 import { isSpectraUiResponse } from '@nexus/contracts/ui-runtime';
 import { RUNTIME_OBSERVATION_PORT } from '../../shared/runtime-observation';
-import { readCardSnapshot } from './snapshot';
+import { hasKnownBackgroundRetentionInputs, readCardSnapshot } from './snapshot';
 import { isCurrentTopDocument } from '../../shared/top-document';
 import { registerCardRenderCallback } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
@@ -80,8 +80,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   const snapshot = await readCardSnapshot(tabId, params.isBackground === true);
   if (!snapshot || popupClosing) return false;
-  const { documentId, status, controlSnapshot, isRemoteActive } = snapshot;
-  let acknowledgedSession = snapshot.sessionSnapshot;
+  const { documentId } = snapshot;
+  const status = snapshot.status.state === 'known' ? snapshot.status.value : null;
+  const controlSnapshot = snapshot.controlSnapshot.state === 'known' ? snapshot.controlSnapshot.value : null;
+  const isRemoteActive = snapshot.isRemoteActive.state === 'known' ? snapshot.isRemoteActive.value : null;
+  let acknowledgedSession = snapshot.sessionSnapshot.state === 'known' ? snapshot.sessionSnapshot.value : null;
 
 	// Processor color is valid only when lifecycle and field-level actual state
 	// identify the same document. A direct runtime read may fill this role only
@@ -103,7 +106,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const hasActiveMedia = tab.audible || isCaptureActive || status?.isPlaying === true;
 
   // rule: retention logic ensures a card stays visible for a grace period after audio stops, allowing the user to resume control
-  if (params.isBackground && !hasActiveMedia && !isRemoteActive) {
+  if (params.isBackground && hasKnownBackgroundRetentionInputs(snapshot) && !hasActiveMedia && !isRemoteActive) {
     const pauseRetentionSeconds = getGlobalSettings().pauseRetentionSeconds ?? 60;
     if (pauseRetentionSeconds > 0 && status?.pausedAt) {
       const pausedSeconds = (Date.now() - status.pausedAt) / 1000;
@@ -121,6 +124,8 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     config,
     stableConfig: mergeAudioConfig(config, { eqValues: [...config.eqValues] }),
     controlSnapshot,
+    controlSnapshotKnown: snapshot.controlSnapshot.state === 'known',
+    lifecycleSnapshotKnown: snapshot.status.state === 'known' && snapshot.sessionSnapshot.state === 'known',
     isCaptureActive,
     userInteracted: status?.userInteracted ?? (controlSnapshot?.revision ?? 0) > 0,
     actualMode: lifecycle?.actualMode ?? 'bypass',

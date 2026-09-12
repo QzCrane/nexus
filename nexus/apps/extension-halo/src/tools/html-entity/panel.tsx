@@ -8,11 +8,17 @@ import type { EntityMode } from './types';
 import { encodeHtmlSpecial, encodeHtmlNamed, encodeHtmlAll, decodeHtml, getEntityTable } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
+const entityModeCodec: ToolStateCodec<EntityMode> = {
+	decode(value) { return value === 'encode' || value === 'decode' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'HTML entity mode is unsupported.' }; },
+	encode(value) { return value; },
+};
 
 export const HtmlEntityPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useToolState<EntityMode>('html-entity-mode', 'encode');
+	const [mode, setMode, , modeRecovery] = useToolState<EntityMode>('html-entity-mode', 'encode', { codec: entityModeCodec });
 	const [input, setInput] = useToolState<string>('html-entity-input', '');
 	const [output, setOutput] = useToolState<string>('html-entity-output', '');
 	const [showTable, setShowTable] = useToolState<boolean>('html-entity-table', false);
@@ -47,6 +53,7 @@ export const HtmlEntityPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={modeRecovery} emptyValue="encode" exportName="halo-html-entity-mode-damaged.json" />
 			{/* Mode Tabs */}
 			<div style={styles.tabs}>
 				<button type="button"

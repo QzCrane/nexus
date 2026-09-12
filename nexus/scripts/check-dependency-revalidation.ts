@@ -16,6 +16,7 @@ interface RevalidationEntry {
 	packagePaths: string[];
 	lockedVersion: string;
 	observedLatest: string;
+	observedAt?: string;
 	source: string;
 	lane: string;
 	risk: 'medium' | 'high' | 'epoch';
@@ -100,6 +101,7 @@ export function checkDependencyRevalidation({
 		throw new Error('Dependency revalidation lock observation does not identify the exact current lock');
 	}
 	for (const entry of policy.entries) {
+		if (entry.observedAt !== undefined && !/^\d{4}-\d{2}-\d{2}$/u.test(entry.observedAt)) throw new Error(`${entry.dependency}: upstream observation date is invalid`);
 		if (!entry.dependency || !validSemver(entry.lockedVersion) || !validSemver(entry.observedLatest)) {
 			throw new Error(`${entry.dependency || '<unknown>'}: revalidation versions must be concrete semver observations`);
 		}

@@ -176,7 +176,7 @@
         "scripts/runtime-performance.spec.ts",
         "scripts/check-runtime-performance-policy.ts",
         "scripts/check-runtime-performance-policy.spec.ts",
-        "apps/extension-halo/test/sidepanel-performance-playwright.spec.ts",
+        "apps/extension-halo/test/sidepanel-performance.spec.ts",
         "apps/extension-spectra/test/performance.spec.ts",
         "apps/extension-spectra/test/runtime-stress-performance.spec.ts",
         "apps/extension-spectra/test/service-worker-wake-performance.spec.ts",

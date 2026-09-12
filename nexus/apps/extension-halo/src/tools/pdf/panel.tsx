@@ -7,11 +7,21 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PDFDocument as PDFDoc, PDFOperation, PDFToolState } from './types';
-import { mergePDFs, splitPDF, extractPages, rotatePages, addWatermark, imagesToPDF, getPageCount, validatePDF } from './core';
 import { ConfigPanel, DEFAULT_CONFIG, type OperationConfig } from './config-panel';
-import { parseRanges, parsePages, formatSize } from './utils';
+import { formatSize } from './utils';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { downloadBlob } from '../../kernel/utils/object-url-lease';
+import { extensionWorkerFactory, oneShotWorker } from '../../kernel/utils/one-shot-worker';
+import {
+	PDF_TASK_DEADLINE_MS,
+	PDF_WORKER_PATH,
+	type PDFWorkerRequest,
+	type PDFWorkerResponse,
+} from './worker-contract';
+import { pdfConfigCodec, pdfOperationCodec } from './state-codecs';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const OPERATIONS: { id: PDFOperation; icon: string; label: string; minFiles: number }[] = [
@@ -25,9 +35,10 @@ const OPERATIONS: { id: PDFOperation; icon: string; label: string; minFiles: num
 
 export const PDFPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [selectedOperation, setSelectedOperation] = useToolState<PDFOperation | null>('pdf-op', null);
+	const [selectedOperation, setSelectedOperation, , operationRecovery] = useToolState<PDFOperation | null>('pdf-op', null, { codec: pdfOperationCodec });
 	const [state, setState] = useState<PDFToolState>({ files: [], selectedOperation: null, processing: false, error: null });
-	const [config, setConfig] = useToolState<OperationConfig>('pdf-config', DEFAULT_CONFIG);
+	const [config, setConfig, , configRecovery] = useToolState<OperationConfig>('pdf-config', DEFAULT_CONFIG, { codec: pdfConfigCodec });
+	const task = useOwnedAsyncTask();
 
 	// Sync selectedOperation to state for backward compatibility with component logic if needed,
 	// but better to use it directly.
@@ -37,113 +48,99 @@ export const PDFPanel: React.FC = () => {
 
 	const [dragActive, setDragActive] = useState(false);
 	const [result, setResult] = useState<{ blob: Blob; name: string }[]>([]);
+	const workerFactory = useMemo(() => extensionWorkerFactory(PDF_WORKER_PATH), []);
+
+	const runWorker = useCallback((request: PDFWorkerRequest) => task.run(
+		() => oneShotWorker<PDFWorkerRequest, PDFWorkerResponse>(workerFactory, request),
+		PDF_TASK_DEADLINE_MS,
+	), [task.run, workerFactory]);
+	const setOwnedConfig = useCallback<React.Dispatch<React.SetStateAction<OperationConfig>>>((next) => {
+		task.cancel();
+		setResult([]);
+		setConfig(next);
+	}, [setConfig, task.cancel]);
 
 	const processFiles = useCallback(async (files: File[]) => {
-		try {
-			const validFiles: PDFDoc[] = [];
-			for (const file of files) {
-				const buffer = await file.arrayBuffer();
-				const isPDF = file.type === 'application/pdf' || file.name.endsWith('.pdf');
-				const isImage = file.type.startsWith('image/');
-				if (isPDF) {
-					const valid = await validatePDF(buffer);
-					if (valid) {
-						const pages = await getPageCount(buffer);
-						validFiles.push({ id: crypto.randomUUID(), name: file.name, pageCount: pages, size: file.size, createdAt: Date.now(), data: buffer });
-					}
-				} else if (isImage) {
-					validFiles.push({ id: crypto.randomUUID(), name: file.name, pageCount: 1, size: file.size, createdAt: Date.now(), data: buffer });
-				}
-			}
-			if (validFiles.length > 0) {
-				setState((prev) => ({ ...prev, files: [...prev.files, ...validFiles], error: null }));
-			}
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : 'Failed to read the selected file';
-			setState((prev) => ({ ...prev, error: message }));
+		const outcome = await runWorker({ type: 'inspect', files: [...state.files.map((file) => file.file), ...files] });
+		if (outcome.kind !== 'succeeded') return;
+		const response = outcome.value;
+		if (response.ok === false) {
+			setState((prev) => ({ ...prev, error: response.error }));
+			return;
 		}
-	}, []);
+		if (response.type !== 'inspect') return;
+		setResult([]);
+		setState((prev) => ({ ...prev, files: response.files as PDFDoc[], error: null }));
+	}, [runWorker, state.files]);
 
 	const handleDrop = useCallback(async (e: React.DragEvent) => { e.preventDefault(); setDragActive(false); await processFiles(Array.from(e.dataTransfer.files)); }, [processFiles]);
 	const handleFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => { await processFiles(Array.from(e.target.files || [])); e.target.value = ''; }, [processFiles]);
-	const handleRemoveFile = useCallback((id: string) => setState((prev) => ({ ...prev, files: prev.files.filter((f) => f.id !== id) })), []);
+	const handleRemoveFile = useCallback((id: string) => {
+		task.cancel();
+		setResult([]);
+		setState((prev) => ({ ...prev, files: prev.files.filter((f) => f.id !== id) }));
+	}, [task.cancel]);
 	const handleSelectOp = useCallback((op: PDFOperation) => { 
+		task.cancel();
 		setSelectedOperation(op);
 		setResult([]);
 		setState(prev => ({ ...prev, error: null }));
-	}, [setSelectedOperation]);
+	}, [setSelectedOperation, task.cancel]);
 
 
 	const canExecute = useMemo(() => {
-		if (!state.selectedOperation || state.processing) return false;
+		if (!state.selectedOperation || task.phase === 'running') return false;
 		const op = OPERATIONS.find((o) => o.id === state.selectedOperation);
 		return op ? state.files.length >= op.minFiles : false;
-	}, [state.selectedOperation, state.files.length, state.processing]);
+	}, [state.selectedOperation, state.files.length, task.phase]);
 
 	const handleExecute = useCallback(async () => {
 		if (!canExecute) return;
 		setState((prev) => ({ ...prev, processing: true, error: null }));
 		setResult([]);
-		try {
-			const { selectedOperation, files } = state;
+		const { selectedOperation, files } = state;
 			const firstFile = files[0];
 			if (!selectedOperation || !firstFile) {
-				throw new Error('Select an operation and at least one file');
+				setState((prev) => ({ ...prev, processing: false, error: 'Select an operation and at least one file' }));
+				return;
 			}
-			let outputs: { blob: Blob; name: string }[] = [];
-
-			if (selectedOperation === 'merge') {
-				const res = await mergePDFs({ documents: files.map((f) => f.data) });
-				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'merged.pdf' }]; } else throw new Error(res.error);
-			} else if (selectedOperation === 'split') {
-				const ranges = parseRanges(config.splitRanges);
-				if (ranges.length === 0) throw new Error('Invalid page ranges');
-				const res = await splitPDF({ document: firstFile.data, ranges });
-				if (!res.success) throw new Error(res.error);
-				if (res.data.length === 0) throw new Error('The selected ranges produced no PDF output');
-				// rule: every split range produces its own download; dropping all
-				// but the first would silently discard the requested results.
-				outputs = res.data.map((part, index) => ({
-					blob: new Blob([part], { type: 'application/pdf' }),
-					name: res.data.length === 1 ? 'split.pdf' : `split-${index + 1}.pdf`,
-				}));
-			} else if (selectedOperation === 'extract') {
-				const pages = parsePages(config.extractPages);
-				if (pages.length === 0) throw new Error('Invalid page numbers');
-				const res = await extractPages({ document: firstFile.data, pages });
-				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'extracted.pdf' }]; } else throw new Error(res.error);
-			} else if (selectedOperation === 'rotate') {
-				const res = await rotatePages({ document: firstFile.data, pages: [], degrees: config.rotateDegrees });
-				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'rotated.pdf' }]; } else throw new Error(res.error);
-			} else if (selectedOperation === 'watermark') {
-				const res = await addWatermark({ document: firstFile.data, text: config.watermarkText, opacity: config.watermarkOpacity });
-				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'watermarked.pdf' }]; } else throw new Error(res.error);
-			} else if (selectedOperation === 'images-to-pdf') {
-				const res = await imagesToPDF({ images: files.map((f) => f.data), pageSize: config.pageSize });
-				if (res.success) { outputs = [{ blob: new Blob([res.data], { type: 'application/pdf' }), name: 'images.pdf' }]; } else throw new Error(res.error);
-			}
-			if (outputs.length > 0) setResult(outputs);
-		} catch (err) {
-			setState((prev) => ({ ...prev, error: (err as Error).message }));
-		} finally {
+		const frozenConfig = structuredClone(config);
+		const outcome = await runWorker({ type: 'execute', operation: selectedOperation, inputs: files, config: frozenConfig });
+		if (outcome.kind !== 'succeeded') {
 			setState((prev) => ({ ...prev, processing: false }));
+			return;
 		}
-	}, [state, config, canExecute]);
+		const response = outcome.value;
+		if (response.ok === false) {
+			setState((prev) => ({ ...prev, processing: false, error: response.error }));
+			return;
+		}
+		if (response.type !== 'execute') return;
+		const baseName = {
+			merge: 'merged', split: 'split', extract: 'extracted', rotate: 'rotated',
+			watermark: 'watermarked', 'images-to-pdf': 'images', 'pdf-to-images': 'images',
+		}[selectedOperation];
+		setResult(response.outputs.map((part, index, all) => ({
+			blob: new Blob([part], { type: 'application/pdf' }),
+			name: all.length === 1 ? `${baseName}.pdf` : `${baseName}-${index + 1}.pdf`,
+		})));
+		setState((prev) => ({ ...prev, processing: false }));
+	}, [state, config, canExecute, runWorker]);
 
 	const handleDownload = useCallback(() => {
 		// Sequential small delays keep multi-part downloads from being swallowed
 		// by the browser's multiple-download guard.
 		result.forEach((part, index) => {
 			setTimeout(() => {
-				const url = URL.createObjectURL(part.blob);
-				const a = document.createElement('a'); a.href = url; a.download = part.name; a.click();
-				URL.revokeObjectURL(url);
+				downloadBlob(part.blob, part.name);
 			}, index * 200);
 		});
 	}, [result]);
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={operationRecovery} emptyValue={null} exportName="halo-pdf-operation-damaged.json" />
+			<StorageRecoveryActions recovery={configRecovery} emptyValue={DEFAULT_CONFIG} exportName="halo-pdf-config-damaged.json" />
 			<fieldset
 				aria-label={t('pdfPanel.dropHint')}
 				style={{
@@ -197,15 +194,17 @@ export const PDFPanel: React.FC = () => {
 				</div>
 			</Card>
 
-			<ConfigPanel operation={state.selectedOperation} config={config} setConfig={setConfig} t={t} />
+			<ConfigPanel operation={state.selectedOperation} config={config} setConfig={setOwnedConfig} t={t} />
 
-			{state.error && <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px', fontSize: '12px', color: '#ef4444' }}>⚠️ {state.error}</div>}
+			{(state.error !== null || task.error !== null) && <div style={{ padding: '10px 12px', background: 'rgba(239,68,68,0.1)', borderRadius: '8px', fontSize: '12px', color: '#ef4444' }}>⚠️ {state.error ?? String(task.error)}</div>}
 			{result.map((part) => (
 				<div key={part.name} style={{ padding: '10px 12px', background: 'rgba(34,197,94,0.1)', borderRadius: '8px', fontSize: '12px', color: '#22c55e' }}>✅ {t('pdfPanel.ready')} - {part.name} ({formatSize(part.blob.size)})</div>
 			))}
 
 			<div style={{ display: 'flex', gap: '8px' }}>
-				{result.length > 0 ? (
+				{task.phase === 'running' ? (
+					<button type="button" style={styles.actionBtn} onClick={task.cancel}>✕ Cancel</button>
+				) : result.length > 0 ? (
 					<button type="button" style={styles.actionBtn} onClick={handleDownload}>⬇️ {t('pdfPanel.buttons.download')}</button>
 				) : (
 					<button type="button" style={{ ...styles.actionBtn, ...(canExecute ? {} : { opacity: 0.5, cursor: 'not-allowed' }) }} onClick={handleExecute} disabled={!canExecute}>

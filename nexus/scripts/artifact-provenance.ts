@@ -60,6 +60,12 @@ export interface StoredZipEntryEvidence {
 	bytes: number;
 }
 
+export function productBuildAnalysisPath(product: 'halo' | 'spectra'): string {
+	return product === 'halo'
+		? resolve(workspaceDir, 'apps/extension-halo/dist', TEMP_ANALYSIS)
+		: resolve(repositoryRoot, 'artifacts/spectra-build-analysis.json');
+}
+
 interface BuildOutputDetail {
 	entryPoint?: unknown;
 	inputs?: unknown;
@@ -465,26 +471,28 @@ export function artifactProvenancePath(product: 'halo' | 'spectra'): string {
 
 export function captureArtifactProvenance({
 	product,
+	analysisPath,
 	keepAnalysis = false,
 }: {
 	product: 'halo' | 'spectra';
+	analysisPath?: string;
 	keepAnalysis?: boolean;
 }): string {
 	const projectDir = resolve(workspaceDir, `apps/extension-${product}`);
 	const distDir = resolve(projectDir, 'dist');
-	const analysisPath = resolve(distDir, TEMP_ANALYSIS);
-	if (!existsSync(analysisPath)) throw new Error(`${product}: build-analysis.json is missing`);
-	const analysisSha256 = sha256File(analysisPath);
+	const source = resolve(analysisPath ?? productBuildAnalysisPath(product));
+	if (!existsSync(source)) throw new Error(`${product}: build analysis is missing: ${source}`);
+	const analysisSha256 = sha256File(source);
 	const evidence = buildArtifactProvenance({
 		product,
 		distDir,
-		analysis: JSON.parse(readFileSync(analysisPath, 'utf8')) as unknown,
+		analysis: JSON.parse(readFileSync(source, 'utf8')) as unknown,
 		analysisSha256,
 	});
 	const output = artifactProvenancePath(product);
 	mkdirSync(dirname(output), { recursive: true });
 	writeFileSync(output, `${JSON.stringify(evidence, null, 2)}\n`, 'utf8');
-	if (!keepAnalysis) rmSync(analysisPath, { force: true });
+	if (!keepAnalysis) rmSync(source, { force: true });
 	console.log(`✓ ${product} whole-artifact provenance: ${evidence.files.length} file(s) -> ${repositoryRelative(output)}`);
 	return output;
 }

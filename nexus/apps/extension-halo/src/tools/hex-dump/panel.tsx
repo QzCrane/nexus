@@ -1,44 +1,44 @@
 // goal: Hex Dump panel UI
 
 import type React from 'react';
-import { useState, useCallback } from 'react';
-import { createHexDump, type HexChunk } from './core';
+import { useCallback } from 'react';
+import { createHexDump, hexChunksCodec, type HexChunk } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 
 
 export const HexDumpPanel: React.FC = () => {
-    const [loading, setLoading] = useState(false);
-    const [chunks, setChunks] = useToolState<HexChunk[]>('hex-dump-chunks', []);
+	const [chunks, setChunks, , chunksRecovery] = useToolState<HexChunk[]>('hex-dump-chunks', [], { codec: hexChunksCodec });
+	const task = useOwnedAsyncTask();
 
 
 	const handleFile = useCallback(async (file: File) => {
-        setLoading(true);
         setChunks([]);
         
         // Limit file size to avoid crashing (e.g. 5MB)
         if (file.size > 5 * 1024 * 1024) {
             alert('File too large (max 5MB)');
-            setLoading(false);
             return;
         }
 
-        const buffer = await file.arrayBuffer();
-        const dump = createHexDump(buffer);
-        setChunks(dump);
-        setLoading(false);
-	}, [setChunks]);
+		const outcome = await task.run(async () => createHexDump(await file.arrayBuffer()));
+		if (outcome.kind === 'succeeded') setChunks(outcome.value);
+	}, [setChunks, task.run]);
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={chunksRecovery} emptyValue={[]} exportName="halo-hex-dump-damaged.json" />
 			<label style={styles.dropzone}>
 				<div>📁 {chunks.length > 0 ? 'Open another file' : 'Open file to dump'}</div>
 				<input type="file" style={{ display: 'none' }} onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
 			</label>
 
-            {loading && <div style={styles.loading}>⏳ Processing...</div>}
+			{task.phase === 'running' && <div style={styles.loading}>⏳ Processing...</div>}
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)' }}>{String(task.error)}</div>}
 
             {chunks.length > 0 && (
                 <div style={styles.viewer}>

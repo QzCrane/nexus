@@ -223,9 +223,17 @@ export function useUserScripts() {
 		await deleteUserScript(id);
 		showToast(`🗑️ ${t('userscripts.scriptDeleted')}`);
 	};
+	const testOperationRef = useRef<AbortController | null>(null);
+	useEffect(() => () => {
+		testOperationRef.current?.abort();
+	}, []);
 
 	const handleTest = async (script: UserScript) => {
-		const success = await injectScriptToCurrentTab(script);
+		testOperationRef.current?.abort();
+		const operation = new AbortController();
+		testOperationRef.current = operation;
+		const success = await injectScriptToCurrentTab(script, operation.signal);
+		if (operation.signal.aborted || testOperationRef.current !== operation) return;
 		showToast(success
 			? `✅ ${t('userscripts.executed', { name: script.name })}`
 			: `❌ ${t('userscripts.injectionFailed')}`);

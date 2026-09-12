@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import {
+	assertCandidateParents,
 	assertPlatformEvidenceSnapshot,
 	browserHostIdentity,
 	assertSameRepositoryPull,
@@ -11,10 +12,13 @@ import {
 	ensureDockerImage,
 	classifyMainPosition,
 	githubReadJson,
+	githubReadText,
+	readBoundedGitHubBody,
 	isExactPromotionProjection,
 	mainPromotionArgs,
 	parseGitHubRepository,
 	parseRemoteRef,
+	platformEvidenceDigest,
 	receiptDigest,
 	readPolicy,
 	validateReceiptDocuments,
@@ -44,11 +48,31 @@ test('closeout identity follows the explicit replay executable and rejects a mis
 	}
 }, 30_000);
 
-const policy = JSON.parse(
+const policySource = JSON.parse(
 	readFileSync(new URL('../closeout-policy.json', import.meta.url), 'utf8'),
-) as CloseoutPolicy;
+) as Omit<CloseoutPolicy, 'toolFiles'>;
+const policy = readPolicy();
 
 function receipt(attempt: number): CloseoutReceipt {
+	const toolSha256 = Object.fromEntries(policy.toolFiles.map((file) => [file, '6'.repeat(64)]));
+	const platformBody = {
+		schemaVersion: 1 as const,
+		recordedAt: '2026-08-13T00:00:00.000Z',
+		head: '1'.repeat(40),
+		tree: '2'.repeat(40),
+		image: policy.platform.image,
+		imageIdentity: `sha256:${'a'.repeat(64)} oven/bun@${policy.platform.image.split('@')[1]}`,
+		environment: policy.platform.environment,
+		platform: 'linux' as const,
+		lanes: policy.platform.lanes.map((args) => ({ args, status: 'PASS' as const })),
+		toolSha256,
+	};
+	const browser = { executable: 'chrome.exe', version: '152.0.7977.54', bytes: 123, sha256: '8'.repeat(64) };
+	const artifact = (product: string, version: string) => {
+		const path = policy.products[product].artifact.replace('{version}', version);
+		const file = (path: string) => ({ path, sha256: '4'.repeat(64), bytes: 100 });
+		return { ...file(path), licenses: file(`${path}.licenses.json`), supplyChain: file(`${path}.provenance.json`), wholeArtifact: file(`${path}.artifact-provenance.json`) };
+	};
 	const body = {
 		schemaVersion: 1 as const,
 		attempt,
@@ -63,30 +87,64 @@ function receipt(attempt: number): CloseoutReceipt {
 			durationMs: attempt * 100,
 		})),
 		artifacts: {
-			halo: { path: 'halo.zip', sha256: '4'.repeat(64), bytes: 100 },
-			spectra: { path: 'spectra.zip', sha256: '5'.repeat(64), bytes: 200 },
+			halo: artifact('halo', '0.6.2'),
+			spectra: artifact('spectra', '1.4.2'),
 		},
-		toolSha256: { policy: '6'.repeat(64) },
-		host: { platform: 'win32', bun: '1.4.0', chromium: 'test' },
-		hosted: { status: 'INFRA_UNAVAILABLE', detail: 'runner was not allocated' },
+		toolSha256,
+		host: { platform: 'win32', arch: 'x64', osRelease: 'test', bun: BUN_VERSION, nodeCompatibility: 'test', browsers: { playwrightChromium: browser, puppeteerChrome: browser } },
+		hosted: { status: 'NOT_APPLICABLE', detail: 'fixture has no applicable workflow', authority: 'github-rest-observation' as const, plan: [], runs: [] },
+		source: { authority: 'local-execution-self-report' as const, authentication: 'none' as const },
 		platform: {
-			schemaVersion: 1 as const,
-			recordedAt: '2026-08-13T00:00:00.000Z',
-			head: '1'.repeat(40),
-			tree: '2'.repeat(40),
-			image: policy.platform.image,
-			imageIdentity: 'sha256:test',
-			environment: policy.platform.environment,
-			platform: 'linux' as const,
-			lanes: policy.platform.lanes.map((args) => ({ args, status: 'PASS' as const })),
-			toolSha256: { policy: '6'.repeat(64) },
-			evidenceSha256: '7'.repeat(64),
+			...platformBody,
+			evidenceSha256: platformEvidenceDigest(platformBody),
 		},
 	};
 	return { ...body, receiptSha256: receiptDigest(body) };
 }
 
 describe('exact-head closeout governance', () => {
+	test('downloads signed job logs without forwarding repository authentication', async () => {
+		const requests: Array<{ url: string; init?: RequestInit }> = [];
+		const text = await githubReadText('/repos/QzCrane/nexus/actions/jobs/1/logs', {
+			token: 'fixture-token', attempts: 1,
+			fetchImpl: async (url, init) => {
+				requests.push({ url: String(url), init });
+				return requests.length === 1
+					? new Response(null, { status: 302, headers: { location: 'https://results.blob.core.windows.net/logs/fixture?sig=fixture' } })
+					: new Response('actual job log');
+			},
+		});
+		expect(text).toBe('actual job log');
+		expect(requests[0].init?.redirect).toBe('manual');
+		expect(requests[1].init?.headers).toBeUndefined();
+		expect(requests[1].init?.credentials).toBe('omit');
+		expect(requests[1].init?.redirect).toBe('error');
+		let calls = 0;
+		await expect(githubReadText('/repos/QzCrane/nexus/actions/jobs/1/logs', {
+			token: 'fixture-token', attempts: 1,
+			fetchImpl: async () => { calls += 1; return new Response(null, { status: 302, headers: { location: 'https://attacker.example/logs' } }); },
+		})).rejects.toThrow('not an admitted');
+		expect(calls).toBe(1);
+	});
+
+	test('cancels an oversized streamed log before allocating the full response', async () => {
+		let cancelled = false;
+		const stream = new ReadableStream<Uint8Array>({
+			pull(controller) { controller.enqueue(new Uint8Array(8)); },
+			cancel() { cancelled = true; },
+		});
+		await expect(readBoundedGitHubBody(new Response(stream), 10)).rejects.toThrow('evidence limit');
+		expect(cancelled).toBe(true);
+	});
+	test('requires the complete parent vector instead of first-parent and reachable-count inference', () => {
+		const base = 'a'.repeat(40);
+		const ancestor = 'b'.repeat(40);
+		expect(() => assertCandidateParents([base], base)).not.toThrow();
+		for (const parents of [[], [ancestor], [base, ancestor], [base, base]]) {
+			expect(() => assertCandidateParents(parents, base)).toThrow('exactly one parent');
+		}
+	});
+
 	test('reads the live closeout policy through the same validator used by record and merge', () => {
 		expect(readPolicy()).toEqual(policy);
 		expect(policy.platform.image.startsWith(`oven/bun:${BUN_VERSION}@sha256:`)).toBe(true);
@@ -103,16 +161,61 @@ describe('exact-head closeout governance', () => {
 				`oven/bun:${BUN_VERSION}@sha256:short`,
 				`other/bun:${BUN_VERSION}@sha256:${'a'.repeat(64)}`,
 			]) {
-				writeFileSync(path, JSON.stringify({ ...policy, platform: { ...policy.platform, image } }));
+				writeFileSync(path, JSON.stringify({ ...policySource, platform: { ...policySource.platform, image } }));
 				expect(() => readPolicy(path)).toThrow('closeout contract');
 			}
 			for (const changes of [{ requiredAttempts: 1 }, { targetBranch: 'other' }, { lanes: [] }, { products: {} }]) {
-				writeFileSync(path, JSON.stringify({ ...policy, ...changes }));
+				writeFileSync(path, JSON.stringify({ ...policySource, ...changes }));
 				expect(() => readPolicy(path)).toThrow('closeout contract');
 			}
 		} finally {
 			rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
 		}
+	});
+
+	test('rejects weakened release owners, unsafe products and editable tool-input lists at the policy boundary', () => {
+		const root = mkdtempSync(resolve(tmpdir(), 'nexus-closeout-policy-semantic-'));
+		try {
+			const path = resolve(root, 'policy.json');
+			for (const changed of [
+				{ ...policySource, lanes: policySource.lanes.map((lane) => ({ ...lane, args: ['-e', 'console.log("PASS")'] })) },
+				{ ...policySource, lanes: [policySource.lanes[0], policySource.lanes[0]] },
+				{ ...policySource, products: { ...policySource.products, halo: { ...policySource.products.halo, versionFile: '../package.json' } } },
+				{ ...policySource, products: { ...policySource.products, halo: { ...policySource.products.halo, artifact: 'C:/other.zip' } } },
+				{ ...policySource, products: { halo: policySource.products.halo, other: policySource.products.spectra } },
+				{ ...policySource, toolFiles: [] },
+				{ ...policySource, allowedHostedStatuses: ['SUCCESS', 'failure'] },
+				{ ...policySource, platform: { ...policySource.platform, lanes: [...policySource.platform.lanes, policySource.platform.lanes[0]] } },
+			]) {
+				writeFileSync(path, JSON.stringify(changed));
+				expect(() => readPolicy(path)).toThrow('closeout contract');
+			}
+		} finally {
+			rmSync(root, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+		}
+	});
+
+	test('rejects incomplete or malformed receipt facts even when their digest is recomputed', () => {
+		const reject = (mutate: (value: CloseoutReceipt) => void) => {
+			const value = receipt(1);
+			mutate(value);
+			const { receiptSha256: _, ...body } = value;
+			value.receiptSha256 = receiptDigest(body);
+			expect(() => validateReceiptDocument(value, policy, 1)).toThrow();
+		};
+		for (const key of ['artifacts', 'host', 'platform', 'toolSha256']) {
+			reject((value) => { delete (value as unknown as Record<string, unknown>)[key]; });
+		}
+		reject((value) => { value.recordedAt = 'invalid'; });
+		reject((value) => { value.lanes[0].durationMs = -1; });
+		reject((value) => { value.lanes[0].durationMs = Number.NaN; });
+		reject((value) => { value.artifacts.halo.sha256 = ''; });
+		reject((value) => { value.artifacts.halo.path = '../unexpected.zip'; });
+		reject((value) => { value.versions.other = '1.0.0'; });
+		reject((value) => { value.toolSha256 = {}; });
+		reject((value) => { value.host.platform = 'linux'; });
+		reject((value) => { value.platform.imageIdentity = 'sha256:unverified'; });
+		reject((value) => { (value as unknown as Record<string, unknown>).fabricated = true; });
 	});
 
 	test('requires two complete same-head, same-tree and reproducible-artifact attempts', () => {

@@ -1,5 +1,7 @@
 // goal: Emoji Picker core logic - emoji data and search
 
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
 // Common emoji categories
 export const EMOJI_CATEGORIES = {
 	smileys: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😊', '😇', '🥰', '😍', '🤩', '😘', '😗', '😚', '😋', '😛', '😜', '🤪', '😝', '🤑', '🤗', '🤭', '🤫', '🤔', '🤐', '🤨', '😐', '😑', '😶', '😏', '😒', '🙄', '😬', '🤥', '😌', '😔', '😪', '🤤', '😴', '😷', '🤒', '🤕', '🤢', '🤮', '🤧', '🥵', '🥶', '🥴', '😵', '🤯', '🤠', '🥳', '😎', '🤓', '🧐', '😕', '😟', '🙁', '😮', '😯', '😲', '😳', '🥺', '😦', '😧', '😨', '😰', '😥', '😢', '😭', '😱', '😖', '😣', '😞', '😓', '😩', '😫', '🥱', '😤', '😡', '😠', '🤬', '👿', '💀', '☠️', '💩', '🤡', '👹', '👺', '👻', '👽', '👾', '🤖'],
@@ -12,6 +14,26 @@ export const EMOJI_CATEGORIES = {
 
 // Flatten all emojis
 export const ALL_EMOJIS = Object.values(EMOJI_CATEGORIES).flat();
+export type EmojiCategory = keyof typeof EMOJI_CATEGORIES;
+
+export const emojiCategoryCodec: ToolStateCodec<EmojiCategory> = {
+	decode(value) {
+		return typeof value === 'string' && Object.hasOwn(EMOJI_CATEGORIES, value)
+			? { kind: 'valid', value: value as EmojiCategory }
+			: { kind: 'invalid', reason: 'Emoji category is not supported.' };
+	},
+	encode(value) { return value; },
+};
+
+export const recentEmojiCodec: ToolStateCodec<string[]> = {
+	decode(value) {
+		if (!Array.isArray(value) || value.length > 16 || value.some((entry) => typeof entry !== 'string') || new Set(value).size !== value.length) {
+			return { kind: 'invalid', reason: 'Recent emoji history is invalid.' };
+		}
+		return { kind: 'valid', value: [...value] as string[] };
+	},
+	encode(value) { return value; },
+};
 
 // Search emojis (simple substring match)
 export function searchEmojis(query: string): { emoji: string; category: string }[] {

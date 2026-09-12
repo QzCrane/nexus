@@ -1,11 +1,14 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { isPrivateHost } from '../src/kernel/utils/ssrf-guard';
+import { fetchWithObservableRedirects, isPrivateHost, NetworkAdmissionError } from '../src/kernel/utils/ssrf-guard';
+import { admitsHoverZoomProxyRequest } from '../src/tools/hover-zoom/rules/network-capabilities';
 import { getTranslateUrl } from '../src/tools/translate/core';
 import { deleteCookie, setCookie, cookieUrl } from '../src/tools/cookie-manager/core';
 import type { CookieInfo } from '../src/tools/cookie-manager/types';
 import { scanActiveTabStorage, setStorageItem, type StorageSnapshot } from '../src/tools/storage-editor/core';
 import { executeRequest } from '../src/tools/api-tester/core';
 import { DEFAULT_CONFIG } from '../src/tools/api-tester/core';
+import { headerListCodec } from '../src/tools/headers-viewer/core';
+import { bilibiliRules } from '../src/tools/hover-zoom/rules/definitions/bilibili';
 
 const previousChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 const previousFetch = Object.getOwnPropertyDescriptor(globalThis, 'fetch');
@@ -68,6 +71,101 @@ describe('ssrf guard literals and false positives', () => {
 		for (const host of ['example.com', '8.8.8.8', '100.63.0.1', '172.32.0.1', '198.51.101.1', '198.20.1.1', '2606:4700::1']) {
 			expect(isPrivateHost(host), host).toBe(false);
 		}
+	});
+});
+
+describe('observable redirect admission', () => {
+	test('revalidates every hop before the next request', async () => {
+		let calls = 0;
+		Object.defineProperty(globalThis, 'fetch', {
+			configurable: true,
+			value: async () => {
+				calls += 1;
+				return new Response(null, { status: 302, headers: { location: 'http://127.0.0.1/admin' } });
+			},
+		});
+		await expect(fetchWithObservableRedirects('https://public.example/start', {})).rejects.toMatchObject({ code: 'blocked_host' });
+		expect(calls).toBe(1);
+	});
+
+	test('rejects an unadmitted cross-origin redirect', async () => {
+		Object.defineProperty(globalThis, 'fetch', {
+			configurable: true,
+			value: async () => new Response(null, { status: 302, headers: { location: 'https://other.example/final' } }),
+		});
+		await expect(fetchWithObservableRedirects('https://public.example/start', {})).rejects.toMatchObject({
+			name: 'NetworkAdmissionError',
+			code: 'cross_origin_redirect',
+		});
+	});
+
+	test('rejects an opaque redirect without pretending its target was inspected', async () => {
+		Object.defineProperty(globalThis, 'fetch', {
+			configurable: true,
+			value: async () => ({ type: 'opaqueredirect', status: 0, headers: new Headers() } as Response),
+		});
+		try {
+			await fetchWithObservableRedirects('https://public.example/start', {});
+			throw new Error('expected rejection');
+		} catch (error) {
+			expect(error).toBeInstanceOf(NetworkAdmissionError);
+			expect((error as NetworkAdmissionError).code).toBe('redirect_unobservable');
+		}
+	});
+});
+
+describe('Hover Zoom rule network capabilities', () => {
+	test('bind source, target, method and headers to the Bilibili rule', () => {
+		expect(admitsHoverZoomProxyRequest(
+			'bilibili-main',
+			new URL('https://www.bilibili.com/video/BV1'),
+			new URL('https://api.bilibili.com/x/player/playurl'),
+			'GET',
+			[],
+		)).toBe(true);
+		expect(admitsHoverZoomProxyRequest(
+			'bilibili-main',
+			new URL('https://attacker.example/'),
+			new URL('https://api.bilibili.com/x/player/playurl'),
+			'GET',
+			[],
+		)).toBe(false);
+		expect(admitsHoverZoomProxyRequest(
+			'bilibili-main',
+			new URL('https://www.bilibili.com/video/BV1'),
+			new URL('https://example.com/collect'),
+			'GET',
+			[],
+		)).toBe(false);
+		expect(admitsHoverZoomProxyRequest(
+			'bilibili-main',
+			new URL('https://www.bilibili.com/video/BV1'),
+			new URL('https://api.bilibili.com/x/player/playurl'),
+			'POST',
+			['authorization'],
+		)).toBe(false);
+	});
+
+	test('async Bilibili rules declare the capability propagated to their network effects', () => {
+		expect(bilibiliRules.find((rule) => rule.id === 'bilibili-video')?.proxyCapability).toBe('bilibili-main');
+		expect(bilibiliRules.find((rule) => rule.id === 'bilibili-episode')?.proxyCapability).toBe('bilibili-main');
+		expect(bilibiliRules.find((rule) => rule.id === 'bilibili-tv')?.proxyCapability).toBe('bilibili-tv');
+	});
+});
+
+describe('headers viewer storage contract', () => {
+	test('accepts legacy rows and emits the versioned domain representation', () => {
+		const legacy = [{ name: 'content-type', value: 'text/plain', category: 'other' as const }];
+		expect(headerListCodec.decode(legacy)).toEqual({ kind: 'valid', value: legacy });
+		expect(headerListCodec.encode(legacy)).toEqual({ version: 1, items: legacy });
+	});
+
+	test('rejects malformed and duplicate header rows', () => {
+		expect(headerListCodec.decode([{ name: 'x', value: '1', category: 'unknown' }]).kind).toBe('invalid');
+		expect(headerListCodec.decode([
+			{ name: 'X-Test', value: '1', category: 'other' },
+			{ name: 'x-test', value: '2', category: 'other' },
+		]).kind).toBe('invalid');
 	});
 });
 

@@ -181,24 +181,34 @@ describe('artifact-bound release supply-chain evidence', () => {
 			const artifactPath = resolve(directory, 'halo.zip');
 			const sbomPath = resolve(directory, 'nexus.cdx.json');
 			const retainedPath = resolve(directory, 'halo.retained-dependencies.json');
+			const artifactProvenanceEvidencePath = resolve(directory, 'halo.artifact-provenance.json');
 			const adjudicationPath = resolve(directory, 'license-adjudication.json');
 			const artifact = Buffer.from('exact-release-artifact');
 			writeFileSync(artifactPath, artifact);
 			writeFileSync(sbomPath, `${JSON.stringify(fixtureSbom(), null, 2)}\n`);
 			writeFileSync(retainedPath, `${JSON.stringify(fixtureRetained(), null, 2)}\n`);
+			writeFileSync(artifactProvenanceEvidencePath, `${JSON.stringify({
+				schemaVersion: 1,
+				product: 'halo',
+				scope: 'whole-extension-dist',
+				wholeArtifactScoped: true,
+				analysisSha256: 'c'.repeat(64),
+				files: [{ path: 'background.js', sha256: 'd'.repeat(64), bytes: 1, origin: { kind: 'generated-bundle', owner: 'build.ts' } }],
+			}, null, 2)}\n`);
 			writeFileSync(adjudicationPath, `${JSON.stringify(emptyAdjudication(), null, 2)}\n`);
 			const result = generateReleaseSupplyChainEvidence({
 				product: 'halo',
 				artifactPath,
 				sbomPath,
 				retainedPath,
+				artifactProvenanceEvidencePath,
 				licenseAdjudicationPath: adjudicationPath,
 				recordedAt: '2026-08-18T00:00:00.000Z',
 				identity: { head: 'a'.repeat(40), tree: 'b'.repeat(40) },
 			});
 			expect(readFileSync(artifactPath)).toEqual(artifact);
 			expect(result.provenance).toMatchObject({
-				schemaVersion: 4,
+				schemaVersion: 5,
 				product: 'halo',
 				head: 'a'.repeat(40),
 				tree: 'b'.repeat(40),
@@ -209,6 +219,10 @@ describe('artifact-bound release supply-chain evidence', () => {
 					npmArtifactScoped: true,
 					wholeArtifactScoped: false,
 					packages: 1,
+				},
+				wholeArtifactProvenance: {
+					analysisSha256: 'c'.repeat(64),
+					files: 1,
 				},
 				licenses: {
 					scope: 'product-retained-npm-runtime',
@@ -244,6 +258,36 @@ describe('artifact-bound release supply-chain evidence', () => {
 					bomRef: 'pkg:npm/example@1.0.0', bytesInOutput: 123,
 				}],
 			});
+		} finally {
+			rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+		}
+	});
+
+	test('rejects retained dependencies captured from a different build analysis', () => {
+		const directory = mkdtempSync(resolve(tmpdir(), 'nexus-supply-chain-stale-'));
+		try {
+			const artifactPath = resolve(directory, 'halo.zip');
+			const sbomPath = resolve(directory, 'nexus.cdx.json');
+			const retainedPath = resolve(directory, 'halo.retained-dependencies.json');
+			const artifactProvenanceEvidencePath = resolve(directory, 'halo.artifact-provenance.json');
+			const adjudicationPath = resolve(directory, 'license-adjudication.json');
+			writeFileSync(artifactPath, 'artifact');
+			writeFileSync(sbomPath, JSON.stringify(fixtureSbom()));
+			writeFileSync(retainedPath, JSON.stringify(fixtureRetained({ analysisSha256: 'a'.repeat(64) })));
+			writeFileSync(artifactProvenanceEvidencePath, JSON.stringify({
+				schemaVersion: 1,
+				product: 'halo',
+				scope: 'whole-extension-dist',
+				wholeArtifactScoped: true,
+				analysisSha256: 'b'.repeat(64),
+				files: [{ path: 'background.js', sha256: 'd'.repeat(64), bytes: 1, origin: { kind: 'generated-bundle', owner: 'build.ts' } }],
+			}));
+			writeFileSync(adjudicationPath, JSON.stringify(emptyAdjudication()));
+			expect(() => generateReleaseSupplyChainEvidence({
+				product: 'halo', artifactPath, sbomPath, retainedPath, artifactProvenanceEvidencePath,
+				licenseAdjudicationPath: adjudicationPath,
+				identity: { head: 'a'.repeat(40), tree: 'b'.repeat(40) },
+			})).toThrow('different build analyses');
 		} finally {
 			rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 		}

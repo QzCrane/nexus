@@ -1,7 +1,7 @@
 // goal: Media Sniffer panel UI - scan and download page media resources
 
 import type React from 'react';
-import { useState, useCallback, useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import {
@@ -17,6 +17,7 @@ import {
 import { filterMedia, downloadMedia, getFilename, formatSize } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
 
 
 const TYPES: MediaType[] = ['video', 'audio', 'image'];
@@ -37,20 +38,18 @@ export const MediaSnifferPanel: React.FC = () => {
 		DEFAULT_FILTER_CONFIG,
 		{ normalize: normalizeFilterConfig },
 	);
-	const [scanning, setScanning] = useState(false);
+	const task = useOwnedAsyncTask();
 
 
 	// Execute scan via content script
 	const handleScan = useCallback(async () => {
-		setScanning(true);
-		try {
+		const outcome = await task.run(async () => {
 			const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-			if (!tab?.id) return;
+			if (!tab?.id) throw new Error('No active tab');
 			
 			// Prevent scanning restricted pages
 			if (tab.url && (tab.url.startsWith('chrome:') || tab.url.startsWith('edge:') || tab.url.startsWith('about:') || tab.url.startsWith('devtools:') || tab.url.startsWith('view-source:'))) {
-				showToast({ message: t('mediaSniffer.errorRestricted'), type: 'error' });
-				return;
+				throw new Error(t('mediaSniffer.errorRestricted'));
 			}
 
 			const results = await chrome.scripting.executeScript({
@@ -58,18 +57,14 @@ export const MediaSnifferPanel: React.FC = () => {
 				func: scanMediaInPage,
 			});
 			
-			if (results?.[0]?.result) {
-				const parsed: unknown = JSON.parse(results[0].result);
-				if (!isScanResult(parsed)) throw new Error('Invalid media scan response');
-				setResult(parsed);
-			}
-		} catch (err: unknown) {
-			console.error('[MediaSniffer] scan failed:', err);
-			showToast({ message: err instanceof Error ? err.message : 'Scan failed', type: 'error' });
-		} finally {
-			setScanning(false);
-		}
-	}, [t, showToast, setResult]);
+			if (!results?.[0]?.result) throw new Error('Media scan returned no result');
+			const parsed: unknown = JSON.parse(results[0].result);
+			if (!isScanResult(parsed)) throw new Error('Invalid media scan response');
+			return parsed;
+		});
+		if (outcome.kind === 'succeeded') setResult(outcome.value);
+		else if (outcome.kind === 'failed') showToast({ message: outcome.error instanceof Error ? outcome.error.message : 'Scan failed', type: 'error' });
+	}, [t, showToast, setResult, task.run]);
 
 	// Auto-scan on mount
 	useEffect(() => { handleScan(); }, [handleScan]);
@@ -103,8 +98,8 @@ export const MediaSnifferPanel: React.FC = () => {
 		<div style={styles.wrapper}>
 			{/* Header */}
 			<div style={styles.header}>
-				<button type="button" style={styles.btn} onClick={handleScan} disabled={scanning}>
-					{scanning ? '⏳' : '🔍'} {t('mediaSniffer.scan')}
+				<button type="button" style={styles.btn} onClick={handleScan} disabled={task.phase === 'running'}>
+					{task.phase === 'running' ? '⏳' : '🔍'} {t('mediaSniffer.scan')}
 				</button>
 				<span style={styles.stats}>
 					{items.length} {t('mediaSniffer.found')}
@@ -130,7 +125,7 @@ export const MediaSnifferPanel: React.FC = () => {
 			{items.length === 0 ? (
 				<Card variant="default" padding="lg">
 					<div style={styles.empty}>
-						{scanning ? t('mediaSniffer.scanning') : t('mediaSniffer.empty')}
+						{task.phase === 'running' ? t('mediaSniffer.scanning') : t('mediaSniffer.empty')}
 					</div>
 				</Card>
 			) : (

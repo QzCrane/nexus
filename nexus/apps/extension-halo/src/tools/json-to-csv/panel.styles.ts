@@ -20,4 +20,8 @@ export const styles: Record<string, React.CSSProperties> = {
 		background: 'var(--halo-accent)', color: '#fff', border: 'none',
 	},
 	error: { color: '#ef4444', fontSize: '12px' },
+	notice: {
+		padding: '8px 10px', borderRadius: '6px', fontSize: '11px', lineHeight: 1.4,
+		background: 'var(--halo-bg-secondary)', color: 'var(--halo-text-muted)',
+	},
 };

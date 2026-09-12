@@ -4,6 +4,12 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, wri
 import { delimiter, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUN_VERSION } from './toolchain-versions.ts';
+import { generateFinalReleaseEvidence } from './release-artifact-provenance';
+import {
+	recordReleaseTestResult,
+	verifyFeaturePromotionResults,
+} from './check-feature-promotion';
+import { releaseTestEntryArgs } from './check-release-test-owners';
 
 export const EXPECTED_BUN_VERSION = BUN_VERSION;
 
@@ -198,17 +204,24 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'documentation architecture', args: ['run', 'docs:check'] },
 	{ label: 'platform contract', args: ['run', 'check:platform'] },
 	{ label: 'repository governance contracts', args: ['run', 'check:governance'] },
+	{ label: 'closeout evidence contracts', args: ['run', 'check:closeout-evidence'] },
 	{ label: 'public projection contract', args: ['run', 'check:public-projections'] },
 	{ label: 'frozen dependency install', args: ['install', '--frozen-lockfile'] },
 	{ label: 'toolchain verify', args: ['run', 'check:toolchain'] },
 	{ label: 'Biome lint', args: ['run', 'lint'] },
 	{ label: 'workspace dependency build', args: ['run', 'build:halo-deps'] },
 	{ label: 'TypeScript check', args: ['run', 'typecheck:halo'] },
-	{ label: 'unit tests', args: ['run', 'test:halo'] },
+	{ label: 'unit tests', args: releaseTestEntryArgs('unit'), promotionResultEntry: 'unit' },
 	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-halo', 'build:prod'] },
-	{ label: 'production Chromium contracts', args: ['run', '--cwd', 'apps/extension-halo', 'test:browser-chromium'] },
+	{
+		label: 'production Chromium contracts',
+		args: releaseTestEntryArgs('browser'),
+		promotionResultEntry: 'browser',
+	},
+	{ label: 'feature promotion execution evidence', fn: verifyFeaturePromotionResults },
 	{ label: 'dependency audit', args: ['run', 'audit:dependencies'] },
 	{ label: 'staging ZIP', fn: createStagingZip },
+	{ label: 'final release supply-chain evidence', fn: () => generateFinalReleaseEvidence('halo') },
 ]);
 
 export function assertReleaseRuntime(version = Bun.version) {
@@ -264,6 +277,7 @@ export function runRelease({
 				const reason = result.signal ? `signal ${result.signal}` : `exit code ${result.status ?? 'unknown'}`;
 				throw new Error(`HALO release stopped at ${step.label}: ${reason}`);
 			}
+			if (step.promotionResultEntry) recordReleaseTestResult(step.promotionResultEntry);
 		}
 	}
 	console.log('\n✓ HALO local release evidence completed and the candidate was staged');

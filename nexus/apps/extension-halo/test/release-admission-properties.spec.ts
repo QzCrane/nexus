@@ -29,6 +29,25 @@ function seededStrings(seed: number, count: number): string[] {
 }
 
 describe('HALO release admission parser properties', () => {
+	test('admits only an exact module-owned Worker source/output pair and matching surface', () => {
+		for (const change of [
+			{ entry: '../worker.ts' }, { entry: 'src/tools/regex/worker.ts' },
+			{ output: 'workers/*.js' }, { output: '../pdf.js' }, { output: 'workers/regex.js' },
+			{ unknown: true },
+		]) {
+			const document = cloneBaseline();
+			const pdf = document.modules.find((module: { id: string }) => module.id === 'pdf');
+			pdf.extensionWorkers[0] = { ...pdf.extensionWorkers[0], ...change };
+			expect(() => parseReleaseAdmission(document)).toThrow('exact owned source and output');
+		}
+		const document = cloneBaseline();
+		const pdf = document.modules.find((module: { id: string }) => module.id === 'pdf');
+		pdf.surfaces = ['panel'];
+		expect(() => parseReleaseAdmission(document)).toThrow('admission and entry must agree');
+		pdf.surfaces.push('extension-worker');
+		pdf.extensionWorkers.push(pdf.extensionWorkers[0]);
+		expect(() => parseReleaseAdmission(document)).toThrow('one owned Worker');
+	});
 	test('is deterministic and idempotent over the canonical admission document', () => {
 		const first = parseReleaseAdmission(baseline);
 		const second = parseReleaseAdmission(structuredClone(first));

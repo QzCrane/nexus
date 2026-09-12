@@ -7,6 +7,10 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generateSbom } from './generate-sbom.ts';
+import {
+	artifactProvenancePath,
+	type ArtifactProvenanceEvidence,
+} from './artifact-provenance';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspaceDir = dirname(scriptDir);
@@ -43,6 +47,19 @@ interface RetainedDependencyEvidence {
 	wholeArtifactScoped?: unknown;
 	analysisSha256?: unknown;
 	packages?: unknown;
+}
+
+function parseArtifactProvenance(product: 'halo' | 'spectra', value: ArtifactProvenanceEvidence): ArtifactProvenanceEvidence {
+	if (value.schemaVersion !== 1
+		|| value.product !== product
+		|| value.scope !== 'whole-extension-dist'
+		|| value.wholeArtifactScoped !== true
+		|| !/^[a-f0-9]{64}$/u.test(value.analysisSha256)
+		|| !Array.isArray(value.files)
+		|| value.files.length === 0) {
+		throw new Error(`${product}: whole-artifact provenance is malformed or belongs to another product`);
+	}
+	return value;
 }
 
 interface LicenseAdjudicationEntry {
@@ -309,38 +326,63 @@ function governanceInputs() {
 	].map((path) => hashedInput(resolve(workspaceDir, path)));
 }
 
+function generatorInputs() {
+	return [
+		'scripts/artifact-provenance.ts',
+		'scripts/capture-retained-dependencies.ts',
+		'scripts/check-source-derived-third-party.ts',
+		'scripts/generate-sbom.ts',
+		'scripts/release-artifact-provenance.ts',
+		'scripts/release-supply-chain.ts',
+	].map((path) => hashedInput(resolve(workspaceDir, path)));
+}
+
 function retainedEvidencePath(product: 'halo' | 'spectra'): string {
 	return resolve(supplyChainDir, `${product}.retained-dependencies.json`);
 }
 
-export function generateReleaseSupplyChainEvidence({
-	product,
-	artifactPath,
-	sbomPath = defaultSbomPath,
-	retainedPath = retainedEvidencePath(product),
-	licenseAdjudicationPath = defaultLicenseAdjudicationPath,
-	recordedAt = new Date().toISOString(),
-	identity,
-}: {
+export function generateReleaseSupplyChainEvidence(options: {
 	product: 'halo' | 'spectra';
 	artifactPath: string;
 	sbomPath?: string;
 	retainedPath?: string;
+	artifactProvenanceEvidencePath?: string;
 	licenseAdjudicationPath?: string;
 	recordedAt?: string;
 	identity?: { head: string; tree: string };
 }) {
+	const {
+		product,
+		artifactPath,
+		retainedPath = retainedEvidencePath(product),
+		artifactProvenanceEvidencePath = artifactProvenancePath(product),
+		licenseAdjudicationPath = defaultLicenseAdjudicationPath,
+		recordedAt,
+		identity,
+	} = options;
+	const sbomPath = options.sbomPath ?? defaultSbomPath;
 	const artifact = resolve(artifactPath);
 	if (!existsSync(artifact)) throw new Error(`release artifact is missing: ${artifact}`);
-	if (!existsSync(sbomPath)) generateSbom(sbomPath);
+	if (options.sbomPath === undefined) generateSbom(sbomPath);
+	else if (!existsSync(sbomPath)) throw new Error('release SBOM is missing');
 	if (!existsSync(retainedPath)) {
 		throw new Error(`${product}: retained runtime dependency evidence is missing; rebuild the exact production candidate`);
+	}
+	if (!existsSync(artifactProvenanceEvidencePath)) {
+		throw new Error(`${product}: whole-artifact provenance is missing; rebuild the exact production candidate`);
 	}
 	if (!existsSync(licenseAdjudicationPath)) throw new Error('license adjudication policy is missing');
 	const sbom = JSON.parse(readFileSync(sbomPath, 'utf8')) as CycloneDxDocument;
 	const retained = JSON.parse(readFileSync(retainedPath, 'utf8')) as RetainedDependencyEvidence;
+	const wholeArtifact = parseArtifactProvenance(
+		product,
+		JSON.parse(readFileSync(artifactProvenanceEvidencePath, 'utf8')) as ArtifactProvenanceEvidence,
+	);
 	const adjudication = JSON.parse(readFileSync(licenseAdjudicationPath, 'utf8')) as LicenseAdjudicationPolicy;
 	const inventory = buildProductLicenseInventory(product, sbom, retained, adjudication);
+	if (retained.analysisSha256 !== wholeArtifact.analysisSha256) {
+		throw new Error(`${product}: retained dependency evidence and whole-artifact provenance come from different build analyses`);
+	}
 	const licensePath = `${artifact}.licenses.json`;
 	const provenancePath = `${artifact}.provenance.json`;
 	mkdirSync(dirname(licensePath), { recursive: true });
@@ -349,9 +391,10 @@ export function generateReleaseSupplyChainEvidence({
 		head: git(['rev-parse', 'HEAD']),
 		tree: git(['rev-parse', 'HEAD^{tree}']),
 	};
+	const evidenceRecordedAt = recordedAt ?? git(['show', '-s', '--format=%cI', gitIdentity.head]);
 	const provenance = {
-		schemaVersion: 4,
-		recordedAt,
+		schemaVersion: 5,
+		recordedAt: evidenceRecordedAt,
 		product,
 		head: gitIdentity.head,
 		tree: gitIdentity.tree,
@@ -378,6 +421,11 @@ export function generateReleaseSupplyChainEvidence({
 			wholeArtifactScoped: inventory.wholeArtifactScoped,
 			packages: inventory.packages.length,
 		},
+		wholeArtifactProvenance: {
+			...hashedInput(artifactProvenanceEvidencePath),
+			analysisSha256: wholeArtifact.analysisSha256,
+			files: wholeArtifact.files.length,
+		},
 		licenses: {
 			path: relative(repositoryRoot, licensePath).replaceAll('\\', '/'),
 			sha256: licensesSha256,
@@ -394,6 +442,7 @@ export function generateReleaseSupplyChainEvidence({
 			licenseAdjudication: hashedInput(licenseAdjudicationPath),
 			product: productInputs(product),
 			governance: governanceInputs(),
+			generators: generatorInputs(),
 		},
 	};
 	const provenanceSha256 = writeCanonicalJson(provenancePath, provenance);

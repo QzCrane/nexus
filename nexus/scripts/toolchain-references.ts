@@ -1,4 +1,5 @@
-import { readdirSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { extname, join, relative, resolve } from 'node:path';
 
 // goal: distinguish executable toolchain pins from immutable historical evidence
@@ -26,6 +27,7 @@ const generatedDirectories = new Set([
 export function isCurrentToolchainFile(path: string): boolean {
 	const normalized = path.replaceAll('\\', '/');
 	return normalized !== 'bun.lock'
+		&& !normalized.split('/').some((segment) => generatedDirectories.has(segment))
 		&& !normalized.includes('/docs/_archive/')
 		&& scannedExtensions.has(extname(normalized));
 }
@@ -49,4 +51,18 @@ export function listArchiveToolchainFiles(repositoryRoot: string): string[] {
 	};
 	visit(root);
 	return paths.sort();
+}
+
+export function listCurrentToolchainFiles(repositoryRoot: string): string[] {
+	if (!existsSync(resolve(repositoryRoot, '.git'))) return listArchiveToolchainFiles(repositoryRoot);
+	const result = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '-z'], { encoding: 'utf8', shell: false });
+	if (result.error) throw result.error;
+	if (result.status !== 0) throw new Error(`git ls-files failed: ${result.stderr.trim()}`);
+	return result.stdout.split('\0').filter(Boolean).filter(isCurrentToolchainFile)
+		.map((path) => {
+			const absolute = resolve(repositoryRoot, path);
+			if (!existsSync(absolute)) throw new Error(`Tracked current source is missing: ${path}`);
+			if (lstatSync(absolute).isSymbolicLink()) throw new Error(`Current source is a symbolic link: ${path}`);
+			return absolute;
+		}).sort();
 }

@@ -10,9 +10,11 @@ import {
 	formatJSON,
 	minifyJSON,
 	copyToClipboard,
+	formatOptionsCodec,
 } from './core';
 import { useToolState } from '../../kernel';
 import { useToast } from '../../components/ToastProvider';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 import { styles } from './panel.styles';
 
@@ -78,7 +80,7 @@ export const JSONFormatterPanel: React.FC = () => {
 	const { showToast } = useToast();
 	const [input, setInput] = useToolState<string>('json-formatter', '');
 	const [error, setError] = useState<string | null>(null);
-	const [options, setOptions] = useToolState<FormatOptions>('json-formatter-opts', DEFAULT_OPTIONS);
+	const [options, setOptions, , optionsRecovery] = useToolState<FormatOptions>('json-formatter-opts', DEFAULT_OPTIONS, { codec: formatOptionsCodec });
 
 	const handleFormat = useCallback(() => {
 		const result = formatJSON(input, options);
@@ -114,6 +116,7 @@ export const JSONFormatterPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={optionsRecovery} emptyValue={DEFAULT_OPTIONS} exportName="halo-json-options-damaged.json" />
 			<Card variant="default" padding="sm">
 				<div style={styles.optionsRow}>
 					{/* Indent: button group */}

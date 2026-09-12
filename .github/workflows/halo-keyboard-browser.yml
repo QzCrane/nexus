@@ -76,6 +76,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact checkout at start
+        run: node nexus/scripts/hosted-execution.mjs start
 
       - name: Set up Bun 1.4.0
         uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -97,3 +103,7 @@ jobs:
 
       - name: Test HALO fast browser contracts in Chromium
         run: bun --cwd nexus/apps/extension-halo test:browser-chromium:fast
+
+      - name: Verify exact checkout at end
+        if: always()
+        run: node nexus/scripts/hosted-execution.mjs end

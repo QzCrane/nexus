@@ -5,7 +5,18 @@
 // never silently treated as a complete success.
 
 import Papa from 'papaparse';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
 import type { ParsedCsv } from './types';
+
+export type CsvExportMode = 'raw' | 'spreadsheet-safe';
+export const csvExportModeCodec: ToolStateCodec<CsvExportMode> = {
+	decode(value) {
+		return value === 'raw' || value === 'spreadsheet-safe'
+			? { kind: 'valid', value }
+			: { kind: 'invalid', reason: 'CSV export mode is unsupported.' };
+	},
+	encode(value) { return value; },
+};
 
 // Parse CSV string
 export function parseCsv(input: string, delimiter = ','): ParsedCsv {
@@ -37,9 +48,25 @@ export function parseCsv(input: string, delimiter = ','): ParsedCsv {
 	};
 }
 
-// Convert table to CSV string
-export function toCsv(headers: string[], rows: string[][], delimiter = ','): string {
-	return Papa.unparse({ fields: headers, data: rows }, { delimiter, newline: '\n' });
+/**
+ * Serialize CSV through the one admitted engine. Raw mode is the fidelity
+ * default. Spreadsheet-safe mode is explicit because it prefixes formula-like
+ * cells with an apostrophe and therefore changes their field text.
+ */
+export function serializeCsv(
+	headers: string[],
+	rows: string[][],
+	delimiter = ',',
+	mode: CsvExportMode = 'raw',
+): string {
+	return Papa.unparse(
+		{ fields: headers, data: rows },
+		{
+			delimiter,
+			newline: '\n',
+			escapeFormulae: mode === 'spreadsheet-safe',
+		},
+	);
 }
 
 // Auto-detect delimiter (tool-level hint for the engine, not a parser)

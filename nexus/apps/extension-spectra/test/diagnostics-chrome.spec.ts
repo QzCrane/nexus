@@ -1,4 +1,4 @@
-import { launchBrowser } from './helpers/browser-driver';
+import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -38,7 +38,7 @@ beforeAll(async () => {
 	});
 	privateUrl = `http://127.0.0.1:${server.port}/private-diagnostic-fixture?token=PRIVATE_TOKEN_987654`;
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-diagnostics-'));
-	browser = await launchBrowser({
+	browser = await launchPuppeteerBrowser({
 		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 		headless: true,
 		userDataDir: profileDir,
@@ -46,8 +46,11 @@ beforeAll(async () => {
 			`--disable-extensions-except=${EXTENSION_DIR}`,
 			`--load-extension=${EXTENSION_DIR}`,
 			'--no-sandbox',
-			'--disable-setuid-sandbox',
-		],
+		'--disable-setuid-sandbox',
+	],
+	}, {
+		owner: 'apps/extension-spectra/test/diagnostics-chrome.spec.ts',
+		profile: { kind: 'temporary', prefix: 'spectra-diagnostics-', isolated: true },
 	});
 	if (EXPECTED_CHROME) expect(await browser.version()).toContain(EXPECTED_CHROME);
 	const workerTarget: Target = await browser.waitForTarget(
@@ -129,6 +132,15 @@ describe('SPECTRA local diagnostic export privacy', () => {
 				'offscreenHostPresent',
 				'offscreenAudioProcessorCount',
 				'offscreenRemoteSessionCount',
+				'mediaDiscoveryPendingCount',
+				'mediaDiscoveryOldestPendingMs',
+				'mediaDiscoveryScanCount',
+				'mediaDiscoveryQueryFailureCount',
+				'mediaDiscoveryProbeTimeoutCount',
+				'mediaDiscoveryDeniedCount',
+				'mediaDiscoveryStaleCount',
+				'mediaDiscoveryUnknownCount',
+				'mediaDiscoveryLastCoverageComplete',
 			]) {
 				expect(Object.hasOwn(owners, key)).toBe(true);
 				const value = owners[key];

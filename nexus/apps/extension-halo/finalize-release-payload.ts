@@ -16,6 +16,7 @@ import {
 	RELEASE_SCRIPT_RUNTIME_IDS,
 	RELEASE_WEB_ACCESSIBLE_RESOURCES,
 	RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES,
+	RELEASE_EXTENSION_WORKER_ENTRIES,
 } from './src/kernel/registry/_generated-release-admission';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -96,6 +97,7 @@ function verifyBuildEntryProjection(analysis: BuildAnalysis): void {
 		['content.js', 'src/entry/content.ts'],
 		...RELEASE_CONTENT_SCRIPTS.map((entry) => [entry.js, entry.entry] as const),
 		...RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES.map((entry) => [entry.output, entry.entry] as const),
+		...RELEASE_EXTENSION_WORKER_ENTRIES.map((entry) => [entry.output, entry.entry] as const),
 		['background.js', 'src/entry/background.ts'],
 		['sidepanel.js', 'src/entry/sidepanel.tsx'],
 		['sidepanel-init.js', 'src/entry/sidepanel-init.ts'],
@@ -205,7 +207,18 @@ function verifyBuiltManifest(): void {
 	}
 }
 
+export function verifyExtensionWorkers(root = distDir): void {
+	const directory = path.join(root, 'workers');
+	const actual = existsSync(directory) ? readdirSync(directory, { withFileTypes: true }).map((entry) => {
+		if (!entry.isFile()) throw new Error('HALO worker payload contains an unexpected directory or link');
+		return `workers/${entry.name}`;
+	}).sort() : [];
+	const expected = RELEASE_EXTENSION_WORKER_ENTRIES.map((entry) => entry.output).sort();
+	if (JSON.stringify(actual) !== JSON.stringify(expected)) throw new Error('HALO Worker payload differs from release admission');
+}
+
 function verifyGeneratedExecutableSurfaces(): void {
+	verifyExtensionWorkers();
 	const scriptsDir = path.join(distDir, 'scripts');
 	const actualScripts = existsSync(scriptsDir)
 		? readdirSync(scriptsDir, { withFileTypes: true })

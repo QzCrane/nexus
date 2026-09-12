@@ -2,16 +2,17 @@
 // eff: Styles and component extracted
 
 import type React from 'react';
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
 import { useTranslation } from '../../i18n';
 import type { RulerMeasurement } from './types';
-import { copyToClipboard } from './core';
+import { copyToClipboard, rulerRemBaseCodec, rulerUnitCodec } from './core';
 import { styles } from './panel.styles';
 import { MeasurementCard } from './MeasurementCard';
 import { useToolState } from '../../kernel';
 import { useToast } from '../../components/ToastProvider';
+import { FRAME_TOOL_RULER_CANCEL, FRAME_TOOL_RULER_START, matchesFrameToolSession, type FrameToolSession } from '../../content/frame-tool-messages';
 
 
 const logger = createLogger('Ruler', 'HALO');
@@ -21,16 +22,24 @@ export const RulerPanel: React.FC = () => {
 	const { showToast } = useToast();
 	const [isActive, setIsActive] = useState(false);
 	const [measurement, setMeasurement] = useState<RulerMeasurement | null>(null);
-	const [unit, setUnit] = useToolState<'px' | 'rem'>('ruler-unit', 'px');
-	const [remBase, setRemBase] = useToolState<number>('ruler-rem-base', 16);
+	const [unit, setUnit] = useToolState<'px' | 'rem'>('ruler-unit', 'px', { codec: rulerUnitCodec });
+	const [remBase, setRemBase] = useToolState<number>('ruler-rem-base', 16, { codec: rulerRemBaseCodec });
+	const sessionRef = useRef<FrameToolSession | null>(null);
 
 	useEffect(() => {
 		// Listen for measurement results from content script
 
-		const listener = (message: { type: string; data?: RulerMeasurement }): boolean | undefined => {
-			if (message.type === 'HALO_RULER_RESULT' && message.data) {
+		const listener = (message: { type: string; operationId?: string; data?: RulerMeasurement }, sender: chrome.runtime.MessageSender): boolean | undefined => {
+			const session = sessionRef.current;
+			if (message.type === 'HALO_RULER_RESULT' && message.data
+				&& matchesFrameToolSession(session, message.operationId, sender.tab?.id)) {
 				setMeasurement(message.data);
 				setIsActive(false);
+				sessionRef.current = null;
+				void chrome.tabs.sendMessage(session.tabId, {
+					type: FRAME_TOOL_RULER_CANCEL,
+					operationId: session.operationId,
+				}).catch(() => undefined);
 				logger.info('Measurement received:', message.data);
 			}
 			return undefined;
@@ -38,17 +47,28 @@ export const RulerPanel: React.FC = () => {
 		chrome.runtime.onMessage.addListener(listener);
 		return () => chrome.runtime.onMessage.removeListener(listener);
 	}, []);
+	useEffect(() => () => {
+		const session = sessionRef.current;
+		sessionRef.current = null;
+		if (session) void chrome.tabs.sendMessage(session.tabId, {
+			type: FRAME_TOOL_RULER_CANCEL,
+			operationId: session.operationId,
+		}).catch(() => undefined);
+	}, []);
 
 	const handleToggle = useCallback(async () => {
 		try {
-			const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-			if (!tab?.id) return;
-
 			if (isActive) {
-				await chrome.tabs.sendMessage(tab.id, { type: 'HALO_RULER_CANCEL' });
+				const session = sessionRef.current;
+				sessionRef.current = null;
+				if (session) await chrome.tabs.sendMessage(session.tabId, { type: FRAME_TOOL_RULER_CANCEL, operationId: session.operationId });
 				setIsActive(false);
 			} else {
-				await chrome.tabs.sendMessage(tab.id, { type: 'HALO_RULER_START' });
+				const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+				if (tab?.id === undefined) return;
+				const session = { tabId: tab.id, operationId: crypto.randomUUID() };
+				await chrome.tabs.sendMessage(session.tabId, { type: FRAME_TOOL_RULER_START, operationId: session.operationId });
+				sessionRef.current = session;
 				setIsActive(true);
 				logger.info('Ruler started');
 			}

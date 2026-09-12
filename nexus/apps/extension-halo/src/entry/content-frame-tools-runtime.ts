@@ -8,7 +8,7 @@ import {
 	FRAME_TOOL_DOM_SELECTOR_STOP,
 	FRAME_TOOL_RULER_CANCEL,
 	FRAME_TOOL_RULER_START,
-	type FrameToolMessageType,
+	type FrameToolCommand,
 } from '../content/frame-tool-messages';
 import * as Ruler from '../content/ruler';
 import * as DomSelector from '../content/dom-selector';
@@ -37,32 +37,52 @@ function sendRuntimeMessageBestEffort(message: unknown): void {
 	}
 }
 
-export function handleFrameToolMessage(message: { type: FrameToolMessageType }): boolean {
+const activeOperations = new Map<'ruler' | 'dom-selector' | 'annotate', string>();
+
+function owns(tool: 'ruler' | 'dom-selector' | 'annotate', operationId: string): boolean {
+	return activeOperations.get(tool) === operationId;
+}
+
+export function handleFrameToolMessage(message: FrameToolCommand): boolean {
 	switch (message.type) {
 		case FRAME_TOOL_RULER_START:
-			Ruler.start();
+			Ruler.cancel();
+			activeOperations.set('ruler', message.operationId);
+			Ruler.start(message.operationId);
 			return true;
 
 		case FRAME_TOOL_RULER_CANCEL:
+			if (!owns('ruler', message.operationId)) return true;
 			Ruler.cancel();
+			activeOperations.delete('ruler');
 			return true;
 
 		case FRAME_TOOL_DOM_SELECTOR_START:
+			DomSelector.stop();
+			activeOperations.set('dom-selector', message.operationId);
 			DomSelector.start((data) => {
-				sendRuntimeMessageBestEffort({ type: 'HALO_DOM_SELECTED', payload: data });
+				if (!owns('dom-selector', message.operationId)) return;
+				sendRuntimeMessageBestEffort({ type: 'HALO_DOM_SELECTED', operationId: message.operationId, payload: data });
+				activeOperations.delete('dom-selector');
 			});
 			return true;
 
 		case FRAME_TOOL_DOM_SELECTOR_STOP:
+			if (!owns('dom-selector', message.operationId)) return true;
 			DomSelector.stop();
+			activeOperations.delete('dom-selector');
 			return true;
 
 		case FRAME_TOOL_ANNOTATE_START:
+			PageAnnotate.stop();
+			activeOperations.set('annotate', message.operationId);
 			PageAnnotate.start();
 			return true;
 
 		case FRAME_TOOL_ANNOTATE_STOP:
+			if (!owns('annotate', message.operationId)) return true;
 			PageAnnotate.stop();
+			activeOperations.delete('annotate');
 			return true;
 	}
 }

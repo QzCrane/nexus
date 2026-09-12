@@ -1,4 +1,4 @@
-import { launchBrowser } from './helpers/browser-driver';
+import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -58,7 +58,7 @@ test('records twenty browser-owned MV3 service-worker wake samples', async () =>
 	let browser: Browser | null = null;
 	let client: CDPSession | null = null;
 	try {
-		browser = await launchBrowser({
+		browser = await launchPuppeteerBrowser({
 			...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 			headless: true,
 			userDataDir: profileDir,
@@ -66,8 +66,11 @@ test('records twenty browser-owned MV3 service-worker wake samples', async () =>
 				`--disable-extensions-except=${EXTENSION_DIR}`,
 				`--load-extension=${EXTENSION_DIR}`,
 				'--no-sandbox',
-				'--disable-setuid-sandbox',
-			],
+			'--disable-setuid-sandbox',
+		],
+		}, {
+			owner: 'apps/extension-spectra/test/service-worker-wake-performance.spec.ts',
+			profile: { kind: 'temporary', prefix: 'spectra-worker-wake-', isolated: true },
 		});
 		const browserVersion = await browser.version();
 		if (EXPECTED_CHROME) expect(browserVersion).toContain(EXPECTED_CHROME);
@@ -137,6 +140,12 @@ test('records twenty browser-owned MV3 service-worker wake samples', async () =>
 			product: 'spectra',
 			browser: { name: 'Chrome', version: browserVersion },
 			samples,
+			profile: {
+				id: 'spectra-service-worker-wake',
+				scenario: 'browser-stopped MV3 worker wake and RPC response',
+				isolation: 'single-profile-repeated-operation',
+				businessAssertions: ['worker-stopped', 'worker-restarted', 'rpc-response-valid'],
+			},
 			outputPath: OUTPUT_PATH,
 			identity: runtimePerformanceIdentityFromEnvironment(),
 		});

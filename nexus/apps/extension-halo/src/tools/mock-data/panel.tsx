@@ -1,13 +1,14 @@
 // goal: Mock data generator panel UI
 
 import type React from 'react';
-import { useCallback, useEffect } from 'react';
+import { useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { MockField, MockDataType, MockConfig } from './types';
-import { createMockField, generateMockData, normalizeMockFields } from './core';
+import { createMockField, generateMockData, mockCountCodec, mockFieldsCodec, mockFormatCodec } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const DATA_TYPES: MockDataType[] = ['name', 'email', 'phone', 'uuid', 'address', 'lorem', 'number', 'date'];
@@ -20,15 +21,10 @@ const DEFAULT_FIELDS: MockField[] = [
 
 export const MockDataPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [fields, setFields] = useToolState<MockField[]>('mock-data-fields', DEFAULT_FIELDS);
-	const [count, setCount] = useToolState<number>('mock-data-count', 10);
-	const [format, setFormat] = useToolState<'json' | 'csv' | 'sql'>('mock-data-format', 'json');
+	const [fields, setFields, , fieldsRecovery] = useToolState<MockField[]>('mock-data-fields', DEFAULT_FIELDS, { codec: mockFieldsCodec });
+	const [count, setCount, , countRecovery] = useToolState<number>('mock-data-count', 10, { codec: mockCountCodec });
+	const [format, setFormat, , formatRecovery] = useToolState<'json' | 'csv' | 'sql'>('mock-data-format', 'json', { codec: mockFormatCodec });
 	const [output, setOutput] = useToolState<string>('mock-data-output', '');
-
-	useEffect(() => {
-		const normalized = normalizeMockFields(fields);
-		if (normalized !== fields) setFields(normalized);
-	}, [fields, setFields]);
 
 	const addField = useCallback(() => {
 		setFields((prev) => [...prev, createMockField(`field${prev.length + 1}`, 'name')]);
@@ -51,6 +47,9 @@ export const MockDataPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={fieldsRecovery} emptyValue={DEFAULT_FIELDS} exportName="halo-mock-fields-damaged.json" />
+			<StorageRecoveryActions recovery={countRecovery} emptyValue={10} exportName="halo-mock-count-damaged.json" />
+			<StorageRecoveryActions recovery={formatRecovery} emptyValue="json" exportName="halo-mock-format-damaged.json" />
 			{/* Fields Configuration */}
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>

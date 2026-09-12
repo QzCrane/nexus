@@ -9,6 +9,16 @@
 import 'reflect-metadata';
 import { X509Certificate } from '@peculiar/x509';
 
+export const CERTIFICATE_INSPECTION_BOUNDARY = Object.freeze({
+	input: 'single-pem-x509-certificate',
+	outputs: ['subject', 'issuer', 'validity', 'serial-number'] as const,
+	verifiesTrust: false,
+	verifiesHostname: false,
+	verifiesSignatureChain: false,
+	checksRevocation: false,
+	observesLiveTlsConnection: false,
+});
+
 export interface CertificateInfo {
 	subject: Record<string, string>;
 	issuer: Record<string, string>;

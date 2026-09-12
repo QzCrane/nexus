@@ -2,10 +2,14 @@
 // rule: header collection and cell typing policy stay with the tool; the
 // generic CSV serialization and escaping belong to the engine.
 
-import Papa from 'papaparse';
+import { serializeCsv, type CsvExportMode } from '../csv-viewer/core';
 
 // Convert JSON array to CSV
-export function jsonToCsv(json: unknown[], delimiter = ','): string {
+export function jsonToCsv(
+	json: unknown[],
+	delimiter = ',',
+	exportMode: CsvExportMode = 'raw',
+): string {
 	if (!Array.isArray(json) || json.length === 0) return '';
 
 	// Get all keys
@@ -26,7 +30,7 @@ export function jsonToCsv(json: unknown[], delimiter = ','): string {
 		return String(value);
 	}));
 
-	return Papa.unparse({ fields: headers, data: rows }, { delimiter, newline: '\n' });
+	return serializeCsv(headers, rows, delimiter, exportMode);
 }
 
 // Parse JSON safely

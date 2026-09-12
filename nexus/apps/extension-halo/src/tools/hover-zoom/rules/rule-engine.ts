@@ -54,8 +54,13 @@ export class RuleEngine {
 
 			// 3. Execute
 			ctx.match = matchResult;
+			ctx.proxyCapability = rule.proxyCapability;
 			const result = await resolver(ctx);
-			if (result) return result;
+			if (result) {
+				return typeof result === 'string' || !rule.proxyCapability
+					? result
+					: { ...result, proxyCapability: rule.proxyCapability };
+			}
 		}
 
 		return null;

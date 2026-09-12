@@ -10,6 +10,7 @@ import {
 	RELEASE_CONTENT_SCRIPTS,
 	RELEASE_SCRIPT_RUNTIME_IDS,
 	RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES,
+	RELEASE_EXTENSION_WORKER_ENTRIES,
 } from './src/kernel/registry/_generated-release-admission';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -108,6 +109,7 @@ function productionEntries(): string[] {
 		'src/entry/content.ts',
 		...RELEASE_CONTENT_SCRIPTS.map((entry) => entry.entry),
 		...RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES.map((entry) => entry.entry),
+		...RELEASE_EXTENSION_WORKER_ENTRIES.map((entry) => entry.entry),
 		'src/entry/background.ts',
 		'src/entry/sidepanel.tsx',
 		'src/entry/sidepanel-init.ts',

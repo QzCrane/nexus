@@ -168,11 +168,16 @@ async function main(): Promise<void> {
     const result = await sendSpectraRequest('spectra.tab.visible.list', {});
     if (!result.ok) throw new Error(result.error.message);
     const visibleTabIds = result.data.tabs;
-    document.documentElement.dataset.mediaInventory = result.data.incomplete ? 'partial' : 'complete';
+		const inventoryCoverage = result.data.coverage;
+		const inventoryEvidence: 'complete' | 'partial' | 'unknown' = inventoryCoverage === undefined
+			? 'unknown'
+			: inventoryCoverage.status === 'complete' ? 'complete' : 'partial';
+		const inventoryDegraded = inventoryEvidence !== 'complete';
+		document.documentElement.dataset.mediaInventory = inventoryEvidence;
     const inventoryStatus = document.getElementById('media-inventory-status');
     if (inventoryStatus) {
-      inventoryStatus.hidden = !result.data.incomplete;
-      inventoryStatus.textContent = result.data.incomplete ? settings.dict.mediaInventoryPartial : '';
+      inventoryStatus.hidden = !inventoryDegraded;
+      inventoryStatus.textContent = inventoryDegraded ? settings.dict.mediaInventoryPartial : '';
     }
     const allTabs = await chrome.tabs.query({});
     const tabMap = new Map(allTabs.map(t => [t.id, t]));

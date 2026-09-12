@@ -8,16 +8,26 @@ import type { UnitCategory } from './types';
 import { UNITS, convertUnit, formatResult } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const CATEGORIES: UnitCategory[] = ['length', 'weight', 'temperature', 'time', 'data'];
+const unitCategoryCodec: ToolStateCodec<UnitCategory> = {
+	decode(value) { return CATEGORIES.includes(value as UnitCategory) ? { kind: 'valid', value: value as UnitCategory } : { kind: 'invalid', reason: 'Unit category is unsupported.' }; },
+	encode(value) { return value; },
+};
+const unitIdCodec: ToolStateCodec<string> = {
+	decode(value) { return typeof value === 'string' && Object.values(UNITS).some((units) => units.some((unit) => unit.id === value)) ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Unit identifier is unsupported.' }; },
+	encode(value) { return value; },
+};
 
 export const UnitConverterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [category, setCategory] = useToolState<UnitCategory>('unit-category', 'length');
+	const [category, setCategory, , categoryRecovery] = useToolState<UnitCategory>('unit-category', 'length', { codec: unitCategoryCodec });
 	const [inputValue, setInputValue] = useToolState<string>('unit-input', '1');
-	const [fromUnit, setFromUnit] = useToolState<string>('unit-from', 'm');
-	const [toUnit, setToUnit] = useToolState<string>('unit-to', 'km');
+	const [fromUnit, setFromUnit, , fromRecovery] = useToolState<string>('unit-from', 'm', { codec: unitIdCodec });
+	const [toUnit, setToUnit, , toRecovery] = useToolState<string>('unit-to', 'km', { codec: unitIdCodec });
 
 
 	const units = useMemo(() => UNITS[category], [category]);
@@ -49,6 +59,9 @@ export const UnitConverterPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={categoryRecovery} emptyValue="length" exportName="halo-unit-category-damaged.json" />
+			<StorageRecoveryActions recovery={fromRecovery} emptyValue="m" exportName="halo-unit-from-damaged.json" />
+			<StorageRecoveryActions recovery={toRecovery} emptyValue="km" exportName="halo-unit-to-damaged.json" />
 			{/* Category Tabs */}
 			<div style={styles.tabs}>
 				{CATEGORIES.map((cat) => (

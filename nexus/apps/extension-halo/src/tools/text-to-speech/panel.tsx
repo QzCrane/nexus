@@ -5,14 +5,15 @@ import type React from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TtsSettings } from './types';
-import { getVoices, speak, stop, pause, resume, getSelectedText, DEFAULT_SETTINGS } from './core';
+import { getVoices, speak, stop, pause, resume, getSelectedText, DEFAULT_SETTINGS, ttsSettingsCodec } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 export const TextToSpeechPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [text, setText] = useToolState<string>('text-to-speech', '');
-	const [settings, setSettings] = useToolState<TtsSettings>('text-to-speech-settings', DEFAULT_SETTINGS);
+	const [settings, setSettings, , settingsRecovery] = useToolState<TtsSettings>('text-to-speech-settings', DEFAULT_SETTINGS, { codec: ttsSettingsCodec });
 
 	const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
 	const [speaking, setSpeaking] = useState(false);
@@ -106,6 +107,7 @@ export const TextToSpeechPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={settingsRecovery} emptyValue={DEFAULT_SETTINGS} exportName="halo-tts-settings-damaged.json" />
 			<textarea
 				style={styles.textarea}
 				value={text}

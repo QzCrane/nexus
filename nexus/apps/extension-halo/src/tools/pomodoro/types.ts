@@ -10,6 +10,7 @@ export interface PomodoroConfig {
 }
 
 export interface PomodoroState {
+	revision: number;
 	phase: PomodoroPhase;
 	/** Remaining whole seconds committed while paused or at a phase boundary. */
 	remaining: number;
@@ -17,6 +18,7 @@ export interface PomodoroState {
 	endsAt?: number | null;
 	isRunning: boolean;
 	sessionsCompleted: number;
+	completion: { id: string; dueAt: number; status: 'pending' | 'delivered' } | null;
 }
 
 export const DEFAULT_CONFIG: PomodoroConfig = {

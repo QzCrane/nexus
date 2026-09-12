@@ -11,6 +11,7 @@ import {
 	type ArtifactProvenanceEvidence,
 } from './artifact-provenance';
 import { checkSourceDerivedThirdParty } from './check-source-derived-third-party';
+import { generateReleaseSupplyChainEvidence } from './release-supply-chain';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspaceDir = dirname(scriptDir);
@@ -38,6 +39,20 @@ function sha256(value: Uint8Array | string): string {
 
 function sha256File(path: string): string {
 	return sha256(readFileSync(path));
+}
+
+export interface FinalReleaseEvidenceFile {
+	path: string;
+	sha256: string;
+	bytes: number;
+}
+
+export interface FinalReleaseEvidence {
+	product: 'halo' | 'spectra';
+	artifact: FinalReleaseEvidenceFile;
+	licenses: FinalReleaseEvidenceFile;
+	supplyChain: FinalReleaseEvidenceFile;
+	wholeArtifact: FinalReleaseEvidenceFile;
 }
 
 function relativeRepo(path: string): string {
@@ -142,10 +157,77 @@ export function generateReleaseArtifactAttestation(product: 'halo' | 'spectra'):
 	return output;
 }
 
+function evidenceFile(path: string): FinalReleaseEvidenceFile {
+	return {
+		path: relativeRepo(path),
+		sha256: sha256File(path),
+		bytes: readFileSync(path).byteLength,
+	};
+}
+
+export function finalReleaseEvidencePaths(product: 'halo' | 'spectra') {
+	const artifact = finalArtifactPath(product);
+	return {
+		artifact,
+		licenses: `${artifact}.licenses.json`,
+		supplyChain: `${artifact}.provenance.json`,
+		wholeArtifact: `${artifact}.artifact-provenance.json`,
+	};
+}
+
+export function readFinalReleaseEvidence(product: 'halo' | 'spectra'): FinalReleaseEvidence {
+	const paths = finalReleaseEvidencePaths(product);
+	for (const path of Object.values(paths)) {
+		if (!existsSync(path)) throw new Error(`${product}: final release evidence is missing: ${relativeRepo(path)}`);
+	}
+	const artifact = evidenceFile(paths.artifact);
+	const supplyChain = readJson<{
+		schemaVersion?: unknown;
+		product?: unknown;
+		artifact?: { sha256?: unknown; bytes?: unknown };
+		licenses?: { sha256?: unknown };
+		wholeArtifactProvenance?: { sha256?: unknown };
+	}>(paths.supplyChain);
+	const wholeArtifact = readJson<{
+		schemaVersion?: unknown;
+		product?: unknown;
+		artifact?: { sha256?: unknown; bytes?: unknown };
+		wholeArtifact?: { provenanceSha256?: unknown };
+	}>(paths.wholeArtifact);
+	if (supplyChain.schemaVersion !== 5
+		|| supplyChain.product !== product
+		|| supplyChain.artifact?.sha256 !== artifact.sha256
+		|| supplyChain.artifact?.bytes !== artifact.bytes
+		|| supplyChain.licenses?.sha256 !== sha256File(paths.licenses)
+		|| supplyChain.wholeArtifactProvenance?.sha256 !== wholeArtifact.wholeArtifact?.provenanceSha256
+		|| wholeArtifact.schemaVersion !== 1
+		|| wholeArtifact.product !== product
+		|| wholeArtifact.artifact?.sha256 !== artifact.sha256
+		|| wholeArtifact.artifact?.bytes !== artifact.bytes) {
+		throw new Error(`${product}: final release evidence does not describe the current artifact and material chain`);
+	}
+	return {
+		product,
+		artifact,
+		licenses: evidenceFile(paths.licenses),
+		supplyChain: evidenceFile(paths.supplyChain),
+		wholeArtifact: evidenceFile(paths.wholeArtifact),
+	};
+}
+
+export function generateFinalReleaseEvidence(product: 'halo' | 'spectra'): FinalReleaseEvidence {
+	const artifact = finalArtifactPath(product);
+	generateReleaseSupplyChainEvidence({ product, artifactPath: artifact });
+	generateReleaseArtifactAttestation(product);
+	const evidence = readFinalReleaseEvidence(product);
+	console.log(`✓ ${product} final release evidence: ${evidence.supplyChain.sha256}`);
+	return evidence;
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
 	const product = process.argv[2];
 	if (product !== 'halo' && product !== 'spectra') {
 		throw new Error('usage: bun scripts/release-artifact-provenance.ts <halo|spectra>');
 	}
-	generateReleaseArtifactAttestation(product);
+	generateFinalReleaseEvidence(product);
 }

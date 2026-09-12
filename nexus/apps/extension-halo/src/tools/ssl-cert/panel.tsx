@@ -3,7 +3,7 @@
 import type React from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
-import { parseCertificate } from './core';
+import { CERTIFICATE_INSPECTION_BOUNDARY, parseCertificate } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -33,6 +33,9 @@ export const SslCertPanel: React.FC = () => {
             </div>
 
             {error && <div style={{ color: '#d33', fontSize: '12px', padding: '4px 0' }}>{error}</div>}
+			<div style={styles.boundary} data-input-contract={CERTIFICATE_INSPECTION_BOUNDARY.input}>
+				{t('sslCert.boundary')}
+			</div>
 
             {info && (
                 <div style={styles.result}>
@@ -57,7 +60,7 @@ export const SslCertPanel: React.FC = () => {
                         <span style={styles.value}>{info.validTo}</span>
                     </div>
                     <div style={{fontSize: '11px', color: 'var(--halo-text-muted)', marginTop: '8px'}}>
-                        {t('sslCert.note', { defaultValue: '* Basic parsing only. For full details, use openssl.' })}
+						{t('sslCert.note')}
                     </div>
                 </div>
             )}

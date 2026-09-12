@@ -65,7 +65,7 @@ const TAB_ID_PAYLOAD_KEYS = new Set(['tabId']);
 const REMOTE_SESSION_PAYLOAD_KEYS = new Set(['tabId']);
 const REMOTE_SESSION_CLOSE_PAYLOAD_KEYS = new Set(['tabId', 'sessionId']);
 const USER_SCRIPT_PAYLOAD_KEYS = new Set(['script']);
-const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted']);
+const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted', 'reportRevision']);
 const CONTENT_RUNTIME_LEASE_REASONS = new Set<ContentRuntimeLeaseReason>([
 	'control',
 	'restore',
@@ -260,7 +260,8 @@ export function isTabMediaReportPayload(
 	return isProtocolRecord(value)
 		&& hasOnlyProtocolKeys(value, TAB_MEDIA_REPORT_PAYLOAD_KEYS)
 		&& typeof value.hasMediaElement === 'boolean'
-		&& typeof value.userInteracted === 'boolean';
+		&& typeof value.userInteracted === 'boolean'
+		&& (value.reportRevision === undefined || isPositiveInteger(value.reportRevision));
 }
 
 // The generic validator and the Background ingress share these sender/context

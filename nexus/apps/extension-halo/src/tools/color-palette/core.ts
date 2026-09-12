@@ -1,26 +1,30 @@
 // goal: Color Palette core logic - extract colors from images
 
 import type { ColorInfo } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
 
-// Extract colors from image
-export function extractColorsFromImage(img: HTMLImageElement, maxColors = 8): ColorInfo[] {
-	const canvas = document.createElement('canvas');
-	const ctx = canvas.getContext('2d');
-	if (!ctx) return [];
-
-	if (!Number.isInteger(maxColors) || maxColors < 1 || maxColors > 256) throw new RangeError('Palette size must be between 1 and 256');
-	if (img.width <= 0 || img.height <= 0) throw new Error('Image has no decoded dimensions');
-	// Scale down for performance
-	const scale = Math.min(1, 100 / Math.max(img.width, img.height));
-	canvas.width = Math.max(1, Math.round(img.width * scale));
-	canvas.height = Math.max(1, Math.round(img.height * scale));
-
-	ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-	const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-	const pixels = imageData.data;
-
-	return paletteFromPixels(pixels, maxColors);
-}
+export const colorPaletteCodec: ToolStateCodec<ColorInfo[]> = {
+	decode(value) {
+		const raw = typeof value === 'object' && value !== null && !Array.isArray(value)
+			&& (value as Record<string, unknown>).version === 1
+			? (value as Record<string, unknown>).value
+			: value;
+		if (!Array.isArray(raw) || raw.length > 256) return { kind: 'invalid', reason: 'Stored palette must be an array with at most 256 colors.' };
+		const colors: ColorInfo[] = [];
+		for (const item of raw) {
+			if (typeof item !== 'object' || item === null || Array.isArray(item)) return { kind: 'invalid', reason: 'Stored palette contains a non-color value.' };
+			const color = item as Record<string, unknown>;
+			if (typeof color.hex !== 'string' || !/^#[0-9a-f]{6}$/iu.test(color.hex) || typeof color.rgb !== 'string'
+				|| !Number.isSafeInteger(color.count) || (color.count as number) < 0
+				|| !Number.isFinite(color.percentage) || (color.percentage as number) < 0 || (color.percentage as number) > 100) {
+				return { kind: 'invalid', reason: 'Stored palette has invalid color, count, or percentage fields.' };
+			}
+			colors.push({ hex: color.hex, rgb: color.rgb, count: color.count as number, percentage: color.percentage as number });
+		}
+		return { kind: 'valid', value: colors };
+	},
+	encode(value) { return { version: 1, value }; },
+};
 
 // Count visible pixels only. Alpha is not a hidden black background; partial
 // alpha retains the source color, and fully transparent pixels have no vote.
@@ -57,17 +61,6 @@ export function paletteFromPixels(pixels: Uint8ClampedArray, maxColors = 8): Col
 			count,
 			percentage: Math.round((count / totalPixels) * 100),
 		};
-	});
-}
-
-// Load image from file
-export function loadImageFromFile(file: File): Promise<HTMLImageElement> {
-	return new Promise((resolve, reject) => {
-		const img = new Image();
-		const url = URL.createObjectURL(file);
-		img.onload = () => { URL.revokeObjectURL(url); resolve(img); };
-		img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('Image decoding failed')); };
-		img.src = url;
 	});
 }
 

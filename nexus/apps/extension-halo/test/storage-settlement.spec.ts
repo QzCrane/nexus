@@ -5,7 +5,8 @@ import { createInitialState, normalizePomodoroState, normalizePomodoroConfig } f
 import { normalizeUnschematizedToolState, UseToolStatePendingAuthority } from '../src/kernel/hooks/use-tool-state';
 import { saveToClipboardHistory } from '../src/tools/clipboard/core';
 import { STORAGE_KEY, MAX_HISTORY } from '../src/tools/clipboard/types';
-import { reportStorageHealth, storageProblemCount, subscribeStorageHealth, retryStorageProblems } from '../src/kernel/core/storage-health';
+import { reportStorageHealth, storageProblemCount, storageProblemMessage, subscribeStorageHealth, retryStorageProblems } from '../src/kernel/core/storage-health';
+import { admitStorageGrowth } from '../src/kernel/core/storage-quota';
 const previous = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 afterEach(() => { if (previous) Object.defineProperty(globalThis, 'chrome', previous); else Reflect.deleteProperty(globalThis, 'chrome'); });
 const pause = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -56,7 +57,20 @@ describe('storage physical settlement and failed hydration', () => {
 		const owner = Symbol(); let notifications = 0; let retries = 0; const count = storageProblemCount();
 		const dispose = subscribeStorageHealth(() => { notifications++; }); reportStorageHealth(owner, 'write-error', () => { retries++; });
 		expect(storageProblemCount()).toBe(count + 1); retryStorageProblems(); expect(retries).toBe(1);
-		reportStorageHealth(owner, null); dispose(); expect(notifications).toBe(2); expect(storageProblemCount()).toBe(count);
+		reportStorageHealth(owner, 'write-error', null, 'Domain byte budget exceeded');
+		expect(storageProblemMessage()).toBe('Domain byte budget exceeded');
+		reportStorageHealth(owner, null); dispose(); expect(notifications).toBe(3); expect(storageProblemCount()).toBe(count);
+	});
+	test('uses the browser quota and allows an oversized legacy value only to shrink', async () => {
+		let domainBytes = 300; let areaBytes = 850;
+		install({
+			QUOTA_BYTES: 1000,
+			getBytesInUse: async (keys: string[] | null) => keys === null ? areaBytes : domainBytes,
+		});
+		expect(await admitStorageGrowth('local', ['owned'], { owned: 'x'.repeat(250) }, { maxAreaFraction: 0.2 })).toBe(true);
+		domainBytes = 100; areaBytes = 500;
+		expect(await admitStorageGrowth('local', ['owned'], { owned: 'x'.repeat(250) }, { maxAreaFraction: 0.2 })).toBe(false);
+		expect(await admitStorageGrowth('local', ['owned'], { owned: 'x'.repeat(20) }, { maxAreaFraction: 0.2 })).toBe(true);
 	});
 });
 describe('JSON-safe timer and pinned history boundaries', () => {
@@ -65,7 +79,7 @@ describe('JSON-safe timer and pinned history boundaries', () => {
 		const legacy = { ...initial, isRunning: true, startedAt: undefined }; expect(normalizeTimerState(legacy).startedAt).toBeNull();
 		const paused = normalizeTimerState({ ...legacy, isRunning: false, elapsed: 420 });
 		expect(JSON.parse(JSON.stringify(paused))).toEqual(paused); expect(paused.isRunning).toBe(false);
-		for (const bad of [{ ...initial, elapsed: NaN }, { ...initial, laps: ['1'] }, { ...initial, mode: 'unknown' }]) expect(() => normalizeTimerState(bad)).toThrow();
+		for (const bad of [{ ...initial, elapsed: NaN }, { ...initial, laps: ['1'] }, { ...initial, mode: 'unknown' }, { ...initial, completion: { id: '', dueAt: 0, status: 'pending' } }]) expect(() => normalizeTimerState(bad)).toThrow();
 	});
 	test('Pomodoro pause and legacy deadlines encode as null, not lost transitions', () => {
 		const initial = createInitialState(); const paused = normalizePomodoroState({ ...initial, remaining: 42, endsAt: undefined });

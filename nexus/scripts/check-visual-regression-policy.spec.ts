@@ -31,6 +31,25 @@ describe('visual regression baseline lifecycle', () => {
 		expect(() => checkVisualRegressionPolicy(policy)).toThrow('must disable motion');
 	});
 
+	test('requires representative pairwise data, error, dynamic, permission, locale, theme and narrow states', () => {
+		for (const mutate of [
+			(policy: typeof current) => { policy.states = policy.states.filter((state: { scenario: string }) => state.scenario !== 'dynamic'); },
+			(policy: typeof current) => { for (const state of policy.states) state.locale = 'en-US'; },
+			(policy: typeof current) => { for (const state of policy.states) state.theme = 'dark'; },
+			(policy: typeof current) => { policy.states = policy.states.filter((state: { width: number }) => state.width > 320); },
+		]) {
+			const policy = structuredClone(current);
+			mutate(policy);
+			expect(() => checkVisualRegressionPolicy(policy)).toThrow('representative pairwise');
+		}
+	});
+
+	test('requires each registered state to name browser-derived assertions and focus ownership', () => {
+		const policy = structuredClone(current);
+		policy.states[0].assertions = [];
+		expect(() => checkVisualRegressionPolicy(policy)).toThrow('browser assertions');
+	});
+
 	test('rejects fuzzy comparison as an unproven visual threshold', () => {
 		const policy = structuredClone(current);
 		policy.comparison = 'pixel-threshold';

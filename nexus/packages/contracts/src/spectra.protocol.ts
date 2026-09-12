@@ -584,12 +584,24 @@ export interface SpectraRequestMap {
 		response: { markers: TimeMarkerResult[] };
 	};
 	'spectra.tab.media.report': {
-		payload: { hasMediaElement: boolean; userInteracted: boolean };
+		payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number };
 		response: { reported: true };
 	};
 	'spectra.tab.visible.list': {
 		payload: Record<string, never>;
-		response: { tabs: number[]; incomplete?: boolean };
+		response: {
+			tabs: number[];
+			coverage?: {
+				status: 'complete' | 'degraded';
+				total: number;
+				examined: number;
+				pending: number;
+				failed: number;
+				denied: number;
+				stale: number;
+				unknown: number;
+			};
+		};
 	};
 	'spectra.tab.pinned.toggle': {
 		payload: Record<string, never>;
@@ -761,7 +773,10 @@ const OPENED_RESULT_KEYS = new Set(['opened']);
 const INJECTED_RESULT_KEYS = new Set(['injected']);
 const REPORTED_RESULT_KEYS = new Set(['reported']);
 const HANDLED_RESULT_KEYS = new Set(['handled']);
-const TABS_RESULT_KEYS = new Set(['tabs', 'incomplete']);
+const TABS_RESULT_KEYS = new Set(['tabs', 'coverage']);
+const MEDIA_COVERAGE_KEYS = new Set([
+	'status', 'total', 'examined', 'pending', 'failed', 'denied', 'stale', 'unknown',
+]);
 const PLAYING_RESULT_KEYS = new Set(['playing']);
 const ACTIVE_RESULT_KEYS = new Set(['active']);
 const MEDIA_STATE_RESULT_KEYS = new Set(['playing', 'speed', 'pipActive', 'preservePitch']);
@@ -1110,11 +1125,32 @@ function isVisibleTabsResult(
 ): value is SpectraResponseData<'spectra.tab.visible.list'> {
 	if (!isRecord(value)
 		|| !hasOnlyKeys(value, TABS_RESULT_KEYS)
-		|| value.incomplete !== undefined && typeof value.incomplete !== 'boolean'
 		|| !Array.isArray(value.tabs)
 		|| value.tabs.length > 10_000) return false;
+	const tabs = value.tabs;
+	const hasCoverage = Object.hasOwn(value, 'coverage');
+	if (hasCoverage && (!isRecord(value.coverage)
+		|| !hasOnlyKeys(value.coverage, MEDIA_COVERAGE_KEYS)
+		|| value.coverage.status !== 'complete' && value.coverage.status !== 'degraded')) return false;
+	if (!hasCoverage) return tabs.every((tabId, index) => (
+		isPositiveInteger(tabId) && tabs.indexOf(tabId) === index
+	));
+	if (!isRecord(value.coverage)) return false;
+	for (const key of ['total', 'examined', 'pending', 'failed', 'denied', 'stale', 'unknown'] as const) {
+		const count = value.coverage[key];
+		if (!Number.isSafeInteger(count) || Number(count) < 0 || Number(count) > 10_000) return false;
+	}
+	const total = Number(value.coverage.total);
+	const examined = Number(value.coverage.examined);
+	const pending = Number(value.coverage.pending);
+	const failed = Number(value.coverage.failed);
+	const denied = Number(value.coverage.denied);
+	const stale = Number(value.coverage.stale);
+	const unknown = Number(value.coverage.unknown);
+	if (examined + failed !== total || pending + denied + stale + unknown !== failed
+		|| (value.coverage.status === 'complete') !== (failed === 0)) return false;
 	const unique = new Set<number>();
-	for (const tabId of value.tabs) {
+	for (const tabId of tabs) {
 		if (!isPositiveInteger(tabId) || unique.has(tabId)) return false;
 		unique.add(tabId);
 	}

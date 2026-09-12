@@ -1,6 +1,20 @@
 // goal: Text-to-Speech core logic - Web Speech API
 
 import type { TtsSettings } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export const ttsSettingsCodec: ToolStateCodec<TtsSettings> = {
+	decode(value) {
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return { kind: 'invalid', reason: 'Speech settings must be an object.' };
+		const settings = value as Record<string, unknown>;
+		if (typeof settings.rate !== 'number' || !Number.isFinite(settings.rate) || settings.rate < 0.1 || settings.rate > 10
+			|| typeof settings.pitch !== 'number' || !Number.isFinite(settings.pitch) || settings.pitch < 0 || settings.pitch > 2
+			|| typeof settings.volume !== 'number' || !Number.isFinite(settings.volume) || settings.volume < 0 || settings.volume > 1
+			|| typeof settings.voiceUri !== 'string') return { kind: 'invalid', reason: 'Speech rate, pitch, volume, or voice is invalid.' };
+		return { kind: 'valid', value: settings as unknown as TtsSettings };
+	},
+	encode(value) { return value; },
+};
 
 export interface SpeechLifecycleCallbacks {
 	onStart?: () => void;

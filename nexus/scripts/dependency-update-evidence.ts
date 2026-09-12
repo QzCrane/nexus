@@ -13,7 +13,7 @@ const performancePolicyPath = resolve(workspaceDir, 'runtime-performance-policy.
 type RuntimePerformanceEvidence = ReturnType<typeof buildRuntimePerformanceEvidence>;
 
 interface RuntimePerformancePolicy {
-	schemaVersion: 1;
+	schemaVersion: 2;
 	phase: 'baseline' | 'budgeted';
 	minimumSamplesPerMetric: number;
 	products: Record<'halo' | 'spectra', {
@@ -206,7 +206,7 @@ export function buildDependencyUpdateEvidence({
 	candidateRoot: string;
 	policy?: RuntimePerformancePolicy;
 }) {
-	if (policy.schemaVersion !== 1 || !Number.isInteger(policy.minimumSamplesPerMetric)
+	if (policy.schemaVersion !== 2 || !Number.isInteger(policy.minimumSamplesPerMetric)
 		|| policy.minimumSamplesPerMetric < 1 || (policy.phase !== 'baseline' && policy.phase !== 'budgeted')) {
 		throw new Error('runtime performance policy is malformed for dependency comparison');
 	}

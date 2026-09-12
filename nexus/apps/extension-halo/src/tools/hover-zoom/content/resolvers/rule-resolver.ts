@@ -91,7 +91,8 @@ export async function resolveEnhanced(
 
 				return {
 					type: mappedType, url: resultObj.url, audioUrl: resultObj.audioUrl,
-					headers: resultObj.headers, caption: '', element: target, fromRule: 'engine', metadata: resultObj.metadata
+					headers: resultObj.headers, caption: '', element: target, fromRule: 'engine', metadata: resultObj.metadata,
+					proxyCapability: resultObj.proxyCapability,
 				};
 			}
 		}

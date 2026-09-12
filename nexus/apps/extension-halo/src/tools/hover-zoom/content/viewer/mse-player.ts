@@ -3,6 +3,7 @@
 
 import { fetchArrayBufferWithProxy } from '../utils/proxy-utils';
 import type { OwnedMSESession } from './mse-session-owner';
+import type { HoverZoomProxyCapability } from '../../rules/network-capabilities';
 
 const LOG_TAG = '[HALO:HoverZoom:MSEPlayer]';
 const VIDEO_MIME = 'video/mp4; codecs="avc1.640028"';
@@ -176,14 +177,17 @@ export function startDashStreams(
 	headers?: Record<string, string>,
 	metadata?: { videoCodec?: string; audioCodec?: string },
 	dependencyOverrides: Partial<MSEPlayerDependencies> = {},
+	proxyCapability?: HoverZoomProxyCapability,
 ): OwnedMSESession {
 	const dependencies: MSEPlayerDependencies = {
 		isSupported: isMSESupported,
 		createMediaSource: () => new MediaSource(),
 		createObjectUrl: (source) => URL.createObjectURL(source),
 		revokeObjectUrl: (url) => URL.revokeObjectURL(url),
-		fetchSegment: (url, requestHeaders) =>
-			fetchArrayBufferWithProxy(url, requestHeaders),
+		fetchSegment: (url, requestHeaders) => {
+			if (!proxyCapability) throw new Error('Proxy capability is required for DASH playback');
+			return fetchArrayBufferWithProxy(url, requestHeaders, proxyCapability);
+		},
 		...dependencyOverrides,
 	};
 	if (!dependencies.isSupported()) throw new Error('MSE not supported');
@@ -374,6 +378,7 @@ export async function playDashStreams(
 	headers?: Record<string, string>,
 	metadata?: { videoCodec?: string; audioCodec?: string },
 	dependencyOverrides: Partial<MSEPlayerDependencies> = {},
+	proxyCapability?: HoverZoomProxyCapability,
 ): Promise<() => void> {
 	const session = startDashStreams(
 		videoEl,
@@ -382,6 +387,7 @@ export async function playDashStreams(
 		headers,
 		metadata,
 		dependencyOverrides,
+		proxyCapability,
 	);
 	await session.ready;
 	return session.dispose;

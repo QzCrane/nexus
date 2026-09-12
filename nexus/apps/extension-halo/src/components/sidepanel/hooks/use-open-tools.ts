@@ -4,6 +4,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import type { ToolId } from '../../../kernel';
 import { STORAGE_PREFIX, TOOL_REGISTRY } from '../../../kernel';
+import { conditionalLedgerWrite, readLedgerEntry } from '../../../kernel/core/safe-storage';
+import { reportStorageHealth } from '../../../kernel/core/storage-health';
 
 const SYSTEM_TOOL_IDS = new Set<string>(
 	TOOL_REGISTRY.filter((tool) => tool.pluginType === 'system').map((tool) => tool.id),
@@ -16,6 +18,7 @@ const isKnownTool = (id: unknown): id is ToolId => typeof id === 'string' && KNO
 const OPEN_TOOLS_KEY = `${STORAGE_PREFIX.CORE}open_tools`;
 const ACTIVE_TOOL_KEY = `${STORAGE_PREFIX.CORE}active_tool`;
 const MAX_OPEN_TOOLS = 10;
+const storageHealthOwner = Symbol('open-tools');
 
 function sameTools(left: readonly ToolId[], right: readonly ToolId[]): boolean {
 	return left.length === right.length && left.every((id, index) => right[index] === id);
@@ -38,8 +41,13 @@ export function useOpenTools(): UseOpenToolsResult {
 	const authorityEpoch = useRef(0);
 
 	const persistOpenTools = useCallback((nextOpen: readonly ToolId[]): void => {
-		void chrome.storage.local.set({ [OPEN_TOOLS_KEY]: [...nextOpen] })
-			.catch((error) => console.warn('openTools persist failed', error));
+		void (async () => {
+			const base = await readLedgerEntry(OPEN_TOOLS_KEY, { area: 'local' });
+			const value = [...nextOpen];
+			const outcome = await conditionalLedgerWrite(OPEN_TOOLS_KEY, { area: 'local', baseRevision: base.revision, value, remerge: () => value });
+			if (outcome.kind !== 'committed') throw new Error('Open tools were not committed');
+			reportStorageHealth(storageHealthOwner, null);
+		})().catch((error) => { reportStorageHealth(storageHealthOwner, 'write-error'); console.warn('openTools persist failed', error); });
 	}, []);
 
 	const claimLocalAuthority = useCallback((): void => {
@@ -50,8 +58,12 @@ export function useOpenTools(): UseOpenToolsResult {
 	useEffect(() => {
 		if (!initialized.current) return;
 		const value = activeTool === null ? 'HALO_LAUNCHER' : activeTool;
-		void chrome.storage.local.set({ [ACTIVE_TOOL_KEY]: value })
-			.catch((error) => console.warn('openTools persist failed', error));
+		void (async () => {
+			const base = await readLedgerEntry(ACTIVE_TOOL_KEY, { area: 'local' });
+			const outcome = await conditionalLedgerWrite(ACTIVE_TOOL_KEY, { area: 'local', baseRevision: base.revision, value, remerge: () => value });
+			if (outcome.kind !== 'committed') throw new Error('Active tool was not committed');
+			reportStorageHealth(storageHealthOwner, null);
+		})().catch((error) => { reportStorageHealth(storageHealthOwner, 'write-error'); console.warn('openTools persist failed', error); });
 	}, [activeTool]);
 
 	const setActiveTool = useCallback((toolId: ToolId | null) => {
@@ -79,14 +91,17 @@ export function useOpenTools(): UseOpenToolsResult {
 		}
 
 		const epoch = ++authorityEpoch.current;
-		const storage = await chrome.storage.local.get([ACTIVE_TOOL_KEY, OPEN_TOOLS_KEY]);
+		const [activeEntry, openEntry] = await Promise.all([
+			readLedgerEntry(ACTIVE_TOOL_KEY, { area: 'local' }),
+			readLedgerEntry(OPEN_TOOLS_KEY, { area: 'local' }),
+		]);
 		if (epoch !== authorityEpoch.current || initialized.current) return;
 
-		const rawOpen = Array.isArray(storage[OPEN_TOOLS_KEY])
-			? storage[OPEN_TOOLS_KEY].filter(isKnownTool)
+		const rawOpen = Array.isArray(openEntry.value)
+			? openEntry.value.filter(isKnownTool)
 			: [];
 		const savedOpen = rawOpen.filter((id) => !isSystemTool(id) && isEnabled(id));
-		const savedActive = storage[ACTIVE_TOOL_KEY];
+		const savedActive = activeEntry.value;
 		const restoredActive = savedActive === 'HALO_LAUNCHER'
 			? null
 			: isKnownTool(savedActive) && isEnabled(savedActive)

@@ -1,7 +1,17 @@
 // goal: Ruler measurement logic
 
 import type { RulerMeasurement } from './types';
-import { STORAGE_KEY, DEFAULT_STATE } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export const rulerUnitCodec: ToolStateCodec<'px' | 'rem'> = {
+	decode(value) { return value === 'px' || value === 'rem' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Ruler unit must be px or rem.' }; },
+	encode(value) { return value; },
+};
+
+export const rulerRemBaseCodec: ToolStateCodec<number> = {
+	decode(value) { return typeof value === 'number' && Number.isFinite(value) && value >= 1 && value <= 100 ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Ruler rem base must be between 1 and 100 pixels.' }; },
+	encode(value) { return value; },
+};
 
 /**
  * Calculate measurement from two points
@@ -54,19 +64,4 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-/**
- * Save settings to storage
- */
-export async function saveSettings(settings: { unit: 'px' | 'rem'; remBase: number }): Promise<void> {
-	await chrome.storage.local.set({ [STORAGE_KEY]: settings });
-}
-
-/**
- * Load settings from storage
- */
-export async function loadSettings(): Promise<{ unit: 'px' | 'rem'; remBase: number }> {
-	const result = await chrome.storage.local.get([STORAGE_KEY]);
-	return result[STORAGE_KEY] || DEFAULT_STATE;
 }

@@ -6,6 +6,7 @@ import { useTranslation } from '../../i18n';
 import { saveSession, getSessions, deleteSession, restoreSession, type RestoreReport, type Session } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
 
 
 export const SessionManagerPanel: React.FC = () => {
@@ -16,50 +17,41 @@ export const SessionManagerPanel: React.FC = () => {
     const [sessions, setSessions] = useState<Session[]>([]);
     const [restoreReport, setRestoreReport] = useState<RestoreReport | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [loading, setLoading] = useState(false);
+	const task = useOwnedAsyncTask();
 
     useEffect(() => {
-        let disposed = false;
-        void getSessions()
-            .then((loaded) => { if (!disposed) setSessions(loaded); })
-            .catch((loadError) => { if (!disposed) setError(String(loadError)); });
-        return () => { disposed = true; };
-    }, []);
+		void task.run(() => getSessions()).then((outcome) => {
+			if (outcome.kind === 'succeeded') setSessions(outcome.value);
+			else if (outcome.kind === 'failed') setError(String(outcome.error));
+		});
+		return task.cancel;
+	}, [task.run, task.cancel]);
 
     const handleSave = async () => {
-        setLoading(true);
         setError(null);
-        try {
-            const { sessions: saved } = await saveSession(name);
-            setSessions(saved);
+		const outcome = await task.run(() => saveSession(name));
+		if (outcome.kind === 'succeeded') {
+			setSessions(outcome.value.sessions);
             setName('');
-        } catch (saveError) {
-            setError(String(saveError));
-        } finally {
-            setLoading(false);
-        }
+		} else if (outcome.kind === 'failed') setError(String(outcome.error));
     };
 
 
     const handleDelete = async (id: string) => {
         if (confirm('Delete this session?')) {
             setError(null);
-            try {
-                setSessions(await deleteSession(id));
-            } catch (deleteError) {
-                setError(String(deleteError));
-            }
+			const outcome = await task.run(() => deleteSession(id));
+			if (outcome.kind === 'succeeded') setSessions(outcome.value);
+			else if (outcome.kind === 'failed') setError(String(outcome.error));
         }
     };
 
 
     const handleRestore = async (session: Session, newWindow: boolean) => {
         setError(null);
-        try {
-            setRestoreReport(await restoreSession(session, newWindow));
-        } catch (restoreError) {
-            setError(String(restoreError));
-        }
+		const outcome = await task.run(() => restoreSession(session, newWindow));
+		if (outcome.kind === 'succeeded') setRestoreReport(outcome.value);
+		else if (outcome.kind === 'failed') setError(String(outcome.error));
     };
 
     return (
@@ -71,7 +63,7 @@ export const SessionManagerPanel: React.FC = () => {
                     onChange={(e) => setName(e.target.value)} 
                     placeholder={t('sessionManager.placeholder', { defaultValue: 'Session Name (Optional)...' })} 
                 />
-                <button type="button" style={styles.btn} onClick={handleSave} disabled={loading}>
+				<button type="button" style={styles.btn} onClick={handleSave} disabled={task.phase === 'running'}>
                     💾 {t('sessionManager.save', { defaultValue: 'Save' })}
                 </button>
             </div>

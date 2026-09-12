@@ -4,7 +4,7 @@ import type { ControlDirectField, MediaTarget } from './control.contracts.js';
 
 export const SPECTRA_PROTOCOL_VERSION = 2 as const;
 export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.3.2' as const;
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.4.0' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.5.0' as const;
 
 export const SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE = {
 	ArrowLeft: 'speed_down',

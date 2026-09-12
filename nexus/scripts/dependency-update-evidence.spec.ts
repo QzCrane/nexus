@@ -42,7 +42,7 @@ function performance(product: 'halo' | 'spectra', metric: string, head: string, 
 }
 
 const policy = {
-	schemaVersion: 1,
+	schemaVersion: 2,
 	phase: 'baseline',
 	minimumSamplesPerMetric: 1,
 	products: {

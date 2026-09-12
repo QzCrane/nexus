@@ -4,7 +4,7 @@ import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
-import { useToolState, getToolMeta } from '../../kernel';
+import { getToolMeta } from '../../kernel';
 import {
 	OPTIONAL_PERMISSIONS,
 	HOST_PERMISSIONS,
@@ -26,7 +26,9 @@ const groupByCategory = (perms: PermissionDef[]): Record<string, PermissionDef[]
 
 export const PermissionsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [states, setStates] = useToolState<Record<string, boolean>>('permissions-states', {});
+	// Browser permission state is the sole authority. Persisting a second copy
+	// can only become stale between browser changes and panel mounts.
+	const [states, setStates] = useState<Record<string, boolean>>({});
 	const [loading, setLoading] = useState<string | null>(null);
 	const pm = getPermissionManager();
 	const meta = getToolMeta('permissions');
@@ -38,7 +40,7 @@ export const PermissionsPanel: React.FC = () => {
 			stateMap[s.id] = s.granted;
 		}
 		setStates(stateMap);
-	}, [pm, setStates]);
+	}, [pm]);
 
 	const refreshStates = useCallback(() => {
 		void loadStates().catch((error: unknown) => {

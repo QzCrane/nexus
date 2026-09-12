@@ -2,7 +2,7 @@
 // note: thin wrapper around @nexus/kernel safe-storage for backward compat
 
 export { safeStorageGet, safeStorageSet, safeStorageRemove, scheduleStorageSet } from '@nexus/kernel';
-export { conditionalLedgerWrite, readLedgerEntry, ledgerRevisionKey, scheduleStorageOperation } from '@nexus/kernel';
+export { conditionalLedgerRemove, conditionalLedgerWrite, readLedgerEntry, ledgerRevisionKey, scheduleStorageOperation } from '@nexus/kernel';
 export type {
 	StorageArea,
 	StorageWrite,
@@ -10,6 +10,8 @@ export type {
 	StorageOptions,
 	LedgerSnapshot,
 	LedgerWriteOutcome,
+	LedgerRemoveOutcome,
 	LedgerReadOptions,
 	ConditionalLedgerWriteOptions,
+	ConditionalLedgerRemoveOptions,
 } from '@nexus/kernel';

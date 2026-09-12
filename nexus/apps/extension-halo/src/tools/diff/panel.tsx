@@ -5,14 +5,16 @@ import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { DiffResult, DiffStats } from './types';
-import { diffLines, getDiffStats } from './core';
+import { diffDraftCodec, diffLines, getDiffStats } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 export const DiffPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [state, setState] = useToolState('diff', { text1: '', text2: '' });
+	const emptyDraft = { text1: '', text2: '' };
+	const [state, setState, , recovery] = useToolState('diff', emptyDraft, { codec: diffDraftCodec });
 	const { text1, text2 } = state;
 
 	const [diffs, setDiffs] = useState<DiffResult[] | null>(null);
@@ -45,6 +47,7 @@ export const DiffPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={recovery} emptyValue={emptyDraft} exportName="halo-diff-damaged.json" />
 			{/* Input */}
 			<div style={styles.inputRow}>
 				<div>

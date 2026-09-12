@@ -1,6 +1,17 @@
 // goal: Network utility core logic (UA parsing, Curl conversion)
 
-import type { UAResult, CurlParseResult } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import type { UAResult, CurlParseResult, NetworkMode } from './types';
+
+export const curlLanguageCodec: ToolStateCodec<'js' | 'python'> = {
+	decode(value) { return value === 'js' || value === 'python' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Curl output language must be JavaScript or Python.' }; },
+	encode(value) { return value; },
+};
+
+export const networkModeCodec: ToolStateCodec<NetworkMode> = {
+	decode(value) { return value === 'ua-parser' || value === 'curl-converter' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Network tool mode is invalid.' }; },
+	encode(value) { return value; },
+};
 
 // === User-Agent Parser (regex-based, no external deps) ===
 

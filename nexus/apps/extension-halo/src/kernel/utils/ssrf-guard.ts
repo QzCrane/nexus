@@ -1,4 +1,7 @@
-// goal: comprehensive SSRF guard blocking private/internal/loopback/link-local hosts
+// goal: URL-level network admission for extension-initiated fetches. This owner
+// rejects non-web schemes and known private literal/internal names at every
+// observable redirect hop. Browser JavaScript cannot resolve DNS, so a public
+// hostname's DNS destination remains unknown rather than being certified safe.
 // eff: Extracted from background.ts to cover IPv6 ULA/link-local, IPv4-mapped IPv6,
 //      0.0.0.0, CGN 100.64.0.0/10, TEST-NET ranges, and decimal/hex/octal IP
 //      representations. Only true IP literals are pattern-matched: a hostname
@@ -123,4 +126,99 @@ export function isPrivateHost(host: string): boolean {
 	if (lower.endsWith('.internal') || lower.endsWith('.local')) return true;
 	if (lower.includes(':')) return isPrivateIPv6(lower);
 	return isPrivateIPv4(lower);
+}
+
+export type NetworkAdmissionCode =
+	| 'invalid_url'
+	| 'unsupported_protocol'
+	| 'embedded_credentials'
+	| 'blocked_host'
+	| 'redirect_unobservable'
+	| 'cross_origin_redirect'
+	| 'redirect_limit';
+
+export class NetworkAdmissionError extends Error {
+	readonly name = 'NetworkAdmissionError';
+	constructor(readonly code: NetworkAdmissionCode, message: string) {
+		super(message);
+	}
+}
+
+/** Validate facts observable from a native URL. DNS resolution is not observable here. */
+export function admitNetworkUrl(input: string | URL, base?: string | URL): URL {
+	let url: URL;
+	try {
+		url = input instanceof URL ? new URL(input.href) : new URL(input, base);
+	} catch {
+		throw new NetworkAdmissionError('invalid_url', 'Invalid URL');
+	}
+	if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+		throw new NetworkAdmissionError('unsupported_protocol', 'Only HTTP(S) targets are supported');
+	}
+	if (url.username || url.password) {
+		throw new NetworkAdmissionError('embedded_credentials', 'URLs with embedded credentials are not supported');
+	}
+	if (isPrivateHost(url.hostname)) {
+		throw new NetworkAdmissionError('blocked_host', 'Private or internal target hosts are blocked');
+	}
+	return url;
+}
+
+const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
+
+export interface ObservableRedirectOptions {
+	readonly maxRedirects?: number;
+	readonly allowCrossOrigin?: (from: URL, to: URL) => boolean;
+}
+
+/**
+ * Fetch with redirect:'manual' so every observable hop is admitted before use.
+ * Chromium may expose a cross-origin manual redirect as opaqueredirect without a
+ * Location header. That boundary fails explicitly because following it would
+ * make the next target unverifiable. One caller-created signal must be reused
+ * across this function to enforce a single wall-clock deadline.
+ */
+export async function fetchWithObservableRedirects(
+	input: string | URL,
+	init: RequestInit,
+	options: ObservableRedirectOptions = {},
+): Promise<Response> {
+	const maxRedirects = options.maxRedirects ?? 5;
+	let url = admitNetworkUrl(input);
+	let method = (init.method ?? 'GET').toUpperCase();
+	let body = init.body;
+	let headers = new Headers(init.headers);
+
+	for (let redirects = 0; ; redirects += 1) {
+		const response = await fetch(url.href, {
+			...init,
+			method,
+			body,
+			headers,
+			redirect: 'manual',
+		});
+		if (response.type === 'opaqueredirect') {
+			throw new NetworkAdmissionError('redirect_unobservable', 'Redirect target is not observable in this browser context');
+		}
+		if (!REDIRECT_STATUSES.has(response.status)) return response;
+		if (redirects >= maxRedirects) {
+			throw new NetworkAdmissionError('redirect_limit', `Redirect limit of ${maxRedirects} exceeded`);
+		}
+		const location = response.headers.get('location');
+		if (!location) {
+			throw new NetworkAdmissionError('redirect_unobservable', 'Redirect target is not observable in this browser context');
+		}
+		const next = admitNetworkUrl(location, url);
+		if (next.origin !== url.origin && !options.allowCrossOrigin?.(url, next)) {
+			throw new NetworkAdmissionError('cross_origin_redirect', 'Cross-origin redirect target is not admitted');
+		}
+		if (response.status === 303 || ((response.status === 301 || response.status === 302) && method === 'POST')) {
+			method = 'GET';
+			body = undefined;
+			headers = new Headers(headers);
+			headers.delete('content-length');
+			headers.delete('content-type');
+		}
+		url = next;
+	}
 }

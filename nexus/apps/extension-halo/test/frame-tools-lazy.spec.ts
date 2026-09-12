@@ -9,6 +9,8 @@ import {
 	FRAME_TOOL_DOM_SELECTOR_STOP,
 	FRAME_TOOL_RULER_CANCEL,
 	FRAME_TOOL_RULER_START,
+	isFrameToolCommand,
+	matchesFrameToolSession,
 } from '../src/content/frame-tool-messages';
 
 function read(relativePath: string): string {
@@ -42,6 +44,11 @@ describe('HALO lazy all-frame tool runtime', () => {
 			'HALO_ANNOTATE_START',
 			'HALO_ANNOTATE_STOP',
 		]);
+		expect(isFrameToolCommand({ type: FRAME_TOOL_RULER_START, operationId: 'op-1' })).toBe(true);
+		expect(isFrameToolCommand({ type: FRAME_TOOL_RULER_START })).toBe(false);
+		expect(matchesFrameToolSession({ tabId: 7, operationId: 'op-1' }, 'op-1', 7)).toBe(true);
+		expect(matchesFrameToolSession({ tabId: 7, operationId: 'op-1' }, 'stale', 7)).toBe(false);
+		expect(matchesFrameToolSession({ tabId: 7, operationId: 'op-1' }, 'op-1', 8)).toBe(false);
 		expect(authority).not.toMatch(/addEventListener|onMessage|setTimeout|setInterval|MutationObserver/u);
 		expect(bootstrap).not.toContain('@nexus/contracts');
 		expect(runtime).not.toContain('@nexus/contracts');

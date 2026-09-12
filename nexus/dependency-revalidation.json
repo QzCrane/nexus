@@ -4,6 +4,28 @@
   "policy": "Upstream observations retain their original observedAt date and are not a claim about the latest available version today. lockedVersion and lockObservedAt bind this integration review to the exact adopted main lock. Updates still require frozen install, source checks, production builds, browser replay and applicable artifact/runtime comparisons on the resulting lock.",
   "entries": [
     {
+      "dependency": "@swaggerexpert/jsonpath",
+      "packagePaths": ["apps/extension-halo/package.json"],
+      "lockedVersion": "4.0.4",
+      "observedLatest": "4.0.4",
+      "observedAt": "2026-09-12",
+      "source": "https://www.npmjs.com/package/@swaggerexpert/jsonpath",
+      "lane": "query-engine-runtime",
+      "risk": "high",
+      "reason": "Explicitly authorized RFC 9535 engine admission: 704 fixed upstream compliance vectors, inherited-property rejection, bounded native Worker execution and Apache-2.0 NOTICE retention. Final production/browser and license provenance remain required on this exact lock."
+    },
+    {
+      "dependency": "csp_evaluator",
+      "packagePaths": ["apps/extension-halo/package.json"],
+      "lockedVersion": "1.1.8",
+      "observedLatest": "1.1.8",
+      "observedAt": "2026-09-12",
+      "source": "https://www.npmjs.com/package/csp_evaluator",
+      "lane": "security-analysis-runtime",
+      "risk": "high",
+      "reason": "Explicitly authorized CSP parser/evaluator replaces the misleading security score. Per-policy findings preserve report-only, duplicate and combined-policy semantics; verify production CSP behavior, bytes and Apache-2.0 materials without claiming site security proof."
+    },
+    {
       "dependency": "@playwright/test",
       "packagePaths": [
         "apps/extension-halo/package.json"
@@ -132,6 +154,6 @@
       "reason": "This is a compiler-generation migration, not a dependency bump. It requires a dedicated diagnostic/build/runtime equivalence epoch and explicit removal or replacement of TypeScript 5 compatibility assumptions."
     }
   ],
-  "lockObservedAt": "2026-09-11",
-  "lockSha256": "1f7d53fd32b98a0d5bb1aafaf7a8fc2b1f4cddcebf157168f38ca64bd00186dd"
+  "lockObservedAt": "2026-09-12",
+  "lockSha256": "856a5e2aafe1cdd96ee1da7959d8df5f6176ab5a6845f0694ec1ed47bd8aa8af"
 }

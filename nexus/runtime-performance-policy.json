@@ -1,6 +1,8 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "phase": "baseline",
+  "browserOwner": "browser-floor.json",
+  "evidence": { "samples": "raw-and-summary", "runs": "immutable-independent" },
   "minimumSamplesPerMetric": 20,
   "minimumIndependentRunsBeforeBudget": 2,
   "products": {
@@ -9,42 +11,41 @@
       "script": "test:performance",
       "workloads": [
         {
+          "id": "spectra-popup-cold",
           "testPath": "apps/extension-spectra/test/performance.spec.ts",
-          "metrics": [
-            "spectra.popup.cold-profile-to-interactive",
-            "spectra.popup.navigation-to-interactive"
-          ]
+          "scenario": "Cold profile Popup readiness followed by a settings navigation roundtrip.",
+          "isolation": "fresh-profile-per-sample",
+          "businessAssertions": ["settings-loaded", "empty-state-owned", "navigation-roundtrip"],
+          "metrics": ["spectra.popup.cold-profile-to-interactive", "spectra.popup.navigation-to-interactive"],
+          "evidenceOnlyMetrics": []
         },
         {
+          "id": "spectra-media-tabs20",
           "testPath": "apps/extension-spectra/test/runtime-stress-performance.spec.ts",
-          "metrics": [
-            "spectra.media-tabs20.inventory-roundtrip",
-            "spectra.media-tabs20.popup-first-card-ready",
-            "spectra.media-tabs20.popup-all-cards-ready",
-            "spectra.hotkey.speed-up.first-document-e2e"
-          ]
+          "scenario": "Twenty real media documents exercise inventory, full Popup rendering and first physical hotkey acknowledgement.",
+          "isolation": "single-profile-repeated-operation",
+          "businessAssertions": ["inventory-exact", "cards20-visible", "hotkey-physical-readback", "lazy-runtime-preserved"],
+          "metrics": ["spectra.media-tabs20.inventory-roundtrip", "spectra.media-tabs20.popup-first-card-ready", "spectra.media-tabs20.popup-all-cards-ready", "spectra.hotkey.speed-up.first-document-e2e"],
+          "evidenceOnlyMetrics": []
         },
         {
+          "id": "spectra-service-worker-wake",
           "testPath": "apps/extension-spectra/test/service-worker-wake-performance.spec.ts",
-          "metrics": [
-            "spectra.service-worker.stopped-to-running",
-            "spectra.service-worker.stopped-to-rpc-response"
-          ]
+          "scenario": "A browser-stopped MV3 worker is woken and must answer a real RPC.",
+          "isolation": "single-profile-repeated-operation",
+          "businessAssertions": ["worker-stopped", "worker-restarted", "rpc-response-valid"],
+          "metrics": ["spectra.service-worker.stopped-to-running", "spectra.service-worker.stopped-to-rpc-response"],
+          "evidenceOnlyMetrics": []
         },
         {
+          "id": "spectra-hotkey-long-session",
           "testPath": "apps/extension-spectra/test/runtime-long-session-performance.spec.ts",
-          "metrics": [
-            "spectra.hotkey.long-session.batch20-e2e",
-            "spectra.hotkey.long-session.heap-used",
-            "spectra.hotkey.long-session.dom-nodes",
-            "spectra.hotkey.long-session.extension-contexts",
-            "spectra.hotkey.long-session.renderer-task-time",
-            "spectra.hotkey.long-session.renderer-script-time",
-            "spectra.hotkey.long-session.renderer-thread-time",
-            "spectra.hotkey.long-session.long-task-count",
-            "spectra.hotkey.long-session.long-task-duration",
-            "spectra.hotkey.long-session.runtime-retained"
-          ]
+          "scenario": "Twenty hotkey batches exercise runtime acquisition and release while collecting renderer diagnostics.",
+          "isolation": "single-profile-long-session",
+          "businessAssertions": ["hotkey-applied", "runtime-released", "popup-closed", "diagnostics-readable"],
+          "metrics": ["spectra.hotkey.long-session.batch20-e2e", "spectra.hotkey.long-session.heap-used", "spectra.hotkey.long-session.dom-nodes", "spectra.hotkey.long-session.extension-contexts", "spectra.hotkey.long-session.renderer-task-time", "spectra.hotkey.long-session.renderer-script-time", "spectra.hotkey.long-session.renderer-thread-time", "spectra.hotkey.long-session.long-task-count", "spectra.hotkey.long-session.long-task-duration", "spectra.hotkey.long-session.runtime-retained"],
+          "evidenceOnlyMetrics": ["spectra.hotkey.long-session.heap-used", "spectra.hotkey.long-session.dom-nodes", "spectra.hotkey.long-session.extension-contexts", "spectra.hotkey.long-session.renderer-task-time", "spectra.hotkey.long-session.renderer-script-time", "spectra.hotkey.long-session.renderer-thread-time", "spectra.hotkey.long-session.long-task-count", "spectra.hotkey.long-session.long-task-duration", "spectra.hotkey.long-session.runtime-retained"],
+          "evidenceOnlyReason": "These diagnostics reveal retention and resource trends, but this baseline epoch has no validated user-facing SLO mapping for absolute heap, DOM, context, CPU or long-task values."
         }
       ]
     },
@@ -53,11 +54,13 @@
       "script": "test:performance",
       "workloads": [
         {
-          "testPath": "apps/extension-halo/test/sidepanel-performance-playwright.spec.ts",
-          "metrics": [
-            "halo.sidepanel.cold-profile-to-interactive",
-            "halo.sidepanel.navigation-to-interactive"
-          ]
+          "id": "halo-sidepanel-representative",
+          "testPath": "apps/extension-halo/test/sidepanel-performance.spec.ts",
+          "scenario": "Fresh SidePanel profiles measure populated Home readiness, valid and invalid JSON feedback, and a running Pomodoro transition.",
+          "isolation": "fresh-profile-per-sample",
+          "businessAssertions": ["home-populated", "json-valid-result", "json-invalid-error", "pomodoro-running"],
+          "metrics": ["halo.sidepanel.cold-profile-to-interactive", "halo.sidepanel.navigation-to-interactive", "halo.json-formatter.valid-data-to-result", "halo.json-formatter.invalid-data-to-error", "halo.pomodoro.start-to-running"],
+          "evidenceOnlyMetrics": []
         }
       ]
     }

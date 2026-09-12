@@ -7,15 +7,18 @@ import { useTranslation } from '../../i18n';
 import { decodeJWT, verifyJWTHS, createJWTHS } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useCryptoSensitiveState } from './sensitive-state';
 
 
 export const JWTPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [token, setToken] = useToolState<string>('crypto-jwt-token', '');
-	const [secret, setSecret] = useToolState<string>('crypto-jwt-secret', '');
-	const [result, setResult] = useToolState<{ header?: object; payload?: object; isValid?: boolean; error?: string } | null>('crypto-jwt-res', null);
+	const { state, update } = useCryptoSensitiveState();
+	const { jwtToken: token, jwtSecret: secret, jwtResult: result, jwtPayload: payloadInput } = state;
+	const setToken = useCallback((value: string) => update({ jwtToken: value }), [update]);
+	const setSecret = useCallback((value: string) => update({ jwtSecret: value }), [update]);
+	const setResult = useCallback((value: { header?: object; payload?: object; isValid?: boolean; error?: string } | null) => update({ jwtResult: value }), [update]);
 	const [createMode, setCreateMode] = useToolState<boolean>('crypto-jwt-mode', false);
-	const [payloadInput, setPayloadInput] = useToolState<string>('crypto-jwt-payload', '{\n  "sub": "1234567890",\n  "name": "John Doe"\n}');
+	const setPayloadInput = useCallback((value: string) => update({ jwtPayload: value }), [update]);
 
 
 	const handleDecode = useCallback(() => {

@@ -246,6 +246,28 @@ export const RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES = Object.freeze([
     "output": "tools/_hover-zoom/runtime.js"
   }
 ] as const);
+export const RELEASE_EXTENSION_WORKER_ENTRIES = Object.freeze([
+  {
+    "id": "image-tools",
+    "entry": "src/tools/image-tools/worker.ts",
+    "output": "workers/image-tools.js"
+  },
+  {
+    "id": "json-path",
+    "entry": "src/tools/json-path/worker.ts",
+    "output": "workers/json-path.js"
+  },
+  {
+    "id": "pdf",
+    "entry": "src/tools/pdf/worker.ts",
+    "output": "workers/pdf.js"
+  },
+  {
+    "id": "regex",
+    "entry": "src/tools/regex/worker.ts",
+    "output": "workers/regex.js"
+  }
+] as const);
 export const RELEASE_WEB_ACCESSIBLE_RESOURCES = Object.freeze([
   "tools/_frame-tools/runtime.js",
   "tools/_hover-zoom/runtime.js"

@@ -1,10 +1,12 @@
 import { generateULID as canonicalULID } from '../uuid/core';
 
+export const MAX_RANDOM_BYTE_LENGTH = 16 * 1024 * 1024;
+
 // goal: Random Generator core logic
 
 // Generate cryptographically strong random bytes
 export function getRandomBytes(length: number): Uint8Array {
-	if (!Number.isSafeInteger(length) || length < 0 || length > 16 * 1024 * 1024) {
+	if (!Number.isSafeInteger(length) || length < 0 || length > MAX_RANDOM_BYTE_LENGTH) {
 		throw new RangeError('Random output must be between zero and 16 MiB');
 	}
 	const arr = new Uint8Array(length);

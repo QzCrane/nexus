@@ -1,6 +1,26 @@
 // goal: Tech Stack core logic - detect website technologies
 
 import type { TechDetection, TechCategory } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+const TECH_CATEGORIES = new Set<TechCategory>(['framework', 'library', 'cms', 'analytics', 'cdn', 'server', 'language', 'other']);
+export const techDetectionCodec: ToolStateCodec<TechDetection[]> = {
+	decode(value) {
+		if (!Array.isArray(value) || value.length > 256) return { kind: 'invalid', reason: 'Stored technology scan row count is invalid.' };
+		const techs: TechDetection[] = [];
+		for (const item of value) {
+			if (typeof item !== 'object' || item === null || Array.isArray(item)) return { kind: 'invalid', reason: 'Stored technology scan contains a non-record row.' };
+			const row = item as Record<string, unknown>;
+			if (typeof row.name !== 'string' || row.name.length > 256 || typeof row.category !== 'string' || !TECH_CATEGORIES.has(row.category as TechCategory)
+				|| typeof row.confidence !== 'number' || !Number.isFinite(row.confidence) || row.confidence < 0 || row.confidence > 1
+				|| (row.version !== undefined && (typeof row.version !== 'string' || row.version.length > 256))
+				|| (row.icon !== undefined && (typeof row.icon !== 'string' || row.icon.length > 64))) return { kind: 'invalid', reason: 'Stored technology scan has invalid fields.' };
+			techs.push(row as unknown as TechDetection);
+		}
+		return { kind: 'valid', value: techs };
+	},
+	encode: (value) => value,
+};
 
 // Detection rules
 const DETECTIONS: Array<{

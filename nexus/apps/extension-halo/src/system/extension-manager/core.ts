@@ -3,8 +3,24 @@
 
 import type { ExtensionInfo, ExtensionGroup } from './types';
 import { STORAGE_KEY } from './types';
+import { conditionalLedgerWrite, readLedgerEntry } from '../../kernel/core/safe-storage';
+import { reportStorageHealth } from '../../kernel/core/storage-health';
 
 const LOG_TAG = '[HALO:ExtMgr]';
+const storageHealthOwner = Symbol('extension-groups');
+const EMPTY_GROUPS: Record<ExtensionGroup, string[]> = { dev: [], work: [], entertainment: [], other: [] };
+
+function parseGroups(value: unknown): Record<ExtensionGroup, string[]> {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return structuredClone(EMPTY_GROUPS);
+	const record = value as Record<string, unknown>;
+	const groups = structuredClone(EMPTY_GROUPS);
+	for (const group of Object.keys(groups) as ExtensionGroup[]) {
+		const ids = record[group];
+		if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) return structuredClone(EMPTY_GROUPS);
+		groups[group] = [...new Set(ids as string[])];
+	}
+	return groups;
+}
 
 /**
  * Fetch all installed extensions
@@ -106,10 +122,9 @@ export async function uninstallExtension(id: string): Promise<boolean> {
  */
 export async function loadGroups(): Promise<Record<ExtensionGroup, string[]>> {
 	try {
-		const result = await chrome.storage.local.get(STORAGE_KEY);
-		return result[STORAGE_KEY] || { dev: [], work: [], entertainment: [], other: [] };
+		return parseGroups((await readLedgerEntry(STORAGE_KEY, { area: 'local' })).value);
 	} catch {
-		return { dev: [], work: [], entertainment: [], other: [] };
+		return structuredClone(EMPTY_GROUPS);
 	}
 }
 
@@ -117,7 +132,10 @@ export async function loadGroups(): Promise<Record<ExtensionGroup, string[]>> {
  * Save groups to storage
  */
 export async function saveGroups(groups: Record<ExtensionGroup, string[]>): Promise<void> {
-	await chrome.storage.local.set({ [STORAGE_KEY]: groups });
+	const base = await readLedgerEntry(STORAGE_KEY, { area: 'local' });
+	const outcome = await conditionalLedgerWrite(STORAGE_KEY, { area: 'local', baseRevision: base.revision, value: parseGroups(groups) });
+	if (outcome.kind !== 'committed') { reportStorageHealth(storageHealthOwner, outcome.kind === 'unknown' ? 'write-unknown' : 'write-error'); throw new Error('Extension groups were not committed'); }
+	reportStorageHealth(storageHealthOwner, null);
 }
 
 /**
@@ -128,17 +146,19 @@ export async function assignToGroup(
 	group: ExtensionGroup | '' | undefined,
 	currentGroups: Record<ExtensionGroup, string[]>
 ): Promise<Record<ExtensionGroup, string[]>> {
-	const newGroups = { ...currentGroups };
-	// Remove from all groups first
-	for (const g of Object.keys(newGroups) as ExtensionGroup[]) {
-		newGroups[g] = newGroups[g].filter(id => id !== extId);
-	}
-	// Only add to new group if a valid group is specified
-	if (group && group in newGroups) {
-		newGroups[group] = [...newGroups[group], extId];
-	}
-	await saveGroups(newGroups);
-	return newGroups;
+	const apply = (value: unknown): Record<ExtensionGroup, string[]> => {
+		const next = parseGroups(value);
+		for (const key of Object.keys(next) as ExtensionGroup[]) next[key] = next[key].filter((id) => id !== extId);
+		if (group && group in next) next[group] = [...next[group], extId];
+		return next;
+	};
+	const base = await readLedgerEntry(STORAGE_KEY, { area: 'local' });
+	const outcome = await conditionalLedgerWrite(STORAGE_KEY, {
+		area: 'local', baseRevision: base.revision, value: apply(base.value ?? currentGroups), remerge: apply,
+	});
+	if (outcome.kind !== 'committed') { reportStorageHealth(storageHealthOwner, outcome.kind === 'unknown' ? 'write-unknown' : 'write-error'); throw new Error('Extension group assignment was not committed'); }
+	reportStorageHealth(storageHealthOwner, null);
+	return parseGroups(outcome.value);
 }
 
 /**

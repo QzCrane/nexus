@@ -1,11 +1,13 @@
 // goal: Core logic for API testing - request execution and history
 
-import type { RequestConfig, ResponseData, Header, SavedRequest } from './types';
-import { isPrivateHost } from '../../kernel/utils/ssrf-guard';
+import type { RequestConfig, ResponseData, Header, SavedRequest, HttpMethod } from './types';
+import type { ToolStateCodec, ToolStateDecode } from '../../kernel/core/storage-codec';
+import { admitNetworkUrl, fetchWithObservableRedirects, NetworkAdmissionError } from '../../kernel/utils/ssrf-guard';
 import { boundedFetchSignal, readBodyCapped, DEFAULT_FETCH_MAX_BYTES, DEFAULT_FETCH_TIMEOUT_MS } from '../../kernel/utils/fetch-budget';
 
-const HISTORY_KEY = 'halo_api_history';
-const MAX_HISTORY = 20;
+export const API_CONFIG_LEGACY_KEY = 'halo_tool_state_api-tester-config';
+export const API_RESPONSE_LEGACY_KEY = 'halo_tool_state_api-tester-res';
+export const HISTORY_KEY = 'halo_api_history';
 
 export interface ExecuteRequestOptions {
 	/** Cancel the in-flight request when the owning surface is disposed. */
@@ -39,31 +41,23 @@ export async function executeRequest(config: RequestConfig, options: ExecuteRequ
 	// before fetch. Delegate to the shared ssrf-guard for full IPv4/IPv6 coverage.
 	let parsedUrl: URL;
 	try {
-		parsedUrl = new URL(config.url);
-	} catch {
+		parsedUrl = admitNetworkUrl(config.url);
+	} catch (error) {
+		const statusText = error instanceof NetworkAdmissionError ? error.code : 'invalid_url';
 		return {
 			status: 0,
-			statusText: 'Invalid URL',
+			statusText,
 			headers: {},
-			body: 'Invalid URL',
+			body: error instanceof Error ? error.message : 'Invalid URL',
 			time: 0,
 			size: 0,
 		};
 	}
-	if (isPrivateHost(parsedUrl.hostname)) {
-		return {
-			status: 0,
-			statusText: 'Blocked',
-			headers: {},
-			body: 'Target host is in a private network range',
-			time: Math.round(performance.now() - start),
-			size: 0,
-		};
-	}
 
-	const res = await fetch(config.url, {
+	const signal = boundedFetchSignal({ signal: options.signal, timeoutMs: options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS });
+	const res = await fetchWithObservableRedirects(parsedUrl, {
 		...init,
-		signal: boundedFetchSignal({ signal: options.signal, timeoutMs: options.timeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS }),
+		signal,
 	});
 	const bytes = await readBodyCapped(res, options.maxBytes ?? DEFAULT_FETCH_MAX_BYTES);
 	const body = new TextDecoder().decode(bytes);
@@ -81,37 +75,6 @@ export async function executeRequest(config: RequestConfig, options: ExecuteRequ
 		time,
 		size: bytes.byteLength,
 	};
-}
-
-/** Get request history */
-export async function getHistory(): Promise<SavedRequest[]> {
-	const result = await chrome.storage.local.get(HISTORY_KEY);
-	return result[HISTORY_KEY] || [];
-}
-
-/** Save request to history */
-export async function saveToHistory(name: string, config: RequestConfig): Promise<void> {
-	const history = await getHistory();
-	const entry: SavedRequest = {
-		id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
-		name: name || config.url,
-		config,
-		createdAt: Date.now(),
-	};
-	history.unshift(entry);
-	if (history.length > MAX_HISTORY) history.pop();
-	await chrome.storage.local.set({ [HISTORY_KEY]: history });
-}
-
-/** Delete from history */
-export async function deleteFromHistory(id: string): Promise<void> {
-	const history = await getHistory();
-	await chrome.storage.local.set({ [HISTORY_KEY]: history.filter((h) => h.id !== id) });
-}
-
-/** Clear history */
-export async function clearHistory(): Promise<void> {
-	await chrome.storage.local.remove(HISTORY_KEY);
 }
 
 /** Format response body (try JSON prettify) */
@@ -161,3 +124,68 @@ export const DEFAULT_CONFIG: RequestConfig = {
 	body: '',
 	bodyType: 'none',
 };
+
+export interface ApiSensitiveState {
+	readonly config: RequestConfig;
+	readonly response: ResponseData | null;
+	readonly history: SavedRequest[];
+}
+
+const METHOD_VALUES = new Set<HttpMethod>(['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']);
+
+function parseConfig(value: unknown): RequestConfig | null {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+	const record = value as Record<string, unknown>;
+	if (!METHOD_VALUES.has(record.method as HttpMethod) || typeof record.url !== 'string' || typeof record.body !== 'string') return null;
+	if (record.bodyType !== 'none' && record.bodyType !== 'json' && record.bodyType !== 'form' && record.bodyType !== 'text') return null;
+	if (!Array.isArray(record.headers)) return null;
+	const ids = new Set<string>(); const headers: Header[] = [];
+	for (const row of record.headers) {
+		if (typeof row !== 'object' || row === null || Array.isArray(row)) return null;
+		const header = row as Record<string, unknown>;
+		if (typeof header.id !== 'string' || header.id.trim() === '' || ids.has(header.id)) return null;
+		if (typeof header.key !== 'string' || typeof header.value !== 'string' || typeof header.enabled !== 'boolean') return null;
+		ids.add(header.id); headers.push({ id: header.id, key: header.key, value: header.value, enabled: header.enabled });
+	}
+	return { method: record.method as HttpMethod, url: record.url, headers, body: record.body, bodyType: record.bodyType };
+}
+
+function parseResponse(value: unknown): ResponseData | null | undefined {
+	if (value === null || value === undefined) return null;
+	if (typeof value !== 'object' || Array.isArray(value)) return undefined;
+	const record = value as Record<string, unknown>;
+	if (typeof record.status !== 'number' || !Number.isFinite(record.status) || typeof record.statusText !== 'string' || typeof record.body !== 'string') return undefined;
+	if (typeof record.time !== 'number' || !Number.isFinite(record.time) || typeof record.size !== 'number' || !Number.isFinite(record.size)) return undefined;
+	if (typeof record.headers !== 'object' || record.headers === null || Array.isArray(record.headers) || Object.values(record.headers).some((entry) => typeof entry !== 'string')) return undefined;
+	return { status: record.status, statusText: record.statusText, headers: record.headers as Record<string, string>, body: record.body, time: record.time, size: record.size };
+}
+
+function parseHistory(value: unknown): SavedRequest[] | null {
+	if (value === undefined) return [];
+	if (!Array.isArray(value)) return null;
+	const history: SavedRequest[] = []; const ids = new Set<string>();
+	for (const row of value) {
+		if (typeof row !== 'object' || row === null || Array.isArray(row)) return null;
+		const record = row as Record<string, unknown>; const config = parseConfig(record.config);
+		if (typeof record.id !== 'string' || record.id.trim() === '' || ids.has(record.id) || typeof record.name !== 'string' || !Number.isSafeInteger(record.createdAt) || (record.createdAt as number) < 0 || !config) return null;
+		ids.add(record.id); history.push({ id: record.id, name: record.name, config, createdAt: record.createdAt as number });
+	}
+	return history;
+}
+
+export const apiSensitiveCodec: ToolStateCodec<ApiSensitiveState> = {
+	decode(value): ToolStateDecode<ApiSensitiveState> {
+		if (typeof value !== 'object' || value === null || Array.isArray(value) || (value as Record<string, unknown>).version !== 1) return { kind: 'invalid', reason: 'API vault data has an unsupported version.' };
+		const raw = (value as Record<string, unknown>).value;
+		if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { kind: 'invalid', reason: 'API vault data is not a record.' };
+		const state = raw as Record<string, unknown>;
+		const config = parseConfig(state.config); const response = parseResponse(state.response); const history = parseHistory(state.history);
+		return config && response !== undefined && history ? { kind: 'valid', value: { config, response, history } } : { kind: 'invalid', reason: 'API vault data has invalid config, response, history, or identities.' };
+	},
+	encode(value) { return { version: 1, value }; },
+};
+
+export function decodeLegacyApiState(values: Record<string, unknown>): ToolStateDecode<ApiSensitiveState> {
+	const config = parseConfig(values[API_CONFIG_LEGACY_KEY]); const response = parseResponse(values[API_RESPONSE_LEGACY_KEY]); const history = parseHistory(values[HISTORY_KEY]);
+	return config && response !== undefined && history ? { kind: 'valid', value: { config, response, history } } : { kind: 'invalid', reason: 'Existing API data is damaged and was left unchanged.' };
+}

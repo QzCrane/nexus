@@ -8,6 +8,7 @@ import type { HistoryItem } from './types';
 import { searchHistory, deleteHistoryItem, getRecentHistory, formatTimeAgo, getFaviconUrl } from './core';
 import { styles } from './panel.styles';
 import { useToolState, usePermission } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
 
 
 export const HistorySearchPanel: React.FC = () => {
@@ -16,36 +17,22 @@ export const HistorySearchPanel: React.FC = () => {
 	const [query, setQuery] = useToolState<string>('history-search', '');
 
 	const [results, setResults] = useState<HistoryItem[]>([]);
-	const [loading, setLoading] = useState(true);
-
-	// Load recent on mount
-	useEffect(() => {
-		if (hasPermission !== false) {
-			getRecentHistory(50).then((items) => {
-				setResults(items);
-				setLoading(false);
-			});
-		}
-	}, [hasPermission]);
+	const task = useOwnedAsyncTask();
 
 	// Search on query change
 	useEffect(() => {
 		if (hasPermission === false) return;
-		const timer = setTimeout(async () => {
-			if (query.length >= 2) {
-				setLoading(true);
-				const items = await searchHistory(query, 100);
-				setResults(items);
-				setLoading(false);
-			} else if (query.length === 0) {
-				setLoading(true);
-				const items = await getRecentHistory(50);
-				setResults(items);
-				setLoading(false);
-			}
+		const timer = setTimeout(() => {
+			const queryTask = query.length >= 2
+				? () => searchHistory(query, 100)
+				: query.length === 0 ? () => getRecentHistory(50) : null;
+			if (!queryTask) { task.cancel(); setResults([]); return; }
+			void task.run(queryTask).then((outcome) => {
+				if (outcome.kind === 'succeeded') setResults(outcome.value);
+			});
 		}, 200);
-		return () => clearTimeout(timer);
-	}, [query, hasPermission]);
+		return () => { clearTimeout(timer); task.cancel(); };
+	}, [query, hasPermission, task.run, task.cancel]);
 
 	// Open URL
 	const handleClick = useCallback((url: string, e: React.MouseEvent) => {
@@ -59,9 +46,9 @@ export const HistorySearchPanel: React.FC = () => {
 	// Delete
 	const handleDelete = useCallback(async (url: string, e: React.MouseEvent) => {
 		e.stopPropagation();
-		await deleteHistoryItem(url);
-		setResults((r) => r.filter((x) => x.url !== url));
-	}, []);
+		const outcome = await task.run(() => deleteHistoryItem(url));
+		if (outcome.kind === 'succeeded') setResults((r) => r.filter((x) => x.url !== url));
+	}, [task.run]);
 
 	if (hasPermission === false) {
 		return (
@@ -108,7 +95,7 @@ export const HistorySearchPanel: React.FC = () => {
 
 			{/* Results */}
 			<div style={styles.list}>
-				{loading ? (
+				{task.phase === 'running' ? (
 					<div style={styles.empty}>⏳ {t('historySearch.loading')}</div>
 				) : results.length === 0 ? (
 					<div style={styles.empty}>📜 {t('historySearch.noResults')}</div>
@@ -135,6 +122,7 @@ export const HistorySearchPanel: React.FC = () => {
 					))
 				)}
 			</div>
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
 		</div>
 	);
 };

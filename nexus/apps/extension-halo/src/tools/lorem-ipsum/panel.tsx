@@ -8,6 +8,8 @@ import type { LoremUnit } from './types';
 import { generateLorem } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const UNIT_OPTIONS: { id: LoremUnit; label: string }[] = [
@@ -15,11 +17,19 @@ const UNIT_OPTIONS: { id: LoremUnit; label: string }[] = [
 	{ id: 'sentences', label: 'Sentences' },
 	{ id: 'paragraphs', label: 'Paragraphs' },
 ];
+const loremUnitCodec: ToolStateCodec<LoremUnit> = {
+	decode(value) { return UNIT_OPTIONS.some((entry) => entry.id === value) ? { kind: 'valid', value: value as LoremUnit } : { kind: 'invalid', reason: 'Lorem unit is unsupported.' }; },
+	encode(value) { return value; },
+};
+const loremCountCodec: ToolStateCodec<number> = {
+	decode(value) { return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 100 ? { kind: 'valid', value: value as number } : { kind: 'invalid', reason: 'Lorem count must be an integer from 1 to 100.' }; },
+	encode(value) { return value; },
+};
 
 export const LoremIpsumPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [count, setCount] = useToolState<number>('lorem-ipsum-count', 5);
-	const [unit, setUnit] = useToolState<LoremUnit>('lorem-ipsum-unit', 'paragraphs');
+	const [count, setCount, , countRecovery] = useToolState<number>('lorem-ipsum-count', 5, { codec: loremCountCodec });
+	const [unit, setUnit, , unitRecovery] = useToolState<LoremUnit>('lorem-ipsum-unit', 'paragraphs', { codec: loremUnitCodec });
 	const [startWithLorem, setStartWithLorem] = useToolState<boolean>('lorem-ipsum-start', true);
 	const [output, setOutput] = useToolState<string>('lorem-ipsum', '');
 
@@ -37,6 +47,8 @@ export const LoremIpsumPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={countRecovery} emptyValue={5} exportName="halo-lorem-count-damaged.json" />
+			<StorageRecoveryActions recovery={unitRecovery} emptyValue="paragraphs" exportName="halo-lorem-unit-damaged.json" />
 			{/* Config */}
 			<Card variant="default" padding="sm">
 				<div style={styles.row}>

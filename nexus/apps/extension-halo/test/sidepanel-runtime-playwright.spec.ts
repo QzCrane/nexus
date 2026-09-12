@@ -1,5 +1,6 @@
 import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
+import { launchPlaywrightPersistentContext } from '../../../scripts/browser-driver';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -15,8 +16,8 @@ import {
 const DIST_PATH = fileURLToPath(new URL('../dist/', import.meta.url));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 
-function launchHalo(profilePath: string) {
-	return chromium.launchPersistentContext(profilePath, {
+function launchHalo(profilePath: string, profilePrefix: string) {
+	return launchPlaywrightPersistentContext(chromium, profilePath, {
 		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 		headless: true,
 		viewport: { width: 520, height: 760 },
@@ -25,6 +26,9 @@ function launchHalo(profilePath: string) {
 			`--disable-extensions-except=${DIST_PATH}`,
 			`--load-extension=${DIST_PATH}`,
 		],
+	}, {
+		owner: 'apps/extension-halo/test/sidepanel-runtime-playwright.spec.ts',
+		profile: { kind: 'temporary', prefix: profilePrefix, isolated: true },
 	});
 }
 
@@ -58,7 +62,7 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			let context: BrowserContext | null = null;
 			const key = 'halo_tool_state_json-formatter';
 			try {
-				context = await launchHalo(profilePath);
+				context = await launchHalo(profilePath, 'halo-hydration-runtime-');
 				const worker = await extensionWorker(context);
 				await worker.evaluate(async (key) => chrome.storage.local.set({ [key]: '{"stored":1}', [`${key}#rev`]: 41 }), key);
 				const page = await context.newPage();
@@ -122,7 +126,7 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 		let context: BrowserContext | null = null;
 
 		try {
-			context = await launchHalo(profilePath);
+			context = await launchHalo(profilePath, 'halo-sidepanel-runtime-');
 
 			const browserErrors: string[] = [];
 			const lazyChunkUrls = new Set<string>();
@@ -244,7 +248,11 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 		};
 		try {
 			for (const restart of [false, true]) {
-				context = await test.step(`launch retained profile: restart=${restart}`, () => launchHalo(profilePath), { timeout: 10_000 });
+				context = await test.step(
+					`launch retained profile: restart=${restart}`,
+					() => launchHalo(profilePath, 'halo-storage-retention-'),
+					{ timeout: 10_000 },
+				);
 				const runningContext = context;
 				const worker = await test.step('bind extension worker', () => extensionWorker(runningContext), { timeout: 10_000 });
 				if (!restart) await test.step('seed saved records', () => worker.evaluate(async (values) => {
@@ -285,7 +293,7 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 		const profilePath = await mkdtemp(join(tmpdir(), 'halo-xml-fidelity-'));
 		let context: BrowserContext | null = null;
 		try {
-			context = await launchHalo(profilePath);
+			context = await launchHalo(profilePath, 'halo-xml-fidelity-');
 			const worker = await extensionWorker(context);
 			const page = await context.newPage();
 			await page.goto(`chrome-extension://${new URL(worker.url()).hostname}/sidepanel.html`);

@@ -2,6 +2,7 @@
 // eff: Allows using HALO as a detached app-like window
 
 import { createLogger } from '@nexus/kernel';
+import { safeStorageSet } from '../core/safe-storage';
 
 const logger = createLogger('PopOutWindow', 'HALO');
 
@@ -127,7 +128,9 @@ export async function popOutWindow(): Promise<void> {
 					top: currentWindow.top,
 				};
 				try {
-					await chrome.storage.local.set({ [STORAGE_KEY]: newBounds });
+					if (!await safeStorageSet({ [STORAGE_KEY]: newBounds }, { area: 'local' })) {
+						throw new Error('Window bounds were not committed');
+					}
 				} catch (error: unknown) {
 					logger.warn('Failed to persist HALO window bounds', error);
 				}

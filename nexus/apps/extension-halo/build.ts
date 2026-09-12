@@ -28,6 +28,7 @@ import {
 	RELEASE_CONTENT_SCRIPTS,
 	RELEASE_SCRIPT_RUNTIME_IDS,
 	RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES,
+	RELEASE_EXTENSION_WORKER_ENTRIES,
 } from './src/kernel/registry/_generated-release-admission';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -53,9 +54,17 @@ const BROWSER_TARGET = `chrome${minimumChromeMajor}`;
 // fetch response budgets, and the conditional storage ledger to the worker's
 // graph (remediation N04/N05/N07/S05). Dropping those gates was rejected; the
 // measured closure is 39 KiB and the ceiling keeps 1 KiB of headroom.
+// background 40 -> 53 KiB (2026-09-12): the single Background deadline
+// coordinator (kernel/core/deadline-jobs) owns Timer and Pomodoro commands,
+// alarms, cold-start reconciliation and completion notifications, so their
+// domain cores now live in the worker graph (architecture "Active feature
+// lifecycle"). Measured closure is 51 KiB; the ceiling keeps 2 KiB of headroom.
 const PRODUCTION_BUDGET_KIB = Object.freeze({
-	background: 40,
-	allFrameDocumentStart: 1,
+	background: 53,
+	// content-frame-tools.js validates the typed FrameToolCommand shape before
+	// routing to the lazy runtime; operation ownership (2026-09-12)
+	// raised the all-frame document_start bootstrap from ~1 KiB to 1124 B.
+	allFrameDocumentStart: 2,
 	topFrameDocumentStart: 26,
 	// Preserve the existing explicitly enabled clipboard host; admission is not a feature deletion.
 	allFrameDocumentIdle: 2,
@@ -76,6 +85,11 @@ const PRODUCTION_BUDGET_KIB = Object.freeze({
 	sidepanelEventualChunks: 2900,
 	largestSidepanelChunk: 500,
 	maxSidepanelActivation: 1100,
+	// On-demand Dedicated Workers own PDF, image, regex and JSONPath engines.
+	// Pre-integration isolated Chrome-floor bundles total about 514 KiB; final
+	// production output is checked here, independently of SidePanel startup.
+	extensionWorkers: 530,
+	largestExtensionWorker: 440,
 });
 
 // HALO keeps React types and source compatibility, but the SidePanel's one
@@ -225,7 +239,7 @@ const [toolScriptsCount, officialScriptsCount] = await Promise.all([
 const entries = [
 	{ entry: 'src/entry/content.ts', out: 'content.js', kind: 'classic' },
 	...RELEASE_CONTENT_SCRIPTS.map(({ entry, js }) => ({ entry, out: js, kind: 'classic' })),
-	...RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES.map(({ entry, output }) => ({
+	...[...RELEASE_WEB_ACCESSIBLE_RUNTIME_ENTRIES, ...RELEASE_EXTENSION_WORKER_ENTRIES].map(({ entry, output }) => ({
 		entry,
 		out: output,
 		kind: 'module',
@@ -483,6 +497,9 @@ if (isWatch) {
 		PRODUCTION_BUDGET_KIB.maxSidepanelActivation,
 	);
 	const maxSidepanelActivation = activationClosures[0]?.bytes ?? 0;
+	const workerClosures = RELEASE_EXTENSION_WORKER_ENTRIES.map(({ id, output }) => ({ id, output, ...closureFor(output) }));
+	const workerBytes = workerClosures.reduce((total, worker) => total + worker.bytes, 0);
+	const largestWorkerBytes = workerClosures.reduce((largest, worker) => Math.max(largest, worker.bytes), 0);
 
 	const budgetMeasurements = {
 		background: sizeOf('background.js'),
@@ -496,9 +513,9 @@ if (isWatch) {
 		sidepanelEventualChunks: chunkBytes,
 		largestSidepanelChunk: largestChunkBytes,
 		maxSidepanelActivation,
+		extensionWorkers: workerBytes,
+		largestExtensionWorker: largestWorkerBytes,
 	};
-	assertProductionBudgets(budgetMeasurements);
-
 	if (isAnalyze) {
 		const report = {
 			budgetsKiB: PRODUCTION_BUDGET_KIB,
@@ -510,7 +527,10 @@ if (isWatch) {
 				sidepanelStartupBytes: sidepanelStartup.bytes,
 				sidepanelStartupFiles: sidepanelStartup.fileCount,
 				backgroundBytes: sizeOf('background.js'),
+				extensionWorkerBytes: workerBytes,
+				largestExtensionWorkerBytes: largestWorkerBytes,
 			},
+			extensionWorkerClosures: workerClosures,
 			sidepanelTopInputs,
 			sidepanelActivationClosures: activationClosures,
 			scriptRuntimeBuilds: scriptBuildAnalyses.sort((left, right) => left.id.localeCompare(right.id)),
@@ -533,6 +553,9 @@ if (isWatch) {
 		);
 	}
 
+	// Keep exact failed-build measurements available for root-cause analysis;
+	// the build still fails before provenance, finalization or release admission.
+	assertProductionBudgets(budgetMeasurements);
 	const chunkInfo = chunkFiles.length > 0
 		? ` | chunks:${chunkFiles.length}/${kib(chunkBytes)}KB`
 		: '';

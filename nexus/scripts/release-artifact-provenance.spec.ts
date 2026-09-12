@@ -3,7 +3,10 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import type { ArtifactProvenanceEvidence } from './artifact-provenance';
-import { buildReleaseArtifactAttestation } from './release-artifact-provenance';
+import {
+	buildReleaseArtifactAttestation,
+	finalReleaseEvidencePaths,
+} from './release-artifact-provenance';
 
 function provenance(product: 'halo' | 'spectra'): ArtifactProvenanceEvidence {
 	return {
@@ -22,6 +25,15 @@ function provenance(product: 'halo' | 'spectra'): ArtifactProvenanceEvidence {
 }
 
 describe('final release whole-artifact attestation', () => {
+	test('owns the consumer-visible final sidecar paths beside each release ZIP', () => {
+		for (const product of ['halo', 'spectra'] as const) {
+			const paths = finalReleaseEvidencePaths(product);
+			expect(paths.licenses).toBe(`${paths.artifact}.licenses.json`);
+			expect(paths.supplyChain).toBe(`${paths.artifact}.provenance.json`);
+			expect(paths.wholeArtifact).toBe(`${paths.artifact}.artifact-provenance.json`);
+		}
+	});
+
 	test('keeps byte provenance complete without pretending repository authorship is proven', () => {
 		const dir = mkdtempSync(resolve(tmpdir(), 'nexus-artifact-attestation-'));
 		try {

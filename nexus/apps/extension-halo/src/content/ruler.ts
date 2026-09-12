@@ -7,6 +7,7 @@ let box: HTMLDivElement | null = null;
 let startX = 0;
 let startY = 0;
 let isDragging = false;
+let activeOperationId: string | null = null;
 
 function createOverlay(): void {
 	if (overlay) return;
@@ -113,22 +114,25 @@ function onMouseUp(e: MouseEvent): void {
 		diagonal: Math.round(diagonal * 10) / 10,
 	};
 
-	chrome.runtime.sendMessage({ type: 'HALO_RULER_RESULT', data: result });
+	if (activeOperationId) chrome.runtime.sendMessage({ type: 'HALO_RULER_RESULT', operationId: activeOperationId, data: result });
 	removeOverlay();
+	activeOperationId = null;
 }
 
 function onKeyDown(e: KeyboardEvent): void {
 	if (e.key === 'Escape') {
-		removeOverlay();
+		cancel();
 	}
 }
 
-export function start(): void {
+export function start(operationId: string): void {
+	activeOperationId = operationId;
 	createOverlay();
 	console.log(LOG_TAG, 'Started');
 }
 
 export function cancel(): void {
 	removeOverlay();
+	activeOperationId = null;
 	console.log(LOG_TAG, 'Cancelled');
 }

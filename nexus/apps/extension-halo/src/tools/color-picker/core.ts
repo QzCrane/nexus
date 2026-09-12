@@ -1,7 +1,18 @@
 // goal: Color conversion and manipulation utilities with CMYK and WCAG support
 
 import type { RGBColor, HSLColor, CMYKColor, ColorInfo, ContrastResult } from './types';
-import { STORAGE_KEY, MAX_HISTORY } from './types';
+import { MAX_HISTORY } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export const colorHistoryCodec: ToolStateCodec<string[]> = {
+	decode(value) {
+		if (!Array.isArray(value) || value.length > MAX_HISTORY || value.some((entry) => typeof entry !== 'string' || parseColor(entry) === null) || new Set(value).size !== value.length) {
+			return { kind: 'invalid', reason: 'Color history contains an invalid or duplicate color.' };
+		}
+		return { kind: 'valid', value: [...value] as string[] };
+	},
+	encode(value) { return value; },
+};
 
 /**
  * Parse hex color to RGB
@@ -161,21 +172,3 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 /**
  * Save color to history
  */
-export async function saveToHistory(hex: string): Promise<string[]> {
-	const result = await chrome.storage.local.get([STORAGE_KEY]);
-	const history: string[] = result[STORAGE_KEY] || [];
-
-	const filtered = history.filter(h => h !== hex);
-	const updated = [hex, ...filtered].slice(0, MAX_HISTORY);
-
-	await chrome.storage.local.set({ [STORAGE_KEY]: updated });
-	return updated;
-}
-
-/**
- * Load history from storage
- */
-export async function loadHistory(): Promise<string[]> {
-	const result = await chrome.storage.local.get([STORAGE_KEY]);
-	return result[STORAGE_KEY] || [];
-}

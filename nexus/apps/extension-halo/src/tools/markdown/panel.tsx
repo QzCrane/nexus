@@ -6,9 +6,17 @@ import { useTranslation } from '../../i18n';
 import { parseMarkdown, getPreviewStyles } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 type ViewMode = 'split' | 'edit' | 'preview';
+const markdownViewCodec: ToolStateCodec<ViewMode> = {
+	decode: (value) => value === 'split' || value === 'edit' || value === 'preview'
+		? { kind: 'valid', value } : { kind: 'invalid', reason: 'Markdown view mode is invalid.' },
+	encode: (value) => value,
+};
 
 const SAMPLE_MD = `# Markdown Preview
 
@@ -40,18 +48,18 @@ function hello() {
 export const MarkdownPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [input, setInput] = useToolState<string>('markdown', SAMPLE_MD);
-	const [viewMode, setViewMode] = useToolState<ViewMode>('markdown-view', 'split');
+	const [viewMode, setViewMode, , viewRecovery] = useToolState<ViewMode>('markdown-view', 'split', { codec: markdownViewCodec });
+	const task = useOwnedAsyncTask();
 
 
 	// Parse markdown to sanitized HTML (async: the sanitizing pass is DOM-bound)
 	const [html, setHtml] = useState('');
 	useEffect(() => {
-		let alive = true;
-		void parseMarkdown(input)
-			.then((rendered) => { if (alive) setHtml(rendered); })
-			.catch((renderError) => { if (alive) setHtml(`<p class="md-error">${String(renderError)}</p>`); });
-		return () => { alive = false; };
-	}, [input]);
+		void task.run(() => parseMarkdown(input)).then((outcome) => {
+			if (outcome.kind === 'succeeded') setHtml(outcome.value);
+		});
+		return task.cancel;
+	}, [input, task.run, task.cancel]);
 	const previewStyles = useMemo(() => getPreviewStyles(), []);
 
 	// Copy HTML
@@ -66,6 +74,7 @@ export const MarkdownPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={viewRecovery} emptyValue="split" exportName="halo-markdown-view-damaged.json" />
 			{/* View Mode Tabs */}
 			<div style={styles.tabs}>
 				{(['edit', 'split', 'preview'] as ViewMode[]).map((mode) => (
@@ -106,6 +115,7 @@ export const MarkdownPanel: React.FC = () => {
 				<button type="button" style={styles.btn} onClick={handleCopyMd}>📋 {t('markdown.copyMd')}</button>
 				<button type="button" style={styles.btn} onClick={handleCopyHtml}>🔗 {t('markdown.copyHtml')}</button>
 			</div>
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
 		</div>
 	);
 };

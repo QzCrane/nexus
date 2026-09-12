@@ -84,7 +84,7 @@ export function clearNativeMediaAsyncState(element: HTMLMediaElement): void {
 	}
 }
 
-function valuesMatch(expected: unknown, actual: unknown, tolerance: number): boolean {
+export function nativeValuesMatch(expected: unknown, actual: unknown, tolerance: number): boolean {
 	if (typeof expected === 'number' && typeof actual === 'number') {
 		return Math.abs(expected - actual) <= tolerance;
 	}
@@ -184,7 +184,7 @@ export async function writeWithStableEventAck<T>(
 	options: NativeMediaOperationOptions = {},
 ): Promise<T> {
 	assertNativeOperationCurrent(options);
-	if (valuesMatch(expected, read(), tolerance)) {
+	if (nativeValuesMatch(expected, read(), tolerance)) {
 		// The native field already exposes the requested value. Re-read across
 		// the same stabilization boundary instead of causing an unnecessary
 		// setter side effect with no authoritative event to acknowledge it.
@@ -201,7 +201,7 @@ export async function writeWithStableEventAck<T>(
 	const onEvent = (): void => {
 		if (quietTimer !== null) clearTimeout(quietTimer);
 		quietTimer = null;
-		if (!valuesMatch(expected, read(), tolerance)) return;
+		if (!nativeValuesMatch(expected, read(), tolerance)) return;
 		// A page-player setter can acknowledge our value and restore its own value
 		// in a timer. Require one short event-quiet window before committing.
 		quietTimer = setTimeout(() => finish(true), NATIVE_EVENT_QUIET_MS);

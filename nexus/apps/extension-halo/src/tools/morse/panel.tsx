@@ -6,11 +6,19 @@ import { useTranslation } from '../../i18n';
 import { encode, decode, playMorse } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+
+type MorseMode = 'encode' | 'decode';
+const morseModeCodec: ToolStateCodec<MorseMode> = {
+	decode(value) { return value === 'encode' || value === 'decode' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Morse mode is unsupported.' }; },
+	encode(value) { return value; },
+};
 
 
 export const MorsePanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useToolState<'encode' | 'decode'>('morse-mode', 'encode');
+	const [mode, setMode, , modeRecovery] = useToolState<MorseMode>('morse-mode', 'encode', { codec: morseModeCodec });
 	const [input, setInput] = useToolState<string>('morse-input', '');
 
 
@@ -32,6 +40,7 @@ export const MorsePanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={modeRecovery} emptyValue="encode" exportName="halo-morse-mode-damaged.json" />
 			{/* Mode tabs */}
 			<div style={styles.tabs}>
 				<button type="button" style={{ ...styles.tab, background: mode === 'encode' ? 'var(--halo-accent)' : 'var(--halo-bg-tertiary)', color: mode === 'encode' ? '#fff' : 'var(--halo-text)' }} onClick={() => setMode('encode')}>

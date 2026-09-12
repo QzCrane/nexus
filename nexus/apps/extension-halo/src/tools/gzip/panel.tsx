@@ -6,42 +6,50 @@ import { useTranslation } from '../../i18n';
 import { compress, decompress, getCompressionRatio } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+
+type GzipMode = 'compress' | 'decompress';
+const gzipModeCodec: ToolStateCodec<GzipMode> = {
+	decode: (value) => value === 'compress' || value === 'decompress' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Gzip mode is invalid.' },
+	encode: (value) => value,
+};
 
 
 export const GzipPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useToolState<'compress' | 'decompress'>('gzip-mode', 'compress');
+	const [mode, setMode, , modeRecovery] = useToolState<GzipMode>('gzip-mode', 'compress', { codec: gzipModeCodec });
 	const [input, setInput] = useToolState<string>('gzip-input', '');
 	const [output, setOutput] = useToolState<string>('gzip-output', '');
 
 	const [stats, setStats] = useState({ original: 0, result: 0, ratio: 0 });
 	const [error, setError] = useState('');
+	const task = useOwnedAsyncTask();
 
 	// Process
 	const handleProcess = useCallback(async () => {
 		setError('');
-		try {
+		const outcome = await task.run(async () => {
 			if (mode === 'compress') {
 				const result = await compress(input);
-				setOutput(result);
-				setStats({
+				return { output: result, stats: {
 					original: new TextEncoder().encode(input).length,
 					result: result.length,
 					ratio: getCompressionRatio(new TextEncoder().encode(input).length, atob(result).length),
-				});
+				} };
 			} else {
 				const result = await decompress(input);
-				setOutput(result);
-				setStats({
+				return { output: result, stats: {
 					original: input.length,
 					result: new TextEncoder().encode(result).length,
 					ratio: 0,
-				});
+				} };
 			}
-		} catch (_e) {
-			setError(t('gzip.error'));
-		}
-	}, [mode, input, t, setOutput]);
+		});
+		if (outcome.kind === 'succeeded') { setOutput(outcome.value.output); setStats(outcome.value.stats); }
+		else if (outcome.kind === 'failed') setError(t('gzip.error'));
+	}, [mode, input, t, setOutput, task.run]);
 
 	// Copy
 	const handleCopy = useCallback(() => {
@@ -50,6 +58,7 @@ export const GzipPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={modeRecovery} emptyValue="compress" exportName="halo-gzip-mode-damaged.json" />
 			{/* Mode tabs */}
 			<div style={styles.tabs}>
 				{(['compress', 'decompress'] as const).map((m) => (
@@ -66,8 +75,8 @@ export const GzipPanel: React.FC = () => {
 			</div>
 
 			{/* Process button */}
-			<button type="button" style={styles.btn} onClick={handleProcess}>
-				{mode === 'compress' ? '🗜️' : '📦'} {t(`gzip.${mode}`)}
+			<button type="button" style={styles.btn} onClick={task.phase === 'running' ? task.cancel : handleProcess}>
+				{task.phase === 'running' ? '✕ Cancel' : `${mode === 'compress' ? '🗜️' : '📦'} ${t(`gzip.${mode}`)}`}
 			</button>
 
 			{/* Error */}

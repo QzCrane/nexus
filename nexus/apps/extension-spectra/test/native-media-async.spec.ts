@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	consumeOwnedSeek,
+	nativeValuesMatch,
 	seekNativeMedia,
 	writeWithStableEventAck,
 } from '../src/content/logic/native-media-async';
@@ -13,6 +14,13 @@ class FakeMediaElement extends EventTarget {
 }
 
 describe('bounded native-media async capability', () => {
+	test('uses one matcher for numeric tolerance and exact structured native values', () => {
+		expect(nativeValuesMatch(1, 1.009, 0.01)).toBe(true);
+		expect(nativeValuesMatch(1, 1.011, 0.01)).toBe(false);
+		expect(nativeValuesMatch([1, 2], [1, 2], 0)).toBe(true);
+		expect(nativeValuesMatch([1, 2], [2, 1], 0)).toBe(false);
+	});
+
 	test('settles a pending seek immediately when its operation is cancelled', async () => {
 		const media = new FakeMediaElement();
 		const controller = new AbortController();

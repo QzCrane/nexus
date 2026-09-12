@@ -2,6 +2,7 @@
 // inv: pending background state clears only after the exact activation ID ACKs
 
 import type { SidepanelActivationEnvelope } from './sidepanel-activation';
+import { conditionalLedgerWrite, readLedgerEntry } from './safe-storage';
 export const QRCODE_MODE_STORAGE_KEY = 'halo_tool_state_qrcode-mode';
 export const QRCODE_TEXT_STORAGE_KEY = 'halo_tool_state_qrcode';
 export const QRCODE_ACTIVATION_ID_STORAGE_KEY = 'halo_tool_state_qrcode-activation-id';
@@ -11,6 +12,14 @@ let snapshot: SidepanelActivationEnvelope | null = null;
 const listeners = new Set<() => void>();
 let latestQrcodeActivation: SidepanelActivationEnvelope | null = null;
 let qrcodeCommitTail = Promise.resolve();
+
+async function commitQrcodeField(key: string, value: unknown): Promise<boolean> {
+	const base = await readLedgerEntry(key, { area: 'local' });
+	const outcome = await conditionalLedgerWrite(key, {
+		area: 'local', baseRevision: base.revision, value, remerge: () => value,
+	});
+	return outcome.kind === 'committed';
+}
 
 function admitQrcodeActivation(envelope: SidepanelActivationEnvelope): boolean {
 	if (envelope.activation.toolId !== 'qrcode') return false;
@@ -82,12 +91,13 @@ export async function persistQrcodeActivation(
 			[QRCODE_ACTIVATION_GENERATION_STORAGE_KEY]: envelope.generation,
 		};
 		try {
-			// This exact durable owner deliberately awaits the browser operation
-			// without a timeout/retry race: an abandoned timed-out set could finish
-			// after a newer activation and roll the physical value backwards.
-			await chrome.storage.local.set(durableState);
+			// The domain tail serializes activations; each field also participates in
+			// the canonical ledger used by its useToolState consumer.
+			for (const [key, value] of Object.entries(durableState)) {
+				if (!await commitQrcodeField(key, value)) return false;
+			}
 			if (latestQrcodeActivation?.id !== envelope.id) return false;
-			const readback = await chrome.storage.local.get(Object.keys(durableState));
+			const readback = Object.fromEntries(await Promise.all(Object.keys(durableState).map(async (key) => [key, (await readLedgerEntry(key, { area: 'local' })).value])));
 			return latestQrcodeActivation?.id === envelope.id
 				&& Object.entries(durableState).every(([key, value]) => readback[key] === value);
 		} catch {

@@ -13,13 +13,13 @@
 		"番茄钟"
 	],
 	"background": {
-		"mechanism": "raf_active",
-		"frequency": "paint-frame while running",
-		"activeOnly": true,
-		"level": "medium",
-		"descriptionKey": "impact.mechanism.raf_active",
-		"sourceFile": "tools/timer/panel.tsx",
-		"sourceAnchor": "frameId = requestAnimationFrame(tick)",
-		"sourceDetail": "requestAnimationFrame state is isolated to the TimerDisplay clock node; a bounded 1Hz deadline watcher performs no persistent write until real completion"
+		"mechanism": "event_listener",
+		"frequency": "one-shot deadline alarm while countdown runs",
+		"activeOnly": false,
+		"level": "idle",
+		"descriptionKey": "impact.event_listener",
+		"sourceFile": "kernel/core/deadline-jobs/coordinator.ts",
+		"sourceAnchor": "chrome.alarms.onAlarm.addListener",
+		"sourceDetail": "one replaceable alarm wakes an idempotent background deadline reconciler; panel requestAnimationFrame only projects the stopwatch/countdown display"
 	}
 }

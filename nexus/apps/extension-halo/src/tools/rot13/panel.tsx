@@ -6,15 +6,25 @@ import { useTranslation } from '../../i18n';
 import { rot13, rot47, rotN } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 type Mode = 'ROT13' | 'ROT47' | 'Custom';
+const rotModeCodec: ToolStateCodec<Mode> = {
+	decode(value) { return value === 'ROT13' || value === 'ROT47' || value === 'Custom' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Rotation mode is unsupported.' }; },
+	encode(value) { return value; },
+};
+const shiftCodec: ToolStateCodec<number> = {
+	decode(value) { return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 25 ? { kind: 'valid', value: value as number } : { kind: 'invalid', reason: 'Rotation shift must be an integer from 1 to 25.' }; },
+	encode(value) { return value; },
+};
 
 export const Rot13Panel: React.FC = () => {
 	const { t } = useTranslation();
 	const [input, setInput] = useToolState<string>('rot13-input', '');
-    const [mode, setMode] = useToolState<Mode>('rot13-mode', 'ROT13');
-    const [shift, setShift] = useToolState<number>('rot13-shift', 13);
+    const [mode, setMode, , modeRecovery] = useToolState<Mode>('rot13-mode', 'ROT13', { codec: rotModeCodec });
+    const [shift, setShift, , shiftRecovery] = useToolState<number>('rot13-shift', 13, { codec: shiftCodec });
 
 
     const output = useMemo(() => {
@@ -33,6 +43,8 @@ export const Rot13Panel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={modeRecovery} emptyValue="ROT13" exportName="halo-rot-mode-damaged.json" />
+			<StorageRecoveryActions recovery={shiftRecovery} emptyValue={13} exportName="halo-rot-shift-damaged.json" />
             <div style={styles.toolbar}>
                 {(['ROT13', 'ROT47', 'Custom'] as Mode[]).map(m => (
                     <button type="button"

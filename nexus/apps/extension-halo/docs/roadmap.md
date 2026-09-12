@@ -3,7 +3,7 @@ type: reference
 status: draft
 audience: developer
 owner: halo-product-and-engineering
-last_reviewed: 2026-08-13
+last_reviewed: 2026-09-12
 ---
 
 # HALO roadmap
@@ -19,6 +19,31 @@ This document owns sequencing and unresolved work. It does not define current ru
 - QR context-menu activation has monotonic dual-channel admission and is acknowledged only after exact payload persistence across SidePanel startup/remount boundaries;
 - startup, lazy runtime, eventual SidePanel, largest-chunk, and per-tool activation-closure production budgets are executable release gates;
 - public projection checks cover HALO as well as SPECTRA.
+
+This heading is dated historical evidence. Current runtime behavior and the
+live executable performance limits are owned by [`architecture.md`](architecture.md)
+and `build.ts`; the former v0.6.2 byte ceilings must not be reused as current
+release admission.
+
+## Current remediation wave
+
+- Timer and Pomodoro deadlines have moved to one Background alarm/revision
+  coordinator; panels are projections and no longer determine completion by
+  remaining mounted.
+- Complex persisted tool values use domain codecs, invalid data is retained for
+  explicit export or replacement, and quota decisions use native byte limits.
+- API and TOTP sensitive drafts default to memory and enter the extension vault
+  only after explicit save/readback; legacy deletion remains a separate action.
+- Regex, PDF, Image Tools and RFC 9535 JSONPath use owned bounded task
+  lifecycles; JSONPath, CSP and CSV behavior now follows the admitted semantic
+  engines and explicit product boundaries in the architecture owner.
+- Extension HTTP(S) admission validates every observable redirect and reports
+  DNS destination as unknown where browser APIs cannot prove it.
+
+These are implementation facts with focused tests. The final production build,
+installed-Chrome semantic replay, hosted checks, release artifact and external
+provider results remain separate evidence gates. Provisional bundle measurements
+do not close those gates.
 
 ## P0: remaining ownership migrations
 
@@ -55,10 +80,6 @@ OCR, AI, cloud backup, translation providers, external validators, remote APIs, 
 - production performance and maintenance exit strategy.
 
 ## Open architectural migrations
-
-### Persistent background timers
-
-Pomodoro, countdown, and similar tools need a Background-owned deadline model, browser-alarm recovery, persisted state, and a SidePanel projection. A mounted React component is not the clock authority.
 
 ### Generated Content entry
 

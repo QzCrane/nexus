@@ -5,6 +5,19 @@
 // a correct edit script instead of an unbounded allocation.
 
 import type { DiffResult, DiffStats } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export interface DiffDraft { text1: string; text2: string }
+export const diffDraftCodec: ToolStateCodec<DiffDraft> = {
+	decode(value) {
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return { kind: 'invalid', reason: 'Diff draft must be an object.' };
+		const candidate = value as Record<string, unknown>;
+		return typeof candidate.text1 === 'string' && typeof candidate.text2 === 'string'
+			? { kind: 'valid', value: { text1: candidate.text1, text2: candidate.text2 } }
+			: { kind: 'invalid', reason: 'Diff draft text fields are invalid.' };
+	},
+	encode(value) { return value; },
+};
 
 function requireItem<T>(items: readonly T[], index: number, label: string): T {
 	const item = items[index];

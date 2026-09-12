@@ -10,9 +10,12 @@ import { styles } from './panel.styles';
 import { KeyComboEditor } from './KeyComboEditor';
 import { ViewSettings } from './ViewSettings';
 import { InfoBarSettings } from './InfoBarSettings';
+import { conditionalLedgerWrite, readLedgerEntry } from '../../../../kernel/core/safe-storage';
+import { useToast } from '../../../../components/ToastProvider';
 
 export const HoverZoomPanel: React.FC = () => {
     const { t } = useTranslation();
+    const { showToast } = useToast();
     const [settings, setSettings] = useState<HoverZoomSettings>(DEFAULT_SETTINGS);
     const [antiHotlinkActive, setAntiHotlinkActive] = useState(false);
 
@@ -54,8 +57,8 @@ export const HoverZoomPanel: React.FC = () => {
         };
         chrome.storage.onChanged.addListener(listener);
         const initialRevision = revision;
-        void chrome.storage.local.get(STORAGE_KEY).then((result) => {
-            if (!disposed && revision === initialRevision) apply(result[STORAGE_KEY]);
+        void readLedgerEntry(STORAGE_KEY, { area: 'local' }).then((result) => {
+            if (!disposed && revision === initialRevision) apply(result.value);
         }).catch(() => {
             if (!disposed && revision === initialRevision) apply(undefined);
         });
@@ -66,17 +69,22 @@ export const HoverZoomPanel: React.FC = () => {
     }, [reconcileAntiHotlink]);
 
     const update = useCallback(async (patch: Partial<HoverZoomSettings>) => {
-        const next = { ...settings, ...patch };
-        setSettings(next);
         try {
-            await chrome.storage.local.set({ [STORAGE_KEY]: next });
+            const base = await readLedgerEntry(STORAGE_KEY, { area: 'local' });
+            const next = parseHoverZoomSettings({ ...parseHoverZoomSettings(base.value), ...patch });
+            const outcome = await conditionalLedgerWrite(STORAGE_KEY, {
+                area: 'local', baseRevision: base.revision, value: next,
+                remerge: (current) => parseHoverZoomSettings({ ...parseHoverZoomSettings(current), ...patch }),
+            });
+            if (outcome.kind !== 'committed') throw new Error('Hover Zoom settings were not committed');
+            setSettings(parseHoverZoomSettings(outcome.value));
             if (patch.antiHotlink !== undefined) await reconcileAntiHotlink();
         } catch (error: unknown) {
-            setSettings(settings);
             if (patch.antiHotlink !== undefined) setAntiHotlinkActive(false);
+            showToast('Failed to save Hover Zoom settings');
             console.error('[HALO:HoverZoom] Settings update failed', error);
         }
-    }, [settings, reconcileAntiHotlink]);
+    }, [reconcileAntiHotlink, showToast]);
 
     const updateResourceKeys = (key: 'imageKey' | 'videoKey', combo: KeyCombo) => {
         update({ resourceKeys: { ...settings.resourceKeys, [key]: combo } });

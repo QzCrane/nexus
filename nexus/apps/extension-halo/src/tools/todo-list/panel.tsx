@@ -1,51 +1,49 @@
 // goal: Todo List panel UI - task management
 
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TodoItem } from './types';
-import { getTodos, addTodo, toggleTodo, deleteTodo, clearCompleted, PRIORITY_COLORS } from './core';
+import { createTodo, PRIORITY_COLORS, TODO_STORAGE_KEY, TODO_QUOTA_POLICY, todoItemBytes, todoListCodec } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+
+type TodoFilter = 'all' | 'active' | 'completed';
+const todoFilterCodec: ToolStateCodec<TodoFilter> = {
+	decode(value) { return value === 'all' || value === 'active' || value === 'completed' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Todo filter is unsupported.' }; },
+	encode(value) { return value; },
+};
 
 
 export const TodoListPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [todos, setTodos] = useState<TodoItem[]>([]);
+	const [todos, setTodos, , recovery] = useToolState<TodoItem[]>('todo-list', [], {
+		storageKey: TODO_STORAGE_KEY,
+		codec: todoListCodec,
+		quota: TODO_QUOTA_POLICY,
+		quotaItemBytes: todoItemBytes,
+	});
 	const [input, setInput] = useToolState<string>('todo-input', '');
-	const [filter, setFilter] = useToolState<'all' | 'active' | 'completed'>('todo-filter', 'all');
+	const [filter, setFilter, , filterRecovery] = useToolState<TodoFilter>('todo-filter', 'all', { codec: todoFilterCodec });
 
-
-	// Load todos
-	useEffect(() => {
-		getTodos().then(setTodos);
-	}, []);
 
 	// Add
-	const handleAdd = useCallback(async () => {
+	const handleAdd = useCallback(() => {
 		if (!input.trim()) return;
-		await addTodo(input);
+		setTodos((current) => [createTodo(input), ...current]);
 		setInput('');
-		setTodos(await getTodos());
-	}, [input, setInput]);
+	}, [input, setInput, setTodos]);
 
 	// Toggle
-	const handleToggle = useCallback(async (id: string) => {
-		await toggleTodo(id);
-		setTodos(await getTodos());
-	}, []);
+	const handleToggle = useCallback((id: string) => setTodos((current) => current.map((todo) => todo.id === id ? { ...todo, completed: !todo.completed } : todo)), [setTodos]);
 
 	// Delete
-	const handleDelete = useCallback(async (id: string) => {
-		await deleteTodo(id);
-		setTodos(await getTodos());
-	}, []);
+	const handleDelete = useCallback((id: string) => setTodos((current) => current.filter((todo) => todo.id !== id)), [setTodos]);
 
 	// Clear completed
-	const handleClearCompleted = useCallback(async () => {
-		await clearCompleted();
-		setTodos(await getTodos());
-	}, []);
+	const handleClearCompleted = useCallback(() => setTodos((current) => current.filter((todo) => !todo.completed)), [setTodos]);
 
 	// Filter
 	const filtered = todos.filter((t) => {
@@ -58,6 +56,8 @@ export const TodoListPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={recovery} emptyValue={[]} exportName="halo-todo-recovery.json" />
+			<StorageRecoveryActions recovery={filterRecovery} emptyValue="all" exportName="halo-todo-filter-damaged.json" />
 			{/* Input */}
 			<div style={styles.inputRow}>
 				<input

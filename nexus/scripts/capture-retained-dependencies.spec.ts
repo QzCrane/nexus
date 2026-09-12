@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { buildRetainedDependencyEvidence } from './capture-retained-dependencies';
+import { productBuildAnalysisPath } from './artifact-provenance';
 
 function fixturePackage(root: string, name: string, version: string, license = 'MIT'): string {
 	const segments = name.startsWith('@') ? name.split('/') : [name];
@@ -14,6 +15,12 @@ function fixturePackage(root: string, name: string, version: string, license = '
 }
 
 describe('product-retained npm dependency evidence', () => {
+	test('shares the production analysis-path owner with whole-artifact provenance', () => {
+		expect(productBuildAnalysisPath('spectra').replaceAll('\\', '/').endsWith(
+			'/artifacts/spectra-build-analysis.json',
+		)).toBe(true);
+	});
+
 	test('aggregates only positive bytes physically retained from npm inputs', () => {
 		const project = mkdtempSync(resolve(tmpdir(), 'nexus-retained-deps-'));
 		try {

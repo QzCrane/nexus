@@ -4,8 +4,8 @@ export const en = {
 	archive: {
 		capture: 'Save This Page',
 		capturing: 'Capturing...',
-		download: 'Download',
-		view: 'View',
+		download: 'Download MHTML',
+		openHint: 'Open the downloaded .mhtml file from Chrome Downloads to view the complete archive.',
 		history: 'History',
 		empty: 'No saved pages yet'
 	}

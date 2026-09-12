@@ -48,6 +48,7 @@ export const splitPDF = async (options: SplitOptions): Promise<PDFProcessResult<
 			}
 		}
 		const results: ArrayBuffer[] = [];
+		let outputBytes = 0;
 
 		for (const range of options.ranges) {
 			const newDoc = await PDFDocument.create();
@@ -60,6 +61,10 @@ export const splitPDF = async (options: SplitOptions): Promise<PDFProcessResult<
 				newDoc.addPage(page);
 			});
 			const data = await newDoc.save();
+			outputBytes += data.byteLength;
+			if (options.maxOutputBytes !== undefined && outputBytes > options.maxOutputBytes) {
+				return { success: false, error: `Split output exceeds the ${Math.floor(options.maxOutputBytes / (1024 * 1024))} MiB result limit.` };
+			}
 			results.push(data.buffer.slice(0) as ArrayBuffer);
 		}
 		return { success: true, data: results };

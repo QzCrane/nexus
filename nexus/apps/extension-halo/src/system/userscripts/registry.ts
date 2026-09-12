@@ -13,6 +13,7 @@ import {
 	type UserScriptsStorageSnapshot,
 } from './storage-schema';
 import { isUserScriptsCapabilityAvailable } from './capability';
+import { conditionalLedgerWrite, readLedgerEntry } from '../../kernel/core/safe-storage';
 
 const LOG_TAG = '[HALO:UserScripts:Registry]';
 const STORAGE_KEY = 'halo_userscripts';
@@ -354,14 +355,20 @@ function resetRecoveryTimer(): void {
 	recoveryAttempt = 0;
 }
 
+async function commitRegistryProjection(key: string, value: unknown): Promise<void> {
+	const base = await readLedgerEntry(key, { area: 'local' });
+	const outcome = await conditionalLedgerWrite(key, {
+		area: 'local', baseRevision: base.revision, value, remerge: () => value,
+	});
+	if (outcome.kind !== 'committed') throw new Error(`Registry projection was not committed: ${key}`);
+}
+
 async function markRecoveryNeeded(): Promise<void> {
-	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: DIRTY_RECEIPT });
+	await commitRegistryProjection(RECOVERY_STORAGE_KEY, DIRTY_RECEIPT);
 }
 
 export async function markSaaTDescriptorProjectionCurrent(): Promise<void> {
-	await chrome.storage.local.set({
-		[SAAT_DESCRIPTOR_VERSION_KEY]: chrome.runtime.getManifest().version,
-	});
+	await commitRegistryProjection(SAAT_DESCRIPTOR_VERSION_KEY, chrome.runtime.getManifest().version);
 }
 
 async function writeRecoveryReceipt(
@@ -369,7 +376,7 @@ async function writeRecoveryReceipt(
 	state: 'blocked' | 'clean',
 ): Promise<void> {
 	const receipt: RegistryReceipt = { version: RECEIPT_VERSION, state, digest };
-	await chrome.storage.local.set({ [RECOVERY_STORAGE_KEY]: receipt });
+	await commitRegistryProjection(RECOVERY_STORAGE_KEY, receipt);
 }
 
 function isSatisfiedReceipt(

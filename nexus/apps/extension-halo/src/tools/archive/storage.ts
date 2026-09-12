@@ -1,8 +1,6 @@
 // goal: Archive IndexedDB storage for MHTML blobs with transaction-completion
 // semantics: a request's success alone is not treated as a committed mutation.
 
-import type { ArchiveEntry } from './types';
-
 const DB_NAME = 'halo_archive_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'mhtml_blobs';
@@ -96,15 +94,4 @@ export async function getAllBlobIds(): Promise<{ id: string; size: number }[]> {
 	const items = await requestValue(tx.objectStore(STORE_NAME).getAll());
 	await transactionDone(tx);
 	return (items || []).map((item: { id: string; blob: Blob }) => ({ id: item.id, size: item.blob?.size || 0 }));
-}
-
-// Open MHTML in new tab (Chrome can render MHTML natively)
-export async function openMHTMLInNewTab(entry: ArchiveEntry): Promise<void> {
-	const blob = await getMHTMLBlob(entry.id);
-	if (!blob) {
-		console.warn('[HALO:Archive] Blob not found for:', entry.id);
-		return;
-	}
-	const url = URL.createObjectURL(blob);
-	chrome.tabs.create({ url });
 }

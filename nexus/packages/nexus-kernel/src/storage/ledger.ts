@@ -18,6 +18,12 @@ export type LedgerWriteOutcome<T = unknown> =
 	| { readonly kind: 'rejected' }
 	| { readonly kind: 'unknown' };
 
+export type LedgerRemoveOutcome =
+	| { readonly kind: 'committed'; readonly revision: number; readonly value: undefined }
+	| { readonly kind: 'external'; readonly revision: number; readonly value: unknown }
+	| { readonly kind: 'rejected' }
+	| { readonly kind: 'unknown' };
+
 export interface LedgerReadOptions extends StorageOptions {}
 
 export function ledgerRevisionKey(key: string): string {
@@ -69,6 +75,13 @@ export interface ConditionalLedgerWriteOptions<T> {
 	 */
 	readonly remerge?: (current: unknown, attempt: number) => T | null;
 	readonly maxAttempts?: number;
+	readonly timeout?: number;
+	readonly retries?: number;
+}
+
+export interface ConditionalLedgerRemoveOptions {
+	readonly area?: StorageArea;
+	readonly baseRevision: number;
 	readonly timeout?: number;
 	readonly retries?: number;
 }
@@ -156,4 +169,37 @@ export async function conditionalLedgerWrite<T>(
 		value = merged;
 	}
 	return { kind: 'rejected' };
+}
+
+/** Remove a ledger value while advancing and verifying its companion revision. */
+export async function conditionalLedgerRemove(
+	key: string,
+	options: ConditionalLedgerRemoveOptions,
+): Promise<LedgerRemoveOutcome> {
+	const area = options.area ?? 'local';
+	const revisionKey = ledgerRevisionKey(key);
+	if (!Number.isSafeInteger(options.baseRevision) || options.baseRevision < 0) return { kind: 'rejected' };
+	let conflicted = false;
+	let laneRevision = 0;
+	let laneValue: unknown;
+	const write = scheduleStorageOperation(area, estimateBytes(key, undefined), async (storage) => {
+		const stored = await storage.get([key, revisionKey]) as Record<string, unknown>;
+		laneRevision = storedRevision(stored[revisionKey]);
+		laneValue = stored[key];
+		if (laneRevision !== options.baseRevision) { conflicted = true; return; }
+		await storage.remove(key);
+		await storage.set({ [revisionKey]: options.baseRevision + 1 });
+	}, options.retries ?? 0);
+	const observed = await write.observe(options.timeout ?? 2_000);
+	if (observed === 'rejected' || !await write.completion) return { kind: 'rejected' };
+	if (conflicted) return { kind: 'external', revision: laneRevision, value: laneValue };
+	let verify: LedgerSnapshot;
+	try {
+		verify = await readLedgerEntry(key, { area, timeout: options.timeout ?? 2_000, retries: options.retries ?? 0 });
+	} catch {
+		return { kind: 'unknown' };
+	}
+	return verify.value === undefined && verify.revision === options.baseRevision + 1
+		? { kind: 'committed', revision: verify.revision, value: undefined }
+		: { kind: 'external', revision: verify.revision, value: verify.value };
 }

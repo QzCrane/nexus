@@ -1,4 +1,4 @@
-import { launchBrowser } from './helpers/browser-driver';
+import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -98,7 +98,7 @@ test('records long-session hotkey, heap, CPU, context and long-task evidence', a
 				);
 			},
 		});
-		browser = await launchBrowser({
+		browser = await launchPuppeteerBrowser({
 			...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 			headless: true,
 			userDataDir: profileDir,
@@ -106,8 +106,11 @@ test('records long-session hotkey, heap, CPU, context and long-task evidence', a
 				`--disable-extensions-except=${EXTENSION_DIR}`,
 				`--load-extension=${EXTENSION_DIR}`,
 				'--no-sandbox',
-				'--disable-setuid-sandbox',
-			],
+			'--disable-setuid-sandbox',
+		],
+		}, {
+			owner: 'apps/extension-spectra/test/runtime-long-session-performance.spec.ts',
+			profile: { kind: 'temporary', prefix: 'spectra-long-session-', isolated: true },
 		});
 		const browserVersion = await browser.version();
 		if (EXPECTED_CHROME) expect(browserVersion).toContain(EXPECTED_CHROME);
@@ -258,6 +261,12 @@ test('records long-session hotkey, heap, CPU, context and long-task evidence', a
 			product: 'spectra',
 			browser: { name: 'Chrome', version: browserVersion },
 			samples,
+			profile: {
+				id: 'spectra-hotkey-long-session',
+				scenario: 'twenty hotkey batches with runtime release and renderer diagnostics',
+				isolation: 'single-profile-long-session',
+				businessAssertions: ['hotkey-applied', 'runtime-released', 'popup-closed', 'diagnostics-readable'],
+			},
 			outputPath: OUTPUT_PATH,
 			identity: runtimePerformanceIdentityFromEnvironment(),
 		});

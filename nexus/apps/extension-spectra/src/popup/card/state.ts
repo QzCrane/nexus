@@ -267,6 +267,7 @@ export function createUpdateFn(
 	};
 
 	const runControl = async <T>(command: () => Promise<T>): Promise<T> => {
+		if (state.controlSnapshotKnown === false) throw new Error('Control state is unknown; reopen the popup to retry');
 		await drain();
 		return serializeControl(command);
 	};
@@ -282,6 +283,10 @@ export function createUpdateFn(
 	}, { once: true });
 
 	const update = ((changes: Partial<AudioConfig>) => {
+		if (state.controlSnapshotKnown === false) {
+			onError(new Error('Control state is unknown; reopen the popup to retry'), state);
+			return;
+		}
 		// This function is only invoked by explicit controls/preset actions; reads never call it.
 		const previous = pending || inFlight ? desiredConfig : state.config;
 		const next = mergeAudioConfig(previous, changes);

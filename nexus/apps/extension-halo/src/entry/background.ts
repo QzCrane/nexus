@@ -22,12 +22,15 @@ import {
 	syncSaaTTools,
 	type SaaTPluginDescriptor,
 } from '../kernel/services/saat-service';
-import { isPrivateHost } from '../kernel/utils/ssrf-guard';
-import { readBodyCapped } from '../kernel/utils/fetch-budget';
+import { admitNetworkUrl, fetchWithObservableRedirects, NetworkAdmissionError } from '../kernel/utils/ssrf-guard';
+import { boundedFetchSignal, readBodyCapped } from '../kernel/utils/fetch-budget';
 import { saveToClipboardHistory } from '../tools/clipboard/core';
 import { reconcileAntiHotlinkRules, type AntiHotlinkReceipt } from '../tools/hover-zoom/logic/engine';
 import { parseHoverZoomSettings } from '../tools/hover-zoom/settings';
 import { STORAGE_KEY as HOVER_ZOOM_STORAGE_KEY } from '../tools/hover-zoom/types';
+import { initDeadlineCoordinator } from '../kernel/core/deadline-jobs/coordinator';
+import { conditionalLedgerWrite, readLedgerEntry, safeStorageGet, scheduleStorageOperation, scheduleStorageSet, type StorageWriteResult } from '../kernel/core/safe-storage';
+import { admitsHoverZoomProxyRequest, isHoverZoomProxyCapability } from '../tools/hover-zoom/rules/network-capabilities';
 
 const LOG_TAG = '[HALO]';
 const SCRIPT_RUNTIME_ASSET = 'script-plugin-runtime.json';
@@ -35,12 +38,32 @@ const SCRIPT_RUNTIME_ASSET = 'script-plugin-runtime.json';
 initUserScriptsEngine();
 initUserScriptsRegistry();
 initSaaTService();
+initDeadlineCoordinator();
 
 const MENU_OPEN_HALO = 'halo-open';
 const MENU_QR_SELECTION = 'halo-qr-selection';
 const MENU_COLOR_PICK = 'halo-color-pick';
 let sidepanelActivationGeneration = 0;
 let sidepanelActivationTail: Promise<void> = Promise.resolve();
+
+async function observeSessionMutation(
+	label: string,
+	write: ReturnType<typeof scheduleStorageSet>,
+): Promise<StorageWriteResult> {
+	const outcome = await write.observe(2_000);
+	if (outcome === 'unknown') {
+		void write.completion.then((committed) => {
+			console.warn(LOG_TAG, `${label} settled after the observation deadline`, { committed });
+		});
+	} else if (outcome === 'rejected') {
+		console.warn(LOG_TAG, `${label} was rejected`);
+	}
+	return outcome;
+}
+
+function scheduleSessionRemoval(key: string) {
+	return scheduleStorageOperation('session', new TextEncoder().encode(key).byteLength, (storage) => storage.remove(key), 0);
+}
 
 let hoverZoomReconciliation: Promise<AntiHotlinkReceipt> = Promise.resolve({
 	desired: false,
@@ -176,7 +199,11 @@ async function queueSidepanelActivation(
 	const opened = chrome.sidePanel.open({ tabId });
 	let envelope: ReturnType<typeof createSidepanelActivationEnvelope> | undefined;
 	const persist = sidepanelActivationTail.catch(() => undefined).then(async () => {
-		const stored = await chrome.storage.session.get(SIDEPANEL_ACTIVATION_STORAGE_KEY);
+		const stored = await safeStorageGet<Record<string, unknown>>(
+			[SIDEPANEL_ACTIVATION_STORAGE_KEY],
+			{},
+			{ area: 'session' },
+		);
 		const previous = parseSidepanelActivationEnvelope(stored[SIDEPANEL_ACTIVATION_STORAGE_KEY]);
 		const createdAt = Date.now();
 		sidepanelActivationGeneration = Math.max(
@@ -190,7 +217,10 @@ async function queueSidepanelActivation(
 			createdAt,
 			sidepanelActivationGeneration,
 		);
-		await chrome.storage.session.set({ [SIDEPANEL_ACTIVATION_STORAGE_KEY]: envelope });
+		const sessionOutcome = await observeSessionMutation('SidePanel activation persistence', scheduleStorageSet({ [SIDEPANEL_ACTIVATION_STORAGE_KEY]: envelope }, { area: 'session' }));
+		if (sessionOutcome !== 'committed') {
+			throw new Error(`SidePanel activation session write ${sessionOutcome}`);
+		}
 	});
 	sidepanelActivationTail = persist;
 	await persist;
@@ -208,13 +238,20 @@ async function queueSidepanelActivation(
 		});
 }
 
-void chrome.storage.session.get(SIDEPANEL_ACTIVATION_STORAGE_KEY).then(async (stored) => {
+void safeStorageGet<Record<string, unknown>>(
+	[SIDEPANEL_ACTIVATION_STORAGE_KEY],
+	{},
+	{ area: 'session' },
+).then(async (stored) => {
 	const envelope = parseSidepanelActivationEnvelope(stored[SIDEPANEL_ACTIVATION_STORAGE_KEY]);
 	if (envelope && isFreshSidepanelActivation(envelope)) return;
 	if (stored[SIDEPANEL_ACTIVATION_STORAGE_KEY] !== undefined) {
-		await chrome.storage.session.remove(SIDEPANEL_ACTIVATION_STORAGE_KEY);
+		const outcome = await observeSessionMutation('Stale SidePanel activation removal', scheduleSessionRemoval(SIDEPANEL_ACTIVATION_STORAGE_KEY));
+		if (outcome !== 'committed') {
+			throw new Error(`Stale SidePanel activation removal ${outcome}`);
+		}
 	}
-}).catch(() => undefined);
+}).catch((error: unknown) => console.warn(LOG_TAG, 'SidePanel activation recovery failed', error));
 
 chrome.runtime.onInstalled.addListener(async (details) => {
 	console.log(LOG_TAG, 'Extension installed/updated:', details.reason);
@@ -247,24 +284,13 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 		}
 	}
 
-	const storage = await chrome.storage.sync.get([
-		`${STORAGE_PREFIX.CORE}active_tool`,
-		SETTINGS_STORAGE_KEY,
-	]);
-
-	const defaults: Record<string, unknown> = {};
-
-	if (storage[`${STORAGE_PREFIX.CORE}active_tool`] === undefined) {
-		defaults[`${STORAGE_PREFIX.CORE}active_tool`] = null;
-	}
-
-	if (!storage[SETTINGS_STORAGE_KEY]) {
-		defaults[SETTINGS_STORAGE_KEY] = DEFAULT_SETTINGS;
-	}
-
-	if (Object.keys(defaults).length > 0) {
-		await chrome.storage.sync.set(defaults);
-		console.log(LOG_TAG, 'Default settings initialized');
+	const settingsEntry = await readLedgerEntry(SETTINGS_STORAGE_KEY, { area: 'sync' });
+	if (settingsEntry.value === undefined) {
+		const outcome = await conditionalLedgerWrite(SETTINGS_STORAGE_KEY, {
+			area: 'sync', baseRevision: settingsEntry.revision, value: DEFAULT_SETTINGS,
+		});
+		if (outcome.kind === 'committed') console.log(LOG_TAG, 'Default settings initialized');
+		else if (outcome.kind !== 'external') console.warn(LOG_TAG, 'Default settings initialization was not confirmed', outcome.kind);
 	}
 
 	try {
@@ -341,10 +367,15 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			sendResponse({ ok: false, error: 'untrusted_sender' });
 			return false;
 		}
-		void chrome.storage.session.get(SIDEPANEL_ACTIVATION_STORAGE_KEY).then(async (stored) => {
+		void safeStorageGet<Record<string, unknown>>(
+			[SIDEPANEL_ACTIVATION_STORAGE_KEY],
+			{},
+			{ area: 'session' },
+		).then(async (stored) => {
 			const pending = parseSidepanelActivationEnvelope(stored[SIDEPANEL_ACTIVATION_STORAGE_KEY]);
 			if (pending?.id === activationAck.id) {
-				await chrome.storage.session.remove(SIDEPANEL_ACTIVATION_STORAGE_KEY);
+				const outcome = await observeSessionMutation('SidePanel activation acknowledgement', scheduleSessionRemoval(SIDEPANEL_ACTIVATION_STORAGE_KEY));
+				if (outcome !== 'committed') throw new Error(`SidePanel activation acknowledgement ${outcome}`);
 			}
 			sendResponse({ ok: true, cleared: pending?.id === activationAck.id });
 		}).catch((error: unknown) => {
@@ -391,26 +422,28 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			sendResponse({ success: false, error: 'untrusted_sender' });
 			return false;
 		}
-		const { url, method = 'GET', headers = {}, body, responseType = 'text' } = message;
+		const { url, method = 'GET', headers = {}, body, responseType = 'text', proxyCapability } = message;
 		if (!url || typeof url !== 'string') {
 			sendResponse({ success: false, error: 'missing url' });
 			return true;
 		}
 
 		let parsedUrl: URL;
+		let sourceUrl: URL;
 		try {
-			parsedUrl = new URL(url);
-		} catch {
-			sendResponse({ success: false, error: 'invalid URL' });
+			parsedUrl = admitNetworkUrl(url);
+			sourceUrl = admitNetworkUrl(sender.url ?? '');
+		} catch (error) {
+			sendResponse({ success: false, code: error instanceof NetworkAdmissionError ? error.code : 'invalid_url', error: error instanceof Error ? error.message : 'invalid URL' });
 			return true;
 		}
-		if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-			sendResponse({ success: false, error: 'only http(s) supported' });
+		if (!isHoverZoomProxyCapability(proxyCapability)) {
+			sendResponse({ success: false, code: 'missing_capability', error: 'A valid rule network capability is required' });
 			return true;
 		}
-		const host = parsedUrl.hostname.toLowerCase();
-		if (isPrivateHost(host)) {
-			sendResponse({ success: false, error: 'private/internal hosts blocked' });
+		const requestHeaders = new Headers(headers);
+		if (!admitsHoverZoomProxyRequest(proxyCapability, sourceUrl, parsedUrl, method, requestHeaders.keys())) {
+			sendResponse({ success: false, code: 'capability_denied', error: 'The matched rule does not admit this proxy request' });
 			return true;
 		}
 
@@ -425,15 +458,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			return false;
 		}
 		const releaseTransfer = trackProxyTransfer(tabId, controller);
-		const timer = setTimeout(() => controller.abort(), HZ_PROXY_TIMEOUT_MS);
+		const signal = boundedFetchSignal({ signal: controller.signal, timeoutMs: HZ_PROXY_TIMEOUT_MS });
 		void (async () => {
 			try {
-				const response = await fetch(url, {
+				const response = await fetchWithObservableRedirects(parsedUrl, {
 					method,
-					headers: { ...headers },
+					headers: requestHeaders,
 					body: method === 'POST' ? body : undefined,
 					credentials: 'omit',
-					signal: controller.signal,
+					signal,
+				}, {
+					allowCrossOrigin: (_from, next) => admitsHoverZoomProxyRequest(proxyCapability, sourceUrl, next, method, requestHeaders.keys()),
 				});
 				if (!response.ok) throw new Error(`HTTP ${response.status}`);
 				const bytes = await readBodyCapped(response, HZ_PROXY_MAX_BYTES);
@@ -452,36 +487,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 			} catch (error) {
 				sendResponse({
 					success: false,
-					error: controller.signal.aborted ? 'proxy request timed out or was cancelled' : String((error as Error)?.message ?? error),
+					code: error instanceof NetworkAdmissionError ? error.code : signal.aborted ? 'cancelled_or_timed_out' : 'fetch_failed',
+					error: signal.aborted ? 'proxy request timed out or was cancelled' : String((error as Error)?.message ?? error),
 				});
 			} finally {
-				clearTimeout(timer);
 				releaseTransfer();
 			}
 		})();
-		return true;
-	}
-
-	if (message.type === 'HALO_INJECT_CSS') {
-		if (!isExtensionTabSender(sender)) {
-			sendResponse({ success: false, error: 'untrusted_sender' });
-			return false;
-		}
-		const { css } = message;
-		if (!sender.tab?.id || !css) {
-			sendResponse({ success: false, error: 'missing_tab_or_css' });
-			return false;
-		}
-		chrome.scripting.insertCSS({
-			target: { tabId: sender.tab.id },
-			css,
-		}).then(() => {
-			console.log(LOG_TAG, 'Injected dynamic CSS for tab', sender.tab?.id);
-			sendResponse({ success: true });
-		}).catch((error) => {
-			console.warn(LOG_TAG, 'Failed to inject CSS:', error);
-			sendResponse({ success: false, error: error.message });
-		});
 		return true;
 	}
 

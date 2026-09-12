@@ -5,9 +5,10 @@ import { useState, useCallback, useMemo, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PasswordConfig } from './types';
-import { generatePassword, generatePasswords, evaluateStrength, DEFAULT_CONFIG } from './core';
+import { generatePassword, generatePasswords, evaluateStrength, DEFAULT_CONFIG, passwordConfigCodec } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 import { useToast } from '../../components/ToastProvider';
@@ -20,7 +21,7 @@ interface GeneratedPassword {
 export const PasswordGenPanel: React.FC = () => {
 	const { t } = useTranslation();
     const { showToast } = useToast();
-	const [config, setConfig] = useToolState<PasswordConfig>('password-gen-opts', DEFAULT_CONFIG);
+	const [config, setConfig, , configRecovery] = useToolState<PasswordConfig>('password-gen-opts', DEFAULT_CONFIG, { codec: passwordConfigCodec });
 
 	const [password, setPassword] = useState(() => generatePassword(DEFAULT_CONFIG));
 	const [bulkPasswords, setBulkPasswords] = useState<GeneratedPassword[]>([]);
@@ -64,6 +65,7 @@ export const PasswordGenPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={configRecovery} emptyValue={DEFAULT_CONFIG} exportName="halo-password-settings-damaged.json" />
 			{error && <div role="alert">{error}</div>}
 			{/* Mode Toggle */}
 			<div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>

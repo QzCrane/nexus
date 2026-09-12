@@ -1,5 +1,6 @@
 // goal: RFC 6238 TOTP with explicit parameters and strict RFC 4648 Base32 input
 import type { TotpEntry, TotpCode, TotpAlgorithm } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
 
 const HASHES = { SHA1: 'SHA-1', SHA256: 'SHA-256', SHA512: 'SHA-512' } as const;
 
@@ -96,3 +97,28 @@ export function parseOtpAuthUri(uri: string): Partial<TotpEntry> | null {
 
 export function generateId(): string { return crypto.randomUUID(); }
 export function formatRemaining(seconds: number): string { return `${seconds}s`; }
+
+export const TOTP_LEGACY_STORAGE_KEY = 'halo_tool_state_totp';
+export const totpEntriesCodec: ToolStateCodec<TotpEntry[]> = {
+	decode(value) {
+		const candidate = Array.isArray(value) ? value : typeof value === 'object' && value !== null && !Array.isArray(value)
+			&& (value as Record<string, unknown>).version === 1 ? (value as Record<string, unknown>).items : null;
+		if (!Array.isArray(candidate)) return { kind: 'invalid', reason: 'TOTP vault data has an unsupported version.' };
+		const ids = new Set<string>();
+		const entries: TotpEntry[] = [];
+		for (const row of candidate) {
+			if (typeof row !== 'object' || row === null || Array.isArray(row)) return { kind: 'invalid', reason: 'A TOTP account is not a record.' };
+			const item = row as Record<string, unknown>;
+			const algorithm = item.algorithm === undefined ? 'SHA1' : item.algorithm;
+			if (typeof item.id !== 'string' || item.id.trim() === '' || ids.has(item.id)) return { kind: 'invalid', reason: 'TOTP account identities are invalid or duplicated.' };
+			if (typeof item.name !== 'string' || typeof item.issuer !== 'string' || typeof item.secret !== 'string') return { kind: 'invalid', reason: 'TOTP account text fields are invalid.' };
+			if ((item.digits !== 6 && item.digits !== 7 && item.digits !== 8) || !Number.isSafeInteger(item.period) || (item.period as number) <= 0) return { kind: 'invalid', reason: 'TOTP digits or period are invalid.' };
+			if (algorithm !== 'SHA1' && algorithm !== 'SHA256' && algorithm !== 'SHA512') return { kind: 'invalid', reason: 'TOTP algorithm is invalid.' };
+			try { base32ToBytes(item.secret); } catch { return { kind: 'invalid', reason: 'A stored TOTP secret is invalid.' }; }
+			ids.add(item.id);
+			entries.push({ id: item.id, name: item.name, issuer: item.issuer, secret: item.secret, digits: item.digits, period: item.period as number, algorithm });
+		}
+		return { kind: 'valid', value: entries };
+	},
+	encode(value) { return { version: 1, items: value }; },
+};

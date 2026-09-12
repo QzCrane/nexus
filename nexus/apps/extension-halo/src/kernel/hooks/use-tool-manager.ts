@@ -68,28 +68,28 @@ export function useToolManager(): UseToolManagerResult {
 		const current = prefs[id] || DEFAULT_TOOL_PREFS;
 		const updated = { ...current, ...update };
 		const newPrefs = { ...prefs, [id]: updated };
-		setPrefs(newPrefs);
 		await saveToolPrefs(newPrefs);
+		setPrefs(newPrefs);
 	}, [prefs]);
 
 	const toggleEnabled = useCallback((id: string) => {
 		// Settings always enabled
 		if (id === 'settings') return;
 		const current = getPrefs(id);
-		updatePrefs(id, { enabled: !current.enabled });
+		void updatePrefs(id, { enabled: !current.enabled }).catch((error: unknown) => console.error('Tool enabled preference was not saved', error));
 	}, [getPrefs, updatePrefs]);
 
 	const togglePinned = useCallback((id: string) => {
 		const current = getPrefs(id);
-		updatePrefs(id, { pinned: !current.pinned });
+		void updatePrefs(id, { pinned: !current.pinned }).catch((error: unknown) => console.error('Tool pinned preference was not saved', error));
 	}, [getPrefs, updatePrefs]);
 
 	const incrementUsage = useCallback((id: string) => {
 		const current = getPrefs(id);
-		updatePrefs(id, {
+		void updatePrefs(id, {
 			usageCount: current.usageCount + 1,
 			lastUsed: Date.now()
-		});
+		}).catch((error: unknown) => console.error('Tool usage preference was not saved', error));
 	}, [getPrefs, updatePrefs]);
 
 	const enableAll = useCallback(async () => {
@@ -97,8 +97,8 @@ export function useToolManager(): UseToolManagerResult {
 		for (const tool of TOOL_REGISTRY) {
 			newPrefs[tool.id] = { ...getPrefs(tool.id), enabled: true };
 		}
-		setPrefs(newPrefs);
 		await saveToolPrefs(newPrefs);
+		setPrefs(newPrefs);
 	}, [prefs, getPrefs]);
 
 	const disableAllExceptSettings = useCallback(async () => {
@@ -108,13 +108,13 @@ export function useToolManager(): UseToolManagerResult {
 				newPrefs[tool.id] = { ...getPrefs(tool.id), enabled: false };
 			}
 		}
-		setPrefs(newPrefs);
 		await saveToolPrefs(newPrefs);
+		setPrefs(newPrefs);
 	}, [prefs, getPrefs]);
 
 	const resetPrefs = useCallback(async () => {
-		setPrefs({});
 		await saveToolPrefs({});
+		setPrefs({});
 	}, []);
 
 	// Computed values

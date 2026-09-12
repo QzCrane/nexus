@@ -7,6 +7,8 @@ import { useTranslation } from '../../i18n';
 import { generateV1, generateV4, generateV7, generateULID, formatUUID } from './core';
 import { UUID_VERSIONS, type UUIDVersion } from './types';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 import { useToast } from '../../components/ToastProvider';
 
 const styles: Record<string, React.CSSProperties> = {
@@ -36,12 +38,20 @@ const styles: Record<string, React.CSSProperties> = {
 	checkbox: { display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', cursor: 'pointer' },
 	toast: { position: 'fixed', bottom: '60px', left: '50%', transform: 'translateX(-50%)', padding: '10px 20px', background: 'var(--halo-accent)', borderRadius: '24px', fontSize: '12px', fontWeight: 500, color: '#fff', zIndex: 1000 },
 };
+const uuidVersionCodec: ToolStateCodec<UUIDVersion> = {
+	decode(value) { return UUID_VERSIONS.includes(value as UUIDVersion) ? { kind: 'valid', value: value as UUIDVersion } : { kind: 'invalid', reason: 'UUID version is unsupported.' }; },
+	encode(value) { return value; },
+};
+const uuidCountCodec: ToolStateCodec<number> = {
+	decode(value) { return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 100 ? { kind: 'valid', value: value as number } : { kind: 'invalid', reason: 'UUID count must be an integer from 1 to 100.' }; },
+	encode(value) { return value; },
+};
 
 export const UuidPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
-	const [version, setVersion] = useToolState<UUIDVersion>('uuid-version', 'v4');
-	const [count, setCount] = useToolState<number>('uuid-count', 1);
+	const [version, setVersion, , versionRecovery] = useToolState<UUIDVersion>('uuid-version', 'v4', { codec: uuidVersionCodec });
+	const [count, setCount, , countRecovery] = useToolState<number>('uuid-count', 1, { codec: uuidCountCodec });
 	const [uppercase, setUppercase] = useToolState<boolean>('uuid-upper', false);
 	const [hyphens, setHyphens] = useToolState<boolean>('uuid-hyphens', true);
 	const [result, setResult] = useToolState<string>('uuid', '');
@@ -64,6 +74,8 @@ export const UuidPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={versionRecovery} emptyValue="v4" exportName="halo-uuid-version-damaged.json" />
+			<StorageRecoveryActions recovery={countRecovery} emptyValue={1} exportName="halo-uuid-count-damaged.json" />
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
 					<div style={styles.row}>

@@ -1,14 +1,22 @@
 import { afterEach, describe, expect, mock, test } from 'bun:test';
 import {
 	captureStates,
+	cleanupTabState,
 	markTabActivated,
 	markTabAudible,
 	tabAudioStates,
 	TAB_VISIBLE_THRESHOLD_MS,
 } from '../src/background/state';
-import { recordMediaState, resolveVisibleTabs } from '../src/background/handlers/tab-state';
+import {
+	classifyMediaReport,
+	recordMediaState,
+	resolveVisibleTabs,
+} from '../src/background/handlers/tab-state';
 
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+const complete = (total: number) => ({
+	status: 'complete', total, examined: total, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0,
+});
 
 afterEach(() => {
 	tabAudioStates.clear();
@@ -18,6 +26,53 @@ afterEach(() => {
 });
 
 describe('complete visible media tab lifecycle', () => {
+	test('discovers cold paused media in a child frame without loading the content runtime', async () => {
+		const frames = [
+			{ frameId: 0, documentId: 'document-top' },
+			{ frameId: 3, documentId: 'document-child' },
+		];
+		const executeScript = mock(async () => [
+			{ frameId: 0, documentId: 'document-top', result: false },
+			{ frameId: 3, documentId: 'document-child', result: true },
+		]);
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { query: async () => [tab(70)] },
+				webNavigation: { getAllFrames: async () => frames },
+				scripting: { executeScript },
+			},
+		});
+		expect(await resolveVisibleTabs()).toEqual({ tabs: [70], coverage: complete(1) });
+		expect(executeScript.mock.calls[0]?.[0]).toMatchObject({ target: { tabId: 70, allFrames: true } });
+	});
+
+	test('keeps the newest report revision for one exact document', () => {
+		recordMediaState(71, 'document-71', { hasMediaElement: true, userInteracted: false, reportRevision: 2 });
+		recordMediaState(71, 'document-71', { hasMediaElement: false, userInteracted: false, reportRevision: 1 });
+		expect(tabAudioStates.get(71)).toMatchObject({ documentId: 'document-71', reportRevision: 2, hasMediaElement: true });
+	});
+
+	test('does not let an unversioned v2 report create or replace an ordered media fact', () => {
+		expect(classifyMediaReport({})).toEqual({ status: 'legacy-unversioned' });
+		expect(classifyMediaReport({ reportRevision: 2 })).toEqual({ status: 'ordered', revision: 2 });
+		recordMediaState(73, 'document-73', { hasMediaElement: true, userInteracted: false, reportRevision: 2 });
+		recordMediaState(73, 'document-73', { hasMediaElement: false, userInteracted: false });
+		recordMediaState(74, 'document-74', { hasMediaElement: true, userInteracted: false });
+		expect(tabAudioStates.get(73)).toMatchObject({ reportRevision: 2, hasMediaElement: true });
+		expect(tabAudioStates.has(74)).toBe(false);
+	});
+
+	test('preserves a new document report when old-document async cleanup settles late', () => {
+		recordMediaState(72, 'document-new', { hasMediaElement: true, userInteracted: false, reportRevision: 1 });
+		cleanupTabState(72, { preserveMedia: true });
+		expect(tabAudioStates.get(72)).toMatchObject({
+			documentId: 'document-new',
+			reportRevision: 1,
+			hasMediaElement: true,
+		});
+	});
+
 	test('discovers paused or muted media tabs without treating active non-media tabs as media', async () => {
 		const now = 1_000_000;
 		const { sendMessage } = installChrome([
@@ -32,12 +87,9 @@ describe('complete visible media tab lifecycle', () => {
 			[4, 'empty'],
 		]));
 
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [2, 3] });
-		expect(sendMessage.mock.calls.map(([tabId]) => tabId).sort((a, b) => Number(a) - Number(b)))
+		expect(await resolveVisibleTabs(now)).toMatchObject({ tabs: [2, 3], coverage: { status: 'degraded', denied: 1 } });
+		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId).sort((a, b) => Number(a) - Number(b)))
 			.toEqual([1, 3, 4]);
-		expect(sendMessage.mock.calls.every(([, , options]) => (
-		typeof options?.documentId === 'string' && options.documentId.startsWith('document-')
-	))).toBe(true);
 	});
 
 	test('never admits ordinary active tabs from another window without media truth', async () => {
@@ -49,8 +101,8 @@ describe('complete visible media tab lifecycle', () => {
 			[7, 'empty'],
 		]));
 
-		expect(await resolveVisibleTabs()).toEqual({ tabs: [] });
-		expect(sendMessage.mock.calls.map(([tabId]) => tabId).sort((a, b) => Number(a) - Number(b)))
+		expect(await resolveVisibleTabs()).toEqual({ tabs: [], coverage: complete(2) });
+		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId).sort((a, b) => Number(a) - Number(b)))
 			.toEqual([6, 7]);
 	});
 
@@ -64,7 +116,7 @@ describe('complete visible media tab lifecycle', () => {
 		]));
 
 		expect(tabAudioStates.size).toBe(0);
-		expect(await resolveVisibleTabs()).toEqual({ tabs: [10] });
+		expect(await resolveVisibleTabs()).toEqual({ tabs: [10], coverage: complete(2) });
 	});
 
 	test('retains bounded recent activity only for known media/audio state while probing current truth', async () => {
@@ -76,14 +128,14 @@ describe('complete visible media tab lifecycle', () => {
 		], new Map([
 			[22, 'media'],
 		]));
-		recordMediaState(20, { hasMediaElement: true, userInteracted: false });
+		recordMediaState(20, 'document-20', { hasMediaElement: true, userInteracted: false, reportRevision: 1 });
 		markTabActivated(20, now - 1_000);
 		markTabAudible(21, true, now - 2_000);
 		markTabAudible(21, false, now - 500);
 
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [20, 21, 22] });
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [20, 21, 22], coverage: complete(3) });
 		// Recent media/audio evidence is already admitted and does not pay a probe.
-		expect(sendMessage.mock.calls.map(([tabId]) => tabId)).toEqual([22]);
+		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId)).toEqual([22]);
 	});
 
 	test('does not create or retain a recent media lease for an activated non-media tab', async () => {
@@ -91,35 +143,35 @@ describe('complete visible media tab lifecycle', () => {
 		installChrome([tab(23, { active: true })], new Map([[23, 'empty']]));
 		markTabActivated(23, now - 1_000);
 		expect(tabAudioStates.has(23)).toBe(false);
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [] });
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
 
-		recordMediaState(23, { hasMediaElement: false, userInteracted: true });
+		recordMediaState(23, 'document-23', { hasMediaElement: false, userInteracted: true, reportRevision: 1 });
 		markTabActivated(23, now - 500);
 		expect(tabAudioStates.get(23)?.lastActivatedTime).toBe(now - 500);
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [] });
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
 	});
 
 	test('never revives a removed tab from a stale recent media row', async () => {
 		const now = 1_000_000;
 		installChrome([tab(25)], new Map([[25, 'empty']]));
-		recordMediaState(24, { hasMediaElement: true, userInteracted: false });
+		recordMediaState(24, 'document-24', { hasMediaElement: true, userInteracted: false, reportRevision: 1 });
 		markTabActivated(24, now - 1_000);
 		expect(tabAudioStates.has(24)).toBe(true);
 
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [] });
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
 		expect(tabAudioStates.has(24)).toBe(false);
 	});
 
 	test('prunes expired telemetry instead of treating media reports as durable leases', async () => {
 		const now = 1_000_000;
 		installChrome([tab(30)], new Map([[30, 'empty']]));
-		recordMediaState(30, { hasMediaElement: true, userInteracted: true });
+		recordMediaState(30, 'document-30', { hasMediaElement: true, userInteracted: true, reportRevision: 1 });
 		captureStates.set(30, true);
 		const state = tabAudioStates.get(30);
 		if (!state) throw new Error('expected tab state');
 		state.lastActivatedTime = now - TAB_VISIBLE_THRESHOLD_MS - 1;
 
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [] });
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
 		expect(tabAudioStates.has(30)).toBe(false);
 	});
 
@@ -134,7 +186,7 @@ describe('complete visible media tab lifecycle', () => {
 			[42, 'media'],
 		]));
 
-		expect(await resolveVisibleTabs()).toEqual({ tabs: [42], incomplete: true });
+		expect(await resolveVisibleTabs()).toMatchObject({ tabs: [42], coverage: { status: 'degraded', examined: 1, denied: 1, unknown: 1 } });
 	});
 
 	test('rejects a delayed positive media response after the tab navigates to a different document', async () => {
@@ -144,9 +196,9 @@ describe('complete visible media tab lifecycle', () => {
 			(_tabId, readIndex) => readIndex === 0 ? 'document-old' : 'document-new',
 		);
 
-		expect(await resolveVisibleTabs()).toEqual({ tabs: [] });
+		expect(await resolveVisibleTabs()).toMatchObject({ tabs: [], coverage: { status: 'degraded', stale: 1 } });
 		expect(sendMessage.mock.calls).toHaveLength(1);
-		expect(sendMessage.mock.calls[0]?.[2]).toEqual({ documentId: 'document-old' });
+		expect(sendMessage.mock.calls[0]?.[0].target).toEqual({ tabId: 60, allFrames: true });
 		expect(getFrame.mock.calls).toHaveLength(2);
 	});
 
@@ -157,7 +209,7 @@ describe('complete visible media tab lifecycle', () => {
 			() => null,
 		);
 
-		expect(await resolveVisibleTabs()).toEqual({ tabs: [] });
+		expect(await resolveVisibleTabs()).toMatchObject({ tabs: [], coverage: { status: 'degraded', stale: 1 } });
 		expect(sendMessage.mock.calls).toHaveLength(0);
 	});
 
@@ -217,56 +269,28 @@ function installChrome(
 ) {
 	const query = mock(async () => tabs);
 	const documentReads = new Map<number, number>();
-	const getFrame = mock(async ({ tabId, frameId }: { tabId: number; frameId: number }) => {
-		if (frameId !== 0) throw new Error(`unexpected frame ${frameId}`);
+	const getAllFrames = mock(async ({ tabId }: { tabId: number }) => {
 		const readIndex = documentReads.get(tabId) ?? 0;
 		documentReads.set(tabId, readIndex + 1);
 		const documentId = await documentResolver(tabId, readIndex);
-		return documentId ? { documentId } : null;
+		return documentId ? [{ frameId: 0, documentId }] : [];
 	});
-	const sendMessage = mock(async (
-		tabId: number,
-		message: unknown,
-		options?: { documentId?: string },
-	) => {
-		if (!message || typeof message !== 'object'
-			|| (message as { type?: unknown }).type !== 'spectra.control.actual.read') {
-			throw new Error('unexpected probe message');
-		}
-		if (options?.documentId !== `document-${tabId}`
-			&& !options?.documentId?.startsWith('document-')) {
-			throw new Error(`probe was not bound to a document: ${String(options?.documentId)}`);
-		}
+	const sendMessage = mock(async ({ target }: { target: { tabId: number } }) => {
+		const tabId = target.tabId;
 		const outcome = resolver instanceof Map
 			? resolver.get(tabId) ?? 'empty'
 			: await resolver(tabId);
 		if (outcome === 'throw') throw new Error('receiver unavailable');
-		if (outcome === 'invalid') return { ok: true, data: { unexpected: true } };
-		if (outcome === 'empty') {
-			return {
-				ok: false,
-				error: {
-					code: 'capability-unavailable',
-					message: 'No observable native media state',
-					retryable: false,
-				},
-			};
-		}
-		return {
-			ok: true,
-			data: {
-				target: null,
-				patch: { playing: false },
-				observedStrategies: { playing: 'dom-native' },
-			},
-		};
+		if (outcome === 'invalid') return [{ frameId: 0, documentId: `document-${tabId}` }];
+		return [{ frameId: 0, documentId: `document-${tabId}`, result: outcome === 'media' }];
 	});
 	Object.defineProperty(globalThis, 'chrome', {
 		configurable: true,
 		value: {
-			tabs: { query, sendMessage },
-			webNavigation: { getFrame },
+			tabs: { query },
+			webNavigation: { getAllFrames },
+			scripting: { executeScript: sendMessage },
 		},
 	});
-	return { sendMessage, getFrame };
+	return { sendMessage, getFrame: getAllFrames };
 }

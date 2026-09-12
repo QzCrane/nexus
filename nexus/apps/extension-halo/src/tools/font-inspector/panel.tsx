@@ -1,29 +1,31 @@
 // goal: Font Inspector panel UI - display page fonts
 
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { FontInfo } from './types';
-import { getPageFonts, groupByFamily, getGoogleFontsUrl } from './core';
+import { fontInfoCodec, getPageFonts, groupByFamily, getGoogleFontsUrl } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 export const FontInspectorPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [fonts, setFonts] = useToolState<FontInfo[]>('font-inspector-data', []);
-	const [loading, setLoading] = useState(false);
+	const [fonts, setFonts, , fontsRecovery] = useToolState<FontInfo[]>('font-inspector-data', [], { codec: fontInfoCodec });
+	const task = useOwnedAsyncTask();
 	const [scanned, setScanned] = useToolState<boolean>('font-inspector-scanned', false);
 
 
 	// Scan page
 	const handleScan = useCallback(async () => {
-		setLoading(true);
-		const result = await getPageFonts();
-		setFonts(result);
-		setLoading(false);
-		setScanned(true);
-	}, [setScanned, setFonts]);
+		const outcome = await task.run(() => getPageFonts());
+		if (outcome.kind === 'succeeded') {
+			setFonts(outcome.value);
+			setScanned(true);
+		}
+	}, [setScanned, setFonts, task.run]);
 
 	// Copy font name
 	const handleCopy = useCallback((family: string) => {
@@ -39,10 +41,12 @@ export const FontInspectorPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={fontsRecovery} emptyValue={[]} exportName="halo-font-scan-damaged.json" />
 			{/* Scan Button */}
-			<button type="button" style={styles.btn} onClick={handleScan} disabled={loading}>
-				{loading ? '⏳' : '🔍'} {t('fontInspector.scan')}
+			<button type="button" style={styles.btn} onClick={handleScan} disabled={task.phase === 'running'}>
+				{task.phase === 'running' ? '⏳' : '🔍'} {t('fontInspector.scan')}
 			</button>
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
 
 			{/* Results */}
 			{scanned && (

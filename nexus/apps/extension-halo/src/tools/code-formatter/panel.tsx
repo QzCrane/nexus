@@ -4,8 +4,10 @@ import type React from 'react';
 import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
 import type { CodeLanguage } from './types';
-import { formatCode, minifyCode } from './core';
+import { CODE_FORMATTER_OPERATION_CONTRACT, codeIndentCodec, codeLanguageCodec, formatCode, minifyCode } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -21,37 +23,33 @@ const LANGUAGES: { id: CodeLanguage; label: string }[] = [
 
 export const CodeFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [language, setLanguage] = useToolState<CodeLanguage>('code-formatter-lang', 'json');
+	const [language, setLanguage, , languageRecovery] = useToolState<CodeLanguage>('code-formatter-lang', 'json', { codec: codeLanguageCodec });
 	const [code, setCode] = useToolState<string>('code-formatter-code', '');
-	const [indentSize, setIndentSize] = useToolState<number>('code-formatter-indent', 2);
+	const [indentSize, setIndentSize, , indentRecovery] = useToolState<number>('code-formatter-indent', 2, { codec: codeIndentCodec });
 	const [error, setError] = useState('');
+	const { phase, run } = useOwnedAsyncTask();
+	const operationContract = CODE_FORMATTER_OPERATION_CONTRACT[language];
 
 
 	// Format
 	const handleFormat = useCallback(() => {
 		setError('');
-		void (async () => {
-			try {
-				const formatted = await formatCode(code, { language, indentSize, useTabs: false });
-				setCode(formatted);
-			} catch (e) {
-				setError((e as Error).message);
-			}
-		})();
-	}, [code, language, indentSize, setCode]);
+		void run(() => formatCode(code, { language, indentSize, useTabs: false })).then((outcome) => {
+			if (outcome.kind === 'succeeded') setCode(outcome.value);
+			else if (outcome.kind === 'failed') setError(outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
+			else if (outcome.reason === 'deadline') setError('Formatting exceeded the execution deadline.');
+		});
+	}, [code, language, indentSize, run, setCode]);
 
 	// Minify
 	const handleMinify = useCallback(() => {
 		setError('');
-		void (async () => {
-			try {
-				const minified = await minifyCode(code, language);
-				setCode(minified);
-			} catch (e) {
-				setError((e as Error).message);
-			}
-		})();
-	}, [code, language, setCode]);
+		void run(() => minifyCode(code, language)).then((outcome) => {
+			if (outcome.kind === 'succeeded') setCode(outcome.value);
+			else if (outcome.kind === 'failed') setError(outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
+			else if (outcome.reason === 'deadline') setError('Minification exceeded the execution deadline.');
+		});
+	}, [code, language, run, setCode]);
 
 	// Copy
 	const handleCopy = useCallback(() => {
@@ -60,6 +58,8 @@ export const CodeFormatterPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={languageRecovery} emptyValue="json" exportName="halo-code-formatter-language-damaged.json" />
+			<StorageRecoveryActions recovery={indentRecovery} emptyValue={2} exportName="halo-code-formatter-indent-damaged.json" />
 			{/* Language Tabs */}
 			<div style={styles.langTabs}>
 				{LANGUAGES.map((lang) => (
@@ -72,6 +72,7 @@ export const CodeFormatterPanel: React.FC = () => {
 					</button>
 				))}
 			</div>
+			<div style={styles.boundary}>{t(operationContract.descriptionKey)}</div>
 
 			{/* Code Input */}
 			<textarea
@@ -101,8 +102,8 @@ export const CodeFormatterPanel: React.FC = () => {
 
 			{/* Actions */}
 			<div style={styles.row}>
-				<button type="button" style={styles.btn} onClick={handleFormat}>✨ {t('codeFormatter.format')}</button>
-				<button type="button" style={styles.btnSecondary} onClick={handleMinify}>📦 {t('codeFormatter.minify')}</button>
+				<button type="button" style={styles.btn} onClick={handleFormat} disabled={phase === 'running'}>✨ {t('codeFormatter.format')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={handleMinify} disabled={phase === 'running'}>📦 {t('codeFormatter.minify')}</button>
 				{code && <button type="button" style={styles.btnSecondary} onClick={handleCopy}>📋 {t('common.copy')}</button>}
 			</div>
 		</div>

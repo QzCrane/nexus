@@ -6,7 +6,13 @@ export const en = {
 		copy: 'Copy Result',
 		input: 'JSON',
 		query: 'JSONPath',
-		error: 'Invalid JSON',
-		copied: 'Copied!'
+		copied: 'Copied!',
+		boundary: 'RFC 9535 evaluation. Input is limited to 1 MiB, 100,000 nodes, 128 nesting levels, 10,000 matches, and 5 seconds.',
+		running: 'Evaluating…',
+		noMatches: 'Valid query with no matches.',
+		'invalid-json': 'Invalid JSON',
+		'invalid-query': 'Invalid JSONPath',
+		budget: 'Execution limit reached',
+		execution: 'Worker execution failed'
 	}
 };

@@ -3,32 +3,41 @@
 import type React from 'react';
 import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { csvExportModeCodec, type CsvExportMode } from '../csv-viewer/core';
 import type { TableData } from './types';
-import { extractTables, tableToCsv, tableToJson } from './core';
+import { extractTables, tableDataCodec, tableToCsv, tableToJson } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
 
 export const TableExtractorPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [tables, setTables] = useToolState<TableData[]>('table-extractor-data', []);
-	const [loading, setLoading] = useState(false);
+	const [tables, setTables, , tablesRecovery] = useToolState<TableData[]>('table-extractor-data', [], { codec: tableDataCodec });
+	const [error, setError] = useState('');
 	const [scanned, setScanned] = useToolState<boolean>('table-extractor-scanned', false);
+	const [exportMode, setExportMode, , exportModeRecovery] = useToolState<CsvExportMode>('table-extractor-csv-mode', 'raw', { codec: csvExportModeCodec });
+	const { phase, run } = useOwnedAsyncTask();
+	const loading = phase === 'running';
 
 
 	// Extract tables
-	const handleExtract = useCallback(async () => {
-		setLoading(true);
-		const result = await extractTables();
-		setTables(result);
-		setLoading(false);
-		setScanned(true);
-	}, [setTables, setScanned]);
+	const handleExtract = useCallback(() => {
+		setError('');
+		void run(() => extractTables()).then((outcome) => {
+			if (outcome.kind === 'succeeded') {
+				setTables(outcome.value);
+				setScanned(true);
+			} else if (outcome.kind === 'failed') setError(outcome.error instanceof Error ? outcome.error.message : String(outcome.error));
+			else if (outcome.reason === 'deadline') setError('Table extraction exceeded the execution deadline.');
+		});
+	}, [run, setTables, setScanned]);
 
 	// Copy as CSV
 	const handleCopyCsv = useCallback((table: TableData) => {
-		navigator.clipboard.writeText(tableToCsv(table));
-	}, []);
+		navigator.clipboard.writeText(tableToCsv(table, exportMode));
+	}, [exportMode]);
 
 	// Copy as JSON
 	const handleCopyJson = useCallback((table: TableData) => {
@@ -37,7 +46,7 @@ export const TableExtractorPanel: React.FC = () => {
 
 	// Download CSV
 	const handleDownload = useCallback((table: TableData, index: number) => {
-		const csv = tableToCsv(table);
+		const csv = tableToCsv(table, exportMode);
 		const blob = new Blob([csv], { type: 'text/csv' });
 		const url = URL.createObjectURL(blob);
 		const a = document.createElement('a');
@@ -45,14 +54,31 @@ export const TableExtractorPanel: React.FC = () => {
 		a.download = `table-${index + 1}.csv`;
 		a.click();
 		URL.revokeObjectURL(url);
-	}, []);
+	}, [exportMode]);
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={tablesRecovery} emptyValue={[]} exportName="halo-table-extractor-data-damaged.json" />
+			<StorageRecoveryActions recovery={exportModeRecovery} emptyValue="raw" exportName="halo-table-extractor-mode-damaged.json" />
+			<div style={styles.exportControl}>
+				<span style={styles.label}>{t('tableExtractor.csvMode')}</span>
+				<select
+					style={styles.select}
+					value={exportMode}
+					onChange={(event) => setExportMode(event.target.value === 'spreadsheet-safe' ? 'spreadsheet-safe' : 'raw')}
+				>
+					<option value="raw">{t('tableExtractor.raw')}</option>
+					<option value="spreadsheet-safe">{t('tableExtractor.spreadsheetSafe')}</option>
+				</select>
+			</div>
+			<div style={styles.notice}>
+				{t(exportMode === 'raw' ? 'tableExtractor.rawNotice' : 'tableExtractor.safeNotice')}
+			</div>
 			{/* Extract Button */}
 			<button type="button" style={styles.btn} onClick={handleExtract} disabled={loading}>
 				{loading ? '⏳' : '📋'} {t('tableExtractor.extract')}
 			</button>
+			{error && <div style={styles.error}>⚠️ {error}</div>}
 
 			{/* Loading */}
 			{loading && <div style={styles.loading}>⏳</div>}

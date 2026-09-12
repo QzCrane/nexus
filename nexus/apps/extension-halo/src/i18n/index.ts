@@ -24,6 +24,10 @@ import {
 	waitForI18n,
 	detectLocale,
 } from './i18n-core';
+import { conditionalLedgerWrite, readLedgerEntry } from '../kernel/core/safe-storage';
+import { reportStorageHealth } from '../kernel/core/storage-health';
+
+const localeStorageHealthOwner = Symbol('locale-setting');
 
 // Re-export core functions
 export { registerTranslations, waitForI18n, detectLocale };
@@ -74,12 +78,17 @@ export function useTranslation() {
 	const updateLocale = useCallback(async (newSetting: LocaleSetting) => {
 		if (newSetting === currentSetting) return;
 
+		if (typeof chrome !== 'undefined' && chrome.storage) {
+			const base = await readLedgerEntry(STORAGE_KEY, { area: 'sync' });
+			const outcome = await conditionalLedgerWrite(STORAGE_KEY, { area: 'sync', baseRevision: base.revision, value: newSetting });
+			if (outcome.kind !== 'committed') {
+				reportStorageHealth(localeStorageHealthOwner, outcome.kind === 'unknown' ? 'write-unknown' : 'write-error');
+				throw new Error('Language setting was not committed');
+			}
+			reportStorageHealth(localeStorageHealthOwner, null);
+		}
 		setGlobalLocale(newSetting);
 		setI18nReady(true);
-
-		if (typeof chrome !== 'undefined' && chrome.storage) {
-			await chrome.storage.sync.set({ [STORAGE_KEY]: newSetting });
-		}
 		notify();
 	}, []);
 

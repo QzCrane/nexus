@@ -6,6 +6,8 @@
   "description": "Local-first SidePanel utilities with no ads or telemetry and explicit, user-invoked network tools.",
   "permissions": [
     "storage",
+    "alarms",
+    "notifications",
     "activeTab",
     "scripting",
     "sidePanel",

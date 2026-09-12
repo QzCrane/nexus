@@ -17,6 +17,11 @@ import { arch, release as osRelease, tmpdir } from 'node:os';
 import { basename, dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUN_VERSION } from './toolchain-versions';
+import { listCurrentToolchainFiles } from './toolchain-references';
+import { parseNulSeparatedPaths } from './ci-product-scope.mjs';
+import { collectHostedEvidence, requiredHostedPlan, validateHostedObservation, type HostedEvidence } from './closeout-hosted';
+import { readFinalReleaseEvidence } from './release-artifact-provenance';
+import { createDurableCloseoutBundle, readRemoteDurableCloseoutEvidence, publishDurableCloseoutEvidence, validateDurableCloseoutBundle, projectFinalDelivery, type DurableCloseoutBundleV1 } from './durable-evidence';
 
 export interface CloseoutPolicy {
 	schemaVersion: 1;
@@ -27,6 +32,7 @@ export interface CloseoutPolicy {
 	lanes: Array<{ label: string; args: string[] }>;
 	products: Record<string, { versionFile: string; artifact: string }>;
 	toolFiles: string[];
+	toolInputs: 'tracked-toolchain-sources';
 	platform: { image: string; environment: Record<string, string>; lanes: string[][] };
 }
 
@@ -34,6 +40,12 @@ interface ArtifactEvidence {
 	path: string;
 	sha256: string;
 	bytes: number;
+}
+
+interface ProductArtifactEvidence extends ArtifactEvidence {
+	licenses: ArtifactEvidence;
+	supplyChain: ArtifactEvidence;
+	wholeArtifact: ArtifactEvidence;
 }
 
 interface CloseoutReceiptBody {
@@ -45,10 +57,11 @@ interface CloseoutReceiptBody {
 	base: string;
 	versions: Record<string, string>;
 	lanes: Array<{ label: string; args: string[]; status: 'PASS'; durationMs: number }>;
-	artifacts: Record<string, ArtifactEvidence>;
+	artifacts: Record<string, ProductArtifactEvidence>;
 	toolSha256: Record<string, string>;
 	host: Record<string, unknown>;
-	hosted: { status: string; detail: string };
+	hosted: HostedEvidence;
+	source: { authority: 'local-execution-self-report'; authentication: 'none' };
 	platform: PlatformEvidence;
 }
 
@@ -75,6 +88,7 @@ const repositoryDir = dirname(workspaceDir);
 const artifactsDir = resolve(workspaceDir, 'artifacts');
 const policyPath = resolve(workspaceDir, 'closeout-policy.json');
 const SHA_PATTERN = /^[a-f0-9]{40}$/u;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/u;
 const GITHUB_READ_ATTEMPTS = 6;
 const GIT_REMOTE_READ_ATTEMPTS = 6;
 
@@ -128,19 +142,76 @@ export function writeImmutableEvidenceFile(path: string, content: string): 'crea
 }
 
 export function readPolicy(path = policyPath): CloseoutPolicy {
-	const policy = JSON.parse(readFileSync(path, 'utf8')) as CloseoutPolicy;
+	const value: unknown = JSON.parse(readFileSync(path, 'utf8'));
+	assertDocumentKeys(value, [
+		'schemaVersion', 'requiredAttempts', 'targetBranch', 'hostedRequired',
+		'allowedHostedStatuses', 'lanes', 'products', 'platform', 'toolInputs',
+	], 'closeout contract');
+	const policy = value as unknown as CloseoutPolicy;
+	assertDocumentKeys(policy.products, ['halo', 'spectra'], 'closeout contract products');
+	assertDocumentKeys(policy.platform, ['image', 'environment', 'lanes'], 'closeout contract platform');
+	assertDocumentKeys(policy.platform.environment, ['PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD', 'PUPPETEER_SKIP_DOWNLOAD'], 'closeout contract environment');
 	const image = policy.platform?.image?.match(/^oven\/bun:([^@]+)@sha256:[a-f0-9]{64}$/u);
 	if (policy.schemaVersion !== 1 || policy.requiredAttempts !== 2
 		|| policy.targetBranch !== 'main' || policy.hostedRequired !== false
-		|| policy.lanes.length !== 2 || Object.keys(policy.products).length !== 2
+		|| !Array.isArray(policy.lanes) || policy.lanes.length !== 2
+		|| policy.toolInputs !== 'tracked-toolchain-sources'
+		|| canonical(policy.allowedHostedStatuses) !== canonical(['SUCCESS', 'INFRA_UNAVAILABLE', 'NOT_APPLICABLE'])
 		|| image?.[1] !== BUN_VERSION
 		|| policy.platform.environment?.PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD !== '1'
 		|| policy.platform.environment?.PUPPETEER_SKIP_DOWNLOAD !== 'true'
 		|| Object.keys(policy.platform.environment).length !== 2
-		|| policy.platform.lanes.length === 0) {
+		|| !Array.isArray(policy.platform.lanes) || policy.platform.lanes.length === 0) {
 		throw new Error('closeout-policy.json does not satisfy the repository closeout contract');
 	}
-	return policy;
+	const manifest = JSON.parse(readFileSync(resolve(workspaceDir, 'package.json'), 'utf8')) as { scripts: Record<string, string> };
+	for (const [index, product] of ['halo', 'spectra'].entries()) {
+		const lane = policy.lanes[index];
+		assertDocumentKeys(lane, ['label', 'args'], 'closeout contract release lane');
+		if (!nonEmptyString(lane.label) || canonical(lane.args) !== canonical(['run', `release:${product}`])
+			|| manifest.scripts[`release:${product}`] !== `bun scripts/release-${product}.ts`) {
+			throw new Error('closeout contract must execute the canonical product release owners');
+		}
+		const config = policy.products[product];
+		assertDocumentKeys(config, ['versionFile', 'artifact'], 'closeout contract product');
+		const root = `apps/extension-${product}`;
+		const staging = product === 'halo' ? '.staging/' : '';
+		if (config.versionFile !== `${root}/package.json`
+			|| config.artifact !== `${root}/release/${staging}${product}-v{version}.zip`) {
+			throw new Error('closeout contract product paths differ from release ownership');
+		}
+	}
+	const domainPolicy = JSON.parse(readFileSync(resolve(workspaceDir, 'dependency-domains.json'), 'utf8')) as {
+		domains: Array<{ frozenInstall: string[]; lockfile: string }>;
+	};
+	const installs = domainPolicy.domains.map((domain) => domain.frozenInstall);
+	const seen = new Set<string>();
+	for (const args of policy.platform.lanes) {
+		if (!Array.isArray(args) || args.some((arg) => !nonEmptyString(arg)) || seen.has(canonical(args))) {
+			throw new Error('closeout contract platform lanes are malformed or duplicated');
+		}
+		seen.add(canonical(args));
+		const install = installs.some((expected) => canonical(expected) === canonical(args));
+		const script = args.length === 2 && args[0] === 'run'
+			&& ['check:toolchain', 'check:governance'].includes(args[1] ?? '');
+		const owner = args[0]?.startsWith('scripts/') && args.every((arg, index) => (
+			index === 0 ? /^[a-zA-Z0-9/.-]+\.ts$/u.test(arg) && !arg.includes('..') : arg === '--check'
+		));
+		const tests = args[0] === 'test' && args.length > 1 && args.slice(1).every((arg) => (
+			/^(?:scripts|apps\/extension-(?:halo|spectra)\/test)\/[a-zA-Z0-9.-]+\.(?:spec|test)\.ts$/u.test(arg)
+		));
+		if (!install && !script && !owner && !tests) throw new Error('closeout contract platform command is not admitted');
+	}
+	for (const command of [...installs, ['run', 'check:toolchain'], ['run', 'check:governance']]) {
+		if (!seen.has(canonical(command))) throw new Error('closeout contract is missing a required platform owner');
+	}
+	const toolFiles = [...new Set([
+		...listCurrentToolchainFiles(repositoryDir)
+			.filter((file) => !file.endsWith('.md'))
+			.map((file) => relative(workspaceDir, file).replaceAll('\\', '/')),
+		...domainPolicy.domains.map((domain) => domain.lockfile),
+	])].sort();
+	return { ...policy, toolFiles };
 }
 
 function run(
@@ -220,9 +291,10 @@ function remoteRef(refName: string): string | undefined {
 	return parseRemoteRef(gitRemoteRead('ls-remote', 'origin', refName), refName);
 }
 
-export async function githubReadJson<T>(
+async function githubRead<T>(
 	path: string,
 	options: GitHubReadOptions = {},
+	format: 'json' | 'text' = 'json',
 ): Promise<T> {
 	if (!path.startsWith('/') || path.startsWith('//')) {
 		throw new Error(`GitHub REST path must be repository-relative: ${path}`);
@@ -239,7 +311,8 @@ export async function githubReadJson<T>(
 	let lastError = 'unknown failure';
 	for (let attempt = 1; attempt <= attempts; attempt += 1) {
 		try {
-			const response = await fetchImpl(url, {
+			let response = await fetchImpl(url, {
+				redirect: 'manual',
 				headers: {
 					Accept: 'application/vnd.github+json',
 					Authorization: `Bearer ${token}`,
@@ -248,8 +321,21 @@ export async function githubReadJson<T>(
 				},
 				signal: AbortSignal.timeout(45_000),
 			});
-			const responseText = await response.text();
+			if (response.status === 302 && format === 'text') {
+				const location = response.headers.get('location');
+				if (!location) throw new Error('GitHub REST read failed without retry: log redirect has no location');
+				const download = new URL(location);
+				if (download.protocol !== 'https:' || download.username || download.password
+					|| !['.actions.githubusercontent.com', '.blob.core.windows.net'].some((suffix) => download.hostname.endsWith(suffix))) {
+					throw new Error('GitHub REST read failed without retry: log redirect is not an admitted HTTPS provider download');
+				}
+				// Signed provider downloads are a separate origin. Never forward the
+				// repository bearer token, cookies or a referrer to that request.
+				response = await fetchImpl(download, { redirect: 'error', credentials: 'omit', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(45_000) });
+			}
+			const responseText = await readBoundedGitHubBody(response);
 			if (response.ok) {
+				if (format === 'text') return responseText as T;
 				try {
 					return JSON.parse(responseText) as T;
 				} catch (error) {
@@ -271,6 +357,40 @@ export async function githubReadJson<T>(
 		if (attempt < attempts) await sleep(Math.min(500 * 2 ** (attempt - 1), 4_000));
 	}
 	throw new Error(`GitHub REST read failed after ${attempts} attempts: ${path}: ${lastError}`);
+}
+
+export async function readBoundedGitHubBody(response: Response, limit = 20 * 1024 * 1024): Promise<string> {
+	if (Number(response.headers.get('content-length')) > limit) {
+		await response.body?.cancel();
+		throw new Error('GitHub REST read failed without retry: response exceeds evidence limit');
+	}
+	if (!response.body) return '';
+	const reader = response.body.getReader();
+	const decoder = new TextDecoder('utf-8', { fatal: true });
+	const parts: string[] = [];
+	let bytes = 0;
+	try {
+		while (true) {
+			const next = await reader.read();
+			if (next.done) break;
+			bytes += next.value.byteLength;
+			if (bytes > limit) {
+				await reader.cancel();
+				throw new Error('GitHub REST read failed without retry: response exceeds evidence limit');
+			}
+			parts.push(decoder.decode(next.value, { stream: true }));
+		}
+		parts.push(decoder.decode());
+		return parts.join('');
+	} finally { reader.releaseLock(); }
+}
+
+export function githubReadJson<T>(path: string, options: GitHubReadOptions = {}): Promise<T> {
+	return githubRead<T>(path, options);
+}
+
+export function githubReadText(path: string, options: GitHubReadOptions = {}): Promise<string> {
+	return githubRead<string>(path, options, 'text');
 }
 
 function valueAfter(name: string): string | undefined {
@@ -319,17 +439,23 @@ function versions(policy: CloseoutPolicy): Record<string, string> {
 function artifactEvidence(
 	policy: CloseoutPolicy,
 	releaseVersions: Record<string, string>,
-): Record<string, ArtifactEvidence> {
+): Record<string, ProductArtifactEvidence> {
 	return Object.fromEntries(Object.entries(policy.products).map(([product, config]) => {
 		const version = releaseVersions[product];
 		if (!version) throw new Error(`missing ${product} release version`);
 		const relativePath = config.artifact.replace('{version}', version);
 		const path = resolve(workspaceDir, relativePath);
 		if (!existsSync(path)) throw new Error(`${product} release artifact is missing: ${relativePath}`);
+		if (product !== 'halo' && product !== 'spectra') throw new Error('Unknown release product');
+		const finalEvidence = readFinalReleaseEvidence(product);
+		const local = (file: ArtifactEvidence): ArtifactEvidence => ({ ...file, path: relative(workspaceDir, resolve(repositoryDir, file.path)).replaceAll('\\', '/') });
 		return [product, {
 			path: relativePath.replaceAll('\\', '/'),
 			sha256: fileSha256(path),
 			bytes: statSync(path).size,
+			licenses: local(finalEvidence.licenses),
+			supplyChain: local(finalEvidence.supplyChain),
+			wholeArtifact: local(finalEvidence.wholeArtifact),
 		}];
 	}));
 }
@@ -358,7 +484,7 @@ async function inspectBrowser(owner: string, browserOwner: BrowserOwner): Promis
 	};
 }
 
-function platformEvidenceDigest(body: Omit<PlatformEvidence, 'evidenceSha256'>): string {
+export function platformEvidenceDigest(body: Omit<PlatformEvidence, 'evidenceSha256'>): string {
 	return sha256Bytes(canonical(body));
 }
 
@@ -503,20 +629,6 @@ async function platformRecord(): Promise<void> {
 	}
 }
 
-interface HostedRun {
-	databaseId: number;
-	headSha: string;
-	status: string;
-	conclusion: string;
-	url: string;
-	workflowName: string;
-}
-
-interface HostedEvidence {
-	status: string;
-	detail: string;
-}
-
 interface VerifiedCloseout {
 	head: string;
 	tree: string;
@@ -528,65 +640,14 @@ interface VerifiedCloseout {
 
 async function hostedEvidence(head: string): Promise<HostedEvidence> {
 	const repository = parseGitHubRepository(git('remote', 'get-url', 'origin'));
-	const response = await githubReadJson<{ workflow_runs?: Array<{
-		id: number;
-		head_sha: string;
-		status: string;
-		conclusion: string;
-		html_url: string;
-		name: string;
-	}> }>(`/repos/${repository}/actions/runs?head_sha=${encodeURIComponent(head)}&per_page=100`);
-	const runs: HostedRun[] = (response.workflow_runs ?? []).map((item) => ({
-		databaseId: item.id,
-		headSha: item.head_sha,
-		status: item.status,
-		conclusion: item.conclusion,
-		url: item.html_url,
-		workflowName: item.name,
-	}));
-	const exactRuns = runs.filter((item) => item.headSha === head);
-	if (exactRuns.length === 0) {
-		return { status: 'NOT_APPLICABLE', detail: `No hosted workflow run exists for exact head ${head}` };
-	}
-	if (exactRuns.some((item) => item.status !== 'completed')) {
-		throw new Error('hosted exact-head workflows are still pending');
-	}
-	const failed = exactRuns.filter((item) => !['success', 'skipped'].includes(item.conclusion));
-	if (failed.length === 0) {
-		return {
-			status: 'SUCCESS',
-			detail: exactRuns.map((item) => `${item.workflowName}:${item.url}`).join(' | '),
-		};
-	}
-	const infraRuns: HostedRun[] = [];
-	for (const workflow of failed) {
-		const jobsResponse = await githubReadJson<{ jobs?: Array<{
-			conclusion?: string;
-			runner_id?: number;
-			steps?: unknown[];
-			check_run_url?: string;
-		}> }>(`/repos/${repository}/actions/runs/${workflow.databaseId}/jobs?per_page=100`);
-		const failedJobs = (jobsResponse.jobs ?? []).filter((job) => job.conclusion === 'failure');
-		let billingOnly = failedJobs.length > 0;
-		for (const job of failedJobs) {
-			let annotationText = '';
-			if (job.check_run_url) {
-				const annotationPath = `${new URL(job.check_run_url).pathname}/annotations`;
-				annotationText = JSON.stringify(await githubReadJson<unknown[]>(annotationPath));
-			}
-			const allocationRejected = job.runner_id === 0 && (job.steps?.length ?? 0) === 0;
-			const billingAnnotation = /payments? have failed|spending limit|billing/iu.test(annotationText);
-			if (!allocationRejected || !billingAnnotation) billingOnly = false;
-		}
-		if (billingOnly) infraRuns.push(workflow);
-	}
-	if (infraRuns.length === failed.length) {
-		return {
-			status: 'INFRA_UNAVAILABLE',
-			detail: infraRuns.map((item) => `${item.workflowName}:${item.url}:runner allocation rejected by billing/spending limit`).join(' | '),
-		};
-	}
-	throw new Error(`hosted exact-head product checks failed: ${failed.map((item) => item.url).join(', ')}`);
+	const base = git('show', '-s', '--format=%P', head);
+	assertCandidateParents(base.split(' ').filter(Boolean), base);
+	const diff = spawnSync('git', ['diff', '--name-only', '--no-renames', '-z', base, head], { cwd: repositoryDir, shell: false });
+	if (diff.error) throw diff.error;
+	if (diff.status !== 0) throw new Error(`Hosted scope diff failed: ${String(diff.stderr)}`);
+	const plan = requiredHostedPlan(repositoryDir, parseNulSeparatedPaths(diff.stdout));
+	return collectHostedEvidence({ repository, head, tree: git('rev-parse', `${head}^{tree}`), base, plan },
+		(path) => githubReadJson<Record<string, unknown>>(path), githubReadText);
 }
 
 export async function browserHostIdentity(): Promise<Record<string, unknown>> {
@@ -682,12 +743,91 @@ export function validateReceiptDocument(
 	policy: CloseoutPolicy,
 	expectedAttempt: number,
 ): void {
+	assertDocumentKeys(receipt, [
+		'schemaVersion', 'attempt', 'recordedAt', 'head', 'tree', 'base', 'versions',
+		'lanes', 'artifacts', 'toolSha256', 'host', 'hosted', 'platform', 'source', 'receiptSha256',
+	], 'receipt');
 	const { receiptSha256, ...body } = receipt;
 	if (receipt.schemaVersion !== 1 || receipt.attempt !== expectedAttempt) {
 		throw new Error(`closeout receipt attempt ${expectedAttempt} has invalid identity`);
 	}
 	if (receiptDigest(body) !== receiptSha256) {
 		throw new Error(`closeout receipt attempt ${receipt.attempt} digest mismatch`);
+	}
+	assertTimestamp(receipt.recordedAt, 'receipt.recordedAt');
+	assertDocumentKeys(receipt.source, ['authority', 'authentication'], 'receipt.source');
+	if (receipt.source.authority !== 'local-execution-self-report' || receipt.source.authentication !== 'none') throw new Error('Local receipt cannot claim independent authentication');
+	assertDocumentKeys(receipt.versions, Object.keys(policy.products), 'receipt.versions');
+	assertDocumentKeys(receipt.artifacts, Object.keys(policy.products), 'receipt.artifacts');
+	assertHashMap(receipt.toolSha256, policy.toolFiles, 'receipt.toolSha256');
+	for (const [product, config] of Object.entries(policy.products)) {
+		const version = receipt.versions[product];
+		if (typeof version !== 'string' || !/^\d+\.\d+\.\d+$/u.test(version)) {
+			throw new Error(`receipt ${product} version is invalid`);
+		}
+		const artifact = receipt.artifacts[product];
+		assertDocumentKeys(artifact, ['path', 'sha256', 'bytes', 'licenses', 'supplyChain', 'wholeArtifact'], `receipt.artifacts.${product}`);
+		if (artifact.path !== config.artifact.replace('{version}', version)
+			|| !SHA256_PATTERN.test(artifact.sha256)
+			|| !Number.isSafeInteger(artifact.bytes) || artifact.bytes <= 0) {
+			throw new Error(`receipt ${product} artifact is invalid`);
+		}
+		for (const [key, suffix] of Object.entries({ licenses: '.licenses.json', supplyChain: '.provenance.json', wholeArtifact: '.artifact-provenance.json' })) {
+			const sidecar = artifact[key as 'licenses' | 'supplyChain' | 'wholeArtifact'];
+			assertDocumentKeys(sidecar, ['path', 'sha256', 'bytes'], `receipt ${product} ${key}`);
+			if (sidecar.path !== `${artifact.path}${suffix}` || !SHA256_PATTERN.test(sidecar.sha256) || !Number.isSafeInteger(sidecar.bytes) || sidecar.bytes <= 0) throw new Error(`receipt ${product} final ${key} binding is invalid`);
+		}
+	}
+	assertDocumentKeys(receipt.host, ['platform', 'arch', 'osRelease', 'bun', 'nodeCompatibility', 'browsers'], 'receipt.host');
+	if (receipt.host.platform !== 'win32' || !['x64', 'arm64'].includes(String(receipt.host.arch))
+		|| receipt.host.bun !== BUN_VERSION
+		|| !nonEmptyString(receipt.host.osRelease) || !nonEmptyString(receipt.host.nodeCompatibility)) {
+		throw new Error('receipt host must identify the actual pinned Windows runtime');
+	}
+	assertDocumentKeys(receipt.host.browsers, ['playwrightChromium', 'puppeteerChrome'], 'receipt.host.browsers');
+	for (const browser of Object.values(receipt.host.browsers)) {
+		assertDocumentKeys(browser, ['executable', 'version', 'bytes', 'sha256'], 'receipt browser');
+		if (!nonEmptyString(browser.executable) || !nonEmptyString(browser.version)
+			|| typeof browser.sha256 !== 'string' || !SHA256_PATTERN.test(browser.sha256)
+			|| !Number.isSafeInteger(browser.bytes) || Number(browser.bytes) <= 0) {
+			throw new Error('receipt browser identity is invalid');
+		}
+	}
+	assertDocumentKeys(receipt.hosted, ['status', 'detail', 'authority', 'plan', 'runs'], 'receipt.hosted');
+	if (!nonEmptyString(receipt.hosted.detail)) throw new Error('receipt hosted observation is missing');
+	validateHostedObservation(receipt.hosted, receipt);
+	assertDocumentKeys(receipt.platform, [
+		'schemaVersion', 'recordedAt', 'head', 'tree', 'image', 'imageIdentity',
+		'environment', 'platform', 'lanes', 'toolSha256', 'evidenceSha256',
+	], 'receipt.platform');
+	assertTimestamp(receipt.platform.recordedAt, 'receipt.platform.recordedAt');
+	assertHashMap(receipt.platform.toolSha256, policy.toolFiles, 'receipt.platform.toolSha256');
+	const { evidenceSha256, ...platformBody } = receipt.platform;
+	if (receipt.platform.schemaVersion !== 1 || receipt.platform.platform !== 'linux'
+		|| receipt.platform.head !== receipt.head || receipt.platform.tree !== receipt.tree
+		|| receipt.platform.image !== policy.platform.image
+		|| canonical(receipt.platform.environment) !== canonical(policy.platform.environment)
+		|| canonical(receipt.platform.toolSha256) !== canonical(receipt.toolSha256)
+		|| !SHA256_PATTERN.test(evidenceSha256) || platformEvidenceDigest(platformBody) !== evidenceSha256) {
+		throw new Error('receipt Linux platform binding is invalid');
+	}
+	assertDockerImageIdentity(receipt.platform.image, receipt.platform.imageIdentity);
+	if (!Array.isArray(receipt.platform.lanes)
+		|| receipt.platform.lanes.length !== policy.platform.lanes.length) {
+		throw new Error('receipt platform lanes are incomplete');
+	}
+	for (const [index, lane] of receipt.platform.lanes.entries()) {
+		assertDocumentKeys(lane, ['args', 'status'], 'receipt platform lane');
+		if (lane.status !== 'PASS' || canonical(lane.args) !== canonical(policy.platform.lanes[index])) {
+			throw new Error('receipt platform lane is invalid');
+		}
+	}
+	if (!Array.isArray(receipt.lanes)) throw new Error('receipt lanes must be an array');
+	for (const lane of receipt.lanes) {
+		assertDocumentKeys(lane, ['label', 'args', 'status', 'durationMs'], 'receipt lane');
+		if (!Number.isFinite(lane.durationMs) || lane.durationMs < 0) {
+			throw new Error('receipt lane duration is invalid');
+		}
 	}
 	if (!SHA_PATTERN.test(receipt.head) || !SHA_PATTERN.test(receipt.tree)
 		|| !SHA_PATTERN.test(receipt.base)) throw new Error('receipt Git identity is invalid');
@@ -702,12 +842,38 @@ export function validateReceiptDocument(
 		))) throw new Error(`closeout receipt attempt ${receipt.attempt} has incomplete lanes`);
 }
 
-function assertSingleCommitCandidate(identity: { head: string; base: string }): void {
-	const parent = git('rev-parse', `${identity.head}^`);
-	const count = Number(git('rev-list', '--count', `${identity.base}..${identity.head}`));
-	if (parent !== identity.base || count !== 1) {
-		throw new Error('closeout candidate must be one squash-equivalent commit whose parent is the exact base');
+function nonEmptyString(value: unknown): value is string {
+	return typeof value === 'string' && value.trim().length > 0;
+}
+
+function assertDocumentKeys(value: unknown, keys: readonly string[], label: string): asserts value is Record<string, unknown> {
+	if (!value || typeof value !== 'object' || Array.isArray(value)
+		|| canonical(Object.keys(value).sort()) !== canonical([...keys].sort())) {
+		throw new Error(`${label} has missing or unexpected fields`);
 	}
+}
+
+function assertTimestamp(value: unknown, label: string): void {
+	if (typeof value !== 'string' || !Number.isFinite(Date.parse(value))
+		|| new Date(value).toISOString() !== value) throw new Error(`${label} is not an ISO UTC timestamp`);
+}
+
+function assertHashMap(value: unknown, keys: readonly string[], label: string): void {
+	assertDocumentKeys(value, keys, label);
+	if (Object.values(value).some((hash) => typeof hash !== 'string' || !SHA256_PATTERN.test(hash))) {
+		throw new Error(`${label} contains an invalid SHA-256`);
+	}
+}
+
+export function assertCandidateParents(parents: readonly string[], base: string): void {
+	if (!SHA_PATTERN.test(base) || parents.length !== 1 || parents[0] !== base) {
+		throw new Error('closeout candidate must have exactly one parent equal to the exact base');
+	}
+}
+
+function assertSingleCommitCandidate(identity: { head: string; base: string }): void {
+	const parents = git('show', '-s', '--format=%P', identity.head).split(' ').filter(Boolean);
+	assertCandidateParents(parents, identity.base);
 }
 
 async function record(): Promise<void> {
@@ -777,6 +943,7 @@ async function record(): Promise<void> {
 		host: await browserHostIdentity(),
 		hosted,
 		platform,
+		source: { authority: 'local-execution-self-report', authentication: 'none' },
 	};
 	const receipt: CloseoutReceipt = { ...body, receiptSha256: receiptDigest(body) };
 	mkdirSync(artifactsDir, { recursive: true });
@@ -824,10 +991,11 @@ function verify(options: { allowPromoted?: boolean } = {}): VerifiedCloseout {
 async function persistEvidenceComment(
 	pr: string,
 	repository: string,
-	verified: VerifiedCloseout,
-	finalHosted: HostedEvidence,
+	bundle: DurableCloseoutBundleV1,
 ): Promise<void> {
-	const receipts = verified.receipts;
+	const verified = bundle.candidate;
+	const receipts = bundle.receipts as unknown as CloseoutReceipt[];
+	const finalHosted = bundle.deliverySnapshot.hosted;
 	const hostedLines = receipts.map((receipt) => {
 		const detail = receipt.hosted.detail
 			.replace(/[\r\n\t]+/gu, ' ')
@@ -843,6 +1011,9 @@ async function persistEvidenceComment(
 	const body = [
 		marker,
 		'Exact-head local closeout evidence (machine-generated)',
+		`- as of: ${bundle.deliverySnapshot.asOf}`,
+		`- durable source: \`${bundle.notesRef}\` at candidate \`${verified.head}\``,
+		`- complete evidence bundle SHA-256: \`${bundle.bundleSha256}\``,
 		`- head: \`${verified.head}\``,
 		`- tree: \`${verified.tree}\``,
 		`- base: \`${verified.base}\``,
@@ -855,17 +1026,23 @@ async function persistEvidenceComment(
 		...hostedLines,
 		`- promotion-time hosted replay: ${finalHosted.status} — ${finalHostedDetail}`,
 	].join('\n');
-	const mutation = run('gh', ['pr', 'comment', pr, '--body', body], {
-		allowFailure: true,
-		timeoutMs: 60_000,
-	});
-	const comments = await githubReadJson<Array<{ body?: string }>>(
-		`/repos/${repository}/issues/${pr}/comments?per_page=100&sort=created&direction=desc`,
-	);
-	if (!comments.some((comment) => comment.body === body)) {
-		if (mutation.status !== 0) throw new Error(`durable PR evidence comment failed: ${mutation.stderr}`);
-		throw new Error('durable PR evidence comment readback failed');
-	}
+	const containsBody = async () => {
+		for (let page = 1; page <= 100; page += 1) {
+			const comments = await githubReadJson<Array<{ body?: string }>>(`/repos/${repository}/issues/${pr}/comments?per_page=100&page=${page}`);
+			if (!Array.isArray(comments)) throw new Error('PR comment inventory is malformed');
+			if (comments.some((comment) => comment.body === body)) return true;
+			if (comments.length < 100) return false;
+		}
+		throw new Error('PR comment inventory exceeds complete-read limit');
+	};
+	if (await containsBody()) return;
+	const directory = mkdtempSync(resolve(artifactsDir, 'closeout-comment-'));
+	try {
+		const bodyPath = resolve(directory, 'body.md');
+		writeFileSync(bodyPath, body, 'utf8');
+		const mutation = run('gh', ['pr', 'comment', pr, '--body-file', bodyPath], { allowFailure: true, timeoutMs: 60_000 });
+		if (!await containsBody()) throw new Error(`durable PR evidence comment readback failed: ${mutation.stderr}`);
+	} finally { rmSync(directory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }); }
 }
 
 function deleteRemoteBranchExact(branch: string, expectedHead: string): void {
@@ -934,7 +1111,6 @@ function promoteMainExact(head: string, base: string, branch: string): void {
 }
 
 async function merge(): Promise<void> {
-	const verified = verify({ allowPromoted: true });
 	const policy = readPolicy();
 	const pr = valueAfter('--pr');
 	if (!pr || !/^\d+$/u.test(pr)) throw new Error('--pr must be a pull request number');
@@ -945,6 +1121,20 @@ async function merge(): Promise<void> {
 		head: { sha: string; ref: string; repo?: { full_name?: string } };
 		base: { sha: string; ref: string; repo?: { full_name?: string } };
 	}>(`/repos/${repository}/pulls/${pr}`);
+	const retained = readRemoteDurableCloseoutEvidence(pull.head.sha, { repositoryDir }).bundle;
+	if (retained) {
+		// Recovery restores evidence only. Current artifacts, tools, browser host,
+		// refs and provider truth still pass the ordinary exact-head verifier.
+		validateReceiptDocuments(retained.receipts as unknown as CloseoutReceipt[], policy);
+		mkdirSync(artifactsDir, { recursive: true });
+		for (const receipt of retained.receipts as unknown as CloseoutReceipt[]) {
+			const path = closeoutReceiptPath(receipt.head, receipt.attempt);
+			if (!existsSync(path)) writeImmutableEvidenceFile(path, `${JSON.stringify(receipt, null, 2)}\n`);
+		}
+		const path = platformEvidencePath(retained.candidate.head);
+		if (!existsSync(path)) writeImmutableEvidenceFile(path, `${JSON.stringify(retained.platform, null, 2)}\n`);
+	}
+	const verified = verify({ allowPromoted: true });
 	const headRepository = pull.head.repo?.full_name;
 	const baseRepository = pull.base.repo?.full_name;
 	assertSameRepositoryPull(headRepository ?? '', baseRepository ?? '');
@@ -969,12 +1159,32 @@ async function merge(): Promise<void> {
 	if (!policy.allowedHostedStatuses.includes(hostedBeforeComment.status)) {
 		throw new Error(`derived hosted status is invalid: ${hostedBeforeComment.status}`);
 	}
-	await persistEvidenceComment(pr, repository, verified, hostedBeforeComment);
 	const hostedBeforePromotion = await hostedEvidence(verified.head);
 	if (!policy.allowedHostedStatuses.includes(hostedBeforePromotion.status)) {
 		throw new Error(`derived hosted status is invalid: ${hostedBeforePromotion.status}`);
 	}
 	equalCanonical(hostedBeforePromotion, hostedBeforeComment, 'hosted truth at promotion boundary');
+	const candidate = { head: verified.head, tree: verified.tree, base: verified.base, pr: Number(pr), headRef: `refs/heads/${metadata.headRefName}`, baseRef: `refs/heads/${policy.targetBranch}` };
+	let bundle = retained;
+	if (bundle) {
+		validateDurableCloseoutBundle(bundle, candidate);
+		equalCanonical(bundle.receipts, verified.receipts, 'durable full receipts');
+		equalCanonical(bundle.platform, verified.platform, 'durable platform receipt');
+	} else {
+		if (mainPosition !== 'base' || remoteRef(candidate.headRef) !== verified.head) throw new Error('Durable evidence must be published before candidate promotion');
+		bundle = createDurableCloseoutBundle({ repository, candidate, receipts: [...verified.receipts], platform: verified.platform, deliverySnapshot: {
+			authority: 'git-remote-and-github-rest-observation', asOf: new Date().toISOString(),
+			refs: { main: { ref: candidate.baseRef, head: remoteMain() }, candidate: { ref: candidate.headRef, head: remoteRef(candidate.headRef) ?? '' } },
+			pullRequest: { number: Number(pr), state: 'open', draft: false, head: metadata.headRefOid, base: metadata.baseRefOid, headRef: candidate.headRef, baseRef: candidate.baseRef },
+			receipts: verified.receipts.map((receipt) => ({ attempt: receipt.attempt, sha256: receipt.receiptSha256 })),
+			hosted: hostedBeforePromotion, result: 'VERIFIED_PENDING_PROMOTION',
+			pending: ['atomic-main-promotion', 'provider-projection-readback', 'local-settlement'],
+		} });
+	}
+	publishDurableCloseoutEvidence(bundle, { repositoryDir });
+	await persistEvidenceComment(pr, repository, bundle);
+	const hostedAfterPublication = await hostedEvidence(verified.head);
+	equalCanonical(hostedAfterPublication, hostedBeforePromotion, 'hosted truth after durable publication');
 	const beforePromotion = await githubReadJson<{
 		state: string;
 		draft: boolean;
@@ -1028,6 +1238,15 @@ async function merge(): Promise<void> {
 	if (remoteHead !== undefined && remoteHead !== verified.head) throw new Error('ref cleanup refuses a moved candidate head');
 	deleteRemoteBranchExact(metadata.headRefName, verified.head);
 	if (remoteRef(`refs/heads/${metadata.headRefName}`)) throw new Error('remote candidate ref absence was not confirmed');
+	const delivery = projectFinalDelivery(bundle, {
+		asOf: new Date().toISOString(),
+		main: { ref: candidate.baseRef, head: verified.head, tree: verified.tree },
+		candidate: { ref: candidate.headRef, head: null },
+		pullRequest: { number: Number(pr), state: 'closed', head: verified.head, baseRef: candidate.baseRef,
+			mergedAt: merged.merged_at ?? null, mergeCommitSha: merged.merge_commit_sha ?? null },
+		pending: ['local-settlement'],
+	});
+	writeFileSync(resolve(artifactsDir, `delivery.${verified.head}.json`), `${JSON.stringify(delivery, null, 2)}\n`, 'utf8');
 	console.log(`closeout-merge: PASS pr=${pr} merge=${mergeSha} tree=${verified.tree}`);
 }
 

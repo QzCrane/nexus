@@ -1,45 +1,51 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "phase": "baseline-required",
   "browserOwner": "browser-floor.json",
   "comparison": "exact-png-sha256",
-  "verification": {
-    "workspacePackagePath": "package.json",
-    "workspaceScript": "test:visual",
-    "workflowPath": "../.github/workflows/minimum-chrome.yml"
-  },
+  "verification": { "workspacePackagePath": "package.json", "workspaceScript": "test:visual", "workflowPath": "../.github/workflows/minimum-chrome.yml" },
   "states": [
     {
-      "id": "halo.sidepanel.home.dark.en.1280x800",
-      "product": "halo",
-      "captureTest": "apps/extension-halo/test/store-assets.spec.ts",
-      "verifyScript": "test:visual",
-      "updateScript": "capture:store-assets",
-      "packagePath": "apps/extension-halo/package.json",
-      "baselinePath": "apps/extension-halo/store-listings/assets/halo-sidepanel-1280x800.png",
-      "width": 1280,
-      "height": 800,
-      "locale": "en",
-      "theme": "dark",
-      "reducedMotion": true,
-      "baselineSha256": null,
-      "provenance": "Existing store asset predates the pinned Chrome visual policy and must be re-recorded before enforcement."
+      "id": "halo.sidepanel.home-data.dark.en.1280x800",
+      "product": "halo", "scenario": "data", "assertions": ["home-populated", "focus-visible"], "focusTarget": "json-formatter",
+      "captureTest": "apps/extension-halo/test/store-assets.spec.ts", "verifyScript": "test:visual", "updateScript": "capture:store-assets", "packagePath": "apps/extension-halo/package.json", "baselinePath": "apps/extension-halo/store-listings/assets/halo-sidepanel-home-data-1280x800.png",
+      "width": 1280, "height": 800, "locale": "en", "theme": "dark", "reducedMotion": true, "baselineSha256": null,
+      "provenance": "Representative populated Home state requires first pinned Chrome review before exact enforcement."
     },
     {
-      "id": "spectra.popup.empty.dark.en-US.390x600",
-      "product": "spectra",
-      "captureTest": "apps/extension-spectra/test/visual-baseline.spec.ts",
-      "verifyScript": "test:visual",
-      "updateScript": "capture:visual-baseline",
-      "packagePath": "apps/extension-spectra/package.json",
-      "baselinePath": "apps/extension-spectra/store-listings/assets/spectra-popup-empty-390x600.png",
-      "width": 390,
-      "height": 600,
-      "locale": "en-US",
-      "theme": "dark",
-      "reducedMotion": true,
-      "baselineSha256": null,
-      "provenance": "No certified baseline exists yet; first pinned Chrome-for-Testing recording requires explicit review."
+      "id": "halo.sidepanel.json-error.light.zh-CN.320x800",
+      "product": "halo", "scenario": "error", "assertions": ["invalid-json-visible", "narrow-layout", "focus-visible"], "focusTarget": "json-input",
+      "captureTest": "apps/extension-halo/test/store-assets.spec.ts", "verifyScript": "test:visual", "updateScript": "capture:store-assets", "packagePath": "apps/extension-halo/package.json", "baselinePath": "apps/extension-halo/store-listings/assets/halo-sidepanel-json-error-320x800.png",
+      "width": 320, "height": 800, "locale": "zh-CN", "theme": "light", "reducedMotion": true, "baselineSha256": null,
+      "provenance": "Representative narrow Chinese error and focus state requires first pinned Chrome review before exact enforcement."
+    },
+    {
+      "id": "halo.sidepanel.permission-denied.dark.en.520x760",
+      "product": "halo", "scenario": "permission-denied", "assertions": ["cookies-not-granted", "permission-required-visible", "focus-visible"], "focusTarget": "grant-permission",
+      "captureTest": "apps/extension-halo/test/store-assets.spec.ts", "verifyScript": "test:visual", "updateScript": "capture:store-assets", "packagePath": "apps/extension-halo/package.json", "baselinePath": "apps/extension-halo/store-listings/assets/halo-sidepanel-permission-denied-520x760.png",
+      "width": 520, "height": 760, "locale": "en", "theme": "dark", "reducedMotion": true, "baselineSha256": null,
+      "provenance": "Representative ungranted optional-permission state requires first pinned Chrome review before exact enforcement."
+    },
+    {
+      "id": "spectra.popup.media-data.dark.en-US.396x510",
+      "product": "spectra", "scenario": "data", "assertions": ["media-card-visible", "control-values-visible", "focus-visible"], "focusTarget": "volume-slider",
+      "captureTest": "apps/extension-spectra/test/visual-baseline.spec.ts", "verifyScript": "test:visual", "updateScript": "capture:visual-baseline", "packagePath": "apps/extension-spectra/package.json", "baselinePath": "apps/extension-spectra/store-listings/assets/spectra-popup-media-data-396x510.png",
+      "width": 396, "height": 510, "locale": "en-US", "theme": "dark", "reducedMotion": true, "baselineSha256": null,
+      "provenance": "Representative real media control card requires first pinned Chrome review before exact enforcement."
+    },
+    {
+      "id": "spectra.popup.startup-error.dark.en-US.320x600",
+      "product": "spectra", "scenario": "error", "assertions": ["startup-error-visible", "retry-visible", "narrow-layout", "focus-visible"], "focusTarget": "retry",
+      "captureTest": "apps/extension-spectra/test/visual-baseline.spec.ts", "verifyScript": "test:visual", "updateScript": "capture:visual-baseline", "packagePath": "apps/extension-spectra/package.json", "baselinePath": "apps/extension-spectra/store-listings/assets/spectra-popup-startup-error-320x600.png",
+      "width": 320, "height": 600, "locale": "en-US", "theme": "dark", "reducedMotion": true, "baselineSha256": null,
+      "provenance": "Representative narrow startup failure and retry state requires first pinned Chrome review before exact enforcement."
+    },
+    {
+      "id": "spectra.popup.dynamic-control.light.en-US.396x510",
+      "product": "spectra", "scenario": "dynamic", "assertions": ["media-card-visible", "volume-applied", "speed-applied", "focus-visible"], "focusTarget": "speed-input",
+      "captureTest": "apps/extension-spectra/test/visual-baseline.spec.ts", "verifyScript": "test:visual", "updateScript": "capture:visual-baseline", "packagePath": "apps/extension-spectra/package.json", "baselinePath": "apps/extension-spectra/store-listings/assets/spectra-popup-dynamic-control-396x510.png",
+      "width": 396, "height": 510, "locale": "en-US", "theme": "light", "reducedMotion": true, "baselineSha256": null,
+      "provenance": "Representative acknowledged dynamic volume and speed state requires first pinned Chrome review before exact enforcement."
     }
   ]
 }

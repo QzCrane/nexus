@@ -8,45 +8,49 @@ import type { BookmarkSearchResult } from './types';
 import { searchBookmarks, getRecentBookmarks, deleteBookmark, openBookmark, getFaviconUrl } from './core';
 import { styles } from './panel.styles';
 import { useToolState, usePermission } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 type ViewMode = 'search' | 'recent';
+const viewModeCodec: ToolStateCodec<ViewMode> = {
+	decode: (value) => value === 'search' || value === 'recent' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Bookmark view mode is invalid.' },
+	encode: (value) => value,
+};
 
 export const BookmarkManagerPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { hasPermission, request } = usePermission('bookmarks');
-	const [mode, setMode] = useToolState<ViewMode>('bookmark-mode', 'recent');
+	const [mode, setMode, , modeRecovery] = useToolState<ViewMode>('bookmark-mode', 'recent', { codec: viewModeCodec });
 	const [query, setQuery] = useToolState<string>('bookmark-query', '');
 
 	const [results, setResults] = useState<BookmarkSearchResult[]>([]);
-	const [loading, setLoading] = useState(false);
+	const task = useOwnedAsyncTask();
 
 	// Load recent on mount
 	useEffect(() => {
 		if (hasPermission !== false && mode === 'recent') {
-			setLoading(true);
-			getRecentBookmarks(30).then((items) => {
-				setResults(items);
-				setLoading(false);
+			void task.run(() => getRecentBookmarks(30)).then((outcome) => {
+				if (outcome.kind === 'succeeded') setResults(outcome.value);
 			});
 		}
-	}, [mode, hasPermission]);
+		return task.cancel;
+	}, [mode, hasPermission, task.run, task.cancel]);
 
 	// Search bookmarks
 	useEffect(() => {
 		if (hasPermission !== false && mode === 'search' && query.length >= 2) {
-			setLoading(true);
 			const timer = setTimeout(() => {
-				searchBookmarks(query).then((items) => {
-					setResults(items);
-					setLoading(false);
+				void task.run(() => searchBookmarks(query)).then((outcome) => {
+					if (outcome.kind === 'succeeded') setResults(outcome.value);
 				});
 			}, 200);
-			return () => clearTimeout(timer);
+			return () => { clearTimeout(timer); task.cancel(); };
 		} else if (hasPermission !== false && mode === 'search') {
 			setResults([]);
 		}
-	}, [query, mode, hasPermission]);
+	}, [query, mode, hasPermission, task.run, task.cancel]);
 
 	// Handle click
 	const handleClick = useCallback((url: string, e: React.MouseEvent) => {
@@ -56,13 +60,14 @@ export const BookmarkManagerPanel: React.FC = () => {
 	// Handle delete
 	const handleDelete = useCallback(async (id: string, e: React.MouseEvent) => {
 		e.stopPropagation();
-		await deleteBookmark(id);
-		setResults((r) => r.filter((x) => x.id !== id));
-	}, []);
+		const outcome = await task.run(() => deleteBookmark(id));
+		if (outcome.kind === 'succeeded') setResults((r) => r.filter((x) => x.id !== id));
+	}, [task.run]);
 
 	if (hasPermission === false) {
 		return (
 			<div style={{ ...styles.wrapper, height: '100%', justifyContent: 'center', alignItems: 'center' }}>
+				<StorageRecoveryActions recovery={modeRecovery} emptyValue="recent" exportName="halo-bookmark-mode-damaged.json" />
 				<div style={{ width: '100%', maxWidth: '320px' }}>
 					<Card variant="default" padding="md">
 						<div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px', padding: '32px 16px' }}>
@@ -95,6 +100,7 @@ export const BookmarkManagerPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={modeRecovery} emptyValue="recent" exportName="halo-bookmark-mode-damaged.json" />
 			{/* Mode Tabs */}
 			<div style={styles.tabs}>
 				<button type="button" style={{ ...styles.tab, ...(mode === 'recent' ? styles.active : styles.inactive) }} onClick={() => setMode('recent')}>
@@ -117,7 +123,7 @@ export const BookmarkManagerPanel: React.FC = () => {
 
 			{/* Results */}
 			<div style={styles.list}>
-				{loading ? (
+				{task.phase === 'running' ? (
 					<div style={styles.empty}>⏳ {t('bookmarkManager.loading')}</div>
 				) : results.length === 0 ? (
 					<div style={styles.empty}>📚 {mode === 'search' ? t('bookmarkManager.noResults') : t('bookmarkManager.noRecent')}</div>
@@ -141,6 +147,7 @@ export const BookmarkManagerPanel: React.FC = () => {
 					))
 				)}
 			</div>
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
 		</div>
 	);
 };

@@ -8,10 +8,11 @@ import { BUN_VERSION } from '../../../scripts/toolchain-versions';
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const extensionDir = resolve(scriptDir, '..');
 const workspaceDir = resolve(extensionDir, '../..');
-const screenshotPath = resolve(
-	extensionDir,
-	'store-listings/assets/halo-sidepanel-1280x800.png',
-);
+const screenshots = [
+	['halo-sidepanel-home-data-1280x800.png', 1280, 800],
+	['halo-sidepanel-json-error-320x800.png', 320, 800],
+	['halo-sidepanel-permission-denied-520x760.png', 520, 760],
+] as const;
 const browserFloor = JSON.parse(
 	readFileSync(resolve(workspaceDir, 'browser-floor.json'), 'utf8'),
 ) as { chromeForTestingVersion?: unknown };
@@ -82,8 +83,10 @@ async function capture(): Promise<void> {
 		'HALO store asset browser capture',
 		environment,
 	);
-	await assertPngDimensions(screenshotPath, 1280, 800);
-	console.log(`✓ Verified pinned HALO visual baseline ${screenshotPath}`);
+	for (const [file, width, height] of screenshots) {
+		await assertPngDimensions(resolve(extensionDir, 'store-listings/assets', file), width, height);
+	}
+	console.log(`✓ Verified ${screenshots.length} pinned HALO visual baselines`);
 }
 
 await capture();

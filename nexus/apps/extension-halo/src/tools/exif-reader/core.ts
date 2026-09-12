@@ -165,19 +165,6 @@ function readString(
 	return str.trim();
 }
 
-// Read file as ArrayBuffer
-export function readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => {
-			if (reader.result instanceof ArrayBuffer) resolve(reader.result);
-			else reject(new TypeError('FileReader did not return an ArrayBuffer'));
-		};
-		reader.onerror = reject;
-		reader.readAsArrayBuffer(file);
-	});
-}
-
 // Format file size
 export function formatFileSize(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;

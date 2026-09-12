@@ -12,11 +12,13 @@ import {
 	getColorInfo,
 	copyToClipboard,
 	getContrast,
+	colorHistoryCodec,
 } from './core';
 import { styles } from './panel.styles';
 import { getContrastColor } from './utils';
 import { useToolState } from '../../kernel';
 import { useToast } from '../../components/ToastProvider';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const logger = createLogger('ColorPicker', 'HALO');
@@ -26,7 +28,7 @@ export const ColorPickerPanel: React.FC = () => {
 	const { showToast } = useToast();
 	const [inputValue, setInputValue] = useToolState<string>('color-picker', '#7c3aed');
 	const color = useMemo(() => getColorInfo(inputValue), [inputValue]);
-	const [history, setHistory] = useToolState<string[]>('color-history', []);
+	const [history, setHistory, , historyRecovery] = useToolState<string[]>('color-history', [], { codec: colorHistoryCodec });
 
 	const handleColorChange = useCallback(async (hex: string) => {
 		setInputValue(hex);
@@ -70,6 +72,7 @@ export const ColorPickerPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={historyRecovery} emptyValue={[]} exportName="halo-color-history-damaged.json" />
 			<Card variant="default" padding="md">
 				<div style={styles.pickerRow}>
 					<input

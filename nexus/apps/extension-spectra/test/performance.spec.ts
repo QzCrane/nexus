@@ -1,4 +1,4 @@
-import { launchBrowser } from './helpers/browser-driver';
+import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -42,15 +42,18 @@ test('records twenty independent SPECTRA Popup cold-interactive samples', async 
 		let browser: Browser | null = null;
 		try {
 			const coldStarted = performance.now();
-			browser = await launchBrowser({
+			browser = await launchPuppeteerBrowser({
 				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 				headless: true,
 				userDataDir: profilePath,
 				args: [
 					`--disable-extensions-except=${EXTENSION_DIR}`,
-					`--load-extension=${EXTENSION_DIR}`,
-				],
-			});
+			`--load-extension=${EXTENSION_DIR}`,
+		],
+		}, {
+			owner: 'apps/extension-spectra/test/performance.spec.ts',
+			profile: { kind: 'temporary', prefix: 'spectra-popup-perf-', isolated: true },
+		});
 			const currentBrowserVersion = await browser.version();
 			if (EXPECTED_CHROME_VERSION && !currentBrowserVersion.includes(EXPECTED_CHROME_VERSION)) {
 				throw new Error(`Expected Chrome ${EXPECTED_CHROME_VERSION}, got ${currentBrowserVersion}`);
@@ -102,6 +105,12 @@ test('records twenty independent SPECTRA Popup cold-interactive samples', async 
 		product: 'spectra',
 		browser: { name: 'Chrome', version: observedBrowserVersion || 'unknown' },
 		samples,
+		profile: {
+			id: 'spectra-popup-cold',
+			scenario: 'cold profile popup readiness plus settings navigation roundtrip',
+			isolation: 'fresh-profile-per-sample',
+			businessAssertions: ['settings-loaded', 'empty-state-owned', 'navigation-roundtrip'],
+		},
 		identity: runtimePerformanceIdentityFromEnvironment(),
 	});
 }, 180_000);

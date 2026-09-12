@@ -10,6 +10,7 @@ import { updatePausedAt } from '../../utils/pause-tracker';
 import { logger } from '../../../shared/logger';
 
 const log = logger.content;
+let reportRevision = 0;
 
 function updatePauseState(): void {
 	const registry = getActiveMediaRegistry();
@@ -29,6 +30,7 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 	safeSend(() => sendSpectraRequest('spectra.tab.media.report', {
 		hasMediaElement: hasMedia,
 		userInteracted: interacted,
+		reportRevision: ++reportRevision,
 	})).catch((error: unknown) => {
 		log.warn('Media-state report failed outside the known context-invalidation boundary', error);
 	});

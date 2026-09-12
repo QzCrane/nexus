@@ -698,7 +698,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		status: undefined,
 		keywords: [],
 		permissions: undefined,
-		background: {"mechanism":"interval_slow","frequency":"1000ms display/deadline check while running","activeOnly":true,"level":"idle","descriptionKey":"impact.interval_1s","sourceFile":"tools/pomodoro/panel.tsx","sourceAnchor":"window.setInterval(tick, 1000)","sourceDetail":"one 1Hz interval updates ephemeral display time and verifies the live wall-clock deadline; persistent PomodoroState changes only at user/phase boundaries"},
+		background: {"mechanism":"event_listener","frequency":"one-shot deadline alarm while a phase runs","activeOnly":false,"level":"idle","descriptionKey":"impact.event_listener","sourceFile":"kernel/core/deadline-jobs/coordinator.ts","sourceAnchor":"chrome.alarms.onAlarm.addListener","sourceDetail":"one replaceable alarm wakes an idempotent background phase reconciler; the mounted panel interval only projects whole-second display time"},
 		script: undefined,
 	},
 	{
@@ -1034,7 +1034,7 @@ export const PLUGIN_REGISTRY: PluginMeta[] = [
 		status: 'coming',
 		keywords: ["timer","pomodoro","stopwatch","jishiqi","计时器","番茄钟"],
 		permissions: undefined,
-		background: {"mechanism":"raf_active","frequency":"paint-frame while running","activeOnly":true,"level":"medium","descriptionKey":"impact.mechanism.raf_active","sourceFile":"tools/timer/panel.tsx","sourceAnchor":"frameId = requestAnimationFrame(tick)","sourceDetail":"requestAnimationFrame state is isolated to the TimerDisplay clock node; a bounded 1Hz deadline watcher performs no persistent write until real completion"},
+		background: {"mechanism":"event_listener","frequency":"one-shot deadline alarm while countdown runs","activeOnly":false,"level":"idle","descriptionKey":"impact.event_listener","sourceFile":"kernel/core/deadline-jobs/coordinator.ts","sourceAnchor":"chrome.alarms.onAlarm.addListener","sourceDetail":"one replaceable alarm wakes an idempotent background deadline reconciler; panel requestAnimationFrame only projects the stopwatch/countdown display"},
 		script: undefined,
 	},
 	{
@@ -1383,14 +1383,14 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "sourceDetail": "light document mouse/key listeners attach only while Hover Zoom is enabled; resolver/viewer code loads only after a valid preview intent"
     },
     "pomodoro": {
-        "mechanism": "interval_slow",
-        "frequency": "1000ms display/deadline check while running",
-        "activeOnly": true,
+        "mechanism": "event_listener",
+        "frequency": "one-shot deadline alarm while a phase runs",
+        "activeOnly": false,
         "level": "idle",
-        "descriptionKey": "impact.interval_1s",
-        "sourceFile": "tools/pomodoro/panel.tsx",
-        "sourceAnchor": "window.setInterval(tick, 1000)",
-        "sourceDetail": "one 1Hz interval updates ephemeral display time and verifies the live wall-clock deadline; persistent PomodoroState changes only at user/phase boundaries"
+        "descriptionKey": "impact.event_listener",
+        "sourceFile": "kernel/core/deadline-jobs/coordinator.ts",
+        "sourceAnchor": "chrome.alarms.onAlarm.addListener",
+        "sourceDetail": "one replaceable alarm wakes an idempotent background phase reconciler; the mounted panel interval only projects whole-second display time"
     },
     "smooth-scroll": {
         "mechanism": "wheel_listener",
@@ -1423,14 +1423,14 @@ export const BACKGROUND_PROFILES_MAP: Record<string, BackgroundProfile> = {
         "sourceDetail": "SpeechSynthesisUtterance start/end/error/pause/resume listeners drive UI state; no periodic status poll"
     },
     "timer": {
-        "mechanism": "raf_active",
-        "frequency": "paint-frame while running",
-        "activeOnly": true,
-        "level": "medium",
-        "descriptionKey": "impact.mechanism.raf_active",
-        "sourceFile": "tools/timer/panel.tsx",
-        "sourceAnchor": "frameId = requestAnimationFrame(tick)",
-        "sourceDetail": "requestAnimationFrame state is isolated to the TimerDisplay clock node; a bounded 1Hz deadline watcher performs no persistent write until real completion"
+        "mechanism": "event_listener",
+        "frequency": "one-shot deadline alarm while countdown runs",
+        "activeOnly": false,
+        "level": "idle",
+        "descriptionKey": "impact.event_listener",
+        "sourceFile": "kernel/core/deadline-jobs/coordinator.ts",
+        "sourceAnchor": "chrome.alarms.onAlarm.addListener",
+        "sourceDetail": "one replaceable alarm wakes an idempotent background deadline reconciler; panel requestAnimationFrame only projects the stopwatch/countdown display"
     },
     "timestamp": {
         "mechanism": "interval_slow",

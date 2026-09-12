@@ -138,6 +138,7 @@ export const bilibiliRules: SiteRule[] = [
 	// 2. [函数式] 常规视频 (BV/av号)
 	{
 		id: 'bilibili-video',
+		proxyCapability: 'bilibili-main',
 		hosts: ['bilibili.com'],
 		// Fix: 兼容 BV 和 av 号
 		match: /bilibili\.com\/video\/([Bb][Vv]\w+|[Aa][Vv]\d+)/,
@@ -185,6 +186,7 @@ export const bilibiliRules: SiteRule[] = [
 	// 3. [函数式] 番剧 Episode
 	{
 		id: 'bilibili-episode',
+		proxyCapability: 'bilibili-main',
 		hosts: ['bilibili.com'],
 		match: /bilibili\.com\/.*\/play\/ep(\d+)/,
 		triggers: [
@@ -211,6 +213,7 @@ export const bilibiliRules: SiteRule[] = [
 	// 4. [函数式] Bilibili TV
 	{
 		id: 'bilibili-tv',
+		proxyCapability: 'bilibili-tv',
 		hosts: ['bilibili.tv'],
 		match: /bilibili\.tv/, // 简单匹配，内部再细分
 		triggers: [

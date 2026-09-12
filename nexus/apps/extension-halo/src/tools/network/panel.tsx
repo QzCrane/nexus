@@ -5,7 +5,7 @@ import { useState, useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { NetworkMode, UAResult, CurlParseResult } from './types';
-import { parseUserAgent, parseCurl, generateJS, generatePython } from './core';
+import { parseUserAgent, parseCurl, generateJS, generatePython, curlLanguageCodec, networkModeCodec } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
 
@@ -51,7 +51,7 @@ const CurlConverterPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [curl, setCurl] = useToolState<string>('network-curl-input', '');
 	const [parsed, setParsed] = useState<CurlParseResult | null>(null);
-	const [lang, setLang] = useToolState<'js' | 'python'>('network-curl-lang', 'js');
+	const [lang, setLang] = useToolState<'js' | 'python'>('network-curl-lang', 'js', { codec: curlLanguageCodec });
 
 
 	const handleParse = useCallback(() => setParsed(parseCurl(curl)), [curl]);
@@ -83,7 +83,7 @@ const CurlConverterPanel: React.FC = () => {
 // Main Network Panel
 export const NetworkPanel: React.FC = () => {
     const { t } = useTranslation();
-	const [mode, setMode] = useToolState<NetworkMode>('network-mode', 'ua-parser');
+	const [mode, setMode] = useToolState<NetworkMode>('network-mode', 'ua-parser', { codec: networkModeCodec });
 
 
 	return (

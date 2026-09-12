@@ -12,6 +12,7 @@ import { fileURLToPath } from 'node:url';
 import {
 	buildArtifactProvenance,
 	normalizeBuildOutputIdentity,
+	productBuildAnalysisPath,
 	readStoredZipEntries,
 	verifyArtifactProvenance,
 	verifyStoredZipAgainstProvenance,
@@ -28,6 +29,15 @@ function tempDist(prefix: string): string {
 }
 
 describe('whole extension artifact provenance', () => {
+	test('owns the actual analysis output path for each product', () => {
+		expect(productBuildAnalysisPath('halo').replaceAll('\\', '/').endsWith(
+			'/nexus/apps/extension-halo/dist/build-analysis.json',
+		)).toBe(true);
+		expect(productBuildAnalysisPath('spectra').replaceAll('\\', '/').endsWith(
+			'/artifacts/spectra-build-analysis.json',
+		)).toBe(true);
+	});
+
 	test('normalizes relative, Unix absolute, and Windows absolute esbuild output identities', () => {
 		for (const input of [
 			'background.js',

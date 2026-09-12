@@ -8,6 +8,7 @@ import type { CookieInfo } from './types';
 import { scanActiveTabCookies, deleteCookie, exportCookies, formatExpiry } from './core';
 import { styles } from './panel.styles';
 import { usePermission, useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
 
 
 export const CookieManagerPanel: React.FC = () => {
@@ -17,21 +18,15 @@ export const CookieManagerPanel: React.FC = () => {
 	const [search, setSearch] = useToolState<string>('cookie-manager', '');
 	const [error, setError] = useState<string | null>(null);
 
-	const [loading, setLoading] = useState(false);
+	const task = useOwnedAsyncTask();
 
 	// Load cookies
 	const loadCookies = useCallback(async () => {
-		setLoading(true);
 		setError(null);
-		try {
-			const scan = await scanActiveTabCookies();
-			setCookies(scan.cookies);
-		} catch (loadError) {
-			setError(String(loadError));
-		} finally {
-			setLoading(false);
-		}
-	}, []);
+		const outcome = await task.run(() => scanActiveTabCookies());
+		if (outcome.kind === 'succeeded') setCookies(outcome.value.cookies);
+		else if (outcome.kind === 'failed') setError(String(outcome.error));
+	}, [task.run]);
 
 	useEffect(() => {
 		if (hasPermission === true) void loadCookies();
@@ -46,12 +41,17 @@ export const CookieManagerPanel: React.FC = () => {
 	// Delete cookie
 	const handleDelete = useCallback(async (cookie: CookieInfo) => {
 		setError(null);
-		const ok = await deleteCookie(cookie);
-		if (!ok) {
+		const outcome = await task.run(async () => {
+			const ok = await deleteCookie(cookie);
+			if (!ok) throw new Error(t('cookieManager.deleteFailed', { defaultValue: 'Cookie deletion failed; the cookie is still present.' }));
+			return scanActiveTabCookies();
+		});
+		if (outcome.kind === 'failed') {
 			setError(t('cookieManager.deleteFailed', { defaultValue: 'Cookie deletion failed; the cookie is still present.' }));
+		} else if (outcome.kind === 'succeeded') {
+			setCookies(outcome.value.cookies);
 		}
-		await loadCookies();
-	}, [loadCookies, t]);
+	}, [task.run, t]);
 
 	// Export all
 	const handleExport = useCallback(() => {
@@ -64,7 +64,7 @@ export const CookieManagerPanel: React.FC = () => {
 		navigator.clipboard.writeText(value);
 	}, []);
 
-	if (hasPermission === null || loading) {
+	if (hasPermission === null || task.phase === 'running') {
 		return <div style={styles.empty}>⏳ {t('cookieManager.loading')}</div>;
 	}
 
@@ -121,7 +121,7 @@ export const CookieManagerPanel: React.FC = () => {
 				<button type="button" style={styles.btn} onClick={handleExport}>📋 {t('cookieManager.export', { defaultValue: 'Export JSON' })}</button>
 			</div>
 
-			{error && <div style={{ color: '#d33', fontSize: '12px', padding: '4px 0' }}>{error}</div>}
+			{(error || task.error !== null) && <div style={{ color: '#d33', fontSize: '12px', padding: '4px 0' }}>{error ?? String(task.error)}</div>}
 
 			{/* Cookie List */}
 			<Card variant="default" padding="sm">

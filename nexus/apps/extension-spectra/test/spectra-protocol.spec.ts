@@ -1150,8 +1150,30 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			'spectra.screenshot.target.verify',
 			rpcSuccess({ valid: false }),
 		)).toBe(false);
+		const coverage = { status: 'complete', total: 2, examined: 2, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0 };
+		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 42], coverage }))).toBe(true);
 		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 42] }))).toBe(true);
-		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 7] }))).toBe(false);
+		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 7], coverage }))).toBe(false);
+		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({
+			tabs: [7],
+			coverage: { ...coverage, status: 'degraded', examined: 1, pending: 1, failed: 1 },
+		}))).toBe(true);
+		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({
+			tabs: [],
+			coverage: { ...coverage, status: 'complete', examined: 1, pending: 1, failed: 1 },
+		}))).toBe(false);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'legacy-media-report',
+			type: 'spectra.tab.media.report',
+			payload: { hasMediaElement: true, userInteracted: false },
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'invalid-media-report-revision',
+			type: 'spectra.tab.media.report',
+			payload: { hasMediaElement: true, userInteracted: false, reportRevision: 0 },
+		})).toBe(false);
 		expect(isSpectraResponse('spectra.settings.patch', rpcFailure('revision_conflict', 'retry', true))).toBe(true);
 		expect(isSpectraResponse('spectra.settings.patch', {
 			ok: false,

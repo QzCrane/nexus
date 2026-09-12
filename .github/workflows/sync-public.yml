@@ -65,6 +65,7 @@ jobs:
           bun run docs:check
           bun --cwd nexus check:toolchain
           bun --cwd nexus check:governance
+          bun --cwd nexus check:closeout-evidence
           bun run lint
           bun run typecheck
           bun run verify:q

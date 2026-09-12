@@ -6,6 +6,15 @@ import { useTranslation } from '../../i18n';
 import { calculateSri, generateTag, type Algo } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+
+const sriAlgorithmCodec: ToolStateCodec<Algo> = {
+	decode: (value) => value === 'sha256' || value === 'sha384' || value === 'sha512'
+		? { kind: 'valid', value } : { kind: 'invalid', reason: 'SRI algorithm is invalid.' },
+	encode: (value) => value,
+};
 
 
 export const SriPanel: React.FC = () => {
@@ -14,25 +23,25 @@ export const SriPanel: React.FC = () => {
     const [content, setContent] = useToolState<string>('subresource-content', '');
     const [hashOnly, setHashOnly] = useState('');
     const [tag, setTag] = useState('');
-    const [alg, setAlg] = useToolState<Algo>('subresource-alg', 'sha384');
+	const [alg, setAlg, , algRecovery] = useToolState<Algo>('subresource-alg', 'sha384', { codec: sriAlgorithmCodec });
 
-    const [loading, setLoading] = useState(false);
+	const task = useOwnedAsyncTask();
 
     // Fetch content if URL is provided and user clicks fetch?
     // CORS might block it. Let's assume user pastes content OR we try fetch.
     // For simplicity: User pastes content mostly, or we try generic fetch.
     const handleFetch = useCallback(async () => {
         if (!url) return;
-        setLoading(true);
-        try {
-            const res = await fetch(url);
-            const text = await res.text();
-            setContent(text);
-        } catch {
+		const controller = new AbortController();
+		const outcome = await task.run(() => ({
+			promise: fetch(url, { signal: controller.signal }).then((response) => response.text()),
+			dispose: () => controller.abort(),
+		}));
+		if (outcome.kind === 'succeeded') setContent(outcome.value);
+		else if (outcome.kind === 'failed') {
             alert('Failed to fetch URL (CORS error?)');
         }
-        setLoading(false);
-    }, [url, setContent]);
+	}, [url, setContent, task.run]);
 
     // Recalculate when content or alg changes
     useEffect(() => {
@@ -41,26 +50,29 @@ export const SriPanel: React.FC = () => {
             setTag('');
             return;
         }
-        calculateSri(content, alg).then(h => {
-            setHashOnly(h);
+		void task.run(() => calculateSri(content, alg)).then((outcome) => {
+			if (outcome.kind !== 'succeeded') return;
+			setHashOnly(outcome.value);
             if (url) {
                 // Determine type by extension
                 const type = url.endsWith('.css') ? 'link' : 'script';
-                setTag(generateTag(url, h, type));
+				setTag(generateTag(url, outcome.value, type));
             } else {
                 setTag('');
             }
-        });
-    }, [content, alg, url]);
+		});
+		return task.cancel;
+	}, [content, alg, url, task.run, task.cancel]);
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={algRecovery} emptyValue="sha384" exportName="halo-sri-algorithm-damaged.json" />
             <div>
                 <div style={styles.label}>{t('subresource.url', { defaultValue: 'Resource URL' })} ({t('subresource.optional', { defaultValue: 'Optional' })})</div>
                 <div style={{display: 'flex', gap: '8px'}}>
                     <input style={styles.input} value={url} onChange={(e) => setUrl(e.target.value)} placeholder={t('subresource.placeholderUrl', { defaultValue: 'https://cdn.example.com/lib.js' })} />
-                    <button type="button" style={styles.btn} onClick={handleFetch} disabled={!url || loading}>
-                        {loading ? '⏳' : `📥 ${t('subresource.fetch', { defaultValue: 'Fetch' })}`}
+					<button type="button" style={styles.btn} onClick={handleFetch} disabled={!url || task.phase === 'running'}>
+						{task.phase === 'running' ? '⏳' : `📥 ${t('subresource.fetch', { defaultValue: 'Fetch' })}`}
                     </button>
                 </div>
             </div>

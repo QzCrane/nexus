@@ -3,12 +3,16 @@
 
 import type { ToolPrefs } from '../core/tool-registry-types';
 import { TOOL_PREFS_KEY } from '../registry/tool-registry';
+import { conditionalLedgerWrite, readLedgerEntry } from '../core/safe-storage';
+import { reportStorageHealth } from '../core/storage-health';
+
+const storageHealthOwner = Symbol('tool-preferences');
+let saveTail = Promise.resolve();
 
 // Load tool preferences from storage
 export async function loadToolPrefs(): Promise<Record<string, ToolPrefs>> {
 	try {
-		const result = await chrome.storage.local.get(TOOL_PREFS_KEY);
-		return (result[TOOL_PREFS_KEY] as Record<string, ToolPrefs>) || {};
+		return ((await readLedgerEntry<Record<string, ToolPrefs>>(TOOL_PREFS_KEY, { area: 'local' })).value) || {};
 	} catch (error: unknown) {
 		console.error('[HALO:ToolPrefs] Failed to load preferences', error);
 		return {};
@@ -17,9 +21,14 @@ export async function loadToolPrefs(): Promise<Record<string, ToolPrefs>> {
 
 // Save tool preferences
 export async function saveToolPrefs(prefs: Record<string, ToolPrefs>): Promise<void> {
-	try {
-		await chrome.storage.local.set({ [TOOL_PREFS_KEY]: prefs });
-	} catch (error: unknown) {
-		console.error('[HALO:ToolPrefs] Failed to persist preferences', error);
-	}
+	const snapshot = structuredClone(prefs);
+	const operation = saveTail.catch(() => undefined).then(async () => {
+		const base = await readLedgerEntry(TOOL_PREFS_KEY, { area: 'local' });
+		const outcome = await conditionalLedgerWrite(TOOL_PREFS_KEY, { area: 'local', baseRevision: base.revision, value: snapshot });
+		if (outcome.kind === 'committed') { reportStorageHealth(storageHealthOwner, null); return; }
+		reportStorageHealth(storageHealthOwner, outcome.kind === 'unknown' ? 'write-unknown' : 'write-error');
+		throw new Error('Tool preferences were not committed');
+	});
+	saveTail = operation;
+	await operation;
 }

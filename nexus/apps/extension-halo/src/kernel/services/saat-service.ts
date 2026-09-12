@@ -4,11 +4,13 @@
 import type { PluginMeta } from '../core/tool-registry-types';
 import type { ScriptRuntimeOwner } from '../core/script-runtime-ownership';
 import type { PluginType, ScriptType } from '../registry/taxonomy';
+import { conditionalLedgerWrite, readLedgerEntry } from '../core/safe-storage';
 
 const LOG_TAG = '[HALO:SaaT]';
 const SAAT_STORAGE_KEY = 'halo_saat_scripts';
 const USERSCRIPTS_STORAGE_KEY = 'halo_userscripts';
 const TOOL_PREFS_KEY = 'halo_tool_prefs';
+type ToolPrefsLike = Record<string, { enabled?: boolean }>;
 
 export interface SaaTPluginDescriptor {
 	id: string;
@@ -78,11 +80,16 @@ export async function isScriptToolEnabled(toolId: string): Promise<boolean> {
 
 export async function toggleScriptTool(tool: PluginMeta): Promise<boolean> {
 	try {
-		const result = await chrome.storage.local.get(TOOL_PREFS_KEY);
-		const prefs = result[TOOL_PREFS_KEY] || {};
+		const base = await readLedgerEntry<Record<string, { enabled?: boolean; lastUsed?: number }>>(TOOL_PREFS_KEY, { area: 'local' });
+		const prefs = base.value || {};
 		const current = prefs[tool.id]?.enabled ?? true;
-		prefs[tool.id] = { ...prefs[tool.id], enabled: !current, lastUsed: Date.now() };
-		await chrome.storage.local.set({ [TOOL_PREFS_KEY]: prefs });
+		const toggledAt = Date.now();
+		const apply = (value: unknown) => {
+			const latest = typeof value === 'object' && value !== null && !Array.isArray(value) ? value as Record<string, { enabled?: boolean; lastUsed?: number }> : {};
+			return { ...latest, [tool.id]: { ...latest[tool.id], enabled: !current, lastUsed: toggledAt } };
+		};
+		const outcome = await conditionalLedgerWrite(TOOL_PREFS_KEY, { area: 'local', baseRevision: base.revision, value: apply(prefs), remerge: apply });
+		if (outcome.kind !== 'committed') throw new Error('Script tool preference was not committed');
 		console.log(LOG_TAG, `Toggled ${tool.id} via Prefs:`, !current);
 		return !current;
 	} catch (e) {
@@ -151,9 +158,12 @@ export async function syncSaaTTools(tools: readonly SaaTPluginDescriptor[]): Pro
 	const saatTools = tools.filter((plugin) => plugin.pluginType === 'tool');
 	const packagedScripts = tools.filter((plugin) => plugin.pluginType !== 'tool');
 
-	const resultSaaT = await chrome.storage.local.get([SAAT_STORAGE_KEY, TOOL_PREFS_KEY]);
-	const saatState = resultSaaT[SAAT_STORAGE_KEY] || { scripts: [], globalEnabled: true };
-	const toolPrefs = resultSaaT[TOOL_PREFS_KEY] || {};
+	const [saatEntry, prefsEntry] = await Promise.all([
+		readLedgerEntry<{ scripts: SaaTScriptState[]; globalEnabled: boolean }>(SAAT_STORAGE_KEY, { area: 'local' }),
+		readLedgerEntry<ToolPrefsLike>(TOOL_PREFS_KEY, { area: 'local' }),
+	]);
+	const saatState = saatEntry.value || { scripts: [], globalEnabled: true };
+	const toolPrefs = prefsEntry.value || {};
 	let saatChanged = false;
 
 	for (const tool of saatTools) {
@@ -217,10 +227,13 @@ export async function syncSaaTTools(tools: readonly SaaTPluginDescriptor[]): Pro
 		&& saatTools.some((tool) => tool.id === script.saatToolId)
 	));
 	if (saatState.scripts.length !== preFilterCount) saatChanged = true;
-	if (saatChanged) await chrome.storage.local.set({ [SAAT_STORAGE_KEY]: saatState });
+	if (saatChanged) {
+		const outcome = await conditionalLedgerWrite(SAAT_STORAGE_KEY, { area: 'local', baseRevision: saatEntry.revision, value: saatState });
+		if (outcome.kind !== 'committed') throw new Error('SaaT state changed concurrently; synchronization will retry');
+	}
 
-	const resultUser = await chrome.storage.local.get(USERSCRIPTS_STORAGE_KEY);
-	const userState = resultUser[USERSCRIPTS_STORAGE_KEY] || { scripts: [], globalEnabled: true };
+	const userEntry = await readLedgerEntry<{ scripts: SaaTScriptState[]; globalEnabled: boolean }>(USERSCRIPTS_STORAGE_KEY, { area: 'local' });
+	const userState = userEntry.value || { scripts: [], globalEnabled: true };
 	let userChanged = false;
 
 	for (const scriptPlugin of packagedScripts) {
@@ -288,7 +301,10 @@ export async function syncSaaTTools(tools: readonly SaaTPluginDescriptor[]): Pro
 		);
 		userChanged = true;
 	}
-	if (userChanged) await chrome.storage.local.set({ [USERSCRIPTS_STORAGE_KEY]: userState });
+	if (userChanged) {
+		const outcome = await conditionalLedgerWrite(USERSCRIPTS_STORAGE_KEY, { area: 'local', baseRevision: userEntry.revision, value: userState });
+		if (outcome.kind !== 'committed') throw new Error('User script state changed concurrently; synchronization will retry');
+	}
 }
 
 let saatInitialized = false;
@@ -301,8 +317,8 @@ export function initSaaTService(): () => void {
 		void (async () => {
 			try {
 				const newPrefs = toolPrefsChange.newValue || {};
-				const result = await chrome.storage.local.get(SAAT_STORAGE_KEY);
-				const state = result[SAAT_STORAGE_KEY];
+				const base = await readLedgerEntry<{ scripts?: SaaTScriptState[] }>(SAAT_STORAGE_KEY, { area: 'local' });
+				const state = base.value;
 				if (!state?.scripts) return;
 				let changed = false;
 				const scripts = state.scripts as SaaTScriptState[];
@@ -315,7 +331,10 @@ export function initSaaTService(): () => void {
 						changed = true;
 					}
 				}
-				if (changed) await chrome.storage.local.set({ [SAAT_STORAGE_KEY]: state });
+				if (changed) {
+					const outcome = await conditionalLedgerWrite(SAAT_STORAGE_KEY, { area: 'local', baseRevision: base.revision, value: state });
+					if (outcome.kind !== 'committed') throw new Error('SaaT enabled-state projection was not committed');
+				}
 			} catch (e) {
 				console.warn(LOG_TAG, 'SaaT listener failed', e);
 			}

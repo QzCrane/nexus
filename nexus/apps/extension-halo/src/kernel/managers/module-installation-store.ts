@@ -8,6 +8,7 @@ import {
 	moduleInstallationStorageKey,
 } from '../core/module-installation-runtime';
 import { ALL_MODULES, OPTIONAL_MODULES } from '../registry/module-registry';
+import { conditionalLedgerRemove, conditionalLedgerWrite, readLedgerEntry } from '../core/safe-storage';
 
 const OPTIONAL_BY_ID = new Map(OPTIONAL_MODULES.map((module) => [module.id, module]));
 const MODULE_BY_ID = new Map(ALL_MODULES.map((module) => [module.id, module]));
@@ -51,6 +52,9 @@ export async function writePackagedModuleEnabled(id: string, enabled: boolean): 
 		throw new Error(`Unknown packaged module: ${id}`);
 	}
 	const key = moduleInstallationStorageKey(id);
-	if (enabled) await chrome.storage.local.remove(key);
-	else await chrome.storage.local.set({ [key]: false });
+	const base = await readLedgerEntry(key, { area: 'local' });
+	const outcome = enabled
+		? await conditionalLedgerRemove(key, { area: 'local', baseRevision: base.revision })
+		: await conditionalLedgerWrite(key, { area: 'local', baseRevision: base.revision, value: false });
+	if (outcome.kind !== 'committed') throw new Error(`Module installation state was not committed: ${id}`);
 }

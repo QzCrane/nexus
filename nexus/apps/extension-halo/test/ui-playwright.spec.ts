@@ -1,5 +1,6 @@
 import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
+import { launchPlaywrightPersistentContext } from '../../../scripts/browser-driver';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
@@ -443,7 +444,7 @@ test.describe('HALO smooth scroll in Chromium', () => {
 
 		try {
 			({ server, url: fixtureUrl } = await startFixtureServer());
-			context = await chromium.launchPersistentContext(profilePath, {
+			context = await launchPlaywrightPersistentContext(chromium, profilePath, {
 				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 				headless: true,
 				viewport: { width: 1_100, height: 700 },
@@ -452,6 +453,9 @@ test.describe('HALO smooth scroll in Chromium', () => {
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],
+			}, {
+				owner: 'apps/extension-halo/test/ui-playwright.spec.ts',
+				profile: { kind: 'temporary', prefix: 'halo-playwright-', isolated: true },
 			});
 
 			const background = await extensionWorker(context);

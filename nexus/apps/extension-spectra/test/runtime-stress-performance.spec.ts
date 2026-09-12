@@ -1,4 +1,4 @@
-import { launchBrowser } from './helpers/browser-driver';
+import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
 import { expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -142,7 +142,7 @@ test('records scaled inventory, full Popup rendering, and first-hotkey physical 
 				);
 			},
 		});
-		browser = await launchBrowser({
+		browser = await launchPuppeteerBrowser({
 			...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 			headless: true,
 			userDataDir: profileDir,
@@ -150,8 +150,11 @@ test('records scaled inventory, full Popup rendering, and first-hotkey physical 
 				`--disable-extensions-except=${EXTENSION_DIR}`,
 				`--load-extension=${EXTENSION_DIR}`,
 				'--no-sandbox',
-				'--disable-setuid-sandbox',
-			],
+			'--disable-setuid-sandbox',
+		],
+		}, {
+			owner: 'apps/extension-spectra/test/runtime-stress-performance.spec.ts',
+			profile: { kind: 'temporary', prefix: 'spectra-runtime-stress-', isolated: true },
 		});
 		const browserVersion = await browser.version();
 		if (EXPECTED_CHROME) expect(browserVersion).toContain(EXPECTED_CHROME);
@@ -255,6 +258,12 @@ test('records scaled inventory, full Popup rendering, and first-hotkey physical 
 			product: 'spectra',
 			browser: { name: 'Chrome', version: browserVersion },
 			samples,
+			profile: {
+				id: 'spectra-media-tabs20',
+				scenario: 'twenty media tabs inventory popup rendering and first physical hotkey',
+				isolation: 'single-profile-repeated-operation',
+				businessAssertions: ['inventory-exact', 'cards20-visible', 'hotkey-physical-readback', 'lazy-runtime-preserved'],
+			},
 			outputPath: OUTPUT_PATH,
 			identity: runtimePerformanceIdentityFromEnvironment(),
 		});

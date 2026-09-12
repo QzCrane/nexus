@@ -14,6 +14,9 @@ const STATE_ID = /^[A-Za-z0-9]+(?:[._-][A-Za-z0-9]+)*$/u;
 interface VisualState {
 	id: string;
 	product: 'halo' | 'spectra';
+	scenario: 'data' | 'error' | 'dynamic' | 'permission-denied';
+	assertions: string[];
+	focusTarget: string;
 	captureTest: string;
 	verifyScript: string;
 	updateScript: string;
@@ -29,7 +32,7 @@ interface VisualState {
 }
 
 interface VisualPolicy {
-	schemaVersion: 1;
+	schemaVersion: 2;
 	phase: 'baseline-required' | 'enforced';
 	browserOwner: string;
 	comparison: 'exact-png-sha256';
@@ -63,7 +66,7 @@ function normalizeRelative(path: string): string {
 export function checkVisualRegressionPolicy(
 	policy: VisualPolicy = readJson<VisualPolicy>(policyPath),
 ): void {
-	if (policy.schemaVersion !== 1) throw new Error('visual regression policy schemaVersion must be 1');
+	if (policy.schemaVersion !== 2) throw new Error('visual regression policy schemaVersion must be 2');
 	if (policy.phase !== 'baseline-required' && policy.phase !== 'enforced') {
 		throw new Error(`visual regression policy phase is invalid: ${String(policy.phase)}`);
 	}
@@ -113,15 +116,31 @@ export function checkVisualRegressionPolicy(
 	}
 
 	const ids = new Set<string>();
+	const products = new Set<string>();
+	const scenarios = new Set<string>();
+	const locales = new Set<string>();
+	const themes = new Set<string>();
+	let hasNarrowState = false;
 	for (const state of policy.states) {
 		if (!state || !STATE_ID.test(state.id)) throw new Error(`invalid visual state id: ${String(state?.id)}`);
 		if (ids.has(state.id)) throw new Error(`duplicate visual state id: ${state.id}`);
 		ids.add(state.id);
 		if (state.product !== 'halo' && state.product !== 'spectra') throw new Error(`${state.id}: invalid product`);
+		products.add(state.product);
+		if (!['data', 'error', 'dynamic', 'permission-denied'].includes(state.scenario)) throw new Error(`${state.id}: invalid representative scenario`);
+		scenarios.add(state.scenario);
+		if (!Array.isArray(state.assertions) || state.assertions.length < 2
+			|| state.assertions.some((assertion) => !STATE_ID.test(assertion))
+			|| new Set(state.assertions).size !== state.assertions.length || !STATE_ID.test(state.focusTarget)) {
+			throw new Error(`${state.id}: representative browser assertions are missing`);
+		}
 		positiveInteger(state.width, `${state.id}.width`);
 		positiveInteger(state.height, `${state.id}.height`);
 		if (!state.locale?.trim()) throw new Error(`${state.id}: locale is required`);
+		locales.add(state.locale);
 		if (state.theme !== 'dark' && state.theme !== 'light') throw new Error(`${state.id}: theme must be dark/light`);
+		themes.add(state.theme);
+		if (state.width <= 320) hasNarrowState = true;
 		if (state.reducedMotion !== true) {
 			throw new Error(`${state.id}: baseline capture must disable motion for deterministic evidence`);
 		}
@@ -165,6 +184,10 @@ export function checkVisualRegressionPolicy(
 			String(state.width),
 			String(state.height),
 			state.theme,
+			state.id,
+			state.scenario,
+			state.focusTarget,
+			...state.assertions,
 		]) {
 			if (!capture.includes(marker)) throw new Error(`${state.id}: capture owner is missing deterministic marker ${marker}`);
 		}
@@ -187,9 +210,14 @@ export function checkVisualRegressionPolicy(
 			throw new Error(`${state.id}: baseline digest drift ${actual} != ${state.baselineSha256}`);
 		}
 	}
+	if (products.size !== 2 || !['data', 'error', 'dynamic', 'permission-denied'].every((value) => scenarios.has(value))
+		|| ![...locales].some((locale) => locale.toLowerCase().startsWith('zh'))
+		|| themes.size !== 2 || !hasNarrowState) {
+		throw new Error('visual states do not provide representative pairwise product/data/error/dynamic/permission, Chinese/light and 320px coverage');
+	}
 
 	console.log(
-		`✓ Visual regression policy: phase=${policy.phase}; states=${policy.states.length}; comparison=${policy.comparison}; execution=${policy.verification.workspaceScript}`,
+		`✓ Visual regression registration: phase=${policy.phase}; states=${policy.states.length}; comparison=${policy.comparison}; execution=${policy.verification.workspaceScript}`,
 	);
 }
 

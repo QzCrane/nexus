@@ -8,42 +8,40 @@ import type { TabItem as TabItemType, TabFilter } from './types';
 import { getTabs, activateTab, closeTab, setupTabListeners } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 import { TabItem } from './TabItem';
+
+const tabFilterCodec: ToolStateCodec<TabFilter> = {
+	decode: (value) => value === 'all' || value === 'audible' || value === 'pinned'
+		? { kind: 'valid', value } : { kind: 'invalid', reason: 'Tab filter is invalid.' },
+	encode: (value) => value,
+};
 
 export const TabsPanel: React.FC = () => {
     const { t } = useTranslation();
     const [tabs, setTabs] = useState<TabItemType[]>([]);
     const [search, setSearch] = useToolState<string>('tabs-search', '');
-    const [filter, setFilter] = useToolState<TabFilter>('tabs-filter', 'all');
+	const [filter, setFilter, , filterRecovery] = useToolState<TabFilter>('tabs-filter', 'all', { codec: tabFilterCodec });
 
-    const [loading, setLoading] = useState(true);
+	const task = useOwnedAsyncTask();
 
     useEffect(() => {
-        let disposed = false;
-        let requestRevision = 0;
         const refreshTabs = (): void => {
-            const revision = ++requestRevision;
-            void getTabs()
-                .then((list) => {
-                    if (!disposed && revision === requestRevision) setTabs(list);
-                })
-                .catch((error: unknown) => {
-                    console.error('[HALO:Tabs] Failed to get tabs', error);
-                })
-                .finally(() => {
-                    if (!disposed && revision === requestRevision) setLoading(false);
-                });
+			void task.run(() => getTabs()).then((outcome) => {
+				if (outcome.kind === 'succeeded') setTabs(outcome.value);
+			});
         };
 
         refreshTabs();
         const cleanup = setupTabListeners(refreshTabs);
         return () => {
-            disposed = true;
-            requestRevision++;
+			task.cancel();
             cleanup();
         };
-    }, []);
+	}, [task.run, task.cancel]);
 
     const filteredTabs = useMemo(() => {
         return tabs.filter(tab => {
@@ -60,25 +58,20 @@ export const TabsPanel: React.FC = () => {
 
     const handleClose = async (e: React.MouseEvent, id: number) => {
         e.stopPropagation();
-        try {
-            await closeTab(id);
+		const outcome = await task.run(() => closeTab(id));
+		if (outcome.kind === 'succeeded') {
             // Optimistic update
             setTabs(prev => prev.filter(t => t.id !== id));
-        } catch (error: unknown) {
-            console.error(`[HALO:Tabs] Failed to close tab ${id}`, error);
         }
     };
 
     const handleActivate = async (id: number) => {
-        try {
-            await activateTab(id);
-        } catch (error: unknown) {
-            console.error(`[HALO:Tabs] Failed to activate tab ${id}`, error);
-        }
+		await task.run(() => activateTab(id));
     };
 
     return (
         <div style={styles.container}>
+			<StorageRecoveryActions recovery={filterRecovery} emptyValue="all" exportName="halo-tabs-filter-damaged.json" />
             <input
                 style={styles.searchInput}
                 placeholder={t('tabsPanel.searchPlaceholder')}
@@ -120,7 +113,7 @@ export const TabsPanel: React.FC = () => {
             </div>
 
             <div style={styles.list}>
-                {filteredTabs.length === 0 && !loading && (
+				{filteredTabs.length === 0 && task.phase !== 'running' && (
                     <div style={styles.empty}>{t('tabsPanel.noTabs')}</div>
                 )}
                 {filteredTabs.map(tab => (
@@ -132,7 +125,8 @@ export const TabsPanel: React.FC = () => {
                         closeLabel={t('tabsPanel.close')}
                     />
                 ))}
-            </div>
+			</div>
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
         </div>
     );
 };

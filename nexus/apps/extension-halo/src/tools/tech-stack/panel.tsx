@@ -1,30 +1,29 @@
 // goal: Tech Stack panel UI - detect and display website technologies
 
 import type React from 'react';
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { TechDetection, TechCategory } from './types';
-import { detectTechStack, CATEGORY_LABELS } from './core';
+import { CATEGORY_LABELS, detectTechStack, techDetectionCodec } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 export const TechStackPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [techs, setTechs] = useToolState<TechDetection[]>('tech-stack', []);
-	const [loading, setLoading] = useState(false);
+	const [techs, setTechs, , techRecovery] = useToolState<TechDetection[]>('tech-stack', [], { codec: techDetectionCodec });
 	const [scanned, setScanned] = useToolState<boolean>('tech-stack-scanned', false);
+	const task = useOwnedAsyncTask();
 
 
 	// Scan page
 	const handleScan = useCallback(async () => {
-		setLoading(true);
-		const results = await detectTechStack();
-		setTechs(results);
-		setLoading(false);
-		setScanned(true);
-	}, [setTechs, setScanned]);
+		const outcome = await task.run(() => detectTechStack());
+		if (outcome.kind === 'succeeded') { setTechs(outcome.value); setScanned(true); }
+	}, [setTechs, setScanned, task.run]);
 
 	// Group by category
 	const grouped = techs.reduce<Record<TechCategory, TechDetection[]>>((acc, tech) => {
@@ -37,10 +36,12 @@ export const TechStackPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={techRecovery} emptyValue={[]} exportName="halo-tech-scan-damaged.json" />
 			{/* Scan Button */}
-			<button type="button" style={styles.btn} onClick={handleScan} disabled={loading}>
-				{loading ? '⏳' : '🔍'} {t('techStack.scan')}
+			<button type="button" style={styles.btn} onClick={handleScan} disabled={task.phase === 'running'}>
+				{task.phase === 'running' ? '⏳' : '🔍'} {t('techStack.scan')}
 			</button>
+			{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
 
 			{/* Summary */}
 			{scanned && (

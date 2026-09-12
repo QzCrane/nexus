@@ -1,6 +1,7 @@
 // goal: Turn repeated browser-runtime measurements into exact-head p50/p95/p99 evidence.
 // inv: finite non-negative samples, one unit per metric, >=20 samples for percentile evidence.
 
+import { randomUUID } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { arch, platform, release as osRelease } from 'node:os';
@@ -30,10 +31,19 @@ export interface RuntimePerformanceIdentity {
 	tree: string;
 }
 
+export interface RuntimePerformanceProfile {
+	id: string;
+	scenario: string;
+	isolation: 'fresh-profile-per-sample' | 'single-profile-repeated-operation' | 'single-profile-long-session';
+	businessAssertions: string[];
+}
+
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspaceDir = dirname(scriptDir);
 const repositoryRoot = dirname(workspaceDir);
 const MIN_PERCENTILE_SAMPLES = 20;
+const RUN_ID_PATTERN = /^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,62}[A-Za-z0-9])?$/u;
+const processRunId = `${Date.now()}-${process.pid}-${randomUUID()}`;
 
 function canonicalNumber(value: number): number {
 	return Number(value.toFixed(3));
@@ -136,32 +146,60 @@ export function runtimePerformanceIdentityFromEnvironment(
 export function runtimePerformanceOutputPath(
 	filename: string,
 	environment: NodeJS.ProcessEnv = process.env,
+	runId = runtimePerformanceRunId(environment),
 ): string {
 	if (!filename || filename.includes('/') || filename.includes('\\') || filename === '.' || filename === '..') {
 		throw new Error('runtime performance output filename must be one local file name');
 	}
 	const override = environment.NEXUS_PERFORMANCE_OUTPUT_DIR?.trim();
 	const directory = override ? resolve(override) : resolve(repositoryRoot, 'artifacts', 'performance');
-	return resolve(directory, filename);
+	return resolve(directory, runId, filename);
+}
+
+export function runtimePerformanceRunId(environment: NodeJS.ProcessEnv = process.env): string {
+	const value = environment.NEXUS_PERFORMANCE_RUN_ID?.trim() || processRunId;
+	if (!RUN_ID_PATTERN.test(value)) {
+		throw new Error('NEXUS_PERFORMANCE_RUN_ID must be a portable 1..64 character run identity');
+	}
+	return value;
+}
+
+function validateProfile(profile: RuntimePerformanceProfile): RuntimePerformanceProfile {
+	if (!RUN_ID_PATTERN.test(profile.id) || !profile.scenario.trim()
+		|| !['fresh-profile-per-sample', 'single-profile-repeated-operation', 'single-profile-long-session'].includes(profile.isolation)
+		|| !Array.isArray(profile.businessAssertions) || profile.businessAssertions.length === 0
+		|| profile.businessAssertions.some((assertion) => !RUN_ID_PATTERN.test(assertion))
+		|| new Set(profile.businessAssertions).size !== profile.businessAssertions.length) {
+		throw new Error('runtime performance profile is malformed');
+	}
+	return profile;
 }
 
 export function buildRuntimePerformanceEvidence({
 	product,
 	browser,
 	samples,
+	profile,
+	runId = runtimePerformanceRunId(),
 	recordedAt = new Date().toISOString(),
 	identity = gitIdentity(),
 }: {
 	product: 'halo' | 'spectra';
 	browser: { name: string; version: string };
 	samples: readonly RuntimePerformanceSample[];
+	profile: RuntimePerformanceProfile;
+	runId?: string;
 	recordedAt?: string;
 	identity?: RuntimePerformanceIdentity;
 }) {
 	const exactIdentity = assertIdentity(identity);
+	const exactProfile = validateProfile(profile);
+	if (!RUN_ID_PATTERN.test(runId)) throw new Error('runtime performance run identity is invalid');
+	const rawSamples = samples.map((sample, sequence) => ({ ...sample, sequence }));
 	return {
 		schemaVersion: 1,
 		recordedAt,
+		runId,
 		product,
 		head: exactIdentity.head,
 		tree: exactIdentity.tree,
@@ -173,6 +211,8 @@ export function buildRuntimePerformanceEvidence({
 			node: process.versions.node,
 			browser,
 		},
+		profile: exactProfile,
+		rawSamples,
 		metrics: summarizeRuntimePerformance(samples),
 	};
 }
@@ -181,6 +221,8 @@ export function writeRuntimePerformanceEvidence({
 	product,
 	browser,
 	samples,
+	profile,
+	runId = runtimePerformanceRunId(),
 	outputPath,
 	identity,
 	recordedAt,
@@ -188,6 +230,8 @@ export function writeRuntimePerformanceEvidence({
 	product: 'halo' | 'spectra';
 	browser: { name: string; version: string };
 	samples: readonly RuntimePerformanceSample[];
+	profile: RuntimePerformanceProfile;
+	runId?: string;
 	outputPath?: string;
 	identity?: RuntimePerformanceIdentity;
 	recordedAt?: string;
@@ -196,12 +240,14 @@ export function writeRuntimePerformanceEvidence({
 		product,
 		browser,
 		samples,
+		profile,
+		runId,
 		...(identity ? { identity } : {}),
 		...(recordedAt ? { recordedAt } : {}),
 	});
-	const path = outputPath ?? runtimePerformanceOutputPath(`${product}.${evidence.head}.json`);
+	const path = outputPath ?? runtimePerformanceOutputPath(`${product}.${evidence.head}.json`, process.env, runId);
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(evidence, null, 2)}\n`);
+	writeFileSync(path, `${JSON.stringify(evidence, null, 2)}\n`, { flag: 'wx' });
 	console.log(`✓ Runtime performance evidence: ${relative(repositoryRoot, path).replaceAll('\\', '/')}`);
 	return path;
 }

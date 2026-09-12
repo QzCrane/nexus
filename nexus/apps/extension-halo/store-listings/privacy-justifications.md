@@ -26,6 +26,14 @@ Saves extension settings, enabled tools, language, user-created tool state, and 
 
 Allows a user-invoked tool to inspect or act on the currently selected tab without granting a separate persistent host permission for that individual operation. Restricted pages remain inaccessible.
 
+### `alarms`
+
+Wakes HALO to reconcile a user-started Timer or Pomodoro deadline while its panel is closed or the extension service worker was suspended. Deadlines, revisions and pending completion records stay in local extension storage. Browser and device sleep can delay delivery.
+
+### `notifications`
+
+Shows a local completion notification for a user-started Timer or Pomodoro. A stable completion identity makes retries replace the same visible notification. Operating-system notification settings can suppress it; this permission creates no network traffic.
+
 ### `scripting`
 
 Runs locally bundled inspection and interaction functions in the user-selected page. HALO does not use it to download or execute updates to extension-owned code.

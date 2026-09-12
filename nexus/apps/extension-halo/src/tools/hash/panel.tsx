@@ -1,13 +1,14 @@
 // goal: Hash panel - shows ALL algorithms + HMAC + Verification
 
 import type React from 'react';
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { generateHash, generateHMAC, verifyHash } from './core';
 import { ALGORITHMS, } from './types';
 import { styles } from './panel.styles';
 import { useOwnedClipboardCopy, useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
 
 
 export const HashPanel: React.FC = () => {
@@ -16,8 +17,8 @@ export const HashPanel: React.FC = () => {
 	const [hmacKey, setHmacKey] = useToolState<string>('hash-hmac', '');
 	const [expectedHash, setExpectedHash] = useToolState<string>('hash-verify', '');
 	const [uppercase, setUppercase] = useToolState<boolean>('hash-upper', false);
-	const [loading, setLoading] = useState(false);
-	const calculationRevision = useRef(0);
+	const calculationTask = useOwnedAsyncTask();
+	const verificationTask = useOwnedAsyncTask();
 
 	const [hashes, setHashes] = useState<Record<string, string>>({});
 	const [verifyResult, setVerifyResult] = useState<{ match: boolean; algorithm?: string } | null>(null);
@@ -27,69 +28,48 @@ export const HashPanel: React.FC = () => {
 		useOwnedClipboardCopy<string>();
 
 	useEffect(() => {
-		let disposed = false;
-		const revision = ++calculationRevision.current;
 		setCalculationFailed(false);
 		if (!input.trim()) {
+			calculationTask.cancel();
 			setHashes({});
-			setLoading(false);
-			return () => {
-				disposed = true;
-				calculationRevision.current += 1;
-			};
+			return;
 		}
-		setLoading(true);
 		const timer = setTimeout(() => {
-			void Promise.all(ALGORITHMS.map(async (algorithm) => {
+			void calculationTask.run(() => Promise.all(ALGORITHMS.map(async (algorithm) => {
 				const hash = hmacKey && algorithm !== 'MD5'
 					? await generateHMAC(input, hmacKey, algorithm)
 					: await generateHash(input, algorithm);
 				return [algorithm, hash] as const;
-			}))
-				.then((entries) => {
-					if (disposed || calculationRevision.current !== revision) return;
-					setHashes(Object.fromEntries(entries));
-				})
-				.catch(() => {
-					if (disposed || calculationRevision.current !== revision) return;
+			}))).then((outcome) => {
+				if (outcome.kind === 'succeeded') setHashes(Object.fromEntries(outcome.value));
+				else if (outcome.kind === 'failed') {
 					setHashes({});
 					setCalculationFailed(true);
-				})
-				.finally(() => {
-					if (!disposed && calculationRevision.current === revision) {
-						setLoading(false);
-					}
-				});
+				}
+			});
 		}, 150);
 		return () => {
-			disposed = true;
 			clearTimeout(timer);
-			calculationRevision.current += 1;
+			calculationTask.cancel();
 		};
-	}, [input, hmacKey]);
+	}, [input, hmacKey, calculationTask.run, calculationTask.cancel]);
 
 	useEffect(() => {
-		let disposed = false;
 		setVerificationFailed(false);
 		if (!input || !expectedHash) {
+			verificationTask.cancel();
 			setVerifyResult(null);
-			return () => {
-				disposed = true;
-			};
+			return;
 		}
-		void verifyHash(input, expectedHash)
-			.then((result) => {
-				if (!disposed) setVerifyResult(result);
-			})
-			.catch(() => {
-				if (disposed) return;
+		void verificationTask.run(() => verifyHash(input, expectedHash)).then((outcome) => {
+			if (outcome.kind === 'succeeded') setVerifyResult(outcome.value);
+			else if (outcome.kind === 'failed') {
 				setVerifyResult(null);
 				setVerificationFailed(true);
-			});
-		return () => {
-			disposed = true;
-		};
-	}, [input, expectedHash]);
+			}
+		});
+		return verificationTask.cancel;
+	}, [input, expectedHash, verificationTask.run, verificationTask.cancel]);
 
 	const copyHash = (algorithm: string, value: string): void => {
 		void copy(
@@ -110,14 +90,14 @@ export const HashPanel: React.FC = () => {
 				</div>
 			</Card>
 
-			<div style={styles.resultsGrid} aria-busy={loading}>
+			<div style={styles.resultsGrid} aria-busy={calculationTask.phase === 'running'}>
 				{ALGORITHMS.map(algo => (
 					<div key={algo} style={styles.resultRow}>
 						<span style={styles.algoLabel}>{algo}</span>
 						<span style={styles.hashValue}>{uppercase ? hashes[algo]?.toUpperCase() : hashes[algo]}</span>
 						<button
 							type="button"
-							disabled={loading || !hashes[algo]}
+							disabled={calculationTask.phase === 'running' || !hashes[algo]}
 							style={{ ...styles.btn, ...(copiedAlgo === algo ? { background: 'var(--halo-accent)', color: '#fff' } : {}) }}
 							onClick={() => copyHash(algo, hashes[algo] || '')}
 						>
@@ -126,7 +106,7 @@ export const HashPanel: React.FC = () => {
 					</div>
 				))}
 			</div>
-			{(calculationFailed || verificationFailed || copyFailed) && (
+			{(calculationFailed || verificationFailed || copyFailed || calculationTask.error !== null || verificationTask.error !== null) && (
 				<div role="status" style={{ color: 'var(--halo-error, #ef4444)', fontSize: '12px' }}>
 					{t('hash.operationFailed', {
 						defaultValue: 'Hash operation failed. Check the input and clipboard permission.',

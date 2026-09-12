@@ -11,6 +11,10 @@ export const styles: Record<string, React.CSSProperties> = {
 	},
 	active: { background: 'var(--halo-accent)', color: '#fff' },
 	inactive: { background: 'var(--halo-bg-tertiary)', color: 'var(--halo-text-muted)' },
+	boundary: {
+		padding: '8px 10px', borderRadius: '6px', fontSize: '11px', lineHeight: 1.4,
+		background: 'var(--halo-bg-secondary)', color: 'var(--halo-text-muted)',
+	},
 	textarea: {
 		width: '100%', minHeight: '200px', padding: '12px', resize: 'vertical',
 		background: 'var(--halo-bg-tertiary)', border: '1px solid var(--halo-border)',

@@ -26,10 +26,13 @@ export function createRenderFn(params: RenderParams): () => void {
     const config = state.config;
     const volumePresentation = resolveVolumePresentation(state);
     const disabled = !config.enabled;
+		const controlUnknown = state.controlSnapshotKnown === false;
     const muted = config.muted;
 
     ui.card.classList.toggle('disabled', disabled);
     ui.card.classList.toggle('muted', muted);
+		ui.card.dataset.controlCoverage = controlUnknown ? 'unknown' : 'known';
+		ui.card.dataset.lifecycleCoverage = state.lifecycleSnapshotKnown === false ? 'unknown' : 'known';
 
     ui.mask.classList.toggle('hidden', !disabled);
 		ui.mask.hidden = !disabled;
@@ -37,8 +40,8 @@ export function createRenderFn(params: RenderParams): () => void {
 		ui.mask.toggleAttribute('inert', !disabled);
 		ui.mask.tabIndex = disabled ? 0 : -1;
 		const controls = ui.card.querySelector<HTMLElement>('.control-stack');
-		controls?.toggleAttribute('inert', disabled);
-		controls?.setAttribute('aria-hidden', String(disabled));
+		controls?.toggleAttribute('inert', disabled || controlUnknown);
+		controls?.setAttribute('aria-hidden', String(disabled || controlUnknown));
     ui.enable.checked = config.enabled;
 
     // rule: always update slider to reflect actual state, but preserve user's dragging position
@@ -56,7 +59,7 @@ export function createRenderFn(params: RenderParams): () => void {
     }
     volumeTransitionWasPending = volumeTransitionPending;
     ui.fill.style.width = `${(newSliderValue / AUDIO_UI.MAX_VOLUME) * 100}%`;
-    ui.val.innerText = muted ? 'MUTE' : `${formatVolume(newSliderValue)}%`;
+    ui.val.innerText = controlUnknown ? '—' : muted ? 'MUTE' : `${formatVolume(newSliderValue)}%`;
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));
 

@@ -32,10 +32,31 @@
       "publicProjection": false
     },
     {
+      "path": "scripts/browser-driver.ts",
+      "packagePath": "package.json",
+      "marker": "ts.createSourceFile",
+      "role": "browser launch evidence token classification",
+      "publicProjection": false
+    },
+    {
       "path": "scripts/check-direct-dependencies.ts",
       "packagePath": "package.json",
       "marker": "ts.createSourceFile",
       "role": "direct dependency source-import classification",
+      "publicProjection": false
+    },
+    {
+      "path": "scripts/check-halo-storage-boundaries.spec.ts",
+      "packagePath": "package.json",
+      "marker": "ts.createSourceFile",
+      "role": "HALO storage boundary audit harness",
+      "publicProjection": false
+    },
+    {
+      "path": "scripts/check-halo-storage-boundaries.ts",
+      "packagePath": "package.json",
+      "marker": "ts.createProgram",
+      "role": "HALO storage boundary source-import audit",
       "publicProjection": false
     },
     {

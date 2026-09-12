@@ -1,4 +1,4 @@
-import { launchBrowser } from './helpers/browser-driver';
+import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
@@ -22,7 +22,7 @@ let extensionId = '';
 
 beforeAll(async () => {
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-accessibility-'));
-	browser = await launchBrowser({
+	browser = await launchPuppeteerBrowser({
 		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 		headless: true,
 		userDataDir: profileDir,
@@ -30,8 +30,11 @@ beforeAll(async () => {
 			`--disable-extensions-except=${EXTENSION_DIR}`,
 			`--load-extension=${EXTENSION_DIR}`,
 			'--no-sandbox',
-			'--disable-setuid-sandbox',
-		],
+		'--disable-setuid-sandbox',
+	],
+	}, {
+		owner: 'apps/extension-spectra/test/accessibility-chrome.spec.ts',
+		profile: { kind: 'temporary', prefix: 'spectra-accessibility-', isolated: true },
 	});
 	const browserVersion = await browser.version();
 	if (EXPECTED_CHROME) expect(browserVersion).toContain(EXPECTED_CHROME);

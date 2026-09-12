@@ -303,7 +303,11 @@
       "id": "image-tools",
       "stage": "legacy",
       "surfaces": [
-        "panel"
+        "panel",
+        "extension-worker"
+      ],
+      "extensionWorkers": [
+        { "entry": "src/tools/image-tools/worker.ts", "output": "workers/image-tools.js" }
       ],
       "reason": "Preserve the executable image-tools surface from the frozen main migration baseline without claiming ready/beta maturity."
     },
@@ -327,7 +331,11 @@
       "id": "json-path",
       "stage": "legacy",
       "surfaces": [
-        "panel"
+        "panel",
+        "extension-worker"
+      ],
+      "extensionWorkers": [
+        { "entry": "src/tools/json-path/worker.ts", "output": "workers/json-path.js" }
       ],
       "reason": "Preserve the executable json-path surface from the frozen main migration baseline without claiming ready/beta maturity."
     },
@@ -441,7 +449,11 @@
       "id": "pdf",
       "stage": "legacy",
       "surfaces": [
-        "panel"
+        "panel",
+        "extension-worker"
+      ],
+      "extensionWorkers": [
+        { "entry": "src/tools/pdf/worker.ts", "output": "workers/pdf.js" }
       ],
       "reason": "Preserve the executable pdf surface from the frozen main migration baseline without claiming ready/beta maturity."
     },
@@ -506,7 +518,11 @@
       "id": "regex",
       "stage": "legacy",
       "surfaces": [
-        "panel"
+        "panel",
+        "extension-worker"
+      ],
+      "extensionWorkers": [
+        { "entry": "src/tools/regex/worker.ts", "output": "workers/regex.js" }
       ],
       "reason": "Preserve the executable regex surface from the frozen main migration baseline without claiming ready/beta maturity."
     },

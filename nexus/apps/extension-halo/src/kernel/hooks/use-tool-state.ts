@@ -5,6 +5,9 @@ import { conditionalLedgerWrite, ledgerRevisionKey } from '../core/safe-storage'
 import type { LedgerWriteOutcome } from '../core/safe-storage';
 import { reportStorageHealth } from '../core/storage-health';
 import { subscribeHaloStorageChanges } from '../core/storage-change-bus';
+import { admitStorageGrowth, type StorageQuotaPolicy } from '../core/storage-quota';
+import type { ToolStateCodec, ToolStateRecovery } from '../core/storage-codec';
+export type { ToolStateCodec, ToolStateDecode, ToolStateRecovery } from '../core/storage-codec';
 
 export interface UseToolStateOptions<T = unknown> {
 	/** Storage area: 'local' (default) or 'session' */
@@ -15,6 +18,12 @@ export interface UseToolStateOptions<T = unknown> {
 	storageKey?: string;
 	/** Normalize values at every storage and local-update boundary */
 	normalize?: (value: unknown) => T;
+	/** Domain-owned versioned persistence contract for structured state. */
+	codec?: ToolStateCodec<T>;
+	/** Native quota-relative budget for this domain-owned key. */
+	quota?: StorageQuotaPolicy;
+	/** Domain projection of each user-owned item's encoded bytes. */
+	quotaItemBytes?: (value: T) => readonly number[];
 }
 
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
@@ -370,24 +379,43 @@ export function useToolState<T>(
 		debounceMs = 300,
 		storageKey: customKey,
 		normalize,
+		codec,
+		quota,
+		quotaItemBytes,
 	} = options;
+	if (codec && normalize) throw new TypeError('useToolState accepts either a domain codec or a legacy normalizer, not both');
 
 	const getInitialValue = useCallback(() => {
 		return typeof initialState === 'function' ? (initialState as () => T)() : initialState;
 	}, [initialState]);
 	const normalizeValue = useCallback((value: unknown, fallback: T): T => {
+		if (codec) {
+			const decoded = codec.decode(value);
+			if (decoded.kind === 'invalid') throw new TypeError(decoded.reason);
+			return decoded.value;
+		}
 		if (!normalize) return normalizeUnschematizedToolState(value, fallback);
 		const normalized = normalize(value);
 		return isJsonRoundTripStorageValue(normalized)
 			? normalized
 			: normalizeUnschematizedToolState(fallback, fallback);
-	}, [normalize]);
+	}, [codec, normalize]);
+	const encodeValue = useCallback((value: T): unknown => {
+		if (!codec) return value;
+		const encoded = codec.encode(value);
+		const decoded = codec.decode(encoded);
+		if (decoded.kind === 'invalid') throw new TypeError(decoded.reason);
+		return encoded;
+	}, [codec]);
 
 	const [state, setState] = useState<T>(() => {
 		const initialValue = getInitialValue();
 		return normalizeValue(initialValue, initialValue);
 	});
 	const [isReady, setIsReady] = useState(false);
+	const [invalid, setInvalid] = useState<ToolStateRecovery<T>['invalid']>(null);
+	const [persistence, setPersistence] = useState<ToolStateRecovery<T>['persistence']>('loading');
+	const [lastConfirmedRevision, setLastConfirmedRevision] = useState<number | null>(null);
 	const stateRef = useRef(state);
 	const storageKey = customKey ?? `halo_tool_state_${toolId}`;
 	const authorityIdentity = `${area}\u0000${storageKey}`;
@@ -418,6 +446,10 @@ export function useToolState<T>(
 	useEffect(() => { initialValueRef.current = getInitialValue; }, [getInitialValue]);
 	const normalizeValueRef = useRef(normalizeValue);
 	useEffect(() => { normalizeValueRef.current = normalizeValue; }, [normalizeValue]);
+	const quotaRef = useRef(quota);
+	quotaRef.current = quota;
+	const quotaItemBytesRef = useRef(quotaItemBytes);
+	quotaItemBytesRef.current = quotaItemBytes;
 
 	const persistNextState = useCallback(function persistNextForEpoch(): void {
 		if (!authorityEpoch.hydrated) return;
@@ -425,33 +457,61 @@ export function useToolState<T>(
 		if (!request) return;
 		void (async () => {
 			let outcome: LedgerWriteOutcome;
+			let rejectionMessage: string | null = null;
 			try {
+				const encoded = encodeValue(request.value);
+				const quotaPolicy = quotaRef.current;
+				if (quotaPolicy && !await admitStorageGrowth(
+					area,
+					[storageKey, ledgerRevisionKey(storageKey)],
+					{ [storageKey]: encoded, [ledgerRevisionKey(storageKey)]: authorityEpoch.baseRevision + 1 },
+					quotaPolicy,
+					quotaItemBytesRef.current?.(request.value),
+				)) {
+					throw new Error('The storage change exceeds its domain or shared reserve budget.');
+				}
 				outcome = await conditionalLedgerWrite(storageKey, {
 					area,
 					baseRevision: authorityEpoch.baseRevision,
-					value: request.value,
-					remerge: (_current, attempt) => {
+					value: encoded,
+					remerge: (current, attempt) => {
 						// Concede to the stored value unless a newer local edit exists;
 						// then revalidate against the fresh revision with that intent.
 						if (attempt >= 2 || storageValuesEqual(stateRef.current, request.value)) return null;
-						try { return normalizeValueRef.current(stateRef.current, request.value); }
+						try {
+							normalizeValueRef.current(current, request.value);
+							return encodeValue(normalizeValueRef.current(stateRef.current, request.value));
+						}
 						catch { return null; }
 					},
 				});
-			} catch {
+			} catch (error) {
+				rejectionMessage = error instanceof Error ? error.message : null;
 				outcome = { kind: 'rejected' };
 			}
 			if (outcome.kind === 'committed') {
 				authorityEpoch.baseRevision = outcome.revision;
 				authorityEpoch.revisionGeneration++;
 				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, null));
+				authorityEpoch.lifecycle.runIfAccepting(() => { setPersistence('saved'); setLastConfirmedRevision(outcome.revision); });
 			} else if (outcome.kind === 'external') {
 				authorityEpoch.baseRevision = outcome.revision;
 				authorityEpoch.revisionGeneration++;
 				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, null));
+				authorityEpoch.lifecycle.runIfAccepting(() => { setPersistence('saved'); setLastConfirmedRevision(outcome.revision); });
 				let stored: T | null = null;
-				try { stored = normalizeValueRef.current(outcome.value, stateRef.current); }
-				catch { stored = null; }
+				try {
+					const fallback = initialValueRef.current();
+					stored = normalizeValueRef.current(outcome.value === undefined ? fallback : outcome.value, fallback);
+				}
+				catch {
+					stored = null;
+					authorityEpoch.lifecycle.runIfAccepting(() => {
+						setInvalid({ raw: outcome.value, reason: 'Stored data does not match its domain contract.' });
+						setPersistence('invalid');
+						reportStorageHealth(authorityEpoch.healthOwner, 'invalid-data');
+					});
+				}
 				if (stored !== null) {
 					const decision = pendingAuthority.observeStorage(stored);
 					if (decision.kind === 'external') {
@@ -461,22 +521,24 @@ export function useToolState<T>(
 				}
 			} else if (outcome.kind === 'unknown') {
 				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(authorityEpoch.healthOwner, 'write-unknown'));
+				authorityEpoch.lifecycle.runIfAccepting(() => setPersistence('unknown'));
 			}
 			// Keep this authority busy until actual completion, including after
 			// an observation timeout. A timeout cannot authorize an overlapping write.
 			pendingAuthority.completeWrite(outcome.kind === 'committed');
 			if (outcome.kind === 'rejected') {
+				authorityEpoch.lifecycle.runIfAccepting(() => setPersistence('failed'));
 				authorityEpoch.lifecycle.runIfAccepting(() => reportStorageHealth(
 					authorityEpoch.healthOwner, 'write-error', () => {
 						const retry = pendingAuthority.stageLocal(stateRef.current);
 						pendingAuthority.flushPending(retry.token);
 						persistNextForEpoch();
-					},
+					}, rejectionMessage,
 				));
 			}
 			persistNextForEpoch();
 		})();
-	}, [storageKey, area, authorityEpoch, pendingAuthority]);
+	}, [storageKey, area, authorityEpoch, pendingAuthority, encodeValue]);
 
 	const [loadAttempt, setLoadAttempt] = useState(0);
 	useEffect(() => {
@@ -487,28 +549,44 @@ export function useToolState<T>(
 		const baseValue = normalizeValueRef.current(initialValue, initialValue);
 		authorityEpoch.hydrated = false;
 		setIsReady(false);
+		setPersistence('loading');
 		void (async () => {
 			try {
-				const res = await safeStorageGet(
+				const res = await safeStorageGet<Record<string, unknown>>(
 					[storageKey, ledgerRevisionKey(storageKey)],
-					{ [storageKey]: baseValue },
+					{},
 					{ area },
 				);
 				if (!isMounted) return;
 				const raw = res[storageKey];
-				const loaded = normalizeValueRef.current(raw !== undefined ? raw : baseValue, baseValue);
-				authorityEpoch.hydrated = true;
-				setIsReady(true);
-				reportStorageHealth(authorityEpoch.healthOwner, null);
-				// A local draft rejects the old value, but still needs its ledger base.
-				// Only a newer storage observation can supersede that read's revision.
 				if (authorityEpoch.revisionGeneration === requestedGeneration) {
 					authorityEpoch.baseRevision = typeof res[ledgerRevisionKey(storageKey)] === 'number'
 						&& Number.isSafeInteger(res[ledgerRevisionKey(storageKey)])
 						&& (res[ledgerRevisionKey(storageKey)] as number) >= 0
-							? (res[ledgerRevisionKey(storageKey)] as number)
-							: 0;
+							? (res[ledgerRevisionKey(storageKey)] as number) : 0;
 				}
+				let loaded: T;
+				try {
+					loaded = normalizeValueRef.current(raw !== undefined ? raw : baseValue, baseValue);
+				} catch (error) {
+					authorityEpoch.hydrated = true;
+					setIsReady(true);
+					setInvalid({
+						raw,
+						reason: error instanceof Error ? error.message : 'Stored data does not match its domain contract.',
+					});
+					reportStorageHealth(authorityEpoch.healthOwner, 'invalid-data');
+					setPersistence('invalid');
+					return;
+				}
+				authorityEpoch.hydrated = true;
+				setIsReady(true);
+				setInvalid(null);
+				setPersistence('saved');
+				setLastConfirmedRevision(authorityEpoch.baseRevision);
+				reportStorageHealth(authorityEpoch.healthOwner, null);
+				// A local draft rejects the old value, but still needs its ledger base.
+				// Only a newer storage observation can supersede that read's revision.
 				if (pendingAuthority.acceptLoaded(loaded, requestedRevision)) {
 					stateRef.current = loaded;
 					setState(loaded);
@@ -518,6 +596,7 @@ export function useToolState<T>(
 				if (!isMounted) return;
 				// Never convert a failed read into an empty initialized record.
 				reportStorageHealth(authorityEpoch.healthOwner, 'read-error', () => setLoadAttempt(loadAttempt + 1));
+				setPersistence('failed');
 			}
 		})();
 		return () => { isMounted = false; };
@@ -529,6 +608,7 @@ export function useToolState<T>(
 
 	const saveState = useCallback((newState: T) => {
 		authorityEpoch.lifecycle.runIfAccepting(() => {
+			setPersistence('saving');
 			const request = pendingAuthority.stageLocal(newState);
 			if (debounceMs <= 0) {
 				flushPendingState(request.token);
@@ -544,6 +624,10 @@ export function useToolState<T>(
 
 	const updateState = useCallback((action: React.SetStateAction<T>) => {
 		authorityEpoch.lifecycle.runIfAccepting(() => {
+			if (invalid) {
+				reportStorageHealth(authorityEpoch.healthOwner, 'invalid-data');
+				return;
+			}
 			const previous = stateRef.current;
 			const candidate = typeof action === 'function'
 				? (action as (prev: T) => T)(previous)
@@ -558,7 +642,7 @@ export function useToolState<T>(
 			setState(next);
 			saveState(next);
 		});
-	}, [authorityEpoch, saveState]);
+	}, [authorityEpoch, invalid, saveState]);
 
 	useLayoutEffect(() => {
 		authorityEpoch.lifecycle.open();
@@ -576,11 +660,19 @@ export function useToolState<T>(
 			const change = changes[storageKey];
 			if (!change) return;
 			let next: T;
-			try { next = normalizeValueRef.current(change.newValue, stateRef.current); }
+			try {
+				const fallback = initialValueRef.current();
+				next = normalizeValueRef.current(change.newValue === undefined ? fallback : change.newValue, fallback);
+			}
 			catch {
-				reportStorageHealth(authorityEpoch.healthOwner, 'read-error');
+				setInvalid({ raw: change.newValue, reason: 'Stored data does not match its domain contract.' });
+				setPersistence('invalid');
+				reportStorageHealth(authorityEpoch.healthOwner, 'invalid-data');
 				return;
 			}
+			setInvalid(null);
+			setPersistence('saved');
+			setLastConfirmedRevision(authorityEpoch.baseRevision);
 			const decision = pendingAuthority.observeStorage(next);
 			if (decision.kind === 'external') {
 				stateRef.current = decision.value;
@@ -595,5 +687,21 @@ export function useToolState<T>(
 		};
 	}, [storageKey, area, authorityEpoch, pendingAuthority, flushPendingState]);
 
-	return [state, updateState, isReady] as const;
+	const replaceInvalid = useCallback((replacement: T) => {
+		authorityEpoch.lifecycle.runIfAccepting(() => {
+			let next: T;
+			try { next = normalizeValueRef.current(codec ? codec.encode(replacement) : replacement, replacement); }
+			catch { return; }
+			setInvalid(null);
+			setPersistence('saving');
+			reportStorageHealth(authorityEpoch.healthOwner, null);
+			stateRef.current = next;
+			setState(next);
+			const request = pendingAuthority.stageLocal(next);
+			pendingAuthority.flushPending(request.token);
+			persistNextState();
+		});
+	}, [authorityEpoch, codec, pendingAuthority, persistNextState]);
+
+	return [state, updateState, isReady, { invalid, persistence, lastConfirmedRevision, replaceInvalid } satisfies ToolStateRecovery<T>] as const;
 }

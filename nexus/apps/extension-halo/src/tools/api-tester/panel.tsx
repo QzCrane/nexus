@@ -4,22 +4,36 @@ import type React from 'react';
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useTranslation } from '../../i18n';
 import type { HttpMethod, RequestConfig, ResponseData, Header } from './types';
-import { executeRequest, formatBody, formatSize, createHeader, normalizeHeaders, DEFAULT_CONFIG } from './core';
+import { API_CONFIG_LEGACY_KEY, API_RESPONSE_LEGACY_KEY, HISTORY_KEY, apiSensitiveCodec, decodeLegacyApiState, executeRequest, formatBody, formatSize, createHeader, normalizeHeaders, DEFAULT_CONFIG } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useSensitiveVaultState } from '../../kernel/hooks/use-sensitive-vault';
+import { SensitiveVaultControls } from '../../components/sidepanel/SensitiveVaultControls';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
 
 
 const METHODS: HttpMethod[] = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
+type ApiResultTab = 'headers' | 'body';
+const apiResultTabCodec: ToolStateCodec<ApiResultTab> = {
+	decode(value) { return value === 'headers' || value === 'body' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'API result tab is unsupported.' }; },
+	encode(value) { return value; },
+};
 
 export const ApiTesterPanel: React.FC = () => {
 	const { t } = useTranslation();
-	// Preserve saved requests across browser restarts. A future secret vault
-	// requires an explicit retention choice, not an automatic storage-area move.
-	const [config, setConfig] = useToolState<RequestConfig>('api-tester-config', { ...DEFAULT_CONFIG });
-	const [response, setResponse] = useToolState<ResponseData | null>('api-tester-res', null);
+	// Existing local requests remain readable without mutation. New edits stay in
+	// memory until the user explicitly saves the complete private state to vault.
+	const [privateState, setPrivateState, vaultControls] = useSensitiveVaultState({
+		vaultId: 'api-tester', legacyKeys: [API_CONFIG_LEGACY_KEY, API_RESPONSE_LEGACY_KEY, HISTORY_KEY],
+		initialValue: { config: { ...DEFAULT_CONFIG }, response: null, history: [] }, codec: apiSensitiveCodec, decodeLegacy: decodeLegacyApiState,
+	});
+	const { config, response } = privateState;
+	const setConfig = useCallback((action: React.SetStateAction<RequestConfig>) => setPrivateState((current) => ({ ...current, config: typeof action === 'function' ? (action as (value: RequestConfig) => RequestConfig)(current.config) : action })), [setPrivateState]);
+	const setResponse = useCallback((action: React.SetStateAction<ResponseData | null>) => setPrivateState((current) => ({ ...current, response: typeof action === 'function' ? (action as (value: ResponseData | null) => ResponseData | null)(current.response) : action })), [setPrivateState]);
 	const [loading, setLoading] = useState(false);
 	const [error, setError] = useState<string>('');
-	const [activeTab, setActiveTab] = useToolState<'headers' | 'body'>('api-tester-tab', 'headers');
+	const [activeTab, setActiveTab, , tabRecovery] = useToolState<ApiResultTab>('api-tester-tab', 'headers', { codec: apiResultTabCodec });
 
 	useEffect(() => {
 		const headers = normalizeHeaders(config.headers);
@@ -69,6 +83,8 @@ export const ApiTesterPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<SensitiveVaultControls controls={vaultControls} exportName="halo-api-legacy.json" />
+			<StorageRecoveryActions recovery={tabRecovery} emptyValue="headers" exportName="halo-api-tab-damaged.json" />
 			{/* URL Row */}
 			<div style={styles.urlRow}>
 				<select style={styles.methodSelect} value={config.method} onChange={(e) => setConfig((c) => ({ ...c, method: e.target.value as HttpMethod }))}>

@@ -2,26 +2,16 @@
 // inv: Heavy tool implementations load only after an explicit activation command.
 
 import {
-	FRAME_TOOL_ANNOTATE_START,
 	FRAME_TOOL_ANNOTATE_STOP,
-	FRAME_TOOL_DOM_SELECTOR_START,
 	FRAME_TOOL_DOM_SELECTOR_STOP,
 	FRAME_TOOL_RULER_CANCEL,
-	FRAME_TOOL_RULER_START,
+	isFrameToolCommand,
+	type FrameToolCommand,
 	type FrameToolMessageType,
 } from '../content/frame-tool-messages';
 
 const LOG_TAG = '[HALO:FrameTools]';
 const RUNTIME_PATH = 'tools/_frame-tools/runtime.js';
-
-const FRAME_TOOL_TYPES = new Set<FrameToolMessageType>([
-	FRAME_TOOL_RULER_START,
-	FRAME_TOOL_RULER_CANCEL,
-	FRAME_TOOL_DOM_SELECTOR_START,
-	FRAME_TOOL_DOM_SELECTOR_STOP,
-	FRAME_TOOL_ANNOTATE_START,
-	FRAME_TOOL_ANNOTATE_STOP,
-]);
 
 const DEACTIVATION_TYPES = new Set<FrameToolMessageType>([
 	FRAME_TOOL_RULER_CANCEL,
@@ -30,14 +20,10 @@ const DEACTIVATION_TYPES = new Set<FrameToolMessageType>([
 ]);
 
 interface FrameToolRuntime {
-	handleFrameToolMessage(message: { type: FrameToolMessageType }): boolean;
+	handleFrameToolMessage(message: FrameToolCommand): boolean;
 }
 
 let runtimePromise: Promise<FrameToolRuntime> | null = null;
-
-function isFrameToolMessageType(value: string): value is FrameToolMessageType {
-	return FRAME_TOOL_TYPES.has(value as FrameToolMessageType);
-}
 
 function loadRuntime(): Promise<FrameToolRuntime> {
 	if (runtimePromise) return runtimePromise;
@@ -63,15 +49,13 @@ function loadRuntime(): Promise<FrameToolRuntime> {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 	if (
-		!message ||
-		typeof message !== 'object' ||
-		typeof message.type !== 'string' ||
-		!isFrameToolMessageType(message.type)
+		!isFrameToolCommand(message)
 	) {
 		return false;
 	}
 
-	const type = message.type;
+	const command = message;
+	const type = command.type;
 	// A stop before the first activation owns no runtime state. Do not turn a
 	// no-op cleanup into a network/module load in every frame.
 	if (!runtimePromise && DEACTIVATION_TYPES.has(type)) {
@@ -81,7 +65,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
 	void loadRuntime()
 		.then((runtime) => {
-			if (!runtime.handleFrameToolMessage({ type })) {
+			if (!runtime.handleFrameToolMessage(command)) {
 				throw new Error(`HALO frame-tool runtime rejected ${type}`);
 			}
 			sendResponse({ success: true, loaded: true });

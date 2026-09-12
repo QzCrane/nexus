@@ -45,6 +45,7 @@ import {
 	clearNativeMediaAsyncState,
 	consumeOwnedSeek,
 	measureVideoFrameDuration,
+	nativeValuesMatch,
 	seekNativeMedia,
 	stablePageReadback,
 	stableReadback,
@@ -184,13 +185,6 @@ const RESTORABLE_MEDIA_FIELDS = new Set<ControlField>([
 
 function isRestorableMediaField(field: ControlField): field is RestorableMediaField {
 	return RESTORABLE_MEDIA_FIELDS.has(field);
-}
-
-function valuesMatch(expected: unknown, actual: unknown, tolerance: number): boolean {
-	if (typeof expected === 'number' && typeof actual === 'number') {
-		return Math.abs(expected - actual) <= tolerance;
-	}
-	return JSON.stringify(expected) === JSON.stringify(actual);
 }
 
 function fullscreenOwnsMedia(element: HTMLMediaElement): boolean {
@@ -398,7 +392,7 @@ async function writeRestorableMediaFieldWithStableAck(
 		);
 	}
 	assertNativeOperationCurrent(options);
-	if (!valuesMatch(desired, actual, tolerance)) {
+	if (!nativeValuesMatch(desired, actual, tolerance)) {
 		throw new Error(`${field} readback mismatch after the stable boundary`);
 	}
 	return actual;
@@ -418,7 +412,7 @@ async function pageCandidateRestoredBaseline(
 	if (error instanceof PageMediaCapabilityUnavailableError) return true;
 	try {
 		const current = readRestorableMediaField(element, field, 'page-native');
-		if (!valuesMatch(current, baseline, tolerance)) {
+		if (!nativeValuesMatch(current, baseline, tolerance)) {
 			writeRestorableMediaField(element, field, baseline, 'page-native');
 		}
 		const restored = await stablePageReadback(
@@ -426,7 +420,7 @@ async function pageCandidateRestoredBaseline(
 			options,
 		);
 		assertNativeOperationCurrent(options);
-		return valuesMatch(restored, baseline, tolerance);
+		return nativeValuesMatch(restored, baseline, tolerance);
 	} catch {
 		return false;
 	}
@@ -830,7 +824,7 @@ export class NativeMediaExecutor {
 				for (const [field, owned] of [...ownership.entries()]) {
 					const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
 					const current = readRestorableMediaField(element, field, owned.writer);
-					if (!valuesMatch(current, owned.lastApplied, tolerance)) {
+					if (!nativeValuesMatch(current, owned.lastApplied, tolerance)) {
 						// The page/user changed the field after SPECTRA's last ACK. It is no
 						// longer our property to restore.
 						ownership.delete(field);
@@ -845,7 +839,7 @@ export class NativeMediaExecutor {
 						},
 					);
 					this.assertCurrentTarget(target, element);
-					if (!valuesMatch(actual, owned.baseline, tolerance)) {
+					if (!nativeValuesMatch(actual, owned.baseline, tolerance)) {
 						throw new Error(`Page baseline readback failed for ${field}`);
 					}
 					ownership.delete(field);
@@ -1151,7 +1145,7 @@ export class NativeMediaExecutor {
 						isCurrent,
 					});
 					assertCurrent();
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
+					if (!nativeValuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Pitch-preservation readback mismatch after the stable boundary');
 					}
 					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
@@ -1170,7 +1164,7 @@ export class NativeMediaExecutor {
 						{ signal, isCurrent },
 					);
 					assertCurrent();
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
+					if (!nativeValuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Playback readback mismatch after the stable boundary');
 					}
 					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
@@ -1188,7 +1182,7 @@ export class NativeMediaExecutor {
 						isCurrent,
 					});
 					assertCurrent();
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
+					if (!nativeValuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Seek readback mismatch after the stable boundary');
 					}
 					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
@@ -1202,7 +1196,7 @@ export class NativeMediaExecutor {
 						isCurrent,
 					});
 					assertCurrent();
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
+					if (!nativeValuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Loop readback mismatch after the stable boundary');
 					}
 					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
@@ -1241,7 +1235,7 @@ export class NativeMediaExecutor {
 						{ signal, isCurrent },
 					);
 					assertCurrent();
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
+					if (!nativeValuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Picture-in-Picture readback mismatch after the stable boundary');
 					}
 					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
@@ -1266,7 +1260,7 @@ export class NativeMediaExecutor {
 						{ signal, isCurrent },
 					);
 					assertCurrent();
-					if (!valuesMatch(effectiveDesired, actual, tolerance)) {
+					if (!nativeValuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Fullscreen readback mismatch after the stable boundary');
 					}
 					this.putState(fields, field, effectiveDesired, actual, intent, 'dom-native');
@@ -1372,7 +1366,7 @@ export class NativeMediaExecutor {
 		assertNativeOperationCurrent({ signal });
 		const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
 		const current = readRestorableMediaField(element, field, writer);
-		if (!valuesMatch(current, attempted, tolerance)) return;
+		if (!nativeValuesMatch(current, attempted, tolerance)) return;
 		writeRestorableMediaField(element, field, baseline, writer);
 		await (writer === 'page-native' ? stablePageReadback : stableReadback)(
 			() => readRestorableMediaField(element, field, writer),
@@ -1392,12 +1386,12 @@ export class NativeMediaExecutor {
 			desired,
 			actual,
 			revision: intent.baseRevision + 1,
-			phase: this.matches(desired, actual, field === 'currentTime' ? 0.05 : 0.01) ? 'applied' : 'error',
+			phase: nativeValuesMatch(desired, actual, field === 'currentTime' ? 0.05 : 0.01) ? 'applied' : 'error',
 			strategy,
 			coverage: 'active-target',
-			controlled: this.matches(desired, actual, field === 'currentTime' ? 0.05 : 0.01),
+			controlled: nativeValuesMatch(desired, actual, field === 'currentTime' ? 0.05 : 0.01),
 			intentId: intent.intentId,
-			lastError: this.matches(desired, actual, field === 'currentTime' ? 0.05 : 0.01)
+			lastError: nativeValuesMatch(desired, actual, field === 'currentTime' ? 0.05 : 0.01)
 				? null
 				: { code: 'readback-mismatch', message: 'Actual state differs from the requested value', retryable: true },
 		};
@@ -1582,7 +1576,7 @@ export class NativeMediaExecutor {
 			const field = rawField as ControlField;
 			const write = pending?.get(field);
 			if (write) {
-				if (this.matches(write.expected, actual, write.tolerance)) {
+				if (nativeValuesMatch(write.expected, actual, write.tolerance)) {
 					this.observe(mediaId, field, actual as ControlValues[ControlField]);
 				}
 				// The executor's event/getter transaction owns every event for this
@@ -1594,7 +1588,7 @@ export class NativeMediaExecutor {
 				this.observe(mediaId, field, actual as ControlValues[ControlField]);
 				continue;
 			}
-			if (this.matches(observed[field], actual, field === 'currentTime' ? 0.05 : 0.01)) continue;
+			if (nativeValuesMatch(observed[field], actual, field === 'currentTime' ? 0.05 : 0.01)) continue;
 			this.observe(mediaId, field, actual as ControlValues[ControlField]);
 			(patch as Record<string, unknown>)[field] = actual;
 			const strategy = candidateStrategies[field as keyof ControlNativeObservationStrategies];
@@ -1642,7 +1636,7 @@ export class NativeMediaExecutor {
 	}
 
 	private rememberDesired(field: ControlField, value: ControlValues[ControlField]): void {
-		if (this.matches((this.desiredMedia as Record<string, unknown>)[field], value, 0.001)) return;
+		if (nativeValuesMatch((this.desiredMedia as Record<string, unknown>)[field], value, 0.001)) return;
 		(this.desiredMedia as Record<string, unknown>)[field] = value;
 		this.desiredRevision += 1;
 	}
@@ -1654,7 +1648,7 @@ export class NativeMediaExecutor {
 			try {
 				const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
 				const current = readRestorableMediaField(element, field, owned.writer);
-				if (!valuesMatch(current, owned.lastApplied, tolerance)) continue;
+				if (!nativeValuesMatch(current, owned.lastApplied, tolerance)) continue;
 				writeRestorableMediaField(element, field, owned.baseline, owned.writer);
 				await (owned.writer === 'page-native' ? stablePageReadback : stableReadback)(
 					() => readRestorableMediaField(element, field, owned.writer),
@@ -1770,13 +1764,6 @@ export class NativeMediaExecutor {
 		const values = this.observed.get(mediaId) ?? {};
 		(values as Record<string, unknown>)[field] = actual;
 		this.observed.set(mediaId, values);
-	}
-
-	private matches(expected: unknown, actual: unknown, tolerance: number): boolean {
-		if (typeof expected === 'number' && typeof actual === 'number') {
-			return Math.abs(expected - actual) <= tolerance;
-		}
-		return valuesMatch(expected, actual, tolerance);
 	}
 
 	dispose(): void {

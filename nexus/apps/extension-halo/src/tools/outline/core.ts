@@ -1,7 +1,20 @@
 // goal: Outline extraction logic
 
 import type { HeadingItem, OutlineSettings } from './types';
-import { STORAGE_KEY, DEFAULT_SETTINGS } from './types';
+import { DEFAULT_SETTINGS } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export const outlineSettingsCodec: ToolStateCodec<OutlineSettings> = {
+	decode(value) {
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return { kind: 'invalid', reason: 'Outline settings are not a record.' };
+		const settings = value as Record<string, unknown>;
+		if (!Number.isSafeInteger(settings.minLevel) || !Number.isSafeInteger(settings.maxLevel)
+			|| (settings.minLevel as number) < 1 || (settings.maxLevel as number) > 6 || (settings.minLevel as number) > (settings.maxLevel as number)
+			|| typeof settings.showNumbers !== 'boolean') return { kind: 'invalid', reason: 'Outline levels or numbering option are invalid.' };
+		return { kind: 'valid', value: settings as unknown as OutlineSettings };
+	},
+	encode: (value) => value,
+};
 
 /**
  * Generate unique ID for heading
@@ -111,22 +124,4 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 	} catch {
 		return false;
 	}
-}
-
-/**
- * Load settings from storage
- */
-export async function loadSettings(): Promise<OutlineSettings> {
-	const result = await chrome.storage.local.get([STORAGE_KEY]);
-	return { ...DEFAULT_SETTINGS, ...result[STORAGE_KEY] };
-}
-
-/**
- * Save settings to storage
- */
-export async function saveSettings(settings: Partial<OutlineSettings>): Promise<OutlineSettings> {
-	const current = await loadSettings();
-	const updated = { ...current, ...settings };
-	await chrome.storage.local.set({ [STORAGE_KEY]: updated });
-	return updated;
 }

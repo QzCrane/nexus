@@ -63,6 +63,7 @@ import {
 	applyPageObservation,
 	assignFieldState,
 } from './control-coordinator-values';
+import { controlApplyAckMatches, controlOperationAckMatches } from './control-coordinator-ack';
 import {
 	mintCaptureAdmission,
 	revokeCaptureAdmission,
@@ -791,12 +792,7 @@ async function prepareIntent(
 			{ documentId: intent.documentId, generation: intent.generation },
 		);
 		if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
-		if (response.data.intentId !== intent.intentId
-			|| response.data.tabId !== intent.tabId
-			|| response.data.documentId !== intent.documentId
-			|| response.data.generation !== intent.generation
-			|| response.data.revision !== intent.baseRevision + 1
-			|| response.data.target && response.data.target.documentId !== intent.documentId) {
+		if (!controlApplyAckMatches(response.data, intent)) {
 			throw new Error('Content runtime returned a stale control ACK');
 		}
 		ackTarget = response.data.target;
@@ -1048,11 +1044,7 @@ async function prepareContentOperation(
 	);
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 	const ack = response.data;
-	if (ack.operationId !== operationId
-		|| ack.operation !== request.operation
-		|| ack.documentId !== intent.documentId
-		|| ack.generation !== intent.generation
-		|| ack.revision !== intent.baseRevision + 1) {
+	if (!controlOperationAckMatches(ack, intent)) {
 		throw new Error('Content runtime returned a stale control operation ACK');
 	}
 	const current = await getOrCreateSnapshot(request.tabId);

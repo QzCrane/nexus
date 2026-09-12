@@ -3,6 +3,7 @@
 
 import { type ModuleMeta, ALL_MODULES } from '../../kernel';
 import { HALO_RELEASE_VERSION } from '../registry/_generated';
+import { safeStorageGet, safeStorageSet } from '../core/safe-storage';
 
 // Remote registry config
 const REGISTRY_CONFIG = {
@@ -81,17 +82,33 @@ export const fetchRemoteRegistry = async (forceRefresh = false): Promise<RemoteR
 // Get cached registry from storage
 const getCachedRegistry = async (): Promise<CachedRegistry | null> => {
 	try {
-		const result = await chrome.storage.local.get(REGISTRY_CONFIG.cacheKey);
-		return result[REGISTRY_CONFIG.cacheKey] || null;
+		const result = await safeStorageGet<Record<string, unknown>>(
+			[REGISTRY_CONFIG.cacheKey],
+			{},
+			{ area: 'local' },
+		);
+		const cached = result[REGISTRY_CONFIG.cacheKey];
+		return isCachedRegistry(cached) ? cached : null;
 	} catch {
 		return null;
 	}
 };
 
+function isCachedRegistry(value: unknown): value is CachedRegistry {
+	if (typeof value !== 'object' || value === null) return false;
+	const candidate = value as Partial<CachedRegistry>;
+	return typeof candidate.fetchedAt === 'number'
+		&& typeof candidate.data === 'object'
+		&& candidate.data !== null
+		&& Array.isArray(candidate.data.modules);
+}
+
 // Set cached registry to storage
 const setCachedRegistry = async (cached: CachedRegistry): Promise<void> => {
 	try {
-		await chrome.storage.local.set({ [REGISTRY_CONFIG.cacheKey]: cached });
+		if (!await safeStorageSet({ [REGISTRY_CONFIG.cacheKey]: cached }, { area: 'local' })) {
+			throw new Error('Remote registry cache was not committed');
+		}
 	} catch (err) {
 		console.warn('[RemoteRegistry] Cache error:', err);
 	}

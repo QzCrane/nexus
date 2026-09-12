@@ -93,7 +93,17 @@ export function useCategorizedTools({
 				return;
 			}
 
-			if (backgroundToolIdSet.has(tool.id) || activeServices.has(tool.id)) cats.active?.push(tool);
+			// Global always-on background assistants (activeOnly: false) live in the
+			// Active Services shelf and nowhere else, mirroring TRUE_BACKGROUND_IDS.
+			// Every other tool appears exactly once in its functional category, so
+			// data-tool-id stays unique in the grid; the per-tool serviceState dot
+			// still surfaces runtime status inside each functional category.
+			const isGlobalAssistant = backgroundToolIdSet.has(tool.id)
+				&& BACKGROUND_ACTIVE_ONLY_MAP[tool.id] === false;
+			if (isGlobalAssistant) {
+				cats.active?.push(tool);
+				return;
+			}
 			const category = cats[tool.category];
 			if (category) category.push(tool);
 			else cats.general?.push(tool);

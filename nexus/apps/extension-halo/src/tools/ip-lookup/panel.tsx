@@ -4,34 +4,38 @@ import type React from 'react';
 import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import type { IpInfo } from './types';
-import { getMyIpInfo, lookupIp, isValidIp, formatLocation } from './core';
+import { formatLocation, getMyIpInfo, ipInfoCodec, isValidIp, lookupIp } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 export const IpLookupPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [query, setQuery] = useToolState<string>('ip-lookup-query', '');
-	const [info, setInfo] = useToolState<IpInfo | null>('ip-lookup-info', null);
+	const [info, setInfo, , infoRecovery] = useToolState<IpInfo | null>('ip-lookup-info', null, { codec: ipInfoCodec });
 
-	const [loading, setLoading] = useState(true);
 	const [error, setError] = useState('');
+	const task = useOwnedAsyncTask();
+	const runLookup = useCallback((lookup: (signal: AbortSignal) => Promise<IpInfo | null>) => {
+		const controller = new AbortController();
+		return task.run(() => ({ promise: lookup(controller.signal), dispose: () => controller.abort() }));
+	}, [task.run]);
 
 	// Load my IP on mount
 	useEffect(() => {
-		getMyIpInfo().then((data) => {
-			setInfo(data);
-			setLoading(false);
+		void runLookup(getMyIpInfo).then((outcome) => {
+			if (outcome.kind === 'succeeded') setInfo(outcome.value);
 		});
-	}, [setInfo]);
+		return task.cancel;
+	}, [setInfo, runLookup, task.cancel]);
 
 	// Lookup IP
 	const handleLookup = useCallback(async () => {
 		if (!query.trim()) {
-			setLoading(true);
-			const data = await getMyIpInfo();
-			setInfo(data);
-			setLoading(false);
+			const outcome = await runLookup(getMyIpInfo);
+			if (outcome.kind === 'succeeded') setInfo(outcome.value);
 			setError('');
 			return;
 		}
@@ -41,16 +45,15 @@ export const IpLookupPanel: React.FC = () => {
 			return;
 		}
 
-		setLoading(true);
 		setError('');
-		const data = await lookupIp(query);
-		if (data) {
-			setInfo(data);
-		} else {
+		const frozenQuery = query;
+		const outcome = await runLookup((signal) => lookupIp(frozenQuery, signal));
+		if (outcome.kind === 'succeeded' && outcome.value) {
+			setInfo(outcome.value);
+		} else if (outcome.kind === 'succeeded') {
 			setError(t('ipLookup.notFound'));
 		}
-		setLoading(false);
-	}, [query, t, setInfo]);
+	}, [query, t, setInfo, runLookup]);
 
 	// Copy IP
 	const handleCopy = useCallback(() => {
@@ -59,6 +62,7 @@ export const IpLookupPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={infoRecovery} emptyValue={null} exportName="halo-ip-info-damaged.json" />
 			{/* Search */}
 			<div style={styles.row}>
 				<input
@@ -72,13 +76,13 @@ export const IpLookupPanel: React.FC = () => {
 			</div>
 
 			{/* Error */}
-			{error && <div style={{ color: '#ef4444', fontSize: '12px' }}>{error}</div>}
+			{(error || task.error !== null) && <div style={{ color: '#ef4444', fontSize: '12px' }}>{error || String(task.error)}</div>}
 
 			{/* Loading */}
-			{loading && <div style={styles.loading}>⏳ {t('ipLookup.loading')}</div>}
+			{task.phase === 'running' && <div style={styles.loading}>⏳ {t('ipLookup.loading')}</div>}
 
 			{/* Result */}
-			{!loading && info && (
+			{task.phase !== 'running' && info && (
 				<div style={styles.card}>
 					<button
 						type="button"

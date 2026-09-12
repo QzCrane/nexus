@@ -5,9 +5,11 @@ import { useState, useCallback, useEffect } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { ArchiveEntry } from './types';
-import { captureCurrentPage, downloadArchive, openInViewer, getStoredEntries, deleteEntry, reconcileArchiveOrphans } from './core';
+import { archiveLastCodec, captureCurrentPage, downloadArchive, getStoredEntries, deleteEntry, reconcileArchiveOrphans } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const formatSize = (bytes: number): string => {
@@ -24,59 +26,58 @@ export const ArchivePanel: React.FC = () => {
 	// is a mount-scoped view refreshed from every mutation's returned list.
 	const [entries, setEntries] = useState<ArchiveEntry[]>([]);
 	const [loadError, setLoadError] = useState<string | null>(null);
-	const [isCapturing, setIsCapturing] = useState(false);
-	const [lastCaptured, setLastCaptured] = useToolState<ArchiveEntry | null>('archive-last', null);
+	const [lastCaptured, setLastCaptured, , lastRecovery] = useToolState<ArchiveEntry | null>('archive-last', null, { codec: archiveLastCodec });
+	const task = useOwnedAsyncTask();
 
 	useEffect(() => {
-		let disposed = false;
-		void getStoredEntries()
-			.then((loaded) => { if (!disposed) setEntries(loaded); })
-			.catch((error) => { if (!disposed) setLoadError(String(error)); });
-		void reconcileArchiveOrphans().catch((error) => {
-			console.error('[HALO:Archive] Orphan reconciliation failed:', error);
+		void task.run(async () => {
+			await reconcileArchiveOrphans();
+			return getStoredEntries();
+		}).then((outcome) => {
+			if (outcome.kind === 'succeeded') setEntries(outcome.value);
+			else if (outcome.kind === 'failed') setLoadError(String(outcome.error));
 		});
-		return () => { disposed = true; };
-	}, []);
+	}, [task.run]);
 
 	const handleCapture = useCallback(async () => {
-		setIsCapturing(true);
-		try {
+		setLoadError(null);
+		const outcome = await task.run(async () => {
 			const entry = await captureCurrentPage();
-			if (entry) {
-				setLastCaptured(entry);
-				setEntries(await getStoredEntries());
-			}
-		} finally {
-			setIsCapturing(false);
-		}
-	}, [setLastCaptured]);
+			return { entry, entries: await getStoredEntries() };
+		});
+		if (outcome.kind === 'succeeded') {
+			setLastCaptured(outcome.value.entry);
+			setEntries(outcome.value.entries);
+		} else if (outcome.kind === 'failed') setLoadError(String(outcome.error));
+	}, [setLastCaptured, task.run]);
 
 	const handleDownload = useCallback(async () => {
-		if (lastCaptured) await downloadArchive(lastCaptured);
-	}, [lastCaptured]);
-
-	const handleOpen = useCallback(async (entry: ArchiveEntry) => {
-		await openInViewer(entry);
-	}, []);
+		if (!lastCaptured) return;
+		const outcome = await task.run(() => downloadArchive(lastCaptured));
+		if (outcome.kind === 'failed') setLoadError(String(outcome.error));
+	}, [lastCaptured, task.run]);
 
 	const handleDelete = useCallback(async (id: string) => {
 		setLoadError(null);
-		try {
+		const outcome = await task.run(async () => {
 			await deleteEntry(id);
-			setEntries(await getStoredEntries());
+			return getStoredEntries();
+		});
+		if (outcome.kind === 'succeeded') {
+			setEntries(outcome.value);
 			if (lastCaptured?.id === id) setLastCaptured(null);
-		} catch (error) {
-			setLoadError(String(error));
-		}
-	}, [lastCaptured, setLastCaptured]);
+		} else if (outcome.kind === 'failed') setLoadError(String(outcome.error));
+	}, [lastCaptured, setLastCaptured, task.run]);
 
 	return (
 		<div style={styles.wrapper}>
-			<button type="button" style={styles.btn} onClick={handleCapture} disabled={isCapturing}>
-				{isCapturing ? '⏳' : '📥'} {isCapturing ? t('archive.capturing') : t('archive.capture')}
+			<StorageRecoveryActions recovery={lastRecovery} emptyValue={null} exportName="halo-archive-last-damaged.json" />
+			<div style={{ color: 'var(--halo-text-secondary)', fontSize: '12px' }}>{t('archive.openHint')}</div>
+			<button type="button" style={styles.btn} onClick={task.phase === 'running' ? task.cancel : handleCapture}>
+				{task.phase === 'running' ? '✕ Cancel' : `📥 ${t('archive.capture')}`}
 			</button>
 
-			{loadError && <div style={{ color: '#d33', fontSize: '12px', padding: '4px 0' }}>{loadError}</div>}
+			{(loadError !== null || task.error !== null) && <div style={{ color: '#d33', fontSize: '12px', padding: '4px 0' }}>{loadError ?? String(task.error)}</div>}
 
 			{lastCaptured && (
 				<Card variant="default" padding="sm">
@@ -86,7 +87,6 @@ export const ArchivePanel: React.FC = () => {
 							<div style={styles.entryTitle}>{lastCaptured.title}</div>
 							<div style={styles.entryMeta}>{formatSize(lastCaptured.size)}</div>
 						</div>
-						<button type="button" style={styles.btnSecondary} onClick={() => handleOpen(lastCaptured)}>👁️ {t('archive.view')}</button>
 						<button type="button" style={styles.btn} onClick={handleDownload}>💾 {t('archive.download')}</button>
 					</div>
 				</Card>
@@ -108,8 +108,7 @@ export const ArchivePanel: React.FC = () => {
 						<div style={styles.entryMeta}>{formatDate(entry.savedAt)} • {formatSize(entry.size)}</div>
 						<div style={styles.entryMeta} title={entry.url}>{entry.url.slice(0, 60)}{entry.url.length > 60 ? '...' : ''}</div>
 						<div style={styles.entryActions}>
-							<button type="button" style={styles.btnSecondary} onClick={() => handleOpen(entry)}>👁️ {t('archive.view')}</button>
-							<button type="button" style={styles.btnSecondary} onClick={async () => await downloadArchive(entry)}>💾</button>
+							<button type="button" style={styles.btnSecondary} onClick={() => { void task.run(() => downloadArchive(entry)); }}>💾</button>
 							<button type="button" style={styles.btnDanger} onClick={() => handleDelete(entry.id)}>🗑️</button>
 						</div>
 					</div>

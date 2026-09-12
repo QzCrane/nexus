@@ -14,6 +14,10 @@ export const styles: Record<string, React.CSSProperties> = {
 		background: 'var(--halo-accent)', color: '#fff', border: 'none',
 	},
 	result: { padding: '12px', background: 'var(--halo-bg-secondary)', borderRadius: '8px' },
+	boundary: {
+		padding: '8px 10px', borderRadius: '6px', fontSize: '11px', lineHeight: 1.4,
+		background: 'var(--halo-bg-secondary)', color: 'var(--halo-text-muted)',
+	},
 	row: { display: 'flex', justifyContent: 'space-between', marginBottom: '8px', fontSize: '12px' },
 	label: { fontWeight: 600, color: 'var(--halo-text-muted)' },
 	value: { fontFamily: 'monospace' },

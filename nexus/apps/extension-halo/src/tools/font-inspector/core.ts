@@ -1,6 +1,24 @@
 // goal: Font Inspector core logic - extract font info from page
 
 import type { FontInfo } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export const fontInfoCodec: ToolStateCodec<FontInfo[]> = {
+	decode(value) {
+		if (!Array.isArray(value) || value.length > 100) return { kind: 'invalid', reason: 'Stored font scan must contain at most 100 rows.' };
+		const rows: FontInfo[] = [];
+		for (const item of value) {
+			if (typeof item !== 'object' || item === null || Array.isArray(item)) return { kind: 'invalid', reason: 'Stored font scan contains a non-record row.' };
+			const row = item as Record<string, unknown>;
+			if (['family', 'weight', 'size', 'lineHeight', 'color', 'element'].some((key) => typeof row[key] !== 'string' || (row[key] as string).length > 256)) {
+				return { kind: 'invalid', reason: 'Stored font scan has invalid or oversized fields.' };
+			}
+			rows.push(row as unknown as FontInfo);
+		}
+		return { kind: 'valid', value: rows };
+	},
+	encode: (value) => value,
+};
 
 // Get fonts from current page
 export async function getPageFonts(): Promise<FontInfo[]> {

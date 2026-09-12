@@ -1,54 +1,46 @@
-// goal: CSP Analyzer panel UI
+// goal: CSP facts and evaluator findings with explicit header disposition
 
 import type React from 'react';
 import { useMemo } from 'react';
 import { useTranslation } from '../../i18n';
-import { parseCsp, calculateScore } from './core';
-import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
-
+import { analyzeCsp } from './core';
+import { styles } from './panel.styles';
 
 export const CspAnalyzerPanel: React.FC = () => {
-    const { t } = useTranslation();
-    const [input, setInput] = useToolState<string>('csp-analyzer', '');
+	const { t } = useTranslation();
+	const [enforced, setEnforced] = useToolState<string>('csp-analyzer', '');
+	const [reportOnly, setReportOnly] = useToolState<string>('csp-analyzer-report-only', '');
+	const analysis = useMemo(() => {
+		try { return { value: analyzeCsp(enforced, reportOnly), error: '' }; }
+		catch (error) { return { value: null, error: error instanceof Error ? error.message : String(error) }; }
+	}, [enforced, reportOnly]);
 
-
-    const directives = useMemo(() => parseCsp(input), [input]);
-    const score = useMemo(() => calculateScore(directives), [directives]);
-
-    return (
-        <div style={styles.wrapper}>
-            <textarea 
-                style={styles.textarea} 
-                value={input} 
-                onChange={(e) => setInput(e.target.value)} 
-                placeholder="default-src 'self'; script-src 'unsafe-inline'..." 
-            />
-
-            {directives.length > 0 && (
-                <div style={styles.score}>
-                    🛡️ {t('cspAnalyzer.score', { defaultValue: 'Score' })}: {score}/100
-                </div>
-            )}
-
-
-            <div style={styles.list}>
-                {directives.map((d, i) => {
-                    // biome-ignore lint/suspicious/noArrayIndexKey: Parsed CSP directive order is the immutable source position for this stateless projection.
-                    return <div key={i} style={d.isUnsafe ? styles.cardUnsafe : styles.card}>
-                        <div style={styles.name}>{d.name}</div>
-                        <div style={styles.desc}>{d.description}</div>
-                        <div style={styles.values}>
-                            {d.values.map((v, j) => {
-                                // biome-ignore lint/suspicious/noArrayIndexKey: Repeated CSP tokens are distinguished only by their immutable source position.
-                                return <span key={j} style={(v.includes('unsafe') || v === '*') ? styles.tagUnsafe : styles.tag}>
-                                    {v}
-                                </span>;
-                            })}
-                        </div>
-                    </div>;
-                })}
-            </div>
-        </div>
-    );
+	return <div style={styles.wrapper}>
+		<div style={styles.boundary}>{t('cspAnalyzer.boundary')}</div>
+		<label htmlFor="csp-enforced" style={styles.label}>{t('cspAnalyzer.enforced')}</label>
+		<textarea id="csp-enforced" style={styles.textarea} value={enforced} onChange={(event) => setEnforced(event.target.value)} placeholder="default-src 'self'; object-src 'none'" />
+		<label htmlFor="csp-report-only" style={styles.label}>{t('cspAnalyzer.reportOnly')}</label>
+		<textarea id="csp-report-only" style={styles.textarea} value={reportOnly} onChange={(event) => setReportOnly(event.target.value)} placeholder="script-src 'nonce-…' 'strict-dynamic'" />
+		{analysis.error && <div style={styles.error}>{analysis.error}</div>}
+		{analysis.value && analysis.value.status !== 'absent' && <>
+			<div style={styles.status}>{t(`cspAnalyzer.status.${analysis.value.status}`)}</div>
+			<div style={styles.fact}>{t(`cspAnalyzer.fact.${analysis.value.compositionFact}`)}</div>
+			<div style={styles.list}>{analysis.value.policies.map((policy, index) => {
+				// biome-ignore lint/suspicious/noArrayIndexKey: Response-header order is the policy's source identity and duplicate headers are semantically distinct.
+				return <div key={`${policy.disposition}-${index}`} style={styles.card}>
+				<div style={styles.name}>{t(`cspAnalyzer.disposition.${policy.disposition}`)} · {t('cspAnalyzer.policy')} {index + 1}</div>
+				<code style={styles.policyText}>{policy.policy}</code>
+				{policy.ignoredDuplicateDirectives.length > 0 && <div style={styles.duplicate}>{t('cspAnalyzer.duplicates')}: {policy.ignoredDuplicateDirectives.join(', ')}</div>}
+				{policy.findings.length === 0 ? <div style={styles.desc}>{t('cspAnalyzer.noFindings')}</div> : policy.findings.map((finding, findingIndex) => {
+					// biome-ignore lint/suspicious/noArrayIndexKey: The evaluator can emit identical findings whose ordered occurrence is their only stable identity.
+					return <div key={`${finding.directive}-${findingIndex}`} style={styles.finding}>
+					<span style={styles[`risk-${finding.risk}`]}>{t(`cspAnalyzer.risk.${finding.risk}`)}</span>
+					<div style={styles.findingText}><strong>{finding.directive || t('cspAnalyzer.policy')}</strong>{finding.value ? ` · ${finding.value}` : ''}<br />{finding.description}</div>
+					</div>;
+				})}
+			</div>;
+			})}</div>
+		</>}
+	</div>;
 };

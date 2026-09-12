@@ -7,8 +7,11 @@ import {
 
 import {
 	cleanupTabState,
+	advanceTabDocumentGeneration,
+	forgetTabDocumentGeneration,
 	markTabActivated,
 	markTabAudible,
+	retireTabMediaDocument,
 	storage,
 } from './state';
 import { teardownCaptureState } from './handlers/capture';
@@ -39,11 +42,14 @@ async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<
 	// cleanup that belonged to the previous document.
 	const captureTeardown = teardownCaptureState(tabId).then(
 		(captureStopped) => {
-			cleanupTabState(tabId, { preserveCapture: !captureStopped });
+			cleanupTabState(tabId, {
+				preserveCapture: !captureStopped,
+				preserveMedia: !tabClosed,
+			});
 			return captureStopped;
 		},
 		() => {
-			cleanupTabState(tabId, { preserveCapture: true });
+			cleanupTabState(tabId, { preserveCapture: true, preserveMedia: !tabClosed });
 			return false;
 		},
 	);
@@ -104,6 +110,10 @@ export function setupLifecycleListeners(): void {
 
 	chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 		if (isTopLevelDocumentNavigation(details)) {
+			// Retire the old document fact synchronously. Capture/storage cleanup may
+			// await, but a late report must never keep the old document visible.
+			retireTabMediaDocument(details.tabId);
+			advanceTabDocumentGeneration(details.tabId);
 			void beginDocumentNavigation(details.tabId).catch((error: unknown) => {
 				swLog.debug(`[Lifecycle] Navigation invalidation settled at browser boundary: ${String(error)}`);
 			});
@@ -161,6 +171,7 @@ export function setupLifecycleListeners(): void {
 		for (const [windowId, activeTabId] of activeTabsByWindow) {
 			if (activeTabId === tabId) activeTabsByWindow.delete(windowId);
 		}
+		forgetTabDocumentGeneration(tabId);
 		void clearTabDocumentState(tabId, true);
 	});
 

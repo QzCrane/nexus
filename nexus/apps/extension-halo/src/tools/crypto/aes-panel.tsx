@@ -5,14 +5,16 @@ import { useState, useCallback } from 'react';
 import { useTranslation } from '../../i18n';
 import { generateAESKey, exportAESKey, importAESKey, encryptAES, decryptAES } from './core';
 import { styles } from './panel.styles';
-import { useToolState } from '../../kernel';
+import { useCryptoSensitiveState } from './sensitive-state';
 
 
 export const AESPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [plaintext, setPlaintext] = useToolState<string>('crypto-aes-plain', '');
-	const [ciphertext, setCiphertext] = useToolState<string>('crypto-aes-cipher', '');
-	const [keyBase64, setKeyBase64] = useToolState<string>('crypto-aes-key', '');
+	const { state, update } = useCryptoSensitiveState();
+	const { aesPlaintext: plaintext, aesCiphertext: ciphertext, aesKey: keyBase64 } = state;
+	const setPlaintext = useCallback((value: string) => update({ aesPlaintext: value }), [update]);
+	const setCiphertext = useCallback((value: string) => update({ aesCiphertext: value }), [update]);
+	const setKeyBase64 = useCallback((value: string) => update({ aesKey: value }), [update]);
 
 	const [error, setError] = useState('');
 

@@ -7,6 +7,13 @@ import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import { formatXml, minifyXml } from './core';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+
+const xmlIndentCodec: ToolStateCodec<number> = {
+	decode(value) { return value === 2 || value === 4 ? { kind: 'valid', value } : { kind: 'invalid', reason: 'XML indentation must be 2 or 4 spaces.' }; },
+	encode(value) { return value; },
+};
 
 
 const styles: Record<string, React.CSSProperties> = {
@@ -61,7 +68,7 @@ const styles: Record<string, React.CSSProperties> = {
 export const XmlFormatterPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [input, setInput] = useToolState<string>('xml-formatter', '');
-	const [indent, setIndent] = useToolState<number>('xml-formatter-indent', 2);
+	const [indent, setIndent, , indentRecovery] = useToolState<number>('xml-formatter-indent', 2, { codec: xmlIndentCodec });
 
 	const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
@@ -93,6 +100,7 @@ export const XmlFormatterPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={indentRecovery} emptyValue={2} exportName="halo-xml-indent-damaged.json" />
 			{/* Input */}
 			<Card variant="default" padding="sm">
 				<div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>

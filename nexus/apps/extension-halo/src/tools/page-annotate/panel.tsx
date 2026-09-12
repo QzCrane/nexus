@@ -1,31 +1,38 @@
 // goal: Page Annotate panel UI
 
 import type React from 'react';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import { startAnnotation, stopAnnotation } from './core';
 import { styles } from './panel.styles';
-import { useToolState } from '../../kernel';
+import type { FrameToolSession } from '../../content/frame-tool-messages';
 
 
 export const PageAnnotatePanel: React.FC = () => {
     const { t } = useTranslation();
-    const [active, setActive] = useToolState<boolean>('page-annotate-active', false);
+    const [active, setActive] = useState(false);
+    const sessionRef = useRef<FrameToolSession | null>(null);
 
 
     const toggle = async () => {
         if (active) {
-            await stopAnnotation();
+            const session = sessionRef.current;
+            sessionRef.current = null;
+            if (session) await stopAnnotation(session);
             setActive(false);
         } else {
-            await startAnnotation();
+            sessionRef.current = await startAnnotation();
             setActive(true);
         }
     };
 
     // Cleanup
     useEffect(() => {
-        return () => { stopAnnotation(); };
+		return () => {
+			const session = sessionRef.current;
+			sessionRef.current = null;
+			if (session) void stopAnnotation(session).catch(() => undefined);
+		};
     }, []);
 
     return (

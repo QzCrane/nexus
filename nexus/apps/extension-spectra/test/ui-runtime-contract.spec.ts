@@ -198,7 +198,10 @@ function createUiSuccessData(): Record<SpectraUiRequestType, unknown> {
 			generation,
 			frames: { '42': [0, 128, 255] },
 		},
-		'spectra.tab.visible.list': { tabs: [7, tabId] },
+		'spectra.tab.visible.list': {
+			tabs: [7, tabId],
+			coverage: { status: 'complete', total: 2, examined: 2, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0 },
+		},
 	};
 }
 
@@ -307,6 +310,12 @@ describe('restricted extension UI protocol facade', () => {
 			expect(isSpectraResponse(type, mutated), `${type} canonical mutation`).toBe(false);
 			expect(isSpectraUiResponse(type, mutated), `${type} UI mutation`).toBe(false);
 		}
+	});
+
+	test('accepts a legacy v2 tab inventory only as a response without coverage evidence', () => {
+		const response = rpcSuccess({ tabs: [7, tabId] });
+		expect(isSpectraResponse('spectra.tab.visible.list', response)).toBe(true);
+		expect(isSpectraUiResponse('spectra.tab.visible.list', response)).toBe(true);
 	});
 
 	test('accepts page-native volume acknowledgements in the focused Popup guard', () => {

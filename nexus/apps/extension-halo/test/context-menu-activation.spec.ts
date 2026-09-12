@@ -17,6 +17,7 @@ import {
 	QRCODE_MODE_STORAGE_KEY,
 	QRCODE_TEXT_STORAGE_KEY,
 } from '../src/kernel/core/sidepanel-activation-store';
+import { ledgerRevisionKey } from '../src/kernel/core/safe-storage';
 
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 
@@ -94,23 +95,31 @@ describe('durable SidePanel activation', () => {
 		expect(await persistQrcodeActivation(envelope)).toBe(true);
 		expect(durable).toEqual({
 			[QRCODE_MODE_STORAGE_KEY]: 'generate',
+			[ledgerRevisionKey(QRCODE_MODE_STORAGE_KEY)]: 1,
 			[QRCODE_TEXT_STORAGE_KEY]: 'durable',
+			[ledgerRevisionKey(QRCODE_TEXT_STORAGE_KEY)]: 1,
 			[QRCODE_ACTIVATION_ID_STORAGE_KEY]: envelope.id,
+			[ledgerRevisionKey(QRCODE_ACTIVATION_ID_STORAGE_KEY)]: 1,
 			[QRCODE_ACTIVATION_GENERATION_STORAGE_KEY]: envelope.generation,
+			[ledgerRevisionKey(QRCODE_ACTIVATION_GENERATION_STORAGE_KEY)]: 1,
 		});
 	});
 
 	test('serializes rapid QR commits and never lets an older payload settle last', async () => {
 		let releaseFirstWrite: (() => void) | undefined;
 		const firstWrite = new Promise<void>((resolve) => { releaseFirstWrite = resolve; });
+		let markFirstWriteStarted: (() => void) | undefined;
+		const firstWriteStarted = new Promise<void>((resolve) => { markFirstWriteStarted = resolve; });
 		const durable: Record<string, unknown> = {};
 		const writes: string[] = [];
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
 			value: { storage: { local: {
 				set: async (value: Record<string, unknown>) => {
-					writes.push(String(value[QRCODE_TEXT_STORAGE_KEY]));
-					if (writes.length === 1) await firstWrite;
+					if (value[QRCODE_TEXT_STORAGE_KEY] !== undefined) {
+						writes.push(String(value[QRCODE_TEXT_STORAGE_KEY]));
+						if (writes.length === 1) { markFirstWriteStarted?.(); await firstWrite; }
+					}
 					Object.assign(durable, value);
 				},
 				get: async () => ({ ...durable }),
@@ -129,9 +138,8 @@ describe('durable SidePanel activation', () => {
 			5,
 		);
 		const firstCommit = persistQrcodeActivation(first);
-		await Promise.resolve();
+		await firstWriteStarted;
 		const secondCommit = persistQrcodeActivation(second);
-		await Promise.resolve();
 		expect(writes).toEqual(['old']);
 		releaseFirstWrite?.();
 		expect(await firstCommit).toBe(false);
@@ -146,7 +154,7 @@ describe('durable SidePanel activation', () => {
 		const contract = readFileSync(new URL('../src/kernel/core/sidepanel-activation.ts', import.meta.url), 'utf8');
 		const sidepanel = readFileSync(new URL('../src/components/sidepanel/use-sidepanel-state.ts', import.meta.url), 'utf8');
 		const qrcode = readFileSync(new URL('../src/tools/qrcode/panel.tsx', import.meta.url), 'utf8');
-		expect(background).toContain('chrome.storage.session.set');
+		expect(background).toContain('scheduleStorageSet({ [SIDEPANEL_ACTIVATION_STORAGE_KEY]: envelope }');
 		expect(background).toContain('parseSidepanelActivationAck');
 		expect(contract).toContain('HALO_SIDEPANEL_ACTIVATION_ACK');
 		expect(sidepanel).toContain('chrome.storage.session.get');

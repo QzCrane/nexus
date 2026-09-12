@@ -25,9 +25,26 @@ interface MediaTarget {
 ```
 
 - **目标选择优先级**: `显式 mediaId -> 最新受信任交互 -> 最新播放 -> 当前播放中 -> 注册视口几何/可见性 -> 注册顺序`
-- `activeMedia` 与 `activeVideo` 独立关联，音频元素选择不清除视频目标。当前作用域限定为 top-level document only (`frameId: 0`)。
+- `activeMedia` 与 `activeVideo` 独立关联，音频元素选择不清除视频目标。控制写入作用域限定为 top-level document only (`frameId: 0`)；Popup 的只读媒体发现会独立检查已授权 frame，但不会把子 frame 变成控制目标。
 
-### §13.1 Edge Case & ACK Projection Table
+### §13.1 Document-level inventory
+
+Popup 枚举使用 `tabId + document generation` 隔离在途探测，并在一次轻量
+`chrome.scripting.executeScript({ allFrames: true })` 前后核对 Chrome
+`frameId + documentId` census。成功的 `found` 或所有当前 frame 均成功返回的
+`no-media` 才是确定事实；权限拒绝、导航错代、无效响应和超时分别投影为
+`denied/stale/unknown/pending`，同时返回 examined/failed coverage。
+
+同一 v2 envelope 的新增证据保持 additive：当前 producer 必须发送单调
+`reportRevision` 和完整 coverage。旧 content report 缺少 revision 时，Background
+只确认收到，不能创建或覆盖有序媒体事实；只含 `tabs` 的旧 inventory 响应在新 UI
+中映射为 `unknown`，不能签发 complete。轻量 DOM census 负责重新获得当前事实。
+
+探测不加载重级 Content runtime。底层 Chrome Promise 未结束时仍占据物理许可；
+重复打开 Popup 只观察同一文档操作。候选起点跨扫描轮转；当所有许可都被永久
+占用时，系统明确返回 degraded，不能通过逻辑超时释放许可或伪造无媒体。
+
+### §13.2 Edge Case & ACK Projection Table
 
 | Edge | Required result | Owner and purpose |
 | --- | --- | --- |

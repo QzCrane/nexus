@@ -3,12 +3,44 @@ import { csvToJson } from '../src/tools/csv-to-json/core';
 import { parseYaml, jsonToYaml } from '../src/tools/yaml/core';
 import { formatJSON, minifyJSON, validateJSON } from '../src/tools/json-formatter/core';
 import { formatSql, minifySql, validateSql } from '../src/tools/sql-formatter/core';
-import { minifyCode } from '../src/tools/code-formatter/core';
+import { CODE_FORMATTER_OPERATION_CONTRACT, codeIndentCodec, codeLanguageCodec, minifyCode } from '../src/tools/code-formatter/core';
 import { decodeHtml, encodeHtmlAll, encodeHtmlNamed } from '../src/tools/html-entity/core';
-import { parseCertificate, parseCertificateStrict } from '../src/tools/ssl-cert/core';
+import { CERTIFICATE_INSPECTION_BOUNDARY, parseCertificate, parseCertificateStrict } from '../src/tools/ssl-cert/core';
 import { parseCron, getNextRuns } from '../src/tools/cron/core';
+import { csvExportModeCodec, serializeCsv } from '../src/tools/csv-viewer/core';
+import { evaluateJsonPath } from '../src/tools/json-path/core';
+import { analyzeCsp } from '../src/tools/csp-analyzer/core';
+import { tableDataCodec, tableToCsv } from '../src/tools/table-extractor/core';
+import { jsonToCsv } from '../src/tools/json-to-csv/core';
 
 describe('PapaParse admission (R01)', () => {
+	test('raw fidelity is the default and spreadsheet-safe export is explicit', () => {
+		const cells = [['=SUM(A1:A2)', '+cmd', '-2', '@value', '\tformula', '\rformula', 'plain']];
+		const raw = serializeCsv([], cells);
+		const safe = serializeCsv([], cells, ',', 'spreadsheet-safe');
+		expect(raw).toContain('=SUM(A1:A2)');
+		expect(raw).not.toContain("'=SUM(A1:A2)");
+		for (const value of ['=SUM(A1:A2)', '+cmd', '-2', '@value', '\tformula', '\rformula']) expect(safe).toContain(`'${value}`);
+		expect(safe).toContain('plain');
+	});
+
+	test('JSON and extracted-table consumers route their explicit safe mode through the same owner', () => {
+		expect(jsonToCsv([{ value: '=1+1' }], ',', 'spreadsheet-safe')).toContain("'=1+1");
+		expect(tableToCsv({ headers: ['value'], rows: [['=1+1']] }, 'spreadsheet-safe')).toContain("'=1+1");
+	});
+
+	test('CSV mode codec preserves supported legacy strings and rejects damaged values', () => {
+		expect(csvExportModeCodec.decode('raw')).toEqual({ kind: 'valid', value: 'raw' });
+		expect(csvExportModeCodec.decode('spreadsheet-safe')).toEqual({ kind: 'valid', value: 'spreadsheet-safe' });
+		expect(csvExportModeCodec.decode('silent-fallback')).toMatchObject({ kind: 'invalid' });
+	});
+
+	test('stored table codec admits legacy arrays, versions new writes, and rejects malformed cells', () => {
+		const tables = [{ headers: ['name'], rows: [['alice']], caption: 'People' }];
+		expect(tableDataCodec.decode(tables)).toEqual({ kind: 'valid', value: tables });
+		expect(tableDataCodec.encode(tables)).toEqual({ version: 1, value: tables });
+		expect(tableDataCodec.decode([{ headers: ['name'], rows: [[42]] }])).toMatchObject({ kind: 'invalid' });
+	});
 	test('multi-line quoted fields survive as one record', () => {
 		const rows = csvToJson('name,note\nalice,"line one\nline two"\nbob,plain');
 		expect(rows).toHaveLength(2);
@@ -33,6 +65,56 @@ describe('PapaParse admission (R01)', () => {
 		const rows = csvToJson('text\n"a,comma"\n"say ""hi"""');
 		expect(rows[0]?.text).toBe('a,comma');
 		expect(rows[1]?.text).toBe('say "hi"');
+	});
+});
+
+describe('@swaggerexpert/jsonpath admission (R05)', () => {
+	test('supports RFC 9535 descendants, filters, escaped names and negative indices', () => {
+		const json = JSON.stringify({ x: 1, nested: { x: 2 }, users: [{ active: true, email: 'a' }, { active: false, email: 'b' }], 'quoted.key': 3, list: [4, 5] });
+		expect(evaluateJsonPath(json, '$..x')).toMatchObject({ ok: true, results: [1, 2] });
+		expect(evaluateJsonPath(json, '$.users[?@.active == true].email')).toMatchObject({ ok: true, results: ['a'] });
+		expect(evaluateJsonPath(json, "$['quoted.key']")).toMatchObject({ ok: true, results: [3] });
+		expect(evaluateJsonPath(json, '$.list[-1]')).toMatchObject({ ok: true, results: [5] });
+	});
+
+	test('uses JSON own properties and distinguishes invalid syntax from zero matches', () => {
+		expect(evaluateJsonPath('{}', '$.constructor')).toMatchObject({ ok: true, results: [] });
+		expect(evaluateJsonPath('{}', '$.missing')).toMatchObject({ ok: true, results: [] });
+		expect(evaluateJsonPath('{}', '$[')).toMatchObject({ ok: false, kind: 'invalid-query' });
+	});
+
+	test('rejects input and query beyond the admitted bounds', () => {
+		expect(evaluateJsonPath(`"${'x'.repeat(1_048_576)}"`, '$')).toMatchObject({ ok: false, kind: 'budget' });
+		expect(evaluateJsonPath('{}', `$${'.x'.repeat(2_100)}`)).toMatchObject({ ok: false, kind: 'budget' });
+	});
+});
+
+describe('csp_evaluator admission (R31/R44)', () => {
+	test('empty input is absent rather than a perfect score', () => {
+		expect(analyzeCsp('', '')).toMatchObject({ status: 'absent', policies: [] });
+	});
+
+	test('report-only disposition is an enforcement fact', () => {
+		expect(analyzeCsp('', "default-src 'none'")).toMatchObject({
+			status: 'report-only', compositionFact: 'report-only-does-not-enforce', reportOnlyPolicyCount: 1,
+		});
+	});
+
+	test('context-sensitive evaluator does not flag data: in img-src as script risk', () => {
+		const analysis = analyzeCsp("img-src data:; default-src 'none'");
+		expect(analysis.status).toBe('enforced');
+		expect(analysis.policies[0]?.findings.some(({ value }) => value === 'data:')).toBe(false);
+	});
+
+	test('preserves first directive and reports ignored duplicates', () => {
+		const analysis = analyzeCsp("script-src 'self'; script-src *; object-src 'none'");
+		expect(analysis.policies[0]?.directives.find(({ name }) => name === 'script-src')?.values).toEqual(["'self'"]);
+		expect(analysis.policies[0]?.ignoredDuplicateDirectives).toEqual(['script-src']);
+	});
+
+	test('multiple enforced response headers are described as intersecting policies', () => {
+		const analysis = analyzeCsp("default-src 'self'\ndefault-src 'none'");
+		expect(analysis).toMatchObject({ enforcedPolicyCount: 2, compositionFact: 'enforced-policies-intersect' });
 	});
 });
 
@@ -116,6 +198,24 @@ describe('sql-formatter engine admission (R06)', () => {
 });
 
 describe('CSSO admission (R09)', () => {
+	test('formatter operation contracts expose their actual validation boundary', () => {
+		expect(CODE_FORMATTER_OPERATION_CONTRACT.json.syntaxValidation).toBe('strict');
+		expect(CODE_FORMATTER_OPERATION_CONTRACT.js.syntaxValidation).toBe('none');
+		expect(CODE_FORMATTER_OPERATION_CONTRACT.css.syntaxValidation).toBe('engine-on-minify');
+	});
+
+	test('formatter codecs preserve valid legacy settings and reject invalid persisted values', () => {
+		expect(codeLanguageCodec.decode('sql')).toEqual({ kind: 'valid', value: 'sql' });
+		expect(codeLanguageCodec.decode('typescript')).toMatchObject({ kind: 'invalid' });
+		expect(codeIndentCodec.decode(8)).toEqual({ kind: 'valid', value: 8 });
+		expect(codeIndentCodec.decode(0)).toMatchObject({ kind: 'invalid' });
+		expect(codeIndentCodec.decode(2.5)).toMatchObject({ kind: 'invalid' });
+	});
+
+	test('JSON minification rejects invalid JSON instead of presenting unchanged text as success', async () => {
+		expect(minifyCode('{broken', 'json')).rejects.toThrow('Invalid JSON');
+	});
+
 	test('string contents keep their spacing while css collapses', async () => {
 		const minified = await minifyCode('a {\n  content: "keep  spacing";\n  color: red;\n}', 'css');
 		expect(minified).toContain('"keep  spacing"');
@@ -146,6 +246,15 @@ describe('entities engine admission (R14)', () => {
 });
 
 describe('@peculiar/x509 admission (R15)', () => {
+	test('certificate inspection contract excludes trust and live-TLS claims', () => {
+		expect(CERTIFICATE_INSPECTION_BOUNDARY).toMatchObject({
+			verifiesTrust: false,
+			verifiesHostname: false,
+			verifiesSignatureChain: false,
+			checksRevocation: false,
+			observesLiveTlsConnection: false,
+		});
+	});
 	test('non-certificate input returns null and strict parse explains why', () => {
 		const bogus = `-----BEGIN CERTIFICATE-----\n${Buffer.from('definitely not der').toString('base64')}\n-----END CERTIFICATE-----`;
 		expect(parseCertificate(bogus)).toBeNull();

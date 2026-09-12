@@ -7,7 +7,19 @@
 import { LosslessNumber, stringify as losslessStringify } from 'lossless-json';
 import { applyEdits, format as formatJsonText, parseTree, type Node as JsonNode, type ParseError } from 'jsonc-parser';
 import type { FormatOptions } from './types';
-import { DEFAULT_OPTIONS, STORAGE_KEY } from './types';
+import { DEFAULT_OPTIONS } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export const formatOptionsCodec: ToolStateCodec<FormatOptions> = {
+	decode(value) {
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return { kind: 'invalid', reason: 'JSON formatter options must be an object.' };
+		const candidate = value as Record<string, unknown>;
+		return (candidate.indent === 2 || candidate.indent === 4) && typeof candidate.sortKeys === 'boolean' && typeof candidate.showTree === 'boolean'
+			? { kind: 'valid', value: { indent: candidate.indent, sortKeys: candidate.sortKeys, showTree: candidate.showTree } }
+			: { kind: 'invalid', reason: 'JSON formatter options contain invalid values.' };
+	},
+	encode(value) { return value; },
+};
 
 export interface FormatResult {
 	success: boolean;
@@ -158,14 +170,3 @@ export async function copyToClipboard(text: string): Promise<boolean> {
 /**
  * Save options to storage
  */
-export async function saveOptions(options: FormatOptions): Promise<void> {
-	await chrome.storage.local.set({ [STORAGE_KEY]: options });
-}
-
-/**
- * Load options from storage
- */
-export async function loadOptions(): Promise<FormatOptions> {
-	const result = await chrome.storage.local.get([STORAGE_KEY]);
-	return result[STORAGE_KEY] || DEFAULT_OPTIONS;
-}

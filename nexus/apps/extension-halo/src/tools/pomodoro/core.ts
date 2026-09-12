@@ -3,6 +3,14 @@
 import type { PomodoroPhase, PomodoroConfig, PomodoroState } from './types';
 import { DEFAULT_CONFIG } from './types';
 
+export const POMODORO_STATE_STORAGE_KEY = 'halo_tool_state_pomodoro-state';
+export const POMODORO_CONFIG_STORAGE_KEY = 'halo_tool_state_pomodoro-config';
+
+export type PomodoroCommand =
+	| { type: 'toggle' }
+	| { type: 'reset'; config: PomodoroConfig }
+	| { type: 'skip'; config: PomodoroConfig };
+
 // Format time as MM:SS
 export function formatTime(seconds: number): string {
 	const mins = Math.floor(seconds / 60);
@@ -33,11 +41,13 @@ export function getNextPhase(state: PomodoroState, config: PomodoroConfig): Pomo
 // Create initial state
 export function createInitialState(config: PomodoroConfig = DEFAULT_CONFIG): PomodoroState {
 	return {
+		revision: 0,
 		phase: 'work',
 		endsAt: null,
 		remaining: config.workMinutes * 60,
 		isRunning: false,
 		sessionsCompleted: 0,
+		completion: null,
 	};
 }
 
@@ -75,5 +85,52 @@ export function normalizePomodoroState(value: unknown): PomodoroState {
 	if (!['work', 'shortBreak', 'longBreak'].includes(state.phase) || typeof state.isRunning !== 'boolean'
 		|| !nonnegativeInteger(state.remaining) || !nonnegativeInteger(state.sessionsCompleted)
 		|| (state.endsAt != null && !nonnegativeInteger(state.endsAt))) throw new TypeError('Invalid Pomodoro state field');
-	return { ...state, endsAt: state.endsAt ?? null };
+	const revision = state.revision === undefined ? 0 : state.revision;
+	if (!nonnegativeInteger(revision)) throw new TypeError('Invalid Pomodoro revision');
+	const completion = state.completion ?? null;
+	if (completion !== null && (typeof completion !== 'object' || typeof completion.id !== 'string' || completion.id.length === 0
+		|| !nonnegativeInteger(completion.dueAt) || (completion.status !== 'pending' && completion.status !== 'delivered'))) {
+		throw new TypeError('Invalid Pomodoro completion');
+	}
+	return { ...state, revision, endsAt: state.endsAt ?? null, completion };
+}
+
+export function projectedPomodoroRemaining(state: PomodoroState, now: number): number {
+	if (!state.isRunning || typeof state.endsAt !== 'number') return state.remaining;
+	return Math.max(0, Math.ceil((state.endsAt - now) / 1000));
+}
+
+function advancePomodoro(state: PomodoroState, config: PomodoroConfig, revision: number): PomodoroState {
+	const phase = getNextPhase(state, config);
+	return {
+		revision,
+		phase,
+		remaining: getPhaseDuration(phase, config),
+		endsAt: null,
+		isRunning: false,
+		sessionsCompleted: state.phase === 'work' ? state.sessionsCompleted + 1 : state.sessionsCompleted,
+		completion: null,
+	};
+}
+
+export function applyPomodoroCommand(state: PomodoroState, command: PomodoroCommand, now: number): PomodoroState {
+	const revision = state.revision + 1;
+	switch (command.type) {
+		case 'toggle':
+			return state.isRunning
+				? { ...state, revision, remaining: projectedPomodoroRemaining(state, now), endsAt: null, isRunning: false }
+				: { ...state, revision, endsAt: now + state.remaining * 1000, isRunning: true, completion: null };
+		case 'reset': return { ...createInitialState(command.config), revision };
+		case 'skip': return advancePomodoro(state, command.config, revision);
+	}
+}
+
+export function reconcilePomodoroDeadline(state: PomodoroState, config: PomodoroConfig, now: number): PomodoroState {
+	if (state.isRunning && typeof state.endsAt !== 'number') {
+		return { ...state, revision: state.revision + 1, endsAt: now + state.remaining * 1000 };
+	}
+	if (!state.isRunning || typeof state.endsAt !== 'number' || now < state.endsAt) return state;
+	const dueAt = state.endsAt;
+	const next = advancePomodoro(state, config, state.revision + 1);
+	return { ...next, completion: { id: `halo-pomodoro-${state.revision}`, dueAt, status: 'pending' } };
 }

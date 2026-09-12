@@ -22,6 +22,9 @@ export const parsePages = (input: string): number[] => {
 	const pages: number[] = [];
 	const ranges = parseRanges(input);
 	for (const r of ranges) {
+		if (r.end - r.start + 1 > 2_000 - pages.length) {
+			throw new RangeError('Page selection exceeds the 2000-page limit.');
+		}
 		for (let i = r.start; i <= r.end; i++) pages.push(i);
 	}
 	return [...new Set(pages)].sort((a, b) => a - b);

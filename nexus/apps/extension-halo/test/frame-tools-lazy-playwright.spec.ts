@@ -1,5 +1,6 @@
 import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
+import { launchPlaywrightPersistentContext } from '../../../scripts/browser-driver';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
@@ -81,12 +82,12 @@ async function closeServer(server: Server | null): Promise<void> {
 	});
 }
 
-async function sendFrameTool(worker: Worker, type: string): Promise<FrameToolResponse> {
-	return worker.evaluate(async (messageType) => {
+async function sendFrameTool(worker: Worker, type: string, operationId = crypto.randomUUID()): Promise<FrameToolResponse> {
+	return worker.evaluate(async ({ messageType, operation }) => {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.id) throw new Error('HALO frame-tools test has no active tab');
-		return chrome.tabs.sendMessage(tab.id, { type: messageType }) as Promise<FrameToolResponse>;
-	}, type);
+		return chrome.tabs.sendMessage(tab.id, { type: messageType, operationId: operation }) as Promise<FrameToolResponse>;
+	}, { messageType: type, operation: operationId });
 }
 
 async function crossOriginChild(contextFrame: Frame, origin: string): Promise<Frame> {
@@ -109,7 +110,7 @@ test.describe('HALO lazy frame tools in Chromium', () => {
 		try {
 			const fixture = await startFixtureServer();
 			server = fixture.server;
-			context = await chromium.launchPersistentContext(profilePath, {
+			context = await launchPlaywrightPersistentContext(chromium, profilePath, {
 				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 				headless: true,
 				viewport: { width: 1_000, height: 700 },
@@ -118,6 +119,9 @@ test.describe('HALO lazy frame tools in Chromium', () => {
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],
+			}, {
+				owner: 'apps/extension-halo/test/frame-tools-lazy-playwright.spec.ts',
+				profile: { kind: 'temporary', prefix: 'halo-frame-tools-playwright-', isolated: true },
 			});
 
 			const browserErrors: string[] = [];
@@ -140,12 +144,16 @@ test.describe('HALO lazy frame tools in Chromium', () => {
 
 			// One tab broadcast reaches both static all-frame bootstraps. Each frame
 			// lazy-imports the packaged runtime and executes the same command.
-			const started = await sendFrameTool(worker, 'HALO_RULER_START');
+			const operationId = crypto.randomUUID();
+			const started = await sendFrameTool(worker, 'HALO_RULER_START', operationId);
 			expect(started).toMatchObject({ success: true, loaded: true });
 			await expect(page.locator('#halo-ruler-overlay')).toHaveCount(1);
 			await expect(child.locator('#halo-ruler-overlay')).toHaveCount(1);
+			await sendFrameTool(worker, 'HALO_RULER_CANCEL', 'stale-operation');
+			await expect(page.locator('#halo-ruler-overlay')).toHaveCount(1);
+			await expect(child.locator('#halo-ruler-overlay')).toHaveCount(1);
 
-			const cancelled = await sendFrameTool(worker, 'HALO_RULER_CANCEL');
+			const cancelled = await sendFrameTool(worker, 'HALO_RULER_CANCEL', operationId);
 			expect(cancelled).toMatchObject({ success: true, loaded: true });
 			await expect(page.locator('#halo-ruler-overlay')).toHaveCount(0);
 			await expect(child.locator('#halo-ruler-overlay')).toHaveCount(0);

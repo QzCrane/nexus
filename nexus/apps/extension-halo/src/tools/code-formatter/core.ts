@@ -7,6 +7,41 @@
 
 import type { CodeLanguage, FormatConfig } from './types';
 import { parse as losslessParse, stringify as losslessStringify } from 'lossless-json';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+const CODE_LANGUAGES = new Set<CodeLanguage>(['html', 'css', 'js', 'json', 'sql', 'xml']);
+export const codeLanguageCodec: ToolStateCodec<CodeLanguage> = {
+	decode(value) {
+		return typeof value === 'string' && CODE_LANGUAGES.has(value as CodeLanguage)
+			? { kind: 'valid', value: value as CodeLanguage }
+			: { kind: 'invalid', reason: 'Code formatter language is unsupported.' };
+	},
+	encode(value) { return value; },
+};
+export const codeIndentCodec: ToolStateCodec<number> = {
+	decode(value) {
+		return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 8
+			? { kind: 'valid', value: value as number }
+			: { kind: 'invalid', reason: 'Code formatter indentation must be an integer from 1 to 8.' };
+	},
+	encode(value) { return value; },
+};
+
+export const CODE_FORMATTER_OPERATION_CONTRACT: Record<CodeLanguage, {
+	descriptionKey: `codeFormatter.boundaries.${CodeLanguage}`;
+	syntaxValidation: 'strict' | 'engine-on-minify' | 'none';
+}> = Object.freeze({
+	json: { descriptionKey: 'codeFormatter.boundaries.json', syntaxValidation: 'strict' },
+	html: { descriptionKey: 'codeFormatter.boundaries.html', syntaxValidation: 'none' },
+	xml: { descriptionKey: 'codeFormatter.boundaries.xml', syntaxValidation: 'none' },
+	css: { descriptionKey: 'codeFormatter.boundaries.css', syntaxValidation: 'engine-on-minify' },
+	js: { descriptionKey: 'codeFormatter.boundaries.js', syntaxValidation: 'none' },
+	sql: { descriptionKey: 'codeFormatter.boundaries.sql', syntaxValidation: 'engine-on-minify' },
+});
+
+function unsupportedLanguage(language: never): never {
+	throw new Error(`Unsupported formatter language: ${String(language)}`);
+}
 
 // Main format function
 export async function formatCode(code: string, config: FormatConfig): Promise<string> {
@@ -26,7 +61,7 @@ export async function formatCode(code: string, config: FormatConfig): Promise<st
 		case 'sql':
 			return formatSql(code, indent);
 		default:
-			return code;
+			return unsupportedLanguage(language);
 	}
 }
 
@@ -258,9 +293,9 @@ export async function minifyCode(code: string, language: CodeLanguage): Promise<
 	switch (language) {
 		case 'json':
 			try {
-				return JSON.stringify(JSON.parse(code));
+				return losslessStringify(losslessParse(code)) ?? code;
 			} catch {
-				return code;
+				throw new Error('Invalid JSON');
 			}
 		case 'html':
 		case 'xml':
@@ -276,6 +311,6 @@ export async function minifyCode(code: string, language: CodeLanguage): Promise<
 		case 'sql':
 			return collapseWhitespaceOutsideStrings(stripCommentsPreservingStrings(code, 'sql'), 'sql').trim();
 		default:
-			return code;
+			return unsupportedLanguage(language);
 	}
 }

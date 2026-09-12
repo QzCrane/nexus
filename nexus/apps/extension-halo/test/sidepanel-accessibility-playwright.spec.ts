@@ -1,5 +1,6 @@
 import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
+import { launchPlaywrightPersistentContext } from '../../../scripts/browser-driver';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -27,7 +28,7 @@ test.describe('HALO SidePanel accessibility contract', () => {
 		const profilePath = await mkdtemp(join(tmpdir(), 'halo-a11y-'));
 		let context: BrowserContext | null = null;
 		try {
-			context = await chromium.launchPersistentContext(profilePath, {
+			context = await launchPlaywrightPersistentContext(chromium, profilePath, {
 				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 				headless: true,
 				reducedMotion: 'reduce',
@@ -37,6 +38,9 @@ test.describe('HALO SidePanel accessibility contract', () => {
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],
+			}, {
+				owner: 'apps/extension-halo/test/sidepanel-accessibility-playwright.spec.ts',
+				profile: { kind: 'temporary', prefix: 'halo-a11y-', isolated: true },
 			});
 			const worker = await extensionWorker(context);
 			const extensionId = new URL(worker.url()).hostname;

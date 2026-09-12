@@ -5,13 +5,13 @@
 	"builtIn": false,
 	"keywords": [],
 	"background": {
-		"mechanism": "interval_slow",
-		"frequency": "1000ms display/deadline check while running",
-		"activeOnly": true,
+		"mechanism": "event_listener",
+		"frequency": "one-shot deadline alarm while a phase runs",
+		"activeOnly": false,
 		"level": "idle",
-		"descriptionKey": "impact.interval_1s",
-		"sourceFile": "tools/pomodoro/panel.tsx",
-		"sourceAnchor": "window.setInterval(tick, 1000)",
-		"sourceDetail": "one 1Hz interval updates ephemeral display time and verifies the live wall-clock deadline; persistent PomodoroState changes only at user/phase boundaries"
+		"descriptionKey": "impact.event_listener",
+		"sourceFile": "kernel/core/deadline-jobs/coordinator.ts",
+		"sourceAnchor": "chrome.alarms.onAlarm.addListener",
+		"sourceDetail": "one replaceable alarm wakes an idempotent background phase reconciler; the mounted panel interval only projects whole-second display time"
 	}
 }

@@ -13,6 +13,7 @@ import {
 	isOffscreenHostStateUnknown,
 	sendOffscreenMessageIfPresent,
 } from './offscreen-coordinator';
+import { resolveVisibleTabs } from './handlers/tab-state';
 
 const events = createDiagnosticEventBuffer();
 let initialized = false;
@@ -48,6 +49,7 @@ export async function collectSpectraDiagnosticOwners(): Promise<DiagnosticOwnerS
 		readOffscreenOwners(),
 	]);
 	const activeCaptureCount = [...captureStates.values()].filter(Boolean).length;
+	const discovery = resolveVisibleTabs.diagnostics();
 	return {
 		backgroundSurfaceActive: true,
 		audibleTabCount: audibleTabs?.length ?? null,
@@ -62,6 +64,15 @@ export async function collectSpectraDiagnosticOwners(): Promise<DiagnosticOwnerS
 		offscreenHostPresent: offscreen.hostPresent,
 		offscreenAudioProcessorCount: offscreen.audioProcessorCount,
 		offscreenRemoteSessionCount: offscreen.remoteSessionCount,
+		mediaDiscoveryPendingCount: discovery.pendingCount,
+		mediaDiscoveryOldestPendingMs: discovery.oldestPendingMs,
+		mediaDiscoveryScanCount: discovery.scanCount,
+		mediaDiscoveryQueryFailureCount: discovery.queryFailureCount,
+		mediaDiscoveryProbeTimeoutCount: discovery.probeTimeoutCount,
+		mediaDiscoveryDeniedCount: discovery.deniedCount,
+		mediaDiscoveryStaleCount: discovery.staleCount,
+		mediaDiscoveryUnknownCount: discovery.unknownCount,
+		mediaDiscoveryLastCoverageComplete: discovery.lastCoverageComplete,
 	};
 }
 

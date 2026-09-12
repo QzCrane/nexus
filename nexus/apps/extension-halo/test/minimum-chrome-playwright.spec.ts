@@ -1,5 +1,6 @@
 import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
+import { launchPlaywrightPersistentContext } from '../../../scripts/browser-driver';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -81,11 +82,11 @@ async function currentTabId(worker: Worker, url: string): Promise<number> {
 	}, url);
 }
 
-async function sendFrameCommand(worker: Worker, tabId: number, type: string): Promise<void> {
-	await worker.evaluate(async ({ targetTabId, messageType }) => {
-		const response = await chrome.tabs.sendMessage(targetTabId, { type: messageType });
+async function sendFrameCommand(worker: Worker, tabId: number, type: string, operationId: string): Promise<void> {
+	await worker.evaluate(async ({ targetTabId, messageType, operation }) => {
+		const response = await chrome.tabs.sendMessage(targetTabId, { type: messageType, operationId: operation });
 		if (!response?.success) throw new Error(`HALO frame command failed: ${messageType}`);
-	}, { targetTabId: tabId, messageType: type });
+	}, { targetTabId: tabId, messageType: type, operation: operationId });
 }
 
 async function assertPinnedBrowser(context: BrowserContext): Promise<void> {
@@ -104,7 +105,7 @@ test.describe('HALO declared minimum Chrome compatibility', () => {
 		try {
 			const fixture = await startFixture();
 			server = fixture.server;
-			context = await chromium.launchPersistentContext(profilePath, {
+			context = await launchPlaywrightPersistentContext(chromium, profilePath, {
 				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 				headless: true,
 				viewport: { width: 1_000, height: 700 },
@@ -113,6 +114,9 @@ test.describe('HALO declared minimum Chrome compatibility', () => {
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],
+			}, {
+				owner: 'apps/extension-halo/test/minimum-chrome-playwright.spec.ts',
+				profile: { kind: 'temporary', prefix: 'halo-minimum-chrome-', isolated: true },
 			});
 			await assertPinnedBrowser(context);
 			const browserErrors: string[] = [];
@@ -140,9 +144,10 @@ test.describe('HALO declared minimum Chrome compatibility', () => {
 			await page.evaluate(() => window.scrollTo(0, 0));
 
 			const tabId = await currentTabId(worker, fixture.url);
-			await sendFrameCommand(worker, tabId, 'HALO_RULER_START');
+			const rulerOperationId = crypto.randomUUID();
+			await sendFrameCommand(worker, tabId, 'HALO_RULER_START', rulerOperationId);
 			await expect(page.locator('#halo-ruler-overlay')).toHaveCount(1);
-			await sendFrameCommand(worker, tabId, 'HALO_RULER_CANCEL');
+			await sendFrameCommand(worker, tabId, 'HALO_RULER_CANCEL', rulerOperationId);
 			await expect(page.locator('#halo-ruler-overlay')).toHaveCount(0);
 
 			await page.locator('#preview-target').hover();

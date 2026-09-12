@@ -85,15 +85,26 @@ last_reviewed: 2026-09-07
 **验收：**巨大整数、十进制、指数、-0、重复键与跨 worker 编码。
 **原始来源：**[github.com/josdejong/lossless-json](https://github.com/josdejong/lossless-json)。
 
-### R05 · JSONPath — @swaggerexpert/jsonpath；jsonpathly 作为比较候选
+### R05 · JSONPath — @swaggerexpert/jsonpath
 
-**裁决：标准候选试点**。
+**裁决：已准入 `@swaggerexpert/jsonpath@4.0.4`**。
 对应位置：`nexus/apps/extension-halo/src/tools/json-path/core.ts`。
 **由轮子接管：**手工路径 tokenizer 和不完整遍历。
-**保留自有职责：**明确支持 RFC 9535 或命名的旧方言；用户查询不可执行 JS。
-**边界与反转条件：**上游合规声明需本地合规集复验；JSONPath-Plus 的 eval:false 可用于明确子集，不冒充完整兼容；不把自定义函数作为字符串执行。
-**验收：**RFC 合规集、递归查询、继承属性、过滤函数、资源上限、无损数字桥接。
-**原始来源：**[github.com/swaggerexpert/jsonpath](https://github.com/swaggerexpert/jsonpath)；[github.com/atamano/jsonpathly](https://github.com/atamano/jsonpathly)；[www.rfc-editor.org/rfc/rfc9535.html](https://www.rfc-editor.org/rfc/rfc9535.html)；[github.com/JSONPath-Plus/JSONPath](https://github.com/JSONPath-Plus/JSONPath)。
+**保留自有职责：**JSON文本解析、资源预算、单次静态MV3 worker、五秒deadline、结果展示和取消归HALO；不开放自定义函数或字符串代码执行。
+**准入证据与边界：**官方JSONPath Compliance Test Suite固定提交`afefcaa256fb9ed224e9dbffb28ec2262182e498`共704项全部通过；JSON realm只读取自有属性；临时Chrome探针在扩展CSP下通过递归查询并确认`$.constructor`零匹配。输入限定1 MiB、100,000节点、128层、4,096查询字符和10,000结果；最终生产扩展构建与UI回放仍是独立门禁。`jsonpathly@3.0.0`因会返回继承的`constructor`属性而淘汰。
+**许可证：**主包Apache-2.0并带NOTICE；运行时依赖`apg-lite@1.0.5`为BSD-2-Clause。精确tarball、fixture和bundle摘要见[`semantic-admission-2026-09-11.json`](../_archive/audits/semantic-admission-2026-09-11.json)。
+**原始来源：**[github.com/swaggerexpert/jsonpath](https://github.com/swaggerexpert/jsonpath)；[www.rfc-editor.org/rfc/rfc9535.html](https://www.rfc-editor.org/rfc/rfc9535.html)；[github.com/jsonpath-standard/jsonpath-compliance-test-suite](https://github.com/jsonpath-standard/jsonpath-compliance-test-suite)。
+
+### CSP Analyzer · csp_evaluator
+
+**裁决：已准入 `csp_evaluator@1.1.8`**。
+对应位置：`nexus/apps/extension-halo/src/tools/csp-analyzer/core.ts`。
+**由轮子接管：**手写分号拆分、脱离指令上下文的危险关键词表和百分制评分。
+**保留自有职责：**HALO区分强制与Report-Only响应头、逐策略展示、输入预算和多响应头组合事实；不把库发现项解释成站点安全证明。
+**准入证据与边界：**解析器按浏览器的first-wins语义保留首个同名指令，HALO显式报告被忽略的重复项；多个强制策略同时约束且资源必须满足每个策略；Report-Only只报告不阻止。输出逐策略事实、风险、语法与严格CSP建议，不产生聚合安全分。最多8条策略、单条16,384字符、总计65,536字符。该库是辅助评估器，不拥有真实响应头、资源图、浏览器执行或完整绕过证明。
+**浏览器边界：**临时combined bundle浏览器探针超时且没有结果，因此没有签发浏览器通过；最终生产扩展UI回放是必需门禁。
+**许可证：**Apache-2.0，无运行时依赖，发布包无NOTICE文件。精确tarball和bundle摘要见[`semantic-admission-2026-09-11.json`](../_archive/audits/semantic-admission-2026-09-11.json)。
+**原始来源：**[github.com/google/csp-evaluator](https://github.com/google/csp-evaluator)；[developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Security-Policy)。
 
 ### R06 · SQL — sql-formatter
 
@@ -622,7 +633,7 @@ last_reviewed: 2026-09-07
 | `cookie-manager` | R44 |
 | `cron` | R29 |
 | `crypto` | R16 |
-| `csp-analyzer` | R31, R44 |
+| `csp-analyzer` | CSP Analyzer (`csp_evaluator`) |
 | `csv-to-json` | R01 |
 | `csv-viewer` | R01 |
 | `diff` | R28 |

@@ -4,12 +4,39 @@
 // metadata failure, and an explicit orphan sweep for older damage.
 
 import { conditionalLedgerWrite, readLedgerEntry } from '@nexus/kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
 import type { ArchiveEntry } from './types';
 import { saveMHTMLBlob, getMHTMLBlob, deleteMHTMLBlob, deleteMHTMLBlobs, getAllBlobIds } from './storage';
+import { downloadBlob } from '../../kernel/utils/object-url-lease';
 
 const STORAGE_KEY = 'halo_archive_entries';
 export const MAX_ARCHIVE_ENTRIES = 50;
 const MAX_MUTATION_ATTEMPTS = 3;
+
+function archiveEntry(value: unknown): ArchiveEntry | null {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+	const candidate = value as Record<string, unknown>;
+	if (typeof candidate.id !== 'string' || candidate.id.length === 0) return null;
+	if (typeof candidate.title !== 'string' || typeof candidate.url !== 'string') return null;
+	if (!Number.isSafeInteger(candidate.savedAt) || (candidate.savedAt as number) < 0) return null;
+	if (!Number.isSafeInteger(candidate.size) || (candidate.size as number) < 0) return null;
+	return { id: candidate.id, title: candidate.title, url: candidate.url, savedAt: candidate.savedAt as number, size: candidate.size as number };
+}
+
+export const archiveLastCodec: ToolStateCodec<ArchiveEntry | null> = {
+	decode(value) {
+		const raw = typeof value === 'object' && value !== null && !Array.isArray(value)
+			&& (value as Record<string, unknown>).version === 1
+			? (value as Record<string, unknown>).value
+			: value;
+		if (raw === null) return { kind: 'valid', value: null };
+		const parsed = archiveEntry(raw);
+		return parsed
+			? { kind: 'valid', value: parsed }
+			: { kind: 'invalid', reason: 'Last archive metadata has invalid identity, text, timestamp, or size.' };
+	},
+	encode(value) { return { version: 1, value }; },
+};
 
 /**
  * Sole missing/malformed-storage policy for the metadata list. Entries that do
@@ -20,13 +47,8 @@ export function parseArchiveEntries(value: unknown): ArchiveEntry[] {
 	const parsed: ArchiveEntry[] = [];
 	for (const entry of value) {
 		if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) continue;
-		const candidate = entry as Record<string, unknown>;
-		if (typeof candidate.id !== 'string' || candidate.id.length === 0) continue;
-		if (typeof candidate.title !== 'string') continue;
-		if (typeof candidate.url !== 'string') continue;
-		if (typeof candidate.savedAt !== 'number' || !Number.isFinite(candidate.savedAt)) continue;
-		if (typeof candidate.size !== 'number' || !Number.isFinite(candidate.size)) continue;
-		parsed.push({ id: candidate.id, title: candidate.title, url: candidate.url, savedAt: candidate.savedAt, size: candidate.size });
+		const candidate = archiveEntry(entry);
+		if (candidate) parsed.push(candidate);
 	}
 	return parsed;
 }
@@ -56,7 +78,7 @@ async function mutateEntries(mutate: (stored: ArchiveEntry[]) => ArchiveEntry[])
 }
 
 // Capture current page as MHTML and store blob plus metadata as one logical unit
-export async function captureCurrentPage(): Promise<ArchiveEntry | null> {
+export async function captureCurrentPage(): Promise<ArchiveEntry> {
 	try {
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.id || !tab.url) throw new Error('No active tab');
@@ -79,44 +101,33 @@ export async function captureCurrentPage(): Promise<ArchiveEntry | null> {
 			await saveEntryMeta(entry);
 		} catch (metaError) {
 			// Metadata did not commit: remove the just-written blob so the two
-			// stores never disagree about this entry.
-			await deleteMHTMLBlob(id).catch(() => undefined);
+			// stores never disagree about this entry. A failed rollback must stay
+			// visible because it leaves a concrete orphan for reconciliation.
+			try {
+				await deleteMHTMLBlob(id);
+			} catch (rollbackError) {
+				throw new AggregateError(
+					[metaError, rollbackError],
+					`Archive metadata commit failed and blob rollback failed for ${id}.`,
+				);
+			}
 			throw metaError;
 		}
 
 		return entry;
 	} catch (error) {
 		console.error('[HALO:Archive] Capture failed:', error);
-		return null;
+		throw error;
 	}
 }
 
 // Download MHTML file
 export async function downloadArchive(entry: ArchiveEntry): Promise<void> {
 	const blob = await getMHTMLBlob(entry.id);
-	if (!blob) return;
+	if (!blob) throw new Error('Archive content was not found in local storage.');
 
-	const url = URL.createObjectURL(blob);
 	const filename = `${sanitizeFilename(entry.title)}_${formatDate(entry.savedAt)}.mhtml`;
-
-	const a = document.createElement('a');
-	a.href = url;
-	a.download = filename;
-	document.body.appendChild(a);
-	a.click();
-	document.body.removeChild(a);
-	URL.revokeObjectURL(url);
-}
-
-// Open in viewer (new tab - Chrome renders MHTML natively)
-export async function openInViewer(entry: ArchiveEntry): Promise<void> {
-	const blob = await getMHTMLBlob(entry.id);
-	if (!blob) {
-		alert('Archive not found in local storage');
-		return;
-	}
-	const url = URL.createObjectURL(blob);
-	chrome.tabs.create({ url });
+	downloadBlob(blob, filename);
 }
 
 // Save entry metadata, trim the list to its ceiling, and delete the blobs of

@@ -1,6 +1,33 @@
 // goal: Mock data generation core logic (lightweight, no external deps)
 
 import type { MockDataType, MockField, MockConfig } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+const MOCK_DATA_TYPES = new Set<MockDataType>(['name', 'email', 'phone', 'uuid', 'address', 'lorem', 'number', 'date']);
+export const mockFieldsCodec: ToolStateCodec<MockField[]> = {
+	decode(value) {
+		if (!Array.isArray(value) || value.length > 100 || value.some((entry) => {
+			if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) return true;
+			const field = entry as Record<string, unknown>;
+			return typeof field.name !== 'string' || typeof field.type !== 'string'
+				|| !MOCK_DATA_TYPES.has(field.type as MockDataType);
+		})) return { kind: 'invalid', reason: 'Mock fields contain invalid names or types.' };
+		// The read boundary is where legacy persisted rows (pre-identity era) and
+		// accidental duplicates are upgraded to stable identities exactly once.
+		return { kind: 'valid', value: normalizeMockFields(value as MockField[]) };
+	},
+	encode(value) { return value; },
+};
+
+export const mockCountCodec: ToolStateCodec<number> = {
+	decode(value) { return Number.isSafeInteger(value) && (value as number) >= 1 && (value as number) <= 1000 ? { kind: 'valid', value: value as number } : { kind: 'invalid', reason: 'Mock row count must be an integer from 1 to 1000.' }; },
+	encode(value) { return value; },
+};
+
+export const mockFormatCodec: ToolStateCodec<MockConfig['format']> = {
+	decode(value) { return value === 'json' || value === 'csv' || value === 'sql' ? { kind: 'valid', value } : { kind: 'invalid', reason: 'Mock output format is unsupported.' }; },
+	encode(value) { return value; },
+};
 
 // Predefined data pools
 const FIRST_NAMES = ['James', 'Mary', 'John', 'Patricia', 'Robert', 'Jennifer', 'Michael', 'Linda', 'William', 'Elizabeth', 'David', 'Susan', 'Richard', 'Jessica', 'Joseph', 'Sarah'] as const;

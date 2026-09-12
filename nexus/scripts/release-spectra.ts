@@ -59,6 +59,14 @@ export const SPECTRA_RELEASE_PATHS = Object.freeze([
 	'nexus/scripts/check-toolchain.ts',
 	'nexus/scripts/toolchain-versions.ts',
 	'nexus/scripts/dependency-audit.ts',
+	'nexus/scripts/artifact-provenance.ts',
+	'nexus/scripts/capture-retained-dependencies.ts',
+	'nexus/scripts/check-source-derived-third-party.ts',
+	'nexus/scripts/generate-sbom.ts',
+	'nexus/scripts/release-artifact-provenance.ts',
+	'nexus/scripts/release-supply-chain.ts',
+	'nexus/license-adjudication.json',
+	'nexus/source-derived-third-party.json',
 	'nexus/scripts/run-lint-parallel.ts',
 	'nexus/scripts/run-prebuild-parallel.ts',
 	'nexus/scripts/run-strict-biome.ts',
@@ -105,6 +113,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'documentation architecture', args: ['run', 'docs:check'] },
 	{ label: 'platform contract', args: ['run', 'check:platform'] },
 	{ label: 'repository governance contracts', args: ['run', 'check:governance'] },
+	{ label: 'closeout evidence contracts', args: ['run', 'check:closeout-evidence'] },
 	{ label: 'public projection contract', args: ['run', 'check:public-projections'] },
 	{ label: 'frozen dependency install', args: ['install', '--frozen-lockfile'] },
 	{ label: 'toolchain verify', args: ['run', 'check:toolchain'] },
@@ -112,7 +121,9 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'workspace dependency build', args: ['run', 'build:spectra-deps'] },
 	{ label: 'TypeScript check', args: ['run', 'typecheck:spectra'] },
 	{ label: 'unit and contract tests', args: ['run', '--cwd', 'apps/extension-spectra', 'test:unit'] },
-	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-spectra', 'build:prod'] },
+	{ label: 'production build', args: ['run', '--cwd', 'apps/extension-spectra', 'build:analyze'] },
+	{ label: 'retained dependency capture', args: ['scripts/capture-retained-dependencies.ts', 'spectra', '--keep-analysis'] },
+	{ label: 'whole-artifact provenance capture', args: ['scripts/artifact-provenance.ts', 'spectra'] },
 	{ label: 'production Chrome integration', args: ['run', '--cwd', 'apps/extension-spectra', 'test:chrome:dist'] },
 	{ label: 'dependency audit', args: ['run', 'audit:dependencies'] },
 	{
@@ -129,10 +140,11 @@ export const RELEASE_STEPS = Object.freeze([
 		args: ['apps/extension-spectra/scripts/smoke-release.ts', '--stage', '--promote'],
 		requiresReceipt: true,
 	},
+	{ label: 'final release supply-chain evidence', args: ['scripts/release-artifact-provenance.ts', 'spectra'] },
 ]);
 
 export const RELEASE_REQUIRED_GATE_LABELS = Object.freeze(
-	RELEASE_STEPS.filter((step) => !step.requiresReceipt).map((step) => step.label),
+	RELEASE_STEPS.slice(0, RELEASE_STEPS.findIndex((step) => step.requiresReceipt)).map((step) => step.label),
 );
 
 export function assertReleaseRuntime(version = Bun.version) {

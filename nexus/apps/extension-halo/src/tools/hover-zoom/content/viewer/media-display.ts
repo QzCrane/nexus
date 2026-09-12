@@ -65,6 +65,8 @@ export function showVideo(
 				source.audioUrl,
 				source.headers,
 				source.metadata,
+				undefined,
+				source.proxyCapability,
 			);
 		} catch (error: unknown) {
 			console.error(LOG_TAG, 'MSE playback could not start', error);

@@ -13,10 +13,13 @@ import {
 	scrollToHeading,
 	outlineToMarkdown,
 	copyToClipboard,
+	outlineSettingsCodec,
 } from './core';
 import { styles } from './panel.styles';
 import { HeadingItem } from './HeadingItem';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 import { useToast } from '../../components/ToastProvider';
 
 
@@ -26,23 +29,20 @@ export const OutlinePanel: React.FC = () => {
 	const { t } = useTranslation();
 	const { showToast } = useToast();
 	const [headings, setHeadings] = useState<HeadingItemType[]>([]);
-	const [storedSettings, setSettings] = useToolState<OutlineSettings>('outline-settings', DEFAULT_SETTINGS);
+	const [storedSettings, setSettings, , settingsRecovery] = useToolState<OutlineSettings>('outline-settings', DEFAULT_SETTINGS, { codec: outlineSettingsCodec });
 	const settings = storedSettings || DEFAULT_SETTINGS;
-	const [loading, setLoading] = useState(false);
+	const task = useOwnedAsyncTask();
 
 	const handleExtract = useCallback(async () => {
-		setLoading(true);
-		try {
-			const extracted = await extractHeadings(settings);
-			setHeadings(extracted);
-			logger.info('Extracted', extracted.length, 'headings');
-		} catch (e) {
-			logger.error('Extract failed:', e);
+		const outcome = await task.run(() => extractHeadings(settings));
+		if (outcome.kind === 'succeeded') {
+			setHeadings(outcome.value);
+			logger.info('Extracted', outcome.value.length, 'headings');
+		} else if (outcome.kind === 'failed') {
+			logger.error('Extract failed:', outcome.error);
 			showToast('Failed to extract headings');
-		} finally {
-			setLoading(false);
 		}
-	}, [settings, showToast]);
+	}, [settings, showToast, task.run]);
 
 	const handleHeadingClick = useCallback(async (index: number) => {
 		await scrollToHeading(index);
@@ -54,7 +54,7 @@ export const OutlinePanel: React.FC = () => {
 		showToast(ok ? t('outlinePanel.exported') : t('outlinePanel.copyFailed'));
 	}, [headings, settings.showNumbers, showToast, t]);
 
-	const handleSettingChange = useCallback(async <K extends keyof OutlineSettings>(
+	const handleSettingChange = useCallback(<K extends keyof OutlineSettings>(
 		key: K,
 		value: OutlineSettings[K]
 	) => {
@@ -70,6 +70,7 @@ export const OutlinePanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={settingsRecovery} emptyValue={DEFAULT_SETTINGS} exportName="halo-outline-settings-damaged.json" />
 			<Card variant="default" padding="sm">
 				<div style={styles.optionsRow}>
 					<span>{t('outlinePanel.levels')}</span>
@@ -107,9 +108,9 @@ export const OutlinePanel: React.FC = () => {
 				<button type="button"
 					style={{ ...styles.btn, ...styles.primaryBtn }}
 					onClick={handleExtract}
-					disabled={loading}
+					disabled={task.phase === 'running'}
 				>
-					{loading ? t('outlinePanel.extracting') : `🔄 ${t('outlinePanel.refresh')}`}
+					{task.phase === 'running' ? t('outlinePanel.extracting') : `🔄 ${t('outlinePanel.refresh')}`}
 				</button>
 				{headings.length > 0 && (
 					<button type="button" style={styles.btn} onClick={handleCopyMarkdown}>

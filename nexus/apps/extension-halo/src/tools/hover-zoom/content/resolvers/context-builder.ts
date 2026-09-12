@@ -26,15 +26,16 @@ export function buildContext(
 	// Extract hostname from URL if not provided
 	const host = urlHost || resolveHostname(url, window.location.hostname);
 
-	return {
+	const context: ResolveContext = {
 		url,
 		element,
 		host,
 		match: null,
-		fetchHtml: (u) => fetchWithProxy<string>(u, { responseType: 'text' }),
-		fetchJson: <T>(u: string, headers?: Record<string, string>) => fetchWithProxy<T>(u, { headers }),
+		fetchHtml: (u) => fetchWithProxy<string>(u, { responseType: 'text', proxyCapability: context.proxyCapability }),
+		fetchJson: <T>(u: string, headers?: Record<string, string>) => fetchWithProxy<T>(u, { headers, proxyCapability: context.proxyCapability }),
 		getCookie,
 		targetWidth,
 		targetHeight
 	};
+	return context;
 }

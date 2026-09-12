@@ -1,73 +1,46 @@
 // goal: Image Tools core logic - compress and convert images using canvas
 
-import type { ImageConfig, ImageInfo } from './types';
+import type { ImageConfig } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { downloadBlob as downloadOwnedBlob } from '../../kernel/utils/object-url-lease';
+import type { OwnedTaskExecution } from '../../kernel/utils/owned-async-task';
 
-// Load image from file
-export function loadImage(file: File): Promise<HTMLImageElement> {
-	return new Promise((resolve, reject) => {
-		const img = new Image();
-		img.onload = () => resolve(img);
-		img.onerror = reject;
-		img.src = URL.createObjectURL(file);
-	});
-}
+const IMAGE_FORMATS = new Set(['png', 'jpeg', 'webp']);
 
-// Get image info
-export function getImageInfo(file: File, img: HTMLImageElement): ImageInfo {
-	return {
-		width: img.naturalWidth,
-		height: img.naturalHeight,
-		size: file.size,
-		type: file.type,
-	};
-}
-
-// Compress/convert image
-export async function processImage(img: HTMLImageElement, config: ImageConfig): Promise<Blob> {
-	const canvas = document.createElement('canvas');
-	const ctx = canvas.getContext('2d');
-	if (!ctx) throw new Error('Canvas 2D context is unavailable');
-
-	// Calculate new dimensions
-	let { width, height } = img;
-	const ratio = width / height;
-
-	if (config.maxWidth && width > config.maxWidth) {
-		width = config.maxWidth;
-		height = width / ratio;
-	}
-	if (config.maxHeight && height > config.maxHeight) {
-		height = config.maxHeight;
-		width = height * ratio;
-	}
-
-	canvas.width = Math.round(width);
-	canvas.height = Math.round(height);
-
-	// Draw image
-	ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-	// Convert to blob
-	return new Promise((resolve, reject) => {
-		canvas.toBlob(
-			(blob) => {
-				if (blob) resolve(blob);
-				else reject(new Error('Failed to process image'));
-			},
-			`image/${config.format}`,
-			config.quality
-		);
-	});
-}
+export const imageToolsConfigCodec: ToolStateCodec<ImageConfig> = {
+	decode(value) {
+		const raw = typeof value === 'object' && value !== null && !Array.isArray(value)
+			&& (value as Record<string, unknown>).version === 1
+			? (value as Record<string, unknown>).value
+			: value;
+		if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return { kind: 'invalid', reason: 'Image configuration is not a record.' };
+		const config = raw as Record<string, unknown>;
+		if (typeof config.format !== 'string' || !IMAGE_FORMATS.has(config.format)
+			|| typeof config.quality !== 'number' || !Number.isFinite(config.quality) || config.quality < 0.1 || config.quality > 1
+			|| !Number.isSafeInteger(config.maxWidth) || (config.maxWidth as number) < 0 || (config.maxWidth as number) > 32_768
+			|| !Number.isSafeInteger(config.maxHeight) || (config.maxHeight as number) < 0 || (config.maxHeight as number) > 32_768) {
+			return { kind: 'invalid', reason: 'Image format, quality, or dimension limits are invalid.' };
+		}
+		return { kind: 'valid', value: config as unknown as ImageConfig };
+	},
+	encode(value) { return { version: 1, value }; },
+};
 
 // Image to Base64
-export function imageToBase64(blob: Blob): Promise<string> {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
+export function imageToBase64(blob: Blob): OwnedTaskExecution<string> {
+	const reader = new FileReader();
+	const promise = new Promise<string>((resolve, reject) => {
 		reader.onload = () => resolve(reader.result as string);
-		reader.onerror = reject;
+		reader.onerror = () => reject(reader.error ?? new Error('Image read failed'));
+		reader.onabort = () => reject(new DOMException('Image read cancelled', 'AbortError'));
 		reader.readAsDataURL(blob);
 	});
+	return {
+		promise,
+		dispose: () => {
+			if (reader.readyState === FileReader.LOADING) reader.abort();
+		},
+	};
 }
 
 // Base64 to Blob
@@ -87,12 +60,7 @@ export function base64ToBlob(base64: string): Blob {
 
 // Download blob
 export function downloadBlob(blob: Blob, filename: string): void {
-	const url = URL.createObjectURL(blob);
-	const a = document.createElement('a');
-	a.href = url;
-	a.download = filename;
-	a.click();
-	URL.revokeObjectURL(url);
+	downloadOwnedBlob(blob, filename);
 }
 
 // Format file size

@@ -6,9 +6,17 @@ import { useTranslation } from '../../i18n';
 import { checkPermission, requestPermission, getGroups, createGroup, ungroup, updateGroup, type TabGroupInfo } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'] as const satisfies readonly chrome.tabGroups.Color[];
+const tabGroupColorCodec: ToolStateCodec<chrome.tabGroups.Color> = {
+	decode: (value) => typeof value === 'string' && (COLORS as readonly string[]).includes(value)
+		? { kind: 'valid', value: value as chrome.tabGroups.Color } : { kind: 'invalid', reason: 'Tab group color is invalid.' },
+	encode: (value) => value,
+};
 
 export const TabGroupPanel: React.FC = () => {
     const { t } = useTranslation();
@@ -16,18 +24,18 @@ export const TabGroupPanel: React.FC = () => {
     const [groups, setGroups] = useState<TabGroupInfo[]>([]);
     const [showCreate, setShowCreate] = useToolState<boolean>('tab-group-show-create', false);
     const [newTitle, setNewTitle] = useToolState<string>('tab-group-title', '');
-    const [newColor, setNewColor] = useToolState<chrome.tabGroups.Color>('tab-group-color', 'blue');
+	const [newColor, setNewColor, , colorRecovery] = useToolState<chrome.tabGroups.Color>('tab-group-color', 'blue', { codec: tabGroupColorCodec });
+	const task = useOwnedAsyncTask();
 
 
 
     const load = useCallback(async () => {
-        const p = await checkPermission();
-        setHasPerm(p);
-        if (p) {
-            const g = await getGroups();
-            setGroups(g);
-        }
-    }, []);
+		const outcome = await task.run(async () => {
+			const permitted = await checkPermission();
+			return { permitted, groups: permitted ? await getGroups() : [] };
+		});
+		if (outcome.kind === 'succeeded') { setHasPerm(outcome.value.permitted); setGroups(outcome.value.groups); }
+	}, [task.run]);
 
     useEffect(() => { load(); }, [load]);
 
@@ -55,20 +63,22 @@ export const TabGroupPanel: React.FC = () => {
     }, [hasPerm, load]);
 
     const handleRequestPerm = async () => {
-        const granted = await requestPermission();
-        if (granted) load();
+		const outcome = await task.run(async () => {
+			const granted = await requestPermission();
+			return { granted, groups: granted ? await getGroups() : [] };
+		});
+		if (outcome.kind === 'succeeded') { setHasPerm(outcome.value.granted); setGroups(outcome.value.groups); }
     };
 
     const handleCreate = async () => {
-        await createGroup(newTitle, newColor);
-        setShowCreate(false);
-        setNewTitle('');
-        load();
+		const outcome = await task.run(async () => { await createGroup(newTitle, newColor); return getGroups(); });
+		if (outcome.kind === 'succeeded') { setGroups(outcome.value); setShowCreate(false); setNewTitle(''); }
     };
 
     if (!hasPerm) {
         return (
             <div style={styles.wrapper}>
+				<StorageRecoveryActions recovery={colorRecovery} emptyValue="blue" exportName="halo-tab-group-color-damaged.json" />
                 <div style={styles.permission}>
                     <div style={{fontSize: '40px'}}>📑</div>
                     <div>{t('tabGroup.permTitle', { defaultValue: 'Tab Groups requires permission' })}</div>
@@ -81,6 +91,7 @@ export const TabGroupPanel: React.FC = () => {
 
     return (
         <div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={colorRecovery} emptyValue="blue" exportName="halo-tab-group-color-damaged.json" />
             <div style={styles.header}>
                 <div style={{fontWeight: 600}}>{t('tabGroup.title', { defaultValue: 'Tab Groups' })} ({groups.length})</div>
                 <button type="button" style={styles.createBtn} onClick={() => setShowCreate(!showCreate)}>{t('tabGroup.newGroup', { defaultValue: '+ New Group' })}</button>
@@ -118,6 +129,7 @@ export const TabGroupPanel: React.FC = () => {
             )}
 
             <div style={styles.list}>
+				{task.error !== null && <div role="alert" style={{ color: 'var(--halo-danger, #d33)', fontSize: '12px' }}>{String(task.error)}</div>}
                 {groups.map(g => (
                     <div key={g.id} style={styles.card}>
                         <div style={styles.groupHeader}>
@@ -126,10 +138,10 @@ export const TabGroupPanel: React.FC = () => {
                                 {g.title || t('tabGroup.untitled', { defaultValue: 'Untitled' })}
                             </div>
                             <div style={styles.controls}>
-                                <button type="button" style={styles.iconBtn} onClick={() => updateGroup(g.id, { collapsed: !g.collapsed })}>
+				<button type="button" style={styles.iconBtn} onClick={() => { void task.run(async () => { await updateGroup(g.id, { collapsed: !g.collapsed }); return getGroups(); }).then((outcome) => { if (outcome.kind === 'succeeded') setGroups(outcome.value); }); }}>
                                     {g.collapsed ? t('tabGroup.expand', { defaultValue: 'Expand' }) : t('tabGroup.collapse', { defaultValue: 'Collapse' })}
                                 </button>
-                                <button type="button" style={{...styles.iconBtn, color: '#ef4444'}} onClick={() => ungroup(g.id)}>
+				<button type="button" style={{...styles.iconBtn, color: '#ef4444'}} onClick={() => { void task.run(async () => { await ungroup(g.id); return getGroups(); }).then((outcome) => { if (outcome.kind === 'succeeded') setGroups(outcome.value); }); }}>
                                     {t('tabGroup.ungroup', { defaultValue: 'Ungroup' })}
                                 </button>
                             </div>

@@ -1,5 +1,6 @@
 // Enhanced resolution result type
 
+import type { HoverZoomProxyCapability } from '../../rules/network-capabilities';
 import type { RuleMetadata } from '../../rules/types';
 
 export interface EnhancedResult {
@@ -13,4 +14,5 @@ export interface EnhancedResult {
 	fromRule: string | null;
 	fileSize?: number;  // File size in bytes (if available)
 	metadata?: RuleMetadata;
+	proxyCapability?: HoverZoomProxyCapability;
 }

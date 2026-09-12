@@ -8,6 +8,8 @@ import type { CaseType, TextToolMode } from './types';
 import { convertCase, getTextStats, dedupeLines, sortLines, trimLines, reverseLines } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
 
 
 const MODES: { id: TextToolMode; label: string }[] = [
@@ -27,12 +29,20 @@ const CASE_OPTIONS: { id: CaseType; label: string }[] = [
 	{ id: 'constant', label: 'CONSTANT_CASE' },
 	{ id: 'kebab', label: 'kebab-case' },
 ];
+const textModeCodec: ToolStateCodec<TextToolMode> = {
+	decode(value) { return MODES.some((entry) => entry.id === value) ? { kind: 'valid', value: value as TextToolMode } : { kind: 'invalid', reason: 'Text tool mode is unsupported.' }; },
+	encode(value) { return value; },
+};
+const caseTypeCodec: ToolStateCodec<CaseType> = {
+	decode(value) { return CASE_OPTIONS.some((entry) => entry.id === value) ? { kind: 'valid', value: value as CaseType } : { kind: 'invalid', reason: 'Text case conversion is unsupported.' }; },
+	encode(value) { return value; },
+};
 
 export const TextToolsPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [mode, setMode] = useToolState<TextToolMode>('text-tools-mode', 'case');
+	const [mode, setMode, , modeRecovery] = useToolState<TextToolMode>('text-tools-mode', 'case', { codec: textModeCodec });
 	const [input, setInput] = useToolState<string>('text-tools-input', '');
-	const [caseType, setCaseType] = useToolState<CaseType>('text-tools-case', 'lower');
+	const [caseType, setCaseType, , caseRecovery] = useToolState<CaseType>('text-tools-case', 'lower', { codec: caseTypeCodec });
 
 
 	// Compute stats in real-time
@@ -60,6 +70,8 @@ export const TextToolsPanel: React.FC = () => {
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={modeRecovery} emptyValue="case" exportName="halo-text-mode-damaged.json" />
+			<StorageRecoveryActions recovery={caseRecovery} emptyValue="lower" exportName="halo-text-case-damaged.json" />
 			{/* Mode Tabs */}
 			<Card variant="default" padding="sm">
 				<div style={styles.tabs}>

@@ -69,7 +69,7 @@ export function initUserScriptsEngine(): () => void {
 	};
 }
 
-export async function injectScriptToCurrentTab(script: UserScript): Promise<boolean> {
+export async function injectScriptToCurrentTab(script: UserScript, signal?: AbortSignal): Promise<boolean> {
 	try {
 		await requireInstalledModule();
 		const hasAccess = await chrome.permissions.contains({
@@ -78,8 +78,16 @@ export async function injectScriptToCurrentTab(script: UserScript): Promise<bool
 		});
 		if (!hasAccess) throw new Error('User Scripts permission and host access are required');
 		await ensureUserScriptsRuntimeReady();
+		await requireInstalledModule();
+		const hasEffectAccess = await chrome.permissions.contains({
+			permissions: ['userScripts'],
+			origins: ['*://*/*'],
+		});
+		if (!hasEffectAccess) throw new Error('User Scripts permission or host access was revoked');
+		if (signal?.aborted) return false;
 		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 		if (!tab?.id) return false;
+		if (signal?.aborted) return false;
 		if (script.type === 'css') {
 			await chrome.scripting.insertCSS({
 				target: { tabId: tab.id },
@@ -96,7 +104,7 @@ export async function injectScriptToCurrentTab(script: UserScript): Promise<bool
 			if (failure?.error) throw new Error(failure.error);
 		}
 		await incrementRunCount(script.id);
-		return true;
+		return !signal?.aborted;
 	} catch (e) {
 		console.warn(LOG_TAG, 'Manual injection failed:', e);
 		return false;

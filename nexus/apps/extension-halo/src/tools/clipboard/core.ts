@@ -15,20 +15,25 @@ import {
 	SETTINGS_STORAGE_KEY,
 	STORAGE_KEY,
 } from './types';
+import { reportStorageHealth } from '../../kernel/core/storage-health';
+
+const settingsStorageHealthOwner = Symbol('clipboard-settings');
 
 /**
  * Get clipboard settings
  */
 export async function getClipboardSettings(): Promise<ClipboardSettings> {
-	const result = await chrome.storage.local.get([SETTINGS_STORAGE_KEY]);
-	return parseClipboardSettings(result[SETTINGS_STORAGE_KEY]);
+	return parseClipboardSettings((await readLedgerEntry(SETTINGS_STORAGE_KEY, { area: 'local' })).value);
 }
 
 /**
  * Update clipboard settings
  */
 export async function updateClipboardSettings(enabled: boolean): Promise<void> {
-	await chrome.storage.local.set({ [SETTINGS_STORAGE_KEY]: { enabled } });
+	const base = await readLedgerEntry(SETTINGS_STORAGE_KEY, { area: 'local' });
+	const outcome = await conditionalLedgerWrite(SETTINGS_STORAGE_KEY, { area: 'local', baseRevision: base.revision, value: { enabled } });
+	if (outcome.kind !== 'committed') { reportStorageHealth(settingsStorageHealthOwner, outcome.kind === 'unknown' ? 'write-unknown' : 'write-error'); throw new Error('Clipboard setting was not committed'); }
+	reportStorageHealth(settingsStorageHealthOwner, null);
 }
 
 /**

@@ -4,9 +4,11 @@ export interface PDFDocument {
 	id: string;
 	name: string;
 	pageCount: number;
+	pixelCount: number;
 	size: number;
 	createdAt: number;
-	data: ArrayBuffer;
+	kind: 'pdf' | 'png' | 'jpeg';
+	file: File;
 }
 
 export interface PDFPage {
@@ -32,6 +34,7 @@ export interface MergeOptions {
 export interface SplitOptions {
 	document: ArrayBuffer;
 	ranges: { start: number; end: number }[];
+	maxOutputBytes?: number;
 }
 
 export interface ExtractOptions {

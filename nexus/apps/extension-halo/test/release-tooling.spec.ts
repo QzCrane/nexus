@@ -79,7 +79,13 @@ describe('HALO release tooling', () => {
 
 	test('checks version parity before expensive release gates', () => {
 		expect(RELEASE_STEPS[0]?.label).toBe('version parity');
-		expect(RELEASE_STEPS.at(-1)?.label).toBe('staging ZIP');
+		expect(RELEASE_STEPS.at(-2)?.label).toBe('staging ZIP');
+		expect(RELEASE_STEPS.at(-1)?.label).toBe('final release supply-chain evidence');
+		expect(RELEASE_STEPS.find((step) => step.label === 'unit tests')?.promotionResultEntry).toBe('unit');
+		expect(RELEASE_STEPS.find((step) => step.label === 'production Chromium contracts')?.promotionResultEntry)
+			.toBe('browser');
+		expect(RELEASE_STEPS.findIndex((step) => step.label === 'feature promotion execution evidence'))
+			.toBeGreaterThan(RELEASE_STEPS.findIndex((step) => step.label === 'production Chromium contracts'));
 		expect(RELEASE_STEPS.find((step) => step.label === 'dependency audit')?.args).toEqual([
 			'run',
 			'audit:dependencies',
@@ -297,7 +303,7 @@ describe('HALO release tooling', () => {
 		expect(background).not.toContain('halo-pdf-link');
 		expect(background).not.toContain('HALO_PREFILL_QR');
 		expect(background).toContain("toolId: 'qrcode'");
-		expect(background).toContain('chrome.storage.session.set');
+		expect(background).toContain('scheduleStorageSet({ [SIDEPANEL_ACTIVATION_STORAGE_KEY]: envelope }');
 		expect(sidepanel).toContain('parseSidepanelActivationDelivery(message)');
 		expect(sidepanel).toContain('publishSidepanelActivation');
 	});

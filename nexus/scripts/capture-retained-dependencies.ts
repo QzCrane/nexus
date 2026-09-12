@@ -12,6 +12,7 @@ import {
 } from 'node:fs';
 import { dirname, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { productBuildAnalysisPath } from './artifact-provenance';
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const workspaceDir = dirname(scriptDir);
@@ -199,7 +200,7 @@ export function captureRetainedDependencies({
 	keepAnalysis?: boolean;
 }): string {
 	const projectDir = resolve(workspaceDir, `apps/extension-${product}`);
-	const source = resolve(analysisPath ?? resolve(projectDir, 'dist/build-analysis.json'));
+	const source = resolve(analysisPath ?? productBuildAnalysisPath(product));
 	if (!existsSync(source)) throw new Error(`${product}: build analysis is missing: ${source}`);
 	const output = resolve(outputPath ?? resolve(repositoryRoot, 'artifacts/supply-chain', `${product}.retained-dependencies.json`));
 	const analysisSha256 = sha256File(source);

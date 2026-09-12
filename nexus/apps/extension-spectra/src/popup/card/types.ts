@@ -23,6 +23,8 @@ export interface CardInternalState {
   config: AudioConfig;
   stableConfig: AudioConfig;
   controlSnapshot: ControlSnapshot | null;
+  controlSnapshotKnown?: boolean;
+  lifecycleSnapshotKnown?: boolean;
   isCaptureActive: boolean;
   volumeTransitionPresentation?: {
     effectiveVolume: number;
@@ -50,12 +52,17 @@ export interface PopupVisualizerFactories {
   createVizLoop: VizLoopFactory;
 }
 
+export type CardObservationReason = 'capacity' | 'not-requested' | 'rejected' | 'stale' | 'timeout' | 'unavailable';
+export type CardObservation<T> =
+	| { state: 'known'; value: T }
+	| { state: 'unknown'; reason: CardObservationReason };
+
 export interface CardSnapshot {
   documentId: string;
-  status: AudioRuntimeStatus | null;
-  controlSnapshot: ControlSnapshot | null;
-  sessionSnapshot: AudioSessionSnapshot | null;
-  isRemoteActive: boolean | null;
+  status: CardObservation<AudioRuntimeStatus>;
+  controlSnapshot: CardObservation<ControlSnapshot>;
+  sessionSnapshot: CardObservation<AudioSessionSnapshot | null>;
+  isRemoteActive: CardObservation<boolean>;
 }
 
 export interface InitCardParams {

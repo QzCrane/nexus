@@ -1,110 +1,134 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
+  "entries": {
+    "unit": {
+      "releasePackagePath": "package.json",
+      "releaseScript": "test:halo",
+      "coveragePackagePath": "apps/extension-halo/package.json",
+      "coverageScript": "test:unit"
+    },
+    "browser": {
+      "releasePackagePath": "apps/extension-halo/package.json",
+      "releaseScript": "test:browser-chromium",
+      "coveragePackagePath": "apps/extension-halo/package.json",
+      "coverageScript": "test:browser-chromium:fast"
+    }
+  },
   "owners": {
     "bilibili-enhancer": [
       {
         "path": "test/bilibili-enhancer-contract.spec.ts",
-        "focusMarkers": [
-          "../src/scripts/bilibili-enhancer/script.js",
-          "observer = new MutationObserver("
-        ]
+        "entry": "unit"
       }
     ],
     "bilibili-plus": [
       {
         "path": "test/legacy-business-preservation.spec.ts",
-        "focusMarkers": [
-          "../src/scripts/bilibili-plus/script.js",
-          "expect(observers).toBe(1)",
-          "30000"
-        ]
+        "entry": "unit"
       }
     ],
     "clipboard": [
       {
         "path": "test/legacy-business-preservation.spec.ts",
-        "focusMarkers": [
-          "../src/entry/content-clipboard.ts",
-          "host.change({ enabled: false })",
-          "host.sent"
-        ]
+        "entry": "unit"
       }
     ],
     "dom-selector": [
       {
         "path": "test/frame-tools-lazy.spec.ts",
-        "focusMarkers": [
-          "FRAME_TOOL_DOM_SELECTOR_START",
-          "../content/dom-selector"
-        ]
+        "entry": "unit"
       }
     ],
     "hover-zoom": [
       {
         "path": "test/hover-zoom-authority.spec.ts",
-        "focusMarkers": [
-          "../src/tools/hover-zoom/logic/engine",
-          "reconcileAntiHotlinkRules"
-        ]
+        "entry": "unit"
       },
       {
         "path": "test/hover-zoom-lazy.spec.ts",
-        "focusMarkers": [
-          "src/content/hover-zoom-runtime-loader.ts",
-          "tools/_hover-zoom/runtime.js"
-        ]
+        "entry": "unit"
+      }
+    ],
+    "image-tools": [
+      {
+        "path": "test/heavy-worker-tasks.spec.ts",
+        "entry": "unit"
+      },
+      {
+        "path": "test/owned-async-task.spec.ts",
+        "entry": "unit"
+      }
+    ],
+    "json-path": [
+      {
+        "path": "test/library-reuse-admission.spec.ts",
+        "entry": "unit"
       }
     ],
     "page-annotate": [
       {
         "path": "test/frame-tools-lazy.spec.ts",
-        "focusMarkers": [
-          "FRAME_TOOL_ANNOTATE_START",
-          "../content/page-annotate"
-        ]
+        "entry": "unit"
+      }
+    ],
+    "pdf": [
+      {
+        "path": "test/heavy-worker-tasks.spec.ts",
+        "entry": "unit"
+      },
+      {
+        "path": "test/owned-async-task.spec.ts",
+        "entry": "unit"
+      }
+    ],
+    "pomodoro": [
+      {
+        "path": "test/deadline-jobs.spec.ts",
+        "entry": "unit"
       }
     ],
     "qrcode": [
       {
         "path": "test/context-menu-activation.spec.ts",
-        "focusMarkers": [
-          "persistQrcodeActivation",
-          "QRCODE_MODE_STORAGE_KEY"
-        ]
+        "entry": "unit"
+      }
+    ],
+    "regex": [
+      {
+        "path": "test/heavy-worker-tasks.spec.ts",
+        "entry": "unit"
+      },
+      {
+        "path": "test/owned-async-task.spec.ts",
+        "entry": "unit"
       }
     ],
     "ruler": [
       {
         "path": "test/frame-tools-lazy.spec.ts",
-        "focusMarkers": [
-          "FRAME_TOOL_RULER_START",
-          "../src/entry/content-frame-tools.ts"
-        ]
+        "entry": "unit"
       }
     ],
     "smooth-scroll": [
       {
         "path": "test/smooth-scroll-keyboard-contract.spec.ts",
-        "focusMarkers": [
-          "../src/content/smooth-scroll.ts",
-          "reconcileInputOwnership()"
-        ]
+        "entry": "unit"
+      }
+    ],
+    "timer": [
+      {
+        "path": "test/deadline-jobs.spec.ts",
+        "entry": "unit"
       }
     ],
     "userscripts": [
       {
         "path": "test/user-scripts-readiness-races.spec.ts",
-        "focusMarkers": [
-          "../src/system/userscripts/registry",
-          "ensureUserScriptsRuntimeReady"
-        ]
+        "entry": "unit"
       },
       {
         "path": "test/user-scripts-storage-authority.spec.ts",
-        "focusMarkers": [
-          "../src/system/userscripts/storage-authority",
-          "subscribeUserScriptsStorage"
-        ]
+        "entry": "unit"
       }
     ]
   }

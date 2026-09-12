@@ -1,8 +1,8 @@
-import { existsSync, readFileSync } from 'node:fs';
+import { readFileSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { dirname, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { findBunVersionDrift, isCurrentToolchainFile, listArchiveToolchainFiles } from './toolchain-references';
+import { findBunVersionDrift, listCurrentToolchainFiles } from './toolchain-references';
 import { BIOME_VERSION, BUN_VERSION, TURBO_VERSION } from './toolchain-versions.ts';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -51,26 +51,8 @@ for (const [tool, version] of Object.entries(expected)) {
 	}
 }
 
-function trackedCurrentFiles() {
-	if (!existsSync(resolve(repositoryRoot, '.git'))) return listArchiveToolchainFiles(repositoryRoot);
-	// A checkout still requires a working Git index; command failures must not
-	// silently fall back to an untracked or partial inventory.
-	const result = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '-z'], {
-		encoding: 'utf8',
-		shell: false,
-	});
-	if (result.error) throw result.error;
-	if (result.status !== 0) throw new Error(`git ls-files failed: ${result.stderr.trim()}`);
-	return result.stdout
-		.split('\0')
-		.filter(Boolean)
-		.filter(isCurrentToolchainFile)
-		.map((path) => resolve(repositoryRoot, path))
-		.filter(existsSync);
-}
-
 const drift = [];
-for (const filePath of trackedCurrentFiles()) {
+for (const filePath of listCurrentToolchainFiles(repositoryRoot)) {
 	const content = readFileSync(filePath, 'utf8');
 	drift.push(...findBunVersionDrift(relative(repositoryRoot, filePath), content, expected.bun));
 }

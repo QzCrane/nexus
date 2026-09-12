@@ -3,6 +3,27 @@
 import QRCode from 'qrcode';
 import type { QRCodeOptions } from './types';
 import { DEFAULT_OPTIONS } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+type StoredQrOptions = Omit<QRCodeOptions, 'text'>;
+const LEVELS = new Set(['L', 'M', 'Q', 'H']);
+export const qrcodeOptionsCodec: ToolStateCodec<StoredQrOptions> = {
+	decode(value) {
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return { kind: 'invalid', reason: 'QR options are not a record.' };
+		const options = value as Record<string, unknown>;
+		if (!Number.isSafeInteger(options.size) || (options.size as number) < 64 || (options.size as number) > 2_048
+			|| !Number.isSafeInteger(options.margin) || (options.margin as number) < 0 || (options.margin as number) > 32
+			|| typeof options.errorCorrectionLevel !== 'string' || !LEVELS.has(options.errorCorrectionLevel)
+			|| typeof options.darkColor !== 'string' || !/^#[0-9a-f]{6}$/iu.test(options.darkColor)
+			|| typeof options.lightColor !== 'string' || !/^#[0-9a-f]{6}$/iu.test(options.lightColor)
+			|| (options.logo !== undefined && (typeof options.logo !== 'string' || options.logo.length > 4 * 1024 * 1024))
+			|| (options.logoSize !== undefined && (typeof options.logoSize !== 'number' || !Number.isFinite(options.logoSize) || options.logoSize < 0.1 || options.logoSize > 0.3))) {
+			return { kind: 'invalid', reason: 'QR size, margin, colors, correction level, or logo are invalid.' };
+		}
+		return { kind: 'valid', value: options as unknown as StoredQrOptions };
+	},
+	encode: (value) => value,
+};
 
 export async function generateQRCode(text: string, options: Partial<Omit<QRCodeOptions, 'text'>> = {}): Promise<string> {
 	const opts = { ...DEFAULT_OPTIONS, ...options };

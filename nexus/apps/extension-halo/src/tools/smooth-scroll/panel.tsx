@@ -5,7 +5,8 @@ import type React from 'react';
 import { useCallback, useRef } from 'react';
 import { Card, Toggle } from '@nexus/ui-kit';
 import { createLogger } from '@nexus/kernel';
-import { normalizeScrollSettings, PROFILES, STORAGE_KEY } from './types';
+import { normalizeScrollSettings, PROFILES } from './types';
+import { saveSettings as persistSettings } from './core';
 import { styles } from './panel.styles';
 import { useSmoothScrollSettings } from './hooks';
 import { ScrollParameters } from './ScrollParameters';
@@ -15,7 +16,6 @@ const logger = createLogger('SmoothScroll', 'HALO');
 export const SmoothScrollPanel: React.FC = () => {
 	const {
 		settings,
-		setSettings,
 		showToast,
 		hasCustomProfile,
 		updateSetting,
@@ -51,8 +51,7 @@ export const SmoothScrollPanel: React.FC = () => {
 			const text = await file.text();
 			const imported: unknown = JSON.parse(text);
 			const validated = normalizeScrollSettings(imported);
-			await chrome.storage.sync.set({ [STORAGE_KEY]: validated });
-			setSettings(validated);
+			await persistSettings(validated);
 			showToast(t('smoothScroll.toasts.imported'));
 			logger.info('Config imported from file');
 		} catch (err) {
@@ -60,7 +59,7 @@ export const SmoothScrollPanel: React.FC = () => {
 			logger.error('Import error:', err);
 		}
 		e.target.value = '';
-	}, [showToast, setSettings, t]);
+	}, [showToast, t]);
 
 	return (
 		<div style={styles.wrapper}>

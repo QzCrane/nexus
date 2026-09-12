@@ -15,6 +15,7 @@ const modulePanelSource = readFileSync(new URL('../src/system/module-store/panel
 const smoothScrollSource = readFileSync(new URL('../src/content/smooth-scroll.ts', import.meta.url), 'utf8');
 const userscriptsRegistrySource = readFileSync(new URL('../src/system/userscripts/registry.ts', import.meta.url), 'utf8');
 const userscriptsEngineSource = readFileSync(new URL('../src/system/userscripts/engine.ts', import.meta.url), 'utf8');
+const deadlineCoordinatorSource = readFileSync(new URL('../src/kernel/core/deadline-jobs/coordinator.ts', import.meta.url), 'utf8');
 
 function deferred() {
 	let resolve!: () => void;
@@ -265,6 +266,9 @@ describe('HALO packaged-module runtime contract', () => {
 		expect(userscriptsRegistrySource).toContain('resolveDesiredRegisteredScripts');
 		expect(userscriptsRegistrySource).toContain('includesModuleInstallationChange');
 		expect(userscriptsEngineSource).toContain('requireInstalledModule()');
+		expect(deadlineCoordinatorSource).toContain("readOptionalPackagedModuleEnabled(POMODORO_MODULE_ID)");
+		expect(deadlineCoordinatorSource).toContain("changes[POMODORO_MODULE_STORAGE_KEY]");
+		expect(deadlineCoordinatorSource).not.toContain('module-manager');
 	});
 
 	test('builtIn is the sole packaged-module uninstallability authority', () => {

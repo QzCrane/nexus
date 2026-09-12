@@ -6,7 +6,8 @@ import { createLogger } from '@nexus/kernel';
 import { useToolState } from '../../kernel';
 import { useTranslation } from '../../i18n';
 import type { ScrollSettings } from './types';
-import { DEFAULT_SETTINGS, PROFILES, CUSTOM_PROFILE_KEY, STORAGE_KEY, normalizeScrollSettings } from './types';
+import { DEFAULT_SETTINGS, PROFILES, STORAGE_KEY, normalizeScrollSettings } from './types';
+import { loadCustomProfile as readCustomProfile, saveCustomProfile } from './core';
 import { useToast } from '../../components/ToastProvider';
 
 const logger = createLogger('SmoothScroll', 'HALO');
@@ -28,9 +29,10 @@ export function useSmoothScrollSettings() {
 	const [hasCustomProfile, setHasCustomProfile] = useState(false);
 
 	useEffect(() => {
-		chrome.storage.sync.get([CUSTOM_PROFILE_KEY], (r) => {
-			setHasCustomProfile(!!r[CUSTOM_PROFILE_KEY]);
-		});
+		let active = true;
+		void readCustomProfile().then((profile) => { if (active) setHasCustomProfile(profile !== null); })
+			.catch((error: unknown) => logger.error('Custom profile load failed', error));
+		return () => { active = false; };
 	}, []);
 
 	const updateSetting = useCallback(<K extends keyof ScrollSettings>(key: K, value: ScrollSettings[K]) => {
@@ -47,19 +49,29 @@ export function useSmoothScrollSettings() {
 
 
 	const loadCustomProfile = useCallback(async () => {
-		const r = await chrome.storage.sync.get([CUSTOM_PROFILE_KEY]);
-		if (r[CUSTOM_PROFILE_KEY]) {
-			setSettings(normalizeScrollSettings(r[CUSTOM_PROFILE_KEY]));
-			showToast(`${t('smoothScroll.profilesList.custom')} ${t('smoothScroll.toasts.loaded')}`);
+		try {
+			const profile = await readCustomProfile();
+			if (profile) {
+				setSettings(profile);
+				showToast(`${t('smoothScroll.profilesList.custom')} ${t('smoothScroll.toasts.loaded')}`);
+			}
+		} catch (error: unknown) {
+			showToast(t('smoothScroll.toasts.importFailed'));
+			logger.error('Custom profile load failed', error);
 		}
 	}, [showToast, t, setSettings]);
 
 
 	const saveAsCustom = useCallback(async () => {
-		await chrome.storage.sync.set({ [CUSTOM_PROFILE_KEY]: settings });
-		setHasCustomProfile(true);
-		showToast(t('smoothScroll.toasts.savedCustom'));
-		logger.info('Custom profile saved');
+		try {
+			await saveCustomProfile(settings);
+			setHasCustomProfile(true);
+			showToast(t('smoothScroll.toasts.savedCustom'));
+			logger.info('Custom profile saved');
+		} catch (error: unknown) {
+			showToast(t('smoothScroll.toasts.importFailed'));
+			logger.error('Custom profile save failed', error);
+		}
 	}, [settings, showToast, t]);
 
 	const resetSettings = useCallback(() => {

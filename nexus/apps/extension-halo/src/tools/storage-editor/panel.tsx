@@ -7,6 +7,16 @@ import type { StorageItem } from './types';
 import { scanActiveTabStorage, setStorageItem, deleteStorageItem, formatSize, type StorageSnapshot } from './core';
 import { styles } from './panel.styles';
 import { useToolState } from '../../kernel';
+import { useOwnedAsyncTask } from '../../kernel/hooks/use-owned-async-task';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecoveryActions';
+
+type StorageFilter = 'all' | 'localStorage' | 'sessionStorage';
+const storageFilterCodec: ToolStateCodec<StorageFilter> = {
+	decode: (value) => value === 'all' || value === 'localStorage' || value === 'sessionStorage'
+		? { kind: 'valid', value } : { kind: 'invalid', reason: 'Storage filter is invalid.' },
+	encode: (value) => value,
+};
 
 
 export const StorageEditorPanel: React.FC = () => {
@@ -14,60 +24,54 @@ export const StorageEditorPanel: React.FC = () => {
 	const [items, setItems] = useState<StorageItem[]>([]);
 	const [snapshot, setSnapshot] = useState<StorageSnapshot | null>(null);
 	const [error, setError] = useState<string | null>(null);
-	const [filter, setFilter] = useToolState<'all' | 'localStorage' | 'sessionStorage'>('storage-editor-filter', 'all');
+	const [filter, setFilter, , filterRecovery] = useToolState<StorageFilter>('storage-editor-filter', 'all', { codec: storageFilterCodec });
 
-	const [loading, setLoading] = useState(false);
 	const [scanned, setScanned] = useState(false);
+	const task = useOwnedAsyncTask();
 
 	// Scan
 	const handleScan = useCallback(async () => {
-		setLoading(true);
 		setError(null);
-		try {
-			const result = await scanActiveTabStorage();
-			setItems(result.items);
-			setSnapshot(result);
+		const outcome = await task.run(() => scanActiveTabStorage());
+		if (outcome.kind === 'succeeded') {
+			setItems(outcome.value.items);
+			setSnapshot(outcome.value);
 			setScanned(true);
-		} catch (scanError) {
-			setError(String(scanError));
-		} finally {
-			setLoading(false);
-		}
-	}, []);
+		} else if (outcome.kind === 'failed') setError(String(outcome.error));
+	}, [task.run]);
 
 	// Update value
 	const handleUpdate = useCallback(async (item: StorageItem, newValue: string) => {
 		if (!snapshot) return;
 		setError(null);
-		try {
-			await setStorageItem(item.key, newValue, item.type, snapshot);
+		const outcome = await task.run(() => setStorageItem(item.key, newValue, item.type, snapshot));
+		if (outcome.kind === 'succeeded') {
 			setItems((prev) => prev.map((i) => i.key === item.key && i.type === item.type ? { ...i, value: newValue, size: newValue.length } : i));
-		} catch (updateError) {
+		} else if (outcome.kind === 'failed') {
 			// The stored value is unchanged; surface the failure instead of a false success.
-			setError(String(updateError));
+			setError(String(outcome.error));
 		}
-	}, [snapshot]);
+	}, [snapshot, task.run]);
 
 	// Delete
 	const handleDelete = useCallback(async (item: StorageItem) => {
 		if (!snapshot) return;
 		setError(null);
-		try {
-			await deleteStorageItem(item.key, item.type, snapshot);
+		const outcome = await task.run(() => deleteStorageItem(item.key, item.type, snapshot));
+		if (outcome.kind === 'succeeded') {
 			setItems((prev) => prev.filter((i) => !(i.key === item.key && i.type === item.type)));
-		} catch (deleteError) {
-			setError(String(deleteError));
-		}
-	}, [snapshot]);
+		} else if (outcome.kind === 'failed') setError(String(outcome.error));
+	}, [snapshot, task.run]);
 
 	// Filter
 	const filtered = items.filter((i) => filter === 'all' || i.type === filter);
 
 	return (
 		<div style={styles.wrapper}>
+			<StorageRecoveryActions recovery={filterRecovery} emptyValue="all" exportName="halo-storage-editor-filter-damaged.json" />
 			{/* Scan Button */}
-			<button type="button" style={styles.btn} onClick={handleScan} disabled={loading}>
-				{loading ? '⏳' : '🔍'} {t('storageEditor.scan')}
+			<button type="button" style={styles.btn} onClick={handleScan} disabled={task.phase === 'running'}>
+				{task.phase === 'running' ? '⏳' : '🔍'} {t('storageEditor.scan')}
 			</button>
 
 			{error && <div style={{ color: '#d33', fontSize: '12px', padding: '4px 0' }}>{error}</div>}

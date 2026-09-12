@@ -25,6 +25,7 @@ import {
 	SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE,
 } from '../src/shared/page-media-bridge';
 import { createRemoteProof } from '../src/remote/protocol';
+import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
 import { requireValue } from './helpers/require-value';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
@@ -32,6 +33,7 @@ const FIXTURE_PATH = join(import.meta.dir, 'fixtures', 'smoke-test.html');
 const FIXTURE_HTML = readFileSync(FIXTURE_PATH, 'utf8');
 const REMOTE_SITE_DIR = resolve(import.meta.dir, '..', '..', '..', '..', 'remote-site');
 const SMOKE_LOCALE = process.env.SPECTRA_SMOKE_LOCALE?.trim() || 'en-US';
+const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 
 if (!/^[a-z]{2}(?:-[A-Z]{2})?$/u.test(SMOKE_LOCALE)) {
 	throw new Error(`Unsupported SPECTRA smoke locale: ${SMOKE_LOCALE}`);
@@ -2437,7 +2439,8 @@ beforeAll(async () => {
 	fixtureUrl = `http://127.0.0.1:${server.port}/smoke-test.html`;
 	browserProfileDir = await mkdtemp(join(tmpdir(), 'spectra-smoke-'));
 
-	browser = await puppeteer.launch({
+	browser = await launchPuppeteerBrowser({
+		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
 		headless: true,
 		userDataDir: browserProfileDir,
 		args: [
@@ -2449,6 +2452,9 @@ beforeAll(async () => {
 			'--disable-setuid-sandbox',
 			'--autoplay-policy=no-user-gesture-required',
 		],
+	}, {
+		owner: 'apps/extension-spectra/test/smoke.spec.ts',
+		profile: { kind: 'temporary', prefix: 'spectra-smoke-', isolated: true },
 	});
 
 	try {

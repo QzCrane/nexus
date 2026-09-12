@@ -2,113 +2,50 @@
 // eff: persistent state changes only at user/phase boundaries; display time is projected from a deadline
 
 import type React from 'react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Card } from '@nexus/ui-kit';
 import { useTranslation } from '../../i18n';
 import type { PomodoroConfig, PomodoroState } from './types';
 import { DEFAULT_CONFIG } from './types';
-import { normalizePomodoroConfig, normalizePomodoroState, formatTime, getPhaseDuration, getNextPhase, createInitialState, PHASE_COLORS } from './core';
+import { normalizePomodoroConfig, normalizePomodoroState, formatTime, getPhaseDuration, createInitialState, PHASE_COLORS, projectedPomodoroRemaining, type PomodoroCommand } from './core';
 import { styles } from './panel.styles';
-import { playCompletionTone, useToolState } from '../../kernel';
-
-function projectedRemaining(state: PomodoroState, now: number): number {
-	if (!state.isRunning || typeof state.endsAt !== 'number') return state.remaining;
-	return Math.max(0, Math.ceil((state.endsAt - now) / 1000));
-}
+import { useToolState } from '../../kernel';
+import { sendDeadlineCommand } from '../../kernel/core/deadline-jobs/protocol';
 
 export const PomodoroPanel: React.FC = () => {
 	const { t } = useTranslation();
 	const [config, setConfig] = useToolState<PomodoroConfig>('pomodoro-config', DEFAULT_CONFIG, { normalize: normalizePomodoroConfig });
-	const [state, setState, stateReady] = useToolState<PomodoroState>('pomodoro-state', () => createInitialState(config), { normalize: normalizePomodoroState });
+	const [state, , stateReady] = useToolState<PomodoroState>('pomodoro-state', () => createInitialState(config), { normalize: normalizePomodoroState });
 	const [now, setNow] = useState(() => Date.now());
-	const stateRef = useRef(state);
-	stateRef.current = state;
 
-	// Compatibility repair for old persisted running states that predate endsAt.
-	useEffect(() => {
-		if (!stateReady || !state.isRunning || typeof state.endsAt === 'number') return;
-		setState((current) => {
-			if (!current.isRunning || typeof current.endsAt === 'number') return current;
-			return { ...current, endsAt: Date.now() + current.remaining * 1000 };
-		});
-	}, [stateReady, state.isRunning, state.endsAt, setState]);
-
-	// One 1Hz owner handles both the whole-second display projection and phase
-	// completion. Every tick compares the latest persisted deadline against a
-	// fresh wall-clock sample, so forward/backward system-clock changes cannot
-	// strand an expired phase or fire an early tone. Persistent PomodoroState
-	// still changes only once at the real phase boundary.
+	// The panel owns only display projection. Durable completion belongs to the
+	// background alarm/reconciliation owner and survives this component.
 	useEffect(() => {
 		if (!stateReady || !state.isRunning || typeof state.endsAt !== 'number') return;
-
-		const tick = () => {
-			const observedNow = Date.now();
-			setNow(observedNow);
-			const current = stateRef.current;
-			if (!current.isRunning || typeof current.endsAt !== 'number') return;
-			if (current.endsAt > observedNow) return;
-
-			const nextPhase = getNextPhase(current, config);
-			const sessionsCompleted = current.phase === 'work'
-				? current.sessionsCompleted + 1
-				: current.sessionsCompleted;
-			const next: PomodoroState = {
-				phase: nextPhase,
-				remaining: getPhaseDuration(nextPhase, config),
-				endsAt: null,
-				isRunning: false,
-				sessionsCompleted,
-			};
-			stateRef.current = next;
-			setState(next);
-			void playCompletionTone().catch((error: unknown) => {
-				console.warn('[HALO:Pomodoro] Completion tone failed', error);
-			});
-		};
-
+		const tick = () => setNow(Date.now());
 		tick();
 		const intervalId = window.setInterval(tick, 1000);
 		return () => window.clearInterval(intervalId);
-	}, [stateReady, state.isRunning, state.endsAt, config, setState]);
+	}, [stateReady, state.isRunning, state.endsAt]);
 
-	const remaining = useMemo(() => projectedRemaining(state, now), [state, now]);
+	const remaining = useMemo(() => projectedPomodoroRemaining(state, now), [state, now]);
+	const command = useCallback((payload: PomodoroCommand) => {
+		void sendDeadlineCommand({ job: 'pomodoro', command: payload }).catch((error: unknown) => {
+			console.warn('[HALO:Pomodoro] Background command failed', error);
+		});
+	}, []);
 
 	const handleToggle = useCallback(() => {
-		const timestamp = Date.now();
-		setState((current) => {
-			if (current.isRunning) {
-				return {
-					...current,
-					remaining: projectedRemaining(current, timestamp),
-					endsAt: null,
-					isRunning: false,
-				};
-			}
-			return {
-				...current,
-				endsAt: timestamp + current.remaining * 1000,
-				isRunning: true,
-			};
-		});
-	}, [setState]);
+		command({ type: 'toggle' });
+	}, [command]);
 
 	const handleReset = useCallback(() => {
-		setState(createInitialState(config));
-	}, [config, setState]);
+		command({ type: 'reset', config });
+	}, [command, config]);
 
 	const handleSkip = useCallback(() => {
-		const nextPhase = getNextPhase(state, config);
-		const sessionsCompleted = state.phase === 'work'
-			? state.sessionsCompleted + 1
-			: state.sessionsCompleted;
-		setState({
-			phase: nextPhase,
-			remaining: getPhaseDuration(nextPhase, config),
-			endsAt: null,
-			isRunning: false,
-			sessionsCompleted,
-		});
-	}, [state, config, setState]);
+		command({ type: 'skip', config });
+	}, [command, config]);
 
 	const total = getPhaseDuration(state.phase, config);
 	const progress = total > 0 ? (total - remaining) / total : 0;

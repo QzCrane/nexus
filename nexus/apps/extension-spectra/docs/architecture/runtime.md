@@ -319,3 +319,18 @@ Release and cross-platform lanes build the production SPECTRA candidate exactly 
 | UI event projection | `popup/ui-event-hub.ts` + surface/session stores | One Chrome runtime listener; subscriber isolation; identity/revision/session-token monotonicity |
 | Locale assets | surface catalogs + `shared/i18n/locale-sections.ts` | Popup/Options/Actions fetch only their surface; settled loads clear; two-locale LRU bound |
 | Artifact evidence | `scripts/check-production-artifacts.ts` | Typed reachability, exact set-union closures, one physical file count, measured attribution when metafiles exist, absolute hard ceilings plus non-blocking 15% planning advisories |
+
+## Actual browser launch evidence
+
+All SPECTRA Puppeteer launches use `scripts/browser-driver.ts`, which selects
+the current or floor driver through the existing replay policy and records the
+runtime version plus the actual spawned process command. In a formal release
+context, each physical launch writes a separate receipt bound to the exact
+head, tree, run and attempt. Repeated launches by one test owner receive stable
+execution sequence numbers instead of overwriting or rejecting valid samples.
+
+Receipts retain sanitized effective arguments and declared profile-construction
+metadata, never a temporary profile path. An executable digest is informational
+evidence derived from the process actually returned by Puppeteer. If that
+process identity is absent or unreadable, the receipt says `unknown`; a user
+override path cannot substitute for an observed launch identity.

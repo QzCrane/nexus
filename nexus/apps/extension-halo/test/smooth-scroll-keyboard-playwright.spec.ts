@@ -1,5 +1,6 @@
 import { extensionWorker } from './helpers/extension-worker';
 import { browserReplayPolicy } from '../../../scripts/browser-replay';
+import { launchPlaywrightPersistentContext } from '../../../scripts/browser-driver';
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 import { mkdtemp, rm } from 'node:fs/promises';
 import { createServer, type Server } from 'node:http';
@@ -307,7 +308,7 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 		try {
 			const fixture = await startFixtureServer();
 			server = fixture.server;
-			context = await chromium.launchPersistentContext(profilePath, {
+			context = await launchPlaywrightPersistentContext(chromium, profilePath, {
 				...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : { channel: 'chromium' as const }),
 				headless: true,
 				viewport: { width: 1_100, height: 700 },
@@ -316,6 +317,9 @@ test.describe('HALO keyboard ownership in Chromium', () => {
 					`--disable-extensions-except=${DIST_PATH}`,
 					`--load-extension=${DIST_PATH}`,
 				],
+			}, {
+				owner: 'apps/extension-halo/test/smooth-scroll-keyboard-playwright.spec.ts',
+				profile: { kind: 'temporary', prefix: 'halo-keyboard-playwright-', isolated: true },
 			});
 			const browserErrors: string[] = [];
 			context.on('weberror', (error) => browserErrors.push(String(error.error())));

@@ -1,6 +1,34 @@
 // goal: Reader Mode core logic - extract and display readable content
 
 import type { ReaderConfig, ArticleContent } from './types';
+import type { ToolStateCodec } from '../../kernel/core/storage-codec';
+
+export const readerConfigCodec: ToolStateCodec<ReaderConfig> = {
+	decode(value) {
+		if (typeof value !== 'object' || value === null || Array.isArray(value)) return { kind: 'invalid', reason: 'Reader settings are not a record.' };
+		const config = value as Record<string, unknown>;
+		if (!Number.isSafeInteger(config.fontSize) || (config.fontSize as number) < 14 || (config.fontSize as number) > 28
+			|| typeof config.lineHeight !== 'number' || !Number.isFinite(config.lineHeight) || config.lineHeight < 1 || config.lineHeight > 3
+			|| !Number.isSafeInteger(config.maxWidth) || (config.maxWidth as number) < 320 || (config.maxWidth as number) > 2_048
+			|| (config.theme !== 'light' && config.theme !== 'sepia' && config.theme !== 'dark')
+			|| typeof config.fontFamily !== 'string' || config.fontFamily.length > 256) return { kind: 'invalid', reason: 'Reader font, width, line height, or theme are invalid.' };
+		return { kind: 'valid', value: config as unknown as ReaderConfig };
+	},
+	encode: (value) => value,
+};
+
+export const articleContentCodec: ToolStateCodec<ArticleContent | null> = {
+	decode(value) {
+		if (value === null) return { kind: 'valid', value: null };
+		if (typeof value !== 'object' || Array.isArray(value)) return { kind: 'invalid', reason: 'Stored reader article is not a record.' };
+		const article = value as Record<string, unknown>;
+		if (typeof article.title !== 'string' || article.title.length > 2_048 || typeof article.content !== 'string' || article.content.length > 4 * 1024 * 1024
+			|| typeof article.textContent !== 'string' || article.textContent.length > 4 * 1024 * 1024 || typeof article.siteName !== 'string' || article.siteName.length > 2_048
+			|| typeof article.byline !== 'string' || article.byline.length > 2_048) return { kind: 'invalid', reason: 'Stored reader article has invalid or oversized fields.' };
+		return { kind: 'valid', value: article as unknown as ArticleContent };
+	},
+	encode: (value) => value,
+};
 
 // rule: panel.tsx renders article.content via dangerouslySetInnerHTML in the
 // sidepanel context which has chrome.storage access, and additionally slices the

@@ -2,27 +2,15 @@
 // eff: persistent time authority is anchor-based; display ticks are isolated to the clock node
 
 import type React from 'react';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from '../../i18n';
 import type { TimerMode, TimerState } from './types';
-import { formatTime, PRESETS, INITIAL_TIMER_STATE, normalizeTimerState } from './core';
+import { formatTime, PRESETS, INITIAL_TIMER_STATE, normalizeTimerState, timerElapsedAt, timerMinutesCodec, timerSecondsCodec, type TimerCommand } from './core';
 import { styles } from './panel.styles';
-import { playCompletionTone, useToolState } from '../../kernel';
-import { watchWallClockDeadline } from '../../kernel/utils/wall-clock-deadline';
+import { useToolState } from '../../kernel';
+import { sendDeadlineCommand } from '../../kernel/core/deadline-jobs/protocol';
 
 const initialState = INITIAL_TIMER_STATE;
-
-function runningElapsed(state: TimerState, now: number): number {
-	if (!state.isRunning || typeof state.startedAt !== 'number') return state.elapsed;
-	return state.elapsed + Math.max(0, now - state.startedAt);
-}
-
-function countdownDeadline(state: TimerState): number | null {
-	if (!state.isRunning || state.mode !== 'countdown' || typeof state.startedAt !== 'number') {
-		return null;
-	}
-	return state.startedAt + Math.max(0, state.target - state.elapsed);
-}
 
 const TimerDisplay: React.FC<{ state: TimerState }> = memo(({ state }) => {
 	const [now, setNow] = useState(() => Date.now());
@@ -46,7 +34,7 @@ const TimerDisplay: React.FC<{ state: TimerState }> = memo(({ state }) => {
 		};
 	}, [state.isRunning]);
 
-	const currentElapsed = runningElapsed(state, now);
+	const currentElapsed = timerElapsedAt(state, now);
 	const displayTime = state.mode === 'countdown'
 		? formatTime(Math.max(0, state.target - currentElapsed))
 		: formatTime(currentElapsed, true);
@@ -56,116 +44,43 @@ const TimerDisplay: React.FC<{ state: TimerState }> = memo(({ state }) => {
 
 export const TimerPanel: React.FC = () => {
 	const { t } = useTranslation();
-	const [state, setState, stateReady] = useToolState<TimerState>('timer', initialState, { normalize: normalizeTimerState });
-	const [inputMins, setInputMins, minsReady] = useToolState<number>('timer-mins', 5);
-	const [inputSecs, setInputSecs, secsReady] = useToolState<number>('timer-secs', 0);
-	const stateRef = useRef(state);
-	stateRef.current = state;
-
-	// One-time compatibility repair for pre-anchor persisted running states.
-	useEffect(() => {
-		if (!stateReady || !state.isRunning || typeof state.startedAt === 'number') return;
-		setState((current) => {
-			if (!current.isRunning || typeof current.startedAt === 'number') return current;
-			return { ...current, startedAt: Date.now() };
+	const [state, , stateReady] = useToolState<TimerState>('timer', initialState, { normalize: normalizeTimerState });
+	const [inputMins, setInputMins, minsReady] = useToolState<number>('timer-mins', 5, { codec: timerMinutesCodec });
+	const [inputSecs, setInputSecs, secsReady] = useToolState<number>('timer-secs', 0, { codec: timerSecondsCodec });
+	const command = useCallback((payload: TimerCommand) => {
+		void sendDeadlineCommand({ job: 'timer', command: payload }).catch((error: unknown) => {
+			console.warn('[HALO:Timer] Background command failed', error);
 		});
-	}, [stateReady, state.isRunning, state.startedAt, setState]);
-
-	// The countdown keeps persistent writes at lifecycle boundaries, while a
-	// bounded wall-clock watcher re-evaluates at most once per second. A clock
-	// jump backward therefore re-arms instead of losing completion; a jump
-	// forward is observed within one check interval instead of waiting for the
-	// stale original timeout. The tone is emitted only after the latest state is
-	// still running and truly due at the same observed clock sample.
-	useEffect(() => {
-		const deadline = stateReady ? countdownDeadline(state) : null;
-		if (deadline === null) return;
-
-		return watchWallClockDeadline(deadline, {
-			onDue: (observedNow) => {
-				const current = stateRef.current;
-				const currentDeadline = countdownDeadline(current);
-				if (currentDeadline === null || observedNow < currentDeadline) return;
-				const next: TimerState = {
-					...current,
-					elapsed: current.target,
-					startedAt: null,
-					isRunning: false,
-				};
-				stateRef.current = next;
-				setState(next);
-				void playCompletionTone().catch((error: unknown) => {
-					console.warn('[HALO:Timer] Completion tone failed', error);
-				});
-			},
-		});
-	}, [state, stateReady, setState]);
+	}, []);
 
 	const handleToggle = useCallback(() => {
-		const timestamp = Date.now();
-		setState((current) => {
-			if (current.isRunning) {
-				const elapsed = runningElapsed(current, timestamp);
-				return {
-					...current,
-					elapsed: current.mode === 'countdown'
-						? Math.min(current.target, elapsed)
-						: elapsed,
-					startedAt: null,
-					isRunning: false,
-				};
-			}
-			return {
-				...current,
-				startedAt: timestamp,
-				isRunning: true,
-			};
-		});
-	}, [setState]);
+		command({ type: 'toggle' });
+	}, [command]);
 
 	const handleReset = useCallback(() => {
-		setState((current) => ({
-			...current,
-			elapsed: 0,
-			startedAt: null,
-			isRunning: false,
-			laps: [],
-		}));
-	}, [setState]);
+		command({ type: 'reset' });
+	}, [command]);
 
 	const handleLap = useCallback(() => {
 		if (state.mode !== 'stopwatch') return;
-		const lapElapsed = runningElapsed(state, Date.now());
-		setState((current) => ({ ...current, laps: [...current.laps, lapElapsed] }));
-	}, [state, setState]);
+		command({ type: 'lap' });
+	}, [state.mode, command]);
 
 	const handleMode = useCallback((mode: TimerMode) => {
-		setState({
-			...initialState,
-			mode,
-			target: (inputMins * 60 + inputSecs) * 1000,
-		});
-	}, [inputMins, inputSecs, setState]);
+		command({ type: 'set-mode', mode, target: (inputMins * 60 + inputSecs) * 1000 });
+	}, [inputMins, inputSecs, command]);
 
 	const handlePreset = useCallback((ms: number) => {
 		setInputMins(Math.floor(ms / 60000));
 		setInputSecs(Math.floor((ms % 60000) / 1000));
-		setState((current) => ({
-			...current,
-			target: ms,
-			elapsed: 0,
-			startedAt: null,
-			isRunning: false,
-		}));
-	}, [setState, setInputSecs, setInputMins]);
+		command({ type: 'set-target', target: ms });
+	}, [command, setInputSecs, setInputMins]);
 
 	useEffect(() => {
 		if (!stateReady || !minsReady || !secsReady || state.isRunning) return;
 		const target = (inputMins * 60 + inputSecs) * 1000;
-		setState((current) => current.target === target
-			? current
-			: { ...current, target });
-	}, [inputMins, inputSecs, stateReady, minsReady, secsReady, state.isRunning, setState]);
+		if (state.target !== target) command({ type: 'set-target', target });
+	}, [inputMins, inputSecs, stateReady, minsReady, secsReady, state.isRunning, state.target, command]);
 
 	return (
 		<div style={styles.wrapper}>
