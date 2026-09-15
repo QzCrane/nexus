@@ -87,7 +87,7 @@ async function retireLegacyOffscreenDocumentUnlocked(): Promise<boolean> {
 	recoveredLeases.clear();
 	hostStateUnknown = false;
 	await cancelIdleClose();
-	swLog.info('Retired legacy six-character remote session host during protocol v2 upgrade');
+	/* @__PURE__ */ swLog.info('Retired legacy six-character remote session host during protocol v2 upgrade');
 	return true;
 }
 
@@ -111,7 +111,7 @@ async function ensureOffscreenDocument(): Promise<void> {
 			reasons: ['USER_MEDIA', 'WEB_RTC'] as chrome.offscreen.Reason[],
 			justification: 'Audio processing and authenticated WebRTC remote control',
 		});
-		swLog.debug('Unified offscreen host created');
+		/* @__PURE__ */ swLog.debug('Unified offscreen host created');
 	});
 }
 
@@ -124,7 +124,7 @@ async function closeIfIdle(): Promise<void> {
 			replaceRecoveredLeases(snapshot);
 			hostStateUnknown = false;
 			if (hasKnownLease()) {
-				swLog.info('Idle close retained resources recovered by the final offscreen HELLO');
+				/* @__PURE__ */ swLog.info('Idle close retained resources recovered by the final offscreen HELLO');
 				return;
 			}
 		} catch (error) {
@@ -142,7 +142,7 @@ async function closeIfIdle(): Promise<void> {
 			await chrome.offscreen.closeDocument();
 			recoveredLeases.clear();
 			hostStateUnknown = false;
-			swLog.debug('Unified offscreen host closed after idle grace period');
+			/* @__PURE__ */ swLog.debug('Unified offscreen host closed after idle grace period');
 		} catch (error) {
 			swLog.warn('Unable to close idle offscreen host', error);
 		}

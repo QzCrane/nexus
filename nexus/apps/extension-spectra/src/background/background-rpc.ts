@@ -115,6 +115,7 @@ export const BACKGROUND_REQUEST_TYPES = [
 	'spectra.screenshot.capture-visible',
 	'spectra.tab.media.report',
 	'spectra.tab.visible.list',
+	'spectra.tab.visible.settle',
 	'spectra.content.inject',
 	'spectra.tab.pinned.toggle',
 	'spectra.tab.muted.toggle',
@@ -179,6 +180,7 @@ export const BACKGROUND_REQUEST_GUARDS: Readonly<Record<string, PayloadGuard>> =
 	'spectra.screenshot.capture-visible': isScreenshotCapturePayload,
 	'spectra.tab.media.report': isTabMediaReportPayload,
 	'spectra.tab.visible.list': isEmptyPayload,
+	'spectra.tab.visible.settle': isEmptyPayload,
 	'spectra.content.inject': isTabIdPayload,
 	'spectra.tab.pinned.toggle': isEmptyPayload,
 	'spectra.tab.muted.toggle': isEmptyPayload,
@@ -271,6 +273,8 @@ export function rpcFailure(
 ): RpcResult<never> {
 	return { ok: false, error: { code, message, retryable } };
 }
+
+export const RPC_INVALID_REQUEST = 'invalid_request' as const;
 
 export interface BackgroundRequestContext {
 	tabId?: number;

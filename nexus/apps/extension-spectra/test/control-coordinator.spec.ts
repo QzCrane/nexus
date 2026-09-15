@@ -879,7 +879,7 @@ describe('authoritative control coordinator', () => {
 		expect(harness.snapshotEvents).toBe(2);
 	});
 
-	test('releases Boost before returning an effective volume at or below 100 to the native writer', async () => {
+	test('holds the processor across a return to or below 100 with a neutral gain instead of releasing', async () => {
 		const harness = installHarness();
 		const target = {
 			frameId: 0,
@@ -898,9 +898,7 @@ describe('authoritative control coordinator', () => {
 			return {
 				ok: true,
 				data: intent.requestedCoverage === 'full'
-					? intent.patch.boost === 1
-						? releaseProcessorAck(harness, intent)
-						: captureProcessorAck(harness, intent)
+					? captureProcessorAck(harness, intent)
 					: appliedPatchAck(intent, () => 'dom-native'),
 			};
 		};
@@ -933,11 +931,79 @@ describe('authoritative control coordinator', () => {
 			{ boost: 1 },
 			{ volumeBase: 80 },
 		]);
+		// 降回 ≤100 是保活而非拆除：处理器会话保持，增益置中性。
+		expect(intents[0]).toMatchObject({ processorHold: true });
+		expect(harness.offscreenProcessorActive).toBe(true);
+		expect(acknowledgement.fields.boost).toMatchObject({
+			actual: 1,
+			phase: 'applied',
+			strategy: 'capture',
+			controlled: true,
+		});
 		expect(acknowledgement.result).toEqual({
 			effectiveVolume: 80,
 			volumeBase: 80,
 			boost: 1,
 		});
+	});
+
+	test('a later up-cross after a held processor is a pure gain update without wake or release', async () => {
+		const harness = installHarness();
+		const target = {
+			frameId: 0,
+			documentId: harness.documentId,
+			mediaId: 'media:effective-roundtrip',
+			sourceRevision: 0,
+			kind: 'audio' as const,
+		};
+		const intents: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, target);
+			}
+			const intent = payload as ControlIntent;
+			intents.push(intent);
+			return {
+				ok: true,
+				data: intent.requestedCoverage === 'full'
+					? captureProcessorAck(harness, intent)
+					: appliedPatchAck(intent, () => 'dom-native'),
+			};
+		};
+
+		await controlCoordinatorTestApi.submitInvoked({
+			tabId: 7,
+			source: 'popup',
+			requestedCoverage: 'full',
+			target,
+			patch: { boost: 2 },
+		}, invocation(harness, 'popup'));
+		await controlCoordinatorTestApi.submitOperation({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 80 },
+		});
+		expect(harness.offscreenProcessorActive).toBe(true);
+		intents.length = 0;
+
+		const up = await controlCoordinatorTestApi.submitOperation({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 120 },
+		});
+
+		// 上跨只改增益：无 release、无重新唤醒。
+		expect(intents.map((intent) => intent.patch)).toEqual([
+			{ volumeBase: 100 },
+			{ boost: 1.2 },
+		]);
+		expect(intents.some((intent) => intent.processorHold === true)).toBe(false);
+		expect(harness.offscreenProcessorActive).toBe(true);
+		expect(up.result).toEqual({ effectiveVolume: 120, volumeBase: 100, boost: 1.2 });
 	});
 
 	test('persists the complete effective-volume pair when only Boost needs a writer', async () => {

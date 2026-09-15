@@ -49,7 +49,7 @@ export async function performWarmUpdate(): Promise<void> {
 		return;
 	}
 
-	swLog.info('[Upgrade] Starting zero-refresh transition...');
+	/* @__PURE__ */ swLog.info('[Upgrade] Starting zero-refresh transition...');
 
 	// Querying by URL pattern omits file:// tabs on some Chrome builds and when
 	// file access is user-enabled. Query every tab once, then apply the same
@@ -57,13 +57,13 @@ export async function performWarmUpdate(): Promise<void> {
 	const queriedTabs = await chrome.tabs.query({});
 	const tabs = queriedTabs.filter((tab) => typeof tab.url === 'string' && isContentDocumentUrl(tab.url));
 	if (tabs.length === 0) {
-		swLog.info(`[Upgrade] No target tabs found (${queriedTabs.length} tabs inspected)`);
+		/* @__PURE__ */ swLog.info(`[Upgrade] No target tabs found (${queriedTabs.length} tabs inspected)`);
 		return;
 	}
 
 	const activeTabs = tabs.filter(tab => tab.active && tab.id !== undefined);
 
-	swLog.info(`[Upgrade] ${tabs.length} tabs (${activeTabs.length} active)`);
+	/* @__PURE__ */ swLog.info(`[Upgrade] ${tabs.length} tabs (${activeTabs.length} active)`);
 	await refreshTabsForUpgrade(tabs);
 }
 
@@ -82,11 +82,11 @@ async function injectWithTransition(tabId: number): Promise<void> {
 			hasOldInstance = r?.[0]?.result === true;
 		} catch (error) {
 			hasOldInstance = false;
-			swLog.debug(`[Upgrade] Tab ${tabId}: unable to probe previous content instance`, error);
+			/* @__PURE__ */ swLog.debug(`[Upgrade] Tab ${tabId}: unable to probe previous content instance`, error);
 		}
 
 		if (hasOldInstance) {
-			swLog.debug(`[Upgrade] Tab ${tabId}: tearing down old instance`);
+			/* @__PURE__ */ swLog.debug(`[Upgrade] Tab ${tabId}: tearing down old instance`);
 			await chrome.scripting.executeScript({
 				target: { tabId },
 				func: () => {
@@ -108,7 +108,7 @@ async function injectWithTransition(tabId: number): Promise<void> {
 			releaseContentRuntimeLease(tabId, ready.documentId, 'restore', capability);
 		}
 
-		swLog.debug(`[Upgrade] Tab ${tabId}: transition complete`);
+		/* @__PURE__ */ swLog.debug(`[Upgrade] Tab ${tabId}: transition complete`);
 	} catch (e) {
 		swLog.warn(`[Upgrade] Tab ${tabId} failed: ${e instanceof Error ? e.message : String(e)}`);
 	}

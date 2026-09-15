@@ -34,9 +34,10 @@ import {
 	isBackgroundRequestEnvelope,
 	rpcFailure,
 	rpcSuccess,
-} from './background-rpc';
+RPC_INVALID_REQUEST} from './background-rpc';
 
 const LOG = '[SPECTRA Remote BG]';
+const REMOTE_HOST_GET_STATUS = 'REMOTE_HOST_GET_STATUS';
 
 type HostSession = RemoteHostSession;
 
@@ -279,7 +280,7 @@ async function restoreSessions(): Promise<void> {
 	// from a partially trusted HELLO snapshot.
 	const stagedSessions: HostSession[] = [];
 	await forEachBounded(snapshot.remoteTabs, 4, async ({ tabId, sessionId }) => {
-		const response = await sendOffscreenMessage({ type: 'REMOTE_HOST_GET_STATUS', tabId });
+		const response = await sendOffscreenMessage({ type: REMOTE_HOST_GET_STATUS, tabId });
 		if (!response.session
 			|| response.session.tabId !== tabId
 			|| response.session.sessionId !== sessionId) {
@@ -416,7 +417,7 @@ async function readAuthoritativeSession(
 ): Promise<HostSession | null> {
 	try {
 		const response = await sendOffscreenMessage({
-			type: 'REMOTE_HOST_GET_STATUS',
+			type: REMOTE_HOST_GET_STATUS,
 			tabId,
 		});
 		if (!response.session
@@ -559,7 +560,7 @@ async function authorizeHostEvent(message: AuthorizedRemoteHostEvent): Promise<S
 	let authorization = authorizations.get(tabId);
 	if (!authorization) {
 		try {
-			const response = await sendOffscreenMessage({ type: 'REMOTE_HOST_GET_STATUS', tabId });
+			const response = await sendOffscreenMessage({ type: REMOTE_HOST_GET_STATUS, tabId });
 			if (!response.session) return null;
 			rememberSession(response.session);
 			authorization = authorizations.get(tabId);
@@ -576,7 +577,7 @@ async function authorizeHostEvent(message: AuthorizedRemoteHostEvent): Promise<S
 		// that authoritative status before adopting it; a delayed old event must
 		// never reset the Background sequence gate.
 		try {
-			const response = await sendOffscreenMessage({ type: 'REMOTE_HOST_GET_STATUS', tabId });
+			const response = await sendOffscreenMessage({ type: REMOTE_HOST_GET_STATUS, tabId });
 			if (!response.session
 				|| response.session.sessionId !== sessionId
 				|| response.session.capability !== capability
@@ -605,7 +606,7 @@ async function requireConnectedRemoteAuthorization(
 	// delayed command instead of executing it after the close fence.
 	try {
 		const response = await sendOffscreenMessage({
-			type: 'REMOTE_HOST_GET_STATUS',
+			type: REMOTE_HOST_GET_STATUS,
 			tabId: message.tabId,
 		});
 		const session = response.session;
@@ -871,7 +872,7 @@ export function initRemoteService(): void {
 				return false;
 			}
 			if (!isBackgroundRequestEnvelope(rawMessage)) {
-				sendResponse(rpcFailure('invalid_request', 'Malformed SPECTRA v3 remote request'));
+				sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed SPECTRA v3 remote request'));
 				return false;
 			}
 			const operation = async () => {

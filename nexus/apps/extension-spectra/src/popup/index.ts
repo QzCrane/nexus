@@ -17,6 +17,10 @@ let visualizerLoad: Promise<PopupVisualizerModule> | null = null;
 const popupAttemptDisposers = new Set<() => void>();
 let popupRetired = false;
 
+function tabIdMap(tabs: readonly chrome.tabs.Tab[]): Map<number, chrome.tabs.Tab> {
+  return new Map(tabs.flatMap((tab) => tab.id === undefined ? [] : [[tab.id, tab] as const]));
+}
+
 async function loadPopupVisualizer(): Promise<PopupVisualizerModule> {
   const pending = visualizerLoad ?? import('./visualizer/loop');
   visualizerLoad = pending;
@@ -131,6 +135,12 @@ async function main(): Promise<void> {
 
   // rule: main-stage is reserved for the current active tab only
   const activeTabId = activeTab?.id;
+  // The inventory request starts before the active-tab card init so a slow or
+  // unresponsive active tab cannot delay the media-tab list render.
+  const inventoryRequest = sendSpectraRequest('spectra.tab.visible.list', {});
+  // The active-tab card boots in parallel with the inventory read; only the
+  // final reconcile awaits it, so a busy active tab never blocks the list.
+  let activeCardReady: Promise<boolean> | null = null;
   if (activeTab && typeof activeTabId === 'number' && !isRestrictedUrl(activeTab.url)) {
     try {
       // eff: establish a persistent port to the active tab's content script to keep the session alive
@@ -144,7 +154,7 @@ async function main(): Promise<void> {
       console.debug('[SPECTRA Popup] Active-tab connection unavailable:', error);
     }
 
-    const mainCardSuccess = await initCard({
+    activeCardReady = initCard({
       container: mainStage,
       template,
       tab: activeTab,
@@ -154,45 +164,67 @@ async function main(): Promise<void> {
       onCardSetChanged: reconcileCardInventory,
       loadVisualizer: loadPopupVisualizer,
       registerCleanup: registerPopupAttemptDisposer,
+    }).then((mainCardSuccess) => {
+      if (mainCardSuccess) {
+        emptyState.classList.add('hidden');
+      }
+      return mainCardSuccess;
+    }).catch((error: unknown) => {
+      // note: the active tab may be unresponsive or retired; the list still renders
+      console.debug('[SPECTRA Popup] Active-tab card unavailable:', error);
+      return false;
     });
-
-    if (mainCardSuccess) {
-      emptyState.classList.add('hidden');
-    }
   }
 
   let hasBgAudio = false;
+  const renderedBackgroundTabIds = new Set<number>();
 
-  try {
-    // goal: render discovered media tabs while retaining the configured display-retention policy
-    const result = await sendSpectraRequest('spectra.tab.visible.list', {});
-    if (!result.ok) throw new Error(result.error.message);
-    const visibleTabIds = result.data.tabs;
-		const inventoryCoverage = result.data.coverage;
-		const inventoryEvidence: 'complete' | 'partial' | 'unknown' = inventoryCoverage === undefined
-			? 'unknown'
-			: inventoryCoverage.status === 'complete' ? 'complete' : 'partial';
-		const inventoryDegraded = inventoryEvidence !== 'complete';
-		document.documentElement.dataset.mediaInventory = inventoryEvidence;
+  // Pending tabs are a transient "checking" state: the settle read converges
+  // them in place. Only genuine probe failures (denied/stale/unknown) warrant
+  // the partial-inventory warning, and those retry automatically via cooldowns.
+  const applyInventoryEvidence = (coverage: {
+    status: 'complete' | 'degraded';
+    pending: number;
+    denied: number;
+    stale: number;
+    unknown: number;
+  } | undefined): void => {
+    const genuineFailures = coverage
+      ? coverage.denied + coverage.stale + coverage.unknown
+      : 0;
+    const evidence: 'complete' | 'partial' | 'checking' | 'unknown' = coverage === undefined
+      ? 'unknown'
+      : coverage.status === 'complete' ? 'complete'
+      : genuineFailures > 0 ? 'partial'
+      : 'checking';
+    document.documentElement.dataset.mediaInventory = evidence;
     const inventoryStatus = document.getElementById('media-inventory-status');
-    if (inventoryStatus) {
-      inventoryStatus.hidden = !inventoryDegraded;
-      inventoryStatus.textContent = inventoryDegraded ? settings.dict.mediaInventoryPartial : '';
-    }
-    const allTabs = await chrome.tabs.query({});
-    const tabMap = new Map(allTabs.map(t => [t.id, t]));
+    if (!inventoryStatus) return;
+    inventoryStatus.hidden = evidence !== 'partial';
+    inventoryStatus.textContent = evidence === 'partial' ? settings.dict.mediaInventoryPartial : '';
+  };
 
-    const activeTabIdForBackground = activeTab?.id;
+  const renderBackgroundTabs = async (
+    visibleTabIds: readonly number[],
+    tabMap: Map<number, chrome.tabs.Tab>,
+  ): Promise<void> => {
+    const liveIds = new Set(visibleTabIds);
+    // Retire cards whose media tab left the visible inventory during this open.
+    for (const renderedId of [...renderedBackgroundTabIds]) {
+      if (liveIds.has(renderedId)) continue;
+      renderedBackgroundTabIds.delete(renderedId);
+      bgStack.querySelector<HTMLElement>(`[data-tab-id="${renderedId}"]`)?.remove();
+    }
     const backgroundTabs = visibleTabIds
-      .filter((tabId) => tabId !== activeTabIdForBackground)
+      .filter((tabId) => tabId !== activeTabId && !renderedBackgroundTabIds.has(tabId))
       .map((tabId) => tabMap.get(tabId))
       .filter((tab): tab is chrome.tabs.Tab => tab !== undefined && !isRestrictedUrl(tab.url));
-
-    if (backgroundTabs.length > 0) {
-      // Bound card bootstrap work so a large visible-tab list cannot serialize
-      // dozens of status probes or create an unbounded burst of DOM/visualizer
-      // work. Every item settles before badge/empty-state reconciliation.
-      const summary = await runBoundedCardBootstrap(backgroundTabs, CARD_SNAPSHOT_CONCURRENCY, async (tab) => initCard({
+    if (backgroundTabs.length === 0) return;
+    // Bound card bootstrap work so a large visible-tab list cannot serialize
+    // dozens of status probes or create an unbounded burst of DOM/visualizer
+    // work. Every item settles before badge/empty-state reconciliation.
+    const summary = await runBoundedCardBootstrap(backgroundTabs, CARD_SNAPSHOT_CONCURRENCY, async (tab) => {
+      const initialized = await initCard({
         container: bgStack,
         template,
         tab,
@@ -203,19 +235,51 @@ async function main(): Promise<void> {
         loadVisualizer: loadPopupVisualizer,
         registerCleanup: registerPopupAttemptDisposer,
         isBackground: true,
-      }));
-      hasBgAudio = summary.succeeded > 0;
-      if (hasBgAudio) bgHeader?.classList.remove('hidden');
-      if (summary.failures.length > 0) {
-        console.warn(`[SPECTRA Popup] ${summary.failures.length} background card(s) failed to initialize.`);
-      }
+      });
+      if (initialized && typeof tab.id === 'number') renderedBackgroundTabIds.add(tab.id);
+      return initialized;
+    });
+    hasBgAudio = summary.succeeded > 0;
+    if (hasBgAudio) bgHeader?.classList.remove('hidden');
+    if (summary.failures.length > 0) {
+      console.warn(`[SPECTRA Popup] ${summary.failures.length} background card(s) failed to initialize.`);
     }
+  };
+
+  try {
+    // goal: render discovered media tabs while retaining the configured display-retention policy
+    const result = await inventoryRequest;
+    if (!result.ok) throw new Error(result.error.message);
+    applyInventoryEvidence(result.data.coverage);
+    const allTabs = await chrome.tabs.query({});
+    await renderBackgroundTabs(result.data.tabs, tabIdMap(allTabs));
+
+    // Convergence pass: the background sweep solidifies facts for tabs that had
+    // no prior report or probe. Re-read once it settles and grow the list in
+    // place so newly discovered media tabs appear without reopening the popup.
+    void (async () => {
+      if (popupRetired) return;
+      try {
+        const settled = await sendSpectraRequest('spectra.tab.visible.settle', {});
+        if (popupRetired || !settled.ok) return;
+        applyInventoryEvidence(settled.data.coverage);
+        const settledTabs = await chrome.tabs.query({});
+        await renderBackgroundTabs(settled.data.tabs, tabIdMap(settledTabs));
+      } catch (error) {
+        console.debug('[SPECTRA Popup] Inventory convergence update failed:', error);
+      }
+      reconcileCardInventory();
+    })();
   } catch (error) {
     document.documentElement.dataset.mediaInventory = 'unavailable';
     const inventoryStatus = document.getElementById('media-inventory-status');
     if (inventoryStatus) { inventoryStatus.hidden = false; inventoryStatus.textContent = settings.dict.mediaInventoryPartial; }
     console.warn('[SPECTRA Popup] Visible tab list unavailable.', error);
   }
+
+  // The active-tab card was booting in parallel; settle it before the final
+  // inventory reconcile so badge/empty-state counts reflect both stages.
+  if (activeCardReady) await activeCardReady;
 
   reconcileCardInventory();
 

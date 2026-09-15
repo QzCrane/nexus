@@ -12,8 +12,9 @@ import {
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { createMediaTabDiscovery, type MediaProbeResult } from '../media-tab-discovery';
+import { mediaFacts } from '../media-facts';
 import { currentTopDocumentId } from '../../shared/top-document';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
 
 export type MediaReportOrdering =
 	| { status: 'ordered'; revision: number }
@@ -40,8 +41,11 @@ export function recordMediaState(
 	if (ordering.revision <= state.reportRevision) return { reported: true };
 	state.hasMediaElement = payload.hasMediaElement;
 	state.reportRevision = ordering.revision;
+	// The content script report is the authoritative source: solidify the media
+	// fact immediately (auto-corrects media removal/loading).
+	mediaFacts.rememberMediaFact(tabId, documentId, payload.hasMediaElement ? 'found' : 'no-media', 'report');
 
-	swLog.debug(`[SPECTRA] Tab ${tabId} reported media: ${payload.hasMediaElement}`);
+	/* @__PURE__ */ swLog.debug(`[SPECTRA] Tab ${tabId} reported media: ${payload.hasMediaElement}`);
 	return { reported: true };
 }
 
@@ -112,6 +116,12 @@ export const resolveVisibleTabs = createMediaTabDiscovery({
 	seed: seedVisibleMedia,
 	documentGeneration: tabDocumentGeneration,
 	probe: hasNativeMedia,
+	readFact: mediaFacts.readMediaFact,
+	isFactCurrent: mediaFacts.isFactCurrent,
+	rememberFact: mediaFacts.rememberMediaFact,
+	readCooldown: mediaFacts.readCooldown,
+	rememberCooldown: mediaFacts.rememberCooldown,
+	forgetCooldown: mediaFacts.forgetCooldown,
 });
 
 function registerTabStateV2Listener(): void {
@@ -121,13 +131,14 @@ function registerTabStateV2Listener(): void {
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| (candidate.type !== 'spectra.tab.media.report'
 				&& candidate.type !== 'spectra.tab.visible.list'
+				&& candidate.type !== 'spectra.tab.visible.settle'
 				&& candidate.type !== 'spectra.content.inject')) return false;
 		if (sender.id && sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Tab-state RPC is extension-internal only'));
 			return false;
 		}
 		if (!isBackgroundRequestEnvelope(message)) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed tab-state request'));
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed tab-state request'));
 			return false;
 		}
 
@@ -146,7 +157,32 @@ function registerTabStateV2Listener(): void {
 			if (message.type === 'spectra.content.inject') {
 				return { injected: await injectContentScriptOnDemand(message.payload.tabId) };
 			}
-			return resolveVisibleTabs();
+			if (message.type === 'spectra.tab.visible.list') {
+				// Hydrate facts from the session area (memoized) before reading the
+				// inventory. The read is a non-blocking projection of solidified facts
+				// and live seeds: a popup open never waits for chrome.scripting probes.
+				// The probe sweep is scheduled in the background and converges facts,
+				// so the next read reflects newly discovered media.
+				await mediaFacts.ready();
+				const inventory = await resolveVisibleTabs.readNow();
+				void resolveVisibleTabs().catch((error: unknown) => {
+					/* @__PURE__ */ swLog.debug('[TabState] Background media sweep failed', error);
+				});
+				return inventory;
+			}
+			if (message.type === 'spectra.tab.visible.settle') {
+				// Convergence read: await the in-flight sweep (single-flight, bounded by
+				// the scan budget) so the popup can re-render with newly probed media
+				// tabs instead of asking the user to reopen. Falls back to the instant
+				// projection when the sweep itself fails.
+				await mediaFacts.ready();
+				try {
+					await resolveVisibleTabs();
+				} catch (error) {
+					/* @__PURE__ */ swLog.debug('[TabState] Inventory convergence sweep failed', error);
+				}
+				return resolveVisibleTabs.readNow();
+			}
 		};
 
 		void operation()

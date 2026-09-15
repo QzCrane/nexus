@@ -122,7 +122,9 @@ async function enterCapture(
 ): Promise<void> {
 	const { captureManager } = deps;
 	if (!state.config.enabled
-		|| (!requiresAudioProcessor(state.config) && state.visualizerSubscribers.size === 0)) {
+		|| (!requiresAudioProcessor(state.config)
+			&& state.visualizerSubscribers.size === 0
+			&& !state.processorHold)) {
 		throw new Error('Capture policy was selected without an enabled processor contribution');
 	}
 	if (!await neutralizeWebAudio(deps, state) || stale(deps, owner, run)) return;

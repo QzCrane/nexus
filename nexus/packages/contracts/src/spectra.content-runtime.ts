@@ -248,6 +248,7 @@ function isControlIntent(value: unknown): boolean {
 		|| !hasOnly(value, new Set([
 			'intentId', 'tabId', 'documentId', 'generation', 'baseRevision', 'source',
 			'requestedCoverage', 'target', 'actualContext', 'patch', 'captureAdmission',
+			'processorHold',
 		]))) return false;
 	return isBoundedString(value.intentId, 128)
 		&& isInteger(value.tabId, true)
@@ -260,7 +261,8 @@ function isControlIntent(value: unknown): boolean {
 		&& isControlPatch(value.actualContext, true)
 		&& isControlPatch(value.patch)
 		&& (value.captureAdmission === undefined
-			|| isCaptureAdmission(value.captureAdmission));
+			|| isCaptureAdmission(value.captureAdmission))
+		&& (value.processorHold === undefined || typeof value.processorHold === 'boolean');
 }
 
 function isControlReadRequest(value: unknown): boolean {

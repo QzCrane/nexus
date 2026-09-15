@@ -4,6 +4,13 @@ import { dirname, extname, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const SPECTRA_PRODUCTION_BUDGETS = Object.freeze({
+	// MV3 service-worker gate. The event-driven media-inventory fact path kept
+	// this bundle above 256KiB, so its owner re-audited the diagnostics it ships
+	// and (a) marked the side-effect-free swLog.debug/info/log/capture call sites
+	// @__PURE__ so esbuild strips them, and (b) hoisted repeated protocol/error
+	// code literals into shared constants (e.g. RPC_INVALID_REQUEST) that esbuild
+	// deduplicates. Verify-gated canonical boundary statements keep their literal
+	// form; only non-gate-monitored strings are deduplicated. Gate stays at 256KiB.
 	serviceWorkerWake: 256 * 1024,
 	documentStart: 24 * 1024,
 	contentBootstrap: 14 * 1024,

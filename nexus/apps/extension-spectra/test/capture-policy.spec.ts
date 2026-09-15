@@ -91,4 +91,26 @@ describe('canonical three-owner audio processor policy', () => {
 		expect(requiresAudioProcessor(disabled)).toBe(true);
 		expect(resolveDesiredAudioMode(disabled)).toBe('bypass');
 	});
+
+	test('hold demand keeps a neutral config on the processor owner for zero-latency crossings', () => {
+		const neutral = config({ volume: 100, volumeBase: 100, boost: 1 });
+		expect(requiresAudioProcessor(neutral)).toBe(false);
+		expect(resolveDesiredAudioMode(neutral)).toBe('bypass');
+		expect(resolveDesiredAudioMode(neutral, {
+			visualizer: false,
+			mediaWebAudio: true,
+			hold: true,
+		})).toBe('webaudio');
+		expect(resolveDesiredAudioMode(neutral, {
+			visualizer: false,
+			mediaWebAudio: false,
+			hold: true,
+		})).toBe('capture');
+		// 禁用是天然释放边界：hold 不能跨越 master switch。
+		expect(resolveDesiredAudioMode({ ...neutral, enabled: false }, {
+			visualizer: false,
+			mediaWebAudio: false,
+			hold: true,
+		})).toBe('bypass');
+	});
 });

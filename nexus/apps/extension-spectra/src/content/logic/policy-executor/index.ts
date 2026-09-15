@@ -52,6 +52,7 @@ export async function createPolicyExecutor(
 				media,
 				(element) => deps.mediaRegistry.getEligibilityEvidence(element),
 			),
+			hold: state.processorHold,
 		});
 		state.desiredMode = mode;
 		const modeChanged = mode !== state.activeMode;

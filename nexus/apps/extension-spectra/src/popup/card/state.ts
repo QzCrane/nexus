@@ -214,6 +214,10 @@ export function createUpdateFn(
 				desiredConfig = state.config;
 				state.volumeTransitionPresentation = undefined;
 			}
+			// A committed ACK is authoritative field-level truth. Flip the
+			// transient-unknown latch so the card projection and diagnostics
+			// recover even when the bootstrap read never settled.
+			state.controlSnapshotKnown = true;
 			state.lastError = null;
 		}).catch((error: unknown) => {
 			if (localRevision === sentRevision) {
@@ -252,7 +256,10 @@ export function createUpdateFn(
 	};
 
 	const runControl = async <T>(command: () => Promise<T>): Promise<T> => {
-		if (state.controlSnapshotKnown === false) throw new Error('Control state is unknown; reopen the popup to retry');
+		// The coordinator is the sole authority for an unknown control state.
+		// Routing an intent even without a local snapshot lets the coordinator
+		// serve or reject with a typed error (e.g. stale-revision recovery),
+		// so a transient bootstrap miss never dead-ends the card controls.
 		await drain();
 		return serializeControl(command);
 	};
@@ -268,10 +275,6 @@ export function createUpdateFn(
 	}, { once: true });
 
 	const update = ((changes: Partial<AudioConfig>) => {
-		if (state.controlSnapshotKnown === false) {
-			onError(new Error('Control state is unknown; reopen the popup to retry'), state);
-			return;
-		}
 		// This function is only invoked by explicit controls/preset actions; reads never call it.
 		const previous = pending || inFlight ? desiredConfig : state.config;
 		const next = mergeAudioConfig(previous, changes);

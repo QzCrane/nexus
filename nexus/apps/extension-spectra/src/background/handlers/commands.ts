@@ -4,7 +4,7 @@ import {
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { submitControlRequest } from '../control-coordinator';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
 
 const COMMAND_REQUEST_TYPES: ReadonlySet<string> = new Set([
 	'spectra.tab.pinned.toggle',
@@ -59,7 +59,7 @@ function registerCommandsV2Listener(): void {
 			return false;
 		}
 		if (!isBackgroundRequestEnvelope(message)) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed extension command'));
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed extension command'));
 			return false;
 		}
 

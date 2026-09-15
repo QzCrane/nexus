@@ -6,7 +6,7 @@ import {
 	type ScreenshotResult,
 } from '@nexus/contracts';
 import { sendSpectraTabRequest } from '../spectra-tab-client';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
 
 function toPngDataUrl(blob: Blob): Promise<string> {
 	return blob.arrayBuffer().then((buffer) => {
@@ -140,7 +140,7 @@ export function registerScreenshotHandler(): void {
 			return false;
 		}
 		if (!isBackgroundRequestEnvelope(message)) {
-			sendResponse(rpcFailure('invalid_request', 'Screenshot capture requires a valid sender tab'));
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Screenshot capture requires a valid sender tab'));
 			return false;
 		}
 		if (message.type !== 'spectra.screenshot.capture-visible') return false;
@@ -158,7 +158,7 @@ export function registerScreenshotHandler(): void {
 			|| !Number.isSafeInteger(generation)
 			|| generation < 0
 			|| sender.documentId !== documentId) {
-			sendResponse(rpcFailure('invalid_request', 'Screenshot capture requires a valid sender tab'));
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Screenshot capture requires a valid sender tab'));
 			return false;
 		}
 		const verifyTarget = async (): Promise<void> => {

@@ -406,17 +406,36 @@ minifyProductionAssets();
 console.log(`✓ SPECTRA ${version} ${isDev ? 'development' : 'production'} build`);
 
 if (isWatch) {
+	// A failed watch rebuild removes that entrypoint's outfile (esbuild cleanup).
+	// Restore the last good output so the loaded package never silently loses a
+	// file, and surface the failure instead of dropping the file with no output.
+	const lastGoodOutputs = new Map<string, Uint8Array>();
 	const contexts = await Promise.all(allEntries.map(async ({ entry, out, format }) => {
+		const outfile = resolve(distDir, out);
 		const context = await esbuild.context({
 			...common,
 			entryPoints: [entry],
-			outfile: resolve(distDir, out),
+			outfile,
 			format,
 			plugins: [{
 				name: 'build-notifier',
 				setup(build) {
 					build.onEnd((result) => {
-						if (result.errors.length === 0) console.log(`✓ ${out}`);
+						if (result.errors.length === 0) {
+							lastGoodOutputs.set(out, readFileSync(outfile));
+							console.log(`✓ ${out}`);
+							return;
+						}
+						const restored = lastGoodOutputs.get(out);
+						if (restored) writeFileSync(outfile, restored);
+						console.error(
+							`✗ ${out}: rebuild failed; ${restored ? 'restored the previous good output' : 'no previous output to restore'}. `
+							+ 'Fix the source; watch retries automatically.',
+						);
+						for (const error of result.errors.slice(0, 3)) {
+							const location = error.location;
+							console.error(`  ${location?.file ?? ''}:${location?.line ?? 0}: ${error.text}`);
+						}
 					});
 				},
 			}],

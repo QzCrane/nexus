@@ -78,7 +78,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const dict = params.getDictionary?.() ?? initialDictionary;
   const tabId = tab.id;
 
-  const snapshot = await readCardSnapshot(tabId, params.isBackground === true);
+  const snapshot = await readCardSnapshot(tabId);
   if (!snapshot || popupClosing) return false;
   const { documentId } = snapshot;
   const status = snapshot.status.state === 'known' ? snapshot.status.value : null;

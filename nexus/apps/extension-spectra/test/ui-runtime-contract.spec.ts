@@ -202,6 +202,10 @@ function createUiSuccessData(): Record<SpectraUiRequestType, unknown> {
 			tabs: [7, tabId],
 			coverage: { status: 'complete', total: 2, examined: 2, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0 },
 		},
+		'spectra.tab.visible.settle': {
+			tabs: [7, tabId],
+			coverage: { status: 'complete', total: 2, examined: 2, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0 },
+		},
 	};
 }
 
@@ -263,7 +267,7 @@ function createUiEvents(): Record<SpectraUiEventType, SpectraEventEnvelope> {
 
 describe('restricted extension UI protocol facade', () => {
 	test('owns one unique closed request and event allowlist', () => {
-		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(18);
+		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(19);
 		expect(new Set(SPECTRA_UI_REQUEST_TYPES).size).toBe(SPECTRA_UI_REQUEST_TYPES.length);
 		expect(SPECTRA_UI_EVENT_TYPES).toHaveLength(7);
 		expect(new Set(SPECTRA_UI_EVENT_TYPES).size).toBe(SPECTRA_UI_EVENT_TYPES.length);

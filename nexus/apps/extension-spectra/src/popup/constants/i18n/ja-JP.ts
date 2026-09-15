@@ -10,7 +10,7 @@ export const JA_JP: I18NDict = {
 	vizSub: 'ダイナミックオーディオバーを表示',
 	vizDesc: '無効にすると、制限付きサイトでは音量が100%を超えるまでネイティブライトモードを使用し、リソースを節約します。',
 	langLabel: '言語',
-	mediaInventoryPartial: "一部のメディアタブを時間内に確認できませんでした。ポップアップを開き直してください。",
+	mediaInventoryPartial: "一部のメディアタブはまだ確認中で、完了すると自動的に表示されます。",
 	noAudio: 'オーディオ信号なし',
 	bgTitle: 'バックグラウンド',
 	paused: 'オーディオ拡張一時停止中',

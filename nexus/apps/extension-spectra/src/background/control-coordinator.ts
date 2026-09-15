@@ -98,7 +98,17 @@ import {
 	rpcFailure,
 	rpcSuccess,
 	sendBackgroundTabRequestOnce,
-} from './background-rpc';
+RPC_INVALID_REQUEST} from './background-rpc';
+const CONTROL_COVERAGE_TARGET = 'active-target' as const;
+const CONTROL_STRATEGY_EXTENSION = 'extension-state' as const;
+const CONTROL_STRATEGY_CHROME_NATIVE = 'chrome-native' as const;
+const PROTO_ACTUAL_READ = 'spectra.control.actual.read' as const;
+const PROTO_INTENT_SUBMIT = 'spectra.control.intent.submit' as const;
+const PROTO_OPERATION_SUBMIT = 'spectra.control.operation.submit' as const;
+const PROTO_SNAPSHOT_GET = 'spectra.control.snapshot.get' as const;
+const PROTO_SOURCE_RELEASED = 'spectra.content.source.released' as const;
+const PROTO_TARGET_CHANGED = 'spectra.content.target.changed' as const;
+
 
 const STORAGE_PREFIX = 'spectra.control.tab.';
 const GENERATION_PREFIX = 'spectra.control.generation.';
@@ -133,6 +143,10 @@ type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & {
 	tabId: number;
 	captureAdmission?: CaptureAdmission;
 	observationDocumentId?: string;
+	// Background-internal hold marker (deliberately absent from
+	// ControlSubmitRequest like captureAdmission): routes the processor stage as
+	// a neutral-gain apply that keeps the capture/webaudio session alive.
+	processorHold?: boolean;
 };
 type ResolvedControlSubmitRequest = Omit<RoutedControlSubmitRequest, 'patch' | 'mutations'> & {
 	patch: ControlPatch;
@@ -166,7 +180,7 @@ function hasRuntimeOwnedState(snapshot: ControlSnapshot): boolean {
 		if (!state?.controlled || (state.phase !== 'applied' && state.phase !== 'error')) return false;
 		const field = rawField as ControlField;
 		if (field === 'audioEnabled') return false;
-		if (state.strategy === 'chrome-native'
+		if (state.strategy === CONTROL_STRATEGY_CHROME_NATIVE
 			|| state.strategy === 'observe' || state.strategy === 'unsupported') return false;
 		if (state.strategy === 'dom-native') return RUNTIME_RESIDENT_NATIVE_FIELDS.has(field);
 		return true;
@@ -320,7 +334,7 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 		.filter((field): field is ControlDirectField => !videoFields.includes(field as typeof videoFields[number]));
 	const read = (fields: readonly ControlDirectField[]) => sendSpectraTabRequest(
 		tabId,
-		'spectra.control.actual.read',
+		PROTO_ACTUAL_READ,
 		{ fields, target: null },
 		{ documentId: identity.documentId, generation },
 	).catch(() => null);
@@ -445,7 +459,7 @@ async function resolveSubmitRequest(
 	if (contentFields.length > 0) {
 		const response = await sendSpectraTabRequest(
 			request.tabId,
-			'spectra.control.actual.read',
+			PROTO_ACTUAL_READ,
 			{ fields: contentFields, target: resolvedTarget },
 			{ documentId: snapshot.documentId, generation: snapshot.generation },
 		);
@@ -474,6 +488,9 @@ async function resolveSubmitRequest(
 		patch,
 		...(request.captureAdmission
 			? { captureAdmission: request.captureAdmission }
+			: {}),
+		...(request.processorHold
+			? { processorHold: true }
 			: {}),
 		...(request.observedStrategies === undefined
 			? {}
@@ -888,7 +905,7 @@ async function applyChromeTabObservation(
 			actual,
 			revision: baseline.revision + 1,
 			phase: 'applied',
-			strategy: 'chrome-native',
+			strategy: CONTROL_STRATEGY_CHROME_NATIVE,
 			coverage: 'full',
 			controlled: false,
 			intentId: crypto.randomUUID(),
@@ -945,7 +962,7 @@ async function captureActualPatch(
 	const patch = snapshotActualPatch(snapshot, fields, controlledOnly);
 	const response = await sendSpectraTabRequest(
 		snapshot.tabId,
-		'spectra.control.actual.read',
+		PROTO_ACTUAL_READ,
 		{ fields, target },
 		{ documentId: snapshot.documentId, generation: snapshot.generation },
 	).catch(() => null);
@@ -976,7 +993,7 @@ async function compensateControlPatch(
 	const failures: string[] = [];
 	const isolatedTargetPatch: ControlPatch = { ...targetPatch };
 	const stages = {
-		target: [isolatedTargetPatch, 'active-target'],
+		target: [isolatedTargetPatch, CONTROL_COVERAGE_TARGET],
 		processor: [processorPatch, 'full'],
 	} as const;
 	for (const stage of order) {
@@ -1142,8 +1159,8 @@ async function handleSourceReleased(tabId: number, target: import('@nexus/contra
 				actual: { pointA: null, pointB: null, enabled: false },
 				revision: snapshot.revision + 1,
 				phase: 'idle',
-				strategy: 'extension-state',
-				coverage: 'active-target',
+				strategy: CONTROL_STRATEGY_EXTENSION,
+				coverage: CONTROL_COVERAGE_TARGET,
 				controlled: false,
 				intentId,
 				lastError: null,
@@ -1173,7 +1190,7 @@ async function handleTargetChanged(
 		&& (target.kind !== 'video' || sameMediaTarget(baseline.activeVideo, target))) return;
 	const response = await sendSpectraTabRequest(
 		tabId,
-		'spectra.control.actual.read',
+		PROTO_ACTUAL_READ,
 		{
 			fields: [...PAGE_OBSERVABLE_FIELDS] as ControlDirectField[],
 			target,
@@ -1323,7 +1340,7 @@ async function executeFieldOperation(
 		const readback = missingActualFields.length > 0
 			? await sendSpectraTabRequest(
 				request.tabId,
-				'spectra.control.actual.read',
+				PROTO_ACTUAL_READ,
 				{ fields: missingActualFields, target: request.target },
 				{ documentId: baseline.documentId, generation: baseline.generation },
 			).catch(() => null)
@@ -1342,6 +1359,14 @@ async function executeFieldOperation(
 			volumeBase: currentVolumeBase,
 			boost: actualField('boost') ?? 1,
 		};
+		// The processor owns the amplified scale while its boost field is
+		// applied and controlled: a live capture/webaudio session is the only
+		// way boost can be controlled (neutral/disabled releases are not).
+		// A held processor sits at a neutral gain (boost === 1) yet still owns
+		// the scale: up-crosses must skip the cold page-native probe and stay
+		// pure gain updates.
+		const processorOwnsScale = baseline.fields.boost?.phase === 'applied'
+			&& baseline.fields.boost?.controlled === true;
 		const observedMuted = readback?.ok ? readback.data.patch.mediaMuted : undefined;
 		const currentMuted = typeof observedMuted === 'boolean'
 			? observedMuted
@@ -1390,8 +1415,8 @@ async function executeFieldOperation(
 				revision: baseline.revision,
 				target,
 				operation: request.operation,
-				strategy: 'extension-state',
-				coverage: desired.boost === 1 ? 'active-target' : 'full',
+				strategy: CONTROL_STRATEGY_EXTENSION,
+				coverage: desired.boost === 1 ? CONTROL_COVERAGE_TARGET : 'full',
 				fields: {},
 				...(currentMuted === null ? {} : {
 					audioVolume: {
@@ -1430,12 +1455,14 @@ async function executeFieldOperation(
 				stage: 'target' | 'processor',
 				patch: ControlPatch,
 				assertion: 'apply' | 'release' | 'probe',
+				processorHold?: boolean,
 			): Promise<PreparedControlIntent> => {
 				const prepared = await prepareIntent({
 					...common,
 					target,
-					requestedCoverage: stage === 'target' ? 'active-target' : 'full',
+					requestedCoverage: stage === 'target' ? CONTROL_COVERAGE_TARGET : 'full',
 					patch,
+					...(processorHold ? { processorHold: true } : {}),
 				}, staged);
 				fields = { ...fields, ...prepared.fields };
 				if (assertion === 'apply') {
@@ -1454,7 +1481,8 @@ async function executeFieldOperation(
 				return prepared;
 			};
 
-			if (desiredEffective > CONTROL_VALUE_LIMITS.volumeBase.max && physicalBoost === 1) {
+			if (desiredEffective > CONTROL_VALUE_LIMITS.volumeBase.max && physicalBoost === 1
+				&& !processorOwnsScale) {
 				// A page controller can expose its own amplified scale. The verdict is
 				// probed ONCE when the content runtime detects media on a page entry
 				// (read-only bridge capability discovery) and solidified per hostname,
@@ -1539,10 +1567,16 @@ async function executeFieldOperation(
 				for (const stage of stageOrder) {
 					const patch = stage === 'target' ? targetPatch : processorPatch;
 					if (Object.keys(patch).length === 0) continue;
+					// Down-cross (>100 → ≤100): the processor is already running.
+					// Hold the session with a processorHold intent at neutral gain
+					// instead of releasing, so later crossings only change the gain.
+					const isProcessorRelease = stage === 'processor' && desired.boost === 1;
+					const holding = isProcessorRelease && current.boost > 1;
 					await runStage(
 						stage,
 						patch,
-						stage === 'processor' && desired.boost === 1 ? 'release' : 'apply',
+						holding ? 'apply' : isProcessorRelease ? 'release' : 'apply',
+						holding,
 					);
 				}
 			}
@@ -1584,8 +1618,8 @@ async function executeFieldOperation(
 				revision: committed.revision,
 				target,
 				operation: request.operation,
-				strategy: 'extension-state',
-				coverage: actualBoost === 1 ? 'active-target' : 'full',
+				strategy: CONTROL_STRATEGY_EXTENSION,
+				coverage: actualBoost === 1 ? CONTROL_COVERAGE_TARGET : 'full',
 				fields,
 				...(audioVolume ? { audioVolume } : {}),
 				result: { effectiveVolume, volumeBase: actualVolumeBase, boost: actualBoost },
@@ -1613,7 +1647,7 @@ async function executeFieldOperation(
 		if (request.operation === 'playback-toggle') {
 			const fieldAck = await executeIntent({
 				...common,
-				requestedCoverage: 'active-target',
+				requestedCoverage: CONTROL_COVERAGE_TARGET,
 				mutations: [{ field: 'playing', operation: 'toggle' }],
 			});
 			assertAppliedFields(fieldAck.fields, ['playing'], 'Playback toggle');
@@ -1624,7 +1658,7 @@ async function executeFieldOperation(
 		if (request.operation === 'seek-relative') {
 			const fieldAck = await executeIntent({
 				...common,
-				requestedCoverage: 'active-target',
+				requestedCoverage: CONTROL_COVERAGE_TARGET,
 			mutations: [{ field: 'currentTime', operation: 'delta', value: request.payload.delta }],
 			});
 			assertAppliedFields(fieldAck.fields, ['currentTime'], 'Relative seek');
@@ -1641,7 +1675,7 @@ async function executeFieldOperation(
 			// page without media is non-fatal because the processor still must release.
 			const observed = await sendSpectraTabRequest(
 				request.tabId,
-				'spectra.control.actual.read',
+				PROTO_ACTUAL_READ,
 				{ fields: ['volumeBase'], target: null },
 				{ documentId: baseline.documentId, generation: baseline.generation },
 			).catch(() => null);
@@ -1671,7 +1705,7 @@ async function executeFieldOperation(
 			const targetPrepared = await prepareIntent({
 				...common,
 				target,
-				requestedCoverage: 'active-target',
+				requestedCoverage: CONTROL_COVERAGE_TARGET,
 				patch: RESET_AUDIO_TARGET_PATCH,
 			}, staged);
 			const targetUnavailable = target === null
@@ -1719,7 +1753,7 @@ async function executeFieldOperation(
 				revision: committed.revision,
 				target,
 				operation: request.operation,
-				strategy: 'extension-state',
+				strategy: CONTROL_STRATEGY_EXTENSION,
 				coverage: 'full',
 				fields,
 				...(audioVolume ? { audioVolume } : {}),
@@ -1747,7 +1781,7 @@ async function executeFieldOperation(
 		if (request.operation === 'video-effects-toggle') {
 			const fieldAck = await executeIntent({
 				...common,
-				requestedCoverage: 'active-target',
+				requestedCoverage: CONTROL_COVERAGE_TARGET,
 				mutations: [{ field: 'filterEnabled', operation: 'toggle' }],
 			});
 			assertAppliedFields(fieldAck.fields, ['filterEnabled'], 'Video effects toggle');
@@ -1758,7 +1792,7 @@ async function executeFieldOperation(
 	if (request.operation === 'video-effects-reset') {
 		const fieldAck = await executeIntent({
 			...common,
-			requestedCoverage: 'active-target',
+			requestedCoverage: CONTROL_COVERAGE_TARGET,
 			patch: RESET_VIDEO_PATCH,
 			});
 			assertAppliedPatch(fieldAck.fields, RESET_VIDEO_PATCH, 'Video effects reset');
@@ -1768,8 +1802,8 @@ async function executeFieldOperation(
 				fieldAck,
 				'filterEnabled',
 				{ reset: true },
-				'extension-state',
-				'active-target',
+				CONTROL_STRATEGY_EXTENSION,
+				CONTROL_COVERAGE_TARGET,
 			);
 		}
 	throw new Error(`Operation ${request.operation} is not a field operation`);
@@ -1798,11 +1832,11 @@ async function executeControlOperation(
 	if (request.operation === 'open-popup') {
 		const tab = await currentOperationTab(request.tabId, snapshot.documentId);
 		await chrome.action.openPopup({ windowId: tab.windowId });
-		return commitBackgroundOperation(request, operationId, 'chrome-native', { opened: true }, snapshot);
+		return commitBackgroundOperation(request, operationId, CONTROL_STRATEGY_CHROME_NATIVE, { opened: true }, snapshot);
 	}
 	if (request.operation === 'open-options') {
 		await chrome.runtime.openOptionsPage();
-		return commitBackgroundOperation(request, operationId, 'chrome-native', { opened: true }, snapshot);
+		return commitBackgroundOperation(request, operationId, CONTROL_STRATEGY_CHROME_NATIVE, { opened: true }, snapshot);
 	}
 	if (request.operation === 'open-url') {
 		const tab = await currentOperationTab(request.tabId, snapshot.documentId);
@@ -1813,7 +1847,7 @@ async function executeControlOperation(
 			openerTabId: request.tabId,
 			active: true,
 		});
-		return commitBackgroundOperation(request, operationId, 'chrome-native', { opened: true }, snapshot);
+		return commitBackgroundOperation(request, operationId, CONTROL_STRATEGY_CHROME_NATIVE, { opened: true }, snapshot);
 	}
 	if (request.operation === 'run-user-script') {
 		const result = await executeUserScriptInTab(
@@ -1822,7 +1856,7 @@ async function executeControlOperation(
 			request.payload.script,
 		);
 		if (!result.success) throw new Error(result.error ?? 'User script execution failed');
-		return commitBackgroundOperation(request, operationId, 'extension-state', { executed: true }, snapshot);
+		return commitBackgroundOperation(request, operationId, CONTROL_STRATEGY_EXTENSION, { executed: true }, snapshot);
 	}
 	if (request.operation === 'restore-page-settings') {
 		const baseline = await getOrCreateSnapshot(request.tabId);
@@ -2381,23 +2415,23 @@ export function initializeControlCoordinator(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
-		const isControlMessage = candidate.type === 'spectra.control.snapshot.get'
-			|| candidate.type === 'spectra.control.intent.submit'
-			|| candidate.type === 'spectra.control.operation.submit'
-			|| candidate.type === 'spectra.content.source.released'
-			|| candidate.type === 'spectra.content.target.changed';
+		const isControlMessage = candidate.type === PROTO_SNAPSHOT_GET
+			|| candidate.type === PROTO_INTENT_SUBMIT
+			|| candidate.type === PROTO_OPERATION_SUBMIT
+			|| candidate.type === PROTO_SOURCE_RELEASED
+			|| candidate.type === PROTO_TARGET_CHANGED;
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || !isControlMessage) return false;
 		if (sender.id && sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Control coordinator RPC is extension-internal only'));
 			return false;
 		}
 		if (!isBackgroundRequestEnvelope(message)
-			|| (message.type !== 'spectra.control.snapshot.get'
-				&& message.type !== 'spectra.control.intent.submit'
-				&& message.type !== 'spectra.control.operation.submit'
-				&& message.type !== 'spectra.content.source.released'
-				&& message.type !== 'spectra.content.target.changed')) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed control coordinator request'));
+			|| (message.type !== PROTO_SNAPSHOT_GET
+				&& message.type !== PROTO_INTENT_SUBMIT
+				&& message.type !== PROTO_OPERATION_SUBMIT
+				&& message.type !== PROTO_SOURCE_RELEASED
+				&& message.type !== PROTO_TARGET_CHANGED)) {
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed control coordinator request'));
 			return false;
 		}
 
@@ -2435,7 +2469,7 @@ export function initializeControlCoordinator(): void {
 			return true;
 		}
 
-		if (message.type === 'spectra.control.snapshot.get') {
+		if (message.type === PROTO_SNAPSHOT_GET) {
 			void awaitDocumentInitialization(message.payload.tabId)
 				.then(() => getControlViewSnapshot(message.payload.tabId)).then(
 				(snapshot) => sendResponse(rpcSuccess(snapshot)),
@@ -2446,7 +2480,7 @@ export function initializeControlCoordinator(): void {
 
 		const tabId = message.payload.tabId ?? sender.tab?.id ?? message.tabId;
 		if (!tabId) {
-			sendResponse(rpcFailure('invalid_request', 'Control intent requires a target tab'));
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Control intent requires a target tab'));
 			return false;
 		}
 		const runtimeClaimedSource: string = message.payload.source;
@@ -2484,7 +2518,7 @@ export function initializeControlCoordinator(): void {
 			));
 			return false;
 		}
-		const pageObservation = message.type === 'spectra.control.intent.submit' && pageSource;
+		const pageObservation = message.type === PROTO_INTENT_SUBMIT && pageSource;
 		const siteHotkeyInvocation = message.payload.source === 'hotkey'
 			? trustedContentHotkeyInvocation(sender, tabId)
 			: undefined;
@@ -2500,7 +2534,7 @@ export function initializeControlCoordinator(): void {
 			const invocation = message.payload.source === 'popup'
 				? await popupInvocation(tabId)
 				: siteHotkeyInvocation;
-			return message.type === 'spectra.control.operation.submit'
+			return message.type === PROTO_OPERATION_SUBMIT
 				? submitOperationSerialized(
 					{ ...message.payload, tabId } as RoutedControlOperationRequest,
 					invocation,
@@ -2518,7 +2552,7 @@ export function initializeControlCoordinator(): void {
 			(error) => sendResponse(rpcFailure(
 				error instanceof StaleControlRevisionError
 					? 'control_stale_revision'
-					: message.type === 'spectra.control.operation.submit'
+					: message.type === PROTO_OPERATION_SUBMIT
 						? 'control_operation_failed'
 						: 'control_apply_failed',
 				error instanceof Error ? error.message : String(error),
@@ -2537,35 +2571,35 @@ export function initializeControlCoordinator(): void {
 		}
 		if (Object.keys(patch).length > 0) {
 			void observeChromeTabState(tabId, patch).catch((error: unknown) => {
-				swLog.debug(`[Control] Ignored tab-state observation without a controllable document: ${String(error)}`);
+				/* @__PURE__ */ swLog.debug(`[Control] Ignored tab-state observation without a controllable document: ${String(error)}`);
 			});
 		}
 		if (changeInfo.status === 'complete') {
 			void awaitDocumentInitialization(tabId)
 				.then(() => serialized(tabId, () => reprojectBadgeForCurrentDocument(tabId)))
 				.catch((error: unknown) => {
-					swLog.debug(`[Control] Badge navigation projection settled at browser boundary: ${String(error)}`);
+					/* @__PURE__ */ swLog.debug(`[Control] Badge navigation projection settled at browser boundary: ${String(error)}`);
 				});
 		}
 	});
 	chrome.webNavigation.onCommitted.addListener((details) => {
 		if (details.frameId === 0) {
 			void invalidateNavigation(details.tabId, false, true).catch((error: unknown) => {
-				swLog.debug(`[Control] Navigation invalidation settled at browser boundary: ${String(error)}`);
+				/* @__PURE__ */ swLog.debug(`[Control] Navigation invalidation settled at browser boundary: ${String(error)}`);
 			});
 		}
 	});
 	chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
 		if (details.frameId === 0) {
 			void invalidateNavigation(details.tabId, true).catch((error: unknown) => {
-				swLog.debug(`[Control] History projection settled at browser boundary: ${String(error)}`);
+				/* @__PURE__ */ swLog.debug(`[Control] History projection settled at browser boundary: ${String(error)}`);
 			});
 		}
 	});
 	chrome.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
 		if (details.frameId === 0) {
 			void invalidateNavigation(details.tabId, true).catch((error: unknown) => {
-				swLog.debug(`[Control] Fragment projection settled at browser boundary: ${String(error)}`);
+				/* @__PURE__ */ swLog.debug(`[Control] Fragment projection settled at browser boundary: ${String(error)}`);
 			});
 		}
 	});

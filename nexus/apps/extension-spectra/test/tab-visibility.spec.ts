@@ -87,7 +87,7 @@ describe('complete visible media tab lifecycle', () => {
 			[4, 'empty'],
 		]));
 
-		expect(await resolveVisibleTabs(now)).toMatchObject({ tabs: [2, 3], coverage: { status: 'degraded', denied: 1 } });
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [2, 3], coverage: complete(4) });
 		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId).sort((a, b) => Number(a) - Number(b)))
 			.toEqual([1, 3, 4]);
 	});
@@ -162,17 +162,25 @@ describe('complete visible media tab lifecycle', () => {
 		expect(tabAudioStates.has(24)).toBe(false);
 	});
 
-	test('prunes expired telemetry instead of treating media reports as durable leases', async () => {
+	test('keeps an expired-telemetry media tab visible through its durable reported fact without probing', async () => {
 		const now = 1_000_000;
-		installChrome([tab(30)], new Map([[30, 'empty']]));
+		const { sendMessage } = installChrome([tab(30)], new Map([[30, 'empty']]));
 		recordMediaState(30, 'document-30', { hasMediaElement: true, userInteracted: true, reportRevision: 1 });
 		captureStates.set(30, true);
 		const state = tabAudioStates.get(30);
 		if (!state) throw new Error('expected tab state');
 		state.lastActivatedTime = now - TAB_VISIBLE_THRESHOLD_MS - 1;
 
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
+		// 内容上报固化的 found 事实是权威媒体租约：过期遥测只清理 recent-activity
+		// 状态行，媒体清单仍复用事实（不重探测），覆盖度保持 complete。
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [30], coverage: complete(1) });
 		expect(tabAudioStates.has(30)).toBe(false);
+		expect(sendMessage.mock.calls).toHaveLength(0);
+
+		// 媒体移除上报（no-media 事实）是唯一剪枝信号：同一 documentId 的
+		// 上报立即替换事实，清单随之清空。
+		recordMediaState(30, 'document-30', { hasMediaElement: false, userInteracted: true, reportRevision: 2 });
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
 	});
 
 	test('isolates probe failures and never turns an unreachable document into a card', async () => {

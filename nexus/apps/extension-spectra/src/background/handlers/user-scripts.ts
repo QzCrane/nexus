@@ -5,7 +5,7 @@ import {
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { swLog } from '../../shared/logger';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
 
 // eff: checks if userScripts API is available and enabled by user
 async function isUserScriptsAvailable(): Promise<boolean> {
@@ -22,7 +22,7 @@ async function initUserScriptsWorld(): Promise<void> {
 	await chrome.userScripts.configureWorld({
 		csp: "script-src 'self' 'unsafe-inline'",
 	});
-	swLog.debug('UserScripts world configured');
+	/* @__PURE__ */ swLog.debug('UserScripts world configured');
 }
 
 let userScriptsWorldReady: Promise<void> | null = null;
@@ -99,7 +99,7 @@ export function registerUserScriptsHandler(): void {
 		}
 		if (!isBackgroundRequestEnvelope(message)) {
 			sendResponse(rpcFailure(
-				'invalid_request',
+				RPC_INVALID_REQUEST,
 				`Malformed SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} user-script request`,
 			));
 			return false;
@@ -121,7 +121,7 @@ export function registerUserScriptsHandler(): void {
 		return true;
 	});
 
-	swLog.debug('UserScripts handler registered');
+	/* @__PURE__ */ swLog.debug('UserScripts handler registered');
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

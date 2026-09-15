@@ -31,7 +31,7 @@ import {
 	isBackgroundRequestEnvelope,
 	rpcFailure,
 	rpcSuccess,
-} from '../background-rpc';
+RPC_INVALID_REQUEST} from '../background-rpc';
 import {
 	advanceVisualizerSubscriberLeases,
 	nextVisualizerSubscriberExpiry,
@@ -47,6 +47,17 @@ import {
 	releasePopupVisualizerSource,
 	type PopupVisualizerSourceLease,
 } from '../control-coordinator';
+const PROTO_AUDIO_SESSION_CURRENT = 'spectra.audio.session.current' as const;
+const PROTO_AUDIO_SESSION_PUBLISH = 'spectra.audio.session.publish' as const;
+const PROTO_AUDIO_SESSION_FLUSH = 'spectra.audio.session.flush' as const;
+const PROTO_AUDIO_SESSION_GET = 'spectra.audio.session.get' as const;
+const PROTO_AUDIO_ROUTE_RECORD = 'spectra.audio.route.record' as const;
+const PROTO_AUDIO_ROUTE_GET = 'spectra.audio.route.get' as const;
+const PROTO_AUDIO_PAGE_SCALE_RECORD = 'spectra.audio.page-scale.record' as const;
+const PROTO_AUDIO_VISUALIZER_BATCH = 'spectra.audio.visualizer.batch' as const;
+const PROTO_AUDIO_CONFIG_GET = 'spectra.audio.config.get' as const;
+const PROTO_AUDIO_CONFIG_SET = 'spectra.audio.config.set' as const;
+const PROTO_AUDIO_POLICY_GET = 'spectra.audio.policy.get' as const;
 
 const sessionIdentityFromSender = identityFromSender;
 
@@ -396,16 +407,16 @@ export function registerAudioV2Listener(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
-		const isBackgroundAudioType = candidate.type === 'spectra.audio.config.get'
-			|| candidate.type === 'spectra.audio.policy.get'
-			|| candidate.type === 'spectra.audio.route.get'
-			|| candidate.type === 'spectra.audio.route.record'
-			|| candidate.type === 'spectra.audio.page-scale.record'
-			|| candidate.type === 'spectra.audio.config.set'
-			|| candidate.type === 'spectra.audio.session.get'
-			|| candidate.type === 'spectra.audio.session.current'
-			|| candidate.type === 'spectra.audio.session.publish'
-			|| candidate.type === 'spectra.audio.session.flush'
+		const isBackgroundAudioType = candidate.type === PROTO_AUDIO_CONFIG_GET
+			|| candidate.type === PROTO_AUDIO_POLICY_GET
+			|| candidate.type === PROTO_AUDIO_ROUTE_GET
+			|| candidate.type === PROTO_AUDIO_ROUTE_RECORD
+			|| candidate.type === PROTO_AUDIO_PAGE_SCALE_RECORD
+			|| candidate.type === PROTO_AUDIO_CONFIG_SET
+			|| candidate.type === PROTO_AUDIO_SESSION_GET
+			|| candidate.type === PROTO_AUDIO_SESSION_CURRENT
+			|| candidate.type === PROTO_AUDIO_SESSION_PUBLISH
+			|| candidate.type === PROTO_AUDIO_SESSION_FLUSH
 			|| candidate.type === 'spectra.audio.visualizer.batch';
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| typeof candidate.type !== 'string'
@@ -415,13 +426,13 @@ export function registerAudioV2Listener(): void {
 			return false;
 		}
 		if (!isBackgroundRequestEnvelope(message)) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed audio session request'));
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed audio session request'));
 			return false;
 		}
-		const currentIdentity = message.type === 'spectra.audio.session.current'
+		const currentIdentity = message.type === PROTO_AUDIO_SESSION_CURRENT
 			? currentContentIdentityFromSender(sender)
 			: null;
-		if (message.type === 'spectra.audio.session.current' && !currentIdentity) {
+		if (message.type === PROTO_AUDIO_SESSION_CURRENT && !currentIdentity) {
 			sendResponse(rpcFailure(
 				'forbidden',
 				'Current audio session requires an extension content-document sender',
@@ -433,23 +444,23 @@ export function registerAudioV2Listener(): void {
 			return false;
 		}
 		const operation = async () => {
-			if (message.type === 'spectra.audio.config.get') {
+			if (message.type === PROTO_AUDIO_CONFIG_GET) {
 				const identity = sessionIdentityFromSender(sender);
 				if (!identity) throw new Error('Audio configuration requires a document identity');
 				return (await resolveAudioPolicyForSender(sender)).config;
 			}
-			if (message.type === 'spectra.audio.policy.get') {
+			if (message.type === PROTO_AUDIO_POLICY_GET) {
 				const identity = sessionIdentityFromSender(sender);
 				if (!identity) throw new Error('Audio policy requires a document identity');
 				return resolveAudioPolicyForSender(sender);
 			}
-			if (message.type === 'spectra.audio.route.get') {
+			if (message.type === PROTO_AUDIO_ROUTE_GET) {
 				if (!sessionIdentityFromSender(sender)) {
 					throw new Error('Audio route requires a document identity');
 				}
 				return settingsRepository.resolveMediaRouteDecision(requireSenderHostname(sender));
 			}
-			if (message.type === 'spectra.audio.route.record') {
+			if (message.type === PROTO_AUDIO_ROUTE_RECORD) {
 				if (!sessionIdentityFromSender(sender)) {
 					throw new Error('Audio route evidence requires a document identity');
 				}
@@ -466,7 +477,7 @@ export function registerAudioV2Listener(): void {
 					source: result.entry.source,
 				};
 			}
-			if (message.type === 'spectra.audio.page-scale.record') {
+			if (message.type === PROTO_AUDIO_PAGE_SCALE_RECORD) {
 				if (!sessionIdentityFromSender(sender)) {
 					throw new Error('Page-scale evidence requires a document identity');
 				}
@@ -476,7 +487,7 @@ export function registerAudioV2Listener(): void {
 				);
 				return { recorded: true as const };
 			}
-			if (message.type === 'spectra.audio.config.set') {
+			if (message.type === PROTO_AUDIO_CONFIG_SET) {
 				const identity = controlSessionIdentityFromSender(sender);
 				if (!identity) throw new Error('Audio configuration requires a document identity');
 				await storage.tabSession.merge(
@@ -486,17 +497,17 @@ export function registerAudioV2Listener(): void {
 				);
 				return { saved: true as const };
 			}
-			if (message.type === 'spectra.audio.session.get') {
+			if (message.type === PROTO_AUDIO_SESSION_GET) {
 				return getAudioSession(message.payload.tabId);
 			}
-			if (message.type === 'spectra.audio.session.current') {
+			if (message.type === PROTO_AUDIO_SESSION_CURRENT) {
 				if (!currentIdentity) throw new Error('Current audio session identity was lost');
 				const snapshot = await getAudioSession(currentIdentity.tabId);
 				return snapshot && snapshotMatchesIdentity(snapshot, currentIdentity)
 					? snapshot
 					: null;
 			}
-			if (message.type === 'spectra.audio.session.publish') {
+			if (message.type === PROTO_AUDIO_SESSION_PUBLISH) {
 				const identity = sessionIdentityFromSender(sender);
 				if (!identity || message.generation === undefined) {
 					throw new Error('Audio session publish requires a document identity and generation');
@@ -512,7 +523,7 @@ export function registerAudioV2Listener(): void {
 				await updateBadgeFromSession(snapshot, message.payload.userInteracted);
 				return snapshot;
 			}
-			if (message.type === 'spectra.audio.session.flush') {
+			if (message.type === PROTO_AUDIO_SESSION_FLUSH) {
 				const tabId = message.tabId ?? sender.tab?.id;
 				if (!tabId) throw new Error('Audio session flush requires a tab identity');
 				await Promise.all([
@@ -521,7 +532,7 @@ export function registerAudioV2Listener(): void {
 				]);
 				return { flushed: true as const };
 			}
-			if (message.type !== 'spectra.audio.visualizer.batch') {
+			if (message.type !== PROTO_AUDIO_VISUALIZER_BATCH) {
 				throw new Error('Unsupported audio session request');
 			}
 			if (message.payload.captureTabId !== null && !isExtensionPopupSender(sender)) {

@@ -17,6 +17,9 @@ export interface PolicyApplicationOptions {
 export interface PolicyUpdateOptions {
 	isNativeSync?: boolean;
 	captureAdmission?: CaptureAdmission;
+	// Document-level processor hold intent: keep the processor session alive even
+	// when the new config is neutral, so 100↔110 crossings only change gain.
+	hold?: boolean;
 }
 
 // PolicyExecutor: public interface exposed to the main content script lifecycle (index.ts)

@@ -814,6 +814,9 @@ export interface ControlIntent {
 	// chrome.commands transaction. It is deliberately absent from
 	// ControlSubmitRequest so callers cannot claim browser invocation authority.
 	captureAdmission?: CaptureAdmission;
+	// Document-level processor hold: apply the patch as a gain change while the
+	// processor session survives (100↔110 crossings must never teardown/wake).
+	processorHold?: boolean;
 }
 
 export interface ControlSubmitRequest {
@@ -1024,6 +1027,7 @@ const intentKeys = new Set<keyof ControlIntent>([
 	'actualContext',
 	'patch',
 	'captureAdmission',
+	'processorHold',
 ]);
 const submitKeys = new Set<keyof ControlSubmitRequest>([
 	'tabId',

@@ -31,6 +31,7 @@ interface ControlFieldState<T> {
 
 - **Echo Correlation Token**: `{ intentId, fieldRevision, expectedValue, tolerance }`（禁止时间窗口布尔标记）。
 - **Stale-base-revision recovery**: Background 拒绝 `baseRevision` 与权威快照 revision 不一致的 intent/operation，返回 `control_stale_revision`。Popup 的 `submitControlIntent`/`submitControlOperation` 携带当前卡片 revision 提交，收到该错误码时先拉取快照刷新投影，再以新 revision 重放一次；并发广播永远不会静默丢弃显式用户意图。
+- **Card transient-unknown recovery**: Popup 卡片启动时的快照读取可能超时/被拒（例如后台 restore 决策慢于 5s 读取超时）。`controlSnapshotKnown` 是瞬时闩锁：任何被接受的 `controlSnapshot`（事件广播、失败恢复读取）或已提交 ACK 都立即把它置为已知，卡片从未知态实时恢复。未知态不拦截用户意图（照常路由到协调器，由 stale-revision recovery 或结构化错误收敛），不把控制区置为 inert，音量标签不显示 `—`；后台卡片启动时同样读取 control snapshot，避免永久未知。
 - **Processor Handoff (three-owner)**: 无双重增益/DSP，无虚假 active ACK。MediaElement WebAudio/Capture 候选必须先得到 running/readback ACK；旧 owner 先中性化，候选验证成功后才释放，失败则恢复最后一个已确认 owner。
 
 ## §11 Volume and mute

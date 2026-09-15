@@ -74,6 +74,7 @@ if (!getContentBootstrapState()) {
 		observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies;
 	};
 	let pendingObservation: BootstrapNativeObservation | null = null;
+	let lastReportedMediaPresence: boolean | null = null;
 	// Page-entry solidification: the bootstrap is the only owner present before
 	// the deferred runtime loads, so the first media volume event probes the
 	// page controller read-only and records a positive amplified-scale verdict.
@@ -271,6 +272,58 @@ if (!getContentBootstrapState()) {
 		return Object.keys(patch).length > 0 ? { target: null, patch, observedStrategies } : null;
 	};
 
+	// Media presence reporting turns a plain document into a durable background
+	// fact without any chrome.scripting probe: every manifest-injected bootstrap
+	// establishes the found/no-media fact event-driven, so a popup inventory read
+	// never waits for probes on ordinary media tabs. The runtime owns reporting
+	// once it loads (state.ready); the bootstrap covers every other document
+	// lifetime and re-syncs on runtime release. The revision counter is shared
+	// with the runtime through the isolated-world bootstrap state, so the
+	// background's per-document monotonic gate never drops either producer.
+	//
+	// Detection stays passive and bounded like the rest of the bootstrap: no
+	// document-wide topology observation. The initial DOMContentLoaded snapshot
+	// covers media in the parsed HTML, pageshow re-reads a bfcache restore, and
+	// the media lifecycle listeners below only fire when a real media element
+	// emits play/pause/metadata events — the signals every controllable media tab
+	// produces. The background's convergence sweep is the fallback for media that
+	// never emits an event and is not present in the initial document.
+	const MEDIA_PRESENCE_EVENTS = [
+		'play', 'pause', 'playing', 'loadedmetadata', 'durationchange', 'emptied',
+	] as const;
+	const onMediaPresenceSignal = (event: Event): void => {
+		if (!(event.target instanceof HTMLMediaElement)) return;
+		reportMediaPresence();
+	};
+
+	const reportMediaPresence = (force = false): void => {
+		if (disposed || state.ready) return;
+		const current = document.querySelector('video,audio') !== null;
+		if (!force && current === lastReportedMediaPresence) return;
+		lastReportedMediaPresence = current;
+		const nextRevision = (state.mediaReportRevision ?? 0) + 1;
+		state.mediaReportRevision = nextRevision;
+		void sendBootstrapRequest('spectra.tab.media.report', {
+			hasMediaElement: current,
+			userInteracted: false,
+			reportRevision: nextRevision,
+		}, state.dispose).catch(() => undefined);
+	};
+
+	const onMediaDomReady = (): void => {
+		if (disposed) return;
+		reportMediaPresence();
+	};
+
+	const onMediaPageShow = (): void => {
+		if (disposed) return;
+		// bfcache restore re-runs pageshow without re-injecting the bootstrap:
+		// force a fresh presence read so a restored document cannot keep a stale
+		// durable fact in the background inventory.
+		lastReportedMediaPresence = null;
+		reportMediaPresence();
+	};
+
 	let unsubscribePhysicalHotkeyRelease = (): void => undefined;
 	const state: ContentBootstrapState = {
 		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
@@ -281,6 +334,11 @@ if (!getContentBootstrapState()) {
 			disposed = true;
 			releaseDefaultScalarKeys();
 			pendingObservation = null;
+			document.removeEventListener('DOMContentLoaded', onMediaDomReady);
+			window.removeEventListener('pageshow', onMediaPageShow);
+			for (const type of MEDIA_PRESENCE_EVENTS) {
+				document.removeEventListener(type, onMediaPresenceSignal, true);
+			}
 			document.removeEventListener('volumechange', onNativeMediaChange, true);
 			document.removeEventListener('ratechange', onNativeMediaChange, true);
 			unsubscribePhysicalHotkeyRelease();
@@ -329,6 +387,9 @@ if (!getContentBootstrapState()) {
 			(candidate): candidate is HTMLMediaElement => candidate instanceof HTMLMediaElement,
 		);
 		if (!element?.isConnected) return;
+		// Native media events double as presence evidence for media that never
+		// plays or loads metadata (volume-only elements).
+		reportMediaPresence();
 		// The first media volume event is the page-entry audio detection moment;
 		// solidify the amplified-controller verdict before the runtime loads.
 		if (event.type === 'volumechange') reportPageScale(element);
@@ -419,6 +480,12 @@ if (!getContentBootstrapState()) {
 			void (state.disposeRuntime?.() ?? Promise.resolve()).then(() => {
 				state.runtimeRevision = null;
 				state.ready = false;
+				// The runtime is gone: the bootstrap resumes media-presence ownership.
+				// Re-read the live document so the fact cannot stay stale behind the
+				// runtime's last revision; the media lifecycle listeners never stop
+				// firing while the bootstrap lives, so later media keeps reporting.
+				lastReportedMediaPresence = null;
+				reportMediaPresence();
 				sendResponse(bootstrapRpcSuccess({ accepted: true as const }));
 		}, (error: unknown) => sendResponse(bootstrapRpcFailure(
 				'runtime_release_failed',
@@ -442,6 +509,12 @@ if (!getContentBootstrapState()) {
 	chrome.runtime.onMessage.addListener(onMessage);
 	document.addEventListener('volumechange', onNativeMediaChange, true);
 	document.addEventListener('ratechange', onNativeMediaChange, true);
+	// Media lifecycle signals keep the durable presence fact event-driven without
+	// any document-wide observation: these events only originate from real media
+	// elements, so the bootstrap stays passive and yields to the heavy runtime.
+	for (const type of MEDIA_PRESENCE_EVENTS) {
+		document.addEventListener(type, onMediaPresenceSignal, true);
+	}
 	// This document-start observer is the release authority for lazily mounted
 	// site hotkeys. It publishes only isolated-world cleanup identity and does
 	// not claim, cancel, or otherwise mutate the website's keyup event.
@@ -457,6 +530,14 @@ if (!getContentBootstrapState()) {
 	document.addEventListener('visibilitychange', onVisibilityChange);
 	window.addEventListener('blur', releaseDefaultScalarKeys);
 	window.addEventListener('pagehide', onPageHide, { once: true });
+	window.addEventListener('pageshow', onMediaPageShow);
+	if (document.readyState === 'loading') {
+		document.addEventListener('DOMContentLoaded', onMediaDomReady);
+	} else {
+		// The document was already loaded when this bootstrap instance ran (warm
+		// re-injection): report the current presence immediately.
+		onMediaDomReady();
+	}
 
 	void sendBootstrapRequest('spectra.content.bootstrap.hello', {
 		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
@@ -465,6 +546,9 @@ if (!getContentBootstrapState()) {
 		state.runtimeRevision = response.data.runtimeRevision;
 		state.ready = response.data.runtimeRevision !== null;
 		observationsReady = true;
+		// The HELLO verdict decides the media reporter owner for this document: a
+		// loaded runtime owns reporting (reportMediaPresence yields via state.ready),
+		// otherwise the bootstrap keeps the fact warm through lifecycle events.
 	}).catch(() => undefined);
 }
 
@@ -473,7 +557,8 @@ function sendBootstrapRequest(
 		| 'spectra.content.runtime.release'
 		| 'spectra.content.default-hotkey.trigger'
 		| 'spectra.control.intent.submit'
-		| 'spectra.audio.page-scale.record',
+		| 'spectra.audio.page-scale.record'
+		| 'spectra.tab.media.report',
 	payload: { bootstrapRevision: string }
 		| { runtimeRevision: string }
 		| {
@@ -483,6 +568,7 @@ function sendBootstrapRequest(
 			repeated: boolean;
 		}
 		| { supported: boolean }
+		| { hasMediaElement: boolean; userInteracted: boolean; reportRevision: number }
 		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {

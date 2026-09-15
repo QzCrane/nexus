@@ -7,7 +7,7 @@ let initialized = false;
 export function initializeMainRuntimeManager(): void {
 	if (initialized) return;
 	initialized = true;
-	swLog.debug('[MAIN] exact-element page-media bridge manager initialized');
+	/* @__PURE__ */ swLog.debug('[MAIN] exact-element page-media bridge manager initialized');
 }
 
 export const MAIN_WORLD_CONTENT_FILES = [

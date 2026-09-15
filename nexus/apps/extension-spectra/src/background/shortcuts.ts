@@ -26,7 +26,10 @@ import {
 	type ExtensionInvocationContext,
 } from './control-coordinator';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from './background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from './background-rpc';
+const HOTKEY_SEEK_RELATIVE = 'seek-relative' as const;
+const HOTKEY_EFFECTIVE_VOLUME = 'effective-volume' as const;
+const PROTO_DEFAULT_HOTKEY_TRIGGER = 'spectra.content.default-hotkey.trigger' as const;
 
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
 const BUILTIN_CHROME_COMMAND_ACTIONS = {
@@ -179,7 +182,7 @@ export function setupShortcutListeners(): void {
 		const action = resolveChromeCommandAction(command);
 		if (!action || action === 'none') return;
 		const execute = async (): Promise<void> => {
-			swLog.debug(`Shortcut command: ${command}`);
+			/* @__PURE__ */ swLog.debug(`Shortcut command: ${command}`);
 			const route = await resolveShortcutTarget();
 			if (!route) return;
 			try {
@@ -199,8 +202,8 @@ export function setupShortcutListeners(): void {
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| candidate.type !== 'spectra.content.default-hotkey.trigger') return false;
 		if (!isBackgroundRequestEnvelope(message)
-			|| message.type !== 'spectra.content.default-hotkey.trigger') {
-			sendResponse(rpcFailure('invalid_request', 'Malformed default hotkey trigger'));
+			|| message.type !== PROTO_DEFAULT_HOTKEY_TRIGGER) {
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed default hotkey trigger'));
 			return false;
 		}
 		const identity = defaultHotkeySenderIdentity(sender);
@@ -457,7 +460,7 @@ async function notifyShortcutFeedback(
 		};
 		await chrome.tabs.sendMessage(active.id, event, { documentId: ready.documentId });
 	} catch (error) {
-		swLog.debug(`Shortcut feedback was unavailable: ${error instanceof Error ? error.message : String(error)}`);
+		/* @__PURE__ */ swLog.debug(`Shortcut feedback was unavailable: ${error instanceof Error ? error.message : String(error)}`);
 	} finally {
 		if (documentId) runtimePort.release(active.id, documentId, capability);
 	}
@@ -526,12 +529,12 @@ async function executeAction(
 		case 'run_js':
 		case 'open_url': return;
 		case 'play_pause': acknowledgement = await operation('playback-toggle'); break;
-		case 'seek_forward_5s': acknowledgement = await operation('seek-relative', { delta: 5 }); break;
-		case 'seek_forward_10s': acknowledgement = await operation('seek-relative', { delta: 10 }); break;
-		case 'seek_forward_30s': acknowledgement = await operation('seek-relative', { delta: 30 }); break;
-		case 'seek_backward_5s': acknowledgement = await operation('seek-relative', { delta: -5 }); break;
-		case 'seek_backward_10s': acknowledgement = await operation('seek-relative', { delta: -10 }); break;
-		case 'seek_backward_30s': acknowledgement = await operation('seek-relative', { delta: -30 }); break;
+		case 'seek_forward_5s': acknowledgement = await operation(HOTKEY_SEEK_RELATIVE, { delta: 5 }); break;
+		case 'seek_forward_10s': acknowledgement = await operation(HOTKEY_SEEK_RELATIVE, { delta: 10 }); break;
+		case 'seek_forward_30s': acknowledgement = await operation(HOTKEY_SEEK_RELATIVE, { delta: 30 }); break;
+		case 'seek_backward_5s': acknowledgement = await operation(HOTKEY_SEEK_RELATIVE, { delta: -5 }); break;
+		case 'seek_backward_10s': acknowledgement = await operation(HOTKEY_SEEK_RELATIVE, { delta: -10 }); break;
+		case 'seek_backward_30s': acknowledgement = await operation(HOTKEY_SEEK_RELATIVE, { delta: -30 }); break;
 		case 'seek_frame_forward': acknowledgement = await operation('frame-step', { direction: 1 }); break;
 		case 'seek_frame_backward': acknowledgement = await operation('frame-step', { direction: -1 }); break;
 		case 'audio_reset': acknowledgement = await operation('audio-reset'); break;
@@ -552,12 +555,12 @@ async function executeAction(
 		case 'speed_down': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'speed', operation: 'delta', value: -speedDelta }]); break;
 		case 'speed_reset': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'speed', operation: 'set', value: 1 }]); break;
 		case 'speed_set': return;
-		case 'volume_up': acknowledgement = await operation('effective-volume', { operation: 'delta', value: volumeDelta }); break;
-		case 'volume_down': acknowledgement = await operation('effective-volume', { operation: 'delta', value: -volumeDelta }); break;
+		case 'volume_up': acknowledgement = await operation(HOTKEY_EFFECTIVE_VOLUME, { operation: 'delta', value: volumeDelta }); break;
+		case 'volume_down': acknowledgement = await operation(HOTKEY_EFFECTIVE_VOLUME, { operation: 'delta', value: -volumeDelta }); break;
 		case 'volume_mute': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'mediaMuted', operation: 'toggle' }]); break;
 		case 'volume_set': return;
-		case 'gain_up': acknowledgement = await operation('effective-volume', { operation: 'delta', value: volumeDelta }); break;
-		case 'gain_down': acknowledgement = await operation('effective-volume', { operation: 'delta', value: -volumeDelta }); break;
+		case 'gain_up': acknowledgement = await operation(HOTKEY_EFFECTIVE_VOLUME, { operation: 'delta', value: volumeDelta }); break;
+		case 'gain_down': acknowledgement = await operation(HOTKEY_EFFECTIVE_VOLUME, { operation: 'delta', value: -volumeDelta }); break;
 		case 'delay_up': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'delay', operation: 'delta', value: 10 }]); break;
 		case 'delay_down': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'delay', operation: 'delta', value: -10 }]); break;
 		case 'delay_reset': acknowledgement = await submitMutations(tabId, invocation, [{ field: 'delay', operation: 'set', value: 0 }]); break;

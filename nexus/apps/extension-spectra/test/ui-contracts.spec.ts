@@ -506,7 +506,11 @@ describe('extension-page DOM and idle contracts', () => {
 		);
 		expect(boundedBootstrap).toContain('await Promise.all(Array.from({ length: workerCount }, () => worker()));');
 		expect(card).toContain('params.isBackground');
-		expect(snapshot).toContain("passive ? Promise.resolve({ state: 'unknown', reason: 'not-requested' } as const)");
+		// rule: every card — including background cards — reads the authoritative
+		// control snapshot at bootstrap; the transient-unknown latch recovers as
+		// soon as any accepted snapshot arrives, so cards never dead-end at "—".
+		expect(snapshot).not.toContain('not-requested');
+		expect(snapshot).not.toContain('passive ?');
 	});
 
 	test('keeps Popup PiP single-click, native-only, and lifecycle-bound', () => {

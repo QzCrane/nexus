@@ -40,6 +40,9 @@ export function prepareCardDom(params: {
 	ui.title.innerText = tab.title || '';
 	ui.title.title = tab.title || '';
 	ui.domain.innerText = domain;
+	// Stable identity hook so the popup can retire a card whose media tab left
+	// the visible inventory during the same open (convergence re-render).
+	if (typeof tab.id === 'number') cardEl.dataset.tabId = String(tab.id);
 	const fallbackIcon = chrome.runtime.getURL('icons/icon48.png');
 	ui.icon.src = getWebsiteIconUrl(tab.url, tab.favIconUrl, fallbackIcon);
 	ui.icon.alt = '';

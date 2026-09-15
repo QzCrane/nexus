@@ -34,6 +34,9 @@ Popup 枚举使用 `tabId + document generation` 隔离在途探测，并在一�
 `frameId + documentId` census。成功的 `found` 或所有当前 frame 均成功返回的
 `no-media` 才是确定事实；权限拒绝、导航错代、无效响应和超时分别投影为
 `denied/stale/unknown/pending`，同时返回 examined/failed coverage。
+非 `http/https/file` 的标签页（扩展内部页、`chrome://` 等）不可承载可控媒体，
+从可见集剔除且不计入 coverage 的 total/denied，其存在不得把完整 inventory 降级
+为 degraded。
 
 同一 v2 envelope 的新增证据保持 additive：当前 producer 必须发送单调
 `reportRevision` 和完整 coverage。旧 content report 缺少 revision 时，Background

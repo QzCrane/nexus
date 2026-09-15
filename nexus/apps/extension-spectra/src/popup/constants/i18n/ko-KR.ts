@@ -10,7 +10,7 @@ export const KO_KR: I18NDict = {
 	vizSub: '동적 오디오 바 표시',
 	vizDesc: '비활성화하면 제한된 사이트에서 볼륨이 100%를 초과할 때까지 네이티브 라이트 모드를 사용하여 리소스를 절약합니다.',
 	langLabel: '언어',
-	mediaInventoryPartial: "일부 미디어 탭을 제시간에 확인하지 못했습니다. 팝업을 다시 열어 주세요.",
+	mediaInventoryPartial: "일부 미디어 탭이 아직 확인 중이며 완료되면 자동으로 표시됩니다.",
 	noAudio: '오디오 신호 없음',
 	bgTitle: '백그라운드',
 	paused: '오디오 향상 일시 중지됨',

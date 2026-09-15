@@ -184,6 +184,10 @@ export interface AudioProcessorDemand {
 	// processing in the page and never escalates to full-tab Capture; `capture`
 	// skips a known-bad page graph after an explicit Capture admission.
 	mediaRoute?: 'auto' | 'direct' | 'capture';
+	// Document-level processor hold: the document crossed the 100% boundary once,
+	// so the processor session must survive a return to a neutral boost so later
+	// crossings apply a gain change instead of a full wake/teardown cycle.
+	hold?: boolean;
 }
 
 const NO_AUDIO_PROCESSOR_DEMAND: Readonly<AudioProcessorDemand> = Object.freeze({
@@ -195,7 +199,7 @@ export function resolveDesiredAudioMode(
 	config: AudioConfig,
 	demand: Readonly<AudioProcessorDemand> = NO_AUDIO_PROCESSOR_DEMAND,
 ): SpectraAudioMode {
-	if (!config.enabled || (!requiresAudioProcessor(config) && !demand.visualizer)) return 'bypass';
+	if (!config.enabled || (!requiresAudioProcessor(config) && !demand.visualizer && !demand.hold)) return 'bypass';
 	if (demand.mediaRoute === 'capture') return 'capture';
 	if (demand.mediaRoute === 'direct') return 'webaudio';
 	return demand.mediaWebAudio ? 'webaudio' : 'capture';

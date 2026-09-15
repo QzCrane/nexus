@@ -24,6 +24,7 @@ import {
 import { beginDocumentNavigation } from './control-coordinator';
 import { settingsRepository } from './settings-repository';
 import { clearBadgeUsage } from './badge-usage';
+import { mediaFacts } from './media-facts';
 import { swLog } from '../shared/logger';
 import {
 	handleVisualizerTabRemoved,
@@ -105,6 +106,7 @@ export function setupLifecycleListeners(): void {
 			storage.tabSession.flush(),
 			flushAudioSessions(),
 			settingsRepository.flush(),
+			mediaFacts.flushMediaFacts(),
 		]);
 	});
 
@@ -113,9 +115,14 @@ export function setupLifecycleListeners(): void {
 			// Retire the old document fact synchronously. Capture/storage cleanup may
 			// await, but a late report must never keep the old document visible.
 			retireTabMediaDocument(details.tabId);
+			// The old document's media fact must never leak to the new document.
+			mediaFacts.forgetMediaFact(details.tabId);
+			// A new document deserves a fresh probe chance: clear any transient
+			// failure cooldown that belonged to the old document.
+			mediaFacts.forgetCooldown(details.tabId);
 			advanceTabDocumentGeneration(details.tabId);
 			void beginDocumentNavigation(details.tabId).catch((error: unknown) => {
-				swLog.debug(`[Lifecycle] Navigation invalidation settled at browser boundary: ${String(error)}`);
+				/* @__PURE__ */ swLog.debug(`[Lifecycle] Navigation invalidation settled at browser boundary: ${String(error)}`);
 			});
 			void clearTabDocumentState(details.tabId);
 		}
@@ -162,7 +169,7 @@ export function setupLifecycleListeners(): void {
 			chrome.tabs.get(tabId).then(tab => {
 				if (tab.active) markTabActivated(tabId);
 			}).catch((error: unknown) => {
-				swLog.debug(`[Lifecycle] Tab ${tabId} disappeared before activation refresh`, error);
+				/* @__PURE__ */ swLog.debug(`[Lifecycle] Tab ${tabId} disappeared before activation refresh`, error);
 			});
 		}
 	});
@@ -172,6 +179,8 @@ export function setupLifecycleListeners(): void {
 			if (activeTabId === tabId) activeTabsByWindow.delete(windowId);
 		}
 		forgetTabDocumentGeneration(tabId);
+		mediaFacts.forgetMediaFact(tabId);
+		mediaFacts.forgetCooldown(tabId);
 		void clearTabDocumentState(tabId, true);
 	});
 

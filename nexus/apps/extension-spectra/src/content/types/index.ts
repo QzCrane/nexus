@@ -26,6 +26,10 @@ export interface PolicyExecutorState {
 	// Transient, document-scoped consumers. This set is never persisted or handed
 	// across runtimes; Background re-admits every live Popup subscriber.
 	visualizerSubscribers: Set<string>;
+	// Document-level processor hold: this document crossed the 100% boundary once,
+	// so the processor session survives a return to neutral boost. Sticky within
+	// the document; a fresh document (new initial-state) naturally resets it.
+	processorHold: boolean;
 }
 
 // PolicyExecutorDeps: dependency injection container for the executor lifecycle

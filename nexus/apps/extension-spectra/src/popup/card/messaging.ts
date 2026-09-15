@@ -30,6 +30,11 @@ export function applyControlSnapshot(
 	const current = state.controlSnapshot;
 	const admission = classifyControlSnapshot(current, snapshot);
 	if (admission !== 'accepted') return false;
+	// An accepted snapshot is authoritative field-level truth. The initial
+	// bootstrap read may have timed out or been rejected; any later accepted
+	// snapshot must recover the card from the transient unknown state instead
+	// of leaving controls inert and the volume label at "—" until reopen.
+	state.controlSnapshotKnown = true;
 	if (current) {
 		if (snapshot.documentId !== current.documentId || snapshot.origin !== current.origin) {
 			// A document transition replaces the complete projection.  Do not carry

@@ -14,7 +14,7 @@ import {
 	initializeSettingsProjection,
 	scheduleSettingsProjection,
 } from '../settings-projection';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
 
 function isAttemptedSettingsV2Message(message: unknown): boolean {
 	if (!message || typeof message !== 'object') return false;
@@ -38,7 +38,7 @@ function registerV2SettingsListener(): void {
 		}
 		if (!isBackgroundRequestEnvelope(message)) {
 			sendResponse(rpcFailure(
-				'invalid_request',
+				RPC_INVALID_REQUEST,
 				`Malformed SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} settings request`,
 			));
 			return false;

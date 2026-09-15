@@ -6,6 +6,14 @@ export interface ContentBootstrapState {
 	bootstrapRevision: string;
 	runtimeRevision: string | null;
 	ready: boolean;
+	/**
+	 * Monotonic media-report revision shared between the bootstrap and the
+	 * runtime. Both content worlds mutate the same isolated-world state object,
+	 * so the background's per-document ordering gate stays correct across the
+	 * handoff instead of dropping the first runtime report after bootstrap
+	 * reports (or vice versa).
+	 */
+	mediaReportRevision?: number;
 	disposeRuntime?: () => Promise<void>;
 	getOwnedSources?: () => ContentRuntimeSourceOwnership[];
 	dispose(): void;

@@ -10,7 +10,7 @@ export const ZH_TW: I18NDict = {
 	vizSub: '顯示視覺化音訊列',
 	vizDesc: '關閉後，受限網站（如抖音）預設使用極省電的原生模式，僅在音量超過 100% 時自動切換增強模式。',
 	langLabel: '語言 (Language)',
-	mediaInventoryPartial: "部分媒體分頁未能及時完成檢查。請重新開啟彈出視窗重試。",
+	mediaInventoryPartial: "部分媒體分頁仍在驗證中，完成後會自動顯示。",
 	noAudio: '無音訊訊號',
 	bgTitle: '背景播放',
 	paused: '增強已暫停',

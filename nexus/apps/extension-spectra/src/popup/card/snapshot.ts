@@ -1,4 +1,4 @@
-// goal: collect bounded document-fenced observations without waking passive background cards
+// goal: collect bounded document-fenced observations for a card without waking background runtime work
 // inv: these are independent observations, not an atomic transaction; control generations/revisions remain authoritative
 
 import { createSettlementPool, observeWithin } from '@nexus/kernel';
@@ -25,7 +25,7 @@ async function observeSource<T>(key: string, start: () => Promise<unknown>, proj
 	} catch { return { state: 'unknown', reason: 'unavailable' }; }
 }
 
-async function collectCardSnapshot(tabId: number, passive: boolean): Promise<CardSnapshot | null> {
+async function collectCardSnapshot(tabId: number): Promise<CardSnapshot | null> {
 	const documentId = await currentTopDocumentId(tabId);
 	if (!documentId) return null;
 	const key = `${tabId}:${documentId}`;
@@ -33,12 +33,11 @@ async function collectCardSnapshot(tabId: number, passive: boolean): Promise<Car
 		observeSource(`${key}:runtime`, () => sendSpectraTabRequest(tabId, 'spectra.audio.runtime.get', {}, { documentId }),
 			(value) => (value as Awaited<ReturnType<typeof sendSpectraTabRequest<'spectra.audio.runtime.get'>>>).ok
 				? (value as { ok: true; data: import('@nexus/contracts').AudioRuntimeStatus }).data : null),
-		passive ? Promise.resolve({ state: 'unknown', reason: 'not-requested' } as const)
-			: observeSource(`${key}:control`, () => sendSpectraRequest('spectra.control.snapshot.get', { tabId }, { tabId, documentId }),
-				(value) => {
-					const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.control.snapshot.get'>>>;
-					return response.ok && response.data?.documentId === documentId ? response.data : null;
-				}),
+		observeSource(`${key}:control`, () => sendSpectraRequest('spectra.control.snapshot.get', { tabId }, { tabId, documentId }),
+			(value) => {
+				const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.control.snapshot.get'>>>;
+				return response.ok && response.data?.documentId === documentId ? response.data : null;
+			}),
 		observeSource(`${key}:session`, () => sendSpectraRequest('spectra.audio.session.get', { tabId }, { tabId }),
 			(value) => {
 				const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.audio.session.get'>>>;
@@ -56,7 +55,7 @@ async function collectCardSnapshot(tabId: number, passive: boolean): Promise<Car
 	return { documentId, status, controlSnapshot, sessionSnapshot, isRemoteActive };
 }
 
-export async function readCardSnapshot(tabId: number, passive = false): Promise<CardSnapshot | null> {
+export async function readCardSnapshot(tabId: number): Promise<CardSnapshot | null> {
 	if (!Number.isSafeInteger(tabId) || tabId <= 0) throw new Error('card snapshot requires a valid tab');
-	return collectCardSnapshot(tabId, passive);
+	return collectCardSnapshot(tabId);
 }

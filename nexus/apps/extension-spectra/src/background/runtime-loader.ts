@@ -22,6 +22,12 @@ import { swLog } from '../shared/logger';
 import { injectMainBridges } from './main-runtime-manager';
 import { settingsRepository } from './settings-repository';
 import { storage } from './state';
+const PROTO_RUNTIME_BOOTSTRAP_HELLO = 'spectra.content.bootstrap.hello' as const;
+const PROTO_RUNTIME_ENSURE = 'spectra.content.runtime.ensure' as const;
+const PROTO_RUNTIME_IDENTITY = 'spectra.content.runtime.identity' as const;
+const PROTO_RUNTIME_READY = 'spectra.content.runtime.ready' as const;
+const PROTO_RUNTIME_RELEASE = 'spectra.content.runtime.release' as const;
+
 import { markBadgeUsedForTab } from './handlers/badge';
 import { ensureCaptureStatesReconciled } from './handlers/capture';
 import {
@@ -37,7 +43,7 @@ import {
 	rpcFailure,
 	rpcSuccess,
 	sendBackgroundTabRequestOnce,
-} from './background-rpc';
+RPC_INVALID_REQUEST} from './background-rpc';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
 // and discovering media before the runtime publishes READY. Keep the handshake
@@ -173,7 +179,7 @@ async function disposeDocumentRuntime(
 	if (!ready) return;
 	const response = await sendBackgroundTabRequestOnce(
 		tabId,
-		'spectra.content.runtime.release',
+		PROTO_RUNTIME_RELEASE,
 		{ runtimeRevision: ready.runtimeRevision },
 		{ documentId },
 	).catch(() => null);
@@ -497,27 +503,27 @@ export function initializeContentRuntimeLoader(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
-		const isRuntimeMessage = candidate.type === 'spectra.content.bootstrap.hello'
-			|| candidate.type === 'spectra.content.runtime.identity'
-			|| candidate.type === 'spectra.content.runtime.ensure'
-			|| candidate.type === 'spectra.content.runtime.ready'
-			|| candidate.type === 'spectra.content.runtime.release';
+		const isRuntimeMessage = candidate.type === PROTO_RUNTIME_BOOTSTRAP_HELLO
+			|| candidate.type === PROTO_RUNTIME_IDENTITY
+			|| candidate.type === PROTO_RUNTIME_ENSURE
+			|| candidate.type === PROTO_RUNTIME_READY
+			|| candidate.type === PROTO_RUNTIME_RELEASE;
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || !isRuntimeMessage) return false;
 		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Content runtime RPC is extension-internal only'));
 			return false;
 		}
 		if (!isBackgroundRequestEnvelope(message)
-			|| (message.type !== 'spectra.content.bootstrap.hello'
-				&& message.type !== 'spectra.content.runtime.identity'
-				&& message.type !== 'spectra.content.runtime.ensure'
-				&& message.type !== 'spectra.content.runtime.ready'
-				&& message.type !== 'spectra.content.runtime.release')) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed content runtime request'));
+			|| (message.type !== PROTO_RUNTIME_BOOTSTRAP_HELLO
+				&& message.type !== PROTO_RUNTIME_IDENTITY
+				&& message.type !== PROTO_RUNTIME_ENSURE
+				&& message.type !== PROTO_RUNTIME_READY
+				&& message.type !== PROTO_RUNTIME_RELEASE)) {
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed content runtime request'));
 			return false;
 		}
 
-		if (message.type === 'spectra.content.runtime.identity') {
+		if (message.type === PROTO_RUNTIME_IDENTITY) {
 			const identity = senderIdentity(sender);
 			if (!identity) {
 				sendResponse(rpcFailure(
@@ -543,7 +549,7 @@ export function initializeContentRuntimeLoader(): void {
 			return true;
 		}
 
-		if (message.type === 'spectra.content.bootstrap.hello') {
+		if (message.type === PROTO_RUNTIME_BOOTSTRAP_HELLO) {
 			const identity = senderIdentity(sender);
 			if (!identity) {
 				sendResponse(rpcFailure('forbidden', 'Bootstrap HELLO requires a document identity'));
@@ -591,7 +597,7 @@ export function initializeContentRuntimeLoader(): void {
 			return true;
 		}
 
-		if (message.type === 'spectra.content.runtime.ensure') {
+		if (message.type === PROTO_RUNTIME_ENSURE) {
 			void ensureContentRuntime(
 				message.payload.tabId,
 				message.payload.documentId,
@@ -608,7 +614,7 @@ export function initializeContentRuntimeLoader(): void {
 			return true;
 		}
 
-		if (message.type === 'spectra.content.runtime.release'
+		if (message.type === PROTO_RUNTIME_RELEASE
 			&& message.payload.tabId !== undefined
 			&& message.payload.documentId !== undefined
 			&& message.payload.reason !== undefined
@@ -632,7 +638,7 @@ export function initializeContentRuntimeLoader(): void {
 			sendResponse(rpcFailure('forbidden', 'Runtime lifecycle requires a document identity'));
 			return false;
 		}
-		if (message.type === 'spectra.content.runtime.ready') {
+		if (message.type === PROTO_RUNTIME_READY) {
 			if (message.payload.runtimeRevision !== SPECTRA_CONTENT_RUNTIME_REVISION) {
 				sendResponse(rpcFailure('runtime_revision_mismatch', 'Unexpected content runtime revision'));
 				return false;

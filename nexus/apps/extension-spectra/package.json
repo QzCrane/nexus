@@ -11,6 +11,7 @@
 		"build:dev": "bun build.ts --dev",
 		"build:sourcemap": "bun build.ts --sourcemap",
 		"build:analyze": "bun build.ts --analyze",
+		"check:dist": "bun scripts/check-dist-integrity.ts",
 		"lint": "bun ../../scripts/run-strict-biome.ts .",
 		"integrity": "bun scripts/check-production-artifacts.ts",
 		"package": "bun run --cwd ../.. release:spectra",

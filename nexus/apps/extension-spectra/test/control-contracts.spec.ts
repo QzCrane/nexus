@@ -112,6 +112,7 @@ describe('per-field SPECTRA control contracts', () => {
 		const admission = createCaptureAdmission();
 		expect(isControlIntent(intent)).toBe(true);
 		expect(isControlIntent({ ...intent, captureAdmission: admission })).toBe(true);
+		expect(isControlIntent({ ...intent, processorHold: true })).toBe(true);
 		expect(isControlIntent({ ...intent, captureAdmission: 'extension-invocation' })).toBe(false);
 		expect(isControlIntent({ ...intent, captureAdmission: 'page-gesture' })).toBe(false);
 		const admittedEnvelope = {

@@ -2639,6 +2639,53 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	});
 
+	test('persists media facts eagerly and reuses them across a forced worker stop', async () => {
+		// Regression: the media inventory delay must not come back on every popup
+		// open. Facts are persisted on every mutation (not only on the best-effort
+		// runtime.onSuspend hook), so a forced worker stop cannot lose them.
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+		await waitForContentBootstrapStatus(fixtureUrl);
+		await fixturePage.bringToFront();
+		const tabId = await getTabId(fixturePage.url());
+		const client = await openExtensionClient('options.html');
+		try {
+			const first = await client.evaluate(() => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type: 'spectra.tab.visible.list',
+				payload: {},
+			})) as SmokeRpcResult<{ tabs: number[] }>;
+			expect(first.ok).toBe(true);
+			expect(first.data.tabs).toContain(tabId);
+
+			// Deterministic proof that persistence no longer waits for onSuspend:
+			// the settled fact must already be in session storage right after the scan.
+			await eventually(
+				() => evaluateServiceWorker(async (targetTabId) => {
+					const key = 'spectra.media-facts.v1';
+					const raw = (await chrome.storage.session.get(key))[key] as
+						Record<string, { outcome?: string }> | undefined;
+					return raw?.[String(targetTabId)]?.outcome ?? null;
+				}, tabId),
+				(outcome) => outcome === 'found',
+				'eager media fact persistence after the first scan',
+			);
+
+			await restartServiceWorker();
+
+			const after = await client.evaluate(() => chrome.runtime.sendMessage({
+				protocolVersion: 2,
+				requestId: crypto.randomUUID(),
+				type: 'spectra.tab.visible.list',
+				payload: {},
+			})) as SmokeRpcResult<{ tabs: number[] }>;
+			expect(after.ok).toBe(true);
+			expect(after.data.tabs).toContain(tabId);
+		} finally {
+			await client.close();
+		}
+	});
+
 	test('keeps the v2 config ABI stable while new Content reads the additive site policy', async () => {
 		const tabId = await getTabId(fixturePage.url());
 		const client = await openExtensionClient('options.html');
@@ -6393,31 +6440,31 @@ describe('SPECTRA built extension smoke', () => {
 			expect(await readPageMediaControllerHarness()).toMatchObject({ volumeBase: 100 });
 
 			await submitEffectiveVolume(tabId, 80);
-			const native80 = await waitForContentStatus(
-				(status) => status.mode === 'bypass' && status.phase === 'idle'
+			const held80 = await waitForContentStatus(
+				(status) => status.mode === 'capture' && status.phase === 'active'
 					&& status.config?.volume === 80
 					&& status.config?.volumeBase === 80
 					&& status.config?.boost === 1,
 				15_000,
 			);
-			expect(native80).toMatchObject({
-				mode: 'bypass',
-				phase: 'idle',
+			expect(held80).toMatchObject({
+				mode: 'capture',
+				phase: 'active',
 				config: { volume: 80, volumeBase: 80, boost: 1 },
 			});
-			const nativeSnapshot = await extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+			const heldSnapshot = await extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
 				protocolVersion: 2,
 				requestId: crypto.randomUUID(),
 				tabId: targetTabId,
 				type: 'spectra.control.snapshot.get',
 				payload: { tabId: targetTabId },
 			}), tabId);
-			expect(nativeSnapshot).toMatchObject({
+			expect(heldSnapshot).toMatchObject({
 				ok: true,
 				data: {
 					fields: {
 						volumeBase: { actual: 80, strategy: 'page-native' },
-						boost: { actual: 1, strategy: 'observe', controlled: false },
+						boost: { actual: 1, strategy: 'capture', controlled: true },
 					},
 				},
 			});
@@ -6425,12 +6472,12 @@ describe('SPECTRA built extension smoke', () => {
 				volumeBase: 80,
 				domVolume: 0.49048,
 			});
-			const native80Presentation = await readPopupVolumePresentation('#2563eb');
-			expect(native80Presentation).toMatchObject({
+			const held80Presentation = await readPopupVolumePresentation('#7c3aed');
+			expect(held80Presentation).toMatchObject({
 				value: '80',
-				fillColor: 'rgb(37, 99, 235)',
-				valueColor: 'rgb(37, 99, 235)',
-				sliderAccent: '#2563eb',
+				fillColor: 'rgb(124, 58, 237)',
+				valueColor: 'rgb(124, 58, 237)',
+				sliderAccent: '#7c3aed',
 			});
 
 			await submitEffectiveVolume(tabId, 350);
@@ -6455,23 +6502,25 @@ describe('SPECTRA built extension smoke', () => {
 			expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
 
 			await submitEffectiveVolume(tabId, 0);
-			const nativeZero = await waitForContentStatus(
-				(status) => status.mode === 'bypass' && status.phase === 'idle'
+			const heldZero = await waitForContentStatus(
+				(status) => status.mode === 'capture' && status.phase === 'active'
 					&& status.config?.volume === 0
 					&& status.config?.volumeBase === 0
 					&& status.config?.boost === 1,
 				15_000,
 			);
-			expect(nativeZero).toMatchObject({
-				mode: 'bypass',
-				phase: 'idle',
+			expect(heldZero).toMatchObject({
+				mode: 'capture',
+				phase: 'active',
 				config: { volume: 0, volumeBase: 0, boost: 1 },
 			});
 			expect(await readPageMediaControllerHarness()).toMatchObject({
 				volumeBase: 0,
 				domVolume: 0,
 			});
-			expect((await readOffscreenSnapshot()).audioTabs).toEqual([]);
+			expect((await readOffscreenSnapshot()).audioTabs).toEqual(
+				expect.arrayContaining([expect.objectContaining({ tabId })]),
+			);
 			const silent = await readPopupVolumePresentation();
 			expect(silent).toMatchObject({
 				value: '0',
@@ -6483,7 +6532,7 @@ describe('SPECTRA built extension smoke', () => {
 
 			await submitEffectiveVolume(tabId, 100);
 			await waitForContentStatus(
-				(status) => status.mode === 'bypass' && status.phase === 'idle'
+				(status) => status.mode === 'capture' && status.phase === 'active'
 					&& status.config?.volume === 100
 					&& status.config?.volumeBase === 100
 					&& status.config?.boost === 1,
@@ -6493,17 +6542,18 @@ describe('SPECTRA built extension smoke', () => {
 				volumeBase: 100,
 				domVolume: 0.6131,
 			});
-			const native100Presentation = await readPopupVolumePresentation('#2563eb');
-			expect(native100Presentation).toMatchObject({
+			const held100Presentation = await readPopupVolumePresentation('#7c3aed');
+			expect(held100Presentation).toMatchObject({
 				value: '100',
-				fillColor: 'rgb(37, 99, 235)',
-				valueColor: 'rgb(37, 99, 235)',
-				sliderAccent: '#2563eb',
+				fillColor: 'rgb(124, 58, 237)',
+				valueColor: 'rgb(124, 58, 237)',
+				sliderAccent: '#7c3aed',
 			});
-			expect(await readBadgeColor(tabId)).toEqual([37, 99, 235, 255]);
+			expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
 
 			// Route ownership is document-scoped. Reload the same tab, then
-			// recreate its exact page controller at 100.
+			// recreate its exact page controller at 100. The navigation is the
+			// natural release boundary for the document-level processor hold.
 			await fixturePage.reload({ waitUntil: 'domcontentloaded' });
 			await waitForContentBootstrapStatus(fixturePage.url());
 			await installPageMediaControllerHarness();
@@ -6513,6 +6563,13 @@ describe('SPECTRA built extension smoke', () => {
 					&& status.config?.volume === 100,
 				15_000,
 			);
+			const native100Presentation = await readPopupVolumePresentation('#2563eb');
+			expect(native100Presentation).toMatchObject({
+				value: '100',
+				fillColor: 'rgb(37, 99, 235)',
+				valueColor: 'rgb(37, 99, 235)',
+				sliderAccent: '#2563eb',
+			});
 			await fixturePage.bringToFront();
 			// Create the feedback surface at that acknowledged native baseline,
 			// then let physical shortcuts cross 100 without acquiring Capture.

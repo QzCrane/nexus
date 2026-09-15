@@ -52,7 +52,7 @@ export interface PopupVisualizerFactories {
   createVizLoop: VizLoopFactory;
 }
 
-export type CardObservationReason = 'capacity' | 'not-requested' | 'rejected' | 'stale' | 'timeout' | 'unavailable';
+export type CardObservationReason = 'capacity' | 'rejected' | 'stale' | 'timeout' | 'unavailable';
 export type CardObservation<T> =
 	| { state: 'known'; value: T }
 	| { state: 'unknown'; reason: CardObservationReason };

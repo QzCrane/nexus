@@ -31,7 +31,7 @@ import {
 	isBackgroundRequestEnvelope,
 	rpcFailure,
 	rpcSuccess,
-} from '../background-rpc';
+RPC_INVALID_REQUEST} from '../background-rpc';
 import {
 	getAudioSession,
 	identityFromSender,
@@ -420,7 +420,7 @@ async function startCapture(
 			config: state.actualConfig,
 			error: null,
 		});
-		swLog.capture(`Tab ${tabId}: capture active (generation ${generation})`);
+		/* @__PURE__ */ swLog.capture(`Tab ${tabId}: capture active (generation ${generation})`);
 		return { status: 'processing' as const, phase: 'active' as const, active: true, generation };
 	} catch (error) {
 		// runtime.sendMessage cannot cancel an in-flight offscreen handler. Leave an
@@ -634,7 +634,7 @@ function registerCaptureProtocolListener(): void {
 			return false;
 		}
 		if (!isBackgroundRequestEnvelope(message)) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed capture request'));
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed capture request'));
 			return false;
 		}
 		const senderTabId = sender.tab?.id;

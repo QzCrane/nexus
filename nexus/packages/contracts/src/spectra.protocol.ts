@@ -589,19 +589,14 @@ export interface SpectraRequestMap {
 	};
 	'spectra.tab.visible.list': {
 		payload: Record<string, never>;
-		response: {
-			tabs: number[];
-			coverage?: {
-				status: 'complete' | 'degraded';
-				total: number;
-				examined: number;
-				pending: number;
-				failed: number;
-				denied: number;
-				stale: number;
-				unknown: number;
-			};
-		};
+		response: VisibleTabsResult;
+	};
+	// Waits for the current background inventory sweep to settle (bounded by the
+	// scan budget) before projecting the known media tabs. Consumed by the popup
+	// after an instant list read so an open popup converges without a reopen.
+	'spectra.tab.visible.settle': {
+		payload: Record<string, never>;
+		response: VisibleTabsResult;
 	};
 	'spectra.tab.pinned.toggle': {
 		payload: Record<string, never>;
@@ -1087,6 +1082,7 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.video.marker.list': isEmptyPayload,
 	'spectra.tab.media.report': isTabMediaReportPayload,
 	'spectra.tab.visible.list': isEmptyPayload,
+	'spectra.tab.visible.settle': isEmptyPayload,
 	'spectra.tab.pinned.toggle': isEmptyPayload,
 	'spectra.tab.muted.toggle': isEmptyPayload,
 	'spectra.ui.open': isUiOpenPayload,
@@ -1120,9 +1116,24 @@ function isMediaSpeedResult(
 		&& typeof value.preservePitch === 'boolean';
 }
 
+// Shared response shape for instant list reads and settling convergence reads.
+export interface VisibleTabsResult {
+	tabs: number[];
+	coverage?: {
+		status: 'complete' | 'degraded';
+		total: number;
+		examined: number;
+		pending: number;
+		failed: number;
+		denied: number;
+		stale: number;
+		unknown: number;
+	};
+}
+
 function isVisibleTabsResult(
 	value: unknown,
-): value is SpectraResponseData<'spectra.tab.visible.list'> {
+): value is VisibleTabsResult {
 	if (!isRecord(value)
 		|| !hasOnlyKeys(value, TABS_RESULT_KEYS)
 		|| !Array.isArray(value.tabs)
@@ -1476,6 +1487,7 @@ const RESPONSE_DATA_GUARDS = {
 		&& hasOnlyKeys(value, REPORTED_RESULT_KEYS)
 		&& value.reported === true,
 	'spectra.tab.visible.list': isVisibleTabsResult,
+	'spectra.tab.visible.settle': isVisibleTabsResult,
 	'spectra.tab.pinned.toggle': (
 		value: unknown,
 	): value is SpectraResponseData<'spectra.tab.pinned.toggle'> => isRecord(value)

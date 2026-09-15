@@ -137,6 +137,7 @@ export function createAudioRuntimeControlDelegate(
 			...(intent.captureAdmission
 				? { captureAdmission: intent.captureAdmission }
 				: {}),
+			hold: intent.processorHold ?? state.processorHold,
 		});
 		if (!persisted.ok) throw new Error(persisted.error.message);
 

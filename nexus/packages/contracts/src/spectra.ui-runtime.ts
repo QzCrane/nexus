@@ -61,6 +61,7 @@ export const SPECTRA_UI_REQUEST_TYPES = [
 	'spectra.audio.runtime.get',
 	'spectra.audio.visualizer.batch',
 	'spectra.tab.visible.list',
+	'spectra.tab.visible.settle',
 ] as const satisfies readonly SpectraRequestType[];
 
 export type SpectraUiRequestType = (typeof SPECTRA_UI_REQUEST_TYPES)[number];
@@ -196,6 +197,7 @@ function isUiResponseData(type: SpectraUiRequestType, value: unknown): boolean {
 		case 'spectra.audio.runtime.get': return isAudioRuntimeStatus(value);
 		case 'spectra.audio.visualizer.batch': return isVisualizerBatchResult(value);
 		case 'spectra.tab.visible.list': return isVisibleTabs(value);
+		case 'spectra.tab.visible.settle': return isVisibleTabs(value);
 		default: return false;
 	}
 }

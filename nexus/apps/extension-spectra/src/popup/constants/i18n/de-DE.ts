@@ -10,7 +10,7 @@ export const DE_DE: I18NDict = {
 	vizSub: 'Dynamische Audiobars anzeigen',
 	vizDesc: 'Deaktivieren spart Ressourcen auf eingeschränkten Seiten durch Native Lite Modus bis Lautstärke > 100%.',
 	langLabel: 'Sprache',
-	mediaInventoryPartial: "Einige Medien-Tabs konnten nicht rechtzeitig geprüft werden. Öffnen Sie das Popup erneut.",
+	mediaInventoryPartial: "Einige Medien-Tabs werden noch geprüft und erscheinen automatisch.",
 	noAudio: 'Kein Audiosignal',
 	bgTitle: 'Hintergrund',
 	paused: 'Audioverbesserung pausiert',

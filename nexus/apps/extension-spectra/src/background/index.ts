@@ -68,9 +68,9 @@ initializeRuntimeRestartRecovery();
 // eff: performs zero-refresh update on existing tabs when extension is updated
 chrome.runtime.onInstalled.addListener(async (details) => {
 	if (details.reason === 'install') {
-		swLog.info('Installed: runtime owners initialized');
+		/* @__PURE__ */ swLog.info('Installed: runtime owners initialized');
 	} else if (details.reason === 'update') {
-		swLog.info(`Updated from ${details.previousVersion} to ${chrome.runtime.getManifest().version}`);
+		/* @__PURE__ */ swLog.info(`Updated from ${details.previousVersion} to ${chrome.runtime.getManifest().version}`);
 		try {
 			// v1 used a six-character peer ID as the credential. Its in-memory
 			// offscreen host is deliberately destroyed before any v2 warm refresh.
@@ -82,4 +82,4 @@ chrome.runtime.onInstalled.addListener(async (details) => {
 	}
 });
 
-swLog.info('Background Service Worker started.');
+/* @__PURE__ */ swLog.info('Background Service Worker started.');

@@ -10,7 +10,7 @@ export const ES_ES: I18NDict = {
 	vizSub: 'Mostrar barras de audio dinámicas',
 	vizDesc: 'Desactivar esto ahorra recursos en sitios restringidos usando el modo Nativo Lite hasta que el volumen supere el 100%.',
 	langLabel: 'Idioma',
-	mediaInventoryPartial: "No se pudieron comprobar algunas pestañas a tiempo. Vuelve a abrir la ventana emergente.",
+	mediaInventoryPartial: "Algunas pestañas aún se están verificando y aparecerán automáticamente.",
 	noAudio: 'Sin señal de audio',
 	bgTitle: 'Fondo',
 	paused: 'Mejora de audio pausada',

@@ -7,14 +7,19 @@ import {
 	scheduleAllMediaRouteProjection,
 	scheduleMediaRouteProjection,
 } from '../settings-projection';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
 
-const REGISTRY_REQUEST_TYPES = new Set([
-	'spectra.registry.get',
-	'spectra.registry.add',
-	'spectra.registry.remove',
-	'spectra.registry.query',
-	'spectra.registry.mark-probed',
+const PROTO_REGISTRY_GET = 'spectra.registry.get' as const;
+const PROTO_REGISTRY_ADD = 'spectra.registry.add' as const;
+const PROTO_REGISTRY_REMOVE = 'spectra.registry.remove' as const;
+const PROTO_REGISTRY_QUERY = 'spectra.registry.query' as const;
+const PROTO_REGISTRY_MARK_PROBED = 'spectra.registry.mark-probed' as const;
+const REGISTRY_REQUEST_TYPES = new Set<string>([
+	PROTO_REGISTRY_GET,
+	PROTO_REGISTRY_ADD,
+	PROTO_REGISTRY_REMOVE,
+	PROTO_REGISTRY_QUERY,
+	PROTO_REGISTRY_MARK_PROBED,
 ]);
 
 function isAttemptedRegistryMessage(message: unknown): boolean {
@@ -40,17 +45,17 @@ export function registerRegistryHandlers(): void {
 		}
 		if (!isBackgroundRequestEnvelope(message) || !REGISTRY_REQUEST_TYPES.has(message.type)) {
 			sendResponse(rpcFailure(
-				'invalid_request',
+				RPC_INVALID_REQUEST,
 				`Malformed SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} site route request`,
 			));
 			return false;
 		}
 
 		const operation = async () => {
-			if (message.type === 'spectra.registry.get') {
+			if (message.type === PROTO_REGISTRY_GET) {
 				return rpcSuccess(await settingsRepository.getMediaRouteSnapshot());
 			}
-			if (message.type === 'spectra.registry.add') {
+			if (message.type === PROTO_REGISTRY_ADD) {
 				const result = await settingsRepository.addMediaRoute(
 					message.payload.domain,
 					'user',
@@ -60,7 +65,7 @@ export function registerRegistryHandlers(): void {
 				await projectRouteMutation(message.payload.domain);
 				return rpcSuccess(result);
 			}
-			if (message.type === 'spectra.registry.remove') {
+			if (message.type === PROTO_REGISTRY_REMOVE) {
 				const before = await settingsRepository.getMediaRouteSnapshot();
 				const domain = before.entries.find((entry) => (
 					entry.fingerprint === message.payload.fingerprint
@@ -69,10 +74,10 @@ export function registerRegistryHandlers(): void {
 				if (result.removed) await projectRouteMutation(domain);
 				return rpcSuccess(result);
 			}
-			if (message.type === 'spectra.registry.query') {
+			if (message.type === PROTO_REGISTRY_QUERY) {
 				return rpcSuccess(await settingsRepository.queryMediaRoute(message.payload.domain));
 			}
-			if (message.type === 'spectra.registry.mark-probed') {
+			if (message.type === PROTO_REGISTRY_MARK_PROBED) {
 				const result = await settingsRepository.markMediaRouteProbed(
 					message.payload.domain,
 					message.payload.route,

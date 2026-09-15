@@ -4,7 +4,7 @@ import {
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { hotkeyTargetRepository } from '../hotkey-target-repository';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from '../background-rpc';
+import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
 
 const HOTKEY_TARGET_REQUEST_TYPES = new Set([
 	'spectra.hotkey-target.get',
@@ -27,7 +27,7 @@ export function registerHotkeyTargetHandlers(): void {
 			return false;
 		}
 		if (!isBackgroundRequestEnvelope(message)) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed SPECTRA hotkey target request'));
+			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Malformed SPECTRA hotkey target request'));
 			return false;
 		}
 
