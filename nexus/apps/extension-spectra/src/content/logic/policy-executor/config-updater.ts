@@ -6,6 +6,7 @@ import {
 	compileEffectiveVolume,
 	resolveAudioVolume,
 	rpcFailure,
+	rpcSuccess,
 	splitEffectiveVolume,
 	type SpectraResponse,
 } from '@nexus/contracts';
@@ -14,6 +15,9 @@ import type { InternalState } from './types';
 import type { PolicyApplicationOptions, PolicyUpdateOptions } from './types';
 import { updateBadge } from './badge-sync';
 import { sendSpectraRequest } from '../../../shared/spectra-client';
+import { logger } from '../../../shared/logger';
+
+const log = logger.content;
 
 // eff: updates internal state, applies policy, refreshes Badge state and persists the snapshot
 export function updateConfig(
@@ -65,6 +69,21 @@ export function updateConfig(
 		}
 
 		updateBadge(deps, state, internalState);
+
+		if (options.deferPersistence === true) {
+			// The policy is already applied; only the durability write remains.
+			// Schedule it on the persistence tail (write order is preserved) and
+			// acknowledge success now so ACK-critical callers do not wait for a
+			// second Content→SW round trip. A failure here is transient and the
+			// next update supersedes it, so it must not reject the applied state.
+			void persistConfigSnapshot(internalState, state.config, state.generation)
+				.then((result) => {
+					if (!result.ok) {
+						log.warn(`[Config] Deferred snapshot persist failed: ${result.error.message}`);
+					}
+				});
+			return rpcSuccess({ saved: true as const });
+		}
 
 		return persistConfigSnapshot(internalState, state.config, state.generation);
 	})();

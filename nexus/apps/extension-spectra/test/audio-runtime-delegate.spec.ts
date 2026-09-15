@@ -43,6 +43,8 @@ describe('audio runtime coverage boundary', () => {
 
 		expect(updateConfig.mock.calls[0]?.[1]).toEqual({
 			captureAdmission,
+			hold: undefined,
+			deferPersistence: true,
 		});
 	});
 
@@ -74,7 +76,10 @@ describe('audio runtime coverage boundary', () => {
 				patch: { boost: 2 },
 			};
 			await delegate.apply(intent, intent.patch);
-			expect(updateConfig.mock.calls[0]?.[1]).toEqual({});
+		expect(updateConfig.mock.calls[0]?.[1]).toEqual({
+			hold: undefined,
+			deferPersistence: true,
+		});
 		}
 	});
 

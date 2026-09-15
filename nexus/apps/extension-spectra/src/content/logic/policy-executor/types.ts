@@ -20,6 +20,13 @@ export interface PolicyUpdateOptions {
 	// Document-level processor hold intent: keep the processor session alive even
 	// when the new config is neutral, so 100↔110 crossings only change gain.
 	hold?: boolean;
+	// Persist the config snapshot in the background instead of awaiting it.
+	// The audio policy is already applied by the time this option is consulted,
+	// so a callers that only need applied-state ACK (hotkeys, control intents)
+	// must not pay a second Content→SW round trip or a durability failure gate.
+	// Write order is preserved via configPersistenceTail; a failed write is
+	// warned and superseded by the next update.
+	deferPersistence?: boolean;
 }
 
 // PolicyExecutor: public interface exposed to the main content script lifecycle (index.ts)

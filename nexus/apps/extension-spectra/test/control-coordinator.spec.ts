@@ -357,6 +357,16 @@ function invocation(
 	};
 }
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	let reject!: (reason?: unknown) => void;
+	const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+		resolve = resolvePromise;
+		reject = rejectPromise;
+	});
+	return { promise, resolve, reject };
+}
+
 function speedErrorAck(intent: ControlIntent, code: string): ControlApplyAck {
 	return {
 		...appliedSpeedAck(intent),
@@ -762,6 +772,7 @@ describe('authoritative control coordinator', () => {
 			controlled: false,
 		});
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.mediaMuted?.actual).toBe(false);
+		await controlCoordinatorTestApi.flushSessionProjections();
 		expect(harness.storage.get('tab_session_7')).toMatchObject({
 			patch: { volumeBase: 40, mediaMuted: false },
 			portablePatch: {},
@@ -1060,6 +1071,118 @@ describe('authoritative control coordinator', () => {
 		});
 	});
 
+	test('answers commits before their durable session projections and preserves per-tab write order', async () => {
+		const harness = installHarness();
+		// Gate the first tab_session projection write (session storage) so both
+		// commits can be acknowledged while the first projection is still pending.
+		const gate = deferred<void>();
+		let gatedFirstWrite = false;
+		const chromeMock = globalThis.chrome as typeof chrome & {
+			storage: { session: { set: (values: Record<string, unknown>) => Promise<void> } };
+		};
+		const originalSessionSet = chromeMock.storage.session.set.bind(chromeMock.storage.session);
+		chromeMock.storage.session.set = async (values: Record<string, unknown>) => {
+			if (!gatedFirstWrite && Object.keys(values).some((key) => key.startsWith('tab_session_'))) {
+				gatedFirstWrite = true;
+				await gate.promise;
+			}
+			await originalSessionSet(values);
+		};
+		const target = {
+			frameId: 0,
+			documentId: harness.documentId,
+			mediaId: 'media:order',
+			sourceRevision: 0,
+			kind: 'video' as const,
+		};
+		const first = controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'page',
+			requestedCoverage: 'active-target',
+			target,
+			patch: { volumeBase: 60 },
+			observedStrategies: { volumeBase: 'page-native' },
+		});
+		const second = controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'page',
+			requestedCoverage: 'active-target',
+			target,
+			patch: { volumeBase: 80 },
+			observedStrategies: { volumeBase: 'page-native' },
+		});
+		const [firstAck, secondAck] = await Promise.all([first, second]);
+		// Both ACKs resolved without waiting for the detached session writes.
+		expect(firstAck.fields.volumeBase.actual).toBe(60);
+		expect(secondAck.fields.volumeBase.actual).toBe(80);
+		expect(harness.storage.has('tab_session_7')).toBe(false);
+
+		gate.resolve();
+		await controlCoordinatorTestApi.flushSessionProjections();
+		// Projections ran in commit order: the second write superseded the first.
+		expect(harness.storage.get('tab_session_7')).toMatchObject({
+			patch: { volumeBase: 80 },
+		});
+	});
+
+	test('reuses the held runtime lease across later owned-state commits', async () => {
+		const harness = installHarness();
+		// Use a document isolated from every other test: the owned-state lease
+		// and ready-document cache are module state keyed by tab+document, so a
+		// shared document would make this assertion order-dependent.
+		harness.documentId = 'document-lease';
+		const target = {
+			frameId: 0,
+			documentId: harness.documentId,
+			mediaId: 'media:lease',
+			sourceRevision: 0,
+			kind: 'audio' as const,
+		};
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.page.scale.probe') {
+				return { ok: true, data: { supported: false } };
+			}
+			if (type === 'spectra.control.actual.read') {
+				const acknowledgement = actualReadAck(
+					payload as ControlReadRequest,
+					target,
+				) as { ok: true; data: { patch: Record<string, unknown> } };
+				acknowledgement.data.patch.volumeBase = 100;
+				acknowledgement.data.patch.boost = 1;
+				return acknowledgement;
+			}
+			const intent = payload as ControlIntent;
+			if (intent.requestedCoverage === 'active-target') {
+				return { ok: true, data: unsupportedPatchAck(intent) };
+			}
+			return { ok: true, data: captureProcessorAck(harness, intent) };
+		};
+		const statusProbes = () => harness.contentMessages
+			.filter((message) => message.type === 'spectra.content.runtime.status').length;
+
+		const first = await controlCoordinatorTestApi.submitOperationInvoked({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 110 },
+		}, invocation(harness, 'popup'));
+		expect(first.result.effectiveVolume).toBe(110);
+		expect(statusProbes()).toBe(1);
+
+		const second = await controlCoordinatorTestApi.submitOperationInvoked({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 120 },
+		}, invocation(harness, 'popup'));
+		expect(second.result.effectiveVolume).toBe(120);
+		// The owned-state lease proves the runtime is alive, so the second
+		// commit skips the redundant re-ensure (no new status probe).
+		expect(statusProbes()).toBe(1);
+	});
+
 	test('uses an acknowledged page-native volume above 100 before considering Capture', async () => {
 		const harness = installHarness();
 		const target = {
@@ -1118,6 +1241,7 @@ describe('authoritative control coordinator', () => {
 		});
 		expect(acknowledgement.coverage).toBe('active-target');
 		expect(acknowledgement.audioVolume?.volumeState).toBe('native');
+		await controlCoordinatorTestApi.flushSessionProjections();
 		expect(harness.storage.get('tab_session_7')).toMatchObject({
 			patch: { volumeBase: 110, boost: 1 },
 		});
@@ -1485,6 +1609,9 @@ describe('authoritative control coordinator', () => {
 			controlled: false,
 			strategy: 'dom-native',
 		});
+		// Session projections are detached from the ACK path; settle them before
+		// asserting the durable tab_session row.
+		await controlCoordinatorTestApi.flushSessionProjections();
 		expect((harness.storage.get('tab_session_7') as {
 			portablePatch?: Record<string, unknown>;
 		} | undefined)?.portablePatch).toEqual({});

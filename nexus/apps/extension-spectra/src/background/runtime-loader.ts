@@ -231,6 +231,20 @@ export function releaseContentRuntimeLease(
 	}, RUNTIME_HANDOFF_GRACE_MS));
 }
 
+// post: reports whether the runtime still holds the given lease. A held lease
+// both proves the runtime is alive (disposal only starts at zero leases) and
+// that the owning consumer already passed the readiness barrier, so consumers
+// may skip a redundant re-ensure for the same document.
+export function hasRuntimeLease(
+	tabId: number,
+	documentId: string,
+	reason: ContentRuntimeLeaseReason,
+	capability: string,
+): boolean {
+	return leases.get(runtimeKey(tabId, documentId))
+		?.has(runtimeLeaseKey(reason, capability)) ?? false;
+}
+
 function senderIdentity(sender: chrome.runtime.MessageSender): { tabId: number; documentId: string } | null {
 	const tabId = sender.tab?.id;
 	if (!tabId || sender.frameId !== 0 || !sender.documentId?.trim()) return null;

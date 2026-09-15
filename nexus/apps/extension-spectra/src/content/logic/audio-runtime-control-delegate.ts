@@ -138,6 +138,10 @@ export function createAudioRuntimeControlDelegate(
 				? { captureAdmission: intent.captureAdmission }
 				: {}),
 			hold: intent.processorHold ?? state.processorHold,
+			// The ACK only needs the applied fields below; the snapshot durability
+			// write is a redundant background copy (the SW commit persists the same
+			// session projection) and must not gate or delay the crossing ACK.
+			deferPersistence: true,
 		});
 		if (!persisted.ok) throw new Error(persisted.error.message);
 

@@ -88,6 +88,7 @@ import { fenceAudioSession, getAudioSession } from './audio-session-store';
 import {
 	ensureContentRuntime,
 	awaitDocumentInitialization,
+	hasRuntimeLease,
 	releaseContentRuntimeLease,
 	releaseSourceRuntimeLease,
 	retainSourceRuntimeLease,
@@ -114,6 +115,30 @@ const STORAGE_PREFIX = 'spectra.control.tab.';
 const GENERATION_PREFIX = 'spectra.control.generation.';
 const snapshots = new Map<number, ControlSnapshot>();
 const serialized = createKeyedSerializedQueue<number>();
+// Deferred per-tab session projections. Each commit answers its requester
+// before the projection runs; chaining per tab preserves commit order while
+// keeping the projection off the serialized ACK path of later commits.
+const sessionProjectionTails = new Map<number, Promise<unknown>>();
+
+function scheduleSessionProjection(
+	tabId: number,
+	run: () => Promise<unknown>,
+): void {
+	const previous = sessionProjectionTails.get(tabId) ?? Promise.resolve();
+	const tail = previous.catch(() => undefined).then(run);
+	sessionProjectionTails.set(tabId, tail);
+	void tail.catch((error: unknown) => {
+		swLog.warn(`[Control] Session projection for tab ${tabId} failed: ${error instanceof Error ? error.message : String(error)}`);
+	});
+}
+
+// Settles every scheduled per-tab session projection. Used by the test surface
+// so assertions on the durable tab_session rows do not race the detached
+// commit tail; production never waits on projections.
+async function flushSessionProjections(): Promise<void> {
+	await Promise.all([...sessionProjectionTails.values()]).catch(() => undefined);
+	sessionProjectionTails.clear();
+}
 // Navigation is fenced synchronously before its durable transition enters the
 // per-tab queue. A queued invalidation alone is insufficient: a control
 // transaction may be awaiting Content/storage while Chrome has already moved
@@ -189,6 +214,20 @@ function hasRuntimeOwnedState(snapshot: ControlSnapshot): boolean {
 
 async function reconcileRuntimeOwnership(snapshot: ControlSnapshot): Promise<void> {
 	if (hasRuntimeOwnedState(snapshot)) {
+		// The owned-state lease is acquired by the first commit that made the
+		// state owned and released only by this function when ownership flips.
+		// Every later crossing on the same document re-verifies the top document
+		// (one getFrame IPC) for no state change; commitControlFields already
+		// fenced this transaction against navigation, so a held lease proves the
+		// runtime stays alive until ownership actually changes.
+		if (hasRuntimeLease(
+			snapshot.tabId,
+			snapshot.documentId,
+			'control',
+			RUNTIME_OWNER_CAPABILITY,
+		)) {
+			return;
+		}
 		await ensureContentRuntime(
 			snapshot.tabId,
 			snapshot.documentId,
@@ -584,9 +623,13 @@ async function publishSnapshot(
 		documentId: snapshot.documentId,
 		generation: snapshot.generation,
 	};
-	await chrome.runtime.sendMessage(event).catch(() => undefined);
+	// Notify extension pages without blocking the requester. Receivers (Popup
+	// card, SidePanel, Remote) classify snapshots by document/generation and are
+	// idempotent, so delivery order relative to the submit ACK is irrelevant and
+	// waiting for every listener would only widen the post-commit fence window.
+	void chrome.runtime.sendMessage(event).catch(() => undefined);
 	// Keep the in-memory and durable owners aligned even if the lifecycle
-	// callback fires while the extension-page notification is in flight.
+	// callback fires right after the notification is dispatched.
 	try {
 		assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 	} catch (error) {
@@ -875,17 +918,24 @@ async function commitControlFields(
 		activeVideo,
 		fields: { ...current.fields, ...fields },
 	};
-	await persistControlProjection(
+	await publishSnapshot(committed, expectedEpoch);
+	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
+	await reconcileRuntimeOwnership(committed);
+	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
+	// The ACK only depends on the memory + snapshot-storage commit and runtime
+	// ownership above. The per-origin session projection (badge + durable
+	// session fields) is a follow-on durability/UI write: it re-verifies the
+	// top document (one getFrame IPC) and performs three storage round trips,
+	// so it is scheduled on a per-tab tail after the requester is answered.
+	// Write order is preserved; a stale-document failure after navigation is
+	// expected and only warned.
+	scheduleSessionProjection(committed.tabId, () => persistControlProjection(
 		committed,
 		fields,
 		projection.acknowledgedSessionPatch,
 		projection.sessionScope,
 		expectedEpoch,
-	);
-	await publishSnapshot(committed, expectedEpoch);
-	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
-	await reconcileRuntimeOwnership(committed);
-	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
+	));
 	return committed;
 }
 
@@ -2631,12 +2681,17 @@ export const controlCoordinatorTestApi = {
 	observeChromeTabState,
 	invalidateNavigation,
 	reprojectBadgeForCurrentDocument,
+	flushSessionProjections,
 	async reset(): Promise<void> {
 		await serialized.drain();
 		// Drain the repository's trailing debounce while the test/background
 		// Chrome storage owner still exists. Otherwise a late timer can outlive
 		// the service-worker harness and write through a deleted global.
 		await storage.tabSession.flush().catch(() => undefined);
+		// Drain deferred session projections so tests observe a fully-settled
+		// store (tab_session projections run off the ACK path but still write
+		// the same storage rows).
+		await flushSessionProjections();
 		snapshots.clear();
 		navigationFences.clear();
 		stalePersistedSnapshots.clear();

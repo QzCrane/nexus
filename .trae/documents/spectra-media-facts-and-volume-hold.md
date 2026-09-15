@@ -42,8 +42,15 @@
 - **根因 2**：popup `scheduleFlush` 50ms 节流在 `inFlight` 时直接 return，`.finally` 里按余数等待——快速 110→100 返回切换被延迟。**根治**：`scheduleFlush(eager)`，in-flight 期间累积的批次在 ACK 落地时以 delay=0 立即发出（in-flight 往返已构成发送间隔，再等余数窗口是第二次纯人工延迟）；空闲间隔更新仍保持 50ms 节流（限制快速拖动 IPC 频率）。新增 `popup-coalescing.spec.ts` 用例断言反转批次 delay=0。
 - **假下限修正（实证链关键）**：popup 直发测量首次得到 2.8ms 是假下限——消息缺 canonical envelope 顶层字段（`tabId`/`documentId`/`generation`）被内容侧 `hasCanonicalRequestContext` 秒拒（~3ms 拒收往返），未真正执行。补全后真实内容下限 = SW contentRoundTrip 吻合。
 - **实测验收（真实浏览器 e2e，重建 dist）**：冷首次上跨（处理器冷启动 + crossfade 无爆音）~330ms 为物理一次性成本；保活跨越（处理器存活、只改增益）41/42/52/58ms——其中音频在内容侧 apply 时即生效（早于 ACK），剩余为 MV3 架构物理地板：4 跳浏览器 IPC + commit（`persistControlProjection` 多存储读 + `publishSnapshot` session.set + 广播 + `reconcileRuntimeOwnership`）+ persist（内容→SW 往返 3.5ms）。
-- **边界结论**：persist（3.5ms）与 commit（~8ms）的进一步优化被评估为高风险（persist 的 `.ok` 失败语义是耐久性/写入顺序契约；commit 涉及存储写入、广播与导航 fencing 的一致性），**不改**。100↔110 显示冻结（`volumeTransitionPresentation`）是刻意设计（颜色与值原子切换，禁止 110+原生色帧），保留。
-- **清理**：全部 TEMP-VolTiming 埋点（control-coordinator/spectra-tab-client/native-media-executor/config-updater/policy-executor 共 8 键）用后即删；临时测量/复现测试（measure-volume-latency、repro-volume-latency、repro-user-scenario、repro-warning-trigger、tmp-debug-inventory）已删除，证据固化本文档。
+- **边界结论（2026-09-16 修订）**：persist/commit"不改"的保守评估已推翻——两者已移出 ACK 关键路径（四项优化 + 实测见下节）。100↔110 显示冻结（`volumeTransitionPresentation`）是刻意设计（颜色与值原子切换，禁止 110+原生色帧），保留。
+
+**本轮（2026-09-16）persist/commit 移出 ACK 关键路径**：
+- **A. 内容侧 persist defer**：`config-updater.ts` `updateConfig` 新增 `deferPersistence` 选项；`audio-runtime-control-delegate.apply` 对控制 ACK 传递 `deferPersistence: true`（内容快照耐久写是 SW commit 同一 session 投影的冗余副本）。策略已应用即回 `rpcSuccess`，3.5ms 内容→SW persist 往返移出 ACK；写序由 `configPersistenceTail` 保留，失败仅 warn（下次更新覆盖，不拒绝已应用状态）。
+- **B. SW `persistControlProjection` 延迟**：`commitControlFields` 只 await `publishSnapshot`（`spectra.control.tab.{tabId}` session.set）+ fence + `reconcileRuntimeOwnership`；per-origin session 投影（badge + 3 次存储读）经新 `scheduleSessionProjection` 按 tab 串行尾随（写序保留，导航后 stale-document 失败仅 warn）。测试面新增 `flushSessionProjections` 保证断言不竞态尾随写入。
+- **C. `publishSnapshot` 广播 detached**：`spectra.control.snapshot.changed` 广播 `void` 发出，不再等待 Popup/SidePanel/Remote 监听方（接收方按 document/generation 幂等分类，投递顺序相对 ACK 无关）。
+- **D. `reconcileRuntimeOwnership` 租约守卫**：runtime-loader 新增 `hasRuntimeLease`；owned-state 租约已持有时跳过重复 `ensureContentRuntime`（持约即证明 runtime 存活且已过 READY 屏障）。
+- **实测（真实浏览器 A/B，同 harness 同方法，2×2 样本）**：100↔110↔100 内容侧 ACK（协议触发完整热键链，含 per-press 租约 ensure×2 + OSD feedback 分发）：下行中位 104-111ms → **97-103ms**（样本区间不重叠，~5-8ms 稳定改善），上行 min 91-97ms → **89-92ms**；存储快照可见延时同步下降（store ≈ ack + 2-3ms，证明 `publishSnapshot` 仍先于 ACK 落地）。剩余 ~90ms 为本轮未触及的固定成本：每次热键的 runtime 租约 ensure×2、OSD feedback 分发、4 跳浏览器 IPC（口径为完整热键触发链，宽于前轮 41-58ms 的纯处理器保活 apply 路径，两者不同场景不可直接比较）。
+- **清理**：全部 TEMP-VolTiming 埋点（control-coordinator/spectra-tab-client/native-media-executor/config-updater/policy-executor 共 8 键）用后即删；临时测量/复现测试（measure-volume-latency、repro-volume-latency、repro-user-scenario、repro-warning-trigger、tmp-debug-inventory、tmp-latency）已删除，证据固化本文档。
 
 > **治理重构（2026-09-15，同一会话）**：上表第 35 行"字节门 256→270KiB"已退役。字节计数的绝对上限是"魔法数字当法律"——数字随风飘、倒逼 `@__PURE__`/字符串去重这类"为凑数而做"的微优化、用口味绑架发布会。现改为 `check-production-artifacts.ts` + `scripts/production-size-policy.json` 的**复核信号 ledger**（镜像仓库 `file-length-policy.json` 治理范式）：
 > - 结构门禁保留并是唯一发布阻断：可达性、孤儿/重复/缺失、所有权、MV3 worker 单包、worker 无诊断调用、禁入产物。
