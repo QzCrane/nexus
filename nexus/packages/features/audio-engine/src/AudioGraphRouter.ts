@@ -296,7 +296,13 @@ export class AudioGraphRouter {
 				AUDIO_PARAM_RAMP_MS,
 			);
 			this.updateLane(this.activeLane, normalized);
-			await new Promise<void>((resolve) => setTimeout(resolve, AUDIO_PARAM_RAMP_MS));
+			// A parameter-only apply (boost, EQ gain, pan, delay) is acknowledged as
+			// soon as the ramps are scheduled. The AudioParam automation starts
+			// moving immediately; awaiting the ramp here would add a fixed
+			// `AUDIO_PARAM_RAMP_MS` of artificial latency to every volume crossing
+			// while adding no readback fidelity (the ACK snapshot is nominal). The
+			// next apply cancels the pending ramp and re-ramps from the live value,
+			// so rapid slider updates still converge on their final targets.
 			this.actualConfig = normalized;
 			return this.snapshot(signature, normalized);
 		}

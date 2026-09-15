@@ -1170,6 +1170,18 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		})).toBe(true);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'subframe-media-report',
+			type: 'spectra.tab.media.report',
+			payload: { hasMediaElement: false, userInteracted: false, hasSubframes: true },
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'invalid-media-report-hassubframes',
+			type: 'spectra.tab.media.report',
+			payload: { hasMediaElement: false, userInteracted: false, hasSubframes: 'yes' },
+		})).toBe(false);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'invalid-media-report-revision',
 			type: 'spectra.tab.media.report',
 			payload: { hasMediaElement: true, userInteracted: false, reportRevision: 0 },

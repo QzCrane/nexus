@@ -239,6 +239,34 @@ describe('Popup latest-value config transport', () => {
 		expect(frames.at(-1)).toBe(100);
 	});
 
+	test('sends a reversal batched during flight immediately when the ACK lands, not after the idle-gap window', async () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdateFn(state, 19, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+
+		update({ volume: 110 });
+		harness.fireOnlyTimer();
+		await waitFor(() => harness.requests.length === 1);
+
+		update({ volume: 100 });
+		// The reversal is coalesced into pending; no second timer can exist while
+		// the first request is still in flight.
+		expect(harness.timers.size).toBe(0);
+
+		harness.resolveRequest(0, runtimeResponse(110, 1, 'capture'));
+		await waitFor(() => harness.timers.size === 1);
+		// The in-flight round already imposed the send gap, so the return swing
+		// must be scheduled with no artificial min-send window at all.
+		expect(harness.timerDelay()).toBe(0);
+
+		harness.fireOnlyTimer();
+		await waitFor(() => harness.requests.length === 2);
+		expect(requestVolume(harness.requests[1]?.message)).toBe(100);
+		harness.resolveRequest(1, runtimeResponse(100, 2, 'observe'));
+		await waitFor(() => state.controlGeneration === 2);
+		expect(state.config.volume).toBe(100);
+	});
+
 	test('commits an above-100 Media WebAudio ACK directly as blue', async () => {
 		const harness = installHarness();
 		const state = createState();
@@ -422,7 +450,7 @@ function requestType(message: unknown): unknown {
 }
 
 function installHarness() {
-	const timers = new Map<number, () => void>();
+	const timers = new Map<number, { callback: () => void; delay: number }>();
 	const requests: Array<{ message: unknown; resolve: (value: unknown) => void }> = [];
 	const runtimeRequests: Array<Record<string, unknown>> = [];
 	let timerId = 0;
@@ -436,9 +464,9 @@ function installHarness() {
 	});
 	Object.defineProperty(globalThis, 'setTimeout', {
 		configurable: true,
-		value: (callback: () => void) => {
+		value: (callback: () => void, delay?: number) => {
 			const id = ++timerId;
-			timers.set(id, callback);
+			timers.set(id, { callback, delay: delay ?? 0 });
 			return id;
 		},
 	});
@@ -470,13 +498,21 @@ function installHarness() {
 		runtimeRequests,
 		fireOnlyTimer() {
 			expect(timers.size).toBe(1);
-			const [id, callback] = requireValue(
+			const [id, timer] = requireValue(
 				[...timers.entries()][0],
 				'Expected exactly one pending popup coalescing timer',
 			);
 			timers.delete(id);
 			now += 50;
-			callback();
+			timer.callback();
+		},
+		timerDelay() {
+			expect(timers.size).toBe(1);
+			const [, timer] = requireValue(
+				[...timers.entries()][0],
+				'Expected exactly one pending popup coalescing timer',
+			);
+			return timer.delay;
 		},
 		resolveRequest(index: number, response: unknown) {
 			const request = requests[index];

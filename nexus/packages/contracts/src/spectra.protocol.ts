@@ -584,7 +584,7 @@ export interface SpectraRequestMap {
 		response: { markers: TimeMarkerResult[] };
 	};
 	'spectra.tab.media.report': {
-		payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number };
+		payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number; hasSubframes?: boolean };
 		response: { reported: true };
 	};
 	'spectra.tab.visible.list': {

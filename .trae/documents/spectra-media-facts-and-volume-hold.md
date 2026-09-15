@@ -35,7 +35,15 @@
 - 字节门：`check-production-artifacts.ts` 将 `serviceWorkerWake` 预算 256→270KiB（集成成本 265,239 B，带评审说明）；bootstrap 去 observer 后 `content-bootstrap.js` 13.2KiB 达标。
 - i18n 收敛文案：`mediaInventoryPartial` 由"请重新打开弹窗重试"改为"仍在验证中，完成后将自动显示"（9 语言包一致）。
 
-**验收结果（本轮）**：`test:unit` 112 文件全绿（含 `popup-inventory-latency.spec.ts` 真实浏览器）；`typecheck`、`lint`（388 文件 0 诊断）、`verify`（0 错误，1 个既有非阻断 warning：control-coordinator.ts 2636 行 vs review signal 2600）、`build`（service-worker wake 259.0KiB，bootstrap 13.2KiB）全通过。延迟实测：cold ~243ms / warm ~203ms 媒体卡片首帧，`mediaInventory: "complete"`（readNow 零 probe 投影）。
+**验收结果（A′ 轮）**：`test:unit` 112 文件全绿（含 `popup-inventory-latency.spec.ts` 真实浏览器）；`typecheck`、`lint`（388 文件 0 诊断）、`verify`（0 错误，1 个既有非阻断 warning：control-coordinator.ts 2636 行 vs review signal 2600）、`build` 全通过。延迟实测：cold ~243ms / warm ~203ms 媒体卡片首帧，`mediaInventory: "complete"`（readNow 零 probe 投影）。
+
+**本轮（2026-09-15）音量延时根治（问题 1 收尾）**：
+- **根因 1（最大）**：`AudioGraphRouter.applyNow` 快速路径（同签名纯参数更新）有固定 `await setTimeout(AUDIO_PARAM_RAMP_MS)`（15ms）——斜坡已调度、音频已开始变化，等待斜坡完成纯粹是给每次音量跨越增加人工延迟。**移除**：同签名纯参数更新（boost/EQ 增益/pan/delay）立即确认；拓扑变化路径（首建、crossfade）保留等待保证无爆音。实测 modeExecutor 16.5ms→0.4ms，SW→content 往返 23.2ms→6.2ms。
+- **根因 2**：popup `scheduleFlush` 50ms 节流在 `inFlight` 时直接 return，`.finally` 里按余数等待——快速 110→100 返回切换被延迟。**根治**：`scheduleFlush(eager)`，in-flight 期间累积的批次在 ACK 落地时以 delay=0 立即发出（in-flight 往返已构成发送间隔，再等余数窗口是第二次纯人工延迟）；空闲间隔更新仍保持 50ms 节流（限制快速拖动 IPC 频率）。新增 `popup-coalescing.spec.ts` 用例断言反转批次 delay=0。
+- **假下限修正（实证链关键）**：popup 直发测量首次得到 2.8ms 是假下限——消息缺 canonical envelope 顶层字段（`tabId`/`documentId`/`generation`）被内容侧 `hasCanonicalRequestContext` 秒拒（~3ms 拒收往返），未真正执行。补全后真实内容下限 = SW contentRoundTrip 吻合。
+- **实测验收（真实浏览器 e2e，重建 dist）**：冷首次上跨（处理器冷启动 + crossfade 无爆音）~330ms 为物理一次性成本；保活跨越（处理器存活、只改增益）41/42/52/58ms——其中音频在内容侧 apply 时即生效（早于 ACK），剩余为 MV3 架构物理地板：4 跳浏览器 IPC + commit（`persistControlProjection` 多存储读 + `publishSnapshot` session.set + 广播 + `reconcileRuntimeOwnership`）+ persist（内容→SW 往返 3.5ms）。
+- **边界结论**：persist（3.5ms）与 commit（~8ms）的进一步优化被评估为高风险（persist 的 `.ok` 失败语义是耐久性/写入顺序契约；commit 涉及存储写入、广播与导航 fencing 的一致性），**不改**。100↔110 显示冻结（`volumeTransitionPresentation`）是刻意设计（颜色与值原子切换，禁止 110+原生色帧），保留。
+- **清理**：全部 TEMP-VolTiming 埋点（control-coordinator/spectra-tab-client/native-media-executor/config-updater/policy-executor 共 8 键）用后即删；临时测量/复现测试（measure-volume-latency、repro-volume-latency、repro-user-scenario、repro-warning-trigger、tmp-debug-inventory）已删除，证据固化本文档。
 
 > **治理重构（2026-09-15，同一会话）**：上表第 35 行"字节门 256→270KiB"已退役。字节计数的绝对上限是"魔法数字当法律"——数字随风飘、倒逼 `@__PURE__`/字符串去重这类"为凑数而做"的微优化、用口味绑架发布会。现改为 `check-production-artifacts.ts` + `scripts/production-size-policy.json` 的**复核信号 ledger**（镜像仓库 `file-length-policy.json` 治理范式）：
 > - 结构门禁保留并是唯一发布阻断：可达性、孤儿/重复/缺失、所有权、MV3 worker 单包、worker 无诊断调用、禁入产物。

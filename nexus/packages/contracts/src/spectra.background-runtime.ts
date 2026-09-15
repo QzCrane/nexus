@@ -65,7 +65,7 @@ const TAB_ID_PAYLOAD_KEYS = new Set(['tabId']);
 const REMOTE_SESSION_PAYLOAD_KEYS = new Set(['tabId']);
 const REMOTE_SESSION_CLOSE_PAYLOAD_KEYS = new Set(['tabId', 'sessionId']);
 const USER_SCRIPT_PAYLOAD_KEYS = new Set(['script']);
-const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted', 'reportRevision']);
+const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted', 'reportRevision', 'hasSubframes']);
 const CONTENT_RUNTIME_LEASE_REASONS = new Set<ContentRuntimeLeaseReason>([
 	'control',
 	'restore',
@@ -261,6 +261,7 @@ export function isTabMediaReportPayload(
 		&& hasOnlyProtocolKeys(value, TAB_MEDIA_REPORT_PAYLOAD_KEYS)
 		&& typeof value.hasMediaElement === 'boolean'
 		&& typeof value.userInteracted === 'boolean'
+		&& (value.hasSubframes === undefined || typeof value.hasSubframes === 'boolean')
 		&& (value.reportRevision === undefined || isPositiveInteger(value.reportRevision));
 }
 

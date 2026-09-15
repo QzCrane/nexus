@@ -299,12 +299,19 @@ if (!getContentBootstrapState()) {
 	const reportMediaPresence = (force = false): void => {
 		if (disposed || state.ready) return;
 		const current = document.querySelector('video,audio') !== null;
+		// A no-media verdict is only conclusive for this top-level document. When
+		// the page hosts subframes (same- or cross-origin), the media may live in
+		// one of them, which this isolated-world bootstrap cannot read. Flag that
+		// inconclusiveness so the background leaves the tab probeable instead of
+		// solidifying a durable no-media fact that would hide nested media forever.
+		const hasSubframes = document.querySelector('iframe,frame') !== null;
 		if (!force && current === lastReportedMediaPresence) return;
 		lastReportedMediaPresence = current;
 		const nextRevision = (state.mediaReportRevision ?? 0) + 1;
 		state.mediaReportRevision = nextRevision;
 		void sendBootstrapRequest('spectra.tab.media.report', {
 			hasMediaElement: current,
+			hasSubframes,
 			userInteracted: false,
 			reportRevision: nextRevision,
 		}, state.dispose).catch(() => undefined);
@@ -568,7 +575,7 @@ function sendBootstrapRequest(
 			repeated: boolean;
 		}
 		| { supported: boolean }
-		| { hasMediaElement: boolean; userInteracted: boolean; reportRevision: number }
+		| { hasMediaElement: boolean; hasSubframes?: boolean; userInteracted: boolean; reportRevision: number }
 		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {

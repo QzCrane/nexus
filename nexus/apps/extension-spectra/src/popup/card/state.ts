@@ -113,9 +113,15 @@ export function createUpdateFn(
 		];
 	};
 
-	const scheduleFlush = () => {
+	const scheduleFlush = (eager = false) => {
 		if (timer || inFlight) return;
-		const delay = Math.max(0, minSendIntervalMs - (performance.now() - lastSentAt));
+		// A batch coalesced while a request was in flight is sent as soon as the
+		// pipeline completes: the in-flight request already imposed a send gap, and
+		// holding it for the rest of `minSendIntervalMs` would add a second,
+		// purely artificial delay to a rapid reversal (e.g. 100→110→100). Idle-gap
+		// updates keep the interval so a fast drag on a fast pipeline still
+		// rate-limits its IPC instead of re-sending on every input sample.
+		const delay = eager ? 0 : Math.max(0, minSendIntervalMs - (performance.now() - lastSentAt));
 	timer = setTimeout(() => {
 			timer = null;
 			void flush().catch((error: unknown) => onError(error, state));
@@ -233,7 +239,10 @@ export function createUpdateFn(
 			render();
 			// A failed intent is requeued for an explicit subsequent user update;
 			// do not spin an automatic retry loop on a persistent coordinator error.
-			if (pending && localRevision !== sentRevision) scheduleFlush();
+			// A value batched during flight is sent immediately: the in-flight round
+			// already imposed the IPC gap, so a rapid reversal (e.g. 100→110→100)
+			// must not wait out a second, purely artificial min-send window.
+			if (pending && localRevision !== sentRevision) scheduleFlush(true);
 		});
 		return inFlight;
 	};

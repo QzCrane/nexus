@@ -27,6 +27,10 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 
 	const hasMedia = hasMediaElements();
 	const interacted = state?.userHasInteracted ?? false;
+	// Same inconclusiveness rule as the bootstrap reporter: when this top-level
+	// document has no media but hosts subframes, the media may live in a frame
+	// this world cannot read, so the background must not solidify a no-media fact.
+	const hasSubframes = document.querySelector('iframe,frame') !== null;
 
 	// The bootstrap and the runtime share one isolated-world revision counter, so
 	// the background's per-document monotonic gate accepts both producers across
@@ -40,6 +44,7 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 
 	safeSend(() => sendSpectraRequest('spectra.tab.media.report', {
 		hasMediaElement: hasMedia,
+		hasSubframes,
 		userInteracted: interacted,
 		reportRevision: nextRevision,
 	})).catch((error: unknown) => {

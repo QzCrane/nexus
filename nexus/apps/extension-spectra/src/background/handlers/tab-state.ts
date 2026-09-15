@@ -31,7 +31,12 @@ export function classifyMediaReport(
 export function recordMediaState(
 	tabId: number,
 	documentId: string,
-	payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number },
+	payload: {
+		hasMediaElement: boolean;
+		userInteracted: boolean;
+		reportRevision?: number;
+		hasSubframes?: boolean;
+	},
 ): { reported: true } {
 	// v2 legacy producers have no ordering token. Accept the additive wire shape,
 	// but never let an unordered report create or replace a current media fact.
@@ -43,6 +48,16 @@ export function recordMediaState(
 	state.reportRevision = ordering.revision;
 	// The content script report is the authoritative source: solidify the media
 	// fact immediately (auto-corrects media removal/loading).
+	//
+	// EXCEPTION: a top-level no-media report on a page that hosts subframes is
+	// inconclusive — the media may live in a same- or cross-origin frame that
+	// the isolated-world reporter cannot read. Solidifying that would durably
+	// hide nested media: the all-frames probe is skipped for current facts, so
+	// the tab would never be re-examined. Leave such tabs probeable instead.
+	if (!payload.hasMediaElement && payload.hasSubframes === true) {
+		/* @__PURE__ */ swLog.debug(`[SPECTRA] Tab ${tabId} top frame reports no media but hosts subframes; probe will arbitrate`);
+		return { reported: true };
+	}
 	mediaFacts.rememberMediaFact(tabId, documentId, payload.hasMediaElement ? 'found' : 'no-media', 'report');
 
 	/* @__PURE__ */ swLog.debug(`[SPECTRA] Tab ${tabId} reported media: ${payload.hasMediaElement}`);
