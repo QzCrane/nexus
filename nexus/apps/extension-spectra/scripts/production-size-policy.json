@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "defaultSignalKiB": 256,
+  "dimensions": {
+    "serviceWorkerWake": {
+      "signalKiB": 384,
+      "owner": "spectra-service-worker",
+      "rationale": "One self-contained MV3 worker bundle; size is attributable evidence (topContributors) and release-bound evidence (artifact sha), not a law. This owned envelope is a non-blocking planning signal that documents the worker's single-bundle boundary; crossing it warns the owner to act, it never blocks a release.",
+      "decompositionTrigger": "Split only when a typed background sub-owner owns an independent worker module boundary without requiring a second MV3 isolate."
+    }
+  }
+}

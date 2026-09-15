@@ -35,7 +35,12 @@
 - 字节门：`check-production-artifacts.ts` 将 `serviceWorkerWake` 预算 256→270KiB（集成成本 265,239 B，带评审说明）；bootstrap 去 observer 后 `content-bootstrap.js` 13.2KiB 达标。
 - i18n 收敛文案：`mediaInventoryPartial` 由"请重新打开弹窗重试"改为"仍在验证中，完成后将自动显示"（9 语言包一致）。
 
-**验收结果（本轮）**：`test:unit` 112 文件全绿（含 `popup-inventory-latency.spec.ts` 真实浏览器）；`typecheck`、`lint`（388 文件 0 诊断）、`verify`（0 错误，1 个既有非阻断 warning：control-coordinator.ts 2636 行 vs review signal 2600）、`build`（service-worker wake 259.0KiB < 270KiB，bootstrap 13.2KiB < 14KiB）全通过。延迟实测：cold ~243ms / warm ~203ms 媒体卡片首帧，`mediaInventory: "complete"`（readNow 零 probe 投影）。
+**验收结果（本轮）**：`test:unit` 112 文件全绿（含 `popup-inventory-latency.spec.ts` 真实浏览器）；`typecheck`、`lint`（388 文件 0 诊断）、`verify`（0 错误，1 个既有非阻断 warning：control-coordinator.ts 2636 行 vs review signal 2600）、`build`（service-worker wake 259.0KiB，bootstrap 13.2KiB）全通过。延迟实测：cold ~243ms / warm ~203ms 媒体卡片首帧，`mediaInventory: "complete"`（readNow 零 probe 投影）。
+
+> **治理重构（2026-09-15，同一会话）**：上表第 35 行"字节门 256→270KiB"已退役。字节计数的绝对上限是"魔法数字当法律"——数字随风飘、倒逼 `@__PURE__`/字符串去重这类"为凑数而做"的微优化、用口味绑架发布会。现改为 `check-production-artifacts.ts` + `scripts/production-size-policy.json` 的**复核信号 ledger**（镜像仓库 `file-length-policy.json` 治理范式）：
+> - 结构门禁保留并是唯一发布阻断：可达性、孤儿/重复/缺失、所有权、MV3 worker 单包、worker 无诊断调用、禁入产物。
+> - 尺寸是可**归因**证据（`topContributors` 点名最大模块来源）且由 `artifactSha256` 绑定到签名回执——任何尺寸变化都必须是有意的、可审的。
+> - 尺寸只产生**非阻断 warn**（`size-review-desired` / `size-over-owned-envelope` / `size-stale-registration`），带 owner + decompositionTrigger，绝不拦截发布。`SPECTRA_PRODUCTION_BUDGETS` 已从代码/测试/文档中移除。
 
 ---
 

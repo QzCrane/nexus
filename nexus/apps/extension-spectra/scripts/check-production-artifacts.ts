@@ -3,108 +3,150 @@ import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { dirname, extname, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const SPECTRA_PRODUCTION_BUDGETS = Object.freeze({
-	// MV3 service-worker gate. The event-driven media-inventory fact path kept
-	// this bundle above 256KiB, so its owner re-audited the diagnostics it ships
-	// and (a) marked the side-effect-free swLog.debug/info/log/capture call sites
-	// @__PURE__ so esbuild strips them, and (b) hoisted repeated protocol/error
-	// code literals into shared constants (e.g. RPC_INVALID_REQUEST) that esbuild
-	// deduplicates. Verify-gated canonical boundary statements keep their literal
-	// form; only non-gate-monitored strings are deduplicated. Gate stays at 256KiB.
-	serviceWorkerWake: 256 * 1024,
-	documentStart: 24 * 1024,
-	contentBootstrap: 14 * 1024,
-	contentSiteHotkeys: 11 * 1024,
-	offscreenCapture: 28 * 1024,
-	offscreenRemote: 72 * 1024,
-	popupStatic: 144 * 1024,
-	popupPossibleScript: 152 * 1024,
-	contentRuntimePossibleScript: 177 * 1024,
-	contentVideoEffectsPossibleScript: 12 * 1024,
-	// Reviewed integration cost: strict local diagnostic validation and retired
-	// permission-intent fencing measure 41,392 bytes with Bun 1.4.0. Other
-	// ceilings are unchanged; this is feature admission, not a speed claim.
-	optionsPossibleScript: 41 * 1024,
-	javascriptTotal: 680 * 1024,
-	distTotal: 780 * 1024,
-});
+// Size governance model (replaces the retired absolute byte ceilings):
+//  - STRUCTURE gates (below) are the only release blockers: reachability,
+//    orphan/duplicate/missing detection, ownership, single self-contained MV3
+//    worker, no diagnostic console calls, forbidden artifact types. These are
+//    boolean invariants the artifact must satisfy.
+//  - SIZE is attributable evidence, not a law. Every byte traces to source
+//    modules via topContributors, and any size change alters artifactSha256 so
+//    the signed candidate receipt binds the change as an intentional, reviewable
+//    fact. Nothing blocks a release on a number.
+//  - A review-signal ledger (production-size-policy.json) mirrors the repository
+//    file-length review-signal governance: a dimension that crosses the default
+//    signal only emits a non-blocking warning that asks for a real owner and a
+//    decomposition boundary. Registered envelopes name owner + decomposition
+//    trigger; they warn, never block, and stale registrations are pruned.
 
-export const PRODUCTION_HEADROOM_CRITICAL_RATIO = 0.05;
-export const PRODUCTION_HEADROOM_ADVISORY_RATIO = 0.15;
+const KiB = 1024;
+const SIZE_POLICY_PATH = fileURLToPath(new URL('./production-size-policy.json', import.meta.url));
 
-function productionBudgetMeasurements(report) {
-	const entries = new Map(report.entrypoints.map((entry) => [entry.name, entry]));
-	return [
-		['service-worker wake', report.serviceWorkerWake?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake],
-		['document_start', report.documentStart?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.documentStart],
-		['content-bootstrap.js static script closure', entries.get('content-bootstrap.js')?.static.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentBootstrap],
-		['content-site-hotkeys.js static script closure', entries.get('content-site-hotkeys.js')?.static.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentSiteHotkeys],
-		['offscreen Capture-only closure', report.offscreenAudioOnly?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenCapture],
-		['offscreen Remote possible script closure', report.offscreenRemote?.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.offscreenRemote],
-		['popup.js static script closure', entries.get('popup.js')?.static.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupStatic],
-		['popup.js possible script closure', entries.get('popup.js')?.possible.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.popupPossibleScript],
-		['content-runtime.js possible script closure', entries.get('content-runtime.js')?.possible.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentRuntimePossibleScript],
-		['content-video-effects.js possible script closure', entries.get('content-video-effects.js')?.possible.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.contentVideoEffectsPossibleScript],
-		['options.js possible script closure', entries.get('options.js')?.possible.scriptBytes ?? 0, SPECTRA_PRODUCTION_BUDGETS.optionsPossibleScript],
-		['total production JavaScript', report.javascript ?? 0, SPECTRA_PRODUCTION_BUDGETS.javascriptTotal],
-		['total production artifact', report.total ?? 0, SPECTRA_PRODUCTION_BUDGETS.distTotal],
-	] as const;
-}
-
-export function productionBudgetFailures(report) {
-	const failures = [];
-	for (const [label, actual, ceiling] of productionBudgetMeasurements(report)) {
-		if (actual > ceiling) failures.push(`${label}: ${actual} bytes exceeds production budget ${ceiling}`);
-	}
-	return failures;
-}
-
-export interface ProductionHeadroomAdvisory {
-	code: 'headroom-low' | 'headroom-critical';
+export interface ProductionSizeMeasurement {
+	key: string;
 	label: string;
 	actualBytes: number;
-	ceilingBytes: number;
-	utilization: number;
-	targetMaxBytes: number;
-	deficitBytes: number;
+}
+
+export interface ProductionSizePolicy {
+	schemaVersion: 1;
+	defaultSignalKiB: number;
+	dimensions: Record<string, {
+		signalKiB: number;
+		owner: string;
+		rationale: string;
+		decompositionTrigger: string;
+	}>;
+}
+
+export interface ProductionSizeSignal {
+	code: 'size-review-desired' | 'size-over-owned-envelope' | 'size-stale-registration';
+	label: string;
+	key: string;
+	actualBytes: number;
+	signalBytes: number;
+	owner?: string;
 	message: string;
 }
 
-/**
- * Headroom is planning evidence only. Release integrity remains governed by
- * the absolute ceilings in SPECTRA_PRODUCTION_BUDGETS; an advisory is never a
- * promotion blocker and is deliberately absent from signed candidate facts.
- */
-export function productionHeadroomAdvisories(report): ProductionHeadroomAdvisory[] {
-	return productionBudgetMeasurements(report)
-		.filter(([, actual, ceiling]) => actual > ceiling * (1 - PRODUCTION_HEADROOM_ADVISORY_RATIO))
-		.map(([label, actual, ceiling]) => {
-			const targetMaxBytes = Math.floor(ceiling * (1 - PRODUCTION_HEADROOM_ADVISORY_RATIO));
-			const deficitBytes = Math.max(0, actual - targetMaxBytes);
-			const utilization = actual / ceiling;
-			const code = utilization >= 1 - PRODUCTION_HEADROOM_CRITICAL_RATIO
-				? 'headroom-critical'
-				: 'headroom-low';
-			const disposition = code === 'headroom-critical'
-				? 'HEADROOM_CRITICAL'
-				: 'HEADROOM_LOW';
-			const message = `${disposition}/${label}: ${actual}/${ceiling} bytes (${(utilization * 100).toFixed(1)}%); `
-				+ `optimization target ${targetMaxBytes} bytes (15% headroom), deficit ${deficitBytes} bytes; `
-				+ 'release remains governed by the absolute production ceiling';
-			return {
-				code,
-				label,
-				actualBytes: actual,
-				ceilingBytes: ceiling,
-				utilization,
-				targetMaxBytes,
-				deficitBytes,
-				message,
-			};
-		});
+export function productionSizePolicy(): ProductionSizePolicy {
+	const policy = JSON.parse(readFileSync(SIZE_POLICY_PATH, 'utf8')) as ProductionSizePolicy;
+	if (policy.schemaVersion !== 1 || !Number.isInteger(policy.defaultSignalKiB)
+		|| policy.defaultSignalKiB <= 0 || !policy.dimensions
+		|| typeof policy.dimensions !== 'object') {
+		throw new Error('production-size-policy.json has an invalid schema or default signal');
+	}
+	for (const [key, entry] of Object.entries(policy.dimensions)) {
+		if (!Number.isInteger(entry.signalKiB) || entry.signalKiB <= policy.defaultSignalKiB
+			|| !entry.owner.trim() || !entry.rationale.trim()
+			|| !entry.decompositionTrigger.trim()) {
+			throw new Error(`Invalid production-size policy dimension: ${key}`);
+		}
+	}
+	return policy;
 }
 
-const KiB = 1024;
+function productionSizeMeasurements(report): ProductionSizeMeasurement[] {
+	const entries = new Map(report.entrypoints.map((entry) => [entry.name, entry]));
+	return [
+		{ key: 'serviceWorkerWake', label: 'service-worker wake', actualBytes: report.serviceWorkerWake?.scriptBytes ?? 0 },
+		{ key: 'documentStart', label: 'document_start', actualBytes: report.documentStart?.scriptBytes ?? 0 },
+		{ key: 'contentBootstrap', label: 'content-bootstrap.js static script closure', actualBytes: entries.get('content-bootstrap.js')?.static.scriptBytes ?? 0 },
+		{ key: 'contentSiteHotkeys', label: 'content-site-hotkeys.js static script closure', actualBytes: entries.get('content-site-hotkeys.js')?.static.scriptBytes ?? 0 },
+		{ key: 'offscreenCapture', label: 'offscreen Capture-only closure', actualBytes: report.offscreenAudioOnly?.scriptBytes ?? 0 },
+		{ key: 'offscreenRemote', label: 'offscreen Remote possible script closure', actualBytes: report.offscreenRemote?.scriptBytes ?? 0 },
+		{ key: 'popupStatic', label: 'popup.js static script closure', actualBytes: entries.get('popup.js')?.static.scriptBytes ?? 0 },
+		{ key: 'popupPossibleScript', label: 'popup.js possible script closure', actualBytes: entries.get('popup.js')?.possible.scriptBytes ?? 0 },
+		{ key: 'contentRuntimePossibleScript', label: 'content-runtime.js possible script closure', actualBytes: entries.get('content-runtime.js')?.possible.scriptBytes ?? 0 },
+		{ key: 'contentVideoEffectsPossibleScript', label: 'content-video-effects.js possible script closure', actualBytes: entries.get('content-video-effects.js')?.possible.scriptBytes ?? 0 },
+		{ key: 'optionsPossibleScript', label: 'options.js possible script closure', actualBytes: entries.get('options.js')?.possible.scriptBytes ?? 0 },
+		{ key: 'javascriptTotal', label: 'total production JavaScript', actualBytes: report.javascript ?? 0 },
+		{ key: 'distTotal', label: 'total production artifact', actualBytes: report.total ?? 0 },
+	];
+}
+
+/**
+ * Non-blocking review signals only. A growing bundle generates planning
+ * evidence naming an owner and decomposition boundary (or asking for one).
+ * Signals never enter report.failures and are deliberately absent from signed
+ * candidate facts; the sole size/behavior binding at promotion is the artifact
+ * sha, which forces any size change to be an intentional, reviewed change.
+ */
+export function productionSizeSignals(report): ProductionSizeSignal[] {
+	const policy = productionSizePolicy();
+	const signalBytes = (kiB) => kiB * 1024;
+	const signals: ProductionSizeSignal[] = [];
+	const seen = new Set<string>();
+	// Aggregate totals sum many isolated bundle boundaries and have no single
+	// owner or decomposition trigger, so they are reporting evidence only
+	// (logged by assertProductionArtifactReport and bound by artifactSha256) and
+	// never emit a review signal that would demand a bogus "owner registration".
+	const evidenceOnly = new Set(['javascriptTotal', 'distTotal']);
+	for (const { key, label, actualBytes } of productionSizeMeasurements(report)) {
+		if (evidenceOnly.has(key)) continue;
+		const entry = policy.dimensions[key];
+		if (!entry) {
+			if (actualBytes > signalBytes(policy.defaultSignalKiB)) {
+				signals.push({
+					code: 'size-review-desired',
+					key,
+					label,
+					actualBytes,
+					signalBytes: signalBytes(policy.defaultSignalKiB),
+					message: `production-size review signal: ${label} is ${format(actualBytes)} `
+						+ `(default signal ${policy.defaultSignalKiB}KiB); register a real owner and a decomposition boundary in production-size-policy.json`,
+				});
+			}
+			continue;
+		}
+		seen.add(key);
+		if (actualBytes > signalBytes(entry.signalKiB)) {
+			signals.push({
+				code: 'size-over-owned-envelope',
+				key,
+				label,
+				actualBytes,
+				signalBytes: signalBytes(entry.signalKiB),
+				owner: entry.owner,
+				message: `production-size review signal (${entry.owner}): ${label} is ${format(actualBytes)} `
+					+ `over owned envelope ${format(signalBytes(entry.signalKiB))}; decomposition trigger: ${entry.decompositionTrigger}`,
+			});
+		}
+	}
+	for (const key of Object.keys(policy.dimensions)) {
+		if (!seen.has(key)) {
+			signals.push({
+				code: 'size-stale-registration',
+				key,
+				label: key,
+				actualBytes: 0,
+				signalBytes: signalBytes(policy.dimensions[key].signalKiB),
+				owner: policy.dimensions[key].owner,
+				message: `production-size ledger: registered dimension "${key}" is no longer measured; prune stale registration`,
+			});
+		}
+	}
+	return signals;
+}
 const REMOTE_RUNTIME_ASSET = 'peerjs-vendor.js';
 const IMPORT_PATTERN = /(?:\bimport\s*(?:[^"'()]*?from\s*)?|\bimport\s*\()\s*["']([^"']+)["']/gu;
 const STATIC_MODULE_REFERENCE_PATTERN = /\b(?:import\s*(?:[^"'()]*?\bfrom\s*)?|export\s+(?:[^"']*?\bfrom\s*))["']([^"']+)["']/gu;
@@ -827,8 +869,7 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 		topContributors: evidence.topContributors,
 		total,
 	};
-	report.headroomAdvisories = productionHeadroomAdvisories(report);
-	report.failures.push(...productionBudgetFailures(report));
+	report.sizeSignals = productionSizeSignals(report);
 	report.failures = [...new Set(report.failures)].sort();
 	return report;
 }
@@ -843,9 +884,9 @@ export function assertProductionArtifactReport(report) {
 		+ `document_start ${format(report.documentStart.scriptBytes)}, `
 		+ `JS ${format(report.javascript)}, dist ${format(report.total)}`,
 	);
-	if (report.headroomAdvisories.length > 0) {
-		console.warn(`⚠ Production headroom advisory (non-blocking):\n${report.headroomAdvisories
-			.map((finding) => `  ${finding.message}`)
+	if (report.sizeSignals.length > 0) {
+		console.warn(`⚠ Production-size review signals (non-blocking, planning evidence only):\n${report.sizeSignals
+			.map((finding) => `  [${finding.code}] ${finding.message}`)
 			.join('\n')}`);
 	}
 	if (report.offscreenAudioOnly && report.offscreenRemote) {

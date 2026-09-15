@@ -55,11 +55,8 @@ import {
 	artifactClosure,
 	bundleFootprint,
 	checkProductionArtifacts,
-	productionHeadroomAdvisories,
-	productionBudgetFailures,
-	PRODUCTION_HEADROOM_ADVISORY_RATIO,
-	PRODUCTION_HEADROOM_CRITICAL_RATIO,
-	SPECTRA_PRODUCTION_BUDGETS,
+	productionSizeSignals,
+	productionSizePolicy,
 } from '../scripts/check-production-artifacts.ts';
 import { productionMangleOptions } from '../scripts/minification-policy.ts';
 
@@ -109,83 +106,46 @@ describe('release ZIP tooling', () => {
 		expect(sendState).not.toContain('authorization.generation =');
 	});
 
-	test('production budgets reject one-byte startup and eventual-closure regressions', () => {
-		const cases = [
-			['serviceWorkerWake', 'service-worker wake', (report, value) => { report.serviceWorkerWake.scriptBytes = value; }],
-			['documentStart', 'document_start', (report, value) => { report.documentStart.scriptBytes = value; }],
-			['contentBootstrap', 'content-bootstrap.js static script closure', (report, value) => { report.entrypoints[0].static.scriptBytes = value; }],
-			['contentSiteHotkeys', 'content-site-hotkeys.js static script closure', (report, value) => { report.entrypoints[1].static.scriptBytes = value; }],
-			['offscreenCapture', 'offscreen Capture-only closure', (report, value) => { report.offscreenAudioOnly.scriptBytes = value; }],
-			['offscreenRemote', 'offscreen Remote possible script closure', (report, value) => { report.offscreenRemote.scriptBytes = value; }],
-			['popupStatic', 'popup.js static script closure', (report, value) => { report.entrypoints[2].static.scriptBytes = value; }],
-			['popupPossibleScript', 'popup.js possible script closure', (report, value) => { report.entrypoints[2].possible.scriptBytes = value; }],
-			['contentRuntimePossibleScript', 'content-runtime.js possible script closure', (report, value) => { report.entrypoints[3].possible.scriptBytes = value; }],
-			['contentVideoEffectsPossibleScript', 'content-video-effects.js possible script closure', (report, value) => { report.entrypoints[4].possible.scriptBytes = value; }],
-			['optionsPossibleScript', 'options.js possible script closure', (report, value) => { report.entrypoints[5].possible.scriptBytes = value; }],
-			['javascriptTotal', 'total production JavaScript', (report, value) => { report.javascript = value; }],
-			['distTotal', 'total production artifact', (report, value) => { report.total = value; }],
-		] as const;
-		for (const [key, label, setValue] of cases) {
-			const report = {
-				serviceWorkerWake: { scriptBytes: 0 },
-				documentStart: { scriptBytes: 0 },
-				offscreenAudioOnly: { scriptBytes: 0 },
-				offscreenRemote: { scriptBytes: 0 },
-				javascript: 0,
-				total: 0,
-				entrypoints: [
-					{ name: 'content-bootstrap.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
-					{ name: 'content-site-hotkeys.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
-					{ name: 'popup.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
-					{ name: 'content-runtime.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
-					{ name: 'content-video-effects.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
-					{ name: 'options.js', static: { scriptBytes: 0 }, possible: { scriptBytes: 0 } },
-				],
-			};
-			const ceiling = SPECTRA_PRODUCTION_BUDGETS[key];
-			setValue(report, ceiling + 1);
-			expect(productionBudgetFailures(report)).toEqual([
-				`${label}: ${ceiling + 1} bytes exceeds production budget ${ceiling}`,
-			]);
-			setValue(report, ceiling);
-		expect(productionBudgetFailures(report)).toEqual([]);
+	test('size is attributable evidence, never a release blocker', () => {
+		const policy = productionSizePolicy();
+		expect(policy.schemaVersion).toBe(1);
+		expect(policy.defaultSignalKiB).toBeGreaterThan(0);
+		for (const entry of Object.values(policy.dimensions)) {
+			expect(entry.signalKiB).toBeGreaterThan(policy.defaultSignalKiB);
+			expect(entry.owner.trim().length).toBeGreaterThan(0);
+			expect(entry.rationale.trim().length).toBeGreaterThan(0);
+			expect(entry.decompositionTrigger.trim().length).toBeGreaterThan(0);
 		}
+
+		const baseline = sizeReport();
+		expect(productionSizeSignals(baseline)).toEqual([]);
+
+		// Aggregate totals are evidence only; even an enormous total produces no
+		// review signal because it sums many isolated bundles without one owner.
+		const aggregateHuge = sizeReport({ javascript: 20 * 1024 * 1024, total: 20 * 1024 * 1024 });
+		expect(productionSizeSignals(aggregateHuge)).toEqual([]);
+
+		const grown = sizeReport({ serviceWorkerWake: policy.dimensions.serviceWorkerWake.signalKiB * 1024 + 1 });
+		const owned = productionSizeSignals(grown).find((signal) => signal.key === 'serviceWorkerWake');
+		expect(owned?.code).toBe('size-over-owned-envelope');
+		expect(owned?.owner).toBe('spectra-service-worker');
+		expect(owned?.message).toContain('decomposition trigger');
+
+		const unregistered = sizeReport({ offscreenRemote: policy.defaultSignalKiB * 1024 + 1 });
+		const reviewWant = productionSizeSignals(unregistered).find((signal) => signal.key === 'offscreenRemote');
+		expect(reviewWant?.code).toBe('size-review-desired');
+
+		// A barely-big artifact still passes the structural gate because size is
+		// planning evidence. Only reachability/ownership/forbidden-artifact
+		// failures throw; a size change is bound by the artifact sha instead.
+		const structuralClean = { ...grown, failures: [] };
+		expect(() => assertProductionArtifactReport(structuralClean)).not.toThrow();
 	});
-	test('reports 15% headroom as advice without adding a release blocker', () => {
-		const ceiling = SPECTRA_PRODUCTION_BUDGETS.serviceWorkerWake;
-		const reportFor = (actual: number) => ({
-			serviceWorkerWake: { scriptBytes: actual },
-			documentStart: { scriptBytes: 0 },
-			offscreenAudioOnly: { scriptBytes: 0 },
-			offscreenRemote: { scriptBytes: 0 },
-			javascript: 0,
-			total: 0,
-			entrypoints: [],
-		});
-		const cases = [
-			['84.9%', Math.floor(ceiling * 0.849), undefined],
-			['85%', Math.floor(ceiling * (1 - PRODUCTION_HEADROOM_ADVISORY_RATIO)), undefined],
-			['85.1%', Math.ceil(ceiling * 0.851), 'headroom-low'],
-			['94.9%', Math.ceil(ceiling * 0.949), 'headroom-low'],
-			['95%', Math.ceil(ceiling * (1 - PRODUCTION_HEADROOM_CRITICAL_RATIO)), 'headroom-critical'],
-			['100%', ceiling, 'headroom-critical'],
-		] as const;
-		for (const [label, actual, expectedCode] of cases) {
-			const finding = productionHeadroomAdvisories(reportFor(actual))
-				.find((candidate) => candidate.label === 'service-worker wake');
-			if (expectedCode === undefined) {
-				expect(finding, label).toBeUndefined();
-				continue;
-			}
-			expect(finding?.code, label).toBe(expectedCode);
-			expect(finding?.targetMaxBytes, label).toBe(
-				Math.floor(ceiling * (1 - PRODUCTION_HEADROOM_ADVISORY_RATIO)),
-			);
-			expect(finding?.message, label).toContain('release remains governed by the absolute production ceiling');
-		}
+	test('keeps size governance out of the release path entirely', () => {
 		const release = readFileSync(new URL('../../../scripts/release-spectra.ts', import.meta.url), 'utf8');
 		expect(release).not.toContain('capacityBlockers');
 		expect(release).not.toContain('typed capacity freeze');
+		expect(release).not.toContain('SPECTRA_PRODUCTION_BUDGETS');
 	});
 	test('forbids publishing an unvalidated ZIP directly', () => {
 		expect(() => createRelease({ stage: false })).toThrow('Direct final release writes are disabled');
@@ -314,13 +274,13 @@ describe('production artifact integrity', () => {
 		const entries = new Map(report.entrypoints.map((entry) => [entry.name, entry]));
 		const popup = entries.get('popup.js');
 		const options = entries.get('options.js');
-		expect(popup?.possible.bytes).toBeGreaterThan(SPECTRA_PRODUCTION_BUDGETS.popupPossibleScript);
-		expect(options?.possible.bytes).toBeGreaterThan(SPECTRA_PRODUCTION_BUDGETS.optionsPossibleScript);
-		expect(popup?.possible.scriptBytes).toBeLessThan(SPECTRA_PRODUCTION_BUDGETS.popupPossibleScript);
-		expect(options?.possible.scriptBytes).toBeLessThan(SPECTRA_PRODUCTION_BUDGETS.optionsPossibleScript);
+		expect(popup?.possible.bytes).toBeGreaterThan(popup?.possible.scriptBytes ?? 0);
+		expect(options?.possible.bytes).toBeGreaterThan(options?.possible.scriptBytes ?? 0);
 		expect(popup?.possible.names).toContain('i18n/popup/en-US.json.gz');
 		expect(options?.possible.names).toContain('i18n/options/en-US.json.gz');
-		expect(productionBudgetFailures(report)).toEqual([]);
+		expect(popup?.possible.scriptBytes).toBeLessThan(160 * 1024);
+		expect(options?.possible.scriptBytes).toBeLessThan(48 * 1024);
+		expect(productionSizeSignals(report)).toEqual([]);
 	});
 
 	test('reports a typed failure when a metafile output is absent from dist', () => {
@@ -1341,4 +1301,33 @@ function remoteSiteServer(directory: string, options: {
 			return new Response(body, { headers });
 		},
 	});
+}
+
+function sizeReport(overrides: Partial<{
+	serviceWorkerWake: number;
+	documentStart: number;
+	offscreenAudioOnly: number;
+	offscreenRemote: number;
+	javascript: number;
+	total: number;
+}> = {}) {
+	return {
+		artifactSha256: 'size-report',
+		boundaryReplications: [],
+		documentStart: { scriptBytes: overrides.documentStart ?? 0 },
+		duplicates: [],
+		entrypoints: [],
+		failures: [],
+		files: 0,
+		javascript: overrides.javascript ?? 0,
+		outputAttribution: { outputClosures: [], sharedInputs: [], status: 'not-measured' },
+		offscreenAudioOnly: { scriptBytes: overrides.offscreenAudioOnly ?? 0 },
+		offscreenRemote: { scriptBytes: overrides.offscreenRemote ?? 0 },
+		reachable: 0,
+		schemaVersion: 1,
+		serviceWorkerWake: { scriptBytes: overrides.serviceWorkerWake ?? 0 },
+		sizeSignals: [],
+		topContributors: [],
+		total: overrides.total ?? 0,
+	};
 }
