@@ -863,17 +863,18 @@ export async function reconcileCaptureStates(): Promise<void> {
 			if (snapshot?.actualMode !== 'capture') return;
 			const state = getSession(tabId);
 			state.identity = snapshot;
-			state.generation = snapshot.generation + 1;
+			state.generation = Math.max(state.generation, snapshot.generation);
 			state.phase = 'error';
 			state.active = false;
 			state.lastError = 'The capture processor was lost while the service worker restarted';
 			captureStates.set(tabId, false);
-			await publishAcknowledgedCaptureState(tabId, state, {
-				actualMode: 'bypass',
-				phase: 'error',
-				config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
-				error: state.lastError,
-			});
+			// The processor is genuinely absent: broadcast an honest live state but
+			// leave the persisted AudioSessionSnapshot untouched. That snapshot is
+			// the durable "a processor session should be alive here" fact that keeps
+			// worker-restart startup from disposing the content runtime; overwriting
+			// it with bypass/error would force a full cold start on the next >100
+			// crossing instead of re-establishing only the lost capture processor.
+			publishCaptureState(tabId, state);
 		});
 	}
 }

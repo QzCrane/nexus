@@ -4,6 +4,7 @@
 import {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	isDefaultAudioConfig,
+	type AudioSessionSnapshot,
 	type ContentRuntimeSourceOwnership,
 	type HotkeySettings,
 } from '@nexus/contracts';
@@ -11,6 +12,8 @@ import { swLog } from '../shared/logger';
 import { resolveSiteHotkeys, type SiteHotkeyRuntimeMode } from '../shared/site-hotkey-mode';
 import { settingsRepository } from './settings-repository';
 import { storage } from './state';
+import { getAudioSession } from './audio-session-store';
+import { RUNTIME_OWNER_CAPABILITY } from './control-coordinator';
 import {
 	ensureContentRuntime,
 	reconcileHotkeyRuntimeLease,
@@ -41,7 +44,20 @@ export interface RuntimeRestartStartupPort {
 	releaseRecoveryRuntime(target: RuntimeRestartTarget): void;
 	resolvePersistentRestoreCapability(target: RuntimeRestartTarget): Promise<string | null>;
 	retainRestoreRuntime(target: RuntimeRestartTarget, capability: string): Promise<void>;
+	/** True when the persisted processor session demands the content runtime stay alive. */
+	resolvePersistentAudioSession(target: RuntimeRestartTarget): Promise<boolean>;
+	retainAudioSessionRuntime(target: RuntimeRestartTarget): Promise<void>;
 	reconcileHotkeys(target: RuntimeRestartTarget, settings: HotkeySettings): Promise<SiteHotkeyRuntimeMode>;
+}
+
+// A held audio processor session (live, and required to keep amplifying/DSP-ing
+// the media) is owned by the content runtime. Its persisted snapshot is the
+// durable truth that must survive an MV3 worker restart: otherwise the startup
+// orphan sweep disposes the runtime, destroying the webaudio/capture session,
+// and the next up-cross (>100 boundary) cold-starts the processor.
+function isPersistedProcessorSession(snapshot: AudioSessionSnapshot): boolean {
+	return (snapshot.actualMode === 'capture' || snapshot.actualMode === 'webaudio')
+		&& snapshot.phase === 'active';
 }
 
 function hasOwnedSource(status: RuntimeRestartStatus): boolean {
@@ -106,6 +122,31 @@ const chromePort: RuntimeRestartStartupPort = {
 			throw new Error('Worker-restart restore owner resolved to a stale document');
 		}
 	},
+	async resolvePersistentAudioSession(target) {
+		const snapshot = await getAudioSession(target.tabId).catch(() => null);
+		return snapshot !== null && isPersistedProcessorSession(snapshot);
+	},
+	async retainAudioSessionRuntime(target) {
+		// Reuse the exact owned-control lease a live commit would hold. The next
+		// reconcileRuntimeOwnership sees it already acquired and skips re-ensure;
+		// when the processor ownership flips back to neutral it releases this same
+		// lease through the canonical path, so no dedicated teardown wiring is needed.
+		const ready = await ensureContentRuntime(
+			target.tabId,
+			target.documentId,
+			'control',
+			RUNTIME_OWNER_CAPABILITY,
+		);
+		if (ready.documentId !== target.documentId) {
+			releaseContentRuntimeLease(
+				target.tabId,
+				ready.documentId,
+				'control',
+				RUNTIME_OWNER_CAPABILITY,
+			);
+			throw new Error('Audio-session hold retained a stale runtime document');
+		}
+	},
 	async reconcileHotkeys(target, settings) {
 		const resolved = resolveSiteHotkeys(target.url, settings);
 		await reconcileHotkeyRuntimeLease(
@@ -147,12 +188,23 @@ export async function recoverDocumentRuntimeOnWorkerStartup(
 		},
 		async restoreDocumentOwnership() {
 			const restoreCapability = await port.resolvePersistentRestoreCapability(target);
-			if (!restoreCapability) return;
-			durableOwner = true;
-			// Do not create a new heavy runtime solely for restart recovery. If one
-			// survived, retain it with exactly the capability normal restore owns;
-			// otherwise bootstrap initialization remains the load boundary.
-			if (runtimeWasPresent) await port.retainRestoreRuntime(target, restoreCapability);
+			if (restoreCapability) {
+				durableOwner = true;
+				// Do not create a new heavy runtime solely for restart recovery. If one
+				// survived, retain it with exactly the capability normal restore owns;
+				// otherwise bootstrap initialization remains the load boundary.
+				if (runtimeWasPresent) await port.retainRestoreRuntime(target, restoreCapability);
+				return;
+			}
+			// A persisted live processor session is itself a durable owner. Without
+			// this retain, the orphan sweep below disposes the runtime and the held
+			// webaudio/capture session with it, forcing a cold processor start on the
+			// next >100 crossing. Retention follows the same "only for a survivor"
+			// rule: a dead runtime is not resurrected just to hold a session.
+			if (await port.resolvePersistentAudioSession(target)) {
+				durableOwner = true;
+				if (runtimeWasPresent) await port.retainAudioSessionRuntime(target);
+			}
 		},
 		async reconcileHotkeyOwnership() {
 			const mode = await port.reconcileHotkeys(target, settings);

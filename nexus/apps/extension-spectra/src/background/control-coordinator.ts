@@ -191,7 +191,10 @@ export interface ExtensionInvocationContext {
 	target: ExtensionDocumentIdentity;
 }
 
-const RUNTIME_OWNER_CAPABILITY = 'owned-control-state';
+// Shared with worker-restart startup recovery: a persisted processor-required
+// session must retain the content runtime with this exact owned-control lease so
+// a later commit flips (and releases) it through the existing ownership logic.
+export const RUNTIME_OWNER_CAPABILITY = 'owned-control-state';
 const RUNTIME_RESIDENT_NATIVE_FIELDS = new Set<ControlField>([
 	'volumeBase',
 	'mediaMuted',

@@ -35,6 +35,7 @@ function ownedSource(): ContentRuntimeSourceOwnership {
 function harness(options: {
 	status?: Partial<RuntimeRestartStatus>;
 	restoreCapability?: string | null;
+	audioSessionDurable?: boolean;
 	hotkeyMode?: 'none' | 'lean' | 'full';
 	failRestoreResolution?: boolean;
 	failHotkeys?: boolean;
@@ -64,6 +65,13 @@ function harness(options: {
 		async retainRestoreRuntime(_target, capability) {
 			events.push(`retain-restore:${capability}`);
 		},
+		async resolvePersistentAudioSession() {
+			events.push('resolve-audio');
+			return options.audioSessionDurable ?? false;
+		},
+		async retainAudioSessionRuntime() {
+			events.push('retain-audio');
+		},
 		async reconcileHotkeys() {
 			events.push('hotkeys');
 			if (options.failHotkeys) throw new Error('hotkey reconstruction failed');
@@ -75,16 +83,17 @@ function harness(options: {
 
 describe('MV3 startup runtime recovery adapter', () => {
 	test('releases only the temporary recovery lease when a surviving runtime has no durable owner', async () => {
-		const h = harness();
-		await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
-		expect(h.events).toEqual([
-			'status',
-			'retain-recovery',
-			'resolve-restore',
-			'hotkeys',
-			'release-recovery',
-		]);
-	});
+			const h = harness();
+			await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
+			expect(h.events).toEqual([
+				'status',
+				'retain-recovery',
+				'resolve-restore',
+				'resolve-audio',
+				'hotkeys',
+				'release-recovery',
+			]);
+		});
 
 	test('reconstructs the exact restore capability before dropping the temporary lease', async () => {
 		const h = harness({ restoreCapability: 'settings:canonical.example' });
@@ -107,31 +116,62 @@ describe('MV3 startup runtime recovery adapter', () => {
 	});
 
 	test('keeps the heavy runtime through the full hotkey owner then drops only the recovery lease', async () => {
-		const h = harness({ hotkeyMode: 'full' });
+			const h = harness({ hotkeyMode: 'full' });
+			await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
+			expect(h.events).toEqual([
+				'status',
+				'retain-recovery',
+				'resolve-restore',
+				'resolve-audio',
+				'hotkeys',
+				'release-recovery',
+			]);
+		});
+
+	test('does not create a heavy restore runtime when bootstrap confirms none survived', async () => {
+			const h = harness({
+				status: { ready: false, runtimeRevision: null },
+				restoreCapability: 'settings:canonical.example',
+				hotkeyMode: 'none',
+			});
+			await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
+			expect(h.events).toEqual([
+				'status',
+				'release-recovery',
+				'resolve-restore',
+				'hotkeys',
+			]);
+			expect(h.events.some((event) => event.startsWith('retain-restore:'))).toBe(false);
+		});
+
+	test('keeps the surviving runtime for a persisted live processor session across worker restarts', async () => {
+		const h = harness({ audioSessionDurable: true });
 		await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
 		expect(h.events).toEqual([
 			'status',
 			'retain-recovery',
 			'resolve-restore',
+			'resolve-audio',
+			'retain-audio',
 			'hotkeys',
 			'release-recovery',
 		]);
 	});
 
-	test('does not create a heavy restore runtime when bootstrap confirms none survived', async () => {
+	test('does not resurrect a dead runtime for a persisted processor session', async () => {
 		const h = harness({
 			status: { ready: false, runtimeRevision: null },
-			restoreCapability: 'settings:canonical.example',
-			hotkeyMode: 'none',
+			audioSessionDurable: true,
 		});
 		await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
 		expect(h.events).toEqual([
 			'status',
 			'release-recovery',
 			'resolve-restore',
+			'resolve-audio',
 			'hotkeys',
 		]);
-		expect(h.events.some((event) => event.startsWith('retain-restore:'))).toBe(false);
+		expect(h.events).not.toContain('retain-audio');
 	});
 
 	test('retains the safety lease when restore reconstruction fails', async () => {
@@ -146,20 +186,21 @@ describe('MV3 startup runtime recovery adapter', () => {
 	});
 
 	test('retains the safety lease when hotkey reconstruction fails', async () => {
-		const h = harness({ failHotkeys: true });
-		await expect(recoverDocumentRuntimeOnWorkerStartup(
-			target,
-			DEFAULT_HOTKEY_SETTINGS,
-			h.port,
-		)).rejects.toThrow('hotkey reconstruction failed');
-		expect(h.events).toEqual([
-			'status',
-			'retain-recovery',
-			'resolve-restore',
-			'hotkeys',
-		]);
-		expect(h.events).not.toContain('release-recovery');
-	});
+			const h = harness({ failHotkeys: true });
+			await expect(recoverDocumentRuntimeOnWorkerStartup(
+				target,
+				DEFAULT_HOTKEY_SETTINGS,
+				h.port,
+			)).rejects.toThrow('hotkey reconstruction failed');
+			expect(h.events).toEqual([
+				'status',
+				'retain-recovery',
+				'resolve-restore',
+				'resolve-audio',
+				'hotkeys',
+			]);
+			expect(h.events).not.toContain('release-recovery');
+		});
 
 	test('fails closed before acquiring ownership for an unexpected surviving runtime revision', async () => {
 		const h = harness({ status: { runtimeRevision: 'old-runtime' } });

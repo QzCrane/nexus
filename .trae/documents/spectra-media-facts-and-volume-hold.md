@@ -52,6 +52,19 @@
 - **实测（真实浏览器 A/B，同 harness 同方法，2×2 样本）**：100↔110↔100 内容侧 ACK（协议触发完整热键链，含 per-press 租约 ensure×2 + OSD feedback 分发）：下行中位 104-111ms → **97-103ms**（样本区间不重叠，~5-8ms 稳定改善），上行 min 91-97ms → **89-92ms**；存储快照可见延时同步下降（store ≈ ack + 2-3ms，证明 `publishSnapshot` 仍先于 ACK 落地）。剩余 ~90ms 为本轮未触及的固定成本：每次热键的 runtime 租约 ensure×2、OSD feedback 分发、4 跳浏览器 IPC（口径为完整热键触发链，宽于前轮 41-58ms 的纯处理器保活 apply 路径，两者不同场景不可直接比较）。
 - **清理**：全部 TEMP-VolTiming 埋点（control-coordinator/spectra-tab-client/native-media-executor/config-updater/policy-executor 共 8 键）用后即删；临时测量/复现测试（measure-volume-latency、repro-volume-latency、repro-user-scenario、repro-warning-trigger、tmp-debug-inventory、tmp-latency）已删除，证据固化本文档。
 
+**本轮（2026-09-20）上跨（100→110）方向性卡顿根治**：
+- **现象**（用户实测）：100→110 依然卡顿，110→100 反而不卡顿。
+- **根因链（web 证据修正后定稿）**：上跨（>100）需要处理器放大（页面原生支持 >100 放大少见），下跨（≤100）永不进放大分支。MV3 SW 空闲回收重启后，`disposeOrphanRuntime` 把"无 durable owner"的 content runtime 拆除 → content 侧处理器会话（webaudio AudioContext，承载 boost/EQ/bass/compressor/mono/pan/delay 全部 DSP 字段）被销毁 → 下次上跨被迫全冷启动处理器 → 卡顿；下跨永不依赖处理器存活 → 永远快。
+- **关键 web 证据（修正此前"offscreen 被浏览器关闭为主因"的假设）**：Chrome offscreen 文档用 `USER_MEDIA`/`WEB_RTC` reason 创建时**无 30s 生命周期限制**（仅 `AUDIO_PLAYBACK` reason 有"不播放音频 30s 后关闭"）；offscreen 宿主跨 SW 重启存活，`reconcileCaptureStates` 的 HELLO 恢复路径（recoveredLeases）本就覆盖宿主存活场景。真正丢失的是 **content 侧 runtime/处理器**。
+- **修复（3 源码 + 2 测试）**：
+  1. `control-coordinator.ts`：导出 `RUNTIME_OWNER_CAPABILITY = 'owned-control-state'`，SW 重启启动复用同一 owned-control 租约。
+  2. `runtime-restart-startup.ts`：持久化 `AudioSessionSnapshot`（`actualMode ∈ {capture, webaudio}` 且 `phase === 'active'`）视为 durable owner；`restoreDocumentOwnership` 在 restore capability 存在时早退（原行为不变），否则 resolve 持久化 audio session，runtime 存活时用既有 `('control', RUNTIME_OWNER_CAPABILITY)` 租约 `retainAudioSessionRuntime` 保活——释放完全复用 `reconcileRuntimeOwnership` owned 状态翻转，无新增 lease reason、无泄漏；死 runtime 不复活（遵守"不为恢复新建重型 runtime"边界，bootstrap 仍是加载边界）。
+  3. `capture.ts` `reconcileCaptureStates` 丢失处理器分支：不再 `publishAcknowledgedCaptureState`（会把 session 覆盖成 bypass/error，破坏 durable 判定），改为 `publishCaptureState`（内存态 + 广播，phase='error'），保留持久化 session 的 active-capture 事实。
+  - 测试：`runtime-restart-startup.spec.ts` 新增 2 用例（存活 runtime 保留 / 死 runtime 不复活）+ 既有用例事件序列补 `resolve-audio`；`capture-reconciliation.spec.ts` 断言丢失后 session 保持 `{actualMode:'capture', phase:'active', generation:31, actualConfig:{volume:141}}` + `captureStates.get(74) === false`。
+- **被否方案**：① SW 启动主动重建 offscreen 处理器——tabCapture 首抓/激活需用户手势（`mintCaptureAdmission`/`consumeCaptureAdmission` 为 per-invocation 一次性内存授权），违规；② 新增 `'hold'` lease reason——无释放路径会泄漏。
+- **`processorOwnsScale` 无需改动**：`commitControlFields` 已把 boost（applied+controlled）持久化到 ControlSnapshot，SW 重启后 `getOrCreateSnapshot` 读回即成立（boost 跨重启无需冷探测）。
+- **验证**：`bun run test:unit` 112 文件全绿（含 runtime-restart-startup 14 例 + capture-reconciliation），`bun run typecheck` 零错误。
+
 > **治理重构（2026-09-15，同一会话）**：上表第 35 行"字节门 256→270KiB"已退役。字节计数的绝对上限是"魔法数字当法律"——数字随风飘、倒逼 `@__PURE__`/字符串去重这类"为凑数而做"的微优化、用口味绑架发布会。现改为 `check-production-artifacts.ts` + `scripts/production-size-policy.json` 的**复核信号 ledger**（镜像仓库 `file-length-policy.json` 治理范式）：
 > - 结构门禁保留并是唯一发布阻断：可达性、孤儿/重复/缺失、所有权、MV3 worker 单包、worker 无诊断调用、禁入产物。
 > - 尺寸是可**归因**证据（`topContributors` 点名最大模块来源）且由 `artifactSha256` 绑定到签名回执——任何尺寸变化都必须是有意的、可审的。

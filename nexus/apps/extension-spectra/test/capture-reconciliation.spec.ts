@@ -19,6 +19,7 @@ import {
 } from '../src/background/audio-session-store';
 import { getOffscreenLeaseCount } from '../src/background/offscreen-coordinator';
 import { mintCaptureAdmission } from '../src/background/capture-admission';
+import { captureStates } from '../src/background/state';
 
 function captureStartAdmission(tabId: number, documentId = `document-${tabId}`) {
 	return mintCaptureAdmission({
@@ -546,12 +547,17 @@ describe('capture restart reconciliation barrier', () => {
 
 			hostAudioTabs = [];
 			await reconcileCaptureStates();
+			// The lost processor is broadcast honestly as live error state, but the
+			// persisted AudioSessionSnapshot keeps its active-capture facts: it is the
+			// durable "a processor session should be alive here" authority that keeps
+			// worker-restart startup from disposing the content runtime.
 			expect(await getAudioSession(74)).toMatchObject({
-				actualMode: 'bypass',
-				phase: 'error',
-				generation: 32,
-				actualConfig: { volume: 100 },
+				actualMode: 'capture',
+				phase: 'active',
+				generation: 31,
+				actualConfig: { volume: 141 },
 			});
+			expect(captureStates.get(74)).toBe(false);
 		} finally {
 			cleanupCaptureState(74);
 			await forgetAudioSession(74);
