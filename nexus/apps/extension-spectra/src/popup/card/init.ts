@@ -7,7 +7,7 @@ import {
 } from '@nexus/contracts';
 import { isSpectraUiResponse } from '@nexus/contracts/ui-runtime';
 import { RUNTIME_OBSERVATION_PORT } from '../../shared/runtime-observation';
-import { hasKnownBackgroundRetentionInputs, readCardSnapshot } from './snapshot';
+import { hasKnownBackgroundRetentionInputs, readCardSnapshot, resolveInitialProcessorLifecycle } from './snapshot';
 import { isCurrentTopDocument } from '../../shared/top-document';
 import { registerCardRenderCallback } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
@@ -87,18 +87,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const isRemoteActive = snapshot.isRemoteActive.state === 'known' ? snapshot.isRemoteActive.value : null;
   let acknowledgedSession = snapshot.sessionSnapshot.state === 'known' ? snapshot.sessionSnapshot.value : null;
 
-	// Processor color is valid only when lifecycle and field-level actual state
-	// identify the same document. A direct runtime read may fill this role only
-	// for an acknowledged active Capture returned by the currently routed tab.
+	// Both observations are fenced to this card's exact document. Prefer the
+	// latest settled lifecycle instead of painting an older cached session first.
 	if (!audioSessionMatchesControlDocument(acknowledgedSession, controlSnapshot)) acknowledgedSession = null;
-	// An extension-page Capture request can commit before its document identity
-	// is projected into ControlSnapshot. The direct content runtime read is still
-	// routed to this exact tab and can safely prevent a false-blue Capture card;
-	// all non-Capture lifecycle colors continue to require the matched session.
-	const runtimeCaptureLifecycle = status?.actualMode === 'capture' && status.phase === 'active'
-		? status
-		: null;
-	const lifecycle = acknowledgedSession ?? runtimeCaptureLifecycle;
+	const lifecycle = resolveInitialProcessorLifecycle(status, acknowledgedSession);
+	const lifecycleFromSession = lifecycle !== null && lifecycle === acknowledgedSession;
 	const isCaptureActive = isActiveCaptureLifecycle({
 		actualMode: lifecycle?.actualMode,
 		phase: lifecycle?.phase ?? 'idle',
@@ -135,10 +128,10 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     audioDocumentId: lifecycle ? controlSnapshot?.documentId ?? null : null,
     audioOrigin: lifecycle ? controlSnapshot?.origin ?? null : null,
     audioGeneration: lifecycle?.generation ?? -1,
-	    audioConfigRevision: acknowledgedSession?.configRevision ?? 0,
+	    audioConfigRevision: lifecycleFromSession ? acknowledgedSession?.configRevision ?? 0 : 0,
     controlGeneration: controlSnapshot?.generation ?? 0,
     controlRevision: controlSnapshot?.revision ?? 0,
-    lastError: acknowledgedSession?.lastError ?? status?.lastError ?? null,
+    lastError: lifecycleFromSession ? acknowledgedSession?.lastError ?? null : status?.lastError ?? null,
     draggingField: null,
   };
 

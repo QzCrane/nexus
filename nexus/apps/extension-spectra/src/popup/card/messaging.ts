@@ -63,7 +63,7 @@ export function applyControlSnapshot(
 	state.controlSnapshot = snapshot;
 	const lifecycleMatches = state.audioDocumentId === snapshot.documentId
 		&& state.audioOrigin === snapshot.origin;
-	if (!lifecycleMatches) {
+	if (!lifecycleMatches && state.audioDocumentId !== null) {
 		state.actualMode = 'bypass';
 		state.desiredMode = 'bypass';
 		state.phase = 'idle';
@@ -74,7 +74,8 @@ export function applyControlSnapshot(
 		state.audioConfigRevision = 0;
 	}
 	state.stableConfig = mergeControlSnapshot(state.stableConfig, snapshot);
-	projectAcknowledgedProcessorLifecycle(state, snapshot.fields);
+	const sameDocument = current?.documentId === snapshot.documentId && current.origin === snapshot.origin;
+	projectAcknowledgedProcessorLifecycle(state, snapshot.fields, sameDocument ? current.fields : undefined);
 	const incoming = state.stableConfig;
 	const optimisticBeforeSnapshot = state.config;
 	const identityChanged = current !== null

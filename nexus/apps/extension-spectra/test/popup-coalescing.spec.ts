@@ -229,6 +229,29 @@ describe('Popup Background-owned control transport projection', () => {
 		expect(secondRan).toBe(true);
 	});
 
+	test('does not replay a broadcast Capture field when its settlement arrives after a session stop', () => {
+		const harness = installHarness();
+		const state = createState();
+		state.controlSnapshot = controlSnapshot(0, 1, 0);
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 110 });
+		const captured = settlement(1, { volume: 110, processor: 'capture' });
+		if (!captured.volumeAck) throw new Error('Expected volume acknowledgement');
+		applyControlSnapshot(state, {
+			...controlSnapshot(1, 1, 1),
+			fields: captured.volumeAck.fields,
+		}, () => undefined);
+		expect(state.actualMode).toBe('capture');
+		// Broadcast and Port settlement are separate deliveries of one field ACK.
+		// A current-document session stop can arrive between them.
+		state.actualMode = 'bypass';
+		state.phase = 'idle';
+		state.isCaptureActive = false;
+		harness.emit(captured);
+		expect(state.actualMode).toBe('bypass');
+		expect(resolveVolumePresentation(state).color).toBe(COLORS.NATIVE);
+	});
+
 	test('renders 100↔110 immediately while processor colour follows only current ACKs', () => {
 		const harness = installHarness();
 		const state = createState();

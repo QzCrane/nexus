@@ -65,6 +65,41 @@ worker replacement and navigation disposal. Independent production review has no
 remaining blocker. Repository push gates remain mandatory for delivery; actual
 sound in the user's live Edge tab requires user readback.
 
+User readback now confirms repeated Capture exit works. Delivery remains open:
+the card still flashes blue/purple during transitions instead of changing once.
+Trace real Popup color mutations and the ordering of audio-session lifecycle,
+control snapshots and settlement ACKs; fix the projection owner and retain the
+continuous-transition regression. The architecture gate also required the
+retired Visualizer Capture grant; replace that obsolete positive requirement
+with neutral-observation and no-admission invariants, without bypassing the gate.
+
+Color repair identified three concrete stale projections: carried old processor
+fields overwrote newer session lifecycle; the first control snapshot cleared a
+known exact-runtime Capture when session identity was not available yet; and
+initialization unconditionally preferred a cached session over a newer settled
+runtime read. The first issue has independent RED cases in both directions.
+The repair consumes only advanced processor field revisions, preserves known
+same-document runtime evidence and chooses the newest settled initial lifecycle.
+Actual Capture remains the meaning of purple; no threshold-based prediction or
+timer-based color masking is introduced. Real Popup mutation/frame traces retain
+the requirement that each completed transition changes color once without a
+later reverse flash.
+
+The initial-color defect was also reproduced in the built Chrome extension by
+returning an older same-document session only from the Popup's session-read RPC,
+while the real Content runtime retained its newer settled state. The old build
+painted purple for a newer bypass runtime. The corrected build passes both
+directions: mutation and animation-frame traces from the first visible card
+contain only blue for newer bypass and only purple for newer Capture. All other
+RPCs and physical processor operations remain real. This is controlled stale-
+read evidence, separate from confirmation in the user's existing Edge session.
+
+Final color candidate: all 109 isolated test files pass; the rebuilt production
+Chrome suite passes 48 tests / 496 assertions, including the two-direction
+first-visible-color oracle and the uninterrupted Capture transition traces.
+The six-package typecheck, strict lint, documentation and updated architecture
+owner pass; independent incremental review reports no remaining blocker.
+
 Baseline: `3f07c73b`. The user reports that Douyin live playback changes the
 displayed volume without changing sound, with Capture shown across the whole
 volume range. The recorded-video page works natively and is disrupted by forcing

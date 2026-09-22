@@ -4,6 +4,7 @@ import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import {
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
+	type ControlField,
 	type ControlFieldStates,
 	type ControlPatch,
 } from '@nexus/contracts';
@@ -25,8 +26,15 @@ export type ConfigErrorHandler = (error: unknown, state: CardInternalState) => v
 export function projectAcknowledgedProcessorLifecycle(
 	state: CardInternalState,
 	fields: ControlFieldStates,
+	previousFields: ControlFieldStates = {},
 ): void {
-	const lifecycle = resolveAcknowledgedProcessorLifecycle(fields);
+	// Snapshots carry unchanged field ACKs. Only newly acknowledged processor
+	// fields may supersede the lifecycle already observed for this document.
+	const advanced = Object.fromEntries(Object.entries(fields).filter(([field, value]) => (
+		value !== undefined
+		&& value.revision > (previousFields[field as ControlField]?.revision ?? -1)
+	))) as ControlFieldStates;
+	const lifecycle = resolveAcknowledgedProcessorLifecycle(advanced);
 	if (!lifecycle) return;
 	state.actualMode = lifecycle.actualMode;
 	state.desiredMode = lifecycle.actualMode;
@@ -118,7 +126,7 @@ export function createUpdateFn(
 			state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
 			state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
 			state.stableConfig = mergeControlFields(state.stableConfig, acknowledgement.fields);
-			projectAcknowledgedProcessorLifecycle(state, acknowledgement.fields);
+			projectAcknowledgedProcessorLifecycle(state, acknowledgement.fields, current?.fields);
 			acceptedAcknowledgement = true;
 			if (acknowledgement === response.volumeAck) acceptedVolume = true;
 		}

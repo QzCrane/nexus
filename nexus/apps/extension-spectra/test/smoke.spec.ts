@@ -5629,6 +5629,52 @@ describe('SPECTRA built extension smoke', () => {
 					frames: { [String(tabId)]: null },
 				},
 			});
+			await popup.waitForFunction(() => {
+				const slider = document.querySelector<HTMLElement>('.vol-slider');
+				return slider
+					? getComputedStyle(slider).getPropertyValue('--slider-accent').trim() === '#2563eb'
+					: false;
+			});
+			await popup.evaluate(() => {
+				type ColorFrame = { accent: string; fill: string; value: string };
+				type ColorTraceScope = Window & typeof globalThis & {
+					__spectraColorTrace?: ColorFrame[];
+					__spectraRecordColor?: () => void;
+					__spectraColorObserver?: MutationObserver;
+					__spectraColorAnimationFrame?: number;
+				};
+				const scope = window as ColorTraceScope;
+				const slider = document.querySelector<HTMLElement>('.vol-slider');
+				const fill = document.querySelector<HTMLElement>('.slider-fill');
+				const value = document.querySelector<HTMLElement>('.vol-number');
+				if (!slider || !fill || !value) throw new Error('Popup color controls are incomplete');
+				const record = () => {
+					scope.__spectraColorTrace?.push({
+						accent: getComputedStyle(slider).getPropertyValue('--slider-accent').trim(),
+						fill: getComputedStyle(fill).backgroundColor,
+						value: getComputedStyle(value).color,
+					});
+				};
+				scope.__spectraColorTrace = [];
+				scope.__spectraRecordColor = record;
+				scope.__spectraColorObserver?.disconnect();
+				scope.__spectraColorObserver = new MutationObserver(record);
+				for (const element of [slider, fill, value]) {
+					scope.__spectraColorObserver.observe(element, {
+						attributes: true,
+						attributeFilter: ['class', 'style'],
+					});
+				}
+				const sampleRenderedFrame = () => {
+					record();
+					scope.__spectraColorAnimationFrame = requestAnimationFrame(sampleRenderedFrame);
+				};
+				if (scope.__spectraColorAnimationFrame !== undefined) {
+					cancelAnimationFrame(scope.__spectraColorAnimationFrame);
+				}
+				scope.__spectraColorAnimationFrame = requestAnimationFrame(sampleRenderedFrame);
+				record();
+			});
 
 			const neutral = await eventually(
 				() => readContentStatus(unsafeUrl),
@@ -5659,6 +5705,14 @@ describe('SPECTRA built extension smoke', () => {
 			] as const;
 			let expectedCaptureStarts = captureCallsBeforePopup;
 			for (const transition of volumeTransitions) {
+				await popup.evaluate(() => {
+					const scope = window as Window & typeof globalThis & {
+						__spectraColorTrace?: unknown[];
+						__spectraRecordColor?: () => void;
+					};
+					scope.__spectraColorTrace = [];
+					scope.__spectraRecordColor?.();
+				});
 				await popup.$eval('.vol-slider', (element, value) => {
 					const slider = element as HTMLInputElement;
 					slider.value = String(value);
@@ -5710,6 +5764,20 @@ describe('SPECTRA built extension smoke', () => {
 					);
 					expect((await readSyntheticCaptureState()).calls).toBe(expectedCaptureStarts);
 				}
+				await new Promise((resolveWait) => setTimeout(resolveWait, 150));
+				const colorTrace = await popup.evaluate(() => {
+					const scope = window as Window & typeof globalThis & {
+						__spectraColorTrace?: Array<{ accent: string; fill: string; value: string }>;
+					};
+					return (scope.__spectraColorTrace ?? [])
+						.map(({ accent, fill, value }) => `${accent}|${fill}|${value}`)
+						.filter((frame, index, frames) => index === 0 || frame !== frames[index - 1]);
+				});
+				const blue = '#2563eb|rgb(37, 99, 235)|rgb(37, 99, 235)';
+				const purple = '#7c3aed|rgb(124, 58, 237)|rgb(124, 58, 237)';
+				expect(colorTrace).toEqual(
+					transition.mode === 'capture' ? [blue, purple] : [purple, blue],
+				);
 			}
 			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
 			expect((await readSyntheticCaptureState()).calls).toBe(expectedCaptureStarts);
@@ -5732,6 +5800,16 @@ describe('SPECTRA built extension smoke', () => {
 				data: { subscriberId: contentSubscriberId, generation: 2, frames: {} },
 			});
 		} finally {
+			await popup?.evaluate(() => {
+				const scope = window as Window & typeof globalThis & {
+					__spectraColorObserver?: MutationObserver;
+					__spectraColorAnimationFrame?: number;
+				};
+				scope.__spectraColorObserver?.disconnect();
+				if (scope.__spectraColorAnimationFrame !== undefined) {
+					cancelAnimationFrame(scope.__spectraColorAnimationFrame);
+				}
+			}).catch(() => undefined);
 			if (popup) await closeActionPopup(popup).catch(() => undefined);
 			await unsafePage.close().catch(() => undefined);
 			await patchExtensionSettings(settingsClient, {
@@ -5741,6 +5819,116 @@ describe('SPECTRA built extension smoke', () => {
 			await settingsClient.close().catch(() => undefined);
 		}
 	}, 20_000);
+
+	test('paints the first visible Popup card from the newest settled processor lifecycle', async () => {
+		await installPageMediaControllerHarness();
+		await installSyntheticCaptureHarness();
+		await installTabCaptureStreamIdStub();
+		const settingsClient = await openExtensionClient('options.html');
+		const settings = await patchExtensionSettings(settingsClient, {
+			scope: 'global',
+			changes: { visualizerEnabled: false },
+		});
+		const tabId = await getTabId(fixturePage.url());
+		const openWithStaleSession = async (
+			staleSession: AudioSessionSnapshot,
+			expectedColor: 'blue' | 'purple',
+		): Promise<void> => {
+			const popup = await browser.newPage();
+			popup.setDefaultTimeout(5_000);
+			await popup.evaluateOnNewDocument(({ targetTabId, injectedSession }) => {
+				type FirstPaintScope = Window & typeof globalThis & {
+					__spectraFirstPaintColors?: string[];
+					__spectraFirstPaintFrame?: number;
+				};
+				const scope = window as FirstPaintScope;
+				const originalSendMessage = chrome.runtime.sendMessage.bind(chrome.runtime);
+				chrome.runtime.sendMessage = ((message: unknown, ...args: unknown[]) => {
+					if (message && typeof message === 'object'
+						&& (message as { type?: unknown }).type === 'spectra.audio.session.get') {
+						return Promise.resolve({ ok: true, data: injectedSession });
+					}
+					return Reflect.apply(originalSendMessage, chrome.runtime, [message, ...args]);
+				}) as typeof chrome.runtime.sendMessage;
+				scope.__spectraFirstPaintColors = [];
+				const scan = () => {
+					const card = document.querySelector<HTMLElement>(`.glass-card[data-tab-id="${targetTabId}"]`);
+					const slider = card?.querySelector<HTMLElement>('.vol-slider');
+					const fill = card?.querySelector<HTMLElement>('.slider-fill');
+					const value = card?.querySelector<HTMLElement>('.vol-number');
+					if (!card || !slider || !fill || !value
+						|| card.hidden || getComputedStyle(card).display === 'none') return;
+					const frame = [
+						getComputedStyle(slider).getPropertyValue('--slider-accent').trim(),
+						getComputedStyle(fill).backgroundColor,
+						getComputedStyle(value).color,
+					].join('|');
+					const trace = scope.__spectraFirstPaintColors;
+					if (trace && trace.at(-1) !== frame) trace.push(frame);
+				};
+				new MutationObserver(scan).observe(document, {
+					attributes: true,
+					childList: true,
+					subtree: true,
+					attributeFilter: ['class', 'hidden', 'style'],
+				});
+				const sample = () => {
+					scan();
+					scope.__spectraFirstPaintFrame = requestAnimationFrame(sample);
+				};
+				scope.__spectraFirstPaintFrame = requestAnimationFrame(sample);
+			}, { targetTabId: tabId, injectedSession: staleSession });
+			try {
+				await fixturePage.bringToFront();
+				await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: 'domcontentloaded' });
+				await popup.waitForSelector(`.glass-card[data-tab-id="${tabId}"] .vol-slider`);
+				await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+				const trace = await popup.evaluate(() => (
+					(window as Window & typeof globalThis & { __spectraFirstPaintColors?: string[] })
+						.__spectraFirstPaintColors ?? []
+				));
+				const blue = '#2563eb|rgb(37, 99, 235)|rgb(37, 99, 235)';
+				const purple = '#7c3aed|rgb(124, 58, 237)|rgb(124, 58, 237)';
+				expect(trace).toEqual([expectedColor === 'purple' ? purple : blue]);
+			} finally {
+				await popup.close().catch(() => undefined);
+			}
+		};
+		try {
+			await fixturePage.bringToFront();
+			await submitEffectiveVolume(tabId, 100);
+			const bypassSession = await readCurrentAudioSession(tabId);
+			if (!bypassSession.ok || !bypassSession.data) throw new Error('Missing bypass session');
+			await openWithStaleSession({
+				...bypassSession.data,
+				generation: Math.max(0, bypassSession.data.generation - 1),
+				desiredMode: 'capture',
+				actualMode: 'capture',
+				phase: 'active',
+			}, 'blue');
+
+			await fixturePage.bringToFront();
+			await submitEffectiveVolume(tabId, 350);
+			const captureSession = await readCurrentAudioSession(tabId);
+			if (!captureSession.ok || !captureSession.data) throw new Error('Missing Capture session');
+			await openWithStaleSession({
+				...captureSession.data,
+				generation: Math.max(0, captureSession.data.generation - 1),
+				desiredMode: 'bypass',
+				actualMode: 'bypass',
+				phase: 'idle',
+			}, 'purple');
+		} finally {
+			await fixturePage.bringToFront().catch(() => undefined);
+			await submitEffectiveVolume(tabId, 100).catch(() => undefined);
+			await removePageMediaControllerHarness();
+			await patchExtensionSettings(settingsClient, {
+				scope: 'global',
+				changes: { visualizerEnabled: settings.previous.globalSettings.visualizerEnabled },
+			}).catch(() => undefined);
+			await settingsClient.close().catch(() => undefined);
+		}
+	}, 25_000);
 
 	test('keeps visualizer IPC and Capture at zero when the feature is disabled', async () => {
 		const settingsClient = await openExtensionClient('options.html');

@@ -2,6 +2,7 @@
 // inv: these are independent observations, not an atomic transaction; control generations/revisions remain authoritative
 
 import { createSettlementPool, observeWithin } from '@nexus/kernel';
+import type { AudioRuntimeStatus } from '@nexus/contracts';
 import { sendSpectraRequest, sendSpectraTabRequest } from '../../shared/ui-spectra-client';
 import { currentTopDocumentId, isCurrentTopDocument } from '../../shared/top-document';
 import type { CardObservation, CardSnapshot } from './types';
@@ -9,6 +10,22 @@ import type { CardObservation, CardSnapshot } from './types';
 export const CARD_SNAPSHOT_CONCURRENCY = 4;
 const pendingReads = createSettlementPool<string, unknown>(CARD_SNAPSHOT_CONCURRENCY * 4);
 const CARD_SNAPSHOT_TIMEOUT_MS = 5_000;
+
+type ProcessorLifecycle = Pick<AudioRuntimeStatus, 'actualMode' | 'desiredMode' | 'phase' | 'generation'>;
+
+// Independent reads can straddle one physical transition. A settled exact-
+// document runtime read outranks an older session projection in both directions.
+// Pending/error runtime phases never pretend to be the final processor state.
+export function resolveInitialProcessorLifecycle(
+	runtime: ProcessorLifecycle | null,
+	session: ProcessorLifecycle | null,
+): ProcessorLifecycle | null {
+	const settled = runtime && (
+		runtime.actualMode === 'bypass' && runtime.phase === 'idle'
+		|| runtime.actualMode !== 'bypass' && runtime.phase === 'active'
+	);
+	return settled && (!session || runtime.generation >= session.generation) ? runtime : session;
+}
 
 export function hasKnownBackgroundRetentionInputs(snapshot: Pick<CardSnapshot, 'status' | 'isRemoteActive'>): boolean {
 	return snapshot.status.state === 'known' && snapshot.isRemoteActive.state === 'known';

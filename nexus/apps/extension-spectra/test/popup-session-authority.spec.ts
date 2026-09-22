@@ -338,6 +338,73 @@ describe('Popup audio-session authority', () => {
 		}
 	});
 
+	test.each(['capture', 'bypass'] as const)('does not replay a carried processor field over a newer %s session', (mode) => {
+		const state = createState();
+		const previous = state.controlSnapshot;
+		if (!previous) throw new Error('Expected current control snapshot');
+		previous.fields.boost = {
+			desired: mode === 'capture' ? 1 : 1.1,
+			actual: mode === 'capture' ? 1 : 1.1,
+			revision: 0,
+			phase: 'applied',
+			strategy: mode === 'capture' ? 'observe' : 'capture',
+			coverage: 'full',
+			controlled: mode !== 'capture',
+			lastError: null,
+		};
+		state.actualMode = mode;
+		state.desiredMode = mode;
+		state.phase = mode === 'capture' ? 'active' : 'idle';
+		state.isCaptureActive = mode === 'capture';
+		state.audioDocumentId = previous.documentId;
+		state.audioOrigin = previous.origin;
+		state.audioGeneration = 6;
+
+		expect(applyControlSnapshot(state, {
+			...previous,
+			revision: 1,
+			fields: {
+				...previous.fields,
+				speed: { desired: 1.5, actual: 1.5, revision: 1, phase: 'applied', strategy: 'dom-native', coverage: 'active-target', controlled: false, lastError: null },
+			},
+		}, () => undefined)).toBe(true);
+		expect(state.actualMode).toBe(mode);
+		expect(state.config.speed).toBe(1.5);
+	});
+
+	test('keeps a control-acknowledged Capture across native updates before the session event arrives', () => {
+		const state = createState();
+		const initial = state.controlSnapshot;
+		if (!initial) throw new Error('Expected current control snapshot');
+		const captured = {
+			...initial,
+			revision: 1,
+			fields: {
+				boost: { desired: 1.1, actual: 1.1, revision: 1, phase: 'applied' as const, strategy: 'capture' as const, coverage: 'full' as const, controlled: true, lastError: null },
+			},
+		};
+		applyControlSnapshot(state, captured, () => undefined);
+		expect(state.actualMode).toBe('capture');
+		expect(state.audioDocumentId).toBeNull();
+		applyControlSnapshot(state, { ...captured, revision: 2 }, () => undefined);
+		expect(state.actualMode).toBe('capture');
+	});
+
+	test('preserves exact-runtime Capture while the first control snapshot becomes known', () => {
+		const state = createState();
+		const incoming = state.controlSnapshot;
+		if (!incoming) throw new Error('Expected current control snapshot');
+		state.controlSnapshot = null;
+		state.controlSnapshotKnown = false;
+		state.actualMode = 'capture';
+		state.desiredMode = 'capture';
+		state.phase = 'active';
+		state.isCaptureActive = true;
+		applyControlSnapshot(state, { ...incoming, revision: 1 }, () => undefined);
+		expect(state.controlSnapshotKnown).toBe(true);
+		expect(state).toMatchObject({ actualMode: 'capture', phase: 'active', isCaptureActive: true });
+	});
+
 	test('accepts a newer navigation generation and rejects a delayed old document', () => {
 		const state = createState();
 		state.controlGeneration = 5;

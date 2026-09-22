@@ -2,6 +2,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
+	DEFAULT_AUDIO_CONFIG,
+	resolveDesiredAudioMode,
+} from '../../packages/contracts/src/audio.contracts.ts';
+import {
 	CONTROL_ALGORITHM_ADJUDICATIONS,
 	CONTROL_ALGORITHM_POLICIES,
 	CONTROL_CAPABILITIES,
@@ -389,7 +393,6 @@ function checkAudioProcessorOwners(root) {
 		'export function requiresAudioProcessor(',
 		'export interface AudioProcessorDemand',
 		'export function resolveDesiredAudioMode(',
-		'!requiresAudioProcessor(config) && !demand.visualizer',
 		'mediaWebAudio: boolean;',
 		"return demand.mediaWebAudio ? 'webaudio' : 'capture';",
 		'export interface AudioSessionSnapshot',
@@ -400,6 +403,18 @@ function checkAudioProcessorOwners(root) {
 	]) {
 		if (!audioContracts.includes(required)) {
 			error(`SCTRL-002/SCTRL-005/SCTRL-008: audio contract lost Capture lifecycle authority (${required})`);
+		}
+	}
+	for (const volume of [0, 40, 100]) {
+		for (const mediaRoute of ['auto', 'direct', 'capture'] as const) {
+			for (const mediaWebAudio of [false, true]) {
+				const mode = resolveDesiredAudioMode({
+					...DEFAULT_AUDIO_CONFIG, volume, volumeBase: volume, boost: 1,
+				}, { visualizer: true, mediaWebAudio, mediaRoute });
+				if (mode === 'capture') {
+					error(`SCTRL-002/SCTRL-013: neutral Visualizer demand acquired Capture (${volume}, ${mediaRoute}, ${mediaWebAudio})`);
+				}
+			}
 		}
 	}
 	const offscreenContracts = fs.readFileSync(
@@ -554,17 +569,17 @@ function checkAudioProcessorOwners(root) {
 	);
 	for (const required of [
 		'export async function acquirePopupVisualizerSource(',
-		'captureAdmissionForInvocation(',
+		'sameExtensionDocument(invocation.foreground, invocation.target)',
 		"'spectra.audio.visualizer.demand.set'",
 		"'visualizer'",
 		'export function releasePopupVisualizerSource(',
 		'chrome.webNavigation.getFrame({',
 		'interface PopupVisualizerSourceAcquisition',
-		"actualMode: 'webaudio' | 'capture' | null;",
+		"actualMode: 'bypass' | 'webaudio' | 'capture' | null;",
 		'lease: pendingLease',
 	]) {
 		if (!coordinator.includes(required)) {
-			error(`SCTRL-013/SCTRL-021/SCTRL-041: Visualizer transient Capture lost foreground/document admission or release compensation (${required})`);
+			error(`SCTRL-013/SCTRL-021/SCTRL-041: Visualizer observation lost foreground/document identity or release compensation (${required})`);
 		}
 	}
 	const contentMessageHandler = fs.readFileSync(
@@ -577,11 +592,13 @@ function checkAudioProcessorOwners(root) {
 		"message.type !== 'spectra.audio.visualizer.demand.set'",
 		'visualizerSubscribers.add(message.payload.subscriberId)',
 		'visualizerSubscribers.delete(message.payload.subscriberId)',
-		'captureAdmission: message.payload.admission',
 	]) {
 		if (!contentMessageHandler.includes(required)) {
 			error(`SCTRL-013/SCTRL-021/SCTRL-041: Content lost exact-subscriber Visualizer demand ownership (${required})`);
 		}
+	}
+	if (executableSource(contentMessageHandler).includes('captureAdmission: message.payload.admission')) {
+		error('SCTRL-013/SCTRL-021: Visualizer observation must not forward Capture admission');
 	}
 	const visualizerContracts = fs.readFileSync(
 		path.join(root, 'packages/contracts/src/visualizer.contracts.ts'),
