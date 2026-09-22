@@ -26,7 +26,7 @@ export function createRenderFn(params: RenderParams): () => void {
     const volumePresentation = resolveVolumePresentation(state);
     const disabled = !config.enabled;
 		const controlUnknown = state.controlSnapshotKnown === false;
-    const muted = config.muted;
+    const muted = state.pendingVolumePresentation?.muted ?? config.muted;
 
     ui.card.classList.toggle('disabled', disabled);
     ui.card.classList.toggle('muted', muted);
@@ -46,27 +46,26 @@ export function createRenderFn(params: RenderParams): () => void {
 		controls?.setAttribute('aria-hidden', String(disabled));
     ui.enable.checked = config.enabled;
 
-    // The same requested/acknowledged projection owns both slider and number.
-    // Newer drag targets are protected by the update owner, not a pixel/value heuristic.
+    // The thumb follows the gesture immediately. The result label, fill and
+    // route color commit together, never a new number with the previous route.
     const currentSliderValue = parseFloat(ui.slider.value);
-    const newSliderValue = volumePresentation.effectiveVolume;
+    const newSliderValue = resolveAudioVolume(config).effectiveVolume;
     if (currentSliderValue !== newSliderValue) {
       ui.slider.value = String(newSliderValue);
     }
-    ui.fill.style.width = `${(newSliderValue / AUDIO_UI.MAX_VOLUME) * 100}%`;
-    ui.val.innerText = muted ? 'MUTE' : `${formatVolume(newSliderValue)}%`;
+    ui.fill.style.width = `${(volumePresentation.effectiveVolume / AUDIO_UI.MAX_VOLUME) * 100}%`;
+    ui.val.innerText = muted ? 'MUTE' : `${formatVolume(volumePresentation.effectiveVolume)}%`;
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));
 
-    // Numeric feedback follows the requested value; colour follows the
-    // acknowledged processor, including when a warm gain crosses 100%.
+		// Pending session/broadcast events cannot recolor the retained result.
 		const fillColor = volumePresentation.color;
 
     ui.fill.style.backgroundColor = fillColor;
     ui.val.style.color = fillColor;
     ui.slider.style.setProperty('--slider-accent', fillColor);
 
-    renderVolumeIcon(ui.mute, muted, newSliderValue);
+    renderVolumeIcon(ui.mute, muted, volumePresentation.effectiveVolume);
 
     if (ui.speedInput) {
       // rule: only update speed input if not focused to avoid interfering with user typing
@@ -115,14 +114,15 @@ function renderVolumeIcon(
 export function resolveVolumePresentation(
   state: CardInternalState,
 ): { effectiveVolume: number; color: string } {
-  const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
+  const presentation = state.pendingVolumePresentation;
+  const effectiveVolume = presentation?.effectiveVolume ?? resolveAudioVolume(state.config).effectiveVolume;
   return {
     effectiveVolume,
     color: actualVolumeColor(
-      state.config.muted,
+      presentation?.muted ?? state.config.muted,
       effectiveVolume,
-      state.actualMode,
-      state.phase,
+      presentation?.actualMode ?? state.actualMode,
+      presentation?.phase ?? state.phase,
     ),
   };
 }

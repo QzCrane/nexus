@@ -154,6 +154,9 @@ export function createUpdateFn(
 		for (const field of pendingFields.keys()) {
 			projected[field] = optimistic[field];
 		}
+		if (!['volume', 'volumeBase', 'boost'].some((field) => pendingFields.has(field as keyof AudioConfig))) {
+			delete state.pendingVolumePresentation;
+		}
 		render();
 		if (response.error) onError(new Error(response.error.message), state);
 	};
@@ -162,6 +165,7 @@ export function createUpdateFn(
 	transport.onFailure((error) => {
 		if (retired) return;
 		pendingFields.clear();
+		delete state.pendingVolumePresentation;
 		state.config = mergeAudioConfig(state.stableConfig, { eqValues: [...state.stableConfig.eqValues] });
 		render();
 		onError(error, state);
@@ -217,6 +221,12 @@ export function createUpdateFn(
 			pendingFields.set(rawField as keyof AudioConfig, inputRevision);
 		}
 		if (volumeChanged) {
+			state.pendingVolumePresentation ??= {
+				effectiveVolume: previousVolume,
+				muted: previous.muted,
+				actualMode: state.actualMode,
+				phase: state.phase,
+			};
 			pendingFields.set('volume', inputRevision);
 			pendingFields.set('volumeBase', inputRevision);
 			pendingFields.set('boost', inputRevision);

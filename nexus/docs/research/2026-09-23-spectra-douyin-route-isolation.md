@@ -7,6 +7,38 @@ last_reviewed: 2026-09-23
 
 # Live and recorded media route isolation
 
+## Follow-up: new input paired with the previous route color
+
+The user rejected the remaining behavior in `b83e4b8f` and identified its trigger:
+changing volume in an already open Popup. The first-paint correction remains
+valid but does not cover this path. The old coalescing test explicitly required
+110 to render blue before its Capture ACK, and 100 to render purple before its
+stop ACK. That oracle mixed an optimistic value with the previous physical route.
+
+Repair: preserve immediate requested thumb movement, but commit the result
+number, fill and color together from the latest volume settlement. The existing
+input owner retains the preceding complete presentation during pending work;
+older session/broadcast/settlement messages cannot recolor it. Failure and
+navigation clear that presentation. No Capture lifetime, route prediction,
+threshold coloring or extra debounce is introduced. Validate the first frame
+where each new number appears, not only eventual color or color-only transitions.
+
+The old production artifact failed the strengthened Chrome regression at the
+first 110% label: thumb 110 and fill 13.75%, but all three colors were blue.
+The repaired artifact passed the same 110→50→110→100 sequence with 47 assertions:
+the thumb responds synchronously, and each new label's first and subsequent
+frames contain its acknowledged route color and matching fill. The first-paint
+stale-session regression also remains green. This is production-extension Chrome
+evidence using controlled media and a synthetic Capture stream, not confirmation
+from the user's current Douyin tab or installed Edge instance.
+
+Final candidate checks: 109 isolated SPECTRA test files, 48 production-extension
+Chrome cases with 512 assertions, all six package typechecks, strict changed-file
+Biome, documentation validation and architecture verification passed. Architecture
+verification retains the two pre-existing file-length warnings. Independent
+read-only review found no blocker in latest-revision settlement, failure rollback,
+navigation cleanup or the combined preset volume/mute presentation.
+
 ## Follow-up: rejected neutral hold and repeated transitions
 
 The user rejected candidate `54d8805a`: returning to 0–100 must release Capture

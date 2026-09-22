@@ -37,6 +37,13 @@ export interface CardInternalState {
   audioConfigRevision: number;
   lastError: AudioSessionError | null;
   draggingField: 'volume' | null;
+  // One visible result while a newer volume intent is awaiting its own ACK.
+  pendingVolumePresentation?: {
+    effectiveVolume: number;
+    muted: boolean;
+    actualMode: SpectraAudioMode;
+    phase: AudioSessionPhase;
+  };
 }
 
 export type VizLoopFactory = (params: VizLoopParams) => VizLoopController;

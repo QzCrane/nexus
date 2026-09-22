@@ -17,6 +17,8 @@ last_reviewed: 2026-08-28
 - **Visualizer 订阅**: 仅可见、启用、未静音的前台主卡可声明精确活动标签页的分析 demand。Background 重新确认可信 Popup、当前活动标签页与精确顶层文档；完整安全的媒体覆盖可使用已 ACK 的 MediaElement WebAudio analyser，也可观察非中性 DSP 已经需要的 Capture。订阅不能创建 Capture admission 或保留中性 Capture；不安全的中性页面稳定为 bypass、返回空帧，不重试获取 Capture。后台卡片只能消费已有处理器；采样必须等待 `actualMode: webaudio | capture` 且 `phase: active` 的精确 ACK，最高 15 Hz。隐藏、失焦、关闭、导航、断连、超时或最终 subscriber 释放都会退役临时 demand；独立 DSP demand 不受影响。
 
 Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠正。首次卡片读取是并发观察：精确文档的已稳定 runtime 状态在 generation 不落后于 session 时优先，双向覆盖 Capture 启动与停止；pending/error 不能冒充稳定结果。后续 ControlSnapshot 只允许 revision 前进的处理器字段改变生命周期，未变化的旧字段和重复回执不能覆盖较新的 session。首份控制快照缺少处理器字段时，不得清除已由精确 runtime 证明的颜色；只有真正文档替换或不匹配的非空音频身份才重置。颜色仍表示实际 Capture，原生支持的超过 100% 音量不能凭阈值变紫。
+调节中的手柄位置立即跟随当前请求；音量数字、填充条和结果颜色必须作为一个已确认结果提交。存在未结算的新音量意图时，保留上一次完整显示结果，不能把新数字与旧处理器颜色拼接，也不能让较早的 session/ACK 把它改色。最新音量结算后一次提交结果；通道失败或文档替换清除等待投影。该显示快照不拥有音频状态、不参与 Capture 准入，也不增加计时器或等待时长；等待仅来自既有控制事务的真实执行确认。
+
 - **Popup 高度**: 主视图使用内容固有高度；只有 Settings 导航模式为容器施加 600px 滚动视口。CSS 是唯一尺寸 owner，导航只切换模式类，禁止读取 `offsetHeight` 后写 inline `min-height` 或调用 `resizeTo`。
 - Favicon 走标准 URL/service 机制，禁止未知 `_favicon` 权限。远程 QR 图显式生成本地 `data:`/SVG URL。
 
@@ -27,7 +29,7 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 | Strategy | Required proof before selection | Idle/runtime cost | Disallowed escalation |
 | --- | --- | --- | --- |
 | `observe` | 权威 getter/事件 | 0 | 读操作不建 runtime/处理器上下文/offscreen/MAIN |
-| `capture-observe` | 可信 Popup、可见前台主卡、活动精确文档、一次性 Capture admission 与 active ACK | 订阅期一个惰性 offscreen Capture | 禁止把后台卡/status read 升级为 Capture，禁止持久化 demand 或创建页面音频图 |
+| `capture-observe` | 可信 Popup、可见前台主卡、活动精确文档、非中性 DSP 已持有的 Capture active ACK | 只读取已有处理器 | 禁止观察订阅启动或保留 Capture，禁止持久化 demand |
 | `dom-native` | 标准单元素 API，目标身份与读回 | 写/事件 | 不 patch 原型描述符，不绕过 user activation |
 | `chrome-native` | Chrome API 匹配且 Chrome getter/事件确认 | 命令/事件 | 在 `tabs.get`/事件确认前不乐观响应 |
 | `extension-state` | 属于 SPECTRA 且绑定文档/媒体/源码 | 0 (未拥有) | 不伪装为原生状态 |

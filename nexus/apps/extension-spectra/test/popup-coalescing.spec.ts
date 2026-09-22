@@ -252,7 +252,7 @@ describe('Popup Background-owned control transport projection', () => {
 		expect(resolveVolumePresentation(state).color).toBe(COLORS.NATIVE);
 	});
 
-	test('renders 100↔110 immediately while processor colour follows only current ACKs', () => {
+	test('commits each new volume and its actual route color in the same render', () => {
 		const harness = installHarness();
 		const state = createState();
 		const frames: Array<{ effectiveVolume: number; color: string }> = [];
@@ -261,14 +261,62 @@ describe('Popup Background-owned control transport projection', () => {
 		});
 
 		update({ volume: 110 });
-		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.NATIVE });
+		expect(state.config.volume).toBe(110);
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
 		harness.emit(settlement(1, { volume: 110, processor: 'capture' }));
 		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.CAPTURE });
 
 		update({ volume: 100 });
-		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.CAPTURE });
+		expect(state.config.volume).toBe(100);
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.CAPTURE });
 		harness.emit(settlement(2, { volume: 100, processor: 'observe' }));
 		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
+	});
+
+	test('keeps a coherent visible result through superseded volume and lifecycle acknowledgements', () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 110 });
+		update({ volume: 50 });
+		state.actualMode = 'capture';
+		state.phase = 'active';
+		harness.emit(settlement(1, { volume: 110, processor: 'capture' }));
+		expect(state.config.volume).toBe(50);
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
+		harness.emit(settlement(2, { volume: 50, processor: 'observe' }));
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 50, color: COLORS.NATIVE });
+		expect(state.pendingVolumePresentation).toBeUndefined();
+	});
+
+	test('releases the pending result on channel failure and keeps native amplification blue', () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 130 });
+		harness.emit(settlement(1, { volume: 130, processor: 'observe' }));
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 130, color: COLORS.NATIVE });
+		update({ volume: 350 });
+		harness.fail(new Error('Channel disconnected'));
+		expect(state.pendingVolumePresentation).toBeUndefined();
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 130, color: COLORS.NATIVE });
+	});
+
+	test('keeps preset volume and mute presentation together until their batch settles', () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 110, muted: true });
+		expect(state.config.muted).toBe(true);
+		expect(state.pendingVolumePresentation?.muted).toBe(false);
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
+		harness.emit(settlement(1, {
+			volume: 110,
+			processor: 'capture',
+			fieldAcks: [{ ...speedAck(1, 1), fields: { mediaMuted: controlField(true, 1, 'dom-native', 'active-target') } }],
+		}));
+		expect(state.pendingVolumePresentation).toBeUndefined();
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 110, color: COLORS.MUTED });
 	});
 });
 

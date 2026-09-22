@@ -48,6 +48,7 @@ export function applyControlSnapshot(
 	state.controlSnapshotKnown = true;
 	if (current) {
 		if (snapshot.documentId !== current.documentId || snapshot.origin !== current.origin) {
+			delete state.pendingVolumePresentation;
 			// A document transition replaces the complete projection.  Do not carry
 			// purple Capture state or any optimistic values across navigation.
 			state.actualMode = 'bypass';

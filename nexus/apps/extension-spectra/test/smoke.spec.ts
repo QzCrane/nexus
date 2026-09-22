@@ -5636,7 +5636,14 @@ describe('SPECTRA built extension smoke', () => {
 					: false;
 			});
 			await popup.evaluate(() => {
-				type ColorFrame = { accent: string; fill: string; value: string };
+				type ColorFrame = {
+					handle: string;
+					label: string;
+					fillWidth: string;
+					accent: string;
+					fill: string;
+					value: string;
+				};
 				type ColorTraceScope = Window & typeof globalThis & {
 					__spectraColorTrace?: ColorFrame[];
 					__spectraRecordColor?: () => void;
@@ -5650,6 +5657,9 @@ describe('SPECTRA built extension smoke', () => {
 				if (!slider || !fill || !value) throw new Error('Popup color controls are incomplete');
 				const record = () => {
 					scope.__spectraColorTrace?.push({
+						handle: (slider as HTMLInputElement).value,
+						label: value.textContent?.trim() ?? '',
+						fillWidth: fill.style.width,
 						accent: getComputedStyle(slider).getPropertyValue('--slider-accent').trim(),
 						fill: getComputedStyle(fill).backgroundColor,
 						value: getComputedStyle(value).color,
@@ -5662,6 +5672,9 @@ describe('SPECTRA built extension smoke', () => {
 				for (const element of [slider, fill, value]) {
 					scope.__spectraColorObserver.observe(element, {
 						attributes: true,
+						childList: true,
+						characterData: true,
+						subtree: true,
 						attributeFilter: ['class', 'style'],
 					});
 				}
@@ -5713,12 +5726,14 @@ describe('SPECTRA built extension smoke', () => {
 					scope.__spectraColorTrace = [];
 					scope.__spectraRecordColor?.();
 				});
-				await popup.$eval('.vol-slider', (element, value) => {
+				const immediateHandle = await popup.$eval('.vol-slider', (element, value) => {
 					const slider = element as HTMLInputElement;
 					slider.value = String(value);
 					slider.dispatchEvent(new Event('input', { bubbles: true }));
 					slider.dispatchEvent(new Event('change', { bubbles: true }));
+					return slider.value;
 				}, transition.volume);
+				expect(immediateHandle).toBe(String(transition.volume));
 				const expectedBoost = transition.volume > 100 ? transition.volume / 100 : 1;
 				const expectedBase = Math.min(transition.volume, 100);
 				const status = await eventually(
@@ -5765,16 +5780,43 @@ describe('SPECTRA built extension smoke', () => {
 					expect((await readSyntheticCaptureState()).calls).toBe(expectedCaptureStarts);
 				}
 				await new Promise((resolveWait) => setTimeout(resolveWait, 150));
-				const colorTrace = await popup.evaluate(() => {
+				const presentationTrace = await popup.evaluate(() => {
 					const scope = window as Window & typeof globalThis & {
-						__spectraColorTrace?: Array<{ accent: string; fill: string; value: string }>;
+						__spectraColorTrace?: Array<{
+							handle: string;
+							label: string;
+							fillWidth: string;
+							accent: string;
+							fill: string;
+							value: string;
+						}>;
 					};
 					return (scope.__spectraColorTrace ?? [])
-						.map(({ accent, fill, value }) => `${accent}|${fill}|${value}`)
-						.filter((frame, index, frames) => index === 0 || frame !== frames[index - 1]);
+						.filter((frame, index, frames) => (
+							index === 0 || JSON.stringify(frame) !== JSON.stringify(frames[index - 1])
+						));
 				});
 				const blue = '#2563eb|rgb(37, 99, 235)|rgb(37, 99, 235)';
 				const purple = '#7c3aed|rgb(124, 58, 237)|rgb(124, 58, 237)';
+				const expectedColor = transition.mode === 'capture' ? purple : blue;
+				const expectedLabel = `${transition.volume}%`;
+				const expectedFillPercent = (transition.volume / 800) * 100;
+				const newValueFrames = presentationTrace.filter((frame) => frame.label === expectedLabel);
+				expect(newValueFrames[0]).toMatchObject({
+					handle: String(transition.volume),
+					label: expectedLabel,
+					accent: expectedColor.split('|')[0],
+					fill: expectedColor.split('|')[1],
+					value: expectedColor.split('|')[2],
+				});
+				expect(Number.parseFloat(newValueFrames[0]?.fillWidth ?? '')).toBeCloseTo(expectedFillPercent);
+				expect(newValueFrames.every((frame) => (
+					`${frame.accent}|${frame.fill}|${frame.value}` === expectedColor
+					&& Math.abs(Number.parseFloat(frame.fillWidth) - expectedFillPercent) < 0.000_001
+				))).toBe(true);
+				const colorTrace = presentationTrace
+					.map(({ accent, fill, value }) => `${accent}|${fill}|${value}`)
+					.filter((frame, index, frames) => index === 0 || frame !== frames[index - 1]);
 				expect(colorTrace).toEqual(
 					transition.mode === 'capture' ? [blue, purple] : [purple, blue],
 				);
