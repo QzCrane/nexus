@@ -55,6 +55,11 @@ does not supersede the historical volume-boundary report or establish a live fix
    the card failure owner marks it reported before Promise reactions run. Save,
    reset and continuous-control consumers preserve settlement without presenting
    that same failure again. Explicit disposal removes listeners before disconnect.
+8. The push gate exposed a second stale reset rule: the architecture verifier
+   required speed to be absent from reset and searched tests for that assertion.
+   It now requires speed 1 in the canonical reset patch while retaining pitch
+   preservation and compensation checks. Browser playback-rate readback remains
+   the independent behavioral oracle; source text matching does not replace it.
 
 ## Validation and remaining boundary
 

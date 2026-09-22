@@ -1904,12 +1904,11 @@ function checkRetiredPaths(root) {
 	)?.[1] ?? '';
 	if (!audioResetTargetPatch.includes('volumeBase: 100')
 		|| !audioResetTargetPatch.includes('mediaMuted: false')
-		|| audioResetTargetPatch.includes('speed')
+		|| !audioResetTargetPatch.includes('speed: 1')
 		|| audioResetTargetPatch.includes('preservePitch')
 		|| !coordinator.includes('nativeObservationFields(targetActual, baseline.revision)')
-		|| !coordinatorTest.includes("not.toHaveProperty('speed')")
 		|| !coordinatorTest.includes("not.toHaveProperty('preservePitch')")) {
-		error('SCTRL-002/SCTRL-003: audio reset may write native volume/mute but must only observe speed and pitch preservation');
+		error('SCTRL-002/SCTRL-003: audio reset must restore native volume, mute and speed while preserving pitch policy');
 	}
 	if (!coordinator.includes('if (!isControlApplyAck(acknowledgement))')
 		|| !coordinator.includes('if (!isControlOperationAck(acknowledgement))')) {
