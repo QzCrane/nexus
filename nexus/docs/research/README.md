@@ -18,6 +18,7 @@ Research documents are dated evidence and hypotheses. They help choose what to b
 - [SPECTRA repeated 100–110 volume display stall](2026-09-23-spectra-volume-boundary.md): baseline diagnosis, evidence limits, and the continuous-feedback repair boundary.
 - [SPECTRA test-value ledger](2026-09-23-spectra-test-value-ledger.md): frozen test census and KEEP/MERGE/REWRITE/DELETE disposition evidence for the cleanup wave.
 - [SPECTRA control liveness follow-up](2026-09-23-spectra-control-liveness.md): post-reload hangs, bounded runtime reuse probes, and outstanding live-profile verification.
+- [SPECTRA live and recorded media route isolation](2026-09-23-spectra-douyin-route-isolation.md): live-player target theft, hostname-rule collisions, and physical validation boundaries.
 
 ## Evidence contract
 

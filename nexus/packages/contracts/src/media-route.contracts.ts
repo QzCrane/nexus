@@ -1,6 +1,6 @@
 // goal: own one explicit direct/capture processing route per normalized site
 
-import { normalizeHostname } from './domain.contracts.js';
+import { hostnameMatchesRule, normalizeHostname } from './domain.contracts.js';
 
 export type MediaProcessingRoute = 'direct' | 'capture';
 export type MediaRouteSource = 'user' | 'auto';
@@ -15,6 +15,11 @@ export interface MediaRouteEntry {
 	route: MediaProcessingRoute;
 	source: MediaRouteSource;
 	updatedAt: number;
+}
+
+export interface MediaRouteScope {
+	domain: string;
+	pathPrefix?: string;
 }
 
 export type MediaRouteSettings = Record<string, MediaRouteEntry>;
@@ -60,6 +65,18 @@ export interface RegistryRecordPayload extends RegistryQueryPayload {
 	force?: boolean;
 }
 
+export interface MediaRouteRuleEntry extends DomainEntry {
+	pathPrefix?: string;
+}
+
+export interface MediaRouteRulesSnapshot {
+	entries: MediaRouteRuleEntry[];
+}
+
+export interface MediaRouteRuleUpsertPayload extends MediaRouteScope {
+	route: MediaRoute;
+}
+
 export interface MediaRouteChangedEvent {
 	domain: string;
 	mediaRoute: MediaProcessingRoute | 'auto';
@@ -78,6 +95,14 @@ export interface MediaRouteRecordRequest {
 }
 
 const MEDIA_ROUTE_ENTRY_KEYS = /* @__PURE__ */ new Set<keyof MediaRouteEntry>([
+	'route',
+	'source',
+	'updatedAt',
+]);
+const MEDIA_ROUTE_RULE_ENTRY_KEYS = /* @__PURE__ */ new Set<keyof MediaRouteRuleEntry>([
+	'domain',
+	'pathPrefix',
+	'fingerprint',
 	'route',
 	'source',
 	'updatedAt',
@@ -105,6 +130,60 @@ const REGISTRY_RECORD_PAYLOAD_KEYS = /* @__PURE__ */ new Set<keyof RegistryRecor
 ]);
 const MEDIA_FINGERPRINT_PATTERN = /^media:v1:[a-f0-9]{16}$/;
 
+function normalizePathPrefix(value: string | undefined): string | undefined {
+	if (value === undefined || value === '' || value === '/') return undefined;
+	if (!value.startsWith('/') || value.length > 2048) return undefined;
+	try {
+		const pathname = new URL(value, 'https://spectra.invalid').pathname;
+		const normalized = pathname.length > 1 ? pathname.replace(/\/+$/u, '') : pathname;
+		return normalized === '/' ? undefined : normalized;
+	} catch {
+		return undefined;
+	}
+}
+
+export function normalizeMediaRouteScope(
+	domain: string,
+	pathPrefix?: string,
+): MediaRouteScope | null {
+	const normalizedDomain = normalizeHostname(domain);
+	if (!normalizedDomain) return null;
+	const normalizedPath = normalizePathPrefix(pathPrefix);
+	if (pathPrefix !== undefined && pathPrefix !== '' && pathPrefix !== '/' && normalizedPath === undefined) {
+		return null;
+	}
+	return normalizedPath
+		? { domain: normalizedDomain, pathPrefix: normalizedPath }
+		: { domain: normalizedDomain };
+}
+
+export function parseMediaRouteScopeInput(value: string): MediaRouteScope | null {
+	const trimmed = value.trim();
+	if (!trimmed || trimmed.length > 2048) return null;
+	try {
+		const explicitScheme = /^[a-z][a-z0-9+.-]*:\/\//iu.test(trimmed);
+		const url = new URL(explicitScheme ? trimmed : `https://${trimmed}`);
+		if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
+		if (url.username || url.password || url.port) return null;
+		return normalizeMediaRouteScope(url.hostname, url.pathname);
+	} catch {
+		return null;
+	}
+}
+
+export function createMediaRouteScopeKey(scope: MediaRouteScope): string | null {
+	const normalized = normalizeMediaRouteScope(scope.domain, scope.pathPrefix);
+	return normalized ? `${normalized.domain}${normalized.pathPrefix ?? ''}` : null;
+}
+
+export function parseMediaRouteScopeKey(value: string): MediaRouteScope | null {
+	const slash = value.indexOf('/');
+	const domain = slash === -1 ? value : value.slice(0, slash);
+	const pathPrefix = slash === -1 ? undefined : value.slice(slash);
+	const scope = normalizeMediaRouteScope(domain, pathPrefix);
+	return scope && createMediaRouteScopeKey(scope) === value ? scope : null;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -118,12 +197,16 @@ export function createSiteRouteFingerprint(domain: string): string | null {
 	return normalized ? `site:${normalized}` : null;
 }
 
+export function createMediaRouteRuleFingerprint(scope: MediaRouteScope): string | null {
+	const key = createMediaRouteScopeKey(scope);
+	return key ? `site:${key}` : null;
+}
+
 export function isMediaRouteFingerprint(value: unknown): value is string {
 	if (typeof value !== 'string') return false;
 	if (MEDIA_FINGERPRINT_PATTERN.test(value)) return true;
 	if (!value.startsWith('site:')) return false;
-	const domain = value.slice('site:'.length);
-	return normalizeHostname(domain) === domain;
+	return parseMediaRouteScopeKey(value.slice('site:'.length)) !== null;
 }
 
 export function isMediaRouteEntry(value: unknown): value is MediaRouteEntry {
@@ -229,8 +312,46 @@ export function isRegistryRecordPayload(value: unknown): value is RegistryRecord
 export function isMediaRouteSettings(value: unknown, maximumEntries = 10_000): value is MediaRouteSettings {
 	if (!isRecord(value) || Object.keys(value).length > maximumEntries) return false;
 	return Object.entries(value).every(([domain, entry]) => (
-		normalizeHostname(domain) === domain && isMediaRouteEntry(entry)
+		parseMediaRouteScopeKey(domain) !== null && isMediaRouteEntry(entry)
 	));
+}
+
+export function isMediaRouteRuleEntry(value: unknown): value is MediaRouteRuleEntry {
+	if (!isRecord(value)
+		|| Object.keys(value).some((key) => !MEDIA_ROUTE_RULE_ENTRY_KEYS.has(key as keyof MediaRouteRuleEntry))
+		|| typeof value.domain !== 'string'
+		|| typeof value.fingerprint !== 'string'
+		|| value.pathPrefix !== undefined && typeof value.pathPrefix !== 'string'
+		|| !isMediaProcessingRoute(value.route)
+		|| value.source !== 'user' && value.source !== 'auto'
+		|| !Number.isSafeInteger(value.updatedAt)
+		|| Number(value.updatedAt) < 0) return false;
+	const scope = normalizeMediaRouteScope(
+		value.domain,
+		typeof value.pathPrefix === 'string' ? value.pathPrefix : undefined,
+	);
+	return scope !== null
+		&& (value.pathPrefix === undefined || scope.pathPrefix === value.pathPrefix)
+		&& value.fingerprint === createMediaRouteRuleFingerprint(scope);
+}
+
+export function isMediaRouteRulesSnapshot(value: unknown): value is MediaRouteRulesSnapshot {
+	return isRecord(value)
+		&& Object.keys(value).length === 1
+		&& Array.isArray(value.entries)
+		&& value.entries.length <= 10_000
+		&& value.entries.every(isMediaRouteRuleEntry)
+		&& new Set(value.entries.map((entry) => entry.fingerprint)).size === value.entries.length;
+}
+
+export function isMediaRouteRuleUpsertPayload(value: unknown): value is MediaRouteRuleUpsertPayload {
+	if (!isRecord(value)
+		|| Object.keys(value).some((key) => key !== 'domain' && key !== 'pathPrefix' && key !== 'route')
+		|| typeof value.domain !== 'string'
+		|| !isMediaProcessingRoute(value.route)
+		|| value.pathPrefix !== undefined && typeof value.pathPrefix !== 'string') return false;
+	const scope = normalizeMediaRouteScope(value.domain, value.pathPrefix as string | undefined);
+	return scope !== null && (value.pathPrefix === undefined || scope.pathPrefix === value.pathPrefix);
 }
 
 export function isMediaRouteChangedEvent(value: unknown): value is MediaRouteChangedEvent {
@@ -265,10 +386,64 @@ export function selectMediaProcessingRoute(
 	const normalized = normalizeHostname(hostname);
 	if (!normalized) return 'auto';
 	const labels = normalized.split('.');
-	for (let index = 0; index < labels.length; index++) {
-		const candidate = labels.slice(index).join('.');
-		const entry = routes[candidate];
-		if (entry) return entry.route;
+	for (const source of ['user', 'auto'] as const) {
+		for (let index = 0; index < labels.length; index++) {
+			const candidate = labels.slice(index).join('.');
+			const entry = routes[candidate];
+			if (entry?.source === source) return entry.route;
+		}
 	}
 	return 'auto';
+}
+
+function pathPrefixMatches(pathname: string, pathPrefix: string | undefined): boolean {
+	return pathPrefix === undefined
+		|| pathname === pathPrefix
+		|| pathname.startsWith(`${pathPrefix}/`);
+}
+
+export function selectMediaRouteDecisionForUrl(
+	resourceUrl: string,
+	routes: Readonly<MediaRouteSettings>,
+): MediaRouteDecision {
+	let url: URL;
+	try {
+		url = new URL(resourceUrl);
+	} catch {
+		return { mediaRoute: 'auto', source: null };
+	}
+	const domain = normalizeHostname(url.hostname);
+	if (!domain || url.protocol !== 'http:' && url.protocol !== 'https:') {
+		return { mediaRoute: 'auto', source: null };
+	}
+	let best: {
+		entry: MediaRouteEntry;
+		userPriority: number;
+		domainLabels: number;
+		pathLength: number;
+	} | null = null;
+	for (const [key, entry] of Object.entries(routes)) {
+		const scope = parseMediaRouteScopeKey(key);
+		if (!scope
+			|| !hostnameMatchesRule(domain, scope.domain)
+			|| !pathPrefixMatches(url.pathname, scope.pathPrefix)) continue;
+		const candidate = {
+			entry,
+			userPriority: entry.source === 'user' ? 1 : 0,
+			domainLabels: scope.domain.split('.').length,
+			pathLength: scope.pathPrefix?.length ?? 0,
+		};
+		if (!best
+			|| candidate.userPriority > best.userPriority
+			|| candidate.userPriority === best.userPriority
+				&& candidate.domainLabels > best.domainLabels
+			|| candidate.userPriority === best.userPriority
+				&& candidate.domainLabels === best.domainLabels
+				&& candidate.pathLength > best.pathLength) {
+			best = candidate;
+		}
+	}
+	return best
+		? { mediaRoute: best.entry.route, source: best.entry.source }
+		: { mediaRoute: 'auto', source: null };
 }

@@ -3,7 +3,7 @@
 import {
 	SPECTRA_PROTOCOL_VERSION,
 	normalizeHostname,
-	selectMediaProcessingRoute,
+	selectMediaRouteDecisionForUrl,
 	type MediaRouteSettings,
 	type SettingsPatch,
 	type SettingsSnapshot,
@@ -93,7 +93,7 @@ async function projectSettings(work: SettingsProjectionWork<SettingsSnapshot>): 
 				type: 'spectra.audio.route.changed',
 				payload: {
 					domain: hostname,
-					mediaRoute: selectMediaProcessingRoute(hostname, mediaRoutes),
+					mediaRoute: selectMediaRouteDecisionForUrl(tab.url, mediaRoutes).mediaRoute,
 				},
 			};
 			await deliverContentMessage(tab.id, routeEvent);

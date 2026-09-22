@@ -1,14 +1,14 @@
 // goal: project and mutate the stable per-site direct/capture route registry
 
 import {
-	normalizeHostname,
-	type DomainEntry,
+	parseMediaRouteScopeInput,
+	type MediaRouteRuleEntry,
 	type MediaRoute,
 } from '@nexus/contracts/registry-runtime';
 import {
-	addRegistryDomain,
-	getRegistrySnapshot,
-	removeRegistryDomain,
+	getMediaRouteRules,
+	removeMediaRouteRule,
+	upsertMediaRouteRule,
 } from '../../shared/registry-client';
 import {
 	subscribeSettingsSnapshots,
@@ -25,7 +25,7 @@ interface RouteElements {
 }
 
 let currentDictionary: I18NDict | null = null;
-let currentEntries: DomainEntry[] = [];
+let currentEntries: MediaRouteRuleEntry[] = [];
 let disposeCurrent: (() => void) | null = null;
 let currentSession = 0;
 let mutationTail: Promise<void> = Promise.resolve();
@@ -35,7 +35,7 @@ const ROUTE_CLASS: Readonly<Record<MediaRoute, string>> = {
 	capture: 'registry-item-route-capture',
 };
 
-const SOURCE_CLASS: Readonly<Record<DomainEntry['source'], string>> = {
+const SOURCE_CLASS: Readonly<Record<MediaRouteRuleEntry['source'], string>> = {
 	auto: 'registry-item-source-auto',
 	user: 'registry-item-source-user',
 };
@@ -57,7 +57,7 @@ function report(error: unknown): void {
 }
 
 function mutate(
-	operation: () => Promise<{ entries: DomainEntry[] }>,
+	operation: () => Promise<{ entries: MediaRouteRuleEntry[] }>,
 	elements: RouteElements,
 	session: number,
 ): Promise<void> {
@@ -81,7 +81,7 @@ function render(elements: RouteElements): void {
 				? dictionary.registrySourceAuto
 				: dictionary.registrySourceUser;
 			return !query
-				|| entry.domain.includes(query)
+				|| `${entry.domain}${entry.pathPrefix ?? ''}`.includes(query)
 				|| entry.route.includes(query)
 				|| sourceLabel.toLowerCase().includes(query);
 		})
@@ -103,7 +103,7 @@ function render(elements: RouteElements): void {
 		identity.className = 'registry-item-identity';
 		const domainLabel = document.createElement('span');
 		domainLabel.className = 'registry-item-domain';
-		domainLabel.textContent = entry.domain;
+		domainLabel.textContent = `${entry.domain}${entry.pathPrefix ?? ''}`;
 		const sourceLabel = document.createElement('span');
 		sourceLabel.className = `registry-item-source ${SOURCE_CLASS[entry.source]}`;
 		sourceLabel.textContent = entry.source === 'auto'
@@ -118,11 +118,11 @@ function render(elements: RouteElements): void {
 		remove.className = 'registry-item-delete';
 		remove.textContent = '×';
 		remove.title = dictionary.tipDelete;
-		remove.setAttribute('aria-label', `${dictionary.tipDelete}: ${entry.domain}`);
+		remove.setAttribute('aria-label', `${dictionary.tipDelete}: ${entry.domain}${entry.pathPrefix ?? ''}`);
 		remove.addEventListener('click', () => {
 			const session = currentSession;
 			void mutate(
-				() => removeRegistryDomain(entry.fingerprint),
+				() => removeMediaRouteRule(entry.fingerprint),
 				elements,
 				session,
 			)
@@ -134,13 +134,13 @@ function render(elements: RouteElements): void {
 	elements.list.replaceChildren(fragment);
 }
 
-function acceptEntries(entries: DomainEntry[], elements: RouteElements): void {
+function acceptEntries(entries: MediaRouteRuleEntry[], elements: RouteElements): void {
 	currentEntries = entries;
 	render(elements);
 }
 
 function refresh(elements: RouteElements, session: number): void {
-	void getRegistrySnapshot()
+	void getMediaRouteRules()
 		.then((snapshot) => {
 			if (session !== currentSession || !disposeCurrent) return;
 			acceptEntries(snapshot.entries, elements);
@@ -159,20 +159,23 @@ export async function initMediaRouteUI(dictionary: I18NDict): Promise<() => void
 	const lifecycle = new AbortController();
 	const { signal } = lifecycle;
 	const submit = () => {
-		const domain = normalizeHostname(elements.domain.value);
-		if (!domain) {
+		const scope = parseMediaRouteScopeInput(elements.domain.value);
+		if (!scope) {
 			report(new Error(currentDictionary?.registryInvalidDomain ?? 'Invalid site hostname'));
 			return;
 		}
 		const route: MediaRoute = elements.route.value === 'direct' ? 'direct' : 'capture';
 		void mutate(
-			() => addRegistryDomain(domain, route),
+			() => upsertMediaRouteRule(scope, route),
 			elements,
 			session,
 		)
 			.then(() => {
 				if (session !== currentSession) return;
-				if (normalizeHostname(elements.domain.value) === domain) elements.domain.value = '';
+				if (parseMediaRouteScopeInput(elements.domain.value)?.domain === scope.domain
+					&& parseMediaRouteScopeInput(elements.domain.value)?.pathPrefix === scope.pathPrefix) {
+					elements.domain.value = '';
+				}
 			})
 			.catch(report);
 	};
@@ -201,7 +204,7 @@ export async function initMediaRouteUI(dictionary: I18NDict): Promise<() => void
 	};
 	disposeCurrent = dispose;
 	try {
-		const snapshot = await getRegistrySnapshot();
+		const snapshot = await getMediaRouteRules();
 		if (session === currentSession && disposeCurrent === dispose) {
 			acceptEntries(snapshot.entries, elements);
 		}

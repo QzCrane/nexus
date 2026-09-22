@@ -120,15 +120,11 @@ function applyMediaRouteEvent(
 	if (sender.id !== chrome.runtime.id) return true;
 	const hostname = normalizeHostname(globalThis.location?.hostname ?? '');
 	if (!hostname || message.payload.domain !== hostname) return true;
-	deps.state.mediaRoute = message.payload.mediaRoute;
 	// A direct-only route may immediately retire an existing Capture owner.
 	// Capture/auto routes never manufacture a new Capture admission from a
 	// settings event; the next explicit processor intent carries that authority.
 	if (deps.policyExecutor) {
-		void deps.policyExecutor.refreshMediaRoute()
-			.then((route) => {
-				if (route === 'direct') return deps.policyExecutor?.applyState({ modeIntent: true });
-			})
+		void deps.policyExecutor.applyMediaRouteChange()
 			.catch((error: unknown) => {
 			deps.state.phase = 'error';
 			deps.state.lastError = error instanceof Error ? error.message : String(error);

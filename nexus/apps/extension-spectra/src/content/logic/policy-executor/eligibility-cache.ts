@@ -63,9 +63,14 @@ export function createSiteEligibilityCache(
 		// a non-auto route from the stable policy snapshot as a user choice.
 		manualStatus: initialStatus === 'PENDING' ? null : initialStatus,
 	};
+	let decisionRevision = 0;
 
 	const refresh = async (): Promise<MediaProcessingRoute | 'auto'> => {
+		const revision = ++decisionRevision;
 		const current = await port.get();
+		if (revision !== decisionRevision) return decision.manualStatus
+			? statusToRoute(decision.manualStatus)
+			: 'auto';
 		if (current.mediaRoute === 'auto') {
 			decision.cachedStatus = 'PENDING';
 			decision.lastPersistedStatus = 'PENDING';
@@ -87,9 +92,11 @@ export function createSiteEligibilityCache(
 		if (decision.lastPersistedStatus === status) return;
 		if (decision.manualStatus && !options.force) return;
 		const previousPersistedStatus = decision.lastPersistedStatus;
+		const revision = decisionRevision;
 		decision.lastPersistedStatus = status;
 		try {
 			const result = await port.mark(statusToRoute(status), options);
+			if (revision !== decisionRevision) return;
 			if (result.mediaRoute === 'auto') {
 				decision.lastPersistedStatus = previousPersistedStatus;
 				return;
@@ -99,7 +106,9 @@ export function createSiteEligibilityCache(
 			decision.lastPersistedStatus = committed;
 			decision.manualStatus = result.source === 'user' ? committed : null;
 		} catch {
-			decision.lastPersistedStatus = previousPersistedStatus;
+			if (revision === decisionRevision) {
+				decision.lastPersistedStatus = previousPersistedStatus;
+			}
 		}
 	};
 

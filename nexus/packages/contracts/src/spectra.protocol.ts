@@ -46,10 +46,14 @@ import {
 	isMediaRouteChangedEvent,
 	isMediaRouteDecision,
 	isMediaRouteRecordRequest,
+	isMediaRouteRulesSnapshot,
+	isMediaRouteRuleUpsertPayload,
 	type MediaRoute,
 	type MediaRouteChangedEvent,
 	type MediaRouteDecision,
 	type MediaRouteRecordRequest,
+	type MediaRouteRulesSnapshot,
+	type MediaRouteRuleUpsertPayload,
 	type RegistryAddResult,
 	type RegistryQueryResult,
 	type RegistryRemoveResult,
@@ -394,6 +398,18 @@ export interface SpectraRequestMap {
 	'spectra.registry.mark-probed': {
 		payload: { domain: string; fingerprint: string; route: MediaRoute; force?: boolean };
 		response: RegistryAddResult;
+	};
+	'spectra.media-route.rules.get': {
+		payload: Record<string, never>;
+		response: MediaRouteRulesSnapshot;
+	};
+	'spectra.media-route.rules.upsert': {
+		payload: MediaRouteRuleUpsertPayload;
+		response: MediaRouteRulesSnapshot;
+	};
+	'spectra.media-route.rules.remove': {
+		payload: { fingerprint: string };
+		response: MediaRouteRulesSnapshot;
 	};
 	'spectra.hotkey-target.get': {
 		payload: Record<string, never>;
@@ -1029,6 +1045,9 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.registry.remove': isRegistryRemovePayload,
 	'spectra.registry.query': isRegistryQueryPayload,
 	'spectra.registry.mark-probed': isRegistryRecordPayload,
+	'spectra.media-route.rules.get': isEmptyPayload,
+	'spectra.media-route.rules.upsert': isMediaRouteRuleUpsertPayload,
+	'spectra.media-route.rules.remove': isRegistryRemovePayload,
 	'spectra.hotkey-target.get': isEmptyPayload,
 	'spectra.hotkey-target.set': isHotkeyTargetState,
 	'spectra.remote.session.get': isRemoteSessionPayload,
@@ -1317,6 +1336,9 @@ const RESPONSE_DATA_GUARDS = {
 	'spectra.registry.remove': isRegistryRemoveResult,
 	'spectra.registry.query': isRegistryQueryResult,
 	'spectra.registry.mark-probed': isRegistryAddResult,
+	'spectra.media-route.rules.get': isMediaRouteRulesSnapshot,
+	'spectra.media-route.rules.upsert': isMediaRouteRulesSnapshot,
+	'spectra.media-route.rules.remove': isMediaRouteRulesSnapshot,
 	'spectra.hotkey-target.get': isHotkeyTargetState,
 	'spectra.hotkey-target.set': isHotkeyTargetState,
 	'spectra.remote.session.get': isRemoteSessionStatus,

@@ -8,13 +8,18 @@ import {
 	MAX_SETTINGS_SNAPSHOT_ENTRIES,
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
 	createSiteRouteFingerprint,
+	createMediaRouteRuleFingerprint,
+	createMediaRouteScopeKey,
 	findBestHostnameMatch,
 	isMediaRouteEntry,
 	isMediaRouteSettings,
 	isAudioConfigPatch,
 	isFiniteControlValue,
 	normalizeHostname,
+	normalizeMediaRouteScope,
+	parseMediaRouteScopeKey,
 	selectMediaProcessingRoute,
+	selectMediaRouteDecisionForUrl,
 	type GlobalSettings,
 	type AudioConfig,
 	type AudioPresetValue,
@@ -27,6 +32,9 @@ import {
 	type MediaRouteSettings,
 	type MediaProcessingRoute,
 	type MediaRouteDecision,
+	type MediaRouteRuleEntry,
+	type MediaRouteRulesSnapshot,
+	type MediaRouteScope,
 	type DomainEntry,
 	type DomainSource,
 	type RegistryAddResult,
@@ -113,10 +121,19 @@ export class SettingsCapacityError extends InvalidSettingsPatchError {
 
 function normalizeMediaRoutes(candidate: unknown): MediaRouteSettings {
 	const routes: MediaRouteSettings = {};
-	const accept = (rawDomain: unknown, rawEntry: unknown, fallbackSource: 'user' | 'auto' = 'user') => {
+	const accept = (
+		rawDomain: unknown,
+		rawEntry: unknown,
+		fallbackSource: 'user' | 'auto' = 'user',
+		rawPathPrefix?: unknown,
+	) => {
 		if (typeof rawDomain !== 'string') return;
-		const domain = normalizeHostname(rawDomain);
-		if (!domain) return;
+		const explicitPathPrefix = typeof rawPathPrefix === 'string' ? rawPathPrefix : undefined;
+		const scope = explicitPathPrefix !== undefined
+			? normalizeMediaRouteScope(rawDomain, explicitPathPrefix)
+			: parseMediaRouteScopeKey(rawDomain) ?? normalizeMediaRouteScope(rawDomain);
+		const key = scope ? createMediaRouteScopeKey(scope) : null;
+		if (!key) return;
 		let entry: MediaRouteEntry | null = null;
 		if (isMediaRouteEntry(rawEntry)) {
 			entry = rawEntry;
@@ -136,11 +153,11 @@ function normalizeMediaRoutes(candidate: unknown): MediaRouteSettings {
 			entry = { route: 'capture', source: fallbackSource, updatedAt: 0 };
 		}
 		if (!entry) return;
-		const previous = routes[domain];
+		const previous = routes[key];
 		if (!previous
 			|| (entry.source === 'user' && previous.source !== 'user')
 			|| (entry.source === previous.source && entry.updatedAt >= previous.updatedAt)) {
-			routes[domain] = entry;
+			routes[key] = entry;
 		}
 	};
 
@@ -149,7 +166,12 @@ function normalizeMediaRoutes(candidate: unknown): MediaRouteSettings {
 	} else if (Array.isArray(candidate)) {
 		for (const value of candidate) {
 			if (typeof value === 'string') accept(value, value);
-			else if (isRecord(value)) accept(value.domain, value, value.source === 'auto' ? 'auto' : 'user');
+			else if (isRecord(value)) accept(
+				value.domain,
+				value,
+				value.source === 'auto' ? 'auto' : 'user',
+				value.pathPrefix,
+			);
 		}
 	}
 	return routes;
@@ -172,8 +194,33 @@ function projectMediaRouteEntry(domain: string, entry: MediaRouteEntry): DomainE
 function projectMediaRouteSnapshot(routes: MediaRouteSettings): RegistrySnapshot {
 	return {
 		entries: Object.entries(routes)
-			.map(([domain, entry]) => projectMediaRouteEntry(domain, entry))
+			.flatMap(([key, entry]) => {
+				const scope = parseMediaRouteScopeKey(key);
+				return scope && !scope.pathPrefix ? [projectMediaRouteEntry(scope.domain, entry)] : [];
+			})
 			.sort((left, right) => left.domain.localeCompare(right.domain)),
+	};
+}
+
+function projectMediaRouteRulesSnapshot(routes: MediaRouteSettings): MediaRouteRulesSnapshot {
+	return {
+		entries: Object.entries(routes)
+			.flatMap(([key, entry]): MediaRouteRuleEntry[] => {
+				const scope = parseMediaRouteScopeKey(key);
+				if (!scope) return [];
+				const fingerprint = createMediaRouteRuleFingerprint(scope);
+				if (!fingerprint) return [];
+				return [{
+					domain: scope.domain,
+					...(scope.pathPrefix ? { pathPrefix: scope.pathPrefix } : {}),
+					fingerprint,
+					...entry,
+				}];
+			})
+			.sort((left, right) => (
+				left.domain.localeCompare(right.domain)
+				|| (left.pathPrefix ?? '').localeCompare(right.pathPrefix ?? '')
+			)),
 	};
 }
 
@@ -466,14 +513,24 @@ export class SettingsRepository {
 			await this.readState();
 			const normalized = normalizeHostname(hostname);
 			if (!normalized) return { mediaRoute: 'auto', source: null };
+			const candidates = Object.entries(await this.readMediaRoutes()).filter(([key]) => (
+				!parseMediaRouteScopeKey(key)?.pathPrefix
+			));
 			const match = findBestHostnameMatch(
 				normalized,
-				Object.entries(await this.readMediaRoutes()),
+				candidates.filter(([, entry]) => entry.source === 'user'),
 				([domain]) => domain,
-			);
+			) ?? findBestHostnameMatch(normalized, candidates, ([domain]) => domain);
 			return match
 				? { mediaRoute: match[1].route, source: match[1].source }
 				: { mediaRoute: 'auto', source: null };
+		});
+	}
+
+	resolveMediaRouteDecisionForUrl(resourceUrl: string): Promise<MediaRouteDecision> {
+		return this.serialized(async () => {
+			await this.readState();
+			return selectMediaRouteDecisionForUrl(resourceUrl, await this.readMediaRoutes());
 		});
 	}
 
@@ -491,17 +548,27 @@ export class SettingsRepository {
 		});
 	}
 
+	getMediaRouteRulesSnapshot(): Promise<MediaRouteRulesSnapshot> {
+		return this.serialized(async () => {
+			await this.readState();
+			return projectMediaRouteRulesSnapshot(await this.readMediaRoutes());
+		});
+	}
+
 	queryMediaRoute(domain: string): Promise<RegistryQueryResult> {
 		return this.serialized(async () => {
 			await this.readState();
 			const normalized = normalizeHostname(domain);
 			if (!normalized) throw new InvalidSettingsPatchError('Invalid media route hostname');
 			const routes = await this.readMediaRoutes();
+			const candidates = Object.entries(routes).filter(([key]) => (
+				!parseMediaRouteScopeKey(key)?.pathPrefix
+			));
 			const match = findBestHostnameMatch(
 				normalized,
-				Object.entries(routes),
+				candidates.filter(([, entry]) => entry.source === 'user'),
 				([candidate]) => candidate,
-			);
+			) ?? findBestHostnameMatch(normalized, candidates, ([candidate]) => candidate);
 			return { entry: match ? projectMediaRouteEntry(match[0], match[1]) : null };
 		});
 	}
@@ -536,6 +603,37 @@ export class SettingsRepository {
 		options: { force?: boolean } = {},
 	): Promise<RegistryAddResult> {
 		return this.addMediaRoute(domain, 'auto', route, options);
+	}
+
+	upsertMediaRouteRule(
+		scope: MediaRouteScope,
+		route: MediaProcessingRoute,
+	): Promise<MediaRouteRulesSnapshot> {
+		return this.serialized(async () => {
+			const current = await this.readState();
+			const normalized = normalizeMediaRouteScope(scope.domain, scope.pathPrefix);
+			const key = normalized ? createMediaRouteScopeKey(normalized) : null;
+			if (!key) throw new InvalidSettingsPatchError('Invalid media route scope');
+			const routes = await this.readMediaRoutes();
+			routes[key] = { route, source: 'user', updatedAt: Date.now() };
+			await this.persistMediaRoutes(routes, current.revision + 1);
+			return projectMediaRouteRulesSnapshot(routes);
+		});
+	}
+
+	removeMediaRouteRule(fingerprint: string): Promise<MediaRouteRulesSnapshot> {
+		return this.serialized(async () => {
+			const current = await this.readState();
+			const routes = await this.readMediaRoutes();
+			const key = Object.keys(routes).find((candidate) => {
+				const scope = parseMediaRouteScopeKey(candidate);
+				return scope && createMediaRouteRuleFingerprint(scope) === fingerprint;
+			});
+			if (!key) return projectMediaRouteRulesSnapshot(routes);
+			delete routes[key];
+			await this.persistMediaRoutes(routes, current.revision + 1);
+			return projectMediaRouteRulesSnapshot(routes);
+		});
 	}
 
 	removeMediaRoute(fingerprint: string): Promise<RegistryRemoveResult> {

@@ -263,6 +263,20 @@ describe('event-driven media registry', () => {
 			expect(modalTarget).toBeDefined();
 			expect(registry.resolve(null)?.target).toEqual(modalTarget);
 			expect(events.filter(({ event }) => event === 'selected')).toEqual([]);
+
+			// A background preview can start after the visible modal is already
+			// playing. Its play and browser-generated property events are not a
+			// user selection of the preview.
+			hiddenPreload.dispatchEvent(new Event('play'));
+			expect(registry.resolve(null)?.target).toEqual(modalTarget);
+			for (const type of ['volumechange', 'ratechange', 'seeked']) {
+				const event = new Event(type);
+				hiddenPreload.dispatchEvent(event);
+				expect(registry.resolve(null)?.target).toEqual(modalTarget);
+			}
+			expect(events.filter(({ event }) => event === 'selected').every(({ target }) => (
+				target.mediaId === modalTarget?.mediaId
+			))).toBe(true);
 		} finally {
 			registry?.dispose();
 			restoreGlobalDescriptors(descriptors);

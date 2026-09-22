@@ -7,5 +7,5 @@ export {
 export {
 	setupPopupConnectionListener
 } from './popup-connection';
-export { createNavigationObserver } from './navigation-observer';
+export { createNavigationObserver, getDocumentRouteIdentity } from './navigation-observer';
 

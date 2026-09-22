@@ -12,6 +12,12 @@ function decision(
 	return { mediaRoute, source };
 }
 
+function deferred<T>() {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+	return { promise, resolve };
+}
+
 function port(initial: MediaRouteDecision = decision('auto')): EligibilityCachePort & {
 	get: ReturnType<typeof mock>;
 	mark: ReturnType<typeof mock>;
@@ -91,5 +97,28 @@ describe('automatic site route cache', () => {
 		expect(await cache.refresh()).toBe('capture');
 		expect(cache.getUserRoute()).toBe('capture');
 		expect(await cache.resolve('SAFE')).toBe('RESTRICTED');
+	});
+
+	test('does not let an older automatic hydration overwrite a newer user path refresh', async () => {
+		const oldHydration = deferred<MediaRouteDecision>();
+		let reads = 0;
+		const cachePort: EligibilityCachePort = {
+			get: mock(async () => {
+				reads += 1;
+				return reads === 1
+					? oldHydration.promise
+					: decision('capture', 'user');
+			}),
+			mark: mock(async () => decision('direct')),
+		};
+		const cache = createSiteEligibilityCache('auto', cachePort);
+
+		expect(await cache.refresh()).toBe('capture');
+		expect(cache.getUserRoute()).toBe('capture');
+		oldHydration.resolve(decision('direct', 'auto'));
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(cache.getUserRoute()).toBe('capture');
 	});
 });

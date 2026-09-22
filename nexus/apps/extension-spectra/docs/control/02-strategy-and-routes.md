@@ -63,6 +63,8 @@ type CaptureAdmission = {
 ### §4.1 Three-owner processor admission
 
 显式全音频 DSP 或前台 Visualizer 需要处理器时，`resolveDesiredAudioMode()` 在完整精确媒体覆盖下选择 `webaudio`，否则才选择 `capture`；中性且无观察需求时保持 `bypass`。`SettingsRepository` 持久化、`spectra.registry.*` v2 独立 Popup 投影的站点路由只改变候选选择：`direct` 禁止降级 Capture，`capture` 跳过页面图但仍必须携带一次性 admission，`auto` 使用上述最低成本顺序。严格的 `spectra.settings.*` v2 响应不含路由字段；Content 只经 sender-bound `spectra.audio.route.get/record` 查询或记录当前文档证据，不能命名其他站点，也不直接读写持久状态。
+
+手动路由可以限定为 hostname，或限定为该 hostname 下的 canonical pathname 前缀。现有 hostname key 与 `spectra.registry.*` v2 domain-only shape 保持不变；`spectra.media-route.rules.*` 是 Popup-only 的完整规则投影，两者由同一个 `SettingsRepository`、revision 与容量边界持有。查询按最具体 hostname、再按最长路径段前缀选择；query 与 hash 不参与匹配，`/live` 不匹配 `/livestream`。自动检测只记录 hostname 级 advisory evidence，不从动态页面 URL 推断持久路径。Content 的路由读取始终由 Background 从 sender 当前 URL 派生；SPA 导航在 policy 串行队列中刷新规则，并清除上一页面的中性 processor hold，旧 Capture 因新规则为 `direct` 时必须退休。导航本身不能创建 Capture admission。
 - MediaElement WebAudio 必须在首次不可逆绑定前证明所有当前 source 的同源/blob/data 或精确 preload-CORS 证据，并在 ACK 中返回 running context、graph signature、normalized actual config 与 source count。
 - `captureAdmission` 只能随已验证的 extension-invocation intent 进入内部 coordinator，普通 `ControlSubmitRequest` 不能伪造该字段。
 - host `active` ACK 必须同时证明 `tabId`、`generation`、`controlRevision`、`phase:'active'`、`contextState:'running'`、`graphSignature` 与 `normalizedActualConfig`；签名不匹配即拒收。

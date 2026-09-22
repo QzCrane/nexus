@@ -347,9 +347,6 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(settings).not.toContain('getRegistrySnapshot');
 		expect(settings).not.toContain('registryEntries');
 		expect(settings).toContain('initMediaRouteUI(state.dict)');
-		expect(routeUI).toContain('getRegistrySnapshot');
-		expect(routeUI).toContain('addRegistryDomain');
-		expect(routeUI).toContain('removeRegistryDomain');
 		expect(routeUI).not.toContain("scope: 'media-route'");
 		expect(routeUI).toContain('subscribeSettingsSnapshots');
 		expect(popupIndex).not.toContain('registryEntries');

@@ -34,6 +34,8 @@ export interface PolicyExecutor {
 	dispose(): void;
 	// eff: re-calculates the optimal AudioMode and synchronizes the active execution layer
 	applyState(options?: PolicyApplicationOptions): Promise<void>;
+	applyNavigation(isCurrentRoute: () => boolean): Promise<void>;
+	applyMediaRouteChange(): Promise<void>;
 	updateBadge(): void;
 	// note: main entry point for configuration changes originating from hotkeys or background messages
 	updateConfig(

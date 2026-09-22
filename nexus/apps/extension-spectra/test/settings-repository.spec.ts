@@ -199,6 +199,110 @@ describe('background settings repository', () => {
 		});
 	});
 
+	test('keeps legacy hostname routes while resolving explicit user path prefixes by current URL', async () => {
+		const storage = new FakeStorageArea({
+			siteProcessingRoutes: {
+				'www.douyin.com': { route: 'direct', source: 'user', updatedAt: 1 },
+			},
+		});
+		const repository = new SettingsRepository(storage);
+		await repository.initialize();
+
+		await repository.upsertMediaRouteRule({
+			domain: 'www.douyin.com',
+			pathPrefix: '/follow/live',
+		}, 'capture');
+
+		expect(await repository.resolveMediaRouteDecisionForUrl(
+			'https://www.douyin.com/follow/live/123?room=456#player',
+		)).toEqual({ mediaRoute: 'capture', source: 'user' });
+		expect(await repository.resolveMediaRouteDecisionForUrl(
+			'https://www.douyin.com/follow/livestream',
+		)).toEqual({ mediaRoute: 'direct', source: 'user' });
+		expect(await repository.resolveMediaRouteDecisionForUrl(
+			'https://www.douyin.com/jingxuan?modal_id=123',
+		)).toEqual({ mediaRoute: 'direct', source: 'user' });
+		expect((await repository.getMediaRouteSnapshot()).entries).toEqual([{
+			domain: 'www.douyin.com',
+			fingerprint: 'site:www.douyin.com',
+			route: 'direct',
+			source: 'user',
+			updatedAt: 1,
+		}]);
+		const rules = await repository.getMediaRouteRulesSnapshot();
+		expect(rules.entries).toEqual([
+			{
+				domain: 'www.douyin.com',
+				fingerprint: 'site:www.douyin.com',
+				route: 'direct',
+				source: 'user',
+				updatedAt: 1,
+			},
+			{
+				domain: 'www.douyin.com',
+				pathPrefix: '/follow/live',
+				fingerprint: 'site:www.douyin.com/follow/live',
+				route: 'capture',
+				source: 'user',
+				updatedAt: expect.any(Number),
+			},
+		]);
+		expect(storage.values.siteProcessingRoutes).toMatchObject({
+			'www.douyin.com': { route: 'direct', source: 'user', updatedAt: 1 },
+			'www.douyin.com/follow/live': { route: 'capture', source: 'user' },
+		});
+
+		await repository.removeMediaRouteRule('site:www.douyin.com/follow/live');
+		expect(await repository.resolveMediaRouteDecisionForUrl(
+			'https://www.douyin.com/follow/live/123',
+		)).toEqual({ mediaRoute: 'direct', source: 'user' });
+	});
+
+	test('normalizes an array path rule into the canonical scope key without dropping its prefix', async () => {
+		const storage = new FakeStorageArea({
+			mediaRouteRegistry: [{
+				domain: 'WWW.DOUYIN.COM.',
+				pathPrefix: '/follow/live/',
+				route: 'capture',
+				source: 'user',
+				updatedAt: 7,
+			}],
+		});
+		const repository = new SettingsRepository(storage);
+		await repository.initialize();
+
+		expect(storage.values.siteProcessingRoutes).toEqual({
+			'www.douyin.com/follow/live': {
+				route: 'capture',
+				source: 'user',
+				updatedAt: 7,
+			},
+		});
+		expect((await repository.getMediaRouteSnapshot()).entries).toEqual([]);
+		expect((await repository.getMediaRouteRulesSnapshot()).entries).toEqual([{
+			domain: 'www.douyin.com',
+			pathPrefix: '/follow/live',
+			fingerprint: 'site:www.douyin.com/follow/live',
+			route: 'capture',
+			source: 'user',
+			updatedAt: 7,
+		}]);
+	});
+
+	test('keeps a parent user rule authoritative over a more-specific automatic record', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea({
+			siteProcessingRoutes: {
+				'douyin.com': { route: 'direct', source: 'user', updatedAt: 1 },
+				'www.douyin.com': { route: 'capture', source: 'auto', updatedAt: 2 },
+			},
+		}));
+		await repository.initialize();
+
+		expect(await repository.resolveMediaRouteDecisionForUrl(
+			'https://www.douyin.com/follow/live',
+		)).toEqual({ mediaRoute: 'direct', source: 'user' });
+	});
+
 	test('merges legacy site keys that collide after hostname normalization', async () => {
 		const firstBinding = {
 			id: 'first',

@@ -16,6 +16,8 @@ import {
 	type ControlSnapshot,
 	type AudioSessionSnapshot,
 	type RegistrySnapshot,
+	type MediaRouteRulesSnapshot,
+	type MediaRouteDecision,
 	type SettingsPatch,
 	type SettingsSnapshot,
 } from '@nexus/contracts';
@@ -3928,7 +3930,7 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 35_000);
 
-	test('replays speed when a pre-rendered same-document SPA modal becomes active', async () => {
+	test.each([true, false])('replays speed when a pre-rendered same-document SPA modal becomes active (hide feed: %s)', async (hideFeed) => {
 		const spaUrl = `${fixtureUrl}?spa-prerendered-modal=1`;
 		const spaPage = await browser.newPage();
 		try {
@@ -3972,8 +3974,14 @@ describe('SPECTRA built extension smoke', () => {
 					label: document.querySelector('#modal-rate-label')?.textContent ?? null,
 				};
 			})).toEqual({ feedRate: 2, modalRate: 1, label: '1.0x' });
+			await spaPage.click('#v');
 
-			await spaPage.evaluate(() => {
+			await spaPage.evaluate((hidePrevious) => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (feed) {
+					feed.pause();
+					if (hidePrevious) feed.style.display = 'none';
+				}
 				const modal = document.querySelector<HTMLVideoElement>('#modal-video');
 				if (!modal) throw new Error('SPA modal video is missing');
 				modal.style.display = 'block';
@@ -3982,7 +3990,7 @@ describe('SPECTRA built extension smoke', () => {
 				// new <video>. Its native play lifecycle is therefore the exact media
 				// identity boundary for desired-state replay.
 				modal.dispatchEvent(new Event('play'));
-			});
+			}, hideFeed);
 			await eventually(
 				() => spaPage.evaluate(() => {
 					const modal = document.querySelector<HTMLVideoElement>('#modal-video');
@@ -4114,6 +4122,58 @@ describe('SPECTRA built extension smoke', () => {
 			await spaPage.close().catch(() => undefined);
 		}
 	}, 35_000);
+
+	test('keeps native volume on the visible live stream when a hidden preview starts and changes properties', async () => {
+		const settingsClient = await openExtensionClient('options.html');
+		const settings = await patchExtensionSettings(settingsClient, {
+			scope: 'global', changes: { visualizerEnabled: false },
+		});
+		const page = await browser.newPage();
+		try {
+			await page.goto(`${fixtureUrl}?live-preview-owner=1`, { waitUntil: 'load' });
+			await page.evaluate(async () => {
+				const video = document.querySelector<HTMLVideoElement>('#v');
+				if (!video) throw new Error('Missing main video');
+				video.style.cssText = 'width:640px;height:360px';
+				const canvas = document.createElement('canvas');
+				canvas.width = 640;
+				canvas.height = 360;
+				canvas.getContext('2d')?.fillRect(0, 0, 640, 360);
+				video.srcObject = canvas.captureStream(1);
+				await video.play();
+			});
+			await acquireSmokeRuntime(page.url(), 'live-preview-owner');
+			const tabId = await getTabId(page.url());
+			await page.bringToFront();
+			await submitEffectiveVolume(tabId, 80);
+			await page.evaluate(async () => {
+				const main = document.querySelector<HTMLVideoElement>('#v');
+				if (!(main?.srcObject instanceof MediaStream)) throw new Error('Missing live stream');
+				const preview = document.createElement('video');
+				preview.id = 'background-preview';
+				preview.style.display = 'none';
+				preview.muted = true;
+				preview.srcObject = main.srcObject.clone();
+				document.body.append(preview);
+				await preview.play();
+				preview.volume = 0.25;
+				preview.playbackRate = 1.5;
+				await new Promise<void>((resolve) => preview.addEventListener('volumechange', () => resolve(), { once: true }));
+			});
+			await page.bringToFront();
+			await submitEffectiveVolume(tabId, 40);
+			expect(await page.evaluate(() => ({
+				main: document.querySelector<HTMLVideoElement>('#v')?.volume,
+				preview: document.querySelector<HTMLVideoElement>('#background-preview')?.volume,
+			}))).toEqual({ main: 0.4, preview: 0.25 });
+		} finally {
+			await page.close();
+			await patchExtensionSettings(settingsClient, {
+				scope: 'global', changes: { visualizerEnabled: settings.previous.globalSettings.visualizerEnabled },
+			});
+			await settingsClient.close();
+		}
+	}, 25_000);
 
 	test('synchronizes page-native media bidirectionally through Popup and the mute hotkey', async () => {
 		await installPageMediaControllerHarness();
@@ -4552,6 +4612,60 @@ describe('SPECTRA built extension smoke', () => {
 			},
 		});
 	});
+
+	test('saves separate path rules through Popup and resolves the current SPA URL', async () => {
+		const popup = await browser.newPage();
+		popup.setDefaultTimeout(5_000);
+		const page = await browser.newPage();
+		const domain = new URL(fixtureUrl).hostname;
+		const prefixes = ['/route-smoke/live', '/route-smoke/video'];
+		try {
+			await page.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+			await page.evaluate((path) => history.pushState({}, '', `${path}?anchor=1`), prefixes[0]);
+			const tabId = await getTabId(page.url());
+			await popup.bringToFront();
+			await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: 'domcontentloaded' });
+			await popup.waitForSelector('#view-main:not([hidden])');
+			await popup.click('#btn-settings');
+			await popup.waitForSelector('#view-settings:not([hidden])');
+			for (const [index, prefix] of prefixes.entries()) {
+				await popup.type('#registry-new-domain', `https://${domain}${prefix}?ignored=1`);
+				await popup.select('#registry-new-route', index === 0 ? 'capture' : 'direct');
+				await popup.click('#btn-add-domain');
+				await popup.waitForFunction((label) => (
+					[...document.querySelectorAll('.registry-item-domain')].some((node) => node.textContent === label)
+				), {}, `${domain}${prefix}`);
+				await popup.waitForFunction(() => document.querySelector<HTMLInputElement>('#registry-new-domain')?.value === '');
+			}
+			const rules = await sendExtensionMessage<SmokeRpcResult<MediaRouteRulesSnapshot>>(popup, {
+				protocolVersion: 2, type: 'spectra.media-route.rules.get', payload: {},
+			});
+			expect(rules).toMatchObject({ ok: true, data: { entries: expect.arrayContaining([
+				{ domain, pathPrefix: prefixes[0], fingerprint: `site:${domain}${prefixes[0]}`, route: 'capture', source: 'user', updatedAt: expect.any(Number) },
+				{ domain, pathPrefix: prefixes[1], fingerprint: `site:${domain}${prefixes[1]}`, route: 'direct', source: 'user', updatedAt: expect.any(Number) },
+			]) } });
+			const readRoute = () => evaluateServiceWorker(async (targetTabId) => {
+				const [result] = await chrome.scripting.executeScript({
+					target: { tabId: targetTabId, frameIds: [0] }, world: 'ISOLATED',
+					func: () => chrome.runtime.sendMessage({ protocolVersion: 2, requestId: crypto.randomUUID(), type: 'spectra.audio.route.get', payload: {} }),
+				});
+				return result?.result;
+			}, tabId) as Promise<SmokeRpcResult<MediaRouteDecision>>;
+			expect(await readRoute()).toMatchObject({ ok: true, data: { mediaRoute: 'capture', source: 'user' } });
+			await page.evaluate((path) => history.pushState({}, '', `${path}?modal_id=2`), prefixes[1]);
+			await eventually(readRoute, (result) => result.ok && result.data.mediaRoute === 'direct', 'same-document path route');
+			await page.evaluate((path) => history.pushState({}, '', `${path}/next?anchor=2`), prefixes[0]);
+			await eventually(readRoute, (result) => result.ok && result.data.mediaRoute === 'capture', 'nested live path route');
+		} finally {
+			for (const prefix of prefixes) {
+				await sendExtensionMessage(popup, {
+					protocolVersion: 2, type: 'spectra.media-route.rules.remove', payload: { fingerprint: `site:${domain}${prefix}` },
+				});
+			}
+			await popup.close();
+			await page.close();
+		}
+	}, 25_000);
 
 	test('initializes popup and options scripts without page exceptions', async () => {
 		const offscreenContextsBeforePopup = await getOffscreenContextCount();

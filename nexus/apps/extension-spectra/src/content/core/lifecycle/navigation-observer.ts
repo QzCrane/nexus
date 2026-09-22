@@ -4,7 +4,7 @@ import { isExtensionContextValid } from '../context-guard';
 import { createEventListener, createCleanupManager } from '../../utils/timing';
 
 interface NavigationObserverDeps {
-	onNavigate: () => void;
+	onNavigate: (routeIdentity: string) => void;
 }
 
 export function getDocumentRouteIdentity(location: Pick<Location, 'origin' | 'pathname' | 'search' | 'hash'>): string {
@@ -27,7 +27,7 @@ export function createNavigationObserver(deps: NavigationObserverDeps): () => vo
 		// behind a debounce would leave a window in which an ACK from the previous
 		// query/hash route could still be accepted.
 		lastRoute = currentRoute;
-		onNavigate();
+		onNavigate(currentRoute);
 	};
 
 	cleanup.add(createEventListener(window, 'popstate', handleNav));

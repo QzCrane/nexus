@@ -24,6 +24,7 @@ interface ModeExecutionOwner {
 
 export interface ModeExecutor {
 	execute(advanceGeneration?: boolean, captureAdmission?: CaptureAdmission): Promise<void>;
+	invalidate(): void;
 	dispose(): void;
 }
 
@@ -52,6 +53,9 @@ export function createModeExecutor(
 				state.generation,
 				captureAdmission,
 			);
+		},
+		invalidate() {
+			if (!owner.disposed) owner.run += 1;
 		},
 		dispose() {
 			if (owner.disposed) return;

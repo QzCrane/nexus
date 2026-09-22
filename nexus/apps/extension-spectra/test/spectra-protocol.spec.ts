@@ -484,6 +484,29 @@ describe('SPECTRA settings runtime guards', () => {
 			payload: { domain: 'Example.com.', fingerprint: 'site:example.com', route: 'direct' },
 		})).toBe(true);
 		expect(isSpectraResponse('spectra.registry.get', rpcSuccess({ entries: [entry] }))).toBe(true);
+		const pathEntry = {
+			...entry,
+			pathPrefix: '/follow/live',
+			fingerprint: 'site:example.com/follow/live',
+			source: 'user' as const,
+		};
+		expect(isSpectraResponse('spectra.registry.get', rpcSuccess({ entries: [pathEntry] }))).toBe(false);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'route-rules-upsert',
+			type: 'spectra.media-route.rules.upsert',
+			payload: { domain: 'example.com', pathPrefix: '/follow/live', route: 'capture' },
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'route-rules-invalid-prefix',
+			type: 'spectra.media-route.rules.upsert',
+			payload: { domain: 'example.com', pathPrefix: '/follow/live/', route: 'capture' },
+		})).toBe(false);
+		expect(isSpectraResponse(
+			'spectra.media-route.rules.get',
+			rpcSuccess({ entries: [entry, pathEntry] }),
+		)).toBe(true);
 		expect(isSpectraResponse('spectra.registry.mark-probed', rpcSuccess({
 			entries: [entry],
 			entry,

@@ -18,6 +18,7 @@ import type {
 
 export {
 	createSiteRouteFingerprint,
+	parseMediaRouteScopeInput,
 	isDomainEntry,
 	isMediaRouteFingerprint,
 	isRegistryEntries,
@@ -25,6 +26,7 @@ export {
 export { normalizeHostname } from './domain.contracts.js';
 export type {
 	DomainEntry,
+	MediaRouteRuleEntry,
 	MediaRoute,
 	RegistryAddResult,
 	RegistryQueryResult,

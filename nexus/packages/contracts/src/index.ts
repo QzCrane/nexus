@@ -14,6 +14,8 @@ export type {
 } from './control-value-limits.js';
 export {
 	createSiteRouteFingerprint,
+	createMediaRouteRuleFingerprint,
+	createMediaRouteScopeKey,
 	isDomainEntry,
 	isMediaProcessingRoute,
 	isMediaRouteFingerprint,
@@ -22,6 +24,9 @@ export {
 	isMediaRouteDecision,
 	isMediaRouteRecordRequest,
 	isMediaRouteSettings,
+	isMediaRouteRuleEntry,
+	isMediaRouteRulesSnapshot,
+	isMediaRouteRuleUpsertPayload,
 	isRegistryEntries,
 	isRegistryAddResult,
 	isRegistryAddPayload,
@@ -32,6 +37,10 @@ export {
 	isRegistryRecordPayload,
 	isRegistrySnapshot,
 	selectMediaProcessingRoute,
+	selectMediaRouteDecisionForUrl,
+	normalizeMediaRouteScope,
+	parseMediaRouteScopeInput,
+	parseMediaRouteScopeKey,
 } from './media-route.contracts.js';
 export type {
 	DomainEntry,
@@ -39,6 +48,10 @@ export type {
 	MediaRoute,
 	MediaProcessingRoute,
 	MediaRouteEntry,
+	MediaRouteRuleEntry,
+	MediaRouteRulesSnapshot,
+	MediaRouteRuleUpsertPayload,
+	MediaRouteScope,
 	MediaRouteChangedEvent,
 	MediaRouteDecision,
 	MediaRouteRecordRequest,

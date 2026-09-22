@@ -14,6 +14,8 @@ import {
 	isSpectraRegistryResponse,
 	type SpectraRegistryRequestType,
 } from '@nexus/contracts/registry-runtime';
+import type { MediaRouteRulesSnapshot, MediaRouteScope } from '@nexus/contracts';
+import { sendSpectraRequest } from './spectra-client';
 import type {
 	SpectraRequestEnvelope,
 	SpectraRequestPayload,
@@ -99,6 +101,31 @@ export async function addRegistryDomain(domain: string, route: MediaRoute): Prom
 
 export async function removeRegistryDomain(fingerprint: string): Promise<RegistryRemoveResult> {
 	const response = await sendRegistryRequest('spectra.registry.remove', { fingerprint });
+	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+	return response.data;
+}
+
+export async function getMediaRouteRules(): Promise<MediaRouteRulesSnapshot> {
+	const response = await sendSpectraRequest('spectra.media-route.rules.get', {});
+	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+	return response.data;
+}
+
+export async function upsertMediaRouteRule(
+	scope: MediaRouteScope,
+	route: MediaRoute,
+): Promise<MediaRouteRulesSnapshot> {
+	const response = await sendSpectraRequest('spectra.media-route.rules.upsert', {
+		domain: scope.domain,
+		...(scope.pathPrefix ? { pathPrefix: scope.pathPrefix } : {}),
+		route,
+	});
+	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+	return response.data;
+}
+
+export async function removeMediaRouteRule(fingerprint: string): Promise<MediaRouteRulesSnapshot> {
+	const response = await sendSpectraRequest('spectra.media-route.rules.remove', { fingerprint });
 	if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 	return response.data;
 }

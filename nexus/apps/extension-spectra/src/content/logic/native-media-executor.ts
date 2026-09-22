@@ -1673,6 +1673,8 @@ export class NativeMediaExecutor {
 		allowPageMaturation = false,
 	): void {
 		if (this.tabId === null || Object.keys(this.desiredMedia).length === 0) return;
+		const selected = this.registry.resolve(null);
+		if (!selected || this.targetKey(selected.target) !== this.targetKey(target)) return;
 		const key = this.targetKey(target);
 		if (this.replayPending.has(key)) {
 			if (allowPageMaturation && element) {

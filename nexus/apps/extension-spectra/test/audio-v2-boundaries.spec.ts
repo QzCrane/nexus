@@ -529,7 +529,7 @@ describe('content audio v2 boundary', () => {
 		}
 	});
 
-	test('applies a current-site direct route but never manufactures Capture admission', async () => {
+	test('queues a current-site route refresh without trusting the projected route value', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const originalLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
 		Object.defineProperty(globalThis, 'chrome', {
@@ -541,12 +541,11 @@ describe('content audio v2 boundary', () => {
 			value: { hostname: 'media.example.com' },
 		});
 		try {
-			const applyState = mock(async () => undefined);
 			const state = { mediaRoute: 'auto' } as MessageHandlerDeps['state'];
-			const refreshMediaRoute = mock(async () => state.mediaRoute);
+			const applyMediaRouteChange = mock(async () => undefined);
 			const handler = createMessageHandler({
 				state,
-				policyExecutor: { applyState, refreshMediaRoute },
+				policyExecutor: { applyMediaRouteChange },
 				captureManager: { handleMessage: mock(() => false) },
 				settingsManager: {},
 			} as unknown as MessageHandlerDeps);
@@ -558,20 +557,19 @@ describe('content audio v2 boundary', () => {
 
 			expect(handler(event('direct'), { id: 'spectra-test' }, () => undefined)).toBe(false);
 			await Promise.resolve();
-			expect(state.mediaRoute).toBe('direct');
-			expect(applyState).toHaveBeenCalledWith({ modeIntent: true });
+			expect(state.mediaRoute).toBe('auto');
+			expect(applyMediaRouteChange).toHaveBeenCalledTimes(1);
 
-			applyState.mockClear();
 			expect(handler(event('capture'), { id: 'spectra-test' }, () => undefined)).toBe(false);
 			await Promise.resolve();
-			expect(state.mediaRoute).toBe('capture');
-			expect(applyState).not.toHaveBeenCalled();
+			expect(state.mediaRoute).toBe('auto');
+			expect(applyMediaRouteChange).toHaveBeenCalledTimes(2);
 
 			expect(handler({
 				...event('direct'),
 				payload: { domain: 'other.example.com', mediaRoute: 'direct' },
 			}, { id: 'spectra-test' }, () => undefined)).toBe(false);
-			expect(state.mediaRoute).toBe('capture');
+			expect(applyMediaRouteChange).toHaveBeenCalledTimes(2);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 			else Reflect.deleteProperty(globalThis, 'chrome');

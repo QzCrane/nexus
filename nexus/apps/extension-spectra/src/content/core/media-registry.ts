@@ -290,10 +290,16 @@ export class MediaRegistry {
 			'enterpictureinpicture',
 			'leavepictureinpicture',
 		] as const) {
-			const listener = (event: Event): void => {
+			const listener = (): void => {
 				if (type === 'play') {
 					record.lastPlay = performance.now();
-					this.selectRecord(record, false);
+					// A pre-rendered modal can become visible and start before the
+					// asynchronous IntersectionObserver delivers its new geometry.
+					record.visibleArea = initialVisibleArea(element);
+					const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
+					if (active && active !== record) active.visibleArea = initialVisibleArea(active.element);
+					const candidate = this.bestRecord(this.byElement.values());
+					if (candidate) this.selectRecord(candidate, true);
 				}
 				if (type === 'loadstart' || type === 'emptied') this.refreshSource(element, true);
 				if (type === 'loadedmetadata') {
@@ -301,16 +307,9 @@ export class MediaRegistry {
 					record.sourceTransitionOpen = false;
 					record.eligibilityEvidence = preloadCorsEvidence(element);
 				}
-				if (event.isTrusted
-					&& (type === 'volumechange' || type === 'ratechange' || type === 'seeked')) {
-					// Native control events can be delivered after transient activation has
-					// expired. The trusted event itself is the best element-level evidence
-					// that a page/player changed this source; pending intent correlation in
-					// NativeMediaExecutor prevents extension echoes from becoming a second
-					// revision even when an explicit command selected another media element.
-					record.lastInteraction = performance.now();
-					this.selectRecord(record, false);
-				}
+				// A script-written media property also produces a trusted browser
+				// event. It is observation, not evidence of user target selection;
+				// inactive previews must not steal the volume/speed control owner.
 				this.emit(record.target, type, element);
 			};
 			element.addEventListener(type, listener);
@@ -498,7 +497,13 @@ export class MediaRegistry {
 	}
 
 	private compare(left: MediaRecord, right: MediaRecord): number {
-		if (left.lastInteraction !== right.lastInteraction) return left.lastInteraction - right.lastInteraction;
+		// A past click cannot pin a paused/retired/hidden feed above a newly opened
+		// modal. Audio-only media is intentionally independent of geometry.
+		const interaction = (record: MediaRecord): number => record.element.ended
+			|| record.target.kind === 'video' && (record.element.paused || record.visibleArea <= 0)
+			? 0 : record.lastInteraction;
+		const interactionDifference = interaction(left) - interaction(right);
+		if (interactionDifference !== 0) return interactionDifference;
 		const leftPlaying = !left.element.paused && !left.element.ended ? 1 : 0;
 		const rightPlaying = !right.element.paused && !right.element.ended ? 1 : 0;
 		if (leftPlaying !== rightPlaying) return leftPlaying - rightPlaying;

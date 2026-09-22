@@ -14,12 +14,18 @@ const PROTO_REGISTRY_ADD = 'spectra.registry.add' as const;
 const PROTO_REGISTRY_REMOVE = 'spectra.registry.remove' as const;
 const PROTO_REGISTRY_QUERY = 'spectra.registry.query' as const;
 const PROTO_REGISTRY_MARK_PROBED = 'spectra.registry.mark-probed' as const;
+const PROTO_RULES_GET = 'spectra.media-route.rules.get' as const;
+const PROTO_RULES_UPSERT = 'spectra.media-route.rules.upsert' as const;
+const PROTO_RULES_REMOVE = 'spectra.media-route.rules.remove' as const;
 const REGISTRY_REQUEST_TYPES = new Set<string>([
 	PROTO_REGISTRY_GET,
 	PROTO_REGISTRY_ADD,
 	PROTO_REGISTRY_REMOVE,
 	PROTO_REGISTRY_QUERY,
 	PROTO_REGISTRY_MARK_PROBED,
+	PROTO_RULES_GET,
+	PROTO_RULES_UPSERT,
+	PROTO_RULES_REMOVE,
 ]);
 
 function isAttemptedRegistryMessage(message: unknown): boolean {
@@ -28,6 +34,11 @@ function isAttemptedRegistryMessage(message: unknown): boolean {
 	return candidate.protocolVersion === SPECTRA_PROTOCOL_VERSION
 		&& typeof candidate.type === 'string'
 		&& REGISTRY_REQUEST_TYPES.has(candidate.type);
+}
+
+export function isTrustedMediaRouteRulesSender(sender: chrome.runtime.MessageSender): boolean {
+	return sender.id === chrome.runtime.id
+		&& sender.url === chrome.runtime.getURL('popup.html');
 }
 
 async function projectRouteMutation(domain?: string): Promise<void> {
@@ -48,6 +59,13 @@ export function registerRegistryHandlers(): void {
 				RPC_INVALID_REQUEST,
 				`Malformed SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} site route request`,
 			));
+			return false;
+		}
+		if ((message.type === PROTO_RULES_GET
+			|| message.type === PROTO_RULES_UPSERT
+			|| message.type === PROTO_RULES_REMOVE)
+			&& !isTrustedMediaRouteRulesSender(sender)) {
+			sendResponse(rpcFailure('forbidden', 'Media route rules require the extension Popup'));
 			return false;
 		}
 
@@ -84,6 +102,26 @@ export function registerRegistryHandlers(): void {
 					{ force: message.payload.force === true },
 				);
 				await projectRouteMutation(message.payload.domain);
+				return rpcSuccess(result);
+			}
+			if (message.type === PROTO_RULES_GET) {
+				return rpcSuccess(await settingsRepository.getMediaRouteRulesSnapshot());
+			}
+			if (message.type === PROTO_RULES_UPSERT) {
+				const result = await settingsRepository.upsertMediaRouteRule({
+					domain: message.payload.domain,
+					...(message.payload.pathPrefix ? { pathPrefix: message.payload.pathPrefix } : {}),
+				}, message.payload.route);
+				await projectRouteMutation(message.payload.domain);
+				return rpcSuccess(result);
+			}
+			if (message.type === PROTO_RULES_REMOVE) {
+				const before = await settingsRepository.getMediaRouteRulesSnapshot();
+				const domain = before.entries.find((entry) => (
+					entry.fingerprint === message.payload.fingerprint
+				))?.domain;
+				const result = await settingsRepository.removeMediaRouteRule(message.payload.fingerprint);
+				if (domain) await projectRouteMutation(domain);
 				return rpcSuccess(result);
 			}
 			return rpcFailure('unsupported_request', 'No site route handler for this request');

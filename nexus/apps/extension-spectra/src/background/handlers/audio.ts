@@ -75,7 +75,8 @@ function controlSessionIdentityFromSender(sender: chrome.runtime.MessageSender) 
 async function resolveAudioPolicyForSender(sender: chrome.runtime.MessageSender): Promise<AudioSitePolicy> {
 	const tabId = sender.tab?.id;
 	const identity = controlSessionIdentityFromSender(sender);
-	const domain = normalizeHostname(sender.url ?? sender.tab?.url ?? '') ?? '';
+	const resourceUrl = await requireCurrentSenderResourceUrl(sender);
+	const domain = normalizeHostname(resourceUrl) ?? '';
 	let config: AudioConfig | null = null;
 	if (tabId && identity) {
 		try {
@@ -87,7 +88,8 @@ async function resolveAudioPolicyForSender(sender: chrome.runtime.MessageSender)
 	}
 	const [fallbackConfig, mediaRoute] = await Promise.all([
 		config ? Promise.resolve(config) : settingsRepository.resolveAudioConfig(domain),
-		settingsRepository.resolveMediaRoute(domain),
+		settingsRepository.resolveMediaRouteDecisionForUrl(resourceUrl)
+			.then((decision) => decision.mediaRoute),
 	]);
 	return { config: fallbackConfig, mediaRoute };
 }
@@ -96,6 +98,19 @@ function requireSenderHostname(sender: chrome.runtime.MessageSender): string {
 	const hostname = normalizeHostname(sender.url ?? sender.tab?.url ?? '');
 	if (!hostname) throw new Error('Audio route requires a valid content-document hostname');
 	return hostname;
+}
+
+async function requireCurrentSenderResourceUrl(sender: chrome.runtime.MessageSender): Promise<string> {
+	const tabId = sender.tab?.id;
+	const documentId = sender.documentId;
+	if (!tabId || sender.frameId !== 0 || !documentId) {
+		throw new Error('Audio route requires a top-level document identity');
+	}
+	const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0, documentId });
+	if (!frame?.url || frame.documentId !== documentId || !normalizeHostname(frame.url)) {
+		throw new Error('Audio route sender is no longer the current top-level document');
+	}
+	return frame.url;
 }
 
 function senderMatchesEnvelope(
@@ -458,13 +473,18 @@ export function registerAudioV2Listener(): void {
 				if (!sessionIdentityFromSender(sender)) {
 					throw new Error('Audio route requires a document identity');
 				}
-				return settingsRepository.resolveMediaRouteDecision(requireSenderHostname(sender));
+				return settingsRepository.resolveMediaRouteDecisionForUrl(
+					await requireCurrentSenderResourceUrl(sender),
+				);
 			}
 			if (message.type === PROTO_AUDIO_ROUTE_RECORD) {
 				if (!sessionIdentityFromSender(sender)) {
 					throw new Error('Audio route evidence requires a document identity');
 				}
-				const hostname = requireSenderHostname(sender);
+				const hostname = requireSenderHostname({
+					...sender,
+					url: await requireCurrentSenderResourceUrl(sender),
+				});
 				const result = await settingsRepository.markMediaRouteProbed(
 					hostname,
 					message.payload.route,

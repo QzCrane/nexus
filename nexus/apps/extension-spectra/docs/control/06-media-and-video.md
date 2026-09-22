@@ -24,7 +24,8 @@ interface MediaTarget {
 }
 ```
 
-- **目标选择优先级**: `显式 mediaId -> 最新受信任交互 -> 最新播放 -> 当前播放中 -> 注册视口几何/可见性 -> 注册顺序`
+- **目标选择**: 显式媒体选择保持粘性；新 `play` 事件按 `有效用户指针交互 -> 当前播放中 -> 可见面积 -> 最近播放 -> 注册顺序` 比较自动候选，不能因隐藏预览最后触发 `play` 就覆盖主播放器。已结束媒体、暂停或不可见视频的历史指针交互不阻止新播放器接管；纯音频不受可见面积限制。实际选择变化通过唯一 `selected` 通知同步 Background。
+- **观察与恢复边界**: `volumechange`、`ratechange`、`seeked` 即使由浏览器标记为 trusted，也可能来自网页脚本，不能据此切换控制目标。恢复已确认的音量/速度只作用于当前选中媒体；后台预加载元素的恢复 ACK 不得夺取当前目标。
 - `activeMedia` 与 `activeVideo` 独立关联，音频元素选择不清除视频目标。控制写入作用域限定为 top-level document only (`frameId: 0`)；Popup 的只读媒体发现会独立检查已授权 frame，但不会把子 frame 变成控制目标。
 
 ### §13.1 Document-level inventory
@@ -54,8 +55,8 @@ Popup 枚举使用 `tabId + document generation` 隔离在途探测，并在一�
 | 重复 `load()` 同 URL | `emptied`/`loadstart` 递增 `sourceRevision`；`loadedmetadata` 闭合 epoch | `MediaRegistry::refreshSource`（防状态泄露） |
 | `srcObject` 替换 | 相同 URL 下不同流递增 `sourceRevision` | `MediaRegistry::sourceIdentity` |
 | 框架节点重排 | `isConnected === false` 时在微任务确认销毁 | `MediaRegistry::queueRemovalTree` |
-| SPA 预渲染 Modal | 注册时同步记录可见面积并允许目标重放 | `MediaRegistry::register` |
-| 镜像快照读取 | `peek`/`resolve` 保持纯净，仅 `select` 或原生事件改变选择 | `MediaRegistry::selectRecord` |
+| SPA 预渲染 Modal | 注册时同步记录可见面积，仅成为当前目标后重放设置 | `MediaRegistry::register` / `NativeMediaExecutor::replayDesired` |
+| 镜像快照读取 | `peek`/`resolve` 保持纯净；显式选择或自动播放候选胜出才切换 | `MediaRegistry::selectRecord` |
 | 全屏播放器容器 | 精确媒体匹配优先，否则显式全屏视频优先 | `MediaRegistry::fullscreenRecord` |
 
 | Contract scope | `activeMedia` projection | `activeVideo` projection |

@@ -190,10 +190,131 @@ function installRouteRpc(initial: {
 			},
 		},
 	});
-	return { records };
+	return {
+		records,
+		setStored(next: typeof stored) { stored = { ...next }; },
+	};
 }
 
 describe('three-owner audio mode executor', () => {
+	test('refreshes a same-document route in the policy queue and drops the previous route hold', async () => {
+		const routeRpc = installRouteRpc({ mediaRoute: 'capture', source: 'user' });
+		const runtimeState = state('capture');
+		runtimeState.config = clone(DEFAULT_AUDIO_CONFIG);
+		runtimeState.appliedConfig = clone(DEFAULT_AUDIO_CONFIG);
+		runtimeState.actualMode = 'capture';
+		runtimeState.phase = 'active';
+		runtimeState.processorHold = true;
+		const request = mock(async () => ({
+			status: 'idle' as const,
+			phase: 'idle' as const,
+			active: false,
+			generation: 6,
+		}));
+		const runtimeDeps = deps({
+			isActive: () => true,
+			syncConfig: mock(async () => clone(DEFAULT_AUDIO_CONFIG)),
+			request,
+		});
+		const executor = await createPolicyExecutor(runtimeDeps, runtimeState);
+		if (!executor) throw new Error('Expected current policy executor');
+		routeRpc.setStored({ mediaRoute: 'direct', source: 'user' });
+
+		await executor.applyNavigation(() => true);
+
+		expect(runtimeState.processorHold).toBe(false);
+		expect(runtimeState.mediaRoute).toBe('direct');
+		expect(request).toHaveBeenCalledWith(false, runtimeState.config, 6);
+		expect(runtimeState).toMatchObject({
+			actualMode: 'bypass',
+			phase: 'idle',
+			generation: 6,
+		});
+		executor.dispose();
+	});
+
+	test('invalidates an older route stop without inventing Capture authority for the newer route', async () => {
+		const routeRpc = installRouteRpc({ mediaRoute: 'capture', source: 'user' });
+		const runtimeState = state('capture');
+		runtimeState.actualMode = 'capture';
+		runtimeState.phase = 'active';
+		let captureActive = true;
+		const stopEntered = deferred<void>();
+		const stopBarrier = deferred<void>();
+		const request = mock(async (enabled: boolean) => {
+			if (enabled) throw new Error('Navigation must not invent Capture admission');
+			stopEntered.resolve(undefined);
+			await stopBarrier.promise;
+			captureActive = false;
+			return {
+				status: 'idle' as const,
+				phase: 'idle' as const,
+				active: false,
+				generation: 6,
+			};
+		});
+		const runtimeDeps = deps({
+			isActive: () => captureActive,
+			syncConfig: mock(async () => clone(DEFAULT_AUDIO_CONFIG)),
+			request,
+		});
+		const executor = await createPolicyExecutor(runtimeDeps, runtimeState);
+		if (!executor) throw new Error('Expected current policy executor');
+		routeRpc.setStored({ mediaRoute: 'direct', source: 'user' });
+
+		const oldRoute = executor.applyNavigation(() => true);
+		await stopEntered.promise;
+		routeRpc.setStored({ mediaRoute: 'capture', source: 'user' });
+		const newRoute = executor.applyNavigation(() => true);
+		stopBarrier.resolve(undefined);
+		await Promise.all([oldRoute, newRoute]);
+
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(request).toHaveBeenCalledWith(false, runtimeState.config, 6);
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'capture',
+			actualMode: 'bypass',
+			phase: 'error',
+			lastError: 'Capture requires a current-tab extension invocation',
+		});
+		executor.dispose();
+	});
+
+	test('does not orphan an active Capture sync when a projection keeps the same capture route', async () => {
+		installRouteRpc({ mediaRoute: 'capture', source: 'user' });
+		const runtimeState = state('capture');
+		runtimeState.actualMode = 'capture';
+		runtimeState.phase = 'active';
+		const syncEntered = deferred<void>();
+		const syncBarrier = deferred<AudioConfig>();
+		const actual = processorConfig();
+		const syncConfig = mock(async () => {
+			syncEntered.resolve(undefined);
+			return syncBarrier.promise;
+		});
+		const runtimeDeps = deps({
+			isActive: () => true,
+			syncConfig,
+		});
+		const executor = await createPolicyExecutor(runtimeDeps, runtimeState);
+		if (!executor) throw new Error('Expected current policy executor');
+
+		const applying = executor.applyState();
+		await syncEntered.promise;
+		const projected = executor.applyMediaRouteChange();
+		syncBarrier.resolve(actual);
+		await Promise.all([applying, projected]);
+
+		expect(syncConfig).toHaveBeenCalledTimes(1);
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'capture',
+			actualMode: 'capture',
+			phase: 'active',
+		});
+		expect(runtimeState.appliedConfig).toEqual(actual);
+		executor.dispose();
+	});
+
 	test('lets a SAFE automatic route fall through a failed page bind to admitted Capture', async () => {
 		const routeRpc = installRouteRpc({ mediaRoute: 'direct', source: 'auto' });
 		const runtimeState = state('webaudio');

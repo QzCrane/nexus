@@ -25,6 +25,7 @@ export async function createPolicyExecutor(
 	const eligibilityCache = createSiteEligibilityCache(state.mediaRoute);
 	let applyTail: Promise<void> = Promise.resolve();
 	let disposed = false;
+	let routeRevision = 0;
 
 	const liveEligibility = (): SiteEligibility => {
 		const media = deps.mediaRegistry.listProcessingSources().map(({ element }) => element);
@@ -37,10 +38,14 @@ export async function createPolicyExecutor(
 		return coverage.fullCoverage ? 'SAFE' : 'PENDING';
 	};
 
-	const applyCurrentState = async (options: PolicyApplicationOptions = {}): Promise<void> => {
-		if (!isCurrent()) return;
+	const applyCurrentState = async (
+		options: PolicyApplicationOptions = {},
+		expectedRouteRevision = routeRevision,
+	): Promise<void> => {
+		const routeIsCurrent = () => expectedRouteRevision === routeRevision;
+		if (!isCurrent() || !routeIsCurrent()) return;
 		await eligibilityCache.resolve(liveEligibility());
-		if (!isCurrent()) return;
+		if (!isCurrent() || !routeIsCurrent()) return;
 		// Source eligibility is evidence, not a user-imposed route. A proven
 		// candidate can still fail its first binding and require admitted Capture.
 		state.mediaRoute = eligibilityCache.getUserRoute();
@@ -65,9 +70,9 @@ export async function createPolicyExecutor(
 			modeChanged || options.navigation === true || options.modeIntent === true,
 			options.captureAdmission,
 		);
-		if (!isCurrent()) return;
+		if (!isCurrent() || !routeIsCurrent()) return;
 		await eligibilityCache.recordActual(state.actualMode, state.phase);
-		if (!isCurrent()) return;
+		if (!isCurrent() || !routeIsCurrent()) return;
 		updateBadge(deps, state, internalState);
 		broadcastUI(deps, state, internalState);
 	};
@@ -76,13 +81,17 @@ export async function createPolicyExecutor(
 	// application so 100↔110 and visualizer changes cannot concurrently bypass
 	// and re-apply the same graph. Because config is read when the queued task
 	// starts, superseded slider values naturally coalesce to the latest intent.
-	const applyState = (options: PolicyApplicationOptions = {}): Promise<void> => {
+	const enqueueApplication = (task: () => Promise<void> | void): Promise<void> => {
 		const operation = applyTail.then(() => {
 			if (disposed || !isCurrent()) return;
-			return applyCurrentState(options);
+			return task();
 		});
 		applyTail = operation.catch(() => undefined);
 		return operation;
+	};
+	const applyState = (options: PolicyApplicationOptions = {}): Promise<void> => {
+		const expectedRouteRevision = routeRevision;
+		return enqueueApplication(() => applyCurrentState(options, expectedRouteRevision));
 	};
 
 	const modeExecutor = createModeExecutor(
@@ -98,6 +107,36 @@ export async function createPolicyExecutor(
 			modeExecutor.dispose();
 		},
 		applyState,
+		applyNavigation(isCurrentRoute) {
+			const expectedRouteRevision = ++routeRevision;
+			// Invalidate the physical mode transaction synchronously. A later route
+			// cannot wait behind an older Capture stop and then accept its stale ACK.
+			modeExecutor.invalidate();
+			return enqueueApplication(async () => {
+				if (!isCurrentRoute() || expectedRouteRevision !== routeRevision) return;
+				// A same-document route is a new media ownership boundary. The previous
+				// route's neutral 100↔110 hold cannot keep Capture alive on this page;
+				// non-neutral DSP demand still selects a processor through normal policy.
+				state.processorHold = false;
+				await eligibilityCache.refresh();
+				if (!isCurrentRoute() || !isCurrent() || expectedRouteRevision !== routeRevision) return;
+				state.mediaRoute = eligibilityCache.getUserRoute();
+				await applyCurrentState({ navigation: true }, expectedRouteRevision);
+			});
+		},
+		applyMediaRouteChange() {
+			const expectedRouteRevision = routeRevision;
+			return enqueueApplication(async () => {
+				await eligibilityCache.refresh();
+				if (!isCurrent() || expectedRouteRevision !== routeRevision) return;
+				const route = eligibilityCache.getUserRoute();
+				state.mediaRoute = route;
+				if (route !== 'direct') return;
+				modeExecutor.invalidate();
+				state.processorHold = false;
+				await applyCurrentState({ modeIntent: true }, expectedRouteRevision);
+			});
+		},
 		updateBadge: () => updateBadge(deps, state, internalState),
 		updateConfig: (changes, options) => updateConfig(
 			deps,
@@ -108,11 +147,13 @@ export async function createPolicyExecutor(
 			applyState,
 		),
 		markUserInteracted: () => { state.userHasInteracted = true; },
-		async refreshMediaRoute() {
-			await eligibilityCache.refresh();
-			const route = eligibilityCache.getUserRoute();
-			state.mediaRoute = route;
-			return route;
+		refreshMediaRoute() {
+			let route: PolicyExecutorState['mediaRoute'] = state.mediaRoute;
+			return enqueueApplication(async () => {
+				await eligibilityCache.refresh();
+				route = eligibilityCache.getUserRoute();
+				state.mediaRoute = route;
+			}).then(() => route);
 		},
 		getActiveMode: () => state.activeMode,
 	};

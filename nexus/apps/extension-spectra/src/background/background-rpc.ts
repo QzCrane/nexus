@@ -44,6 +44,8 @@ import {
 	isRegistrySnapshot,
 	isMediaRouteDecision,
 	isMediaRouteRecordRequest,
+	isMediaRouteRulesSnapshot,
+	isMediaRouteRuleUpsertPayload,
 	isSettingsPatchRequest,
 	isSpectraDefaultHotkeyTriggerPayload,
 	isSettingsSnapshot,
@@ -93,6 +95,9 @@ export const BACKGROUND_REQUEST_TYPES = [
 	'spectra.registry.remove',
 	'spectra.registry.query',
 	'spectra.registry.mark-probed',
+	'spectra.media-route.rules.get',
+	'spectra.media-route.rules.upsert',
+	'spectra.media-route.rules.remove',
 	'spectra.hotkey-target.get',
 	'spectra.hotkey-target.set',
 	'spectra.remote.session.get',
@@ -154,6 +159,9 @@ export const BACKGROUND_REQUEST_GUARDS: Readonly<Record<string, PayloadGuard>> =
 	'spectra.registry.remove': isRegistryRemovePayload,
 	'spectra.registry.query': isRegistryQueryPayload,
 	'spectra.registry.mark-probed': isRegistryRecordPayload,
+	'spectra.media-route.rules.get': isEmptyPayload,
+	'spectra.media-route.rules.upsert': isMediaRouteRuleUpsertPayload,
+	'spectra.media-route.rules.remove': isRegistryRemovePayload,
 	'spectra.hotkey-target.get': isEmptyPayload,
 	'spectra.hotkey-target.set': isHotkeyTargetState,
 	'spectra.remote.session.get': isRemoteSessionPayload,
@@ -248,6 +256,9 @@ function isBackgroundResponseData(type: SpectraRequestType, value: unknown): boo
 		case 'spectra.registry.mark-probed': return isRegistryAddResult(value);
 		case 'spectra.registry.remove': return isRegistryRemoveResult(value);
 		case 'spectra.registry.query': return isRegistryQueryResult(value);
+		case 'spectra.media-route.rules.get':
+		case 'spectra.media-route.rules.upsert':
+		case 'spectra.media-route.rules.remove': return isMediaRouteRulesSnapshot(value);
 		case 'spectra.hotkey-target.get':
 		case 'spectra.hotkey-target.set': return isHotkeyTargetState(value);
 		default: return true;

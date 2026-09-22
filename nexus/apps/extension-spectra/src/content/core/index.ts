@@ -17,6 +17,7 @@ import {
   reportMediaState,
   setupPopupConnectionListener,
   createNavigationObserver,
+	getDocumentRouteIdentity,
 } from './lifecycle';
 import {
   initHotkeyListener,
@@ -207,7 +208,9 @@ function bootstrapLifecycle(ctx: InitContext, runtime: ContentRuntime): void {
   });
 
   registry.track(createNavigationObserver({
-    onNavigate: () => policyExecutor.applyState({ navigation: true }),
+    onNavigate: (routeIdentity) => policyExecutor.applyNavigation(() => (
+		getDocumentRouteIdentity(window.location) === routeIdentity
+	)),
   }));
 
   void initHotkeyListener(ctx.settingsManager, state).then((cleanup) => {
