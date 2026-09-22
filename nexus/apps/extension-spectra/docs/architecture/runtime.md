@@ -137,6 +137,16 @@ Passive bootstrap may do a bounded top-level getter. It observes `volumechange`/
 ## Runtime loading and shortcuts
 
 Manifest loads minimal isolated bootstrap + closed MAIN bridges. Heavy Content runtime is acquired via consumer tokens. Final consumer releases listeners. Cold-document built-in hotkeys use READY ensure and release their transient capability after the admitted operation.
+
+The pre-injection runtime-status probe is an optional read bounded to 1 second.
+Its settlement pool retains at most eight physical outstanding probes; observation
+expiry does not pretend to cancel a browser request. An expired or unavailable
+probe proceeds through the same document-scoped injection/READY transaction.
+Late probe replies cannot restore source leases or publish READY. This boundary
+does not time out or bypass restore writes: explicit controls still wait for the
+document initialization decision. Local diagnostic export includes aggregate
+Popup input/batch counts, runtime loading/READY counts and outstanding Content
+RPC route counts/durations, without page, tab, document or request identities.
 Offscreen events keep Chrome message channel open until Background settles, preventing suspension mid-event.
 
 Built-in chords (`Alt+Arrow*/Alt+M`) are reserved, claimed at `document_start` before page handlers. Configured-site bindings yield to website claims. Keyup clears unconsumed repeat pulses but cannot revoke an admitted press. `chrome.commands` admits only non-coalescing actions.

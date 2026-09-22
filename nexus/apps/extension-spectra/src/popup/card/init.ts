@@ -19,7 +19,7 @@ import {
   type PopupVisualizerFactories,
 } from './types';
 import { createGetCapturing, createUpdateFn } from './state';
-import { openPopupControlTransport } from './control-port';
+import { isReportedControlFailure, openPopupControlTransport } from './control-port';
 import { createRenderFn } from './render';
 import { bindCardEvents } from './events';
 import { setupCardMessaging } from './messaging';
@@ -240,7 +240,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   };
 
   const onControlError = (error: unknown): void => {
-    if (disposed) return;
+    if (disposed || isReportedControlFailure(error)) return;
     reportCardControlFailure(tabId, state, render, error);
   };
   const controlTransport = openPopupControlTransport(tabId, documentId);

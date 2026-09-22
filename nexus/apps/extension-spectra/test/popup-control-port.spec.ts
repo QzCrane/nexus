@@ -59,8 +59,9 @@ describe('Popup Background control port', () => {
 		port.message(openMessage());
 		port.message(stageMessage(1, 90));
 		port.message({ type: 'flush', sessionId: 'session', throughRevision: 1 });
-		await waitFor(() => port.posts.length === 1);
-		expect(port.posts[0]).toMatchObject({
+		await waitFor(() => port.posts.length === 2);
+		expect(port.posts[0]).toEqual({ type: 'ready', sessionId: 'session' });
+		expect(port.posts[1]).toMatchObject({
 			throughRevision: 1,
 			volumeAck,
 			error: { code: 'field_failed' },
@@ -95,6 +96,82 @@ describe('Popup control Port contract', () => {
 });
 
 describe('Popup control Port client', () => {
+	test('accepts session ready and settles a staged input', async () => {
+		const port = new FakePort();
+		installChrome(port.value);
+		const transport = openPopupControlTransport(7, 'document');
+		const { sessionId } = port.posts[0] as { sessionId: string };
+		port.message({ type: 'ready', sessionId });
+		transport.stage({ inputRevision: 1, effectiveVolume: 90, groups: [] });
+		const flush = transport.flush(1);
+		const response = { type: 'settled', sessionId, throughRevision: 1, volumeAck: null,
+			fieldAcks: [], error: { code: 'unavailable', message: 'Media unavailable', retryable: true } };
+		port.message(response);
+		expect(await flush).toEqual(response);
+		expect(transport.hasPendingVolume()).toBe(false);
+		transport.dispose();
+	});
+
+	test.each(['wrong-session', 'duplicate'])('rejects %s ready once with one causal failure', async (kind) => {
+		const port = new FakePort();
+		installChrome(port.value);
+		const transport = openPopupControlTransport(7, 'document');
+		const failures: Error[] = [];
+		transport.onFailure((error) => failures.push(error));
+		const { sessionId } = port.posts[0] as { sessionId: string };
+		transport.stage({ inputRevision: 1, effectiveVolume: 90, groups: [] });
+		const flush = transport.flush(1).catch((error: unknown) => error);
+		if (kind === 'duplicate') port.message({ type: 'ready', sessionId });
+		port.message({ type: 'ready', sessionId: kind === 'duplicate' ? sessionId : 'wrong' });
+		port.disconnectFromBrowser();
+		expect(failures).toHaveLength(1);
+		expect(await flush).toBe(failures[0]);
+		expect(await transport.flush(1).catch((error: unknown) => error)).toBe(failures[0]);
+	});
+
+	test('disposing before readiness remains silent beyond the deadline', async () => {
+		const port = new FakePort();
+		installChrome(port.value);
+		const transport = openPopupControlTransport(7, 'document');
+		const failures: Error[] = [];
+		transport.onFailure((error) => failures.push(error));
+		transport.dispose();
+		port.disconnectFromBrowser();
+		await new Promise((resolve) => setTimeout(resolve, 5_100));
+		expect(failures).toEqual([]);
+		expect(port.disconnected).toBe(true);
+	}, 8_000);
+
+	test('fails visibly when an older Background accepts the connection but never acknowledges it', async () => {
+		const port = new FakePort();
+		installChrome(port.value);
+		const transport = openPopupControlTransport(7, 'document');
+		const failure = new Promise<Error>((resolve) => { transport.onFailure(resolve); });
+		transport.stage({ inputRevision: 1, effectiveVolume: 110, groups: [] });
+		const flushed = transport.flush(1).then(() => false, () => true);
+		try {
+			expect((await failure).message).toContain('did not acknowledge');
+			expect(await flushed).toBe(true);
+			expect(transport.hasPendingVolume()).toBe(false);
+			expect(port.disconnected).toBe(true);
+		} finally { transport.dispose(); }
+	}, 8_000);
+
+	test('settles every flush after the browser disconnects an accepted input', async () => {
+		const port = new FakePort();
+		installChrome(port.value);
+		const transport = openPopupControlTransport(7, 'document');
+		transport.stage({ inputRevision: 1, effectiveVolume: 90, groups: [] });
+		port.disconnectFromBrowser();
+		let error: unknown;
+		let settled = false;
+		const flush = transport.flush(1).catch((failure: unknown) => { error = failure; })
+			.finally(() => { settled = true; });
+		await waitFor(() => settled);
+		await flush;
+		expect(error).toBeInstanceOf(Error);
+	});
+
 	test('returns the flush rejection when postMessage fails without orphaning its waiter', async () => {
 		const port = new FakePort();
 		let postCount = 0;
@@ -106,7 +183,7 @@ describe('Popup control Port client', () => {
 		const transport = openPopupControlTransport(7, 'document');
 		transport.stage({ inputRevision: 1, effectiveVolume: 90, groups: [] });
 		const flush = transport.flush(1);
-		await expect(flush).rejects.toThrow('Popup control channel closed');
+		await expect(flush).rejects.toThrow('Background control channel disconnected');
 		expect(postCount).toBe(3);
 	});
 });

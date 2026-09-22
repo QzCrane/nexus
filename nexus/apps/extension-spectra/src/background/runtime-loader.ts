@@ -17,7 +17,9 @@ import {
 	type MediaTarget,
 	type HotkeySettings,
 	type AudioConfig,
+	type SpectraResponse,
 } from '@nexus/contracts';
+import { createSettlementPool, observeWithin } from '@nexus/kernel';
 import { swLog } from '../shared/logger';
 import { injectMainBridges } from './main-runtime-manager';
 import { settingsRepository } from './settings-repository';
@@ -66,6 +68,15 @@ const documentInitializations = new Map<string, Promise<void>>();
 let initialized = false;
 
 const RUNTIME_HANDOFF_GRACE_MS = 250;
+const RUNTIME_PROBE_TIMEOUT_MS = 1_000;
+const RUNTIME_PROBE_CONCURRENCY = 8;
+let runtimeProbes = createSettlementPool<string, SpectraResponse<'spectra.content.runtime.status'>>(RUNTIME_PROBE_CONCURRENCY);
+
+export function getRuntimeLoaderDiagnostics(): Record<string, number> {
+	return { runtimeProbePendingCount: runtimeProbes.pendingCount,
+		runtimeLoadingCount: loadingDocuments.size, runtimeReadyWaiterCount: waiters.size,
+		runtimeReadyDocumentCount: readyDocuments.size, runtimeDisposingCount: disposingDocuments.size };
+}
 
 function runtimeKey(tabId: number, documentId: string): string {
 	return `${tabId}:${documentId}`;
@@ -309,12 +320,18 @@ export async function awaitDocumentInitialization(
 }
 
 async function probeRuntime(tabId: number, documentId: string): Promise<ContentRuntimeReadyResult | null> {
-	const response = await sendBackgroundTabRequestOnce(
+	const operation = runtimeProbes.getOrStart(runtimeKey(tabId, documentId), () => sendBackgroundTabRequestOnce(
 		tabId,
 		'spectra.content.runtime.status',
 		{},
 		{ documentId },
-	).catch(() => null);
+	));
+	// This optional read must not prevent the injection/READY transaction from
+	// starting. Keep its physical permit until it settles; expired observations
+	// cannot restore source leases or overwrite the newer READY authority.
+	if (!operation) return null;
+	const observed = await observeWithin(operation, RUNTIME_PROBE_TIMEOUT_MS).catch(() => null);
+	const response = observed?.settled ? observed.value : null;
 	if (!response?.ok
 		|| !response.data.ready
 		|| response.data.runtimeRevision !== SPECTRA_CONTENT_RUNTIME_REVISION) return null;
@@ -719,6 +736,7 @@ export function resetContentRuntimeLoaderForTests(): void {
 	disposeTimers.clear();
 	resetDocumentSiteHotkeysForTests();
 	documentInitializations.clear();
+	runtimeProbes = createSettlementPool(RUNTIME_PROBE_CONCURRENCY);
 	restoreDocumentForInitialization = (...args) => restoreIfConfigured(...args);
 	initialized = false;
 }

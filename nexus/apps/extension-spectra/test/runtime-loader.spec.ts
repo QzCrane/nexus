@@ -496,6 +496,43 @@ describe('document-scoped content runtime loader', () => {
 		expect(harness.executeCount).toBe(1);
 	});
 
+	test('loads once when the old status probe hangs and ignores its late ownership report', async () => {
+		const harness = installChromeHarness(true, [{
+			target: { documentId: 'document-7', mediaId: 'late-source', sourceRevision: 1, kind: 'audio' },
+			markerCount: 1, abActive: false,
+		}]);
+		const send = chrome.tabs.sendMessage;
+		let releaseProbe!: () => void;
+		const held = new Promise<void>((resolve) => { releaseProbe = resolve; });
+		chrome.tabs.sendMessage = (async (...args: Parameters<typeof send>) => {
+			if (args[1]?.type === 'spectra.content.runtime.status') await held;
+			return send(...args);
+		}) as typeof send;
+		let deadline: ReturnType<typeof setTimeout> | undefined;
+		try {
+			const [first, second] = await Promise.race([
+				Promise.all([
+					ensureContentRuntime(7, 'document-7', 'control', 'first'),
+					ensureContentRuntime(7, 'document-7', 'control', 'second'),
+				]),
+				new Promise<never>((_resolve, reject) => {
+					deadline = setTimeout(() => reject(new Error('Old status probe prevented runtime READY')), 2_000);
+				}),
+			]);
+			expect(first.ready).toBe(true);
+			expect(second).toEqual(first);
+			expect(harness.executeCount).toBe(1);
+			releaseProbe();
+			await Bun.sleep(0);
+			releaseContentRuntimeLease(7, 'document-7', 'control', 'first');
+			releaseContentRuntimeLease(7, 'document-7', 'control', 'second');
+			await expectRelease(harness, 1);
+		} finally {
+			clearTimeout(deadline);
+			releaseProbe();
+		}
+	});
+
 	test('recovers an already-ready document after a service-worker restart without injection', async () => {
 		const harness = installChromeHarness(true);
 		const result = await ensureContentRuntime(7, undefined, 'control', 'owned-fields');

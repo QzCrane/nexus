@@ -9,7 +9,7 @@ import {
 } from '@nexus/contracts';
 import { resolveAcknowledgedProcessorLifecycle } from '@nexus/contracts/ui-runtime';
 import type { PopupControlPortResponse } from '../../shared/popup-control-port';
-import type { PopupControlTransport } from './control-port';
+import { isReportedControlFailure, PopupControlChannelError, type PopupControlTransport } from './control-port';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
 import { classifyControlSnapshot, isControlClockStale } from '../control-snapshot-order';
 
@@ -151,6 +151,14 @@ export function createUpdateFn(
 	};
 
 	transport.onSettled(applySettlement);
+	transport.onFailure((error) => {
+		if (retired) return;
+		pendingFields.clear();
+		state.config = mergeAudioConfig(state.stableConfig, { eqValues: [...state.stableConfig.eqValues] });
+		render();
+		onError(error, state);
+		if (error instanceof PopupControlChannelError) error.reported = true;
+	});
 	window.addEventListener('pagehide', () => { retired = true; }, { once: true });
 
 	const flush = async (): Promise<void> => {
@@ -193,7 +201,7 @@ export function createUpdateFn(
 				groups: splitByCoverage(patch),
 			});
 		} catch (error) {
-			onError(error, state);
+			if (!isReportedControlFailure(error)) onError(error, state);
 			return;
 		}
 		localRevision = inputRevision;

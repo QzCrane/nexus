@@ -14,6 +14,9 @@ import {
 	sendOffscreenMessageIfPresent,
 } from './offscreen-coordinator';
 import { resolveVisibleTabs } from './handlers/tab-state';
+import { getBackgroundTabRequestDiagnostics } from './background-rpc';
+import { getPopupControlDiagnostics } from './popup-control-port';
+import { getRuntimeLoaderDiagnostics } from './runtime-loader';
 
 const events = createDiagnosticEventBuffer();
 let initialized = false;
@@ -52,6 +55,9 @@ export async function collectSpectraDiagnosticOwners(): Promise<DiagnosticOwnerS
 	const discovery = resolveVisibleTabs.diagnostics();
 	return {
 		backgroundSurfaceActive: true,
+		...getBackgroundTabRequestDiagnostics(),
+		...getPopupControlDiagnostics(),
+		...getRuntimeLoaderDiagnostics(),
 		audibleTabCount: audibleTabs?.length ?? null,
 		userScriptsPermissionGranted,
 		captureStateCount: captureStates.size,

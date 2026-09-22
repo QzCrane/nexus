@@ -12,6 +12,7 @@ import { sendSpectraRequest } from '../../shared/ui-spectra-client';
 import { submitControlIntent } from './intent-recovery';
 import { mergeAudioConfig, mergeControlFields } from './types';
 import { showPopupToast } from '../toast';
+import { isReportedControlFailure } from './control-port';
 
 export interface EventsParams {
   ui: CardUIElements;
@@ -172,6 +173,7 @@ export function bindCardEvents(params: EventsParams): void {
       // feedback: shared i18n success indicator on the save button
       if (dict) showSaveFeedback(ui.btnSave, true, dict);
     } catch (error: unknown) {
+      if (isReportedControlFailure(error)) return;
       const { getCurrentDict } = await import('../views/i18n-apply');
       const dict = getCurrentDict();
       // feedback: shared i18n failure indicator on the save button
@@ -197,6 +199,7 @@ export function bindCardEvents(params: EventsParams): void {
         // feedback: shared i18n success indicator — same style as btnSave
         if (dict) showSaveFeedback(saveGlobalButton, true, dict);
       } catch (error: unknown) {
+		if (isReportedControlFailure(error)) return;
 		const { getCurrentDict } = await import('../views/i18n-apply');
 		const dict = getCurrentDict();
 		// feedback: share the same failure indicator as btnSave for consistency.

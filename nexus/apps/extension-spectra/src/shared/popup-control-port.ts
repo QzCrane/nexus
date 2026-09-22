@@ -15,6 +15,7 @@ import {
 
 export const POPUP_CONTROL_PORT = 'spectra-popup-control';
 export const POPUP_CONTROL_MAX_GROUPS = 2;
+export const POPUP_CONTROL_READY_TIMEOUT_MS = 5_000;
 const MAX_DOCUMENT_ID_LENGTH = 256;
 const MAX_SESSION_ID_LENGTH = 128;
 
@@ -51,6 +52,13 @@ export type PopupControlPortResponse = {
 	fieldAcks: ControlApplyAck[];
 	error: RpcError | null;
 };
+
+export type PopupControlReady = { type: 'ready'; sessionId: string };
+
+export function isPopupControlReady(value: unknown): value is PopupControlReady {
+	return isRecord(value) && hasExactKeys(value, ['type', 'sessionId'])
+		&& value.type === 'ready' && isSessionId(value.sessionId);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);

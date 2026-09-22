@@ -6,9 +6,18 @@ import {
 	POPUP_CONTROL_PORT,
 	type PopupControlPatchGroup,
 	type PopupControlPortResponse,
+	type PopupControlReady,
 } from '../shared/popup-control-port';
 
 const COALESCE_MS = 50;
+let receivedInputs = 0;
+let pendingBatches = 0;
+let failedBatches = 0;
+
+export function getPopupControlDiagnostics(): Record<string, number> {
+	return { popupControlReceivedInputs: receivedInputs, popupControlPendingBatches: pendingBatches,
+		popupControlFailedBatches: failedBatches };
+}
 
 export interface PopupControlBatch {
 	tabId: number;
@@ -98,9 +107,15 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 		if (timer) { clearTimeout(timer); timer = null; }
 		const batch = takeBatch();
 		if (!batch) return;
+		pendingBatches++;
 		inFlight = runner.submit(batch).then(
-			(result) => postSettled(batch.inputRevision, result),
-			(error: unknown) => postSettled(batch.inputRevision, {
+			(result) => {
+				if (result.error) failedBatches = Math.min(Number.MAX_SAFE_INTEGER, failedBatches + 1);
+				postSettled(batch.inputRevision, result);
+			},
+			(error: unknown) => {
+				failedBatches = Math.min(Number.MAX_SAFE_INTEGER, failedBatches + 1);
+				postSettled(batch.inputRevision, {
 				volumeAck: null,
 				fieldAcks: [],
 				error: {
@@ -108,8 +123,10 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 					message: error instanceof Error ? error.message : String(error),
 					retryable: true,
 				},
-			}),
+				});
+			},
 		).finally(() => {
+			pendingBatches--;
 			inFlight = null;
 			if (volume || fields.size > 0) run();
 		});
@@ -143,6 +160,8 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 		if (raw.type === 'open') {
 			if (identity) { rejectPort(); return; }
 			identity = { sessionId: raw.sessionId, tabId: raw.tabId, documentId: raw.documentId };
+			try { port.postMessage({ type: 'ready', sessionId: raw.sessionId } satisfies PopupControlReady); }
+			catch { close(); }
 			return;
 		}
 		if (!identity || raw.sessionId !== identity.sessionId) { rejectPort(); return; }
@@ -153,6 +172,7 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 			return;
 		}
 		if (raw.inputRevision <= lastAcceptedRevision) { rejectPort(); return; }
+		receivedInputs = Math.min(Number.MAX_SAFE_INTEGER, receivedInputs + 1);
 		lastAcceptedRevision = raw.inputRevision;
 		if (raw.effectiveVolume !== undefined) {
 			volume = { revision: raw.inputRevision, value: raw.effectiveVolume };

@@ -302,6 +302,19 @@ export function createBackgroundEnvelope<T extends SpectraRequestType>(
 	} as SpectraRequestEnvelope<T>;
 }
 
+// One bounded entry per canonical route, never per URL, tab, document or request.
+// Busy duration describes a continuously occupied route, not an individual call.
+const tabRequestActivity = new Map<SpectraRequestType, { pending: number; startedAt: number }>();
+
+export function getBackgroundTabRequestDiagnostics(): Record<string, number> {
+	const result: Record<string, number> = {};
+	for (const [type, activity] of tabRequestActivity) {
+		result[`contentRpc:${type}:pending`] = activity.pending;
+		result[`contentRpc:${type}:busyMs`] = Math.max(0, performance.now() - activity.startedAt);
+	}
+	return result;
+}
+
 export async function sendBackgroundTabRequestOnce<T extends SpectraRequestType>(
 	tabId: number,
 	type: T,
@@ -309,13 +322,21 @@ export async function sendBackgroundTabRequestOnce<T extends SpectraRequestType>
 	context: Omit<BackgroundRequestContext, 'tabId'> = {},
 ): Promise<SpectraResponse<T>> {
 	const message = createBackgroundEnvelope(type, payload, { ...context, tabId });
-	const response: unknown = context.documentId
-		? await chrome.tabs.sendMessage(tabId, message, { documentId: context.documentId })
-		: await chrome.tabs.sendMessage(tabId, message);
-	if (!isBackgroundResponse(type, response)) {
-		throw new Error(
-			`Content host returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${type}`,
-		);
+	const activity = tabRequestActivity.get(type) ?? { pending: 0, startedAt: performance.now() };
+	activity.pending++;
+	tabRequestActivity.set(type, activity);
+	try {
+		const response: unknown = context.documentId
+			? await chrome.tabs.sendMessage(tabId, message, { documentId: context.documentId })
+			: await chrome.tabs.sendMessage(tabId, message);
+		if (!isBackgroundResponse(type, response)) {
+			throw new Error(
+				`Content host returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${type}`,
+			);
+		}
+		return response;
+	} finally {
+		activity.pending--;
+		if (activity.pending === 0) tabRequestActivity.delete(type);
 	}
-	return response;
 }

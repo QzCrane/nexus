@@ -6,7 +6,7 @@ import {
 	type ControlSnapshot,
 } from '@nexus/contracts';
 import type { PopupControlPortResponse } from '../src/shared/popup-control-port';
-import type { PopupControlTransport } from '../src/popup/card/control-port';
+import { isReportedControlFailure, PopupControlChannelError, type PopupControlTransport } from '../src/popup/card/control-port';
 import { applyControlSnapshot } from '../src/popup/card/messaging';
 import { resolveVolumePresentation } from '../src/popup/card/render';
 import { createUpdateFn } from '../src/popup/card/state';
@@ -18,6 +18,35 @@ const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 afterEach(() => restoreProperty('window', originalWindow));
 
 describe('Popup Background-owned control transport projection', () => {
+	test('presents a channel failure once across notification, stage and flush rejection', async () => {
+		const harness = installHarness();
+		const state = createState();
+		const errors: unknown[] = [];
+		const report = (error: unknown) => {
+			if (!isReportedControlFailure(error)) errors.push(error);
+		};
+		const update = createUpdate(harness.transport, state, report);
+		const failure = new PopupControlChannelError('Background unavailable');
+		harness.transport.stage = () => { harness.fail(failure); throw failure; };
+		harness.onFlush(async () => { throw failure; });
+		update({ speed: 1.75 });
+		await update.flush().catch(report);
+		expect(errors).toEqual([failure]);
+		expect(state.config).toEqual(state.stableConfig);
+		expect(update.pendingConfigFields().size).toBe(0);
+	});
+	test('retires optimistic values and reports a lost control channel', () => {
+		const harness = installHarness();
+		const state = createState();
+		const errors: unknown[] = [];
+		const update = createUpdate(harness.transport, state, (error) => errors.push(error));
+		update({ volume: 110, speed: 1.5 });
+		harness.fail(new Error('Background unavailable'));
+		expect(update.hasPendingVolume()).toBe(false);
+		expect(update.pendingConfigFields().size).toBe(0);
+		expect(state.config).toEqual(state.stableConfig);
+		expect(errors).toHaveLength(1);
+	});
 	test('stages every input synchronously and leaves 100-value coalescing to Background', () => {
 		const harness = installHarness();
 		const update = createUpdate(harness.transport);
@@ -245,6 +274,7 @@ function installHarness() {
 	const stages: Array<Parameters<PopupControlTransport['stage']>[0]> = [];
 	const flushCalls: number[] = [];
 	const listeners = new Set<(response: PopupControlPortResponse) => void>();
+	const failures = new Set<(error: Error) => void>();
 	let flushHandler: PopupControlTransport['flush'] = async () => null;
 	const harness = {
 		stages,
@@ -255,6 +285,9 @@ function installHarness() {
 		emit(response: PopupControlPortResponse) {
 			for (const listener of listeners) listener(response);
 		},
+		fail(error: Error) {
+			for (const listener of failures) listener(error);
+		},
 		transport: {
 			stage(input) { stages.push(structuredClone(input)); },
 			flush(throughRevision) {
@@ -264,6 +297,10 @@ function installHarness() {
 			onSettled(listener) {
 				listeners.add(listener);
 				return () => listeners.delete(listener);
+			},
+			onFailure(listener) {
+				failures.add(listener);
+				return () => failures.delete(listener);
 			},
 			hasPendingVolume() {
 				return false;

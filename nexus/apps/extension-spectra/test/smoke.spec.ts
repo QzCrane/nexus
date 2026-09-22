@@ -5029,6 +5029,13 @@ describe('SPECTRA built extension smoke', () => {
 				await popup.click('#btn-back');
 				await popup.waitForSelector('#view-main:not([hidden])');
 			}
+			await popup.$eval('.speed-input', (element) => {
+				const input = element as HTMLInputElement;
+				input.value = '1.75';
+				input.dispatchEvent(new Event('change', { bubbles: true }));
+			});
+			await eventually(() => fixturePage.$eval('video', (element) => (element as HTMLVideoElement).playbackRate),
+				(value) => value === 1.75, 'physical playback speed before reset');
 			await popup.$eval('.vol-slider', (element) => {
 				const slider = element as HTMLInputElement;
 				slider.value = '80';
@@ -5060,6 +5067,7 @@ describe('SPECTRA built extension smoke', () => {
 					cause: error,
 				});
 			});
+			expect(await fixturePage.$eval('video', (element) => (element as HTMLVideoElement).playbackRate)).toBe(1);
 		} finally {
 			await popup.select('#set-lang', originalLanguage).catch(() => undefined);
 			await popup.waitForFunction(

@@ -287,7 +287,7 @@ function releasedPatchAck(intent: ControlIntent): ControlApplyAck {
 	return acknowledgement;
 }
 
-function actualReadAck(payload: ControlReadRequest, target: ControlApplyAck['target']): unknown {
+function actualReadAck(payload: ControlReadRequest, target: ControlApplyAck['target'], overrides: Partial<Record<ControlField, unknown>> = {}): unknown {
 	const defaults: Record<ControlField, unknown> = {
 		audioEnabled: false,
 		volumeBase: 72,
@@ -317,6 +317,7 @@ function actualReadAck(payload: ControlReadRequest, target: ControlApplyAck['tar
 		pan: 0,
 		delay: 0,
 		visualizer: false,
+		...overrides,
 	};
 	return {
 		ok: true,
@@ -1938,14 +1939,15 @@ describe('authoritative control coordinator', () => {
 		expect(intents[0]?.patch).toEqual({
 			volumeBase: 100,
 			mediaMuted: false,
+			speed: 1,
 		});
-		expect(intents[0]?.patch).not.toHaveProperty('speed');
 		expect(intents[1]?.actualContext).toEqual({
 			volumeBase: 100,
 			mediaMuted: false,
+			speed: 1,
 			preservePitch: true,
 		});
-		expect(intents[1]?.actualContext).not.toHaveProperty('speed');
+		expect(ack.fields.speed).toMatchObject({ actual: 1, phase: 'applied' });
 		expect(ack).toMatchObject({ revision: 1, result: { reset: true } });
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.revision).toBe(1);
 		expect(harness.snapshotEvents).toBe(1);
@@ -2197,7 +2199,7 @@ describe('authoritative control coordinator', () => {
 		const intents: ControlIntent[] = [];
 		harness.contentResponder = ({ type, payload }) => {
 			if (type === 'spectra.control.actual.read') {
-				return actualReadAck(payload as ControlReadRequest, target);
+				return actualReadAck(payload as ControlReadRequest, target, { speed: 1.75 });
 			}
 			const intent = payload as ControlIntent;
 			intents.push(intent);
@@ -2238,8 +2240,8 @@ describe('authoritative control coordinator', () => {
 		expect(intents[2]?.patch).toMatchObject({
 			volumeBase: 72,
 			mediaMuted: false,
+			speed: 1.75,
 		});
-		expect(intents[2]?.patch).not.toHaveProperty('speed');
 		expect(intents[2]?.patch).not.toHaveProperty('preservePitch');
 		expect(harness.snapshotEvents).toBe(0);
 		expect(await controlCoordinatorTestApi.getSnapshot(7)).toBeNull();

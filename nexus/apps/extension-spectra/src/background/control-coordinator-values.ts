@@ -355,6 +355,7 @@ export function controlSessionScopeForSource(
 export const RESET_AUDIO_TARGET_PATCH: ControlPatch = {
 	volumeBase: 100,
 	mediaMuted: false,
+	speed: 1,
 };
 
 export const RESET_AUDIO_PROCESSOR_PATCH: ControlPatch = {
