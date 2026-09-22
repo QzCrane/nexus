@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-media-source-admission
-last_reviewed: 2026-09-01
+last_reviewed: 2026-09-23
 ---
 
 # Audio source admission
@@ -15,7 +15,7 @@ This document owns source evidence for SPECTRA's three physical audio states. It
 The canonical order is `bypass -> webaudio -> capture`:
 
 1. `bypass`: native page/DOM writers own neutral audio; no `AudioContext`, analyser, offscreen document, or tab stream exists.
-2. `webaudio`: one isolated-world, page-lifetime `MediaElementAudioSourceNode` per element feeds the shared sparse graph. It is allowed only when every current media source is proven safe before the first irreversible binding.
+2. `webaudio`: one isolated-world, page-lifetime `MediaElementAudioSourceNode` per element feeds the shared sparse graph. It is allowed only when every current processing source is proven safe before the first irreversible binding. `MediaRegistry.listProcessingSources()` owns this set: selected URL or non-null `srcObject`. An empty placeholder is not an output source. Playback, visibility, and mute do not exclude a selected source.
 3. `capture`: one-shot extension-invocation admission acquires the complete tab mix when page coverage is incomplete, unsafe, protected, or binding/readback fails.
 
 Processor demand never chooses an owner from a volume threshold alone. `resolveDesiredAudioMode()` combines explicit DSP/visible-Visualizer demand with the current registry's exact coverage evidence. A candidate becomes actual only after running context, `graphSignature`, `normalizedActualConfig`, `sourceCount`, document/generation, and revision readback.
@@ -49,6 +49,36 @@ Automatic records remain advisory history; only user-sourced entries are hard
 route choices. Current-document evidence therefore corrects stale automatic
 history without allowing an old `direct` record to suppress a necessary Capture.
 
+Automatic detection answers whether SPECTRA needs Capture to control this page
+successfully. It is not a detector for a page's own AudioContext usage. Detection
+results and manual route constraints must remain distinct through policy
+selection and execution: a proven automatic WebAudio candidate may still fail
+at binding or readback and fall back to admitted Capture. Only a user-sourced
+`direct` entry forbids that fallback. The route list shows automatic results and
+manual choices with their source; a cached result does not claim Capture is
+currently running. Actual activation requires the processor ACK described below.
+
+| Automatic control decision | Required next step |
+| --- | --- |
+| No processing demand | Native bypass; no Capture acquisition |
+| Complete safe source set | Try page WebAudio and verify physical readback |
+| Unsafe/incomplete source set, or WebAudio binding/readback failure | Try Capture only with current invocation admission |
+| Capture active ACK | Record `capture/auto` and project the acknowledged state |
+| Missing admission or failed processor ACK | Report error and actual bypass/remaining owner; never claim successful control |
+
+Resource selection changes re-evaluate this same source set. When a new unsafe
+source invalidates an active page graph, the graph is neutralized before Capture
+admission is checked; absence of admission cannot leave partial processing marked
+active. Empty former sources disconnect from the graph while retaining their
+page-lifetime binding identity for later reuse.
+
+WebAudio initialization and graph application are asynchronous. The executor
+re-reads the registry after initialization and verifies current source membership
+and coverage before acknowledging the graph, including after retiring Capture.
+A manual-direct failure retires any previous Capture through its stop ACK;
+failed retirement retains the actual Capture owner in the error state. These
+transitions never infer physical bypass merely from the requested route.
+
 ## MediaElement WebAudio evidence
 
 `WebAudioController` may bind a source only when its current resource is one of:
@@ -59,6 +89,9 @@ history without allowing an old `direct` record to suppress a necessary Capture.
 - cross-origin URL whose already-loaded element has explicit `crossOrigin` mode, metadata, no media error, and an exact current-resource evidence record from `media-registry.ts`.
 
 The controller never mutates `crossOrigin`, guesses from analyser silence, binds a subset of current elements, retries a known failure for the same resource, or patches page prototypes. `MediaElementAudioSourceNode` identity is page-lifetime: source changes reuse the same binding; DOM removal/disposal disconnects it; a replacement Content runtime reconnects the existing source rather than creating a second node.
+
+A non-null `srcObject` remains in the processing set and is not proven by a
+leftover `src` URL or URL-specific CORS evidence; it requires the Capture path.
 
 ## Capture admission
 

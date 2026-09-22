@@ -30,6 +30,13 @@ export function prepareCardDom(params: {
   setButtonLabel(ui.btnSave, dict.saveTooltip, 'Save');
 	setButtonLabel(ui.btnReset, dict.resetTooltip, 'Reset');
 	setButtonLabel(ui.btnSaveGlobal, dict.btnSaveAsGlobal, 'Save as Global Preset');
+	const effects = cardEl.querySelector<HTMLButtonElement>('.btn-effects');
+	if (effects) {
+		effects.textContent = dict.effectsLabel;
+		setButtonLabel(effects, dict.tipAdvancedSettings, 'Effects');
+	}
+	const syncStatus = cardEl.querySelector<HTMLElement>('.control-sync-status');
+	if (syncStatus) syncStatus.textContent = dict.controlSyncing;
 	ui.maskText.textContent = '';
 	const paused = document.createElement('div');
 	paused.textContent = dict.paused;

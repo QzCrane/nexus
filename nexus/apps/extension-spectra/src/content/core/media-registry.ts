@@ -473,6 +473,12 @@ export class MediaRegistry {
 		}));
 	}
 
+	listProcessingSources(): Array<{ element: HTMLMediaElement; target: MediaTarget }> {
+		return this.list().filter(({ element }) => (
+			Boolean(element.currentSrc || element.src) || element.srcObject != null
+		));
+	}
+
 	get size(): number {
 		return this.byElement.size;
 	}

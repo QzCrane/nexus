@@ -73,7 +73,8 @@ export type SettingsPatch = SettingsUiPatch
 		mode?: 'merge' | 'replace';
 	}
 	| { scope: 'audio-preset'; name: string; value: AudioPresetValue | null }
-	| { scope: 'default-preset'; value: string | null };
+	| { scope: 'default-preset'; value: string | null }
+	| { scope: 'audio-presets-clear' };
 
 export interface SettingsPatchRequest {
 	expectedRevision: number;
@@ -93,6 +94,7 @@ const SETTINGS_PATCH_REQUEST_KEYS = new Set<keyof SettingsPatchRequest>(['expect
 const AUDIO_SITE_PATCH_KEYS = new Set(['scope', 'domain', 'value', 'mode']);
 const AUDIO_PRESET_PATCH_KEYS = new Set(['scope', 'name', 'value']);
 const DEFAULT_PRESET_PATCH_KEYS = new Set(['scope', 'value']);
+const AUDIO_PRESETS_CLEAR_PATCH_KEYS = new Set(['scope']);
 const AUDIO_PRESET_VALUE_KEYS = new Set<keyof AudioPresetValue>(['config', 'meta']);
 const AUDIO_PRESET_META_KEYS = new Set<keyof AudioPresetMeta>(['type', 'name', 'createdAt', 'isDefault']);
 const AUDIO_SITE_POLICY_KEYS = new Set<keyof AudioSitePolicy>(['config', 'mediaRoute']);
@@ -197,6 +199,9 @@ export function isSettingsPatchRequest(value: unknown): value is SettingsPatchRe
 	if (patch.scope === 'default-preset') {
 		return hasOnlyKeys(patch, DEFAULT_PRESET_PATCH_KEYS)
 		&& (patch.value === null || isPresetName(patch.value));
+	}
+	if (patch.scope === 'audio-presets-clear') {
+		return hasOnlyKeys(patch, AUDIO_PRESETS_CLEAR_PATCH_KEYS);
 	}
 	return false;
 }

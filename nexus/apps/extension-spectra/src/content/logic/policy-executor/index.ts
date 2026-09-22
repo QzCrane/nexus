@@ -27,7 +27,7 @@ export async function createPolicyExecutor(
 	let disposed = false;
 
 	const liveEligibility = (): SiteEligibility => {
-		const media = deps.mediaRegistry.list().map(({ element }) => element);
+		const media = deps.mediaRegistry.listProcessingSources().map(({ element }) => element);
 		const coverage = assessMediaSourceCoverage(
 			media,
 			(element) => deps.mediaRegistry.getEligibilityEvidence(element),
@@ -39,12 +39,12 @@ export async function createPolicyExecutor(
 
 	const applyCurrentState = async (options: PolicyApplicationOptions = {}): Promise<void> => {
 		if (!isCurrent()) return;
-		const eligibility = await eligibilityCache.resolve(liveEligibility());
+		await eligibilityCache.resolve(liveEligibility());
 		if (!isCurrent()) return;
-		state.mediaRoute = eligibility === 'SAFE'
-			? 'direct'
-			: eligibility === 'RESTRICTED' ? 'capture' : 'auto';
-		const media = deps.mediaRegistry.list().map(({ element }) => element);
+		// Source eligibility is evidence, not a user-imposed route. A proven
+		// candidate can still fail its first binding and require admitted Capture.
+		state.mediaRoute = eligibilityCache.getUserRoute();
+		const media = deps.mediaRegistry.listProcessingSources().map(({ element }) => element);
 		const mode = resolveDesiredAudioMode(state.config, {
 			visualizer: state.visualizerSubscribers.size > 0,
 			mediaRoute: state.mediaRoute,
@@ -109,7 +109,8 @@ export async function createPolicyExecutor(
 		),
 		markUserInteracted: () => { state.userHasInteracted = true; },
 		async refreshMediaRoute() {
-			const route = await eligibilityCache.refresh();
+			await eligibilityCache.refresh();
+			const route = eligibilityCache.getUserRoute();
 			state.mediaRoute = route;
 			return route;
 		},

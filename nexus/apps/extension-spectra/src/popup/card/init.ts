@@ -19,13 +19,14 @@ import {
   type PopupVisualizerFactories,
 } from './types';
 import { createGetCapturing, createUpdateFn } from './state';
+import { openPopupControlTransport } from './control-port';
 import { createRenderFn } from './render';
 import { bindCardEvents } from './events';
 import { setupCardMessaging } from './messaging';
 import { reportCardControlFailure } from './error';
 import { showPopupToast } from '../toast';
 import { prepareCardDom } from './dom-init';
-import { bindCardIconClick, getCurrentPanelTabId, registerCard } from '../side-panel';
+import { bindEffectsButton, getCurrentPanelTabId, registerCard } from '../side-panel';
 import { syncSidePanelState } from '../side-panel/controls';
 import { setPresetApplyTargetProvider } from '../views/preset-target';
 import { getDomain } from '../utils/dom';
@@ -138,7 +139,6 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     controlGeneration: controlSnapshot?.generation ?? 0,
     controlRevision: controlSnapshot?.revision ?? 0,
     lastError: acknowledgedSession?.lastError ?? status?.lastError ?? null,
-    isDragging: false,
     draggingField: null,
   };
 
@@ -243,13 +243,16 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     if (disposed) return;
     reportCardControlFailure(tabId, state, render, error);
   };
+  const controlTransport = openPopupControlTransport(tabId, documentId);
+  cleanupStack.push(controlTransport.dispose);
   const update = createUpdateFn(
     state,
     tabId,
     getCapturing,
     render,
-    getGlobalSettings,
-    onControlError,
+		getGlobalSettings,
+		onControlError,
+		controlTransport,
   );
 
   if (ui.vizIsland) {
@@ -267,8 +270,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     onError: onControlError,
   });
 
-  if (ui.icon) {
-    bindCardIconClick(ui.icon, tabId, tab.title || '', ui.icon.src);
+  const effectsButton = cardEl.querySelector<HTMLButtonElement>('.btn-effects');
+  if (effectsButton) {
+    bindEffectsButton(effectsButton, tabId, tab.title || '', ui.icon.src);
   }
 
   // note: register the update handle globally so settings can trigger re-renders from the Settings view
@@ -287,6 +291,8 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   const cleanupMessaging = setupCardMessaging({
     tabId, documentId, state, render,
+    hasPendingVolume: update.hasPendingVolume,
+		pendingConfigFields: update.pendingConfigFields,
     onDocumentReplaced: () => {
       disposeCard();
       void chrome.tabs.get(tabId).then(async (currentTab) => {

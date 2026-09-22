@@ -59,7 +59,7 @@ export function applyLang(lang: string): I18NDict {
 // goal: updates text/tooltips for dynamically generated tab cards and side panel components
 export function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 	$$<HTMLElement>('.glass-card').forEach((card) => {
-		const keys: Array<keyof I18NDict> = ['comp', 'bass', 'mono', 'eqTitle'];
+		const keys: Array<keyof I18NDict> = ['comp', 'bass', 'mono', 'eqTitle', 'effectsLabel', 'controlSyncing'];
 		keys.forEach((k) => {
 			const el = card.querySelector(`[data-i18n="${k}"]`);
 			const value = dict[k];
@@ -84,8 +84,7 @@ export function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 		setInteractiveLabel(btnHotkey, dict.btnHotkeyTarget, 'Hotkey Target');
 		setInteractiveLabel(btnGotoTab, dict.btnGotoTab, 'Go to Tab');
 
-		const metaIcon = card.querySelector('.meta-icon') as HTMLElement | null;
-		if (metaIcon) metaIcon.title = dict.tipAdvancedSettings;
+		setInteractiveLabel(card.querySelector('.btn-effects'), dict.tipAdvancedSettings, 'Effects');
 
 		const maskText = card.querySelector('.sleep-text') as HTMLElement | null;
 		if (maskText) {

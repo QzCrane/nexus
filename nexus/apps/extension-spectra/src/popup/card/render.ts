@@ -18,7 +18,6 @@ export interface RenderParams {
 // post: returns a sync-render function that updates HTML elements, CSS variables, and canvas overlays based on current state
 export function createRenderFn(params: RenderParams): () => void {
   const { ui, state, getVizEnabled } = params;
-  let volumeTransitionWasPending = false;
 
   return () => {
     if (!ui.card) return;
@@ -33,6 +32,9 @@ export function createRenderFn(params: RenderParams): () => void {
     ui.card.classList.toggle('muted', muted);
 		ui.card.dataset.controlCoverage = controlUnknown ? 'unknown' : 'known';
 		ui.card.dataset.lifecycleCoverage = state.lifecycleSnapshotKnown === false ? 'unknown' : 'known';
+		const syncStatus = ui.card.querySelector<HTMLElement>('.control-sync-status');
+		if (syncStatus) syncStatus.hidden = !controlUnknown;
+		ui.val.setAttribute('aria-busy', String(controlUnknown));
 
     ui.mask.classList.toggle('hidden', !disabled);
 		ui.mask.hidden = !disabled;
@@ -44,27 +46,20 @@ export function createRenderFn(params: RenderParams): () => void {
 		controls?.setAttribute('aria-hidden', String(disabled));
     ui.enable.checked = config.enabled;
 
-    // rule: always update slider to reflect actual state, but preserve user's dragging position
-    // by only updating when the value has actually changed significantly
+    // The same requested/acknowledged projection owns both slider and number.
+    // Newer drag targets are protected by the update owner, not a pixel/value heuristic.
     const currentSliderValue = parseFloat(ui.slider.value);
     const newSliderValue = volumePresentation.effectiveVolume;
-    const volumeTransitionPending = state.volumeTransitionPresentation !== undefined;
-    const volumeTransitionCommitted = volumeTransitionWasPending && !volumeTransitionPending;
-    // Only update if not dragging OR if the difference is significant (> 5%)
-    if (volumeTransitionPending
-      || volumeTransitionCommitted
-      || !state.isDragging
-      || Math.abs(currentSliderValue - newSliderValue) > 5) {
+    if (currentSliderValue !== newSliderValue) {
       ui.slider.value = String(newSliderValue);
     }
-    volumeTransitionWasPending = volumeTransitionPending;
     ui.fill.style.width = `${(newSliderValue / AUDIO_UI.MAX_VOLUME) * 100}%`;
     ui.val.innerText = muted ? 'MUTE' : `${formatVolume(newSliderValue)}%`;
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));
 
-    // A threshold crossing presents the previous complete ACK until value and
-    // processor lifecycle can switch together; no guessed or third-state color.
+    // Numeric feedback follows the requested value; colour follows the
+    // acknowledged processor, including when a warm gain crosses 100%.
 		const fillColor = volumePresentation.color;
 
     ui.fill.style.backgroundColor = fillColor;
@@ -121,17 +116,6 @@ export function resolveVolumePresentation(
   state: CardInternalState,
 ): { effectiveVolume: number; color: string } {
   const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
-  const transition = state.volumeTransitionPresentation;
-  if (transition) {
-    return {
-      effectiveVolume: transition.effectiveVolume,
-      color: transition.volumeState === 'silent'
-        ? COLORS.MUTED
-        : transition.volumeState === 'capture'
-          ? COLORS.CAPTURE
-          : COLORS.NATIVE,
-    };
-  }
   return {
     effectiveVolume,
     color: actualVolumeColor(

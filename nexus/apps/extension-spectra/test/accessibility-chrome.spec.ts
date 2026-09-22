@@ -5,6 +5,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Browser, Page, Target } from 'puppeteer';
+import { build } from 'esbuild';
+import { createRemotePairing } from '../src/remote/protocol';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
@@ -19,6 +21,239 @@ if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 let browser: Browser;
 let profileDir = '';
 let extensionId = '';
+
+test('commits the latest physical speed settlement when a held OSD gesture releases', async () => {
+	const bundled = await build({
+		entryPoints: [resolve(import.meta.dir, '../src/content/ui/osd.ts')],
+		bundle: true,
+		write: false,
+		platform: 'browser',
+		format: 'iife',
+		globalName: 'SpectraOSD',
+	});
+	const code = bundled.outputFiles?.[0]?.text;
+	if (!code) throw new Error('OSD component bundle is missing');
+	const page = await browser.newPage();
+	type OsdScope = Window & {
+		SpectraOSD: typeof import('../src/content/ui/osd');
+	};
+	const settings = {
+		osdEnabled: true,
+		visualizerEnabled: true,
+		lang: 'en-US',
+		osdMessages: { muted: 'MUTE' },
+	};
+	const label = () => page.evaluate(() => (
+		document.querySelector<HTMLElement>('#spectra-osd-host')
+			?.shadowRoot?.getElementById('t')?.textContent ?? ''
+	));
+	const waitForLabel = (expected: string) => page.waitForFunction((value) => (
+		document.querySelector<HTMLElement>('#spectra-osd-host')
+			?.shadowRoot?.getElementById('t')?.textContent === value
+	), {}, expected);
+	try {
+		await page.setContent('<main>OSD transaction probe</main>');
+		await page.addScriptTag({ content: code });
+
+		await page.evaluate((value) => {
+			const osd = (window as OsdScope).SpectraOSD;
+			osd.advanceHotkeyTargetOSD({ kind: 'speed', value: 1 }, 0.1, value, 'default:1');
+		}, settings);
+		await waitForLabel('1.1×');
+		await page.evaluate((value) => {
+			const osd = (window as OsdScope).SpectraOSD;
+			osd.showHotkeyActualOSD({ kind: 'speed', value: 1.1 }, value, {}, 'default:1');
+			osd.advanceHotkeyTargetOSD({ kind: 'speed', value: 1.1 }, 0.1, value, 'default:1');
+		}, settings);
+		await waitForLabel('1.2×');
+		await page.evaluate(() => {
+			const osd = (window as OsdScope).SpectraOSD;
+			osd.freezeHotkeyTargetOSD('default:1');
+			osd.releaseHotkeyTargetOSD('default:1');
+		});
+		expect(await label()).toBe('1.1×');
+
+		await page.evaluate((value) => {
+			const osd = (window as OsdScope).SpectraOSD;
+			osd.advanceHotkeyTargetOSD({ kind: 'speed', value: 1.1 }, 0.1, value, 'default:2');
+		}, settings);
+		await waitForLabel('1.2×');
+		await page.evaluate((value) => {
+			const osd = (window as OsdScope).SpectraOSD;
+			osd.freezeHotkeyTargetOSD('default:2');
+			osd.showHotkeyActualOSD({ kind: 'speed', value: 1.15 }, value, {}, 'default:2');
+			osd.releaseHotkeyTargetOSD('default:2');
+		}, settings);
+		expect(await label()).toBe('1.15×');
+
+		await page.evaluate((value) => {
+			const osd = (window as OsdScope).SpectraOSD;
+			osd.advanceHotkeyTargetOSD({ kind: 'speed', value: 1.15 }, 0.1, value, 'default:3');
+			osd.showHotkeyActualOSD({ kind: 'speed', value: 1.05 }, value, {}, 'default:2');
+		}, settings);
+		await waitForLabel('1.25×');
+		expect(await label()).toBe('1.25×');
+	} finally {
+		await page.close();
+	}
+}, 20_000);
+
+test('keeps remote disconnect visible through failure and fences a late close from a newer dialog', async () => {
+	const bundled = await build({
+		entryPoints: [resolve(import.meta.dir, '../src/remote/modal-renderer.ts')],
+		bundle: true, write: false, platform: 'browser', format: 'iife', globalName: 'RemoteModal',
+	});
+	const code = bundled.outputFiles?.[0]?.text;
+	if (!code) throw new Error('Remote modal component bundle is missing');
+	const page = await browser.newPage();
+	type Scope = Window & {
+		RemoteModal: typeof import('../src/remote/modal-renderer');
+		pending: Array<(reply: unknown) => void>;
+	};
+	try {
+		await page.setContent('<button id="opener">Remote</button>');
+		await page.evaluate(() => {
+			const scope = window as Scope;
+			scope.pending = [];
+			Object.defineProperty(window, 'chrome', { configurable: true, value: { runtime: {
+				sendMessage: () => new Promise((resolveReply) => scope.pending.push(resolveReply)),
+				onMessage: { addListener() {}, removeListener() {} },
+			} } });
+			document.getElementById('opener')?.focus();
+		});
+		await page.addScriptTag({ content: code });
+		const pairing = createRemotePairing();
+		await page.evaluate((value) => {
+			(window as Scope).RemoteModal.renderRemoteModal('data:image/png;base64,AA==', value, 1);
+		}, pairing);
+		await page.click('.remote-disconnect-btn');
+		expect(await page.evaluate(() => ({
+			open: (window as Scope).RemoteModal.isRemoteModalOpen(),
+			busy: document.getElementById('remote-modal')?.getAttribute('aria-busy'),
+			disabled: document.querySelector<HTMLButtonElement>('.remote-disconnect-btn')?.disabled,
+			requests: (window as Scope).pending.length,
+		}))).toEqual({ open: true, busy: 'true', disabled: true, requests: 1 });
+		await page.click('.remote-modal-close');
+		await page.keyboard.press('Escape');
+		await page.evaluate(() => document.getElementById('remote-modal')?.click());
+		expect(await page.evaluate(() => (window as Scope).RemoteModal.isRemoteModalOpen())).toBe(true);
+		await page.evaluate(() => (window as Scope).pending[0]?.({
+			ok: false, error: { code: 'remote_failed', message: 'internal transport detail', retryable: true },
+		}));
+		await page.waitForFunction(() => !document.querySelector<HTMLButtonElement>('.remote-disconnect-btn')?.disabled);
+		expect(await page.$eval('.remote-status-text', (node) => node.textContent)).toBe('Could not disconnect. Please try again.');
+		await page.click('.remote-disconnect-btn');
+		await page.evaluate(() => (window as Scope).pending[1]?.({ ok: true, data: { closed: true } }));
+		await page.waitForFunction(() => !document.getElementById('remote-modal'));
+		expect(await page.evaluate(() => document.activeElement?.id)).toBe('opener');
+		await page.evaluate((value) => {
+			(window as Scope).RemoteModal.renderRemoteModal('data:image/png;base64,AA==', value, 1);
+		}, pairing);
+		await page.click('.remote-disconnect-btn');
+		await page.evaluate((value) => {
+			(window as Scope).RemoteModal.renderRemoteModal('data:image/png;base64,AA==', value, 2);
+			(window as Scope).pending[2]?.({ ok: true, data: { closed: true } });
+		}, createRemotePairing());
+		expect(await page.evaluate(() => (window as Scope).RemoteModal.isRemoteModalOpen())).toBe(true);
+		await page.click('.remote-modal-close');
+		expect(await page.evaluate(() => (window as Scope).pending.length)).toBe(3);
+	} finally {
+		await page.close();
+	}
+}, 20_000);
+
+test('renders automatically detected and manually configured site audio routes together', async () => {
+	const bundled = await build({
+		entryPoints: [resolve(import.meta.dir, '../src/popup/views/media-route-ui.ts')],
+		bundle: true,
+		write: false,
+		platform: 'browser',
+		format: 'iife',
+		globalName: 'MediaRouteUI',
+	});
+	const code = bundled.outputFiles?.[0]?.text;
+	if (!code) throw new Error('Media route UI component bundle is missing');
+	const page = await browser.newPage();
+	type RouteScope = Window & {
+		MediaRouteUI: typeof import('../src/popup/views/media-route-ui');
+		routeDispose?: () => void;
+	};
+	try {
+		await page.setContent(`
+			<input id="registry-filter" />
+			<ul id="registry-list"></ul>
+			<input id="registry-new-domain" />
+			<select id="registry-new-route"><option value="capture">Capture when needed</option></select>
+			<button id="btn-add-domain" type="button">Add</button>
+		`);
+		await page.evaluate(() => {
+			const listeners = { addListener() {}, removeListener() {} };
+			Object.defineProperty(window, 'chrome', {
+				configurable: true,
+				value: {
+					runtime: {
+						onMessage: listeners,
+						sendMessage: () => Promise.resolve({
+							ok: true,
+							data: {
+								entries: [
+									{
+										domain: 'www.douyin.com',
+										fingerprint: 'site:www.douyin.com',
+										route: 'capture',
+										source: 'auto',
+										updatedAt: 2,
+									},
+									{
+										domain: 'example.com',
+										fingerprint: 'site:example.com',
+										route: 'direct',
+										source: 'user',
+										updatedAt: 1,
+									},
+								],
+							},
+						}),
+					},
+					storage: { onChanged: listeners },
+				},
+			});
+		});
+		await page.addScriptTag({ content: code });
+		await page.evaluate(async () => {
+			const scope = window as RouteScope;
+			scope.routeDispose = await scope.MediaRouteUI.initMediaRouteUI({
+				tabRestricted: 'Capture when needed',
+				tabSafe: 'Direct',
+				registrySourceAuto: 'Auto-detected',
+				registrySourceUser: 'Manual',
+				registryEmptyRestricted: 'No detected or configured sites',
+				registryInvalidDomain: 'Invalid domain',
+				tipDelete: 'Delete',
+			} as never);
+		});
+		const rows = await page.$$eval('.registry-item', (items) => items.map((item) => ({
+			domain: item.querySelector('.registry-item-domain')?.textContent,
+			source: item.querySelector('.registry-item-source')?.textContent,
+			route: item.querySelector('.registry-item-route')?.textContent,
+		})));
+		expect(rows).toEqual([
+			{ domain: 'www.douyin.com', source: 'Auto-detected', route: 'Capture when needed' },
+			{ domain: 'example.com', source: 'Manual', route: 'Direct' },
+		]);
+		expect(await page.$eval('body', (body) => body.textContent?.includes('site:'))).toBe(false);
+		await page.$eval('#registry-filter', (element) => {
+			const input = element as HTMLInputElement;
+			input.value = 'Auto-detected';
+			input.dispatchEvent(new Event('input', { bubbles: true }));
+		});
+		expect(await page.$$eval('.registry-item-domain', (items) => items.map((item) => item.textContent)))
+			.toEqual(['www.douyin.com']);
+	} finally {
+		await page.evaluate(() => (window as RouteScope).routeDispose?.()).catch(() => undefined);
+		await page.close();
+	}
+}, 20_000);
 
 beforeAll(async () => {
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-accessibility-'));

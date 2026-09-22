@@ -41,12 +41,7 @@ const IGNORED_DIRECTORIES = new Set([
  * Cross-platform compatibility projections that must remain byte-identical to
  * their canonical owner. A mirror has no independent edit authority.
  */
-const REGISTERED_MARKDOWN_MIRRORS = new Map([
-	[
-		'nexus/apps/extension-spectra/docs/control-architecture.md',
-		'nexus/apps/extension-spectra/docs/control/04a-algorithm-matrix.md',
-	],
-]);
+const REGISTERED_MARKDOWN_MIRRORS = new Map<string, string>();
 
 const REQUIRED_ENTRYPOINTS = [
 	'README.md',

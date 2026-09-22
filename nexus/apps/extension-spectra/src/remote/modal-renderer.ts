@@ -31,7 +31,7 @@ export function renderRemoteModal(
 	isConnected = false,
 ): void {
 	if (!isSafeRemoteQrDataUrl(qrDataUrl)) throw new Error('Invalid remote QR image URL');
-	closeRemoteModal(false);
+	void closeRemoteModal();
 	activePairing = pairing;
 	activeTabId = tabId;
 	previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
@@ -51,20 +51,20 @@ export function renderRemoteModal(
 	const closeButton = element('button', 'remote-modal-close');
 	closeButton.type = 'button';
 	closeButton.textContent = '✕';
-	closeButton.setAttribute('aria-label', 'Close');
+	closeButton.setAttribute('aria-label', t('btnClose', 'Close'));
 	header.append(title, closeButton);
 
 	const body = element('div', 'remote-modal-body');
 	const qr = element('img', 'remote-qr');
 	qr.src = qrDataUrl;
-	qr.alt = 'Secure SPECTRA remote pairing QR code';
+	qr.alt = t('remoteModalTitle', 'Remote Control');
 
 	const sessionRow = element('div', 'remote-session-id');
 	const sessionLabel = element('span');
 	sessionLabel.textContent = t('remoteSessionCode', 'Secure pairing');
 	const sessionCode = element('code');
 	sessionCode.textContent = `${pairing.sessionId.slice(0, 8)}…`;
-	sessionCode.title = 'Copy secure pairing link';
+	sessionCode.title = t('remoteSessionCode', 'Session Code');
 	sessionCode.tabIndex = 0;
 	sessionCode.setAttribute('role', 'button');
 	sessionRow.append(sessionLabel, sessionCode);
@@ -76,7 +76,7 @@ export function renderRemoteModal(
 	link.target = '_blank';
 	link.rel = 'noopener noreferrer';
 	link.title = t('remoteOpenLinkTitle', 'Open secure remote in a new tab');
-	link.textContent = 'Open secure remote';
+	link.textContent = t('remoteOpenLinkTitle', 'Open secure remote');
 	linkRow.append(link);
 
 	const status = element('div', 'remote-status');
@@ -104,13 +104,16 @@ export function renderRemoteModal(
 	document.body.append(modal);
 	isModalOpen = true;
 
-	closeButton.addEventListener('click', () => closeRemoteModal(false));
-	disconnectButton.addEventListener('click', () => closeRemoteModal(true));
+	const dismiss = () => {
+		if (modal.getAttribute('aria-busy') !== 'true') void closeRemoteModal();
+	};
+	closeButton.addEventListener('click', dismiss);
+	disconnectButton.addEventListener('click', () => { void closeRemoteModal(true); });
 	modal.addEventListener('click', (event) => {
-		if (event.target === modal) closeRemoteModal(false);
+		if (event.target === modal) dismiss();
 	});
 	modal.addEventListener('keydown', (event) => {
-		handleDialogKeydown(event, modal, () => closeRemoteModal(false));
+		handleDialogKeydown(event, modal, dismiss);
 	});
 	const copyLink = () => void copyPairingLink(sessionCode, remoteUrl);
 	sessionCode.addEventListener('click', copyLink);
@@ -121,7 +124,6 @@ export function renderRemoteModal(
 		}
 	});
 
-	adjustPopupHeight(true);
 	closeButton.focus();
 	statusMessageListener = (message: unknown): false => {
 		if (!isSpectraUiEventEnvelope(message)) return false;
@@ -132,7 +134,7 @@ export function renderRemoteModal(
 		} else if (message.type === 'spectra.remote.session.closed'
 			&& message.payload.tabId === tabId
 			&& message.payload.sessionId === pairing.sessionId) {
-			closeRemoteModal(false);
+			void closeRemoteModal();
 		}
 		return false;
 	};
@@ -168,27 +170,38 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className?: stri
 	return node;
 }
 
-function adjustPopupHeight(expand: boolean): void {
-	if (expand && document.body.offsetHeight < 520) document.body.style.minHeight = '520px';
-	else if (!expand) document.body.style.minHeight = '';
-}
-
-export function closeRemoteModal(closeConnection = false): void {
+export async function closeRemoteModal(closeConnection = false): Promise<void> {
 	const modal = document.getElementById('remote-modal');
+	if (closeConnection && activePairing && activeTabId !== null && modal) {
+		if (modal.getAttribute('aria-busy') === 'true') return;
+		const pairing = activePairing;
+		const tabId = activeTabId;
+		const button = modal.querySelector<HTMLButtonElement>('.remote-disconnect-btn');
+		modal.setAttribute('aria-busy', 'true');
+		if (button) button.disabled = true;
+		try {
+			const response = await sendSpectraRequest(
+				'spectra.remote.session.close',
+				{ tabId, sessionId: pairing.sessionId },
+				{ tabId },
+			);
+			if (!response.ok) throw new Error(response.error.message);
+		} catch {
+			if (activePairing !== pairing || !modal.isConnected) return;
+			modal.removeAttribute('aria-busy');
+			if (button) button.disabled = false;
+			const status = modal.querySelector<HTMLElement>('.remote-status-text');
+			if (status) status.textContent = t('remoteDisconnectFailed', 'Could not disconnect. Please try again.');
+			return;
+		}
+		// A close event or another dialog may have superseded this transaction.
+		if (activePairing !== pairing || !modal.isConnected) return;
+	}
 	modal?.remove();
 	isModalOpen = false;
 	if (statusMessageListener) {
 		chrome.runtime.onMessage.removeListener(statusMessageListener);
 		statusMessageListener = null;
-	}
-	adjustPopupHeight(false);
-
-	if (closeConnection && activePairing && activeTabId) {
-		void sendSpectraRequest(
-			'spectra.remote.session.close',
-			{ tabId: activeTabId, sessionId: activePairing.sessionId },
-			{ tabId: activeTabId },
-		);
 	}
 	activePairing = null;
 	activeTabId = null;

@@ -42,43 +42,6 @@ describe('cold-document shortcuts', () => {
 		expect(resolveChromeCommandAction('volume_up')).toBe('volume_up');
 	});
 
-	test('admits only identity-bound extension shortcut routes and keeps site-page sender-bound', () => {
-		const source = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
-		expect(source).toContain('submitExtensionInvokedControlRequest');
-		expect(source).toContain('submitExtensionInvokedControlOperation');
-		expect(source).not.toContain('submitControlRequest');
-		expect(source).not.toContain('extensionInvoked');
-		expect(source).toContain('defaultHotkeySenderIdentity');
-		expect(source).toContain('route.invocation.target.documentId');
-		expect(source).toContain('validateHotkeyDocument');
-		expect(source).toContain('frame.documentId !== identity.documentId');
-		expect(source).not.toContain('before.url !== identity.url');
-		expect(source).toContain('{ ...identity.tab, url: before.url }');
-		expect(source).toContain("'builtin-page'");
-		expect(source).toContain("'chrome-command'");
-		expect(source).toContain("origin: 'site-page'");
-		expect(source).toContain("message.payload.disposition === 'site-page'");
-		expect(source).toContain('runSitePageHotkey');
-		expect(source).toContain('runDefaultPageHotkey');
-		expect(source).toContain('activeChromeCommands.has(command)');
-		expect(source).toContain('activeChromeCommands.delete(command)');
-		expect(source).not.toMatch(/\bsubmitControlOperation\(/u);
-
-		const siteStart = source.indexOf('async function runSitePageHotkey');
-		const routeStart = source.indexOf('interface ShortcutRoute', siteStart);
-		const siteBlock = source.slice(siteStart, routeStart);
-		expect(siteBlock).toContain('foreground: document');
-		expect(siteBlock).toContain('target: document');
-		expect(siteBlock).toContain('executeShortcutRoute');
-		expect(siteBlock).not.toContain('hotkeyTargetRepository');
-
-		const defaultStart = source.indexOf('async function runDefaultPageHotkey');
-		const siteFunctionStart = source.indexOf('async function runSitePageHotkey', defaultStart);
-		const defaultBlock = source.slice(defaultStart, siteFunctionStart);
-		expect(defaultBlock).toContain('resolveShortcutTargetFromActive');
-		expect(source).toContain('const { tabId: targetId } = await hotkeyTargetRepository.get();');
-	});
-
 	test('acquires a document runtime before executing and releases it afterwards', async () => {
 		const port = runtimePort();
 		const order: string[] = [];

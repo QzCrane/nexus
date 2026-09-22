@@ -30,10 +30,10 @@
           <button id="theme-toggle" class="btn-icon" type="button" title="Toggle Theme" aria-label="Toggle theme">🌙</button>
         </div>
       </header>
-	  <div id="options-status" class="options-status" role="alert" aria-live="assertive" hidden>
-		<span id="options-status-message"></span>
-		<button id="options-retry" class="btn btn-small" type="button">Retry</button>
-	  </div>
+      <div id="options-status" class="options-status" role="alert" aria-live="assertive" hidden>
+        <span id="options-status-message" data-i18n="options_error">Settings are temporarily unavailable. Retry to restore the latest saved settings.</span>
+        <button id="options-retry" class="btn btn-small" type="button" data-i18n="options_retry">Retry</button>
+      </div>
 
       <!-- Main Content -->
       <main class="main">
@@ -63,9 +63,12 @@
           <div id="legacy-hotkeys-warning" class="form-warning" role="status" aria-live="polite" hidden></div>
 
           <!-- Add new site -->
-          <div class="site-add-row">
-            <input type="text" id="site-input" class="site-input" data-i18n-placeholder="opt_site_placeholder" placeholder="Enter domain (e.g. youtube.com)" aria-label="Site domain" />
-            <button type="button" id="site-add-btn" class="btn btn-small" data-i18n="opt_site_add_btn">Add</button>
+          <div class="site-add-field">
+            <div class="site-add-row">
+              <input type="text" id="site-input" class="site-input" data-i18n-placeholder="opt_site_placeholder" placeholder="Enter domain (e.g. youtube.com)" aria-label="Site domain" aria-describedby="site-input-error" aria-invalid="false" />
+              <button type="button" id="site-add-btn" class="btn btn-small" data-i18n="opt_site_add_btn">Add</button>
+            </div>
+            <p id="site-input-error" class="form-warning" role="alert" aria-live="assertive" hidden></p>
           </div>
 
           <!-- Existing sites selector -->
@@ -121,18 +124,29 @@
         <!-- Local diagnostics: explicit export only, never remote telemetry -->
         <section id="diagnostics-section" class="section">
           <div class="section-header">
-            <h2>🧪 Local Diagnostics</h2>
+            <h2 data-i18n="opt_diagnostics_title">🧪 Local Diagnostics</h2>
           </div>
-          <p class="section-desc">
+          <p class="section-desc" data-i18n="opt_diagnostics_desc">
             Export a redacted local JSON snapshot for troubleshooting. It excludes page URLs, titles, storage values, media, remote secrets and tokens, and sends nothing automatically.
           </p>
-          <button type="button" id="diagnostics-export-btn" class="btn btn-secondary">
+          <button type="button" id="diagnostics-export-btn" class="btn btn-secondary" data-i18n="opt_diagnostics_export">
             Export diagnostic JSON
           </button>
           <p id="diagnostics-status" class="section-desc" role="status" aria-live="polite"></p>
         </section>
       </main>
     </div>
+
+    <dialog id="site-delete-dialog" class="confirm-dialog" aria-labelledby="site-delete-title" aria-describedby="site-delete-message">
+      <form method="dialog">
+        <h3 id="site-delete-title" data-i18n="delete_site_title">Delete site configuration?</h3>
+        <p id="site-delete-message"></p>
+        <div class="modal-footer">
+          <button type="submit" id="site-delete-cancel" class="btn btn-secondary" value="cancel" data-i18n="modal_cancel">Cancel</button>
+          <button type="submit" id="site-delete-confirm" class="btn btn-danger" value="confirm" data-i18n="delete_site_action">Delete configuration</button>
+        </div>
+      </form>
+    </dialog>
 
     <!-- Edit Modal -->
     <div id="edit-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="edit-modal-title" aria-hidden="true" hidden inert>

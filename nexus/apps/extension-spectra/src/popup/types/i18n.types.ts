@@ -44,6 +44,8 @@ export interface I18NDict {
 	btnSettingsTooltip: string;
 	btnHotkeysTooltip: string;
 	btnShortcutsTooltip: string;
+	effectsLabel: string;
+	controlSyncing: string;
 
 	// note: side panel specific labels for advanced audio and video effects
 	spAudio: string;
@@ -107,6 +109,15 @@ export interface I18NDict {
 	presetSetDefaultTooltip: string;
 	presetRemoveDefaultTooltip: string;
 	presetDeleteTooltip: string;
+	presetClearTitle: string;
+	presetClearBody: string;
+	presetClearConfirm: string;
+	presetPreviewVolume: string;
+	presetPreviewEnabled: string;
+	presetPreviewMuted: string;
+	presetPreviewPreservePitch: string;
+	presetStateOn: string;
+	presetStateOff: string;
 	presetAppliedToast: (name: string) => string;
 	btnClose: string;
 	btnSaveAsGlobal: string;
@@ -137,6 +148,7 @@ export interface I18NDict {
 	remoteWaiting: string;
 	remoteHint: string;
 	remoteDisconnect: string;
+	remoteDisconnectFailed: string;
 	remoteCopied: string;
 	remoteOpenLinkTitle: string;
 	remoteConnectedTooltip: string;
@@ -144,9 +156,6 @@ export interface I18NDict {
 	// note: preset search aria-label for the static presets-group input.
 	presetSearchAria: string;
 
-	// note: CORS injection and domain correction feedback
-	corsAddedSafe: (domain: string) => string;
-	corsCorrectedSafe: (domain: string) => string;
 }
 
 export type I18NMap = Record<string, I18NDict>;

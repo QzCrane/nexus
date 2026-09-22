@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { bindOptionsRetry, showOptionsError, clearOptionsError } from '../src/options/status';
+import { createRevisionedSettingsClient } from '../src/shared/revisioned-settings-client';
 
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
 
@@ -11,27 +11,43 @@ afterEach(() => {
 
 describe('Options failure presentation', () => {
 	test('publishes and clears one accessible page-level error surface', () => {
-		const surface = { hidden: true, textContent: '' };
+		const surface = { hidden: true };
+		const message = { textContent: 'Settings are temporarily unavailable. Retry.' };
 		Object.defineProperty(globalThis, 'document', {
 			configurable: true,
-			value: { getElementById: (id: string) => id === 'options-status' ? surface : null },
+			value: { getElementById: (id: string) => id === 'options-status' ? surface : id === 'options-status-message' ? message : null },
 		});
-		showOptionsError(new Error('worker restarting'));
-		expect(surface.hidden).toBe(false);
-		expect(surface.textContent).toContain('worker restarting');
-		clearOptionsError();
-		expect(surface).toEqual({ hidden: true, textContent: '' });
+		const originalError = console.error;
+		const technicalErrors: unknown[][] = [];
+		console.error = (...values: unknown[]) => { technicalErrors.push(values); };
+		try {
+			showOptionsError(new Error('worker restarting'));
+			expect(surface.hidden).toBe(false);
+			expect(message.textContent).toBe('Settings are temporarily unavailable. Retry.');
+			expect(technicalErrors[0]?.[1]).toBeInstanceOf(Error);
+			clearOptionsError();
+			expect(surface.hidden).toBe(true);
+			expect(message.textContent).toBe('Settings are temporarily unavailable. Retry.');
+		} finally {
+			console.error = originalError;
+		}
 	});
 
-	test('does not convert failed settings loads into persisted defaults', () => {
-		const siteEditor = readFileSync(new URL('../src/options/site-editor.ts', import.meta.url), 'utf8');
-		const slotsEditor = readFileSync(new URL('../src/options/slots-editor.ts', import.meta.url), 'utf8');
-		const entry = readFileSync(new URL('../src/options/index.ts', import.meta.url), 'utf8');
-		expect(siteEditor).toContain('await getOptionsSettingsSnapshot(forceRefresh)');
-		expect(siteEditor).not.toMatch(/getOptionsSettingsSnapshot\([^)]*\)\.catch\([^)]*DEFAULT/u);
-		expect(slotsEditor).toContain('await getOptionsSettingsSnapshot(forceRefresh)');
-		expect(slotsEditor).not.toMatch(/getOptionsSettingsSnapshot\([^)]*\)\.catch\([^)]*DEFAULT/u);
-		expect(entry).toContain('init().catch(showOptionsError)');
+	test('leaves Options unhydrated when the authoritative settings read fails', async () => {
+		let patchAttempts = 0;
+		const client = createRevisionedSettingsClient<{ revision: number }, { enabled: boolean }>({
+			getSnapshot: () => Promise.reject(new Error('worker restarting')),
+			sendPatch: () => {
+				patchAttempts += 1;
+				return Promise.resolve({ ok: true, data: { revision: 1 } });
+			},
+		});
+		const projected: number[] = [];
+		client.subscribe((snapshot) => projected.push(snapshot.revision));
+
+		await expect(client.getSnapshot()).rejects.toThrow('worker restarting');
+		expect(projected).toEqual([]);
+		expect(patchAttempts).toBe(0);
 	});
 
 	test('binds one explicit retry action for a failed initialization', () => {

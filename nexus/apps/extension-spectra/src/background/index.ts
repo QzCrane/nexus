@@ -23,9 +23,10 @@ import {
 } from './offscreen-coordinator';
 import { initializeContentRuntimeLoader } from './runtime-loader';
 import { bindRuntimeObservationPort } from './runtime-observation';
+import { bindPopupControlPort } from './popup-control-port';
 import { initializeRuntimeRestartRecovery } from './runtime-restart-startup';
 import { initializeMainRuntimeManager } from './main-runtime-manager';
-import { initializeControlCoordinator } from './control-coordinator';
+import { initializeControlCoordinator, submitPopupControlBatch } from './control-coordinator';
 import { initializeBackgroundDiagnostics } from './diagnostics';
 
 // eff: initialize all functional modules and start message routing
@@ -33,6 +34,9 @@ initializeOffscreenCoordinator();
 initializeMainRuntimeManager();
 initializeContentRuntimeLoader();
 chrome.runtime.onConnect.addListener(bindRuntimeObservationPort);
+chrome.runtime.onConnect.addListener((port) => bindPopupControlPort(port, {
+	submit: submitPopupControlBatch,
+}));
 initializeControlCoordinator();
 initializeBackgroundDiagnostics();
 registerAudioHandlers();

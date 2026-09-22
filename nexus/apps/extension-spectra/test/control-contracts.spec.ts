@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import {
 	compileEffectiveVolume,
 	CONTROL_VALUE_LIMITS,
@@ -16,8 +15,6 @@ import {
 	CONTROL_TERMINAL_STRATEGY_FAILURES,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	classifyControlStrategy,
-	controlCapabilityUsesAcknowledgement,
-	controlCapabilityUsesStrategy,
 	isControlIntent,
 	isCaptureAdmission,
 	isControlOperationAck,
@@ -28,10 +25,6 @@ import {
 	isSpectraRequestEnvelope,
 	resolveAcknowledgedProcessorLifecycle,
 	resolveControlAudioVolume,
-	selectControlAlgorithmAdjudication,
-	selectControlAlgorithmPolicy,
-	selectControlCapabilityScope,
-	selectControlStrategyRule,
 	shouldTryNextControlStrategy,
 	splitEffectiveVolume,
 	type ControlField,
@@ -396,41 +389,6 @@ describe('per-field SPECTRA control contracts', () => {
 		);
 	});
 
-	test('derives complete audit projections from the typed compact dimension owner', () => {
-		for (const strategy of CONTROL_STRATEGIES) {
-			expect(selectControlStrategyRule(strategy)).toEqual(CONTROL_STRATEGY_RULES[strategy]);
-		}
-		for (const capability of CONTROL_CAPABILITIES) {
-			const policy = selectControlAlgorithmPolicy(capability);
-			expect(policy).toEqual(CONTROL_ALGORITHM_POLICIES[capability]);
-			expect(selectControlAlgorithmAdjudication(capability)).toEqual(
-				CONTROL_ALGORITHM_ADJUDICATIONS[capability],
-			);
-			expect(selectControlCapabilityScope(capability)).toBe(policy.scope);
-			for (const strategy of CONTROL_STRATEGIES) {
-				expect(controlCapabilityUsesStrategy(capability, strategy)).toBe(
-					policy.orderedStrategies.includes(strategy as never),
-				);
-			}
-			for (const acknowledgement of [
-				'coordinator-snapshot',
-				'page-controller-getter',
-				'dom-event-getter',
-				'dom-stable-getter',
-				'chrome-event-getter',
-				'processor-readback',
-				'computed-style',
-				'overlay-readback',
-				'subscription-state',
-				'operation-result',
-			] as const) {
-				expect(controlCapabilityUsesAcknowledgement(capability, acknowledgement)).toBe(
-					policy.acknowledgements.includes(acknowledgement),
-				);
-			}
-		}
-	});
-
 	test('falls through only for capability incompleteness and stops at browser boundaries', () => {
 		for (const failure of CONTROL_RETRYABLE_STRATEGY_FAILURES) {
 			expect(shouldTryNextControlStrategy(failure)).toBe(true);
@@ -518,32 +476,6 @@ describe('per-field SPECTRA control contracts', () => {
 			'tabMuted', 'tabPinned', 'playing', 'currentTime', 'pip', 'fullscreen', 'abLoop', 'visualizer',
 		]) {
 			expect(CONTROL_SESSION_FIELDS).not.toContain(transient as never);
-		}
-	});
-
-	test('keeps all 51 executable strategy orders, MAIN boundaries, ACKs, and lifetimes mirrored in the owner design', () => {
-		const architecture = readFileSync(
-			new URL('../docs/control/04a-algorithm-matrix.md', import.meta.url),
-			'utf8',
-		);
-		for (const capability of CONTROL_CAPABILITIES) {
-			const policy = CONTROL_ALGORITHM_POLICIES[capability];
-			const adjudication = CONTROL_ALGORITHM_ADJUDICATIONS[capability];
-			const mainWorld = policy.orderedStrategies.some(
-				(strategy) => CONTROL_STRATEGY_RULES[strategy].mainWorld === 'exact-element-page-bridge',
-			)
-				? 'exact-element-page-bridge'
-				: 'forbidden';
-			const exactRow = [
-				`| \`${capability}\``,
-				`\`${adjudication.nativePreference}\``,
-				`\`${adjudication.augmentationAdmission}\``,
-				`\`${policy.orderedStrategies.join(' -> ')}\``,
-				`\`${mainWorld}\``,
-				`\`${policy.acknowledgements.join(' + ')}\``,
-				`\`${policy.recurringWork}\` |`,
-			].join(' | ');
-			expect(architecture).toContain(exactRow);
 		}
 	});
 

@@ -150,6 +150,78 @@ class FakeIntersectionObserver {
 }
 
 describe('event-driven media registry', () => {
+	test('projects only selected processing sources and recomputes URL and srcObject lifecycles', () => {
+		const descriptors = captureGlobalDescriptors([
+			'document',
+			'Node',
+			'Element',
+			'HTMLMediaElement',
+			'HTMLVideoElement',
+			'MutationObserver',
+			'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const placeholder = new FakeMediaElement(1);
+		const urlSource = new FakeMediaElement(1);
+		const streamSource = new FakeMediaElement(1);
+		document.documentElement.descendants.push(placeholder, urlSource, streamSource);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		const events: Array<{ target: MediaTarget; event: string }> = [];
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:processing-sources', frameId: 0 }),
+				(target, event) => events.push({ target, event }),
+			);
+			expect(registry.list()).toHaveLength(3);
+			expect(registry.listProcessingSources()).toEqual([]);
+
+			const initialUrlTarget = requireValue(
+				registry.list().find(({ element }) => element === urlSource)?.target,
+				'Expected URL placeholder identity',
+			);
+			urlSource.src = 'https://media.example/selected.mp3';
+			FakeMutationObserver.latest?.emitAttribute(urlSource, 'src');
+
+			const initialStreamTarget = requireValue(
+				registry.list().find(({ element }) => element === streamSource)?.target,
+				'Expected srcObject placeholder identity',
+			);
+			streamSource.srcObject = {};
+			streamSource.dispatchEvent(new Event('loadstart'));
+
+			expect(registry.listProcessingSources().map(({ element }) => element))
+				.toEqual([urlSource, streamSource]);
+			expect(registry.listProcessingSources()).not.toContainEqual(
+				expect.objectContaining({ element: placeholder }),
+			);
+			expect(registry.list().find(({ element }) => element === urlSource)?.target)
+				.toMatchObject({ mediaId: initialUrlTarget.mediaId, sourceRevision: 1 });
+			expect(registry.list().find(({ element }) => element === streamSource)?.target)
+				.toMatchObject({ mediaId: initialStreamTarget.mediaId, sourceRevision: 1 });
+			expect(events.filter(({ target, event }) => (
+				target.mediaId === initialUrlTarget.mediaId
+				&& (event === 'removed' || event === 'registered')
+			)).map(({ event }) => event)).toEqual(['registered', 'removed', 'registered']);
+			expect(events.filter(({ target, event }) => (
+				target.mediaId === initialStreamTarget.mediaId
+				&& (event === 'removed' || event === 'registered')
+			)).map(({ event }) => event)).toEqual(['registered', 'removed', 'registered']);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
 	test('seeds initial selection from visible geometry before IntersectionObserver delivery', () => {
 		const descriptors = captureGlobalDescriptors([
 			'document',

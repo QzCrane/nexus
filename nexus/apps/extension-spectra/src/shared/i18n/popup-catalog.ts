@@ -16,8 +16,6 @@ import {
 const VALUE_MARKER = '__SPECTRA_I18N_VALUE__';
 const FUNCTION_KEYS = [
 	'presetAppliedToast',
-	'corsAddedSafe',
-	'corsCorrectedSafe',
 ] as const satisfies ReadonlyArray<keyof I18NDict>;
 const popupStore = createLocaleSectionStore();
 const hydratedPopupCache = new Map<SupportedLanguage, I18NDict>();

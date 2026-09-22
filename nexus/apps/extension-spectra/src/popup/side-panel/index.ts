@@ -94,7 +94,7 @@ export function initSidePanel(): () => void {
 	document.addEventListener('click', (e) => {
 		if (!state.isOpen || state.isPinned) return;
 		const target = e.target as HTMLElement;
-		if (!elements?.panel.contains(target) && !target.closest('.meta-icon')) {
+		if (!elements?.panel.contains(target) && !target.closest('.btn-effects')) {
 			closeSidePanel();
 		}
 	}, listenerOptions);
@@ -134,21 +134,15 @@ export function disposeSidePanel(): void {
 	initialized = false;
 }
 
-// eff: attaches a toggle listener to a card icon to open/close advanced settings for that specific tab
-export function bindCardIconClick(
-	iconEl: HTMLElement,
+// eff: binds the native Effects button to this card's acknowledged media target
+export function bindEffectsButton(
+	button: HTMLButtonElement,
 	tabId: number,
 	tabTitle: string,
 	faviconUrl: string,
-	i18nTitle?: string
 ): void {
-	iconEl.style.cursor = 'pointer';
-	iconEl.title = i18nTitle || 'Click for advanced settings';
-	iconEl.tabIndex = 0;
-	iconEl.setAttribute('role', 'button');
-	iconEl.setAttribute('aria-label', `${i18nTitle || 'Open advanced settings'} for ${tabTitle || 'this tab'}`);
-	iconEl.setAttribute('aria-expanded', 'false');
-	iconEl.setAttribute('aria-controls', 'side-panel');
+	button.setAttribute('aria-expanded', 'false');
+	button.setAttribute('aria-controls', 'side-panel');
 
 	const toggle = (e: Event) => {
 		e.stopPropagation();
@@ -156,18 +150,12 @@ export function bindCardIconClick(
 			closeSidePanel();
 		} else {
 			lastTrigger?.setAttribute('aria-expanded', 'false');
-			lastTrigger = iconEl;
-			iconEl.setAttribute('aria-expanded', 'true');
+			lastTrigger = button;
+			button.setAttribute('aria-expanded', 'true');
 			openSidePanel(tabId, tabTitle, faviconUrl);
 		}
 	};
-	iconEl.addEventListener('click', toggle);
-	iconEl.addEventListener('keydown', (event) => {
-		if (event.key === 'Enter' || event.key === ' ') {
-			event.preventDefault();
-			toggle(event);
-		}
-	});
+	button.addEventListener('click', toggle);
 }
 
 // eff: slides in the advanced panel and binds controls to the target tab's update handle

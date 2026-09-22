@@ -34,8 +34,6 @@ function compressedSection(
 		const english = {
 			popup: {
 				presetAppliedToast: 'Applied {value}',
-				corsAddedSafe: 'Added {value}',
-				corsCorrectedSafe: 'Corrected {value}',
 				settingsTitle: 'Settings',
 			},
 			options: { modal_save: 'Save' },
@@ -45,12 +43,12 @@ function compressedSection(
 	}
 	const localized = language === 'fr-FR'
 		? {
-			popup: ['Appliqué {value}', 'Ajouté {value}', 'Corrigé {value}', 'Paramètres'],
+			popup: ['Appliqué {value}', 'Paramètres'],
 			options: ['Enregistrer'],
 			actions: ['Augmenter'],
 		}
 		: {
-			popup: ['Angewendet {value}', 'Hinzugefügt {value}', 'Korrigiert {value}', 'Einstellungen'],
+			popup: ['Angewendet {value}', 'Einstellungen'],
 			options: ['Speichern'],
 			actions: ['Erhöhen'],
 		};

@@ -11,9 +11,11 @@ import {
 	createModeExecutor,
 	type ModeExecutor,
 } from '../src/content/logic/mode-executor';
+import { createPolicyExecutor } from '../src/content/logic/policy-executor';
 import { createCaptureAdmission } from './helpers/capture-admission';
 
 const ADMISSION = createCaptureAdmission();
+const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 let disposeCallbacks: (() => void) | null = null;
 let currentExecutor: ModeExecutor | null = null;
 
@@ -21,6 +23,8 @@ afterEach(() => {
 	disposeCallbacks?.();
 	disposeCallbacks = null;
 	currentExecutor = null;
+	if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+	else Reflect.deleteProperty(globalThis, 'chrome');
 });
 
 function clone(config: AudioConfig): AudioConfig {
@@ -50,6 +54,7 @@ function processorConfig(): AudioConfig {
 function state(mode: 'bypass' | 'webaudio' | 'capture' = 'capture'): PolicyExecutorState {
 	return {
 		config: processorConfig(),
+		mediaRoute: 'auto',
 		appliedConfig: clone(DEFAULT_AUDIO_CONFIG),
 		activeMode: mode,
 		desiredMode: mode,
@@ -59,6 +64,7 @@ function state(mode: 'bypass' | 'webaudio' | 'capture' = 'capture'): PolicyExecu
 		userHasInteracted: true,
 		isPopupOpen: false,
 		visualizerSubscribers: new Set(),
+		processorHold: false,
 	};
 }
 
@@ -66,7 +72,18 @@ function deps(
 	overrides: Partial<PolicyExecutorDeps['captureManager']> = {},
 	audioOverrides: Record<string, unknown> = {},
 	media: HTMLMediaElement[] = [],
+	allMedia: HTMLMediaElement[] = media,
 ): PolicyExecutorDeps {
+	const sources = (elements: HTMLMediaElement[]) => elements.map((element, index) => ({
+		element,
+		target: {
+			frameId: 0,
+			documentId: 'document-test',
+			mediaId: `media:${index + 1}`,
+			sourceRevision: 0,
+			kind: 'audio' as const,
+		},
+	}));
 	return {
 		captureManager: {
 			isActive: () => false,
@@ -93,21 +110,15 @@ function deps(
 			canAttachAll: () => false,
 			initialize: mock(async () => false),
 			ensureAttached: () => false,
+			detachNode: mock(() => undefined),
 			hasCompleteCoverage: () => false,
+			hasKnownBindingFailure: () => false,
 			applyConfig: mock(async () => { throw new Error('unconfigured WebAudio test'); }),
 			...audioOverrides,
 		} as unknown as PolicyExecutorDeps['audioController'],
 		mediaRegistry: {
-			list: () => media.map((element, index) => ({
-				element,
-				target: {
-					frameId: 0,
-					documentId: 'document-test',
-					mediaId: `media:${index + 1}`,
-					sourceRevision: 0,
-					kind: 'audio' as const,
-				},
-			})),
+			list: () => sources(allMedia),
+			listProcessingSources: () => sources(media),
 			getEligibilityEvidence: () => undefined,
 		} as unknown as PolicyExecutorDeps['mediaRegistry'],
 		settingsManager: {} as PolicyExecutorDeps['settingsManager'],
@@ -135,7 +146,472 @@ function executeMode(
 	return currentExecutor.execute(advanceGeneration, captureAdmission);
 }
 
+function safeDataMedia(): HTMLMediaElement {
+	return {
+		currentSrc: 'data:audio/wav;base64,AA==',
+		src: '',
+		srcObject: null,
+	} as HTMLMediaElement;
+}
+
+function installRouteRpc(initial: {
+	mediaRoute: 'auto' | 'direct' | 'capture';
+	source: 'auto' | 'user' | null;
+}) {
+	const records: Array<{ route: 'direct' | 'capture'; force?: boolean }> = [];
+	let stored = { ...initial };
+	Object.defineProperty(globalThis, 'chrome', {
+		configurable: true,
+		value: {
+			runtime: {
+				sendMessage: async (message: unknown) => {
+					if (!message || typeof message !== 'object') {
+						throw new Error('Expected a SPECTRA request envelope');
+					}
+					const envelope = message as {
+						protocolVersion?: unknown;
+						requestId?: unknown;
+						type?: unknown;
+						payload?: unknown;
+					};
+					expect(envelope.protocolVersion).toBe(2);
+					expect(typeof envelope.requestId).toBe('string');
+					if (envelope.type === 'spectra.audio.route.get') {
+						return { ok: true, data: { ...stored } };
+					}
+					if (envelope.type === 'spectra.audio.route.record') {
+						const payload = envelope.payload as { route: 'direct' | 'capture'; force?: boolean };
+						records.push({ ...payload });
+						stored = { mediaRoute: payload.route, source: 'auto' };
+						return { ok: true, data: { ...stored } };
+					}
+					throw new Error(`Unexpected RPC ${String(envelope.type)}`);
+				},
+			},
+		},
+	});
+	return { records };
+}
+
 describe('three-owner audio mode executor', () => {
+	test('lets a SAFE automatic route fall through a failed page bind to admitted Capture', async () => {
+		const routeRpc = installRouteRpc({ mediaRoute: 'direct', source: 'auto' });
+		const runtimeState = state('webaudio');
+		const actual = processorConfig();
+		const request = mock(async () => ({
+			status: 'processing' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 6,
+			actualConfig: actual,
+		}));
+		const media = safeDataMedia();
+		const runtimeDeps = deps({ request, getActualConfig: () => actual }, {
+			canAttachAll: () => true,
+			initialize: async () => true,
+			ensureAttached: () => false,
+			hasCompleteCoverage: () => false,
+		}, [media]);
+		const executor = await createPolicyExecutor(runtimeDeps, runtimeState);
+		if (!executor) throw new Error('Expected current policy executor');
+
+		await executor.applyState({ captureAdmission: ADMISSION });
+
+		expect(request).toHaveBeenCalledWith(true, runtimeState.config, 5, { admission: ADMISSION });
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'auto',
+			actualMode: 'capture',
+			phase: 'active',
+			generation: 6,
+		});
+		expect(runtimeState.appliedConfig).toEqual(actual);
+		expect(routeRpc.records).toContainEqual({ route: 'capture', force: true });
+		executor.dispose();
+	});
+
+	test('neutralizes an active user-direct graph before rejecting a newly unsafe selected source', async () => {
+		const routeRpc = installRouteRpc({ mediaRoute: 'direct', source: 'user' });
+		const runtimeState = state('webaudio');
+		runtimeState.mediaRoute = 'direct';
+		runtimeState.actualMode = 'webaudio';
+		runtimeState.phase = 'active';
+		runtimeState.appliedConfig = clone(runtimeState.config);
+		const safe = safeDataMedia();
+		const media = [safe];
+		const bypassBarrier = deferred<void>();
+		const bypassEntered = deferred<void>();
+		const bypass = mock(async () => {
+			bypassEntered.resolve(undefined);
+			await bypassBarrier.promise;
+		});
+		const request = mock(async () => ({
+			status: 'processing' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 6,
+			actualConfig: runtimeState.config,
+		}));
+		const runtimeDeps = deps({ request }, {
+			isReady: () => true,
+			bypass,
+			canAttachAll: (elements: HTMLMediaElement[]) => elements.every((element) => element === safe),
+		}, media);
+		const executor = await createPolicyExecutor(runtimeDeps, runtimeState);
+		if (!executor) throw new Error('Expected current policy executor');
+
+		media.push({
+			currentSrc: safe.currentSrc,
+			src: safe.src,
+			srcObject: {} as MediaProvider,
+		} as HTMLMediaElement);
+		let settled = false;
+		const applying = executor.applyState({ captureAdmission: ADMISSION })
+			.finally(() => { settled = true; });
+		await bypassEntered.promise;
+
+		expect(bypass).toHaveBeenCalledTimes(1);
+		expect(settled).toBe(false);
+		expect(request).not.toHaveBeenCalled();
+		expect(runtimeState).toMatchObject({ actualMode: 'webaudio', phase: 'active' });
+
+		bypassBarrier.resolve(undefined);
+		await applying;
+
+		expect(request).not.toHaveBeenCalled();
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'direct',
+			actualMode: 'bypass',
+			phase: 'error',
+		});
+		expect(runtimeState.lastError).toContain('Direct route cannot bind');
+		expect(routeRpc.records).not.toContainEqual(expect.objectContaining({ route: 'capture' }));
+		executor.dispose();
+	});
+
+	test('retains actual WebAudio ownership when neutralizing an unsafe selected source fails', async () => {
+		const routeRpc = installRouteRpc({ mediaRoute: 'direct', source: 'user' });
+		const runtimeState = state('webaudio');
+		runtimeState.mediaRoute = 'direct';
+		runtimeState.actualMode = 'webaudio';
+		runtimeState.phase = 'active';
+		runtimeState.appliedConfig = clone(runtimeState.config);
+		const safe = safeDataMedia();
+		const media = [safe];
+		const request = mock(async () => ({
+			status: 'processing' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 6,
+			actualConfig: runtimeState.config,
+		}));
+		const bypass = mock(async () => { throw new Error('graph bypass rejected'); });
+		const runtimeDeps = deps({ request }, {
+			isReady: () => true,
+			bypass,
+			canAttachAll: (elements: HTMLMediaElement[]) => elements.every((element) => element === safe),
+		}, media);
+		const executor = await createPolicyExecutor(runtimeDeps, runtimeState);
+		if (!executor) throw new Error('Expected current policy executor');
+
+		media.push({
+			currentSrc: safe.currentSrc,
+			src: safe.src,
+			srcObject: {} as MediaProvider,
+		} as HTMLMediaElement);
+		await executor.applyState({ captureAdmission: ADMISSION });
+
+		expect(bypass).toHaveBeenCalledTimes(1);
+		expect(request).not.toHaveBeenCalled();
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'direct',
+			actualMode: 'webaudio',
+			phase: 'error',
+			lastError: 'Unable to neutralize Media WebAudio: graph bypass rejected',
+		});
+		expect(runtimeState.appliedConfig).toEqual(runtimeState.config);
+		expect(routeRpc.records).not.toContainEqual(expect.objectContaining({ route: 'capture' }));
+		executor.dispose();
+	});
+
+	test('does not turn an automatic Capture fallback into success without a grant', async () => {
+		const routeRpc = installRouteRpc({ mediaRoute: 'direct', source: 'auto' });
+		const runtimeState = state('webaudio');
+		const request = mock(async () => ({
+			status: 'processing' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 6,
+			actualConfig: runtimeState.config,
+		}));
+		const runtimeDeps = deps({ request }, {
+			canAttachAll: () => true,
+			initialize: async () => true,
+			ensureAttached: () => false,
+			hasCompleteCoverage: () => false,
+		}, [safeDataMedia()]);
+		const executor = await createPolicyExecutor(runtimeDeps, runtimeState);
+		if (!executor) throw new Error('Expected current policy executor');
+
+		await executor.applyState();
+
+		expect(request).not.toHaveBeenCalled();
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'auto',
+			actualMode: 'bypass',
+			phase: 'error',
+		});
+		expect(runtimeState.lastError).toContain('did not bind the complete registry scope');
+		expect(routeRpc.records).not.toContainEqual(expect.objectContaining({ route: 'capture' }));
+		executor.dispose();
+	});
+
+	test('neutralizes an active page graph before an unsafe selected source can fall back to Capture', async () => {
+		const routeRpc = installRouteRpc({ mediaRoute: 'direct', source: 'auto' });
+		const runtimeState = state('webaudio');
+		runtimeState.actualMode = 'webaudio';
+		runtimeState.phase = 'active';
+		runtimeState.appliedConfig = clone(runtimeState.config);
+		const safe = safeDataMedia();
+		const media = [safe];
+		const bypassBarrier = deferred<void>();
+		const bypassEntered = deferred<void>();
+		let bypassCalls = 0;
+		const bypass = mock(async () => {
+			bypassCalls += 1;
+			if (bypassCalls === 1) {
+				bypassEntered.resolve(undefined);
+				await bypassBarrier.promise;
+			}
+		});
+		const actual = processorConfig();
+		const request = mock(async () => ({
+			status: 'processing' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 6,
+			actualConfig: actual,
+		}));
+		const runtimeDeps = deps({ request, getActualConfig: () => actual }, {
+			isReady: () => true,
+			bypass,
+			canAttachAll: (elements: HTMLMediaElement[]) => elements.every((element) => element === safe),
+		}, media);
+		const executor = await createPolicyExecutor(runtimeDeps, runtimeState);
+		if (!executor) throw new Error('Expected current policy executor');
+
+		// A MediaStream-backed source is unsafe even when its stale URL still looks
+		// origin-owned. It joins the selected processing universe before policy runs.
+		media.push({
+			currentSrc: safe.currentSrc,
+			src: safe.src,
+			srcObject: {} as MediaProvider,
+		} as HTMLMediaElement);
+		let firstSettled = false;
+		const first = executor.applyState().finally(() => { firstSettled = true; });
+		await bypassEntered.promise;
+
+		expect(bypass).toHaveBeenCalledTimes(1);
+		expect(firstSettled).toBe(false);
+		expect(request).not.toHaveBeenCalled();
+		expect(runtimeState).toMatchObject({ actualMode: 'webaudio', phase: 'active' });
+
+		bypassBarrier.resolve(undefined);
+		await first;
+		expect(request).not.toHaveBeenCalled();
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'auto',
+			actualMode: 'bypass',
+			phase: 'error',
+		});
+		expect(runtimeState.lastError).toBe('Capture requires a current-tab extension invocation');
+
+		await executor.applyState({ captureAdmission: ADMISSION });
+		expect(bypass).toHaveBeenCalledTimes(2);
+		expect(request).toHaveBeenCalledWith(true, runtimeState.config, 6, { admission: ADMISSION });
+		expect(runtimeState).toMatchObject({
+			actualMode: 'capture',
+			phase: 'active',
+			generation: 6,
+		});
+		expect(runtimeState.appliedConfig).toEqual(actual);
+		expect(routeRpc.records).toContainEqual({ route: 'capture', force: undefined });
+		executor.dispose();
+	});
+
+	test('retires an existing Capture before reporting a user-direct coverage failure', async () => {
+		const runtimeState = state('webaudio');
+		runtimeState.mediaRoute = 'direct';
+		runtimeState.actualMode = 'capture';
+		runtimeState.phase = 'active';
+		runtimeState.appliedConfig = clone(runtimeState.config);
+		const transparent = clone(DEFAULT_AUDIO_CONFIG);
+		const syncConfig = mock(async () => transparent);
+		const bypass = mock(async () => undefined);
+		const request = mock(async (enabled: boolean) => ({
+			status: enabled ? 'processing' as const : 'idle' as const,
+			phase: enabled ? 'active' as const : 'idle' as const,
+			active: enabled,
+			generation: 6,
+		}));
+		const runtimeDeps = deps({
+			isActive: () => true,
+			syncConfig,
+			request,
+		}, { isReady: () => true, bypass, canAttachAll: () => false });
+		bindCallbacks(runtimeDeps, runtimeState);
+
+		await executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+
+		expect(syncConfig).toHaveBeenCalledWith(DEFAULT_AUDIO_CONFIG, 5);
+		expect(bypass).toHaveBeenCalledTimes(1);
+		expect(request).toHaveBeenCalledWith(false, runtimeState.config, 5);
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'direct',
+			actualMode: 'bypass',
+			phase: 'error',
+			generation: 6,
+		});
+		expect(runtimeState.lastError).toContain('Direct route cannot bind');
+	});
+
+	test('retains existing Capture ownership when a user-direct retirement is rejected', async () => {
+		const runtimeState = state('webaudio');
+		runtimeState.mediaRoute = 'direct';
+		runtimeState.actualMode = 'capture';
+		runtimeState.phase = 'active';
+		const transparent = clone(DEFAULT_AUDIO_CONFIG);
+		const bypass = mock(async () => undefined);
+		const request = mock(async () => ({
+			status: 'processing' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 6,
+			error: 'processor refused to stop',
+		}));
+		const runtimeDeps = deps({
+			isActive: () => true,
+			syncConfig: mock(async () => transparent),
+			request,
+		}, { isReady: () => true, bypass, canAttachAll: () => false });
+		bindCallbacks(runtimeDeps, runtimeState);
+
+		await executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+
+		expect(request).toHaveBeenCalledWith(false, runtimeState.config, 5);
+		expect(bypass).toHaveBeenCalledTimes(1);
+		expect(runtimeState).toMatchObject({
+			mediaRoute: 'direct',
+			actualMode: 'capture',
+			phase: 'error',
+			generation: 6,
+			lastError: 'processor refused to stop',
+		});
+		expect(runtimeState.appliedConfig).toEqual(transparent);
+	});
+
+	test('rechecks selected sources after WebAudio initialization before attaching the graph', async () => {
+		const runtimeState = state('webaudio');
+		runtimeState.mediaRoute = 'direct';
+		const safe = safeDataMedia();
+		const media = [safe];
+		const initializeBarrier = deferred<boolean>();
+		const applyConfig = mock(async () => { throw new Error('partial graph must not be applied'); });
+		const runtimeDeps = deps({}, {
+			canAttachAll: (elements: HTMLMediaElement[]) => elements.every((element) => element === safe),
+			initialize: mock(async () => initializeBarrier.promise),
+			ensureAttached: () => true,
+			hasCompleteCoverage: () => true,
+			applyConfig,
+		}, media);
+		bindCallbacks(runtimeDeps, runtimeState);
+
+		const applying = executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+		await Promise.resolve();
+		media.push({ ...safe, srcObject: {} as MediaProvider } as HTMLMediaElement);
+		initializeBarrier.resolve(true);
+		await applying;
+
+		expect(applyConfig).not.toHaveBeenCalled();
+		expect(runtimeState).toMatchObject({ actualMode: 'bypass', phase: 'error' });
+		expect(runtimeState.lastError).toContain('coverage changed during WebAudio initialization');
+	});
+
+	test('rejects a WebAudio ACK when the selected source set changes during graph application', async () => {
+		const runtimeState = state('webaudio');
+		runtimeState.mediaRoute = 'direct';
+		const first = safeDataMedia();
+		const media = [first];
+		const graphConfig = audioConfigToProcessorConfig(runtimeState.config);
+		const applyBarrier = deferred<void>();
+		const applyConfig = mock(async () => {
+			await applyBarrier.promise;
+			return {
+				phase: 'active' as const,
+				contextState: 'running' as const,
+				graphSignature: audioGraphSignature(graphConfig),
+				normalizedActualConfig: graphConfig,
+				outputChannels: 2,
+				sourceCount: 1,
+			};
+		});
+		const runtimeDeps = deps({}, {
+			canAttachAll: () => true,
+			initialize: mock(async () => true),
+			ensureAttached: () => true,
+			hasCompleteCoverage: (elements: HTMLMediaElement[]) => elements.length === 1,
+			applyConfig,
+		}, media);
+		bindCallbacks(runtimeDeps, runtimeState);
+
+		const applying = executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+		await Promise.resolve();
+		await Promise.resolve();
+		media.push(safeDataMedia());
+		applyBarrier.resolve(undefined);
+		await applying;
+
+		expect(applyConfig).toHaveBeenCalledTimes(1);
+		expect(runtimeState).toMatchObject({ actualMode: 'bypass', phase: 'error' });
+		expect(runtimeState.lastError).toContain('coverage changed before WebAudio acknowledgement');
+	});
+
+	test('detaches excluded registry elements before dispatching Capture', async () => {
+		const runtimeState = state('capture');
+		const excluded = {} as HTMLMediaElement;
+		const detachNode = mock(() => undefined);
+		const request = mock(async () => ({
+			status: 'processing' as const,
+			phase: 'active' as const,
+			active: true,
+			generation: 6,
+			actualConfig: runtimeState.config,
+		}));
+		const runtimeDeps = deps({ request }, { detachNode }, [], [excluded]);
+		bindCallbacks(runtimeDeps, runtimeState);
+
+		await executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+
+		expect(detachNode).toHaveBeenCalledTimes(1);
+		expect(detachNode).toHaveBeenCalledWith(excluded);
+		expect(runtimeState).toMatchObject({ actualMode: 'capture', phase: 'active' });
+	});
+
+	test('detaches excluded registry elements before dispatching native bypass', async () => {
+		const runtimeState = state('bypass');
+		const excluded = {} as HTMLMediaElement;
+		const detachNode = mock(() => undefined);
+		const request = mock(async () => { throw new Error('Capture must not run'); });
+		const runtimeDeps = deps({ request }, { detachNode }, [], [excluded]);
+		bindCallbacks(runtimeDeps, runtimeState);
+
+		await executeMode(runtimeDeps, runtimeState);
+
+		expect(detachNode).toHaveBeenCalledTimes(1);
+		expect(detachNode).toHaveBeenCalledWith(excluded);
+		expect(request).not.toHaveBeenCalled();
+		expect(runtimeState).toMatchObject({ actualMode: 'bypass', phase: 'idle' });
+	});
+
 	test('keeps a proven >100 media source in the lower-cost page WebAudio owner', async () => {
 		const runtimeState = state('webaudio');
 		const media = {} as HTMLMediaElement;

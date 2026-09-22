@@ -41,6 +41,11 @@ describe('Media WebAudio ownership', () => {
 			const safe = createMedia('https://media.example/first.mp3');
 			const unknown = createMedia('');
 			const unsafe = createMedia('https://cdn.example/second.mp3');
+			const objectSource = createMedia('https://media.example/stale.mp3');
+			objectSource.srcObject = {} as MediaStream;
+			expect(assessMediaSourceCoverage([safe, objectSource])).toMatchObject({
+				eligibility: 'unsafe', fullCoverage: false, eligible: 1,
+			});
 			expect(assessMediaSourceCoverage([safe, unknown])).toMatchObject({
 				eligibility: 'unknown', fullCoverage: false, eligible: 1,
 			});

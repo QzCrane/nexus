@@ -324,9 +324,9 @@ const cases = [
 		expectText: 'AGENTS\\.md',
 	},
 	{
-		name: 'pre-write: blocks control-architecture index',
+		name: 'pre-write: blocks canonical control algorithm owner',
 		hook: 'ai-pre-write-guard.ts',
-		payload: { tool_name: 'Write', tool_input: { file_path: 'nexus/apps/extension-spectra/docs/control-architecture.md', content: FRONTMATTER } },
+		payload: { tool_name: 'Write', tool_input: { file_path: 'nexus/apps/extension-spectra/docs/control/04a-algorithm-matrix.md', content: FRONTMATTER } },
 		expectExit: 2,
 		expectText: 'progressive-disclosure',
 	},

@@ -42,6 +42,7 @@ function statusToRoute(status: Exclude<SiteEligibility, 'PENDING'>): MediaProces
 }
 
 export interface SiteEligibilityCache {
+	getUserRoute(): MediaProcessingRoute | 'auto';
 	refresh(): Promise<MediaProcessingRoute | 'auto'>;
 	resolve(liveStatus: SiteEligibility): Promise<SiteEligibility>;
 	recordActual(
@@ -103,6 +104,9 @@ export function createSiteEligibilityCache(
 	};
 
 	return {
+		getUserRoute() {
+			return decision.manualStatus ? statusToRoute(decision.manualStatus) : 'auto';
+		},
 		async refresh() {
 			hydration = refresh().catch(() => (
 				decision.cachedStatus === 'PENDING' ? 'auto' : statusToRoute(decision.cachedStatus)

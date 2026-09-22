@@ -55,10 +55,20 @@ export function listArchiveToolchainFiles(repositoryRoot: string): string[] {
 
 export function listCurrentToolchainFiles(repositoryRoot: string): string[] {
 	if (!existsSync(resolve(repositoryRoot, '.git'))) return listArchiveToolchainFiles(repositoryRoot);
-	const result = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '-z'], { encoding: 'utf8', shell: false });
-	if (result.error) throw result.error;
-	if (result.status !== 0) throw new Error(`git ls-files failed: ${result.stderr.trim()}`);
-	return result.stdout.split('\0').filter(Boolean).filter(isCurrentToolchainFile)
+	// The gate validates the working tree before staging: Git owns ignore rules
+	// and deletions, while newly authored source must already participate.
+	const result = spawnSync('git', [
+		'-C', repositoryRoot, 'ls-files', '--cached', '--others', '--exclude-standard', '--deduplicate', '-z',
+	], { encoding: 'utf8', shell: false });
+	const removed = spawnSync('git', ['-C', repositoryRoot, 'ls-files', '--deleted', '-z'], {
+		encoding: 'utf8', shell: false,
+	});
+	for (const inventory of [result, removed]) {
+		if (inventory.error) throw inventory.error;
+		if (inventory.status !== 0) throw new Error(`git ls-files failed: ${inventory.stderr.trim()}`);
+	}
+	const deleted = new Set(removed.stdout.split('\0').filter(Boolean));
+	return result.stdout.split('\0').filter((path) => path && !deleted.has(path)).filter(isCurrentToolchainFile)
 		.map((path) => {
 			const absolute = resolve(repositoryRoot, path);
 			if (!existsSync(absolute)) throw new Error(`Tracked current source is missing: ${path}`);

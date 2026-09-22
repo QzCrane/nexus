@@ -469,6 +469,9 @@ body {
 .site-add-row {
   display: flex;
   gap: var(--space-sm);
+}
+
+.site-add-field {
   margin-bottom: var(--space-md);
 }
 
@@ -486,6 +489,14 @@ body {
 .site-input:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.site-input[aria-invalid="true"] {
+  border-color: var(--danger);
+}
+
+.site-add-field .form-warning {
+  margin-top: var(--space-xs);
 }
 
 .site-input::placeholder {
@@ -529,6 +540,31 @@ body {
 .site-domain {
   font-weight: 600;
   color: var(--accent);
+}
+
+.confirm-dialog {
+  width: min(440px, calc(100vw - 32px));
+  margin: auto;
+  padding: var(--space-lg);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-lg);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+}
+
+.confirm-dialog::backdrop {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.confirm-dialog h3 {
+  margin-bottom: var(--space-sm);
+}
+
+.confirm-dialog p {
+  margin-bottom: var(--space-lg);
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
 }
 
 /* ========== Bindings list ========== */

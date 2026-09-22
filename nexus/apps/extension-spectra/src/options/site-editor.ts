@@ -21,6 +21,8 @@ import { formatKeyCombo } from './formatters';
 
 let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 let selectedSite: string | null = null;
+let siteInputErrorKey: 'invalid_domain' | 'site_exists' | null = null;
+let pendingDeleteDomain: string | null = null;
 
 // eff: initializes the site editor by loading saved configurations and populating the domain selector
 export async function initSiteEditor(initialSnapshot?: SettingsUiSnapshot): Promise<void> {
@@ -32,6 +34,8 @@ export async function initSiteEditor(initialSnapshot?: SettingsUiSnapshot): Prom
 	onLangChange(() => {
 		renderLegacyWarning();
 		renderBindings();
+		renderSiteInputError();
+		renderDeleteDialog();
 	});
 }
 
@@ -124,8 +128,12 @@ function bindEvents(): void {
 	const addBtn = document.getElementById('site-add-btn');
 
 	addBtn?.addEventListener('click', () => addSiteFromInput(siteInput?.value));
+	siteInput?.addEventListener('input', clearSiteInputError);
 	siteInput?.addEventListener('keydown', (e) => {
-		if (e.key === 'Enter') addSiteFromInput(siteInput.value);
+		if (e.key === 'Enter') {
+			e.preventDefault();
+			void addSiteFromInput(siteInput.value);
+		}
 	});
 
 	const enabledCb = document.getElementById('site-enabled') as HTMLInputElement | null;
@@ -141,7 +149,14 @@ function bindEvents(): void {
 		}
 	});
 
-	document.getElementById('site-delete')?.addEventListener('click', deleteSite);
+	document.getElementById('site-delete')?.addEventListener('click', requestSiteDeletion);
+	document.getElementById('site-delete-confirm')?.addEventListener('click', (event) => {
+		event.preventDefault();
+		void confirmSiteDeletion();
+	});
+	document.getElementById('site-delete-dialog')?.addEventListener('close', () => {
+		pendingDeleteDomain = null;
+	});
 	document.getElementById('site-add-binding')?.addEventListener('click', () => {
 		if (!selectedSite) return;
 		const domain = selectedSite;
@@ -153,20 +168,17 @@ function bindEvents(): void {
 
 // eff: validates and adds a new site from manual domain input
 async function addSiteFromInput(rawDomain: string | undefined): Promise<void> {
-	if (!rawDomain) return;
-
-	// note: normalize domain - strip protocol, path, whitespace
-	const domain = normalizeHostname(rawDomain);
+	const domain = normalizeHostname(rawDomain ?? '');
 
 	if (!domain) {
-		alert(t('invalid_domain'));
+		setSiteInputError('invalid_domain');
 		return;
 	}
 
 	try {
 		await loadSettings(true);
 		if (settings.sites[domain]) {
-			alert(t('site_exists'));
+			setSiteInputError('site_exists');
 			return;
 		}
 		await mutateSite(domain, { type: 'ensure-site', enabled: false });
@@ -184,6 +196,28 @@ async function addSiteFromInput(rawDomain: string | undefined): Promise<void> {
 	// note: clear input field
 	const input = document.getElementById('site-input') as HTMLInputElement | null;
 	if (input) input.value = '';
+	clearSiteInputError();
+}
+
+function setSiteInputError(key: 'invalid_domain' | 'site_exists'): void {
+	siteInputErrorKey = key;
+	renderSiteInputError();
+	(document.getElementById('site-input') as HTMLInputElement | null)?.focus();
+}
+
+function clearSiteInputError(): void {
+	siteInputErrorKey = null;
+	renderSiteInputError();
+}
+
+function renderSiteInputError(): void {
+	const input = document.getElementById('site-input') as HTMLInputElement | null;
+	const message = document.getElementById('site-input-error');
+	if (!input || !message) return;
+	const invalid = siteInputErrorKey !== null;
+	input.setAttribute('aria-invalid', String(invalid));
+	message.hidden = !invalid;
+	message.textContent = siteInputErrorKey ? t(siteInputErrorKey) : '';
 }
 
 // eff: displays the configuration sub-panel for the chosen domain and populates its current key bindings
@@ -217,18 +251,43 @@ function setSiteConfigVisibility(visible: boolean): void {
 }
 
 
-async function deleteSite(): Promise<void> {
-	if (!selectedSite || !confirm(tf('delete_site_confirm', { domain: selectedSite }))) return;
-	const deletedDomain = selectedSite;
+function requestSiteDeletion(): void {
+	if (!selectedSite) return;
+	pendingDeleteDomain = selectedSite;
+	renderDeleteDialog();
+	const dialog = document.getElementById('site-delete-dialog') as HTMLDialogElement | null;
+	dialog?.showModal();
+}
+
+function renderDeleteDialog(): void {
+	const message = document.getElementById('site-delete-message');
+	if (message && pendingDeleteDomain) {
+		message.textContent = tf('delete_site_confirm', { domain: pendingDeleteDomain });
+	}
+}
+
+async function confirmSiteDeletion(): Promise<void> {
+	const deletedDomain = pendingDeleteDomain;
+	if (!deletedDomain) return;
+	const dialog = document.getElementById('site-delete-dialog') as HTMLDialogElement | null;
+	const confirmButton = document.getElementById('site-delete-confirm') as HTMLButtonElement | null;
+	const cancelButton = document.getElementById('site-delete-cancel') as HTMLButtonElement | null;
+	if (confirmButton) confirmButton.disabled = true;
+	if (cancelButton) cancelButton.disabled = true;
 	try {
 		await mutateSite(deletedDomain, { type: 'delete-site' });
 	} catch (error) {
 		showOptionsError(error);
 		await recoverEditorState();
+		dialog?.close();
 		return;
+	} finally {
+		if (confirmButton) confirmButton.disabled = false;
+		if (cancelButton) cancelButton.disabled = false;
 	}
 	renderSiteSelector();
-	hideSiteConfig();
+	if (selectedSite === deletedDomain) hideSiteConfig();
+	dialog?.close();
 }
 
 // Note: renderBindings and createBindingRow handle the visual representation of individual hotkey assignments

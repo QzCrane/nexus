@@ -36,6 +36,7 @@ import {
 	getAudioSession,
 	identityFromSender,
 	isAudioSessionIdentityInvalidated,
+	scheduleAudioSessionProjection,
 	updateAudioSession,
 } from '../audio-session-store';
 import { updateBadgeFromSession } from './badge';
@@ -243,7 +244,12 @@ async function publishAcknowledgedCaptureState(
 	update: Parameters<typeof commitCaptureSnapshot>[2],
 ): Promise<void> {
 	const snapshot = await commitCaptureSnapshot(tabId, state, update);
-	if (snapshot) await updateBadgeFromSession(snapshot, false);
+	if (snapshot) {
+		// The audio-session queue orders this best-effort presentation with the
+		// durable lifecycle commit and later updates without holding the physical
+		// Capture ACK open on Action API work.
+		scheduleAudioSessionProjection(tabId, () => updateBadgeFromSession(snapshot, false));
+	}
 	publishCaptureState(tabId, state);
 }
 

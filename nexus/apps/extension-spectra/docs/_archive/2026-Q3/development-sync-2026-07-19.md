@@ -2,9 +2,9 @@
 
 This document records the implementation that landed after the 2026-07-18
 regression snapshot. It is an evidence index, not a second control policy. The
-normative rules live in [control-architecture.md](./control-architecture.md);
-wire shapes live in [protocols.md](./protocols.md); context ownership lives in
-[architecture.md](./architecture.md).
+normative rules live in [control architecture](../../control/README.md); wire
+shapes live in [protocols](../../reference/protocols.md); context ownership lives
+in [runtime architecture](../../architecture/runtime.md).
 
 ## Scope and commits
 

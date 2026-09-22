@@ -717,6 +717,12 @@ export class SettingsRepository {
 					}
 					break;
 				}
+				case 'audio-presets-clear': {
+					for (const domain of Object.keys(siteSettings)) delete siteSettings[domain];
+					for (const name of Object.keys(globalPresets)) delete globalPresets[name];
+					defaultPresetId = null;
+					break;
+				}
 				default:
 					throw new InvalidSettingsPatchError('Unknown settings patch scope');
 			}

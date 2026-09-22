@@ -1,372 +1,369 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { requireValue } from './helpers/require-value';
 import {
 	DEFAULT_AUDIO_CONFIG,
 	DEFAULT_GLOBAL_SETTINGS,
+	type ControlApplyAck,
+	type ControlSnapshot,
 } from '@nexus/contracts';
-import { createUpdateFn } from '../src/popup/card/state';
+import type { PopupControlPortResponse } from '../src/shared/popup-control-port';
+import type { PopupControlTransport } from '../src/popup/card/control-port';
+import { applyControlSnapshot } from '../src/popup/card/messaging';
 import { resolveVolumePresentation } from '../src/popup/card/render';
-import { COLORS } from '../src/popup/constants';
+import { createUpdateFn } from '../src/popup/card/state';
 import type { CardInternalState } from '../src/popup/card/types';
+import { COLORS } from '../src/popup/constants';
 
-const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
-const originalPerformance = Object.getOwnPropertyDescriptor(globalThis, 'performance');
-const originalSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
-const originalClearTimeout = Object.getOwnPropertyDescriptor(globalThis, 'clearTimeout');
 
-afterEach(() => {
-	restoreProperty('chrome', originalChrome);
-	restoreProperty('window', originalWindow);
-	restoreProperty('performance', originalPerformance);
-	restoreProperty('setTimeout', originalSetTimeout);
-	restoreProperty('clearTimeout', originalClearTimeout);
-});
+afterEach(() => restoreProperty('window', originalWindow));
 
-describe('Popup latest-value config transport', () => {
-	test('coalesces a 100-value slider burst into one IPC carrying the latest value', async () => {
+describe('Popup Background-owned control transport projection', () => {
+	test('stages every input synchronously and leaves 100-value coalescing to Background', () => {
 		const harness = installHarness();
-		const state = createState();
-		const update = createUpdateFn(state, 5, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		const update = createUpdate(harness.transport);
 
-		for (let index = 0; index < 100; index += 1) update({ volume: index + 1 });
-		expect(harness.timers.size).toBe(1);
-		expect(harness.requests).toHaveLength(0);
-		harness.fireOnlyTimer();
-		await waitFor(() => harness.requests.length === 1);
-		expect(requestVolume(harness.requests[0]?.message)).toBe(100);
-		harness.resolveRequest(0, runtimeResponse(100, 1));
-		await waitFor(() => state.controlGeneration === 1);
-		expect(harness.requests).toHaveLength(1);
+		for (let index = 0; index < 100; index += 1) update({ volume: 101 + index });
+
+		expect(harness.stages).toHaveLength(100);
+		expect(harness.stages.map(({ inputRevision }) => inputRevision))
+			.toEqual(Array.from({ length: 100 }, (_, index) => index + 1));
+		expect(harness.stages.at(-1)?.effectiveVolume).toBe(200);
+		expect(harness.flushCalls).toEqual([]);
 	});
 
-	test('drops a repeated acknowledged value before scheduling any IPC', async () => {
+	test('does not let an older settlement replace a newer optimistic value', () => {
 		const harness = installHarness();
 		const state = createState();
-		const update = createUpdateFn(state, 6, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		const update = createUpdate(harness.transport, state);
 
-		update({ volume: 100 });
-		update({ volume: 100 });
-		expect(harness.timers.size).toBe(0);
-		expect(harness.requests).toHaveLength(0);
-		await update.flush();
-		expect(harness.requests).toHaveLength(0);
+		update({ volume: 110 });
+		update({ volume: 120 });
+		harness.emit(settlement(1, { volume: 110 }));
+
+		expect(state.stableConfig.volume).toBe(110);
+		expect(state.config.volume).toBe(120);
+		expect(state.controlRevision).toBe(1);
 	});
 
-	test('keeps newer optimistic values when an older ACK arrives', async () => {
+	test('commits a successful volume ACK and rolls back only the current unacknowledged projection', async () => {
 		const harness = installHarness();
 		const state = createState();
-		const update = createUpdateFn(state, 7, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		const errors: string[] = [];
+		const update = createUpdate(harness.transport, state, (error) => {
+			errors.push(error instanceof Error ? error.message : String(error));
+		});
+		const response = settlement(1, {
+			volume: 110,
+			error: { code: 'control_failed', message: 'speed unavailable', retryable: true },
+		});
+		harness.onFlush(async () => {
+			harness.emit(response);
+			return response;
+		});
 
-		update({ volume: 10 });
-		harness.fireOnlyTimer();
-		await waitFor(() => harness.requests.length === 1);
+		update({ volume: 110, speed: 1.25 });
+		await expect(update.flush()).rejects.toThrow('speed unavailable');
 
-		update({ volume: 20 });
-		update({ volume: 30 });
-		harness.resolveRequest(0, runtimeResponse(10, 1));
-		await waitFor(() => harness.timers.size === 1);
-		expect(state.config.volumeBase).toBe(30);
-
-		harness.fireOnlyTimer();
-		await waitFor(() => harness.requests.length === 2);
-		expect(requestVolume(harness.requests[1]?.message)).toBe(30);
-		harness.resolveRequest(1, runtimeResponse(30, 2));
-		await waitFor(() => state.controlGeneration === 2);
-		expect(state.config.volumeBase).toBe(30);
+		expect(state.stableConfig.volume).toBe(110);
+		expect(state.config.volume).toBe(110);
+		expect(state.stableConfig.speed).toBe(DEFAULT_AUDIO_CONFIG.speed);
+		expect(state.config.speed).toBe(DEFAULT_AUDIO_CONFIG.speed);
+		expect(state.lastError).toEqual(response.error);
+		expect(errors).toEqual(['speed unavailable']);
 	});
 
-	test('drains a pending latest value after an in-flight request on pagehide', async () => {
+	test('tracks pending volume until the matching Background settlement', () => {
 		const harness = installHarness();
-		const state = createState();
-		const update = createUpdateFn(state, 9, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		const update = createUpdate(harness.transport);
 
-		update({ volume: 50 });
-		harness.fireOnlyTimer();
-		await waitFor(() => harness.requests.length === 1);
-		update({ volume: 75 });
-		harness.window.dispatchEvent(new Event('pagehide'));
-
-		harness.resolveRequest(0, runtimeResponse(50, 1));
-		await waitFor(() => harness.requests.length === 2);
-		expect(requestVolume(harness.requests[1]?.message)).toBe(75);
-		expect(harness.timers.size).toBe(0);
-		harness.resolveRequest(1, runtimeResponse(75, 2));
-		await waitFor(() => harness.runtimeRequests.length === 1);
-		expect(harness.runtimeRequests[0]?.type).toBe('spectra.audio.session.flush');
+		update({ volume: 110 });
+		expect(update.hasPendingVolume()).toBe(true);
+		harness.emit(settlement(1, { volume: 110 }));
+		expect(update.hasPendingVolume()).toBe(false);
 	});
 
-	test('flushes the final slider value immediately on change', async () => {
+	test('keeps pending DSP optimistic when an accepted Background snapshot carries an older value', () => {
 		const harness = installHarness();
 		const state = createState();
-		const update = createUpdateFn(state, 11, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		state.controlSnapshot = controlSnapshot(1, 1);
+		state.controlGeneration = 1;
+		state.controlRevision = 1;
+		const update = createUpdate(harness.transport, state);
 
-		update({ volume: 40 });
-		expect(harness.timers.size).toBe(1);
-		const drained = update.flush();
-		await waitFor(() => harness.requests.length === 1);
-		expect(harness.timers.size).toBe(0);
-		expect(requestVolume(harness.requests[0]?.message)).toBe(40);
-		harness.resolveRequest(0, runtimeResponse(40, 1));
-		await drained;
-		expect(state.config.volumeBase).toBe(40);
+		update({ speed: 1.5 });
+		const accepted = applyControlSnapshot(
+			state,
+			controlSnapshot(2, 1.25),
+			() => undefined,
+			update.hasPendingVolume(),
+			update.pendingConfigFields(),
+		);
+
+		expect(accepted).toBe(true);
+		expect(state.stableConfig.speed).toBe(1.25);
+		expect(state.config.speed).toBe(1.5);
 	});
 
-	test('serializes a discrete media command behind the pending slider ACK', async () => {
+	test('rejects stale ACK and broadcast projections in both arrival orders', () => {
 		const harness = installHarness();
 		const state = createState();
-		const update = createUpdateFn(state, 14, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		state.controlSnapshot = controlSnapshot(5, 1.25);
+		state.controlGeneration = 5;
+		state.controlRevision = 5;
+		state.stableConfig.speed = 1.25;
+		state.config.speed = 1.25;
+		const update = createUpdate(harness.transport, state);
 
-		update({ volume: 40 });
-		let commandRevision: number | null = null;
+		update({ speed: 1.5 });
+		harness.emit(settlement(1, { fieldAcks: [speedAck(4, 0.75)] }));
+		expect(state.stableConfig.speed).toBe(1.25);
+		expect(state.config.speed).toBe(1.5);
+
+		harness.emit(settlement(2, { fieldAcks: [speedAck(6, 1.5)] }));
+		expect(state.stableConfig.speed).toBe(1.5);
+		expect(state.config.speed).toBe(1.5);
+		expect(applyControlSnapshot(
+			state,
+			controlSnapshot(5, 0.5),
+			() => undefined,
+			update.hasPendingVolume(),
+			update.pendingConfigFields(),
+		)).toBe(false);
+		expect(state.stableConfig.speed).toBe(1.5);
+		expect(state.config.speed).toBe(1.5);
+	});
+
+	test('rejects a same-generation stale volume result without rolling back the volume triple', () => {
+		const harness = installHarness();
+		const state = createState();
+		state.controlSnapshot = controlSnapshot(5, 1.25, 1);
+		state.controlGeneration = 1;
+		state.controlRevision = 5;
+		state.stableConfig = { ...state.stableConfig, volume: 120, volumeBase: 100, boost: 1.2 };
+		state.config = { ...state.config, volume: 120, volumeBase: 100, boost: 1.2 };
+		createUpdate(harness.transport, state);
+
+		harness.emit(settlement(1, {
+			volume: 80,
+			ackGeneration: 1,
+			ackRevision: 4,
+		}));
+
+		expect(state.stableConfig).toMatchObject({ volume: 120, volumeBase: 100, boost: 1.2 });
+		expect(state.config).toMatchObject({ volume: 120, volumeBase: 100, boost: 1.2 });
+	});
+
+	test('flushes staged input before dispatching a discrete control', async () => {
+		const harness = installHarness();
+		const update = createUpdate(harness.transport);
+		const pendingFlush = deferred<PopupControlPortResponse | null>();
+		let commandRan = false;
+		harness.onFlush(() => pendingFlush.promise);
+
+		update({ speed: 1.25 });
 		const command = update.runControl(async () => {
-			commandRevision = state.controlRevision;
+			commandRan = true;
+			return 'done';
 		});
-		await waitFor(() => harness.requests.length === 1);
-		expect(commandRevision).toBeNull();
-		harness.resolveRequest(0, runtimeResponse(40, 3));
-		await command;
-		expect(commandRevision).toBe(3);
+		await Promise.resolve();
+
+		expect(harness.flushCalls).toEqual([1]);
+		expect(commandRan).toBe(false);
+		pendingFlush.resolve(null);
+		expect(await command).toBe('done');
+		expect(commandRan).toBe(true);
 	});
 
-	test('sends one above-100 effective-volume intent without rewriting mute', async () => {
+	test('holds a second command behind a newer stage and its flush', async () => {
 		const harness = installHarness();
-		const state = createState();
-		state.config.muted = true;
-		state.stableConfig.muted = true;
-		const update = createUpdateFn(state, 12, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
+		const update = createUpdate(harness.transport);
+		const firstCommand = deferred<void>();
+		const newerFlush = deferred<PopupControlPortResponse | null>();
+		let secondRan = false;
+		harness.onFlush((revision) => revision === 0 ? Promise.resolve(null) : newerFlush.promise);
 
-		update({ volume: 200 });
-		const drained = update.flush();
-		await waitFor(() => harness.requests.length === 1);
-		expect(requestVolume(harness.requests[0]?.message)).toBe(200);
-		expect(requestType(harness.requests[0]?.message)).toBe('spectra.control.operation.submit');
-		harness.resolveRequest(0, runtimeResponse(200, 1));
-		await drained;
+		const first = update.runControl(() => firstCommand.promise);
+		await Promise.resolve();
+		update({ speed: 1.25 });
+		const second = update.runControl(async () => { secondRan = true; });
+		await Promise.resolve();
+		expect(harness.flushCalls).toEqual([0]);
+		expect(secondRan).toBe(false);
 
-		expect(state.config.muted).toBe(true);
-		expect(state.stableConfig.muted).toBe(true);
-		expect(harness.requests).toHaveLength(1);
+		firstCommand.resolve();
+		await first;
+		await waitFor(() => harness.flushCalls.length === 2);
+		expect(harness.flushCalls).toEqual([0, 1]);
+		expect(secondRan).toBe(false);
+		newerFlush.resolve(null);
+		await second;
+		expect(secondRan).toBe(true);
 	});
 
-	test('keeps one compound operation when the slider crosses the routing boundary', async () => {
+	test('renders 100↔110 immediately while processor colour follows only current ACKs', () => {
 		const harness = installHarness();
 		const state = createState();
-		state.config = { ...state.config, volume: 40, volumeBase: 40, boost: 1 };
-		state.stableConfig = { ...state.config };
-		const update = createUpdateFn(state, 13, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
-
-		update({ volume: 250 });
-		const drained = update.flush();
-		await waitFor(() => harness.requests.length === 1);
-		expect(requestVolume(harness.requests[0]?.message)).toBe(250);
-		expect(requestType(harness.requests[0]?.message)).toBe('spectra.control.operation.submit');
-		harness.resolveRequest(0, runtimeResponse(250, 1));
-		await drained;
-
-		expect(state.config.volume).toBe(250);
-		expect(harness.requests).toHaveLength(1);
-	});
-
-	test('atomically switches the complete volume presentation across the processor boundary', async () => {
-		const harness = installHarness();
-		const state = createState();
-		const frames: Array<{ volume: number; color: string }> = [];
-		const render = () => {
-			const presentation = resolveVolumePresentation(state);
-			frames.push({
-				volume: presentation.effectiveVolume,
-				color: presentation.color,
-			});
-		};
-		const update = createUpdateFn(state, 15, () => false, render, () => DEFAULT_GLOBAL_SETTINGS);
+		const frames: Array<{ effectiveVolume: number; color: string }> = [];
+		const update = createUpdate(harness.transport, state, () => undefined, () => {
+			frames.push(resolveVolumePresentation(state));
+		});
 
 		update({ volume: 110 });
-		expect(frames.at(-1)).toEqual({ volume: 100, color: COLORS.NATIVE });
-		const drained = update.flush();
-		await waitFor(() => harness.requests.length === 1);
-		harness.resolveRequest(0, runtimeResponse(110, 1, 'capture'));
-		await drained;
-
-		expect(frames.at(-1)).toEqual({ volume: 110, color: COLORS.CAPTURE });
-		expect(frames).not.toContainEqual({ volume: 110, color: COLORS.NATIVE });
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.NATIVE });
+		harness.emit(settlement(1, { volume: 110, processor: 'capture' }));
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.CAPTURE });
 
 		update({ volume: 100 });
-		expect(frames.at(-1)).toEqual({ volume: 110, color: COLORS.CAPTURE });
-		const released = update.flush();
-		await waitFor(() => harness.requests.length === 2);
-		harness.resolveRequest(1, runtimeResponse(100, 2, 'observe'));
-		await released;
-
-		expect(frames.at(-1)).toEqual({ volume: 100, color: COLORS.NATIVE });
-		expect(frames).not.toContainEqual({ volume: 100, color: COLORS.CAPTURE });
-		expect(frames.every(({ color }) => (
-			color === COLORS.NATIVE || color === COLORS.CAPTURE
-		))).toBe(true);
-	});
-
-	test('keeps one frozen presentation across a rapid 100→110→100 reversal while serializing physical ACKs', async () => {
-		const harness = installHarness();
-		const state = createState();
-		const frames: number[] = [];
-		const update = createUpdateFn(state, 18, () => false, () => {
-			frames.push(resolveVolumePresentation(state).effectiveVolume);
-		}, () => DEFAULT_GLOBAL_SETTINGS);
-
-		update({ volume: 110 });
-		const firstDrain = update.flush();
-		await waitFor(() => harness.requests.length === 1);
-		// The boundary crossing freezes the complete last-acknowledged value/color
-		// pair until the physical route ACK lands; the optimistic 110 never shows.
-		expect(frames.at(-1)).toBe(100);
-
-		update({ volume: 100 });
-		const finalDrain = update.flush();
-		expect(frames.at(-1)).toBe(100);
-		// The second physical write waits for the first ACK while the frozen
-		// presentation stays on the acknowledged pair.
-		expect(harness.requests).toHaveLength(1);
-
-		harness.resolveRequest(0, runtimeResponse(110, 1, 'capture'));
-		await waitFor(() => harness.requests.length === 2);
-		expect(requestVolume(harness.requests[1]?.message)).toBe(100);
-		expect(frames.at(-1)).toBe(100);
-
-		harness.resolveRequest(1, runtimeResponse(100, 2, 'observe'));
-		await Promise.all([firstDrain, finalDrain]);
-		expect(state.config.volume).toBe(100);
-		expect(state.stableConfig.volume).toBe(100);
-		expect(frames.at(-1)).toBe(100);
-	});
-
-	test('sends a reversal batched during flight immediately when the ACK lands, not after the idle-gap window', async () => {
-		const harness = installHarness();
-		const state = createState();
-		const update = createUpdateFn(state, 19, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
-
-		update({ volume: 110 });
-		harness.fireOnlyTimer();
-		await waitFor(() => harness.requests.length === 1);
-
-		update({ volume: 100 });
-		// The reversal is coalesced into pending; no second timer can exist while
-		// the first request is still in flight.
-		expect(harness.timers.size).toBe(0);
-
-		harness.resolveRequest(0, runtimeResponse(110, 1, 'capture'));
-		await waitFor(() => harness.timers.size === 1);
-		// The in-flight round already imposed the send gap, so the return swing
-		// must be scheduled with no artificial min-send window at all.
-		expect(harness.timerDelay()).toBe(0);
-
-		harness.fireOnlyTimer();
-		await waitFor(() => harness.requests.length === 2);
-		expect(requestVolume(harness.requests[1]?.message)).toBe(100);
-		harness.resolveRequest(1, runtimeResponse(100, 2, 'observe'));
-		await waitFor(() => state.controlGeneration === 2);
-		expect(state.config.volume).toBe(100);
-	});
-
-	test('commits an above-100 Media WebAudio ACK directly as blue', async () => {
-		const harness = installHarness();
-		const state = createState();
-		const frames: Array<{ volume: number; color: string }> = [];
-		const update = createUpdateFn(state, 16, () => false, () => {
-			const presentation = resolveVolumePresentation(state);
-			frames.push({
-				volume: presentation.effectiveVolume,
-				color: presentation.color,
-			});
-		}, () => DEFAULT_GLOBAL_SETTINGS);
-
-		update({ volume: 110 });
-		expect(frames.at(-1)).toEqual({ volume: 100, color: COLORS.NATIVE });
-		const drained = update.flush();
-		await waitFor(() => harness.requests.length === 1);
-		harness.resolveRequest(0, runtimeResponse(110, 1, 'media-webaudio'));
-		await drained;
-
-		expect(frames.at(-1)).toEqual({ volume: 110, color: COLORS.NATIVE });
-		expect(frames).not.toContainEqual({ volume: 110, color: COLORS.CAPTURE });
-	});
-
-	test('requeues DSP fields when the compound volume operation is rejected', async () => {
-		const harness = installHarness();
-		const state = createState();
-		const update = createUpdateFn(state, 17, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
-		const eqValues = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-
-		update({ volume: 200 });
-		update({ eqValues });
-		const rejected = update.flush();
-		await waitFor(() => harness.requests.length === 1);
-		harness.resolveRequest(0, {
-			ok: false,
-			error: { code: 'control_failed', message: 'volume unavailable', retryable: true },
-		});
-		await expect(rejected).rejects.toThrow('volume unavailable');
-
-		// A newer explicit update retries the preserved DSP intent; it was not
-		// consumed together with the failed independent volume operation.
-		update({ bass: true });
-		const retry = update.flush();
-		await waitFor(() => harness.requests.length === 2);
-		const payload = requestPayload(harness.requests[1]?.message);
-		expect(payload.patch).toMatchObject({ eqValues, bass: true });
-		harness.resolveRequest(1, intentResponse(1, eqValues));
-		await retry;
-	});
-
-	test('preserves the rejected ordinary DSP group for the next explicit flush', async () => {
-		const harness = installHarness();
-		const state = createState();
-		const update = createUpdateFn(state, 18, () => false, () => undefined, () => DEFAULT_GLOBAL_SETTINGS);
-		const eqValues = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-
-		update({ eqValues, compressor: true });
-		const rejected = update.flush();
-		await waitFor(() => harness.requests.length === 1);
-		harness.resolveRequest(0, {
-			ok: false,
-			error: { code: 'control_failed', message: 'DSP unavailable', retryable: true },
-		});
-		await expect(rejected).rejects.toThrow('DSP unavailable');
-
-		update({ pan: 0.5 });
-		const retry = update.flush();
-		await waitFor(() => harness.requests.length === 2);
-		const payload = requestPayload(harness.requests[1]?.message);
-		expect(payload.patch).toMatchObject({ eqValues, compressor: true, pan: 0.5 });
-		harness.resolveRequest(1, intentResponse(2, eqValues));
-		await retry;
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.CAPTURE });
+		harness.emit(settlement(2, { volume: 100, processor: 'observe' }));
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
 	});
 });
 
-function intentResponse(revision: number, eqValues: number[]): Record<string, unknown> {
-	return {
-		ok: true,
-		data: {
-			intentId: `intent-${revision}`,
-			tabId: 1,
-			documentId: 'document-popup',
-			generation: revision,
-			revision,
-			target: null,
-			fields: {
-				eqValues: {
-					desired: eqValues,
-					actual: eqValues,
-					revision,
-					phase: 'applied',
-					strategy: 'capture',
-					coverage: 'full',
-					controlled: true,
-					intentId: `intent-${revision}`,
-					lastError: null,
-				},
-			},
-			audioVolume: undefined,
+function createUpdate(
+	transport: PopupControlTransport,
+	state = createState(),
+	onError: (error: unknown) => void = () => undefined,
+	render: () => void = () => undefined,
+) {
+	return createUpdateFn(
+		state,
+		5,
+		() => false,
+		render,
+		() => DEFAULT_GLOBAL_SETTINGS,
+		onError,
+		transport,
+	);
+}
+
+function installHarness() {
+	Object.defineProperty(globalThis, 'window', {
+		configurable: true,
+		value: new EventTarget(),
+	});
+	const stages: Array<Parameters<PopupControlTransport['stage']>[0]> = [];
+	const flushCalls: number[] = [];
+	const listeners = new Set<(response: PopupControlPortResponse) => void>();
+	let flushHandler: PopupControlTransport['flush'] = async () => null;
+	const harness = {
+		stages,
+		flushCalls,
+		onFlush(handler: PopupControlTransport['flush']) {
+			flushHandler = handler;
 		},
+		emit(response: PopupControlPortResponse) {
+			for (const listener of listeners) listener(response);
+		},
+		transport: {
+			stage(input) { stages.push(structuredClone(input)); },
+			flush(throughRevision) {
+				flushCalls.push(throughRevision);
+				return flushHandler(throughRevision);
+			},
+			onSettled(listener) {
+				listeners.add(listener);
+				return () => listeners.delete(listener);
+			},
+			hasPendingVolume() {
+				return false;
+			},
+			dispose() { listeners.clear(); },
+		} satisfies PopupControlTransport,
+	};
+	return harness;
+}
+
+function settlement(
+	throughRevision: number,
+	options: {
+		volume?: number;
+		ackGeneration?: number;
+		ackRevision?: number;
+		processor?: 'capture' | 'observe';
+		fieldAcks?: ControlApplyAck[];
+		error?: PopupControlPortResponse['error'];
+	},
+): PopupControlPortResponse {
+	const effectiveVolume = options.volume;
+	const acknowledgementGeneration = options.ackGeneration ?? throughRevision;
+	const acknowledgementRevision = options.ackRevision ?? throughRevision;
+	const volumeBase = effectiveVolume === undefined ? undefined : Math.min(effectiveVolume, 100);
+	const boost = effectiveVolume === undefined ? undefined : effectiveVolume / (volumeBase ?? 100);
+	return {
+		type: 'settled',
+		sessionId: 'popup-test-session',
+		throughRevision,
+		volumeAck: effectiveVolume === undefined ? null : {
+			operationId: `volume-${acknowledgementGeneration}-${acknowledgementRevision}`,
+			tabId: 5,
+			documentId: 'document-popup',
+			generation: acknowledgementGeneration,
+			revision: acknowledgementRevision,
+			target: null,
+			operation: 'effective-volume',
+			strategy: 'extension-state',
+			coverage: effectiveVolume > 100 ? 'full' : 'active-target',
+			fields: options.processor ? {
+				boost: controlField(
+					boost ?? 1,
+					acknowledgementRevision,
+					options.processor,
+					'full',
+				),
+			} : {},
+			result: {
+				effectiveVolume,
+				volumeBase: volumeBase ?? 100,
+				boost: boost ?? 1,
+			},
+		},
+		fieldAcks: options.fieldAcks ?? [],
+		error: options.error ?? null,
+	};
+}
+
+function speedAck(revision: number, speed: number): ControlApplyAck {
+	return {
+		intentId: `speed-${revision}`,
+		tabId: 5,
+		documentId: 'document-popup',
+		generation: revision,
+		revision,
+		target: null,
+		fields: { speed: controlField(speed, revision, 'dom-native', 'active-target') },
+		audioVolume: undefined,
+	};
+}
+
+function controlSnapshot(revision: number, speed: number, generation = revision): ControlSnapshot {
+	return {
+		tabId: 5,
+		documentId: 'document-popup',
+		origin: 'https://media.example',
+		generation,
+		revision,
+		activeMedia: null,
+		activeVideo: null,
+		fields: { speed: controlField(speed, revision, 'dom-native', 'active-target') },
+	};
+}
+
+function controlField<T>(
+	value: T,
+	revision: number,
+	strategy: 'capture' | 'observe' | 'dom-native',
+	coverage: 'full' | 'active-target',
+) {
+	return {
+		desired: value,
+		actual: value,
+		revision,
+		phase: 'applied' as const,
+		strategy,
+		coverage,
+		controlled: strategy !== 'observe',
+		lastError: null,
 	};
 }
 
@@ -387,150 +384,25 @@ function createState(): CardInternalState {
 		audioGeneration: 0,
 		audioConfigRevision: 0,
 		lastError: null,
-		isDragging: false,
 		draggingField: null,
 	};
 }
 
-function runtimeResponse(
-	effectiveVolume: number,
-	generation: number,
-	strategy?: 'capture' | 'media-webaudio' | 'observe' | 'page-native',
-): Record<string, unknown> {
-	const pageNative = strategy === 'page-native';
-	const volumeBase = pageNative ? effectiveVolume : effectiveVolume <= 100 ? effectiveVolume : 100;
-	const boost = pageNative || effectiveVolume <= 100 ? 1 : effectiveVolume / 100;
-	return {
-		ok: true,
-		data: {
-			operationId: `operation-${generation}`,
-			tabId: 1,
-			documentId: 'document-popup',
-			generation,
-			revision: generation,
-			target: null,
-			operation: 'effective-volume',
-			strategy: 'extension-state',
-			coverage: boost > 1 ? 'full' : 'active-target',
-			fields: strategy ? {
-				[pageNative ? 'volumeBase' : 'boost']: {
-					desired: pageNative ? volumeBase : boost,
-					actual: pageNative ? volumeBase : boost,
-					revision: generation,
-					phase: 'applied',
-					strategy,
-					coverage: pageNative ? 'active-target' : 'full',
-					controlled: strategy !== 'observe',
-					intentId: `intent-${generation}`,
-					lastError: null,
-				},
-			} : {},
-			result: { effectiveVolume, volumeBase, boost },
-		},
-	};
+function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
+	let resolve!: (value: T) => void;
+	const promise = new Promise<T>((done) => { resolve = done; });
+	return { promise, resolve };
 }
 
-function requestPayload(message: unknown): Record<string, unknown> {
-	if (!message || typeof message !== 'object') return {};
-	const payload = (message as { payload?: unknown }).payload;
-	return payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
-}
-
-function requestVolume(message: unknown): unknown {
-	const payload = requestPayload(message).payload;
-	return payload && typeof payload === 'object'
-		? (payload as { value?: unknown }).value
-		: undefined;
-}
-
-function requestType(message: unknown): unknown {
-	return message && typeof message === 'object'
-		? (message as { type?: unknown }).type
-		: undefined;
-}
-
-function installHarness() {
-	const timers = new Map<number, { callback: () => void; delay: number }>();
-	const requests: Array<{ message: unknown; resolve: (value: unknown) => void }> = [];
-	const runtimeRequests: Array<Record<string, unknown>> = [];
-	let timerId = 0;
-	let now = 0;
-	const fakeWindow = new EventTarget();
-
-	Object.defineProperty(globalThis, 'window', { configurable: true, value: fakeWindow });
-	Object.defineProperty(globalThis, 'performance', {
-		configurable: true,
-		value: { now: () => now },
-	});
-	Object.defineProperty(globalThis, 'setTimeout', {
-		configurable: true,
-		value: (callback: () => void, delay?: number) => {
-			const id = ++timerId;
-			timers.set(id, { callback, delay: delay ?? 0 });
-			return id;
-		},
-	});
-	Object.defineProperty(globalThis, 'clearTimeout', {
-		configurable: true,
-		value: (id: number) => timers.delete(id),
-	});
-	Object.defineProperty(globalThis, 'chrome', {
-		configurable: true,
-		value: {
-			runtime: {
-				sendMessage: (message: Record<string, unknown>) => {
-					if (message.type === 'spectra.audio.session.flush') {
-						runtimeRequests.push(message);
-						return Promise.resolve({ ok: true, data: { flushed: true } });
-					}
-					return new Promise((resolve) => {
-						requests.push({ message, resolve });
-					});
-				},
-			},
-		},
-	});
-
-	return {
-		window: fakeWindow,
-		timers,
-		requests,
-		runtimeRequests,
-		fireOnlyTimer() {
-			expect(timers.size).toBe(1);
-			const [id, timer] = requireValue(
-				[...timers.entries()][0],
-				'Expected exactly one pending popup coalescing timer',
-			);
-			timers.delete(id);
-			now += 50;
-			timer.callback();
-		},
-		timerDelay() {
-			expect(timers.size).toBe(1);
-			const [, timer] = requireValue(
-				[...timers.entries()][0],
-				'Expected exactly one pending popup coalescing timer',
-			);
-			return timer.delay;
-		},
-		resolveRequest(index: number, response: unknown) {
-			const request = requests[index];
-			if (!request) throw new Error(`Missing request ${index}`);
-			request.resolve(response);
-		},
-	};
-}
-
-async function waitFor(condition: () => boolean): Promise<void> {
-	for (let attempt = 0; attempt < 50; attempt += 1) {
-		if (condition()) return;
+async function waitFor(predicate: () => boolean): Promise<void> {
+	for (let attempt = 0; attempt < 20; attempt += 1) {
+		if (predicate()) return;
 		await Promise.resolve();
 	}
 	throw new Error('Condition was not reached after flushing microtasks');
 }
 
-function restoreProperty(key: string, descriptor?: PropertyDescriptor): void {
+function restoreProperty(key: 'window', descriptor?: PropertyDescriptor): void {
 	if (descriptor) Object.defineProperty(globalThis, key, descriptor);
 	else Reflect.deleteProperty(globalThis, key);
 }

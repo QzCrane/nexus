@@ -2,77 +2,83 @@
 
 export interface ContentOSDMessages {
 	muted: string;
+}
+
+// The three route messages remain required on the v2 wire because an existing
+// Content runtime can outlive a service-worker update and its frozen guard
+// requires this complete shape. Current Content consumes only `muted`.
+export interface ContentSettingsWireOSDMessages extends ContentOSDMessages {
 	corsAutoAdded: string;
 	corsAddedSafe: string;
 	corsCorrectedSafe: string;
 }
 
-const ENGLISH_OSD_MESSAGES: Readonly<ContentOSDMessages> = {
+const ENGLISH_OSD_MESSAGES: Readonly<ContentSettingsWireOSDMessages> = {
 	muted: 'MUTE',
-	corsAutoAdded: '🔧 Auto-added {domain} to capture list',
-	corsAddedSafe: '✓ Added {domain} to safe list',
-	corsCorrectedSafe: '✓ Corrected {domain} to safe',
+	corsAutoAdded: 'Saved compatibility routing for {domain}',
+	corsAddedSafe: 'Saved page-audio routing for {domain}',
+	corsCorrectedSafe: 'Updated {domain} to page-audio routing',
 };
 
-const OSD_MESSAGES: Readonly<Record<string, Readonly<ContentOSDMessages>>> = {
+const OSD_MESSAGES: Readonly<Record<string, Readonly<ContentSettingsWireOSDMessages>>> = {
 	'en-US': ENGLISH_OSD_MESSAGES,
 	'zh-CN': {
 		muted: '静音',
-		corsAutoAdded: '🔧 已自动添加 {domain} 到劫持列表',
-		corsAddedSafe: '✓ 已添加 {domain} 到安全列表',
-		corsCorrectedSafe: '✓ 已更正 {domain} 为安全站点',
+		corsAutoAdded: '已保存 {domain} 的兼容路由',
+		corsAddedSafe: '已保存 {domain} 的网页音频路由',
+		corsCorrectedSafe: '已将 {domain} 更新为网页音频路由',
 	},
 	'zh-TW': {
 		muted: '靜音',
-		corsAutoAdded: '🔧 已自動新增 {domain} 至擷取清單',
-		corsAddedSafe: '✓ 已新增 {domain} 至安全清單',
-		corsCorrectedSafe: '✓ 已將 {domain} 更正為安全網站',
+		corsAutoAdded: '已儲存 {domain} 的相容路由',
+		corsAddedSafe: '已儲存 {domain} 的網頁音訊路由',
+		corsCorrectedSafe: '已將 {domain} 更新為網頁音訊路由',
 	},
 	'ja-JP': {
 		muted: 'ミュート',
-		corsAutoAdded: '🔧 {domain} をキャプチャリストに自動追加しました',
-		corsAddedSafe: '✓ {domain} を安全なリストに追加しました',
-		corsCorrectedSafe: '✓ {domain} を安全なサイトに修正しました',
+		corsAutoAdded: '{domain} の互換ルートを保存しました',
+		corsAddedSafe: '{domain} のページ音声ルートを保存しました',
+		corsCorrectedSafe: '{domain} をページ音声ルートに更新しました',
 	},
 	'ko-KR': {
 		muted: '음소거',
-		corsAutoAdded: '🔧 {domain}을(를) 캡처 목록에 자동 추가했습니다',
-		corsAddedSafe: '✓ {domain}을(를) 안전한 목록에 추가했습니다',
-		corsCorrectedSafe: '✓ {domain}을(를) 안전한 사이트로 수정했습니다',
+		corsAutoAdded: '{domain}의 호환 라우팅을 저장했습니다',
+		corsAddedSafe: '{domain}의 페이지 오디오 라우팅을 저장했습니다',
+		corsCorrectedSafe: '{domain}을 페이지 오디오 라우팅으로 변경했습니다',
 	},
 	'es-ES': {
 		muted: 'SILENCIO',
-		corsAutoAdded: '🔧 {domain} añadido automáticamente a la lista de captura',
-		corsAddedSafe: '✓ {domain} añadido a la lista segura',
-		corsCorrectedSafe: '✓ {domain} corregido como seguro',
+		corsAutoAdded: 'Se guardó el enrutamiento compatible para {domain}',
+		corsAddedSafe: 'Se guardó el audio de página para {domain}',
+		corsCorrectedSafe: 'Se actualizó {domain} al audio de página',
 	},
 	'ru-RU': {
 		muted: 'БЕЗ ЗВУКА',
-		corsAutoAdded: '🔧 {domain} автоматически добавлен в список захвата',
-		corsAddedSafe: '✓ {domain} добавлен в белый список',
-		corsCorrectedSafe: '✓ {domain} исправлен как безопасный',
+		corsAutoAdded: 'Для {domain} сохранён совместимый маршрут',
+		corsAddedSafe: 'Для {domain} сохранён маршрут аудио страницы',
+		corsCorrectedSafe: 'Для {domain} выбран маршрут аудио страницы',
 	},
 	'de-DE': {
 		muted: 'STUMM',
-		corsAutoAdded: '🔧 {domain} automatisch zur Capture-Liste hinzugefügt',
-		corsAddedSafe: '✓ {domain} zur sicheren Liste hinzugefügt',
-		corsCorrectedSafe: '✓ {domain} als sicher korrigiert',
+		corsAutoAdded: 'Kompatibilitätsrouting für {domain} gespeichert',
+		corsAddedSafe: 'Seitenaudio-Routing für {domain} gespeichert',
+		corsCorrectedSafe: '{domain} auf Seitenaudio-Routing aktualisiert',
 	},
 	'fr-FR': {
 		muted: 'MUET',
-		corsAutoAdded: '🔧 {domain} ajouté automatiquement à la liste de capture',
-		corsAddedSafe: '✓ {domain} ajouté à la liste sûre',
-		corsCorrectedSafe: '✓ {domain} corrigé comme sûr',
+		corsAutoAdded: 'Routage compatible enregistré pour {domain}',
+		corsAddedSafe: 'Routage audio de la page enregistré pour {domain}',
+		corsCorrectedSafe: '{domain} utilise désormais l’audio de la page',
 	},
 };
 
-export function getContentOSDMessages(language: string): ContentOSDMessages {
+export function getContentOSDMessages(language: string): ContentSettingsWireOSDMessages {
 	return { ...(OSD_MESSAGES[language] ?? ENGLISH_OSD_MESSAGES) };
 }
 
 export function withContentOSDMessages<T extends { lang: string }>(
 	settings: T,
-): T & { osdMessages: ContentOSDMessages } {
+): T & { osdMessages: ContentSettingsWireOSDMessages } {
 	return {
 		...settings,
 		osdMessages: getContentOSDMessages(settings.lang),

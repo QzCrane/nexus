@@ -9,6 +9,7 @@ import {
 	getAudioSession,
 	isAudioSessionIdentityInvalidated,
 	removeAudioSession,
+	scheduleAudioSessionProjection,
 	StaleAudioSessionError,
 	updateAudioSession,
 } from '../src/background/audio-session-store';
@@ -17,6 +18,7 @@ class FakeSessionStorage {
 	readonly values: Record<string, unknown> = {};
 	readonly setCalls: Array<Record<string, unknown>> = [];
 	readonly removeCalls: string[] = [];
+	onSet?: (items: Record<string, unknown>) => void;
 
 	async get(storageKey: string): Promise<Record<string, unknown>> {
 		return storageKey in this.values
@@ -27,6 +29,7 @@ class FakeSessionStorage {
 	async set(items: Record<string, unknown>): Promise<void> {
 		this.setCalls.push(structuredClone(items));
 		Object.assign(this.values, structuredClone(items));
+		this.onSet?.(items);
 	}
 
 	async remove(storageKey: string): Promise<void> {
@@ -36,6 +39,25 @@ class FakeSessionStorage {
 }
 
 describe('acknowledged audio session store', () => {
+	test('canonical flush waits for projection-only serialized work', async () => {
+		let releaseProjection!: () => void;
+		let signalProjectionStarted!: () => void;
+		const projectionGate = new Promise<void>((resolve) => { releaseProjection = resolve; });
+		const projectionStarted = new Promise<void>((resolve) => { signalProjectionStarted = resolve; });
+		scheduleAudioSessionProjection(8_113, async () => {
+			signalProjectionStarted();
+			await projectionGate;
+		});
+		await projectionStarted;
+		let flushed = false;
+		const flush = flushAudioSessions().then(() => { flushed = true; });
+		await Promise.resolve();
+		expect(flushed).toBe(false);
+		releaseProjection();
+		await flush;
+		expect(flushed).toBe(true);
+	});
+
 	test('serializes concurrent updates for one tab without losing the later ACK', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const storage = new FakeSessionStorage();
@@ -57,19 +79,124 @@ describe('acknowledged audio session store', () => {
 				config: { volume: 180 },
 			});
 			const [firstSnapshot, secondSnapshot] = await Promise.all([first, second]);
+			await flushAudioSessions(identity.tabId);
 			expect(firstSnapshot.generation).toBe(1);
 			expect(firstSnapshot.actualMode).toBe('capture');
 			expect(secondSnapshot.generation).toBe(2);
 			expect(secondSnapshot.actualMode).toBe('capture');
 			expect(secondSnapshot.actualConfig.volume).toBe(180);
 			expect(storage.setCalls).toHaveLength(2);
+			// Presentation runs independently from authority: the first committed
+			// lifecycle may publish while the second durable update proceeds, and the
+			// final projection must still be the later acknowledged snapshot.
 			expect(broadcasts).toHaveLength(2);
+			expect(broadcasts.map((event) => (
+				(event as { payload: { generation: number } }).payload.generation
+			))).toEqual([1, 2]);
+			expect(broadcasts.at(-1)).toMatchObject({ payload: secondSnapshot });
 			expect(await getAudioSession(identity.tabId)).toEqual(secondSnapshot);
-			await flushAudioSessions(identity.tabId);
 			expect(storage.setCalls).toHaveLength(2);
 			expect(storage.values.spectra_audio_session_8101).toEqual(secondSnapshot);
 		} finally {
 			await removeAudioSession(identity.tabId);
+			restoreChrome(originalChrome);
+		}
+	});
+
+	test('acknowledges the durable session before its runtime broadcast settles', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const storage = new FakeSessionStorage();
+		let releaseBroadcast!: () => void;
+		let signalBroadcastStarted!: () => void;
+		const broadcastGate = new Promise<void>((resolve) => { releaseBroadcast = resolve; });
+		const broadcastStarted = new Promise<void>((resolve) => { signalBroadcastStarted = resolve; });
+		installChrome(storage, []);
+		globalThis.chrome.runtime.sendMessage = async () => {
+			signalBroadcastStarted();
+			await broadcastGate;
+		};
+
+		const identity = identityFor(8_112, 'document-projection-barrier');
+		let update: Promise<Awaited<ReturnType<typeof updateAudioSession>>> | undefined;
+		try {
+			let acknowledged = false;
+			update = updateAudioSession(identity, {
+				generation: 1,
+				actualMode: 'capture',
+				phase: 'active',
+				config: { volume: 110 },
+			}).then((snapshot) => {
+				acknowledged = true;
+				return snapshot;
+			});
+			await broadcastStarted;
+			const acknowledgedSnapshot = await update;
+			expect(acknowledged).toBe(true);
+			expect(acknowledgedSnapshot.generation).toBe(1);
+			expect(storage.values.spectra_audio_session_8112).toMatchObject({
+				generation: 1,
+				actualConfig: { volume: 110 },
+			});
+
+			releaseBroadcast();
+			await flushAudioSessions(identity.tabId);
+		} finally {
+			releaseBroadcast();
+			await update?.catch(() => undefined);
+			await removeAudioSession(identity.tabId).catch(() => undefined);
+			restoreChrome(originalChrome);
+		}
+	});
+
+	test('does not let a pending projection block the next durable session ACK', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const storage = new FakeSessionStorage();
+		let releaseFirstProjection!: () => void;
+		let signalFirstProjectionStarted!: () => void;
+		let signalSecondCommit!: () => void;
+		const firstProjectionGate = new Promise<void>((resolve) => { releaseFirstProjection = resolve; });
+		const firstProjectionStarted = new Promise<void>((resolve) => { signalFirstProjectionStarted = resolve; });
+		const secondCommit = new Promise<void>((resolve) => { signalSecondCommit = resolve; });
+		let projectionCount = 0;
+		installChrome(storage, []);
+		globalThis.chrome.runtime.sendMessage = async () => {
+			projectionCount += 1;
+			if (projectionCount === 1) {
+				signalFirstProjectionStarted();
+				await firstProjectionGate;
+			}
+		};
+		const identity = identityFor(8_114, 'document-next-ack');
+		storage.onSet = (items) => {
+			const snapshot = items.spectra_audio_session_8114 as { generation?: number } | undefined;
+			if (snapshot?.generation === 2) signalSecondCommit();
+		};
+
+		try {
+			await updateAudioSession(identity, {
+				generation: 1,
+				actualMode: 'capture',
+				phase: 'active',
+				config: { volume: 110 },
+			});
+			await firstProjectionStarted;
+			const second = updateAudioSession(identity, {
+				generation: 2,
+				actualMode: 'capture',
+				phase: 'active',
+				config: { volume: 120 },
+			});
+			// This storage commit is an exact causal barrier. It must occur while the
+			// first presentation remains deliberately unresolved.
+			await secondCommit;
+			const acknowledged = await second;
+			expect(acknowledged.generation).toBe(2);
+			expect(acknowledged.actualConfig.volume).toBe(120);
+			expect(projectionCount).toBe(1);
+		} finally {
+			releaseFirstProjection();
+			await flushAudioSessions(identity.tabId).catch(() => undefined);
+			await removeAudioSession(identity.tabId).catch(() => undefined);
 			restoreChrome(originalChrome);
 		}
 	});
@@ -178,6 +305,7 @@ describe('acknowledged audio session store', () => {
 				config: { volume: 20 },
 				error: 'late startup failure',
 			});
+			await flushAudioSessions(identity.tabId);
 
 			expect(stale).toEqual(acknowledged);
 			expect(storage.setCalls).toHaveLength(writeCount);
@@ -294,6 +422,7 @@ describe('acknowledged audio session store', () => {
 				actualMode: 'capture',
 				phase: 'starting',
 			});
+			await flushAudioSessions(identity.tabId);
 			expect(failed.phase).toBe('error');
 			expect(lateRetry).toEqual(failed);
 			expect(broadcasts).toHaveLength(6);

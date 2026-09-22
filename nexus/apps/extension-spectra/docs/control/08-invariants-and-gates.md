@@ -19,12 +19,12 @@ last_reviewed: 2026-08-28
 - `SCTRL-005`: only readback actual state may be acknowledged; settings/session success require physical storage confirmation.
 - `SCTRL-006`: intent and ACK identity includes document, generation, revision and intent ID; Remote additionally requires `sessionEpoch + commandId`, and every post-await continuation revalidates its full ticket.
 - `SCTRL-007`: 100% and 1x are literal controlled values.
-- `SCTRL-008`: a typed, current-document, one-shot Capture admission is consumed before tab-stream acquisition; page media sources are never bound.
+- `SCTRL-008`: a typed, current-document, one-shot Capture admission is consumed before tab-stream acquisition; MediaElement WebAudio binds page sources only after complete exact source-safety evidence, while Capture never binds page media sources.
 - `SCTRL-009`: extension CSS removal restores the site's current cascade; dim-target handoff preserves independent video effects.
 - `SCTRL-010`: transport/video state is bound to media ID and source revision.
-- `SCTRL-011`: Capture is the only processor path; replacement handoff never double-applies DSP and preserves the acknowledged processor on candidate failure.
+- `SCTRL-011`: at most one acknowledged MediaElement WebAudio or Capture processor owns DSP output; replacement handoff never double-applies DSP and preserves the acknowledged processor on candidate failure.
 - `SCTRL-012`: status and observation reads do not write settings, badge, or activate processing.
-- `SCTRL-013`: neutral DSP and unsubscribed analysis create no optional nodes; only an admitted active Capture owns an `AudioContext`, source and sparse graph, all of which are disposed on final release; disabled Popup Visualizer imports no visualizer chunk and owns no metrics observer/draw loop; only the visible foreground subscriber may transiently admit Capture, background cards remain passive, and visualizer IPC leaves no timer wake-up loop while a batch is pending.
+- `SCTRL-013`: neutral DSP and unsubscribed analysis create no optional nodes; only an acknowledged active MediaElement WebAudio or admitted Capture owner may retain its `AudioContext`, sources and sparse graph, all of which are disposed on final release; disabled Popup Visualizer imports no visualizer chunk and owns no metrics observer/draw loop; only the visible foreground subscriber may request transient processor observation, background cards remain passive, and visualizer IPC leaves no timer wake-up loop while a batch is pending.
 - `SCTRL-014`: page, Popup, remote, hotkeys and badge project one snapshot; Popup owns one tab-routed runtime event hub and one card audio/config projection; Badge renders no placeholder before complete ACK exists.
 - `SCTRL-015`: MAIN cannot bypass user activation, CORS, DRM or inaccessible media.
 - `SCTRL-016`: product UX exposes outcomes, not implementation modes; records exact 28 persistent snapshot fields plus 23 momentary operations inventory.
@@ -43,7 +43,7 @@ last_reviewed: 2026-08-28
 - `SCTRL-029`: ACK target is projected only through contract scope; non-media operations write `target: null`.
 - `SCTRL-030`: runtime status/read is a pure projection with no document scan or synthetic event.
 - `SCTRL-031`: operations executing no media writer acknowledge `target: null`.
-- `SCTRL-032`: processor configuration exposes only `boostGain: 1–8`; page volume/mute cannot cross the Capture processor boundary.
+- `SCTRL-032`: processor configuration exposes only `boostGain: 1–8`; page volume/mute cannot cross either processor boundary.
 - `SCTRL-033`: Background control consumers invoke serialized coordinator directly without SW self-RPC.
 - `SCTRL-034`: default content bootstrap uses minimal contract; MV3 SW is self-contained ESM; build has zero redundancy; extracted pure value/ACK/queue/async capabilities are direct owners rather than aliases or re-export shims, while coordinator commit/persist/publish remains the sole effect writer.
 - `SCTRL-035`: native event-driven writes install bounded listener before setter and ACK after quiet getter boundary.

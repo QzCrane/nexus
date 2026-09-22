@@ -24,17 +24,12 @@ function mint(now = 100) {
 beforeEach(() => captureAdmissionTestApi.reset());
 
 describe('Capture one-shot admission owner', () => {
-	test('declares the temporary active-tab authority required by the exact target capture API', () => {
+	test('declares the temporary active-tab and tabCapture authority', () => {
 		const manifest = JSON.parse(readFileSync(
 			resolve(import.meta.dir, '../public/manifest.json'),
 			'utf8',
 		)) as { permissions?: unknown };
-		const captureOwner = readFileSync(
-			resolve(import.meta.dir, '../src/background/handlers/capture.ts'),
-			'utf8',
-		);
 		expect(manifest.permissions).toEqual(expect.arrayContaining(['activeTab', 'tabCapture']));
-		expect(captureOwner).toContain('getMediaStreamId({ targetTabId: tabId }');
 	});
 
 	test('consumes an exact current-document grant once before physical work', () => {

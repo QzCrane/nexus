@@ -1060,14 +1060,14 @@ function checkPolicyOwner(root) {
 	)) {
 		error(`SCTRL-017: required coordinator invariant is missing (${missing.fragment})`);
 	}
-	const document = path.join(root, APP_PATH, 'docs/control-architecture.md');
-	if (!fs.existsSync(document)) error('SCTRL-016: control-architecture.md owner is missing');
+	const document = path.join(root, APP_PATH, 'docs/control/04a-algorithm-matrix.md');
+	if (!fs.existsSync(document)) error('SCTRL-016: canonical control algorithm matrix owner is missing');
 	else {
 		// 自 v2.6+ 起,控制架构按 progressive disclosure 拆分到 control/ 子目录
 		// 新结构采用编号章节 (§X.Y),验证脚本需识别重命名后的标题
 		const controlDir = path.join(root, APP_PATH, 'docs/control');
 		const subFiles = fs.existsSync(controlDir)
-			? fs.readdirSync(controlDir).filter(f => f.endsWith('.md')).map(f => path.join(controlDir, f))
+			? fs.readdirSync(controlDir).filter(f => f.endsWith('.md') && f !== path.basename(document)).map(f => path.join(controlDir, f))
 			: [];
 		const architecture = [fs.readFileSync(document, 'utf8'), ...subFiles.map(f => fs.readFileSync(f, 'utf8'))].join('\n\n');
 		for (const requiredSection of [
@@ -1077,7 +1077,7 @@ function checkPolicyOwner(root) {
 			'#### §8.6.1 Algorithm entry points and implementation anchors',
 			'### §9.4 Retired/forbidden source inventory and current anchors',
 			'### §12.1 Media WebAudio / Capture admission and ACK',
-			'### §17.1 Implementation status ledger',
+			'## §17 Implementation ownership and migration map',
 		]) {
 			if (!architecture.includes(requiredSection)) {
 				error(`SCTRL-016: control owner is missing ${requiredSection}`);
@@ -1192,7 +1192,7 @@ function checkPolicyOwner(root) {
 			|| !sourceEligibility.includes('graphSignature')
 			|| !sourceEligibility.includes('normalizedActualConfig')
 			|| !sourceEligibility.includes('MediaElementAudioSourceNode')
-			|| !sourceEligibility.includes('every current media source is proven safe')
+			|| !sourceEligibility.includes('every current processing source is proven safe')
 			|| !sourceEligibility.includes('Forbidden designs')) {
 			error('SCTRL-008/SCTRL-016: audio source admission must require complete MediaElement evidence and typed WebAudio/Capture readback');
 		}
@@ -1948,12 +1948,12 @@ function checkRetiredPaths(root) {
 	);
 	const controlArchitecture = (() => {
 		const idx = fs.readFileSync(
-			path.join(root, APP_PATH, 'docs/control-architecture.md'),
+			path.join(root, APP_PATH, 'docs/control/04a-algorithm-matrix.md'),
 			'utf8',
 		);
 		const controlDir = path.join(root, APP_PATH, 'docs/control');
 		if (!fs.existsSync(controlDir)) return idx;
-		const subs = fs.readdirSync(controlDir).filter(f => f.endsWith('.md'));
+		const subs = fs.readdirSync(controlDir).filter(f => f.endsWith('.md') && f !== '04a-algorithm-matrix.md');
 		return [idx, ...subs.map(f => fs.readFileSync(path.join(controlDir, f), 'utf8'))].join('\n\n');
 	})();
 	if (!controlArchitecture.includes('top-level document only (`frameId: 0`)')
@@ -2306,7 +2306,9 @@ function checkRetiredPaths(root) {
 		|| !scalarFeedback.includes("{ value: 2, label: '2×', lane: 'upper' }")
 		|| !osd.includes('volumeState: feedback.volumeState')
 		|| !osd.includes('advanceHotkeyTargetOSD(')
-		|| !osd.includes('pendingVolumeBoundary(')
+		|| !osd.includes('resolveHotkeyVolumeBaseline(')
+		|| !osd.includes('renderOSD(target, s, {})')
+		|| osd.includes('pendingVolumeBoundary(')
 		|| !osd.includes('UI_COLORS.CAPTURE')
 		|| !osd.includes('UI_COLORS.NATIVE')
 		|| osd.includes('resolveAudioVolumeState')

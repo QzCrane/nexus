@@ -121,21 +121,4 @@ describe('Popup startup failure surface', () => {
 		expect(sidePanel).toContain('unbindFooterActions();');
 	});
 
-	test('keeps the card visualizer loader free of the retired card EQ drawer', () => {
-		const cardTypes = readFileSync(new URL('../src/popup/card/types.ts', import.meta.url), 'utf8');
-		const cardElements = readFileSync(new URL('../src/popup/card/ui-elements.ts', import.meta.url), 'utf8');
-		const cardEvents = readFileSync(new URL('../src/popup/card/events.ts', import.meta.url), 'utf8');
-		const cardRender = readFileSync(new URL('../src/popup/card/render.ts', import.meta.url), 'utf8');
-		const visualizer = readFileSync(new URL('../src/popup/visualizer/loop.ts', import.meta.url), 'utf8');
-
-		expect(cardTypes).not.toContain('EqCurveDrawerFactory');
-		expect(cardTypes).not.toContain('createEqCurveDrawer');
-		expect(cardElements).not.toContain(".eq-trigger");
-		expect(cardElements).not.toContain(".eq-drawer");
-		expect(cardEvents).not.toContain('onMetricsUpdate');
-		expect(cardEvents).not.toContain('EQ_DRAWER_DELAY');
-		expect(cardRender).not.toContain('drawEqCurve');
-		expect(visualizer).not.toContain('draw-eq-curve');
-		expect(visualizer).not.toContain('metrics-cache');
-	});
 });

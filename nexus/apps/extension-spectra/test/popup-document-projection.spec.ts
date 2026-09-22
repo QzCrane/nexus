@@ -43,7 +43,6 @@ function state(): CardInternalState {
 		controlGeneration: 5,
 		controlRevision: 0,
 		lastError: null,
-		isDragging: false,
 		draggingField: null,
 	};
 }

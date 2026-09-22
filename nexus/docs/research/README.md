@@ -15,6 +15,8 @@ Research documents are dated evidence and hypotheses. They help choose what to b
 - [`../_archive/market-research.md`](../_archive/market-research.md): legacy long-form HALO competitor research collected in 2025. Preserve as source material, but revalidate every dynamic number, price, policy, product capability, issue count, and user-count claim before using it in a current decision.
 - [HALO research index](../../apps/extension-halo/docs/research/README.md): application-specific market and gap evidence.
 - [SPECTRA archived evidence](../../apps/extension-spectra/docs/_archive/2026-Q3/README.md): dated implementation, regression, and release snapshots.
+- [SPECTRA repeated 100–110 volume display stall](2026-09-23-spectra-volume-boundary.md): baseline diagnosis, evidence limits, and the continuous-feedback repair boundary.
+- [SPECTRA test-value ledger](2026-09-23-spectra-test-value-ledger.md): frozen test census and KEEP/MERGE/REWRITE/DELETE disposition evidence for the cleanup wave.
 
 ## Evidence contract
 

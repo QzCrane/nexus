@@ -12,7 +12,7 @@ last_reviewed: 2026-08-28
 
 ## §9 Audited source algorithms and dispositions
 
-`CONTROL_ALGORITHM_POLICIES` (`packages/contracts/src/control.contracts.ts`) executable `Record<ControlCapability, ControlAlgorithmPolicy>` owns scope, kind, strategies, ACK source, MAIN policy, and work rules. Capture processor fields have one ordered strategy: `capture`. Missing policies cause compile errors.
+`CONTROL_ALGORITHM_POLICIES` (`packages/contracts/src/control.contracts.ts`) executable `Record<ControlCapability, ControlAlgorithmPolicy>` owns scope, kind, strategies, ACK source, MAIN policy, and work rules. Processor fields share one ordered strategy: proven `media-webaudio`, then admitted `capture`. Missing policies cause compile errors.
 
 This audit records legacy source dispositions. Retired locations are historical evidence; current ownership uses implementation anchors.
 
@@ -26,10 +26,10 @@ Names and paths in the negative rows below are forbidden production owners. They
 | --- | --- | --- |
 | retired `dom-volume.ts::applyToElement`; retired local native writers | Wrote `volume` and `muted`. | Replaced with one selected native writer: `volumeBase` writes `media.volume`, `mediaMuted` writes `media.muted`. `AudioProcessorConfig` lacks mute/zero-gain admission. |
 | `popup/card/events.ts::handleVolume`; `hotkey-helpers.ts`; `remote-commands.ts` | Separate native/Boost delta rules. | All surfaces submit typed `effective-volume 0–800`. Coordinator splits internal base/Boost writers. |
-| retired/forbidden `webaudio-hijack.ts` | Replaced `AudioContext`, redirected `destination`, and applied limits. | Removed from production; Capture is the only processor path. No implicit limiter. |
+| retired/forbidden `webaudio-hijack.ts` | Replaced `AudioContext`, redirected `destination`, and applied limits. | Removed from production; processing uses only the proven MediaElement WebAudio owner or admitted Capture owner. No implicit limiter. |
 | retired/forbidden `audio-engine/src/webaudio/node-factory.ts::createAudioGraph` | Created all nodes per media. | Removed; `offscreen/audio-host.ts` owns one tab Capture graph with non-neutral nodes only. |
-| retired/forbidden `WebAudioController::attachNode` and `cors-checker.ts` | Late `crossOrigin` set and inferred CORS from silence. | Removed; no page source eligibility or irreversible page binding exists. |
-| retired/forbidden `content-bootstrap.js::installAudioMain`; retired `dom-volume.ts` | Always-on `AudioContext` or Capture. | Capability-driven: non-neutral DSP fields request Capture, gated by `requestedCoverage:'full'` plus an invocation admission. |
+| retired/forbidden `WebAudioController::attachNode` and `cors-checker.ts` | Late `crossOrigin` set and inferred CORS from silence. | Removed; the MediaElement WebAudio owner requires proven source eligibility before binding, without inferring CORS from silence. |
+| retired/forbidden `content-bootstrap.js::installAudioMain`; retired `dom-volume.ts` | Always-on `AudioContext` or Capture. | Capability-driven: non-neutral DSP fields request a processor; complete safe media coverage admits MediaElement WebAudio, otherwise Capture still requires `requestedCoverage:'full'` plus an invocation admission. |
 | `audio-engine::BoostEnvelope` (retired) | Free-floating gain. | Replaced by `AudioProcessorConfig.boostGain` readback. |
 | retired implicit limiter | Applied gain reduction on Capture. | Removed; no product capability. |
 | retired/forbidden `WebAudioController::updateProcessor` | Per-frame writes. | Capture host uses latest-value coalescing, trailing storage write, 0 Hz on neutral. |
@@ -117,7 +117,7 @@ The catalog defines exactly what executable code fulfills a capability. Verifica
 | `ALG-026` | Browser actions | native-control | Chrome UI/nav APIs only. | One browser result per action. |
 | `ALG-027` | userScripts execution| controlled-augmentation| Explicit sandbox only. | Bounded script validation. |
 | `ALG-028` | Hotkey normalization | intent-routing | Builds canonical intents. | Compiled O(1) key map. |
-| `ALG-029` | Popup latest-value | intent-routing | Coordinator ACK replaces optimistic UI. | 20 Hz cap, identical dropped. |
+| `ALG-029` | Popup latest-value | intent-routing | One private typed Popup control channel publishes the latest continuous volume/DSP value to a Background-owned slot; only the existing coordinator mutates control state and its ACK replaces optimistic UI. | Per target/field latest slot, 50 ms coalesce, identical values dropped; Popup disconnect retires only its response channel. |
 | `ALG-030` | Remote command route | intent-routing | Authenticated coordinator use. | Event-driven snapshot push. |
 | `ALG-031` | Remote auth boundary | lifecycle-orchestration| HMAC/sequence gate. | One authenticated controller. |
 | `ALG-032` | Offscreen host lease | lifecycle-orchestration| One document for audio/remote. | Serialized creation; 30s final close. |

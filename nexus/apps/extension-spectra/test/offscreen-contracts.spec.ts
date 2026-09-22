@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import {
 	isOffscreenHostEvent,
 	isOffscreenHostRequest,
@@ -51,19 +49,6 @@ const processorConfig = {
 };
 
 describe('offscreen host request contract', () => {
-	test('has no legacy action table or generic kernel bypass', () => {
-		const actions = readFileSync(
-			resolve(import.meta.dir, '../../../packages/contracts/src/actions.ts'),
-			'utf8',
-		);
-		const client = readFileSync(
-			resolve(import.meta.dir, '../../../packages/nexus-kernel/src/messages/client.ts'),
-			'utf8',
-		);
-		expect(actions).not.toContain('OFFSCREEN_ACTIONS');
-		expect(client).not.toContain('sendToOffscreen');
-	});
-
 	test('accepts every canonical request type', () => {
 		const requests: unknown[] = [
 			{ target: 'offscreen', type: 'OFFSCREEN_HOST_HELLO' },

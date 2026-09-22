@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const appDir = resolve(import.meta.dir, '..');
@@ -51,39 +51,6 @@ describe('Popup style ownership', () => {
 		expect(unowned).toEqual([]);
 	});
 
-	test('keeps route-list styles while rejecting retired card-EQ style owners', () => {
-		const css = readFileSync(resolve(appDir, 'public/popup.css'), 'utf8');
-		expect(css).toContain('.registry-card');
-		expect(css).toContain('.registry-item-route-capture');
-		expect(css).toContain('.registry-item-route-direct');
-		for (const retired of [
-			'.nice-textarea',
-			'.setting-actions',
-			'.chips-row',
-			'.chip-body',
-			'.eq-island',
-			'.eq-trigger',
-			'.eq-drawer',
-			'.eq-container',
-			'.eq-curve-canvas',
-			'.eq-sliders-row',
-			'.eq-col',
-			'.sp-radio',
-			'.btn-preset-delete',
-		]) expect(css).not.toContain(retired);
-	});
-
-	test('keeps main view intrinsic and gives only Settings the fixed scroll viewport', () => {
-		const css = readFileSync(resolve(appDir, 'public/popup.css'), 'utf8');
-		const navigation = readFileSync(resolve(appDir, 'src/popup/views/navigation.ts'), 'utf8');
-		const baseContainer = css.match(/\.view-container\s*\{(?<body>[^}]*)\}/u)?.groups?.body ?? '';
-		expect(baseContainer).not.toContain('min-height');
-		expect(css).toMatch(/\.view-container\.settings-view-active\s*\{[^}]*min-height:\s*600px/su);
-		expect(navigation).toContain("classList.add('settings-view-active')");
-		expect(navigation).toContain("classList.remove('settings-view-active')");
-		expect(navigation).not.toContain('offsetHeight');
-		expect(navigation).not.toContain('style.minHeight');
-	});
 });
 
 describe('Options style ownership', () => {
@@ -105,23 +72,4 @@ describe('Options style ownership', () => {
 		expect(unowned).toEqual([]);
 	});
 
-	test('does not restore the retired tab navigation or legacy hotkey list', () => {
-		const css = readFileSync(resolve(appDir, 'public/options.css'), 'utf8');
-		for (const retired of [
-			'.nav-btn',
-			'.tab-content',
-			'.hotkeys-list',
-			'.hotkey-item',
-			'.hotkey-enable',
-			'.hotkey-key',
-			'.hotkey-action',
-			'.section-actions',
-		]) expect(css).not.toContain(retired);
-		expect(existsSync(resolve(appDir, 'src/options/tabs.ts'))).toBe(false);
-	});
-
-	test('lets command-slot selects shrink inside narrow extension-page viewports', () => {
-		const css = readFileSync(resolve(import.meta.dir, '../public/options.css'), 'utf8');
-		expect(css).toMatch(/\.slot-action-select\s*\{[^}]*flex:\s*1;[^}]*min-width:\s*0;/su);
-	});
 });

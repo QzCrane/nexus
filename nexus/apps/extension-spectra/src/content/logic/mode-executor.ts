@@ -74,6 +74,7 @@ async function executeModeTransition(
 		await deps.captureManager.waitForSettled();
 		if (stale(deps, owner, run)) return;
 	}
+	synchronizeProcessingSources(deps);
 	const mode = state.activeMode ?? 'bypass';
 	if (mode === 'capture') {
 		await enterCapture(deps, state, owner, run, generation, captureAdmission);
@@ -86,6 +87,15 @@ async function executeModeTransition(
 		owner.updateBadge();
 		owner.broadcastUI();
 	}
+}
+
+function synchronizeProcessingSources(deps: PolicyExecutorDeps): HTMLMediaElement[] {
+	const elements = deps.mediaRegistry.listProcessingSources().map(({ element }) => element);
+	const selected = new Set(elements);
+	for (const { element } of deps.mediaRegistry.list()) {
+		if (!selected.has(element)) deps.audioController.detachNode(element);
+	}
+	return elements;
 }
 
 function stale(deps: PolicyExecutorDeps, owner: ModeExecutionOwner, run: number): boolean {
@@ -193,9 +203,15 @@ async function enterWebAudio(
 	generation: number,
 	captureAdmission?: CaptureAdmission,
 ): Promise<void> {
-	const elements = deps.mediaRegistry.list().map(({ element }) => element);
+	let elements = deps.mediaRegistry.listProcessingSources().map(({ element }) => element);
 	const evidenceFor = (element: HTMLMediaElement) =>
 		deps.mediaRegistry.getEligibilityEvidence(element);
+	const hasCurrentCoverage = (): boolean => {
+		const current = deps.mediaRegistry.listProcessingSources().map(({ element }) => element);
+		return current.length === elements.length
+			&& current.every((element, index) => element === elements[index])
+			&& deps.audioController.hasCompleteCoverage(current, evidenceFor);
+	};
 	if (!deps.audioController.canAttachAll(elements, evidenceFor)) {
 		await fallbackFromWebAudio(
 			deps, state, owner, run, generation, captureAdmission,
@@ -221,6 +237,10 @@ async function enterWebAudio(
 			throw new Error('Media WebAudio context is not running');
 		}
 		if (stale(deps, owner, run)) return;
+		elements = synchronizeProcessingSources(deps);
+		if (!deps.audioController.canAttachAll(elements, evidenceFor)) {
+			throw new Error('Media source coverage changed during WebAudio initialization');
+		}
 		const attached = elements.every((element) =>
 			deps.audioController.ensureAttached(element, evidenceFor(element)));
 		if (!attached || !deps.audioController.hasCompleteCoverage(elements, evidenceFor)) {
@@ -228,11 +248,12 @@ async function enterWebAudio(
 		}
 		const snapshot = await deps.audioController.applyConfig(state.config);
 		if (stale(deps, owner, run)) return;
+		if (!hasCurrentCoverage()) {
+			throw new Error('Media source coverage changed before WebAudio acknowledgement');
+		}
 		graphActual = actualConfigFromGraphSnapshot(state.config, snapshot, elements.length);
 		deps.audioController.setVisualizerSubscribed(state.visualizerSubscribers.size > 0);
 	} catch (error) {
-		await deps.audioController.bypass().catch(() => undefined);
-		deps.audioController.setVisualizerSubscribed(false);
 		await fallbackFromWebAudio(
 			deps, state, owner, run, generation, captureAdmission, errorMessage(error),
 		);
@@ -257,6 +278,13 @@ async function enterWebAudio(
 			return;
 		}
 	}
+	if (!hasCurrentCoverage()) {
+		await fallbackFromWebAudio(
+			deps, state, owner, run, state.generation, captureAdmission,
+			'Media source coverage changed during processor handoff',
+		);
+		return;
+	}
 	state.actualMode = 'webaudio';
 	state.phase = 'active';
 	state.appliedConfig = graphActual;
@@ -274,13 +302,16 @@ async function fallbackFromWebAudio(
 ): Promise<void> {
 	if (stale(deps, owner, run)) return;
 	if (state.mediaRoute === 'direct') {
-		state.actualMode = 'bypass';
-		state.phase = 'error';
-		state.appliedConfig = toDomAppliedConfig(state.config);
-		state.lastError = `Direct route cannot bind the complete page media graph: ${reason}`;
+		await enterBypass(deps, state, owner, run, generation);
+		if (stale(deps, owner, run)) return;
+		if (state.phase !== 'error') {
+			state.phase = 'error';
+			state.lastError = `Direct route cannot bind the complete page media graph: ${reason}`;
+		}
 		return;
 	}
 	if (deps.captureManager.isActive()) {
+		if (!await neutralizeWebAudio(deps, state) || stale(deps, owner, run)) return;
 		const restored = await deps.captureManager.syncConfig(state.config, generation);
 		if (stale(deps, owner, run)) return;
 		state.actualMode = 'capture';
@@ -297,6 +328,7 @@ async function fallbackFromWebAudio(
 		await enterCapture(deps, state, owner, run, generation, captureAdmission);
 		return;
 	}
+	if (!await neutralizeWebAudio(deps, state) || stale(deps, owner, run)) return;
 	state.actualMode = 'bypass';
 	state.phase = 'error';
 	state.appliedConfig = toDomAppliedConfig(state.config);

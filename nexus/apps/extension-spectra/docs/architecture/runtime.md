@@ -132,7 +132,7 @@ A separate monotonic per-tab record owns Action-badge stickiness, surviving work
 ## Media discovery and identity
 
 Content maintains media through an event-driven registry. Registration does one viewport-geometry seed. Deduplicated on same-document navigation. Every element independently receives native configuration upon registration/play/selection; the registry never binds an audio graph.
-Passive bootstrap may do bounded top-level getter. Background captures `volumechange`/`ratechange`, submits complete actual pairs without media identity.
+Passive bootstrap may do a bounded top-level getter. It observes `volumechange`/`ratechange` and submits complete actual pairs to Background without media identity. While the initial HELLO verdict is pending, it retains the latest observation without dispatching it. A lean verdict drains that observation; a heavy-runtime verdict discards it because the runtime owns observation. Restoration acquires the heavy runtime before writing media, so restored native events cannot be replayed by the lean bootstrap.
 
 ## Runtime loading and shortcuts
 
@@ -214,7 +214,7 @@ Runtime RPC `source` is a claim, never authority by itself. Popup and page sourc
 
 ## Protocol and envelope ownership
 
-The content-runtime v3 release line has one SPECTRA envelope owner. `@nexus/contracts`
+The extension-internal v2 release line has one SPECTRA envelope owner. `@nexus/contracts`
 owns the typed `SpectraRequestEnvelope` / `SpectraEventEnvelope` schema and runtime
 validators. Common envelope/RPC primitives live in `spectra.protocol-primitives.ts`;
 canonical Background route guards live in `spectra.background-runtime.ts` and are reused
@@ -225,6 +225,12 @@ construction, delivery, and response validation. Focused UI clients are typed tr
 facades, not alternate protocol owners. The wire value remains the single
 `SPECTRA_PROTOCOL_VERSION` contract constant, including for the minimal document-start
 bootstrap boundary.
+
+Discrete Popup controls continue to use that v2 request/response envelope. Continuous
+volume/DSP uses one private typed Popup port whose Background-owned latest slot invokes
+the same coordinator; it neither changes the public v2 wire nor creates another mutation
+owner. Port disconnect retires the Popup response channel after Background admission,
+not an already accepted latest intent.
 
 That constant versions the extension-internal RPC only. The authenticated
 Remote transport has its own v3 protocol/version owner. Diagnostic errors must
@@ -274,27 +280,7 @@ Terms are deliberately non-interchangeable:
 - **Possible non-script payload** is the same possible closure's bytes excluding JavaScript, such as reachable locale assets. **Possible payload** is possible script plus those non-script bytes.
 - Residency, CPU, IPC, allocation, and latency claims require a named Chrome scenario trace. Artifact reachability alone cannot prove them.
 
-The integrated Windows production analysis for the current local v1.4.2 candidate produced artifact SHA-256 `6504eedd91e19794b8c94694583c808ec5e15adf750f72e3b474596e8a44ecf3`, `84/84` reachable files, zero byte-identical duplicates, `outputAttribution: measured`, 618,332 JavaScript bytes, and 709,960 total bytes:
-
-| Executable surface | Current bytes | Hard ceiling | 85% target max | Status |
-| --- | ---: | ---: | ---: | --- |
-| Service-worker wake | 231,774 | 262,144 | 222,822 | headroom deficit 8,952 |
-| `document_start` | 19,704 | 24,576 | 20,889 | within target by 1,185 |
-| Content bootstrap static script | 12,496 | 14,336 | 12,185 | headroom deficit 311 |
-| Lean site-hotkey static script | 9,693 | 11,264 | 9,574 | headroom deficit 119 |
-| Offscreen Capture-only script | 20,127 | 28,672 | 24,371 | within target by 4,244 |
-| Offscreen Remote possible script | 50,505 | 73,728 | 62,668 | within target by 12,163 |
-| Popup static script | 106,668 | 147,456 | 125,337 | within target |
-| Popup possible script | 133,790 | 155,648 | 132,300 | headroom deficit 1,490 |
-| Popup possible payload | 145,305 | informational | — | script plus reachable non-script assets |
-| Content runtime possible script | 159,324 | 180,224 | 153,190 | headroom deficit 6,134 |
-| Video-effects possible script | 10,444 | 12,288 | 10,444 | at target boundary |
-| Options possible script | 34,146 | 40,960 | 34,816 | within target by 670 |
-| Options possible payload | 43,655 | informational | — | script plus reachable non-script assets |
-| Total production JavaScript | 618,332 | 696,320 | 591,872 | headroom deficit 26,460 |
-| Total production artifact | 709,960 | 798,720 | 678,912 | headroom deficit 31,048 |
-
-All hard ceilings pass; this proves the build is structurally valid. The 85% values are optimization targets, not release authority: deficits are reported as non-blocking advisories and may guide owner-local work, while only an exceeded absolute ceiling is a capacity failure. Hiding graph edges, weakening protocol guards, or relabelling possible closure as non-resident remains forbidden because it corrupts measurement rather than improving the product.
+Measured candidate bytes and hashes are dated evidence, not runtime architecture. The 2026-08-29 v1.4.2 snapshot is preserved in the [historical evidence archive](../_archive/2026-Q3/production-artifact-evidence-2026-08-29.md). Current values and hard ceilings come only from the executable owner and the receipt bound to the exact candidate. A missing 15% planning target remains a non-blocking optimization advisory; hiding graph edges, weakening protocol guards, or relabelling possible closure as non-resident corrupts measurement rather than improving the product.
 
 All tab-set operations use bounded concurrency. Settings and visualizer projection use eight workers, remote restoration uses four, and Capture/runtime-restart flows use their declared bounded fan-out owners. On failure, the fan-out owner stops admitting new items but waits for every live worker to retire before rejecting, so an immediate retry cannot overlap the previous generation and exceed the bound. A new tab-wide `Promise.all` is a release regression unless the owner proves a smaller physical bound.
 

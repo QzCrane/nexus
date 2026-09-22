@@ -55,15 +55,6 @@ describe('remote protocol v3', () => {
 		expect(isSafeRemoteQrDataUrl('https://remote.example.test/qr.svg')).toBe(false);
 	});
 
-	test('loads the QR encoder only when a pairing surface requests it', () => {
-		const remoteDirectory = resolve(import.meta.dir, '../src/remote');
-		const bindings = readFileSync(resolve(remoteDirectory, 'ui-bindings.ts'), 'utf8');
-		const entry = readFileSync(resolve(remoteDirectory, 'index.ts'), 'utf8');
-		expect(bindings).not.toContain("import { generateRemoteQR } from './qr-generator.js'");
-		expect(bindings).toContain("await import('./qr-generator.js')");
-		expect(entry).not.toContain('export { generateRemoteQR }');
-	});
-
 	test('accepts only the correct HMAC proof', async () => {
 		const pairing = createRemotePairing();
 		const nonce = cryptoToken(32);

@@ -18,9 +18,6 @@ export const DEFAULT_CONTENT_SETTINGS: ContentGlobalSettings = {
 	lang: 'en-US',
 	osdMessages: {
 		muted: 'MUTE',
-		corsAutoAdded: '🔧 Auto-added {domain} to capture list',
-		corsAddedSafe: '✓ Added {domain} to safe list',
-		corsCorrectedSafe: '✓ Corrected {domain} to safe',
 	},
 };
 
@@ -30,13 +27,13 @@ function mergeSettings(
 ): ContentGlobalSettings {
 	const messages = patch.osdMessages;
 	const validMessages = messages
-		&& (['muted', 'corsAutoAdded', 'corsAddedSafe', 'corsCorrectedSafe'] as const)
-			.every((key) => typeof messages[key] === 'string' && messages[key].length > 0);
+		&& typeof messages.muted === 'string'
+		&& messages.muted.length > 0;
 	return {
 		...current,
 		...patch,
-		osdMessages: validMessages && messages
-			? { ...messages }
+		osdMessages: validMessages
+			? { muted: messages.muted }
 			: current.osdMessages,
 	};
 }

@@ -34,6 +34,7 @@ import {
 	type ControlSubmitRequest,
 	type ControlValues,
 	type MediaTarget,
+	type RpcError,
 	type SpectraEventEnvelope,
 } from '@nexus/contracts';
 import {
@@ -100,6 +101,10 @@ import {
 	rpcSuccess,
 	sendBackgroundTabRequestOnce,
 RPC_INVALID_REQUEST} from './background-rpc';
+import type {
+	PopupControlBatch,
+	PopupControlBatchResult,
+} from './popup-control-port';
 const CONTROL_COVERAGE_TARGET = 'active-target' as const;
 const CONTROL_STRATEGY_EXTENSION = 'extension-state' as const;
 const CONTROL_STRATEGY_CHROME_NATIVE = 'chrome-native' as const;
@@ -2049,6 +2054,17 @@ async function recordSuccessfulExtensionUse(
 	await reprojectBadgeForCurrentDocument(tabId);
 }
 
+// Presentation follows a successful physical/durable control acknowledgement.
+// Reuse the existing per-tab projection tail so sticky usage and the final
+// badge remain ordered with tab-session projection without delaying the caller.
+function scheduleSuccessfulExtensionUse(
+	tabId: number,
+	source: ControlIntent['source'],
+): void {
+	if (source === 'page' || source === 'restore' || source === 'system') return;
+	scheduleSessionProjection(tabId, () => recordSuccessfulExtensionUse(tabId, source));
+}
+
 function submitSerialized(
 	request: RoutedControlSubmitRequest,
 	invocation?: ExtensionInvocationContext,
@@ -2077,7 +2093,7 @@ function submitSerialized(
 			if (!isControlApplyAck(acknowledgement)) {
 				throw new Error('Control executor returned a strategy outside the capability policy');
 			}
-			await recordSuccessfulExtensionUse(request.tabId, request.source);
+			scheduleSuccessfulExtensionUse(request.tabId, request.source);
 			return acknowledgement;
 		} finally {
 			revokeCaptureAdmission(captureAdmission);
@@ -2109,7 +2125,7 @@ function submitOperationSerialized(
 			if (!isControlOperationAck(acknowledgement)) {
 				throw new Error('Control operation returned a strategy outside the capability policy');
 			}
-			await recordSuccessfulExtensionUse(request.tabId, request.source);
+			scheduleSuccessfulExtensionUse(request.tabId, request.source);
 			return acknowledgement;
 		} finally {
 			revokeCaptureAdmission(captureAdmission);
@@ -2176,6 +2192,66 @@ async function popupInvocation(tabId: number): Promise<ExtensionInvocationContex
 		foreground: tabs[0]?.id === tabId ? target : null,
 		target,
 	};
+}
+
+function assertPopupRequestDocument(
+	invocation: ExtensionInvocationContext,
+	requestedDocumentId?: string,
+): void {
+	if (requestedDocumentId !== undefined
+		&& invocation.target.documentId !== requestedDocumentId) {
+		throw new Error('Popup control belongs to a stale document');
+	}
+}
+
+export async function submitPopupControlBatch(
+	batch: PopupControlBatch,
+): Promise<PopupControlBatchResult> {
+	let volumeAck: ControlOperationAck<'effective-volume'> | null = null;
+	const fieldAcks: ControlApplyAck[] = [];
+	let batchError: RpcError | null = null;
+	const recordFailure = (error: unknown): void => {
+		batchError ??= {
+			code: 'popup_control_failed',
+			message: error instanceof Error ? error.message : String(error),
+			retryable: true,
+		} satisfies RpcError;
+	};
+	let invocation: ExtensionInvocationContext;
+	try {
+		invocation = await popupInvocation(batch.tabId);
+		assertPopupRequestDocument(invocation, batch.documentId);
+	} catch (error) {
+		recordFailure(error);
+		return { volumeAck, fieldAcks, error: batchError };
+	}
+	if (batch.effectiveVolume !== null) {
+		try {
+			volumeAck = await submitOperationSerialized({
+				tabId: batch.tabId,
+				source: 'popup',
+				target: null,
+				operation: 'effective-volume',
+				payload: { operation: 'set', value: batch.effectiveVolume },
+			}, invocation) as ControlOperationAck<'effective-volume'>;
+		} catch (error) {
+			recordFailure(error);
+		}
+	}
+	for (const group of batch.groups) {
+		try {
+			fieldAcks.push(await submitSerialized({
+				tabId: batch.tabId,
+				source: 'popup',
+				target: null,
+				requestedCoverage: group.requestedCoverage,
+				patch: group.patch,
+			}, invocation));
+		} catch (error) {
+			recordFailure(error);
+		}
+	}
+	return { volumeAck, fieldAcks, error: batchError };
 }
 
 export interface PopupVisualizerSourceLease {
@@ -2587,6 +2663,9 @@ export function initializeControlCoordinator(): void {
 			const invocation = message.payload.source === 'popup'
 				? await popupInvocation(tabId)
 				: siteHotkeyInvocation;
+			if (message.payload.source === 'popup' && invocation) {
+				assertPopupRequestDocument(invocation, message.documentId);
+			}
 			return message.type === PROTO_OPERATION_SUBMIT
 				? submitOperationSerialized(
 					{ ...message.payload, tabId } as RoutedControlOperationRequest,
@@ -2684,6 +2763,8 @@ export const controlCoordinatorTestApi = {
 	observeChromeTabState,
 	invalidateNavigation,
 	reprojectBadgeForCurrentDocument,
+	scheduleSuccessfulExtensionUse,
+	assertPopupRequestDocument,
 	flushSessionProjections,
 	async reset(): Promise<void> {
 		await serialized.drain();

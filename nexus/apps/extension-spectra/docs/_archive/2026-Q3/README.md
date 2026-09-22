@@ -27,6 +27,7 @@ Current normative entrypoints:
 | [optimization-review-2026-07-17.md](optimization-review-2026-07-17.md) | 2026-07-17 | native-first redesign evidence at its recorded commit |
 | [development-sync-2026-07-19.md](development-sync-2026-07-19.md) | 2026-07-19 | implementation synchronization relative to the 2026-07-18 baseline |
 | [business-implementation-audit-2026-08-27.md](business-implementation-audit-2026-08-27.md) | 2026-08-27 | read-only business, performance, implementation, test, artifact, and release audit at the named commit |
+| [production-artifact-evidence-2026-08-29.md](production-artifact-evidence-2026-08-29.md) | 2026-08-29 | v1.4.2 production artifact hash, reachability, measured bytes, and planning headroom snapshot |
 
 ## Interpretation
 

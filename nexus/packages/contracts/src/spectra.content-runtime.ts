@@ -16,7 +16,6 @@ import {
 	resolveAudioVolume,
 	resolveAudioVolumeState,
 	resolveDesiredAudioMode,
-	crossesAudioVolumeRoutingBoundary,
 } from './audio.contracts.js';
 import { isAudioSitePolicy } from './settings.contracts.js';
 import {
@@ -87,7 +86,6 @@ export {
 	resolveAudioVolumeState,
 	resolveDesiredAudioMode,
 	splitEffectiveVolume,
-	crossesAudioVolumeRoutingBoundary,
 	resolveSpectraDefaultHotkeyAction,
 	resolveSpectraHotkeyActualFeedback,
 	selectHotkeyFeedbackOwner,
@@ -154,6 +152,9 @@ const CONTROL_FIELD_STATE_KEYS = new Set([
 const DELTA_KEYS = new Set(['delta']);
 const LABEL_KEYS = new Set(['label']);
 const ID_KEYS = new Set(['id']);
+const CONTENT_OSD_MESSAGE_KEYS = new Set([
+	'muted', 'corsAutoAdded', 'corsAddedSafe', 'corsCorrectedSafe',
+]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -399,17 +400,17 @@ function isContentSettings(value: unknown): boolean {
 		|| !hasOnly(value, new Set([
 			'osdEnabled', 'visualizerEnabled', 'lang', 'themeMode', 'pauseRetentionSeconds', 'osdMessages',
 		]))) return false;
+	const osdMessages = value.osdMessages;
 	return typeof value.osdEnabled === 'boolean'
 		&& typeof value.visualizerEnabled === 'boolean'
 		&& isBoundedString(value.lang, 16)
 		&& (value.themeMode === 'system' || value.themeMode === 'light' || value.themeMode === 'dark')
 		&& isFiniteInRange(value.pauseRetentionSeconds, 0, 86_400)
-		&& isRecord(value.osdMessages)
-		&& ['muted', 'corsAutoAdded', 'corsAddedSafe', 'corsCorrectedSafe']
-			.every((key) => isBoundedString(
-				(value.osdMessages as Record<string, unknown>)[key],
-				256,
-			));
+		&& isRecord(osdMessages)
+		&& hasOnly(osdMessages, CONTENT_OSD_MESSAGE_KEYS)
+		&& isBoundedString(osdMessages.muted, 128)
+		&& ['corsAutoAdded', 'corsAddedSafe', 'corsCorrectedSafe']
+			.every((key) => isBoundedString(osdMessages[key], 256));
 }
 
 export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnvelope {

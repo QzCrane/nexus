@@ -35,6 +35,11 @@ const ROUTE_CLASS: Readonly<Record<MediaRoute, string>> = {
 	capture: 'registry-item-route-capture',
 };
 
+const SOURCE_CLASS: Readonly<Record<DomainEntry['source'], string>> = {
+	auto: 'registry-item-source-auto',
+	user: 'registry-item-source-user',
+};
+
 function requireElements(): RouteElements {
 	const filter = document.querySelector<HTMLInputElement>('#registry-filter');
 	const list = document.querySelector<HTMLUListElement>('#registry-list');
@@ -71,11 +76,15 @@ function render(elements: RouteElements): void {
 	if (!dictionary) return;
 	const query = elements.filter.value.trim().toLowerCase();
 	const entries = currentEntries
-		.filter((entry) => !query
-			|| entry.domain.includes(query)
-			|| entry.fingerprint.includes(query)
-			|| entry.route.includes(query)
-			|| entry.source.includes(query))
+		.filter((entry) => {
+			const sourceLabel = entry.source === 'auto'
+				? dictionary.registrySourceAuto
+				: dictionary.registrySourceUser;
+			return !query
+				|| entry.domain.includes(query)
+				|| entry.route.includes(query)
+				|| sourceLabel.toLowerCase().includes(query);
+		})
 		.sort((left, right) => (
 			right.updatedAt - left.updatedAt || left.domain.localeCompare(right.domain)
 		));
@@ -95,16 +104,15 @@ function render(elements: RouteElements): void {
 		const domainLabel = document.createElement('span');
 		domainLabel.className = 'registry-item-domain';
 		domainLabel.textContent = entry.domain;
-		domainLabel.title = entry.fingerprint;
-		identity.append(domainLabel);
-		const routeLabel = document.createElement('span');
-		routeLabel.className = `registry-item-route ${ROUTE_CLASS[entry.route]}`;
-		routeLabel.textContent = entry.route === 'capture' ? dictionary.tabRestricted : dictionary.tabSafe;
 		const sourceLabel = document.createElement('span');
-		sourceLabel.className = 'registry-item-source';
+		sourceLabel.className = `registry-item-source ${SOURCE_CLASS[entry.source]}`;
 		sourceLabel.textContent = entry.source === 'auto'
 			? dictionary.registrySourceAuto
 			: dictionary.registrySourceUser;
+		identity.append(domainLabel, sourceLabel);
+		const routeLabel = document.createElement('span');
+		routeLabel.className = `registry-item-route ${ROUTE_CLASS[entry.route]}`;
+		routeLabel.textContent = entry.route === 'capture' ? dictionary.tabRestricted : dictionary.tabSafe;
 		const remove = document.createElement('button');
 		remove.type = 'button';
 		remove.className = 'registry-item-delete';
@@ -120,7 +128,7 @@ function render(elements: RouteElements): void {
 			)
 				.catch(report);
 		});
-		item.append(identity, routeLabel, sourceLabel, remove);
+		item.append(identity, routeLabel, remove);
 		fragment.append(item);
 	}
 	elements.list.replaceChildren(fragment);

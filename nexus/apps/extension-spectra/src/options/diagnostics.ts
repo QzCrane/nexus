@@ -5,25 +5,35 @@ import {
 	downloadLocalDiagnosticBundle,
 	requestLocalDiagnosticBundle,
 } from '@nexus/kernel';
+import { onLangChange, t } from './i18n';
 
 export function initDiagnosticsSection(): void {
 	const button = document.getElementById('diagnostics-export-btn') as HTMLButtonElement | null;
 	const status = document.getElementById('diagnostics-status');
 	if (!button || !status) return;
 	let retired = false;
+	let statusKey: 'opt_diagnostics_collecting' | 'opt_diagnostics_exported' | 'opt_diagnostics_failed' | null = null;
+	const showStatus = (key: typeof statusKey): void => {
+		statusKey = key;
+		status.textContent = key ? t(key) : '';
+	};
+	onLangChange(() => {
+		if (!retired && statusKey) status.textContent = t(statusKey);
+	});
 	window.addEventListener('pagehide', () => { retired = true; }, { once: true });
 
 	button.addEventListener('click', () => {
 		if (retired || button.disabled) return;
 		button.disabled = true;
-		status.textContent = 'Collecting local diagnostic facts…';
+		showStatus('opt_diagnostics_collecting');
 		void requestLocalDiagnosticBundle().then((bundle) => {
 			if (retired || !button.isConnected) return;
 			downloadLocalDiagnosticBundle(bundle);
-			status.textContent = 'Diagnostic JSON exported locally. No data was sent.';
-		}).catch(() => {
+			showStatus('opt_diagnostics_exported');
+		}).catch((error) => {
 			if (retired || !button.isConnected) return;
-			status.textContent = 'Diagnostic export failed.';
+			console.error('[SPECTRA Options] Diagnostic export failed:', error);
+			showStatus('opt_diagnostics_failed');
 		}).finally(() => {
 			if (!retired && button.isConnected) button.disabled = false;
 		});

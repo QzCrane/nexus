@@ -13,11 +13,15 @@ import {
 } from '../src/background/handlers/capture';
 import {
 	forgetAudioSession,
+	flushAudioSessions,
 	getAudioSession,
 	removeAudioSession,
 	updateAudioSession,
 } from '../src/background/audio-session-store';
-import { getOffscreenLeaseCount } from '../src/background/offscreen-coordinator';
+import {
+	flushOffscreenCoordinatorLifecycle,
+	getOffscreenLeaseCount,
+} from '../src/background/offscreen-coordinator';
 import { mintCaptureAdmission } from '../src/background/capture-admission';
 import { captureStates } from '../src/background/state';
 
@@ -103,6 +107,7 @@ describe('capture restart reconciliation barrier', () => {
 				generation: 13,
 			}));
 		} finally {
+			await drainAudioSessionWork();
 			timers.clear();
 			restore('chrome', chromeDescriptor);
 			restore('setTimeout', setTimeoutDescriptor);
@@ -145,6 +150,7 @@ describe('capture restart reconciliation barrier', () => {
 				generation: 10,
 			}));
 		} finally {
+			await drainAudioSessionWork();
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
@@ -178,6 +184,7 @@ describe('capture restart reconciliation barrier', () => {
 		} finally {
 			process.off('unhandledRejection', rejectionListener);
 			cleanupCaptureState(52);
+			await drainAudioSessionWork();
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
@@ -224,6 +231,7 @@ describe('capture restart reconciliation barrier', () => {
 			expect(orphanStopCalls).toBe(3);
 			expect(getOffscreenLeaseCount()).toBe(0);
 		} finally {
+			await drainAudioSessionWork();
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
@@ -234,13 +242,17 @@ describe('capture restart reconciliation barrier', () => {
 		const timerHarness = installFastTimerHarness();
 		const listeners: RuntimeMessageListener[] = [];
 		const starts: Array<Record<string, unknown>> = [];
+		const streamIdOptions: Array<Record<string, unknown>> = [];
 
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
 			value: createChromeHarness({
 				queryTabs: [{ id: 72 }],
 				listeners,
-				getStreamId: (callback) => callback('stream-72'),
+				getStreamId: (callback, options) => {
+					streamIdOptions.push(structuredClone(options));
+					callback('stream-72');
+				},
 				sendOffscreen: async (message) => {
 					if (message.type === 'OFFSCREEN_HOST_HELLO') {
 						return { audioTabs: [], remoteTabs: [] };
@@ -295,8 +307,10 @@ describe('capture restart reconciliation barrier', () => {
 				audioConfigToProcessorConfig(DEFAULT_AUDIO_CONFIG),
 				audioConfigToProcessorConfig(DEFAULT_AUDIO_CONFIG),
 			]);
+			expect(streamIdOptions).toEqual([{ targetTabId: 72 }]);
 			expect(await teardownCaptureState(72)).toBe(true);
 		} finally {
+			await drainAudioSessionWork();
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
@@ -359,6 +373,7 @@ describe('capture restart reconciliation barrier', () => {
 		} finally {
 			cleanupCaptureState(76);
 			await forgetAudioSession(76);
+			await drainAudioSessionWork();
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
@@ -504,6 +519,7 @@ describe('capture restart reconciliation barrier', () => {
 		} finally {
 			cleanupCaptureState(73);
 			await forgetAudioSession(73);
+			await drainAudioSessionWork();
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
@@ -561,6 +577,7 @@ describe('capture restart reconciliation barrier', () => {
 		} finally {
 			cleanupCaptureState(74);
 			await forgetAudioSession(74);
+			await drainAudioSessionWork();
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
@@ -664,11 +681,12 @@ describe('capture restart reconciliation barrier', () => {
 
 			expect(getOffscreenLeaseCount()).toBe(0);
 			expect(unhandled).toHaveLength(0);
-		expect(await getAudioSession(75)).toBeNull();
+			expect(await getAudioSession(75)).toBeNull();
 			expect(runtimeMessages.some((m) => m.type === 'spectra.audio.session.changed')).toBe(false);
 		} finally {
 			cleanupCaptureState(75);
 			await forgetAudioSession(75);
+			await drainAudioSessionWork();
 			timerHarness.restore();
 			restore('chrome', chromeDescriptor);
 		}
@@ -700,6 +718,7 @@ describe('capture restart reconciliation barrier', () => {
 				error: { code: 'forbidden' },
 			});
 		} finally {
+			await drainAudioSessionWork();
 			restore('chrome', chromeDescriptor);
 		}
 	});
@@ -721,7 +740,10 @@ function createChromeHarness(options: {
 		message: Record<string, unknown>;
 		options?: { documentId?: string };
 	}>;
-	getStreamId?: (callback: (streamId?: string) => void) => void;
+	getStreamId?: (
+		callback: (streamId?: string) => void,
+		options: Record<string, unknown>,
+	) => void;
 }): unknown {
 	return {
 		offscreen: {
@@ -759,7 +781,7 @@ function createChromeHarness(options: {
 			getMediaStreamId: (
 				_options: Record<string, unknown>,
 				callback: (streamId?: string) => void,
-			) => options.getStreamId?.(callback),
+			) => options.getStreamId?.(callback, _options),
 		},
 		storage: {
 			session: {
@@ -917,6 +939,11 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 	let resolve!: (value: T) => void;
 	const promise = new Promise<T>((done) => { resolve = done; });
 	return { promise, resolve };
+}
+
+async function drainAudioSessionWork(): Promise<void> {
+	await flushAudioSessions();
+	await flushOffscreenCoordinatorLifecycle();
 }
 
 function restore(

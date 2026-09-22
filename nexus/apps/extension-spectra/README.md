@@ -58,10 +58,6 @@ The private NEXUS workspace maintains the normative control, runtime, protocol, 
 
 SPECTRA has no advertising, analytics, telemetry, or developer-operated collection service. Settings and media processing remain local by default. The optional remote feature creates disclosed third-party network connections and sends a limited control projection only after authentication. See [PRIVACY.md](PRIVACY.md).
 
-## Chrome Web Store
-
-Add the canonical product listing URL after publication. The Chrome Web Store homepage is not a product install link and is intentionally not used here.
-
 ## Contribution boundary
 
 Change a capability through its contract, implementation, tests, owner documentation, and release evidence in one closure. Public pull requests should keep the application and shared package boundaries intact and avoid committing generated build or release artifacts.

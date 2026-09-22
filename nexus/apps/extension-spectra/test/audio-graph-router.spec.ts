@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import {
 	audioConfigToProcessorConfig,
 	DEFAULT_AUDIO_CONFIG,
@@ -7,10 +6,7 @@ import {
 	resolveDesiredAudioMode,
 } from '@nexus/contracts';
 import {
-	AUDIO_GRAPH_CROSSFADE_MS,
 	AudioGraphRouter,
-	AudioParams,
-	CompressorOn,
 	DEFAULT_AUDIO_GRAPH_CONFIG,
 	audioGraphSignature,
 } from '@nexus/audio-engine';
@@ -38,27 +34,13 @@ describe('shared sparse audio graph router', () => {
 		expect(isAudioProcessorConfig(processor)).toBe(true);
 		expect(isAudioProcessorConfig({ ...processor, boostGain: 0 })).toBe(false);
 		expect(isAudioProcessorConfig({ ...processor, muted: true })).toBe(false);
+		expect(isAudioProcessorConfig({ ...processor, volume: 100 })).toBe(false);
+		expect(isAudioProcessorConfig({ ...processor, speed: 1 })).toBe(false);
+		expect(isAudioProcessorConfig({ ...processor, eqValues: [0] })).toBe(false);
 	});
 
 	test('uses the contracts default as the kernel default owner', () => {
 		expect(KERNEL_DEFAULT_AUDIO_CONFIG).toBe(DEFAULT_AUDIO_CONFIG);
-	});
-
-	test('keeps canonical DSP parameters mirrored in the architecture owner', () => {
-		const architecture = readFileSync(
-			new URL('../docs/control/05-control-state.md', import.meta.url),
-			'utf8',
-		);
-		expect(architecture).toContain(
-			`peaking filters at \`${AudioParams.EQ_FREQUENCIES.join('/')}Hz\`, \`Q=${AudioParams.EQ_Q}\``,
-		);
-		expect(architecture).toContain(
-			`\`${AudioParams.BASS_FREQUENCY}Hz\`, \`+${AudioParams.BASS_GAIN}dB\``,
-		);
-		expect(architecture).toContain(
-			`threshold \`${CompressorOn.threshold}dB\`, knee \`${CompressorOn.knee}dB\`, ratio \`${CompressorOn.ratio}:1\`, attack \`${CompressorOn.attack}s\`, release \`${CompressorOn.release}s\``,
-		);
-		expect(architecture).toContain(`\`${AUDIO_GRAPH_CROSSFADE_MS}ms\` complementary linear crossfade`);
 	});
 
 	test('keeps a neutral graph sparse and connects each source only once', async () => {

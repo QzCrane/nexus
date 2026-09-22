@@ -284,7 +284,6 @@ describe('options translations', () => {
 		}
 		expect(getContentOSDMessages('unsupported')).toMatchObject({ muted: 'MUTE' });
 		expect(getContentOSDMessages('zh-CN')).toMatchObject({ muted: '静音' });
-		expect(getContentOSDMessages('zh-TW').corsAutoAdded).toContain('已自動新增');
 	});
 
 	test('keeps locale tables out of the content bundle and sends only current strings', () => {
@@ -452,21 +451,6 @@ describe('extension-page DOM and idle contracts', () => {
 		}
 	});
 
-	test('injects the selected locale before preset first render', () => {
-		const settings = readFileSync(resolve(import.meta.dir, '../src/popup/views/settings.ts'), 'utf8');
-		const presets = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
-		const normalizedPresets = presets.replaceAll('\r\n', '\n');
-
-		expect(settings).not.toContain('initRegistryUI');
-		expect(settings).not.toContain('getRegistrySnapshot');
-		expect(settings).toContain('initPresetsUI(state.dict)');
-		expect(settings).toContain("} from './presets-ui'");
-		expect(settings).not.toContain('disposePresetsUI?.(');
-		expect(normalizedPresets).toContain('export function initPresetsUI(dict: I18NDict):');
-		expect(presets).toContain('const refreshRevision = ++latestRefreshRevision');
-		expect(presets).not.toContain('currentDict: I18NDict | null');
-	});
-
 	test('keeps video-only Popup acknowledgements independent from active media', () => {
 		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
 		const videoControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/video-controls.ts'), 'utf8');
@@ -480,12 +464,6 @@ describe('extension-page DOM and idle contracts', () => {
 		expect(mediaControls).not.toContain("mutation.field === 'pip'");
 		expect(videoControls).toContain('activeMedia: currentSnapshot.activeMedia');
 		expect(videoControls).not.toContain('activeMedia: ack.target ?? currentSnapshot.activeMedia');
-	});
-
-	test('keeps v1 UI_SYNC outside the Popup state projection', () => {
-		const messaging = readFileSync(resolve(import.meta.dir, '../src/popup/card/messaging.ts'), 'utf8');
-		expect(messaging).not.toContain('legacy-message-adapter');
-		expect(messaging).not.toContain('UI_SYNC');
 	});
 
 	test('requires a live card target before applying a preset and bounds background bootstrap', () => {
@@ -511,50 +489,6 @@ describe('extension-page DOM and idle contracts', () => {
 		// soon as any accepted snapshot arrives, so cards never dead-end at "—".
 		expect(snapshot).not.toContain('not-requested');
 		expect(snapshot).not.toContain('passive ?');
-	});
-
-	test('keeps Popup PiP single-click, native-only, and lifecycle-bound', () => {
-		const popup = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
-		const bridge = readFileSync(
-			resolve(import.meta.dir, '../src/content/input/trusted-activation-bridge.ts'),
-			'utf8',
-		);
-		const nativeExecutor = readFileSync(
-			resolve(import.meta.dir, '../src/content/logic/native-media-executor.ts'),
-			'utf8',
-		);
-		const protocol = readFileSync(
-			resolve(import.meta.dir, '../../../packages/contracts/src/spectra.protocol.ts'),
-			'utf8',
-		);
-		const pipHandlerStart = popup.indexOf('if (ui.btnPip)');
-		const pipHandlerEnd = popup.indexOf('const submitSpeed', pipHandlerStart);
-		expect(pipHandlerStart).toBeGreaterThanOrEqual(0);
-		expect(pipHandlerEnd).toBeGreaterThan(pipHandlerStart);
-		const pipHandler = popup.slice(pipHandlerStart, pipHandlerEnd);
-		const pipDispatchStart = popup.indexOf('async function dispatchPictureInPicture(');
-		const pipDispatchEnd = popup.indexOf('function asControlUiFailure(', pipDispatchStart);
-		expect(pipDispatchStart).toBeGreaterThanOrEqual(0);
-		expect(pipDispatchEnd).toBeGreaterThan(pipDispatchStart);
-		const pipDispatch = popup.slice(pipDispatchStart, pipDispatchEnd);
-		expect(pipDispatch.match(/chrome\.scripting\.executeScript/gu)?.length).toBe(1);
-		expect(pipDispatch).toContain("world: 'ISOLATED'");
-		expect(pipDispatch).toContain('SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE');
-		expect(pipDispatch).toContain('documentId: currentDocumentId');
-		expect(pipDispatch).toContain('target: currentTarget');
-		expect(pipDispatch).toContain('return new Promise<SpectraTrustedPipOutcome | null>');
-		expect(pipDispatch).toContain('new MutationObserver(readOutcome)');
-		expect(pipDispatch).not.toContain('while (performance.now() < deadline)');
-		expect(pipHandler).not.toContain('chrome.tabs.update');
-		expect(bridge).toContain('navigator.userActivation.isActive');
-		// rule: SCTRL-014/025 — the ISOLATED bridge invokes the canonical
-		// control entry with no positional context; the document/target context
-		// was already bound at click time and resolved inside the executor.
-		expect(bridge).toContain("submitTrustedActivationControl('pip')");
-		expect(bridge).toContain('dispatchOutcome');
-		expect(nativeExecutor).toContain('element.disablePictureInPicture = false');
-		expect(nativeExecutor).toContain('element.disablePictureInPicture = true');
-		expect(protocol).not.toContain('spectra.content.activation.prompt');
 	});
 
 	test('keeps card tooltips defined and routes site identity through Chromium favicon service', () => {

@@ -173,6 +173,16 @@ index failure never silently becomes an archive-mode pass. The scanner and
 reference checker are included in the receipt's tool hashes. This changes no
 platform lane, pinned image or required release attempt.
 
+Before staging, the local reference gate checks the current working tree:
+Git's cached and non-ignored untracked paths participate, and Git-reported
+working-tree deletions do not. This lets removal of a duplicate document pass
+without restoring it, while newly authored files already fail on stale pins.
+Git owns ignore/deletion semantics; the scanner retains its shared source
+predicate, symlink rejection and missing-file race checks. Release receipt
+creation still independently requires a clean exact commit tree. The real-Git
+regression in `scripts/toolchain-references.spec.ts` covers deletion, ignored
+files, untracked source and identical inventory after staging.
+
 
 ## Platform-complete runtime checks
 

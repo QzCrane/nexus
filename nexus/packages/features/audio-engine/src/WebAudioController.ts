@@ -20,6 +20,7 @@ export type MediaSourceEligibilityReason =
 	| 'origin-owned-blob'
 	| 'explicit-preload-cors'
 	| 'resource-unselected'
+	| 'source-object-unproven'
 	| 'cross-origin-unproven'
 	| 'invalid-resource-url';
 
@@ -67,6 +68,11 @@ export function assessMediaSourceEligibility(
 	evidence?: MediaSourceEligibilityEvidence,
 ): MediaSourceEligibility {
 	const raw = resourceUrl(element);
+	// srcObject owns playback even when an old src URL remains on the element.
+	// URL/CORS evidence cannot prove the object-backed source safe to bind.
+	if (element.srcObject != null) {
+		return { eligible: false, reason: 'source-object-unproven', resourceUrl: raw };
+	}
 	if (!raw) return { eligible: false, reason: 'resource-unselected', resourceUrl: raw };
 	if (evidence?.resourceUrl === raw) {
 		return { eligible: true, reason: 'explicit-preload-cors', resourceUrl: raw };

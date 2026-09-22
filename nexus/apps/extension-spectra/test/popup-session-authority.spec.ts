@@ -1,6 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
 import { DEFAULT_AUDIO_CONFIG } from '@nexus/contracts';
 import { applyControlSnapshot, setupCardMessaging } from '../src/popup/card/messaging';
 import { initialControlConfig, type CardInternalState } from '../src/popup/card/types';
@@ -36,10 +34,6 @@ describe('Popup audio-session authority', () => {
 		expect(config.volumeBase).toBe(35);
 		expect(config.boost).toBe(1);
 		expect(config.volume).toBe(35);
-
-		const initSource = readFileSync(resolve(import.meta.dir, '../src/popup/card/init.ts'), 'utf8');
-		expect(initSource).not.toContain('.actualConfig');
-		expect(initSource).not.toContain('status?.config');
 	});
 
 	test('ignores capture predictions and updates mode only from AudioSessionSnapshot', () => {
@@ -402,7 +396,6 @@ function createState(): CardInternalState {
 		audioGeneration: 5,
 		audioConfigRevision: 0,
 		lastError: null,
-		isDragging: false,
 		draggingField: null,
 	};
 }

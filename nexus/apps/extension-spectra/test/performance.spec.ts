@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
 import { join, resolve } from 'node:path';
 import type { Browser } from 'puppeteer';
+import { build } from 'esbuild';
 import {
 	runtimePerformanceIdentityFromEnvironment,
 	writeRuntimePerformanceEvidence,
@@ -19,6 +20,82 @@ const EXPECTED_CHROME_VERSION = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim(
 if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
+
+test('renders continuous audio through repeated neutral and boosted gain updates', async () => {
+	const bundle = await build({
+		entryPoints: [resolve(import.meta.dir, '../../../packages/features/audio-engine/src/AudioGraphRouter.ts')],
+		bundle: true, write: false, platform: 'browser', format: 'iife', globalName: 'AudioGraph',
+	});
+	const code = bundle.outputFiles?.[0]?.text;
+	if (!code) throw new Error('Production audio graph bundle is missing');
+	const profilePath = await mkdtemp(join(tmpdir(), 'spectra-audio-continuity-'));
+	let browser: Browser | null = null;
+	try {
+		browser = await launchPuppeteerBrowser({
+			...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
+			headless: true, userDataDir: profilePath,
+		}, {
+			owner: 'apps/extension-spectra/test/performance.spec.ts',
+			profile: { kind: 'temporary', prefix: 'spectra-audio-continuity-', isolated: true },
+		});
+		const page = await browser.newPage();
+		await page.addScriptTag({ content: code });
+		const result = await page.evaluate(async () => {
+			const { AudioGraphRouter, DEFAULT_AUDIO_GRAPH_CONFIG } = (window as Window & {
+				AudioGraph: typeof import('../../../packages/features/audio-engine/src/AudioGraphRouter');
+			}).AudioGraph;
+			const context = new OfflineAudioContext(1, 24_000, 48_000);
+			// OfflineAudioContext supplies the real WebAudio node factories and clock;
+			// only the controller-specific realtime resume/close API is absent.
+			const router = new AudioGraphRouter(context as unknown as AudioContext);
+			const oscillator = context.createOscillator();
+			oscillator.frequency.value = 1_000;
+			const input = context.createGain();
+			input.gain.value = 0.1;
+			oscillator.connect(input);
+			router.connectSource(input);
+			await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, eqValues: [...DEFAULT_AUDIO_GRAPH_CONFIG.eqValues] });
+			oscillator.start();
+			const pauses = [0.1, 0.2, 0.3].map((time) => context.suspend(time));
+			const rendering = context.startRendering();
+			const sources: number[] = [];
+			const signatures: string[] = [];
+			for (const [index, boostGain] of [1.1, 1, 1.1].entries()) {
+				await pauses[index];
+				const snapshot = await router.apply({
+					...DEFAULT_AUDIO_GRAPH_CONFIG, boostGain,
+					eqValues: [...DEFAULT_AUDIO_GRAPH_CONFIG.eqValues],
+				});
+				sources.push(snapshot.sourceCount);
+				signatures.push(snapshot.graphSignature);
+				await context.resume();
+			}
+			const samples = (await rendering).getChannelData(0);
+			const rms = (start: number, length: number) => {
+				let energy = 0;
+				for (let index = start; index < start + length; index++) energy += (samples[index] ?? 0) ** 2;
+				return Math.sqrt(energy / length);
+			};
+			let minimumQuantumRms = Number.POSITIVE_INFINITY;
+			let maximumAmplitude = 0;
+			for (let offset = 0; offset + 128 <= samples.length; offset += 128) {
+				minimumQuantumRms = Math.min(minimumQuantumRms, rms(offset, 128));
+			}
+			for (const value of samples) maximumAmplitude = Math.max(maximumAmplitude, Math.abs(value));
+			return { minimumQuantumRms, maximumAmplitude, finalRms: rms(19_200, 4_800), sources, signatures };
+		});
+		// Independent signal oracle: a 0.1-amplitude sine is 0.1/sqrt(2) RMS;
+		// gain 1.1 must finish at 0.11/sqrt(2), with no silent quantum or doubling.
+		expect(result.minimumQuantumRms).toBeGreaterThan(0.06);
+		expect(result.maximumAmplitude).toBeLessThanOrEqual(0.111);
+		expect(result.finalRms).toBeCloseTo(0.11 / Math.sqrt(2), 4);
+		expect(result.sources).toEqual([1, 1, 1]);
+		expect(new Set(result.signatures).size).toBe(1);
+	} finally {
+		await browser?.close();
+		await rm(profilePath, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
+	}
+}, 20_000);
 
 async function extensionId(browser: Browser): Promise<string> {
 	try {

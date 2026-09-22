@@ -9,9 +9,9 @@
 //
 // Forbidden operations (any match blocks the command):
 //   - rm / mv / cp targeting docs/_archive/, AGENTS.md,
-//     control-architecture.md, control/NN-*.md, principles/NN-*.md
+//     control/NN*.md, principles/NN-*.md
 //   - redirection (>, >>) into any of the above
-//   - sed -i on AGENTS.md / control-architecture.md
+//   - sed -i on AGENTS.md / canonical control owners
 //   - git checkout / restore / reset that would clobber safety files
 //   - bulk chmod / chown / rm -rf on the workspace root
 //
@@ -24,7 +24,7 @@ import {
 } from './_hook-helpers.ts';
 
 const PROTECTED_BASENAME =
-	'(?:docs\\/_archive|AGENTS\\.md|control-architecture\\.md|control\\/\\d{2}-[a-z-]+\\.md|principles\\/0[1-5]-[a-z-]+\\.md)';
+	'(?:docs\\/_archive|AGENTS\\.md|control\\/\\d{2}[a-z]?-[a-z-]+\\.md|principles\\/0[1-5]-[a-z-]+\\.md)';
 
 const FORBIDDEN_PATTERNS = [
 	{
@@ -50,7 +50,7 @@ const FORBIDDEN_PATTERNS = [
 	},
 	{
 		// sed -i in-place edit on protected files
-		pattern: /\bsed\s+-i[^\s]*\s+[^|;&]*\b(?:AGENTS\.md|control-architecture\.md)\b/i,
+		pattern: /\bsed\s+-i[^\s]*\s+[^|;&]*\b(?:AGENTS\.md|control\/\d{2}[a-z]?-[a-z-]+\.md)\b/i,
 		reason:
 			'sed -i on AGENTS.md is forbidden because it is a ' +
 			'human-owned rule file that must be edited inline.',

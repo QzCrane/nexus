@@ -1,10 +1,9 @@
 // goal: transient visual feedback (On-Screen Display) for adjustments
 
 import { UI_COLORS } from '../../shared/ui-colors';
-import {
-	crossesAudioVolumeRoutingBoundary,
-	type AudioVolumeState,
-	type SpectraHotkeyActualFeedback,
+import type {
+	AudioVolumeState,
+	SpectraHotkeyActualFeedback,
 } from '@nexus/contracts';
 import type { ContentGlobalSettings } from '../core/settings-manager';
 import { activateFeedbackSurface, createFeedbackSurface } from './feedback-surface';
@@ -17,7 +16,7 @@ import {
 	type ScalarFeedbackKind,
 } from './scalar-feedback';
 
-type OSDPayload =
+export type OSDPayload =
 	| { type: 'volume'; value: number; volumeState: AudioVolumeState }
 	| { type: 'speed'; value: number };
 type VolumeOSDPayload = Extract<OSDPayload, { type: 'volume' }>;
@@ -30,7 +29,11 @@ interface HotkeyOSDTransaction {
 	alternate: boolean;
 	target: OSDPayload;
 	volumeState: AudioVolumeState;
-	pendingBoundary: boolean;
+	settlement: {
+		actual: OSDPayload;
+		settings: ContentGlobalSettings;
+		options: OSDOptions;
+	} | null;
 }
 
 interface OSDState {
@@ -68,15 +71,6 @@ export interface OSDOptions {
 
 const OSD_HIDE_DELAY_MS = 2_000;
 
-export function resolveHotkeyVolumeTarget(
-	previous: VolumeOSDPayload,
-	target: VolumeOSDPayload,
-): VolumeOSDPayload {
-	return crossesAudioVolumeRoutingBoundary(previous.value, target.value)
-		? previous
-		: target;
-}
-
 export function resolveHotkeyVolumeBaseline(
 	visible: VolumeOSDPayload | null,
 	baseline: VolumeOSDPayload | null,
@@ -85,6 +79,19 @@ export function resolveHotkeyVolumeBaseline(
 	return priorPhase !== undefined && priorPhase !== 'settled'
 		? visible ?? baseline
 		: baseline ?? visible;
+}
+
+// A released gesture keeps its optimistic target only when no exact actual was
+// observed. Gesture identity is part of the reducer so a late prior ACK cannot
+// become the terminal presentation of a newer shortcut.
+export function resolveHotkeyReleasePresentation(
+	releaseGesture: string,
+	ownerGesture: string,
+	target: OSDPayload,
+	settlement: OSDPayload | null,
+): OSDPayload | null {
+	if (releaseGesture !== ownerGesture) return null;
+	return settlement ?? target;
 }
 
 // The OSD is the only owner of the transient shortcut target. Input listeners
@@ -136,7 +143,7 @@ export function advanceHotkeyTargetOSD(
 			volumeState: previous !== null && previous.value > 0
 				? previous.volumeState
 				: predictedState,
-			pendingBoundary: false,
+			settlement: null,
 		};
 	state.hotkey = hotkey;
 	if (hotkey.phase !== 'active' || hotkey.alternate) return;
@@ -151,15 +158,7 @@ export function advanceHotkeyTargetOSD(
 		volumeState: value <= 0 ? 'silent' : hotkey.volumeState,
 	};
 	hotkey.target = target;
-	hotkey.pendingBoundary = previous !== null
-		&& crossesAudioVolumeRoutingBoundary(previous.value, target.value);
-	const projection = resolveHotkeyVolumeTarget(previous ?? target, target);
-	renderOSD(
-		projection,
-		s,
-		{},
-		!crossesAudioVolumeRoutingBoundary(projection.value, target.value),
-	);
+	renderOSD(target, s, {});
 }
 
 // A non-predictive actual-OSD action (mute/reset/set) still claims the current
@@ -204,15 +203,6 @@ function feedbackPayload(feedback: SpectraHotkeyActualFeedback): OSDPayload {
 	return feedback.kind === 'volume'
 		? { type: 'volume', value: feedback.value, volumeState: feedback.volumeState }
 		: { type: 'speed', value: feedback.value };
-}
-
-function pendingVolumeBoundary(
-	hotkey: HotkeyOSDTransaction,
-	presentation: OSDPayload | null,
-): presentation is VolumeOSDPayload {
-	return hotkey.target.type === 'volume'
-		&& presentation?.type === 'volume'
-		&& crossesAudioVolumeRoutingBoundary(presentation.value, hotkey.target.value);
 }
 
 function updateAcknowledgedVolumeState(
@@ -264,7 +254,7 @@ export function showHotkeyActualOSD(
 			alternate,
 			target: actual,
 			volumeState: actual.type === 'volume' ? actual.volumeState : 'native',
-			pendingBoundary: false,
+			settlement: null,
 		};
 		state.hotkey = hotkey;
 		state.claimedGesture = gesture;
@@ -278,15 +268,11 @@ export function showHotkeyActualOSD(
 			&& hotkey.target.value === actual.value
 			&& (hotkey.target.type !== 'volume'
 				|| actual.type === 'volume' && hotkey.target.volumeState === actual.volumeState);
-		if (targetMatches && !hotkey.pendingBoundary) return;
-		// A tap can release before the processor transition ACK returns. The
-		// boundary prediction intentionally keeps the old value/tone together.
-		// Runtime replacement can also replay the press after hydration already
-		// contains the ACK, making that prediction one step too far. Correct either
-		// case to the authoritative pair without executing another action.
+		if (targetMatches) return;
+		// Reconcile the finished gesture with its actual result without executing
+		// another action. An active newer gesture is fenced above.
 		if (actual.type === 'volume') updateAcknowledgedVolumeState(hotkey, actual);
 		hotkey.target = actual;
-		hotkey.pendingBoundary = false;
 		renderOSD(actual, s, options, false, true);
 		return;
 	}
@@ -303,49 +289,23 @@ export function showHotkeyActualOSD(
 		);
 		return;
 	}
+	// The final ACK can arrive before keyup retires unsent repeats. Retain it
+	// throughout the gesture so release does not wait for a nonexistent later ACK.
+	// Prediction remains visible until release; only the latest actual is kept.
+	hotkey.settlement = { actual, settings: s, options };
 	if (hotkey.phase === 'frozen') {
 		if (actual.type === 'volume') updateAcknowledgedVolumeState(hotkey, actual);
-		// Keyup owns the frozen visual frame. A late ACK may refresh the
-		// internal volume truth, but it must not repaint the released target or
-		// restart its interpolation window.
 		return;
 	}
-	if (state.presentation?.type !== feedback.kind) {
-		if (feedback.kind !== 'volume'
-			|| hotkey.target.type !== 'volume'
-			|| !hotkey.pendingBoundary) return;
-		// Processor settlement may legitimately outlive the first display window.
-		// The exact ACK still owns one final complete value/tone presentation.
-		updateAcknowledgedVolumeState(hotkey, actual as VolumeOSDPayload);
-		const target = {
-			...hotkey.target,
-			volumeState: hotkey.target.value <= 0 ? 'silent' : hotkey.volumeState,
-		} satisfies VolumeOSDPayload;
-		hotkey.target = target;
-		hotkey.pendingBoundary = false;
-		renderOSD(target, s, options, false, true);
-		return;
-	}
+	if (state.presentation?.type !== feedback.kind) return;
 	if (feedback.kind !== 'volume' || hotkey.target.type !== 'volume') return;
-	if ((feedback.value > 100) !== (hotkey.target.value > 100)) return;
 	updateAcknowledgedVolumeState(hotkey, actual as VolumeOSDPayload);
 	const target = {
 		...hotkey.target,
 		volumeState: hotkey.target.value <= 0 ? 'silent' : hotkey.volumeState,
 	} satisfies VolumeOSDPayload;
 	hotkey.target = target;
-	if (pendingVolumeBoundary(hotkey, state.presentation)) {
-		hotkey.pendingBoundary = false;
-		renderOSD(
-			hotkey.phase === 'active' ? target : actual,
-			s,
-			options,
-			false,
-			hotkey.phase === 'active',
-		);
-		return;
-	}
-	// Same-region ACKs correct only the acknowledged tone. They must not rewind
+	// ACKs correct only the acknowledged tone. They must not rewind
 	// the transient target, cancel its fill interpolation, or restart its timer.
 	state.presentation = target;
 	if (state.root) paintOSDColor(state.root, target);
@@ -473,8 +433,8 @@ function concealOSD(): void {
 
 // Keyup terminates motion but not readability. Preserve the exact final
 // number/width/tone frame synchronously, then give it a fresh display window.
-// The gesture identity remains until the in-flight ACK settles so late actual
-// feedback cannot repaint or restart the released surface.
+// The gesture identity remains until the in-flight ACK settles. Settlement may
+// correct the final value once, without restarting animation or display time.
 export function freezeHotkeyTargetOSD(gesture: string): void {
 	if (state.disposed || state.hotkey?.gesture !== gesture) return;
 	if (state.hotkey.phase === 'active') state.hotkey.phase = 'frozen';
@@ -490,7 +450,26 @@ export function releaseHotkeyTargetOSD(gesture: string): void {
 		state.hotkey = null;
 		return;
 	}
-	state.hotkey.phase = 'settled';
+	const hotkey = state.hotkey;
+	hotkey.phase = 'settled';
+	const settlement = hotkey.settlement;
+	if (!settlement) return;
+	const presentation = resolveHotkeyReleasePresentation(
+		gesture,
+		hotkey.gesture,
+		hotkey.target,
+		settlement.actual,
+	);
+	if (!presentation) return;
+	hotkey.settlement = null;
+	hotkey.target = presentation;
+	renderOSD(
+		presentation,
+		settlement.settings,
+		settlement.options,
+		false,
+		false,
+	);
 }
 
 // eff: core OSD rendering logic, handles both volume and speed display modes

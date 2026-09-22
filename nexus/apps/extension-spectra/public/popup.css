@@ -201,13 +201,18 @@ body {
 }
 
 .registry-item-source {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text);
-  margin-left: 8px;
-  padding: 2px 6px;
+  width: fit-content;
+  padding: 1px 5px;
+  border-radius: 999px;
+  color: var(--g3);
   background: var(--w);
-  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.registry-item-source-user {
+  color: var(--primary);
 }
 
 .registry-item-delete {
@@ -558,6 +563,20 @@ body {
   font-size: 11px;
   color: var(--g2);
   margin-top: 2px;
+}
+
+.control-sync-status {
+  margin: 0 0 8px;
+  color: var(--g3);
+  font-size: 12px;
+}
+
+.btn-text.btn-effects {
+  font-size: 12px;
+  white-space: nowrap;
+  width: auto;
+  padding: 0 8px;
+  flex-shrink: 0;
 }
 
 .top-right {
@@ -1034,6 +1053,7 @@ input:checked + .slider-round:before {
 /* ========== Side Panel ========== */
 .side-panel {
   position: fixed;
+  box-sizing: border-box;
   top: 0;
   bottom: 0; /* fill popup height, don't overflow */
   right: 390px; /* right edge aligned with main UI left edge */
@@ -1775,14 +1795,24 @@ input:checked + .slider-round:before {
   color: var(--text);
 }
 
-.preset-preview-content pre {
+.preset-preview-content dl {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px 16px;
   background: var(--g0);
   padding: 12px;
   border-radius: 6px;
-  font-size: 11px;
-  overflow-x: auto;
-  margin-bottom: 16px;
+  font-size: 13px;
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
   color: var(--g3);
+}
+
+.preset-preview-content dd {
+  margin: 0;
+  color: var(--text);
+  text-align: end;
+  font-variant-numeric: tabular-nums;
 }
 
 .preset-preview-content button {
@@ -1794,6 +1824,12 @@ input:checked + .slider-round:before {
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
+}
+
+.preset-preview-content .presets-actions button {
+  flex: 1;
+  min-width: 0;
+  width: auto;
 }
 
 .preset-toast {
@@ -1885,7 +1921,31 @@ input:checked + .slider-round:before {
   color: #fff;
 }
 
+.preset-preview-content .btn-small {
+  background: var(--g1);
+  color: var(--text);
+}
+
+.preset-preview-content .btn-small-danger {
+  background: var(--danger);
+  color: #111;
+}
+
+.preset-preview-content button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 /* ========== Remote control modal ========== */
+body:has(> .remote-modal) {
+  min-height: 520px;
+}
+
+.remote-disconnect-btn:disabled {
+  cursor: progress;
+  opacity: 0.65;
+}
+
 .remote-modal {
   position: fixed;
   top: 0;

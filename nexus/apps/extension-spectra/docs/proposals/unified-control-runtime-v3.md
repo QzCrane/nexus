@@ -8,6 +8,10 @@ last_reviewed: 2026-08-28
 
 # SPECTRA Unified Control Runtime V3 proposal
 
+> Historical scope: local-status, dirty-tree, count, size, and authorization
+> statements are frozen to the 2026-08 repair candidate. Current behavior and
+> release status come only from the normative owners and exact-candidate gates.
+
 ## 0. Decision, status, and evidence boundary
 
 This proposal defines the migration architecture for every confirmed finding in

@@ -39,6 +39,7 @@ describe('automatic site route cache', () => {
 		expect(await cache.resolve('PENDING')).toBe('PENDING');
 		expect(await cache.resolve('SAFE')).toBe('SAFE');
 		expect(await cache.resolve('SAFE')).toBe('SAFE');
+		expect(cache.getUserRoute()).toBe('auto');
 		expect(cachePort.mark).toHaveBeenCalledTimes(1);
 		expect(cachePort.mark).toHaveBeenCalledWith('direct', {});
 		expect(await cache.resolve('PENDING')).toBe('PENDING');
@@ -48,6 +49,7 @@ describe('automatic site route cache', () => {
 		const automaticPort = port(decision('capture'));
 		const automatic = createSiteEligibilityCache('capture', automaticPort);
 		expect(await automatic.resolve('SAFE')).toBe('SAFE');
+		expect(automatic.getUserRoute()).toBe('auto');
 		expect(automaticPort.mark).toHaveBeenCalledWith(
 			'direct',
 			{},
@@ -56,6 +58,7 @@ describe('automatic site route cache', () => {
 		const userPort = port(decision('capture', 'user'));
 		const user = createSiteEligibilityCache('capture', userPort);
 		expect(await user.resolve('SAFE')).toBe('RESTRICTED');
+		expect(user.getUserRoute()).toBe('capture');
 		await user.recordActual('webaudio', 'active');
 		expect(userPort.mark).not.toHaveBeenCalled();
 	});
@@ -80,11 +83,13 @@ describe('automatic site route cache', () => {
 		const cachePort = port(decision('direct', 'user'));
 		const cache = createSiteEligibilityCache('direct', cachePort);
 		expect(await cache.resolve('PENDING')).toBe('SAFE');
+		expect(cache.getUserRoute()).toBe('direct');
 		cachePort.mark.mockImplementationOnce(async () => {
 			throw new Error('not used');
 		});
 		cachePort.get.mockResolvedValueOnce(decision('capture', 'user'));
 		expect(await cache.refresh()).toBe('capture');
+		expect(cache.getUserRoute()).toBe('capture');
 		expect(await cache.resolve('SAFE')).toBe('RESTRICTED');
 	});
 });

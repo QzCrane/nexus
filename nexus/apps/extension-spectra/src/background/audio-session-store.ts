@@ -28,6 +28,10 @@ const STORAGE_WRITE_DEBOUNCE_MS = 250;
 const MAX_WRITE_RETRIES = 5;
 const snapshots = new Map<number, AudioSessionSnapshot>();
 const serialized = createKeyedSerializedQueue<number>();
+// Runtime messages and badge rendering are presentation work. They preserve
+// per-tab order, but never occupy the durable session authority queue: a slow
+// optional receiver must not delay the next physical/session ACK.
+const projectionSerialized = createKeyedSerializedQueue<number>();
 interface AudioDocumentFence {
 	epoch: number;
 	currentDocumentId: string | null;
@@ -356,7 +360,32 @@ async function broadcast(snapshot: AudioSessionSnapshot): Promise<void> {
 		generation: snapshot.generation,
 		payload: snapshot,
 	};
-	await chrome.runtime.sendMessage(event).catch(() => undefined);
+	await chrome.runtime.sendMessage(event).catch((error: unknown) => {
+		// Extension pages are optional receivers; retain the diagnostic without
+		// turning their absence or failure into an audio-session failure.
+		/* @__PURE__ */ swLog.debug('[AudioSession] Runtime projection was not delivered', error);
+	});
+}
+
+// Audio-session durability and its UI/runtime projections have different ACK
+// boundaries. The projection queue preserves presentation order without letting
+// slow receivers block this or the next durable session commit.
+export function scheduleAudioSessionProjection(
+	tabId: number,
+	projection: () => Promise<void>,
+): void {
+	void projectionSerialized(tabId, projection).catch((error: unknown) => {
+		swLog.warn(`[AudioSession] Projection failed for tab ${tabId}`, error);
+	});
+}
+
+function scheduleBroadcast(snapshot: AudioSessionSnapshot): void {
+	scheduleAudioSessionProjection(snapshot.tabId, async () => {
+		// A newer queued update supersedes an event that has not started yet.
+		if (snapshots.get(snapshot.tabId) !== snapshot
+			|| !isCurrentAudioSnapshot(snapshot.tabId, snapshot)) return;
+		await broadcast(snapshot);
+	});
 }
 
 export async function updateAudioSession(
@@ -435,13 +464,10 @@ export async function updateAudioSession(
 			await discardFencedAudioSnapshot(identity.tabId, snapshot);
 			throw error;
 		}
-		await broadcast(snapshot);
-		try {
-			assertAudioSessionFence(identity, expectedEpoch);
-		} catch (error) {
-			await discardFencedAudioSnapshot(identity.tabId, snapshot);
-			throw error;
-		}
+		// The exact durable snapshot above is the public ACK and worker-restart
+		// authority. Runtime delivery is an identity-fenced projection and cannot
+		// add readback fidelity to that commit, so it must not delay the caller.
+		scheduleBroadcast(snapshot);
 		return snapshot;
 	});
 }
@@ -528,9 +554,18 @@ export const audioSessionTestApi = {
 export async function flushAudioSessions(tabId?: number): Promise<void> {
 	if (tabId !== undefined) {
 		await serialized(tabId, () => flushAudioSessionInternal(tabId));
+		// The authority barrier above guarantees every earlier update has scheduled
+		// its presentation. This second owner-specific barrier then settles those
+		// projections without putting them back on the authority path.
+		await projectionSerialized(tabId, async () => undefined);
 		return;
 	}
 	await Promise.all([...pendingWrites.keys()].map((pendingTabId) => (
 		serialized(pendingTabId, () => flushAudioSessionInternal(pendingTabId))
 	)));
+	// First settle all authority operations: each one schedules its projection
+	// before completing. Then settle projection-only work, which intentionally has
+	// no pending storage entry.
+	await serialized.drain();
+	await projectionSerialized.drain();
 }

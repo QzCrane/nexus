@@ -8,6 +8,16 @@ export type ControlSnapshotAdmission =
 	| 'tab-conflict'
 	| 'identity-conflict';
 
+export function isControlClockStale(
+	currentGeneration: number,
+	currentRevision: number,
+	incomingGeneration: number,
+	incomingRevision: number,
+): boolean {
+	return incomingGeneration < currentGeneration
+		|| incomingGeneration === currentGeneration && incomingRevision < currentRevision;
+}
+
 // Control generation is a tab-scoped lifecycle clock. A different document or
 // origin may replace the current identity only on a strictly newer generation;
 // revision is monotonic inside one generation. Keeping this rule in one pure
@@ -19,7 +29,12 @@ export function classifyControlSnapshot(
 ): ControlSnapshotAdmission {
 	if (!current) return 'accepted';
 	if (incoming.tabId !== current.tabId) return 'tab-conflict';
-	if (incoming.generation < current.generation) return 'stale';
+	if (isControlClockStale(
+		current.generation,
+		current.revision,
+		incoming.generation,
+		incoming.revision,
+	)) return 'stale';
 	if (incoming.generation > current.generation) return 'accepted';
 	if (incoming.documentId !== current.documentId || incoming.origin !== current.origin) {
 		return 'identity-conflict';

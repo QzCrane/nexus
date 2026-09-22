@@ -2,7 +2,7 @@
 
 This report records the product outcome and release evidence for the native-first
 control follow-up. The normative design remains
-[`control-architecture.md`](./control-architecture.md); this file does not define
+[control architecture](../../control/README.md); this file does not define
 a second policy.
 
 ## Product outcome

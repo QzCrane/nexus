@@ -7,7 +7,7 @@
 // Forbidden zones:
 //   1. docs/_archive/         historical snapshots; must not be edited
 //   2. AGENTS.md              root rule file; managed by humans
-//   3. control-architecture.md / control/<NN>-*.md / principles/<NN>-*.md
+//   3. control/<NN*>-*.md / principles/<NN>-*.md
 //                             progressive-disclosure index files; humans
 //                             own them; the topic sub-files are the owner
 //   4. any .md without Diátaxis frontmatter (type / status / audience)
@@ -37,7 +37,7 @@ const FORBIDDEN_PATTERNS = [
 	},
 	{
 		pattern:
-			/control-architecture\.md$|control\/\d{2}-[a-z-]+\.md$|principles\/0[1-5]-[a-z-]+\.md$/,
+			/control\/\d{2}[a-z]?-[a-z-]+\.md$|principles\/0[1-5]-[a-z-]+\.md$/,
 		reason:
 			'This is a progressive-disclosure index or a topic sub-file. ' +
 			'Indexes hold ONLY the topic map + summary table; topic files ' +

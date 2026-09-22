@@ -14,11 +14,12 @@ status and cannot override executable contracts or the normative owners linked
 from the [SPECTRA documentation entrypoint](../README.md).
 
 - [Unified Control Runtime V3](unified-control-runtime-v3.md): one coherent
-  target architecture for the 2026-08-27 business, lifecycle, performance,
-  implementation, and release audit.
+  historical migration design for the 2026-08-27 business, lifecycle,
+  performance, implementation, and release audit; its local-status statements
+  are scoped to that repair candidate.
 - [Unified Control Runtime V3 implementation ledger](unified-control-runtime-v3-implementation.md):
-  exact-tree implementation waves, ownership boundaries, acceptance evidence,
-  and cutover status for the authorized repair.
+  historical exact-tree implementation waves, ownership boundaries, acceptance
+  evidence, and cutover status for that authorized repair.
 
 A proposal becomes current architecture only after the corresponding contracts,
 implementation, tests, production artifacts, owner documents, and release gates

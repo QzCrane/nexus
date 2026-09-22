@@ -109,7 +109,6 @@ export function bindCardEvents(params: EventsParams): void {
 
   const setDragging = (field: CardInternalState['draggingField']) => {
     state.draggingField = field;
-    state.isDragging = field !== null;
   };
 
   ui.slider.oninput = (e) => {

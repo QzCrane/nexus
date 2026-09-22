@@ -4,9 +4,9 @@
 > It is not the owner of the current control architecture. The exhaustive
 > native/augmentation decisions, current implementation anchors and static
 > invariants are maintained in
-> [control-architecture.md](./control-architecture.md); current runtime ownership
-> is maintained in [architecture.md](./architecture.md) and
-> [protocols.md](./protocols.md).
+> [control architecture](../../control/README.md); current runtime ownership
+> is maintained in [runtime architecture](../../architecture/runtime.md) and
+> [protocols](../../reference/protocols.md).
 
 ## Outcome
 

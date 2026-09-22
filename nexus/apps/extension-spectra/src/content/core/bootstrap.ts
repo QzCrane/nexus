@@ -400,7 +400,7 @@ if (!getContentBootstrapState()) {
 		// The first media volume event is the page-entry audio detection moment;
 		// solidify the amplified-controller verdict before the runtime loads.
 		if (event.type === 'volumechange') reportPageScale(element);
-		if (!observationsReady || state.ready) return;
+		if (state.ready) return;
 		const observation = readBootstrapObservation(
 			element,
 			event.type as 'volumechange' | 'ratechange',
@@ -553,6 +553,7 @@ if (!getContentBootstrapState()) {
 		state.runtimeRevision = response.data.runtimeRevision;
 		state.ready = response.data.runtimeRevision !== null;
 		observationsReady = true;
+		drainObservation();
 		// The HELLO verdict decides the media reporter owner for this document: a
 		// loaded runtime owns reporting (reportMediaPresence yields via state.ready),
 		// otherwise the bootstrap keeps the fact warm through lifecycle events.

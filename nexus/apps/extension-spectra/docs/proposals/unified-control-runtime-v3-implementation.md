@@ -8,6 +8,10 @@ last_reviewed: 2026-08-29
 
 # SPECTRA Unified Control Runtime V3 implementation ledger
 
+> Historical scope: this ledger preserves the 2026-08 repair candidate. Its
+> local counts, artifact hash, dirty-tree state, and authorization boundary are
+> not current implementation or release facts.
+
 This ledger records the authorized implementation of the
 [Unified Control Runtime V3 proposal](unified-control-runtime-v3.md). It is a
 progress and evidence record, not a second runtime authority. Executable

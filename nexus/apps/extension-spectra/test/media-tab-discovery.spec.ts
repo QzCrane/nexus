@@ -124,9 +124,12 @@ describe('bounded media tab inventory', () => {
 		await expect(discover()).rejects.toThrow('query timed out');
 		await expect(discover()).rejects.toThrow('query timed out');
 		expect(queries).toBe(1);
-		pending.resolve(tabs);
+		// This case owns query coalescing and capacity release. A one-tab recovery
+		// keeps its 10 ms query timeout independent from the separately tested
+		// bounded eight-tab probe schedule.
+		pending.resolve(tabs.slice(0, 1));
 		await flush();
-		expect((await discover()).tabs).toHaveLength(8);
+		expect(await discover()).toEqual({ tabs: [1], coverage: complete(1) });
 		expect(queries).toBe(2);
 	});
 

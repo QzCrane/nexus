@@ -12,23 +12,6 @@ last_reviewed: 2026-08-13
 
 This document owns sequencing and unresolved work. It does not own current control semantics; those start at [control architecture](control/README.md).
 
-## Current baseline
-
-The current architecture defines:
-
-- one acknowledged `ControlSnapshot` for field-level actual state;
-- independent processor lifecycle in `AudioSessionSnapshot`;
-- one writer per `{document, media, field}`;
-- effective volume from 0–800%;
-- a 10-band equalizer plus explicit bass, compressor, mono, pan, and delay controls;
-- native-first playback and video operations with bounded unsupported results;
-- event-driven media identity, runtime leases, and update/navigation recovery;
-- authenticated optional remote control with disclosed third-party network dependencies.
-
-Implementation status and release evidence are read from source, tests, static gates, production artifacts, and dated reports—not inferred from this summary.
-
-The v1.4.2 baseline additionally closes durable-before-ACK AudioSession and settings commits, restart-recoverable settings projection, exact runtime-source and Capture-document authorization, canonical partial audio merges, bounded tab fan-out, authoritative Popup rollback, retryable Options failures, presentation-only global settings, and hard production-artifact budgets. GitHub runner allocation remains independent hosted replay evidence, not product-runtime authority.
-
 ## P0: release truth and regression resistance
 
 - keep the 51 capability policies, 50 audited source algorithms, and 44 SCTRL invariants synchronized with contracts and tests;

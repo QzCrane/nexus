@@ -2,6 +2,7 @@
 // features: apply preset, global vs site-specific, search/filter, set as default, preview config
 
 import type { AudioConfig } from '@nexus/kernel';
+import { resolveAudioVolume } from '@nexus/contracts';
 import type { I18NDict } from '../types';
 import {
 	getSettingsSnapshot,
@@ -39,6 +40,7 @@ let searchInput: HTMLInputElement | null = null;
 let currentDict: I18NDict;
 let currentDomain: string = '';
 let closeActivePreview: ((restoreFocus?: boolean) => void) | null = null;
+let closeActiveClearConfirmation: ((restoreFocus?: boolean) => void) | null = null;
 let latestRefreshRevision = 0;
 let unsubscribeSettings: (() => void) | null = null;
 
@@ -69,7 +71,7 @@ export function initPresetsUI(dict: I18NDict): void {
 
 	currentDomain = '';
 
-	if (clearBtn) clearBtn.onclick = handleClearAll;
+	if (clearBtn) clearBtn.onclick = showClearConfirmation;
 	if (searchInput) {
 		searchInput.oninput = () => { void refreshPresetsList().catch(presentPresetFailure); };
 		searchInput.placeholder = currentDict.presetSearchPlaceholder;
@@ -377,10 +379,17 @@ function showPresetPreview(id: string, config: Partial<AudioConfig>): void {
 	header.id = 'preset-preview-title';
 	header.textContent = id;
 
-	const details = document.createElement('pre');
+	const details = document.createElement('dl');
 	details.id = 'preset-preview-details';
+	details.className = 'preset-preview-details';
 	details.tabIndex = 0;
-	details.textContent = JSON.stringify(config, null, 2);
+	for (const row of resolvePresetPreviewRows(config, currentDict)) {
+		const term = document.createElement('dt');
+		term.textContent = row.label;
+		const value = document.createElement('dd');
+		value.textContent = row.value;
+		details.append(term, value);
+	}
 
 	const closeBtn = document.createElement('button');
 	closeBtn.type = 'button';
@@ -434,20 +443,118 @@ async function handleDeletePreset(id: string, type: PresetType): Promise<void> {
 	}
 }
 
-async function handleClearAll(): Promise<void> {
-	try {
-		const { sitePresets, globalPresets } = await loadAllPresets();
-		for (const domain of Object.keys(sitePresets)) {
-			await patchSettings({ scope: 'audio-site', domain, value: null });
-		}
-		for (const name of Object.keys(globalPresets)) {
-			await patchSettings({ scope: 'audio-preset', name, value: null });
-		}
-		await patchSettings({ scope: 'default-preset', value: null });
-		await refreshPresetsList();
-	} catch (error: unknown) {
-		presentPresetFailure(error);
+function showClearConfirmation(): void {
+	closeActiveClearConfirmation?.(false);
+	const previouslyFocused = document.activeElement instanceof HTMLElement
+		? document.activeElement
+		: null;
+	const modal = document.createElement('div');
+	modal.className = 'preset-preview-modal';
+	modal.setAttribute('role', 'dialog');
+	modal.setAttribute('aria-modal', 'true');
+	modal.setAttribute('aria-labelledby', 'preset-clear-title');
+	modal.setAttribute('aria-describedby', 'preset-clear-description');
+	modal.tabIndex = -1;
+
+	const content = document.createElement('div');
+	content.className = 'preset-preview-content';
+	const title = document.createElement('h3');
+	title.id = 'preset-clear-title';
+	title.textContent = currentDict.presetClearTitle;
+	const description = document.createElement('p');
+	description.id = 'preset-clear-description';
+	description.textContent = currentDict.presetClearBody;
+	const actions = document.createElement('div');
+	actions.className = 'presets-actions';
+	const cancel = document.createElement('button');
+	cancel.type = 'button';
+	cancel.className = 'btn-small';
+	cancel.textContent = currentDict.btnClose;
+	const confirm = document.createElement('button');
+	confirm.type = 'button';
+	confirm.className = 'btn-small-danger';
+	confirm.textContent = currentDict.presetClearConfirm;
+	actions.append(cancel, confirm);
+	content.append(title, description, actions);
+	modal.append(content);
+	document.body.append(modal);
+
+	const close = (restoreFocus = true) => {
+		if (!modal.isConnected) return;
+		modal.remove();
+		if (closeActiveClearConfirmation === close) closeActiveClearConfirmation = null;
+		if (restoreFocus) previouslyFocused?.focus();
+	};
+	closeActiveClearConfirmation = close;
+	cancel.onclick = () => close();
+	confirm.onclick = () => {
+		cancel.disabled = true;
+		confirm.disabled = true;
+		confirm.setAttribute('aria-busy', 'true');
+		void patchSettings({ scope: 'audio-presets-clear' })
+			.then(() => refreshPresetsList())
+			.then(() => close())
+			.catch((error: unknown) => {
+				presentPresetFailure(error);
+				cancel.disabled = false;
+				confirm.disabled = false;
+				confirm.removeAttribute('aria-busy');
+			});
+	};
+	modal.onclick = (event) => {
+		if (event.target === modal && !confirm.disabled) close();
+	};
+	modal.addEventListener('keydown', (event) => {
+		handleDialogKeydown(event, modal, () => {
+			if (!confirm.disabled) close();
+		});
+	});
+	cancel.focus();
+}
+
+export interface PresetPreviewRow {
+	label: string;
+	value: string;
+}
+
+export function resolvePresetPreviewRows(
+	config: Partial<AudioConfig>,
+	dictionary: I18NDict,
+): PresetPreviewRow[] {
+	const rows: PresetPreviewRow[] = [];
+	const state = (enabled: boolean) => enabled ? dictionary.presetStateOn : dictionary.presetStateOff;
+	if (config.volume !== undefined || config.volumeBase !== undefined || config.boost !== undefined) {
+		const hasCanonicalPair = config.volumeBase !== undefined || config.boost !== undefined;
+		const effectiveVolume = hasCanonicalPair
+			? resolveAudioVolume({
+				volumeBase: config.volumeBase ?? 100,
+				boost: config.boost ?? 1,
+			}).effectiveVolume
+			: config.volume ?? 100;
+		rows.push({
+			label: dictionary.presetPreviewVolume,
+			value: `${effectiveVolume}%`,
+		});
 	}
+	if (config.speed !== undefined) rows.push({ label: dictionary.spSpeed, value: `${config.speed}×` });
+	if (config.enabled !== undefined) rows.push({ label: dictionary.presetPreviewEnabled, value: state(config.enabled) });
+	if (config.muted !== undefined) rows.push({ label: dictionary.presetPreviewMuted, value: state(config.muted) });
+	if (config.preservePitch !== undefined) {
+		rows.push({ label: dictionary.presetPreviewPreservePitch, value: state(config.preservePitch) });
+	}
+	if (config.compressor !== undefined) rows.push({ label: dictionary.comp, value: state(config.compressor) });
+	if (config.bass !== undefined) rows.push({ label: dictionary.bass, value: state(config.bass) });
+	if (config.mono !== undefined) rows.push({ label: dictionary.mono, value: state(config.mono) });
+	if (config.pan !== undefined) rows.push({ label: dictionary.spPan, value: String(config.pan) });
+	if (config.delay !== undefined) rows.push({ label: dictionary.spDelay, value: `${config.delay} ms` });
+	if (config.eqValues !== undefined) {
+		rows.push({
+			label: dictionary.eqTitle.replace(/^\p{Extended_Pictographic}\uFE0F?\s*/u, ''),
+			value: config.eqValues.map((value) => `${value > 0 ? '+' : ''}${value}`).join(' / '),
+		});
+	}
+	if (rows.length === 0) rows.push({ label: dictionary.presetEffectDefault, value: dictionary.presetStateOn });
+	return rows;
 }
 
 // eff: loads all presets from storage
@@ -539,5 +646,7 @@ export function disposePresetsUI(): void {
 	unsubscribeTargetChanges = null;
 	closeActivePreview?.(false);
 	closeActivePreview = null;
+	closeActiveClearConfirmation?.(false);
+	closeActiveClearConfirmation = null;
 	currentDomain = '';
 }

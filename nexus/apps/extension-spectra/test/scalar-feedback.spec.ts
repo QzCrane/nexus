@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import { crossesAudioVolumeRoutingBoundary } from '@nexus/contracts';
 import {
 	resolveHotkeyVolumeBaseline,
-	resolveHotkeyVolumeTarget,
+	resolveHotkeyReleasePresentation,
 	scalarHotkeyGestureSequence,
 } from '../src/content/ui/osd';
 import {
@@ -31,8 +30,6 @@ describe('scalar feedback bars', () => {
 		expect(firstSpeedDelta).toBeCloseTo(secondSpeedDelta, 10);
 		expect(scalarFeedbackProgress('speed', 0.1)).toBe(0);
 		expect(scalarFeedbackProgress('speed', 16)).toBe(100);
-		expect(crossesAudioVolumeRoutingBoundary(100, 110)).toBe(true);
-		expect(crossesAudioVolumeRoutingBoundary(110, 120)).toBe(false);
 	});
 
 	test('owns the semantic markers for both scalar kinds', () => {
@@ -61,32 +58,6 @@ describe('scalar feedback bars', () => {
 		expect(scalarFeedbackMaxFrameDelta('speed') / 0.1).toBeCloseTo(0.6);
 	});
 
-	test('retains one complete blue or purple presentation throughout a boundary gesture', () => {
-		const project = (
-			start: ReturnType<typeof volume>,
-			targets: ReturnType<typeof volume>[],
-		) => {
-			let presentation = start;
-			return targets.map((target) => {
-				presentation = resolveHotkeyVolumeTarget(presentation, target);
-				return [presentation.value, presentation.volumeState];
-			});
-		};
-		const cases = [
-			['held-up', volume(100, 'native'), [volume(110, 'capture'), volume(120, 'capture')],
-				[[100, 'native'], [100, 'native']]],
-			['held-down', volume(110, 'capture'), [volume(100, 'native'), volume(90, 'native')],
-				[[110, 'capture'], [110, 'capture']]],
-			['reverse-up', volume(100, 'native'), [volume(110, 'capture'), volume(100, 'native')],
-				[[100, 'native'], [100, 'native']]],
-			['reverse-down', volume(110, 'capture'), [volume(100, 'native'), volume(110, 'capture')],
-				[[110, 'capture'], [110, 'capture']]],
-		] as const;
-		for (const [name, start, targets, expected] of cases) {
-			expect(project(start, [...targets]), name).toEqual(expected);
-		}
-	});
-
 	test('starts a new gesture from the lifecycle-correct complete pair', () => {
 		const visible = volume(110, 'capture');
 		const baseline = volume(100, 'native');
@@ -100,6 +71,23 @@ describe('scalar feedback bars', () => {
 		expect(scalarHotkeyGestureSequence('default:0')).toBeNull();
 		expect(scalarHotkeyGestureSequence('forged:9')).toBeNull();
 		expect(scalarHotkeyGestureSequence('default:9007199254740992')).toBeNull();
+	});
+
+	test('commits the exact final ACK after a frozen optimistic gesture without crossing identities', () => {
+		const optimistic = volume(130, 'capture');
+		const rejectedActual = volume(100, 'native');
+		expect(resolveHotkeyReleasePresentation(
+			'default:12',
+			'default:12',
+			optimistic,
+			rejectedActual,
+		)).toEqual(rejectedActual);
+		expect(resolveHotkeyReleasePresentation(
+			'default:13',
+			'default:12',
+			optimistic,
+			rejectedActual,
+		)).toBeNull();
 	});
 
 });

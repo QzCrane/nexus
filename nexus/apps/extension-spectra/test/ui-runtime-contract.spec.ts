@@ -432,9 +432,9 @@ describe('restricted extension UI protocol facade', () => {
 					...settings.globalSettings,
 					osdMessages: {
 						muted: 'MUTE',
-						corsAutoAdded: 'Added {domain}',
-						corsAddedSafe: 'Safe {domain}',
-						corsCorrectedSafe: 'Corrected {domain}',
+						corsAutoAdded: 'Compatibility {domain}',
+						corsAddedSafe: 'Page audio {domain}',
+						corsCorrectedSafe: 'Updated page audio {domain}',
 					},
 				},
 			},

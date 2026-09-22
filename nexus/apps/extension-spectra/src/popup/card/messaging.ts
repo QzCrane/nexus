@@ -5,9 +5,10 @@ import {
 	isActiveCaptureLifecycle,
 } from '@nexus/contracts';
 import type { CardInternalState } from './types';
-import { mergeControlSnapshot } from './types';
+import type { AudioConfig } from '@nexus/kernel';
+import { mergeAudioConfig, mergeControlSnapshot } from './types';
 import { projectAcknowledgedProcessorLifecycle } from './state';
-import { classifyControlSnapshot } from '../control-snapshot-order';
+import { classifyControlSnapshot, isControlClockStale } from '../control-snapshot-order';
 import { subscribePopupTabUiEvents, type PopupUiEvent } from '../ui-event-hub';
 import { currentTopDocumentId } from '../../shared/top-document';
 
@@ -15,6 +16,8 @@ export interface MessagingParams {
 	tabId: number;
 	documentId?: string;
 	onDocumentReplaced?: () => void;
+	hasPendingVolume?: () => boolean;
+	pendingConfigFields?: () => ReadonlySet<keyof AudioConfig>;
 	state: CardInternalState;
 	render: () => void;
 }
@@ -26,8 +29,16 @@ export function applyControlSnapshot(
 	state: CardInternalState,
 	snapshot: import('@nexus/contracts').ControlSnapshot,
 	render: () => void,
+	hasPendingVolume = false,
+	pendingConfigFields: ReadonlySet<keyof AudioConfig> = new Set(),
 ): boolean {
 	const current = state.controlSnapshot;
+	if (isControlClockStale(
+		state.controlGeneration,
+		state.controlRevision,
+		snapshot.generation,
+		snapshot.revision,
+	)) return false;
 	const admission = classifyControlSnapshot(current, snapshot);
 	if (admission !== 'accepted') return false;
 	// An accepted snapshot is authoritative field-level truth. The initial
@@ -65,20 +76,27 @@ export function applyControlSnapshot(
 	state.stableConfig = mergeControlSnapshot(state.stableConfig, snapshot);
 	projectAcknowledgedProcessorLifecycle(state, snapshot.fields);
 	const incoming = state.stableConfig;
-	if (state.draggingField === 'volume') {
+	const optimisticBeforeSnapshot = state.config;
+	const identityChanged = current !== null
+		&& (snapshot.documentId !== current.documentId || snapshot.origin !== current.origin);
+	// Broadcasts update acknowledged truth without rewinding a newer local intent.
+	// A navigation always replaces both projections, even during an old gesture.
+	if (!identityChanged && (state.draggingField === 'volume' || hasPendingVolume)) {
 		const {
 			volume: _volume,
 			volumeBase: _volumeBase,
 			boost: _boost,
-			muted: _muted,
 			...otherConfig
 		} = incoming;
 		state.config = { ...state.config, ...otherConfig };
 	} else {
-		state.config = incoming;
+		state.config = mergeAudioConfig(incoming, { eqValues: [...incoming.eqValues] });
 	}
-	const identityChanged = current !== null
-		&& (snapshot.documentId !== current.documentId || snapshot.origin !== current.origin);
+	if (!identityChanged) {
+		const optimistic = state.config as unknown as Record<string, unknown>;
+		const previous = optimisticBeforeSnapshot as unknown as Record<string, unknown>;
+		for (const field of pendingConfigFields) optimistic[field] = previous[field];
+	}
 	if (!current || identityChanged) {
 		// Revisions are scoped to a document. Carrying a larger revision from the
 		// previous navigation would make every subsequent intent use an invalid
@@ -137,7 +155,13 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 			if (!sender.tab && classifyControlSnapshot(state.controlSnapshot, snapshot) === 'accepted') verifyReplacement();
 			return;
 		}
-		applyControlSnapshot(state, snapshot, render);
+		applyControlSnapshot(
+			state,
+			snapshot,
+			render,
+			params.hasPendingVolume?.() ?? false,
+			params.pendingConfigFields?.() ?? new Set(),
+		);
 		return;
 	}
 	if (rawMessage.type === 'spectra.audio.session.changed') {
@@ -175,18 +199,4 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 
   const unsubscribe = subscribePopupTabUiEvents(tabId, onMessage);
   return () => { disposed = true; unsubscribe(); };
-}
-
-// eff: attempts to establish a long-lived port connection to the content script for high-frequency signaling
-export function connectToTab(tabId: number): chrome.runtime.Port | null {
-  try {
-    const port = chrome.tabs.connect(tabId, { name: 'popup-connection' });
-    port.onDisconnect.addListener(() => {
-      // note: swallow error to avoid console noise if tab is closed during connection
-      void chrome.runtime.lastError;
-    });
-    return port;
-  } catch {
-    return null;
-  }
 }

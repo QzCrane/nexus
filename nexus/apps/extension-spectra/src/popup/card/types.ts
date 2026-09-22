@@ -6,7 +6,6 @@ import { DEFAULT_AUDIO_CONFIG } from '@nexus/contracts';
 import type {
   AudioSessionError,
   AudioSessionPhase,
-  AudioVolumeState,
   SpectraAudioMode,
 } from '@nexus/contracts';
 import {
@@ -26,10 +25,6 @@ export interface CardInternalState {
   controlSnapshotKnown?: boolean;
   lifecycleSnapshotKnown?: boolean;
   isCaptureActive: boolean;
-  volumeTransitionPresentation?: {
-    effectiveVolume: number;
-    volumeState: AudioVolumeState;
-  };
   userInteracted: boolean;
   actualMode: SpectraAudioMode;
   desiredMode: SpectraAudioMode;
@@ -41,8 +36,6 @@ export interface CardInternalState {
   audioGeneration: number;
   audioConfigRevision: number;
   lastError: AudioSessionError | null;
-  // isDragging: flag to prevent UI jitter by skipping re-renders while the user is actively manipulating sliders
-  isDragging: boolean;
   draggingField: 'volume' | null;
 }
 

@@ -56,10 +56,6 @@ ACK 模块只做值验证。原生字段的相等判定由 `native-media-async.t
 Executor 不再维护第二份数值/结构比较实现。产物调整必须在同一功能和探测负载下
 比较真实 metafile closure；现有硬预算不可上调，零字节或把内容移到另一统计桶不算优化。
 
-### §17.1 Implementation status ledger (All landed)
-
-- **Current local implementation**: generic MAIN dispatch, Media WebAudio production ownership, v1 UI state projection, and V1 action runtime are deleted; the sparse graph exists only in the admitted Offscreen Capture owner; cold-document bootstrap is isolated; one esbuild optimization pass is enforced (PeerJS IIFE opaque vendor excepted); one physical native async writer is enforced; activeMedia and activeVideo remain separate; A/B and Markers bind to `mediaId + sourceRevision`; hotkeys map through exhaustive descriptors; Remote V3 is HMAC/sessionEpoch/commandId fenced; Popup uses one runtime event hub; disabled Visualizer performs no Popup import/draw/observer work; enabled Visualizer gives only the visible foreground card a generation/document-fenced transient Capture lease, while background cards remain passive and release/expiry/disconnect retries are bounded; main Popup height is intrinsic and only Settings owns the 600px viewport. Release status still depends on the exact-candidate gates in §21 and is not implied by this implementation ledger.
-
 ## §18 Cross-world bridges
 
 两个 Bridge 均为 manifest `document_start` 注册，由 `main-runtime-manager.ts` 幂等重注入:

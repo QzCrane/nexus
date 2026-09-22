@@ -12,8 +12,8 @@
 
 > **历史报告说明**：下方问题单保留 2026-07-18 的原始复现、根因假设和
 > 基线字段。原始字段只表示当日快照，不代表当前主分支状态。
-> 当前已落地的实现、所有权和约束以 [control-architecture.md](./control-architecture.md)、
-> [protocols.md](./protocols.md)、[architecture.md](./architecture.md) 和
+> 当前已落地的实现、所有权和约束以 [control architecture](../../control/README.md)、
+> [protocols](../../reference/protocols.md)、[runtime architecture](../../architecture/runtime.md) 和
 > [development-sync-2026-07-19.md](./development-sync-2026-07-19.md) 为准。
 
 ## 当前验证与落地状态（2026-07-19）

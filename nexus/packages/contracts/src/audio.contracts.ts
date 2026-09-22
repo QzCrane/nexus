@@ -440,14 +440,6 @@ export function resolveAudioVolumeState(value: {
 		: 'native';
 }
 
-// post: identifies the effective-volume boundary where the physical route may
-// change between standard DOM, an amplified page controller, and Capture.
-// Presentation layers retain one complete value/tone pair until the actual
-// route acknowledgement arrives; the threshold itself never claims Capture.
-export function crossesAudioVolumeRoutingBoundary(from: number, to: number): boolean {
-	return (from > 100) !== (to > 100);
-}
-
 // goal: complete, side-effect-free status returned by the current document runtime
 export interface AudioRuntimeStatus {
   config: AudioConfig;

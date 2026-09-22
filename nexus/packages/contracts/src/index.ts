@@ -110,7 +110,6 @@ export {
   audioSessionMatchesControlDocument,
   isActiveCaptureLifecycle,
   resolveAudioVolumeState,
-  crossesAudioVolumeRoutingBoundary
 } from './audio.contracts.js';
 
 // Per-field SPECTRA control contracts

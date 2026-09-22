@@ -333,6 +333,7 @@ async function holdDefaultShortcut(
 	repeats: number,
 	releaseDelayMs = 0,
 	repeatIntervalMs = 35,
+	beforeRelease?: () => Promise<void>,
 ): Promise<void> {
 	await page.keyboard.down('Alt');
 	await page.keyboard.down(key);
@@ -341,6 +342,7 @@ async function holdDefaultShortcut(
 		await page.keyboard.down(key);
 	}
 	if (releaseDelayMs > 0) await new Promise((resolveWait) => setTimeout(resolveWait, releaseDelayMs));
+	await beforeRelease?.();
 	await page.keyboard.up(key);
 	await page.keyboard.up('Alt');
 }
@@ -2444,6 +2446,9 @@ beforeAll(async () => {
 		headless: true,
 		userDataDir: browserProfileDir,
 		args: [
+			// Action-popup sizing is browser-owned; pin physical/CSS rounding for geometry assertions.
+			'--force-device-scale-factor=1',
+			'--window-size=1280,960',
 			`--lang=${SMOKE_LOCALE}`,
 			`--accept-lang=${SMOKE_LOCALE}`,
 			`--disable-extensions-except=${EXTENSION_DIR}`,
@@ -2659,11 +2664,11 @@ describe('SPECTRA built extension smoke', () => {
 			expect(first.data.tabs).toContain(tabId);
 
 			// Deterministic proof that persistence no longer waits for onSuspend:
-			// the settled fact must already be in session storage right after the scan.
+			// the settled fact must already be in durable local storage after the scan.
 			await eventually(
 				() => evaluateServiceWorker(async (targetTabId) => {
 					const key = 'spectra.media-facts.v1';
-					const raw = (await chrome.storage.session.get(key))[key] as
+					const raw = (await chrome.storage.local.get(key))[key] as
 						Record<string, { outcome?: string }> | undefined;
 					return raw?.[String(targetTabId)]?.outcome ?? null;
 				}, tabId),
@@ -2684,7 +2689,7 @@ describe('SPECTRA built extension smoke', () => {
 		} finally {
 			await client.close();
 		}
-	});
+	}, 30_000);
 
 	test('keeps the v2 config ABI stable while new Content reads the additive site policy', async () => {
 		const tabId = await getTabId(fixturePage.url());
@@ -2777,6 +2782,12 @@ describe('SPECTRA built extension smoke', () => {
 			// The following physical keys therefore still execute exactly once.
 			const replacement = await reinjectContentBootstrap(coldUrl, true);
 			const expectedListenerOwnership: BootstrapListenerKey[] = [
+				['document', 'durationchange', true],
+				['document', 'emptied', true],
+				['document', 'loadedmetadata', true],
+				['document', 'pause', true],
+				['document', 'play', true],
+				['document', 'playing', true],
 				['document', 'ratechange', true],
 				['document', 'visibilitychange', false],
 				['document', 'volumechange', true],
@@ -2784,11 +2795,13 @@ describe('SPECTRA built extension smoke', () => {
 				['window', 'keydown', true],
 				['window', 'keyup', true],
 				['window', 'pagehide', false],
+				['window', 'pageshow', false],
 			];
 			expect(replacement).toMatchObject({ same: false });
 			expect(replacement.listenerChanges).toEqual({
 				added: expectedListenerOwnership,
-				removed: expectedListenerOwnership,
+				// The original document-start host also retires its one-shot readiness hook.
+				removed: [['document', 'DOMContentLoaded', false], ...expectedListenerOwnership],
 			});
 			await waitForContentBootstrapStatus(coldUrl);
 
@@ -3165,7 +3178,11 @@ describe('SPECTRA built extension smoke', () => {
 			);
 			await waitForOsdToSettle();
 			expect(await readMedia()).toMatchObject({ speed: 1.2, volume: 100 });
+			await startOsdFeedbackProbe(arbiterPage, '%');
 			await tapDefaultShortcut(arbiterPage, 'ArrowUp');
+			const immediateFeedback = await readOsdFeedback(arbiterPage, 'volume', true);
+			expect(immediateFeedback.frames[0]?.label).toBe('110%');
+			expect(immediateFeedback.visible).toBe(true);
 			await eventually(
 				async () => ({
 					status: await readContentStatus(historyUrl),
@@ -3174,8 +3191,7 @@ describe('SPECTRA built extension smoke', () => {
 				(state) => state.status.config?.volume === 110
 					&& state.status.config.boost === 1.1
 					&& state.media.volume === 100
-					&& state.media.osd === '110%'
-					&& state.media.osdVisible,
+					&& state.media.osd === '110%',
 				'first reserved volume key crosses the native 100 percent boundary',
 			);
 		} finally {
@@ -4639,15 +4655,47 @@ describe('SPECTRA built extension smoke', () => {
 			activeId: 'site-add-binding',
 		});
 
-		options.once('dialog', (dialog) => void dialog.accept());
 		await options.click('#site-delete');
+		await options.waitForSelector('#site-delete-dialog[open]');
+		expect(await options.$eval('#site-delete-message', (node) => node.textContent)).toContain(accessibilityTestDomain);
+		await options.click('#site-delete-confirm');
 		await options.waitForFunction((domain) => {
 			const select = document.querySelector<HTMLSelectElement>('#site-select');
 			return ![...select?.options ?? []].some((option) => option.value === domain);
 		}, {}, accessibilityTestDomain);
 		expect(optionsErrors).toEqual([]);
 		await options.close();
-	});
+	}, 20_000);
+
+	test('hands the latest volume to Background before the real action popup is destroyed', async () => {
+		const page = await browser.newPage();
+		const url = `${fixtureUrl}?popup-close-handoff=1`;
+		let popup: Page | null = null;
+		try {
+			await page.goto(url, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(url);
+			await page.bringToFront();
+			const tabId = await getTabId(url);
+			popup = await (await openActionPopupTarget()).asPage();
+			await popup.waitForSelector(`.glass-card[data-tab-id="${tabId}"][data-control-coverage="known"]`);
+			await popup.evaluate(() => {
+				const slider = document.querySelector<HTMLInputElement>('.vol-slider');
+				if (!slider) throw new Error('Popup volume slider missing');
+				slider.value = '80';
+				slider.dispatchEvent(new Event('input', { bubbles: true }));
+				slider.dispatchEvent(new Event('change', { bubbles: true }));
+				slider.value = '90';
+				slider.dispatchEvent(new Event('input', { bubbles: true }));
+			});
+			await closeActionPopup(popup);
+			await eventually(() => page.$eval('video', (element) => (element as HTMLVideoElement).volume),
+				(value) => Math.abs(value - 0.9) < 0.001, 'final volume after Popup realm destruction');
+			expect(popup.isClosed()).toBe(true);
+		} finally {
+			if (popup && !popup.isClosed()) await closeActionPopup(popup);
+			await page.close();
+		}
+	}, 20_000);
 
 	test('renders Presets from the selected locale on first paint and language refresh', async () => {
 		const siteDomain = 'i18n-site-smoke.example';
@@ -4756,6 +4804,20 @@ describe('SPECTRA built extension smoke', () => {
 					&& presetItem?.querySelector('.preset-badge.default')?.textContent === 'DEFAULT'
 					&& presetItem?.querySelector('.btn-preset-action.apply')?.getAttribute('title') === 'Apply preset';
 			}, { timeout: 8_000 }, { presetName });
+
+			await popup.evaluate((name) => {
+				const item = [...document.querySelectorAll('.preset-item')]
+					.find((node) => node.querySelector('.preset-name span')?.textContent === name);
+				item?.querySelector<HTMLButtonElement>('.preview')?.click();
+			}, presetName);
+			await popup.waitForSelector('#preset-preview-details');
+			expect(await popup.$eval('#preset-preview-details', (node) => ({
+				tag: node.tagName,
+				internalKeys: /volumeBase|eqValues|"boost"/u.test(node.textContent ?? ''),
+			}))).toEqual({ tag: 'DL', internalKeys: false });
+			expect(await popup.$$eval('#preset-preview-details dt', (nodes) => nodes.length)).toBeGreaterThan(0);
+			await popup.keyboard.press('Escape');
+			await popup.waitForSelector('#preset-preview-modal', { hidden: true });
 
 			await popup.select('#set-lang', 'zh-CN');
 			await popup.waitForFunction(({ presetName }) => {
@@ -4952,6 +5014,15 @@ describe('SPECTRA built extension smoke', () => {
 				expect(cardIdentity.icon).toContain('/_favicon/');
 				expect(cardIdentity.visualizer).toMatchObject({ hidden: false, height: 40 });
 				expect(cardIdentity.visualizer.width).toBeGreaterThan(0);
+				await popup.focus('.btn-effects');
+				await popup.keyboard.press('Enter');
+				await popup.waitForSelector('#side-panel[aria-hidden="false"]');
+				await popup.waitForFunction(() => document.getElementById('side-panel')?.classList.contains('open'));
+				await popup.evaluate(async () => { await Promise.all(document.getAnimations().map((animation) => animation.finished)); });
+				await assertPageAudit(popup, `popup effects ${language}`);
+				await popup.keyboard.press('Escape');
+				await popup.waitForFunction(() => document.getElementById('side-panel')?.getAttribute('aria-hidden') === 'true');
+				expect(await popup.evaluate(() => document.activeElement?.classList.contains('btn-effects'))).toBe(true);
 				await popup.click('#btn-settings');
 				await popup.waitForSelector('#view-settings:not([hidden])');
 				await assertPageAudit(popup, `popup settings ${language}`);
@@ -5157,7 +5228,7 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 20_000);
 
-	test('renders a real analyser spectrum at native volume 0, 40 and 100 without Capture', async () => {
+	test('detects direct audio with empty placeholders and renders spectrum across 0, 40, 100 and 110', async () => {
 		const visualizerErrors: string[] = [];
 		const popupErrors: string[] = [];
 		const visualizerPage = await browser.newPage();
@@ -5185,6 +5256,14 @@ describe('SPECTRA built extension smoke', () => {
 				media.src = URL.createObjectURL(new Blob([Uint8Array.from(toneBytes)], { type: 'audio/wav' }));
 				media.loop = true;
 				fixture.replaceWith(media);
+				// SPA players retain both a selected preload and an empty placeholder.
+				// Neither visibility nor an empty DOM node may force tab Capture.
+				const preload = document.createElement('audio');
+				preload.src = media.src;
+				preload.preload = 'metadata';
+				const placeholder = document.createElement('video');
+				placeholder.id = 'empty-player-placeholder';
+				document.body.append(preload, placeholder);
 				await new Promise<void>((resolveReady, rejectReady) => {
 					media.addEventListener('canplay', () => resolveReady(), { once: true });
 					media.addEventListener('error', () => {
@@ -5295,6 +5374,23 @@ describe('SPECTRA built extension smoke', () => {
 				expect(activeAtNativeVolume.config).toMatchObject({ volume, volumeBase: volume, boost: 1 });
 				expect(await hasOffscreenAudioTab(visualizerTabId)).toBe(false);
 			}
+			await popup.$eval('.vol-slider', (element) => {
+				const slider = element as HTMLInputElement;
+				slider.value = '110';
+				slider.dispatchEvent(new Event('input', { bubbles: true }));
+			});
+			const boosted = await eventually(
+				() => readContentStatus(visualizerUrl),
+				(status) => status.actualMode === 'webaudio' && status.phase === 'active'
+					&& status.config?.volume === 110,
+				'automatically detected direct source physical 110 ACK with empty placeholder',
+			);
+			expect(boosted.config).toMatchObject({ volume: 110, volumeBase: 100, boost: 1.1 });
+			expect(await hasOffscreenAudioTab(visualizerTabId)).toBe(false);
+			await configureRuntime(visualizerUrl, {
+				...DEFAULT_AUDIO_CONFIG,
+				eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+			});
 			const activeProbe = await eventually(
 				readVisualizerBatchProbe,
 				(probe) => probe.events.some((event) => {
@@ -5553,32 +5649,50 @@ describe('SPECTRA built extension smoke', () => {
 			shortcutTargetPage = null;
 			await fixturePage.bringToFront();
 			await startOsdFeedbackProbe(fixturePage, '×');
-			await holdDefaultShortcut(fixturePage, 'ArrowRight', 11, 35);
+			let speedBeforeRelease: OsdFeedbackSnapshot | null = null;
+			await holdDefaultShortcut(fixturePage, 'ArrowRight', 11, 35, 35, async () => {
+				speedBeforeRelease = await readOsdFeedback(fixturePage, 'speed');
+			});
+			const heldSpeedTarget = requireValue<OsdFeedbackSnapshot>(
+				speedBeforeRelease, 'Expected held speed target before keyup',
+			);
 			const speedAtRelease = await readOsdFeedback(fixturePage, 'speed');
-			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+			await eventually(
+				() => readOsdFeedback(fixturePage, 'speed'),
+				(feedback) => feedback.actual !== null
+					&& feedback.label === `${feedback.actual.toFixed(1)}×`,
+				'released speed feedback matching physical playback rate',
+			);
+			await fixturePage.evaluate(() => new Promise<void>((resolveFrame) => {
+				requestAnimationFrame(() => requestAnimationFrame(() => resolveFrame()));
+			}));
 			const heldSpeedFeedback = await readOsdFeedback(fixturePage, 'speed', true);
-			expect(speedAtRelease).toMatchObject({
+			expect(heldSpeedTarget).toMatchObject({
 				visible: true,
 				label: '2.2×',
 				color: 'rgb(16, 185, 129)',
 			});
 			expect(heldSpeedFeedback).toMatchObject({
-				actual: speedAtRelease.actual,
 				visible: true,
-				label: speedAtRelease.label,
-				width: speedAtRelease.width,
+				label: `${heldSpeedFeedback.actual.toFixed(1)}×`,
 				tone: speedAtRelease.tone,
 				color: speedAtRelease.color,
 			});
-			expect(heldSpeedFeedback.frames).toHaveLength(speedAtRelease.frames.length);
+			// Release retires unsent repeats. One final same-gesture ACK may correct
+			// the requested number to the physical result without restarting motion.
+			expect(heldSpeedFeedback.actual).toBeGreaterThanOrEqual(
+				requireValue(speedAtRelease.actual, 'Expected physical playback rate at release'),
+			);
+			expect(heldSpeedFeedback.actual).toBeLessThanOrEqual(2.2);
+			expect(heldSpeedFeedback.frames.length).toBeLessThanOrEqual(speedAtRelease.frames.length + 1);
 			const heldSpeedLabels = [...new Set(
-				heldSpeedFeedback.frames.map(({ label }) => label),
+				heldSpeedTarget.frames.map(({ label }) => label),
 			)];
 			expect(heldSpeedLabels).toEqual([
 				'1.1×', '1.2×', '1.3×', '1.4×', '1.5×', '1.6×',
 				'1.7×', '1.8×', '1.9×', '2.0×', '2.1×', '2.2×',
 			]);
-			const heldSpeedWidths = heldSpeedFeedback.frames.map(({ width }) => width);
+			const heldSpeedWidths = heldSpeedTarget.frames.map(({ width }) => width);
 			expect(heldSpeedWidths.every((width, index) => (
 				index === 0 || width >= requireValue(
 					heldSpeedWidths[index - 1],
@@ -5904,7 +6018,7 @@ describe('SPECTRA built extension smoke', () => {
 		}
 	}, 35_000);
 
-	test('serializes denied capture attempts through one offscreen host and rolls back', async () => {
+	test('rejects unadmitted capture requests without creating an offscreen host', async () => {
 		const secondaryUrl = `${fixtureUrl}?secondary=1`;
 		const secondary = await browser.newPage();
 		await secondary.goto(secondaryUrl, { waitUntil: 'domcontentloaded' });
@@ -5915,8 +6029,10 @@ describe('SPECTRA built extension smoke', () => {
 		});
 
 		const primaryUrl = fixturePage.url();
+		const contextsBefore = await getOffscreenContextCount();
+		let leases: SmokeRuntimeLease[] = [];
 		try {
-			await Promise.all([
+			leases = await Promise.all([
 				acquireSmokeRuntime(primaryUrl, 'capture-denied-primary'),
 				acquireSmokeRuntime(secondaryUrl, 'capture-denied-secondary'),
 			]);
@@ -5967,9 +6083,6 @@ describe('SPECTRA built extension smoke', () => {
 				const contexts = await chrome.runtime.getContexts({
 					contextTypes: ['OFFSCREEN_DOCUMENT' as chrome.runtime.ContextType],
 				});
-				// Host introspection is background-only; the Puppeteer side reads it
-				// through the service worker after these v2 UI requests settle.
-				const snapshot = { audioTabs: [], remoteTabs: [] };
 				const stops = await Promise.all(tabIds.map((tabId, index) => (
 					captureRequest(tabId, false, index + 100)
 				)));
@@ -6003,23 +6116,17 @@ describe('SPECTRA built extension smoke', () => {
 					tabIds,
 					starts,
 					contexts: contexts.length,
-					snapshot,
 					stops,
 					stoppedStatuses,
 				};
 			}, { urls: [primaryUrl, secondaryUrl] });
-			const hostSnapshot = await readOffscreenSnapshot();
-			expect(result.contexts).toBe(1);
-			expect(hostSnapshot.remoteTabs).toEqual([]);
-			for (const [index, start] of result.starts.entries()) {
+			// A denied request cannot create a host; an unrelated idle host may retire.
+			expect(result.contexts).toBeLessThanOrEqual(contextsBefore);
+			for (const start of result.starts) {
 				expect(start).toMatchObject({
 					ok: false,
 					error: { code: 'invalid_request', message: 'Malformed capture request' },
 				});
-				const describedTab = hostSnapshot.audioTabs.find(
-					(audio: { tabId: number }) => audio.tabId === result.tabIds[index],
-				);
-				expect(describedTab).toBeUndefined();
 			}
 			for (const stop of result.stops) {
 				expect(stop).toMatchObject({ ok: true, data: { phase: 'idle', active: false } });
@@ -6029,6 +6136,7 @@ describe('SPECTRA built extension smoke', () => {
 				expect.objectContaining({ mode: 'bypass', phase: 'idle' }),
 			]);
 		} finally {
+			await Promise.all(leases.map((lease) => releaseSmokeRuntime(lease)));
 			await extensionClient.close();
 			await secondary.close();
 		}

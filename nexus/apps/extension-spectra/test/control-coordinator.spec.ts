@@ -468,6 +468,19 @@ describe('authoritative control coordinator', () => {
 		})).toBe(false);
 	});
 
+	test('rejects a Popup handoff whose fixed card document was replaced', () => {
+		const harness = installHarness();
+		const current = invocation(harness, 'popup');
+		expect(() => controlCoordinatorTestApi.assertPopupRequestDocument(
+			current,
+			harness.documentId,
+		)).not.toThrow();
+		expect(() => controlCoordinatorTestApi.assertPopupRequestDocument(
+			current,
+			'document-replaced',
+		)).toThrow('Popup control belongs to a stale document');
+	});
+
 	test('binds page-hotkey invocation to the exact top-level extension document sender', () => {
 		installHarness();
 		const sender = {
@@ -588,6 +601,7 @@ describe('authoritative control coordinator', () => {
 		const harness = installHarness();
 		const first = await controlCoordinatorTestApi.submit(request({ tabPinned: true }));
 		expect(first.generation).toBe(0);
+		await controlCoordinatorTestApi.flushSessionProjections();
 		const writesAfterCommit = harness.storageWrites;
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.tabPinned?.actual).toBe(true);
 		expect(harness.storageWrites).toBe(writesAfterCommit);
@@ -1439,6 +1453,7 @@ describe('authoritative control coordinator', () => {
 			target: null,
 			patch: { boost: 1 },
 		});
+		await controlCoordinatorTestApi.flushSessionProjections();
 		expect(badgeText).toBe('63');
 
 		badgeText = '';
@@ -1485,6 +1500,7 @@ describe('authoritative control coordinator', () => {
 				...request(patch),
 				source: 'hotkey',
 			}, invocation(harness, 'site-page'));
+			await controlCoordinatorTestApi.flushSessionProjections();
 			expect(badgeText).toBe(expectedBadge);
 		},
 	);

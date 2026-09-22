@@ -1,12 +1,40 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
-import { findBunVersionDrift, isCurrentToolchainFile, listArchiveToolchainFiles } from './toolchain-references';
+import { findBunVersionDrift, isCurrentToolchainFile, listArchiveToolchainFiles, listCurrentToolchainFiles } from './toolchain-references';
 import { BUN_VERSION } from './toolchain-versions';
 
 const old = ['1', '3', '14'].join('.');
 describe('current toolchain reference authority', () => {
+	test('checks unstaged new source while respecting tracked deletions and Git ignores', () => {
+		const root = mkdtempSync(join(tmpdir(), 'nexus-toolchain-worktree-'));
+		const git = (...args: string[]): void => {
+			const result = spawnSync('git', ['-C', root, ...args], { encoding: 'utf8', shell: false });
+			if (result.error) throw result.error;
+			if (result.status !== 0) throw new Error(result.stderr);
+		};
+		try {
+			git('init', '--quiet');
+			writeFileSync(join(root, 'kept.md'), `Bun ${BUN_VERSION}`);
+			writeFileSync(join(root, 'removed.md'), `Bun ${old}`);
+			writeFileSync(join(root, '.gitignore'), 'ignored.md\n');
+			git('add', '--', 'kept.md', 'removed.md', '.gitignore');
+			unlinkSync(join(root, 'removed.md'));
+			writeFileSync(join(root, 'new source.md'), `Bun ${old}`);
+			writeFileSync(join(root, 'ignored.md'), `Bun ${old}`);
+			const files = listCurrentToolchainFiles(root);
+			expect(files.map((path) => relative(root, path))).toEqual(['kept.md', 'new source.md']);
+			expect(files.flatMap((path) => findBunVersionDrift(
+				relative(root, path), readFileSync(path, 'utf8'), BUN_VERSION,
+			))).toEqual([`new source.md: Bun ${old}`]);
+			git('add', '--', 'new source.md');
+			expect(listCurrentToolchainFiles(root)).toEqual(files);
+		} finally {
+			rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+		}
+	});
 	test('rejects stale package, script, workflow and live document pins', () => {
 		for (const [path, text] of [
 			['nexus/package.json', `"packageManager":"bun@${old}"`],

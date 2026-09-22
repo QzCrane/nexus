@@ -612,8 +612,7 @@
             <!-- Explanation moved inside the card but slightly styled -->
             <div style="padding: 0 16px 16px 16px">
               <div class="setting-desc" data-i18n="vizDesc">
-                Disabling this allows "Native Lite" mode for restricted sites,
-                saving resources until >100% volume.
+                Show audio visualization. Turn it off to reduce audio processing.
               </div>
             </div>
           </div>
@@ -678,7 +677,7 @@
           <!-- Group 3: explicit site processing routes -->
           <div id="registry-group">
             <div id="registry-group-title" class="setting-group-title" data-i18n="grpAdvanced">
-              Site Processing Routes
+              Site audio routing
             </div>
             <div class="setting-card registry-card">
               <input
@@ -702,13 +701,13 @@
                   placeholder="example.com"
                 />
                 <select id="registry-new-route" class="registry-route-select" data-i18n-aria="registryRouteAria" aria-label="Processing route">
-                  <option value="capture" data-i18n="tabRestricted">Capture when needed</option>
-                  <option value="direct" data-i18n="tabSafe">Direct only</option>
+                  <option value="capture" data-i18n="tabRestricted">Compatibility</option>
+                  <option value="direct" data-i18n="tabSafe">Page audio only</option>
                 </select>
                 <button type="button" id="btn-add-domain" class="btn-small" data-i18n-title="registryAddDomainTitle" title="Add domain">＋</button>
               </div>
               <div class="setting-desc registry-hint" data-i18n="registryHint">
-                One explicit route per site. Capture starts only after an authorized processing request.
+                Automatic routing is used unless you choose an override. Deleting an override restores automatic selection.
               </div>
             </div>
           </div>
@@ -764,6 +763,7 @@
             </div>
           </div>
           <div class="top-right">
+            <button type="button" class="btn-text btn-effects" data-i18n="effectsLabel" data-i18n-title="tipAdvancedSettings">Effects</button>
             <div class="save-actions">
               <button
                 type="button"
@@ -798,6 +798,7 @@
           </div>
         </div>
 
+        <p class="control-sync-status" role="status" aria-live="polite" data-i18n="controlSyncing" hidden>Syncing current controls…</p>
         <div class="sleep-mask hidden">
           <div class="sleep-content">
             <div class="sleep-icon">⏻</div>

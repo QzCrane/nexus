@@ -27,7 +27,16 @@ import {
 	type SpectraEventEnvelope,
 	type SpectraRequestEnvelope,
 } from '@nexus/contracts';
+import { withContentOSDMessages } from '../src/shared/i18n/content-osd';
 import { createCaptureAdmission } from './helpers/capture-admission';
+
+function legacyV2ContentGuardAccepts(value: ReturnType<typeof withContentOSDMessages>): boolean {
+	const keys = Object.keys(value.osdMessages).sort();
+	return keys.join(',') === 'corsAddedSafe,corsAutoAdded,corsCorrectedSafe,muted'
+		&& Object.values(value.osdMessages).every((message) => (
+			typeof message === 'string' && message.length > 0 && message.length <= 256
+		));
+}
 
 function createAudioConfig(overrides: Partial<AudioConfig> = {}): AudioConfig {
 	const merged = {
@@ -1015,6 +1024,32 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		})).toBe(false);
 	});
 
+	test('keeps the v2 producer acceptable to an already-running legacy Content guard', () => {
+		const settings = createSettingsSnapshot();
+		const produced = withContentOSDMessages(settings.globalSettings);
+		expect(legacyV2ContentGuardAccepts(produced)).toBe(true);
+		expect(isSpectraResponse('spectra.content.settings.get', rpcSuccess(produced))).toBe(true);
+		expect(isSpectraEventEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			type: 'spectra.content.settings.changed',
+			payload: produced,
+		})).toBe(true);
+		const incomplete = {
+			...settings.globalSettings,
+			osdMessages: { muted: 'MUTE' },
+		};
+		expect(legacyV2ContentGuardAccepts(incomplete as typeof produced)).toBe(false);
+		expect(isSpectraResponse('spectra.content.settings.get', rpcSuccess(incomplete))).toBe(false);
+		expect(isSpectraResponse('spectra.content.settings.get', rpcSuccess({
+			...produced,
+			osdMessages: { ...produced.osdMessages, corsAddedSafe: 7 },
+		}))).toBe(false);
+		expect(isSpectraResponse('spectra.content.settings.get', rpcSuccess({
+			...produced,
+			osdMessages: { ...produced.osdMessages, unexpected: 'copy' },
+		}))).toBe(false);
+	});
+
 	test('validates request-specific success data and the shared error shape', () => {
 		const settings = createSettingsSnapshot();
 		const config = createAudioConfig({ volume: 150 });
@@ -1124,15 +1159,10 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			generation: 1,
 			frames: { '7': [256] },
 		}))).toBe(false);
-		expect(isSpectraResponse('spectra.content.settings.get', rpcSuccess({
-			...settings.globalSettings,
-			osdMessages: {
-				muted: 'MUTE',
-				corsAutoAdded: 'Added {domain}',
-				corsAddedSafe: 'Safe {domain}',
-				corsCorrectedSafe: 'Corrected {domain}',
-			},
-		}))).toBe(true);
+		expect(isSpectraResponse(
+			'spectra.content.settings.get',
+			rpcSuccess(withContentOSDMessages(settings.globalSettings)),
+		)).toBe(true);
 		expect(isSpectraResponse('spectra.media.state.get', rpcSuccess({
 			playing: true,
 			speed: 1.25,

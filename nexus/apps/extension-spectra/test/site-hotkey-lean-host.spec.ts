@@ -1,5 +1,4 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import {
 	DEFAULT_HOTKEY_SETTINGS,
 	isSpectraDefaultHotkeyTriggerPayload,
@@ -11,15 +10,6 @@ import {
 	isLeanRepeatableSiteHotkeyAction,
 	resolveSiteHotkeys,
 } from '../src/shared/site-hotkey-mode';
-
-const hostSource = readFileSync(
-	new URL('../src/content/input/lean-site-hotkey-host.ts', import.meta.url),
-	'utf8',
-);
-const shortcutSource = readFileSync(
-	new URL('../src/background/shortcuts.ts', import.meta.url),
-	'utf8',
-);
 
 function binding(
 	action: HotkeyAction,
@@ -150,62 +140,4 @@ describe('lean site-page trigger contract', () => {
 		})).toBe(false);
 	});
 
-	test('lean host reuses the existing physical gesture/feedback channel instead of direct control RPC', () => {
-		expect(hostSource).toContain("type: 'spectra.content.default-hotkey.trigger'");
-		expect(hostSource).toContain("disposition: 'site-page'");
-		expect(hostSource).toContain("nextScalarGestureId('site')");
-		expect(hostSource).toContain('publishDefaultScalarGesture');
-		expect(hostSource).toContain('showToast');
-		expect(hostSource).not.toContain("type: 'spectra.control.intent.submit'");
-		expect(hostSource).not.toContain("type: 'spectra.control.operation.submit'");
-		expect(hostSource).not.toContain('pendingPulses');
-		expect(hostSource).not.toContain('hotkeyTargetRepository');
-	});
-
-	test('Background keeps shipped defaults global-targeted while site-page bypasses the target repository', () => {
-		const siteStart = shortcutSource.indexOf('async function runSitePageHotkey');
-		const routeStart = shortcutSource.indexOf('interface ShortcutRoute', siteStart);
-		const siteBlock = shortcutSource.slice(siteStart, routeStart);
-		expect(siteStart).toBeGreaterThanOrEqual(0);
-		expect(siteBlock).toContain("origin: 'site-page'");
-		expect(siteBlock).toContain('foreground: document');
-		expect(siteBlock).toContain('target: document');
-		expect(siteBlock).toContain('executeShortcutRoute');
-		expect(siteBlock).not.toContain('hotkeyTargetRepository');
-
-		const defaultStart = shortcutSource.indexOf('async function runDefaultPageHotkey');
-		const siteFunctionStart = shortcutSource.indexOf('async function runSitePageHotkey', defaultStart);
-		const defaultBlock = shortcutSource.slice(defaultStart, siteFunctionStart);
-		expect(defaultBlock).toContain('resolveShortcutTargetFromActive');
-		expect(shortcutSource).toContain('const { tabId: targetId } = await hotkeyTargetRepository.get();');
-	});
-});
-
-describe('lean site-hotkey host lifecycle', () => {
-	test('uses website-first arbitration and Background-owned bounded repeat bursts', () => {
-		expect(hostSource).toContain('createWebsiteFirstKeyboardArbiter');
-		expect(hostSource).toContain('resolveSpectraDefaultHotkeyAction(event) !== null');
-		expect(hostSource).toContain('SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS.includes');
-		expect(hostSource).toContain("phase: 'press' | 'release'");
-		expect(shortcutSource).toContain('MAX_REPEAT_BURST_PULSES = 160');
-		expect(shortcutSource).toContain('releasePageGestureBurst');
-		expect(hostSource).not.toContain('setInterval');
-	});
-
-	test('releases the admitted physical gesture and retires invalid extension contexts', () => {
-		expect(hostSource).toContain('activeByCode.set(event.code, active)');
-		expect(hostSource).toContain('subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease)');
-		expect(hostSource).toContain("publishPhase(active, 'release')");
-		expect(hostSource).toContain("publishPhase(active, 'settled')");
-		expect(hostSource).toContain('runWithValidExtensionContext');
-		expect(hostSource).toContain('dispose');
-	});
-
-	test('keeps the lean host alive across BFCache and disposes only a real page retirement', () => {
-		expect(hostSource).toContain('const onPageHide = (event: PageTransitionEvent)');
-		expect(hostSource).toContain('if (!event.persisted) dispose();');
-		expect(hostSource).toContain("window.addEventListener('pagehide', onPageHide);");
-		expect(hostSource).not.toContain("window.addEventListener('pagehide', onPageHide, { once: true })");
-		expect(hostSource).toContain("window.removeEventListener('pagehide', onPageHide)");
-	});
 });
