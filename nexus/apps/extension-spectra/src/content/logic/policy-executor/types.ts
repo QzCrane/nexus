@@ -17,9 +17,6 @@ export interface PolicyApplicationOptions {
 export interface PolicyUpdateOptions {
 	isNativeSync?: boolean;
 	captureAdmission?: CaptureAdmission;
-	// Document-level processor hold intent: keep the processor session alive even
-	// when the new config is neutral, so 100↔110 crossings only change gain.
-	hold?: boolean;
 	// Persist the config snapshot in the background instead of awaiting it.
 	// The audio policy is already applied by the time this option is consulted,
 	// so a callers that only need applied-state ACK (hotkeys, control intents)

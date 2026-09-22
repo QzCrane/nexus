@@ -7,6 +7,64 @@ last_reviewed: 2026-09-23
 
 # Live and recorded media route isolation
 
+## Follow-up: rejected neutral hold and repeated transitions
+
+The user rejected candidate `54d8805a`: returning to 0–100 must release Capture
+when volume enhancement is its only demand, and repeated transitions must work
+without reloading. The prior candidate's neutral hold is not approved business
+behavior. Its passing tests asserted the wrong requirement and used a reload to
+exit the held session. The historical hold description below is superseded.
+
+Repair and verification:
+
+1. Remove sticky processor demand and stop emitting hold intents; preserve
+   independent non-neutral DSP and safe page analyser demand.
+2. Change the existing built-extension regression to require real neutral release
+   and repeated re-entry on one document, without a restorative reload.
+3. Trace repeated volume/page transitions through target identity, Capture
+   admission, generation and physical stop/start readback; fix demonstrated
+   failures in their existing owners.
+4. Update the canonical state contract, run browser and applicable repository
+   gates, independently review, and deliver the verified candidate.
+
+Two old-artifact failures were reproduced before changing the browser oracle:
+`350 -> 80` retained physical Capture despite neutral boost, and an unsafe
+`srcObject` at neutral volume acquired Capture after a visible Visualizer's
+delayed retry. Default Visualizer observation was a second independent source
+of Capture demand. Removing hold alone could not restore the requested behavior.
+
+The canonical policy now requires enabled, non-neutral DSP for Capture. The
+Visualizer may use a proven safe page analyser or observe DSP-owned Capture,
+but cannot mint admission or extend Capture lifetime. Unsafe neutral subscribers
+settle on bypass without acquisition retries. A failed neutral page-analyser
+handoff also executes the existing acknowledged Capture stop path. Stop failure
+remains a retained physical owner/error, never an optimistic idle state.
+
+The old optional v2 hold/admission fields remain decodable but have no execution
+authority. Runtime revision `3.6.0` forces the existing loader to replace older
+Content implementations. Both envelope validators accept observation without a
+Capture grant and still validate the identity of any legacy supplied grant.
+The full browser suite caught a missed optional-field decoder during this repair;
+the decoder and its no-grant boundary tests were corrected before delivery.
+
+Browser regressions require one document without reload: three `350 -> 80/0/100`
+cycles, and a continuously subscribed default Visualizer across
+`110 -> 50 -> 110 -> 100`. Assertions cover DOM volume, Content and session ACKs,
+offscreen graph retirement, and distinct starts on re-entry. These use a real
+browser and synthetic MediaStreams; they do not measure the user's current
+Douyin stream or audible output. Existing same-document path-rule tests remain
+part of the full suite. No new site-name special case, permission or dependency
+was introduced.
+
+Verified candidate: production build and artifact integrity pass; all 109 isolated
+SPECTRA unit/contract/runtime test files pass, with the final foreground-acquisition
+guard additionally covered by the 50-test coordinator suite. The final built
+extension Chrome suite passes 47 tests / 490 assertions, including real Popup
+subscription acceptance/release, safe analyser pixels, repeated Capture cycles,
+worker replacement and navigation disposal. Independent production review has no
+remaining blocker. Repository push gates remain mandatory for delivery; actual
+sound in the user's live Edge tab requires user readback.
+
 Baseline: `3f07c73b`. The user reports that Douyin live playback changes the
 displayed volume without changing sound, with Capture shown across the whole
 volume range. The recorded-video page works natively and is disrupted by forcing

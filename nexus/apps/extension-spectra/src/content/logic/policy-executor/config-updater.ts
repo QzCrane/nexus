@@ -33,10 +33,6 @@ export function updateConfig(
 	if (!options.isNativeSync) {
 		state.userHasInteracted = true;
 	}
-	// Document-level sticky hold: once this document crosses the 100% boundary,
-	// every later crossing must be a gain change, never a processor wake/teardown.
-	if (options.hold === true) state.processorHold = true;
-
 	const newConfig = { ...state.config, ...changes };
 	const effectiveVolume = changes.volume;
 	const effectiveVolumeOnly = effectiveVolume !== undefined

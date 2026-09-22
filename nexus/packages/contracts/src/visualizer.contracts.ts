@@ -1,4 +1,4 @@
-// goal: own every visualizer subscription and transient Capture-demand wire shape
+// goal: own visualizer observation subscriptions and frame wire shapes
 
 import {
 	isCaptureAdmission,
@@ -34,7 +34,8 @@ export type AudioVisualizerDemandPayload =
 	| {
 		subscriberId: string;
 		enabled: true;
-		admission: CaptureAdmission;
+		// Retired v2 field; observation no longer grants Capture authority.
+		admission?: CaptureAdmission;
 	}
 	| {
 		subscriberId: string;
@@ -102,8 +103,8 @@ export function isAudioVisualizerDemandPayload(
 	if (!isProtocolRecord(value) || !isSubscriberId(value.subscriberId)) return false;
 	if (value.enabled === true) {
 		return hasOnlyProtocolKeys(value, VISUALIZER_DEMAND_ENABLED_KEYS)
-			&& isCaptureAdmission(value.admission)
-			&& value.admission.kind === 'capture-start';
+			&& (value.admission === undefined
+				|| isCaptureAdmission(value.admission) && value.admission.kind === 'capture-start');
 	}
 	return value.enabled === false
 		&& hasOnlyProtocolKeys(value, VISUALIZER_DEMAND_DISABLED_KEYS);

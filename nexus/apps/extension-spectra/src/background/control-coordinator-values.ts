@@ -168,7 +168,6 @@ export interface ResolvedControlIntentRequest {
 	target: MediaTarget | null;
 	patch: ControlPatch;
 	captureAdmission?: CaptureAdmission;
-	processorHold?: boolean;
 }
 
 export function createIntent(
@@ -202,9 +201,6 @@ export function createIntent(
 		patch: request.patch,
 		...(request.captureAdmission
 			? { captureAdmission: request.captureAdmission }
-			: {}),
-		...(request.processorHold
-			? { processorHold: true }
 			: {}),
 	};
 }

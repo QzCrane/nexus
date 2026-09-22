@@ -55,7 +55,7 @@ effective output ~= volumeBase / 100 * boost
 
 ## §12 Audio processing
 
-所有显式 DSP 都走同一稀疏图语义，但物理 owner 按成本选择：完整精确媒体覆盖用 MediaElement WebAudio，否则用 Capture。原生音量、静音和倍速仍由原生 writer 负责。可见前台 Popup Visualizer 是独立、非持久化 demand；后台卡片与普通状态读取无权触发 analyser 或 Capture。
+所有显式 DSP 都走同一稀疏图语义，但物理 owner 按成本选择：完整精确媒体覆盖用 MediaElement WebAudio，否则用 Capture。原生音量、静音和倍速仍由原生 writer 负责。可见前台 Popup Visualizer 是独立、非持久化的安全页面 analyser demand，只能观察 DSP 已经需要的 Capture，不能单独启动或保留 Capture；后台卡片与普通状态读取无权触发 analyser 或 Capture。
 
 ### §12.1 Media WebAudio / Capture admission and ACK
 

@@ -17,6 +17,7 @@ import {
 	isCaptureAdmission,
 } from '@nexus/contracts';
 import {
+	acquirePopupVisualizerSource,
 	controlCoordinatorTestApi,
 	type ExtensionInvocationContext,
 } from '../src/background/control-coordinator';
@@ -395,6 +396,15 @@ afterEach(async () => {
 });
 
 describe('authoritative control coordinator', () => {
+	test('rejects background-tab analyser acquisition without issuing Content demand', async () => {
+		const harness = installHarness();
+		harness.activeTabId = 8;
+		await expect(acquirePopupVisualizerSource(7, 'background-observer'))
+			.rejects.toThrow('foreground Popup tab');
+		expect(harness.contentMessages).toEqual([]);
+		expect(harness.offscreenProcessorActive).toBe(false);
+	});
+
 	test('mints volatile Capture admission only for an invoked current-tab UI or validated shortcut', async () => {
 		const harness = installHarness();
 		const intents: ControlIntent[] = [];
@@ -905,7 +915,7 @@ describe('authoritative control coordinator', () => {
 		expect(harness.snapshotEvents).toBe(2);
 	});
 
-	test('holds the processor across a return to or below 100 with a neutral gain instead of releasing', async () => {
+	test('releases the volume processor before native attenuation on a return below 100', async () => {
 		const harness = installHarness();
 		const target = {
 			frameId: 0,
@@ -924,7 +934,9 @@ describe('authoritative control coordinator', () => {
 			return {
 				ok: true,
 				data: intent.requestedCoverage === 'full'
-					? captureProcessorAck(harness, intent)
+					? intent.patch.boost === 1
+						? releaseProcessorAck(harness, intent)
+						: captureProcessorAck(harness, intent)
 					: appliedPatchAck(intent, () => 'dom-native'),
 			};
 		};
@@ -957,14 +969,13 @@ describe('authoritative control coordinator', () => {
 			{ boost: 1 },
 			{ volumeBase: 80 },
 		]);
-		// 降回 ≤100 是保活而非拆除：处理器会话保持，增益置中性。
-		expect(intents[0]).toMatchObject({ processorHold: true });
-		expect(harness.offscreenProcessorActive).toBe(true);
+		expect(intents[0]?.processorHold).toBeUndefined();
+		expect(harness.offscreenProcessorActive).toBe(false);
 		expect(acknowledgement.fields.boost).toMatchObject({
 			actual: 1,
-			phase: 'applied',
-			strategy: 'capture',
-			controlled: true,
+			phase: 'idle',
+			strategy: 'observe',
+			controlled: false,
 		});
 		expect(acknowledgement.result).toEqual({
 			effectiveVolume: 80,
@@ -973,7 +984,7 @@ describe('authoritative control coordinator', () => {
 		});
 	});
 
-	test('a later up-cross after a held processor is a pure gain update without wake or release', async () => {
+	test('a later up-cross reacquires a released processor through a fresh invocation', async () => {
 		const harness = installHarness();
 		const target = {
 			frameId: 0,
@@ -984,6 +995,7 @@ describe('authoritative control coordinator', () => {
 		};
 		const intents: ControlIntent[] = [];
 		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.page.scale.probe') return { ok: true, data: { supported: false } };
 			if (type === 'spectra.control.actual.read') {
 				return actualReadAck(payload as ControlReadRequest, target);
 			}
@@ -992,7 +1004,9 @@ describe('authoritative control coordinator', () => {
 			return {
 				ok: true,
 				data: intent.requestedCoverage === 'full'
-					? captureProcessorAck(harness, intent)
+					? intent.patch.boost === 1
+						? releaseProcessorAck(harness, intent)
+						: captureProcessorAck(harness, intent)
 					: appliedPatchAck(intent, () => 'dom-native'),
 			};
 		};
@@ -1011,18 +1025,17 @@ describe('authoritative control coordinator', () => {
 			operation: 'effective-volume',
 			payload: { operation: 'set', value: 80 },
 		});
-		expect(harness.offscreenProcessorActive).toBe(true);
+		expect(harness.offscreenProcessorActive).toBe(false);
 		intents.length = 0;
 
-		const up = await controlCoordinatorTestApi.submitOperation({
+		const up = await controlCoordinatorTestApi.submitOperationInvoked({
 			tabId: 7,
 			source: 'popup',
 			target,
 			operation: 'effective-volume',
 			payload: { operation: 'set', value: 120 },
-		});
+		}, invocation(harness, 'popup'));
 
-		// 上跨只改增益：无 release、无重新唤醒。
 		expect(intents.map((intent) => intent.patch)).toEqual([
 			{ volumeBase: 100 },
 			{ boost: 1.2 },

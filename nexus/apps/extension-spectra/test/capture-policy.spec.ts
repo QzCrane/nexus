@@ -26,7 +26,7 @@ describe('canonical three-owner audio processor policy', () => {
 	});
 
 	test.each([0, 40, 100])(
-		'admits a real processor at native volume %i only for an explicit foreground visualizer demand',
+		'uses only a safe page analyser for visualizer demand at native volume %i',
 		(nativeVolumeValue) => {
 			const nativeVolume = config({
 				volume: nativeVolumeValue,
@@ -41,7 +41,12 @@ describe('canonical three-owner audio processor policy', () => {
 				expect(resolveDesiredAudioMode(nativeVolume, {
 					visualizer: true,
 					mediaWebAudio: false,
-				})).toBe('capture');
+				})).toBe('bypass');
+				expect(resolveDesiredAudioMode(nativeVolume, {
+					visualizer: true,
+					mediaWebAudio: true,
+					mediaRoute: 'capture',
+				})).toBe('bypass');
 				expect(resolveDesiredAudioMode(
 					{ ...nativeVolume, enabled: false },
 					{ visualizer: true, mediaWebAudio: true },
@@ -92,25 +97,27 @@ describe('canonical three-owner audio processor policy', () => {
 		expect(resolveDesiredAudioMode(disabled)).toBe('bypass');
 	});
 
-	test('hold demand keeps a neutral config on the processor owner for zero-latency crossings', () => {
+	test('neutral volume releases every route unless independent analyser demand remains', () => {
 		const neutral = config({ volume: 100, volumeBase: 100, boost: 1 });
 		expect(requiresAudioProcessor(neutral)).toBe(false);
 		expect(resolveDesiredAudioMode(neutral)).toBe('bypass');
 		expect(resolveDesiredAudioMode(neutral, {
 			visualizer: false,
 			mediaWebAudio: true,
-			hold: true,
-		})).toBe('webaudio');
+			mediaRoute: 'direct',
+		})).toBe('bypass');
 		expect(resolveDesiredAudioMode(neutral, {
 			visualizer: false,
 			mediaWebAudio: false,
-			hold: true,
-		})).toBe('capture');
-		// 禁用是天然释放边界：hold 不能跨越 master switch。
+			mediaRoute: 'capture',
+		})).toBe('bypass');
+		expect(resolveDesiredAudioMode(neutral, {
+			visualizer: true,
+			mediaWebAudio: false,
+		})).toBe('bypass');
 		expect(resolveDesiredAudioMode({ ...neutral, enabled: false }, {
 			visualizer: false,
 			mediaWebAudio: false,
-			hold: true,
 		})).toBe('bypass');
 	});
 });

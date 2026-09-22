@@ -378,7 +378,7 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 			|| !isBoundedString(value.documentId, 256)
 			|| !isInteger(value.generation)
 			|| !isAudioVisualizerDemandPayload(value.payload)) return false;
-		return value.payload.enabled === false || (
+		return value.payload.admission === undefined || (
 			value.tabId === value.payload.admission.document.tabId
 			&& value.documentId === value.payload.admission.document.documentId
 			&& value.generation === value.payload.admission.documentEpoch

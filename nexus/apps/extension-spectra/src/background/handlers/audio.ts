@@ -217,12 +217,12 @@ async function reconcileVisualizerSourceOwners(
 		if (visualizerSourceOwners.has(subscriberId)) continue;
 		const acquisition = await acquirePopupVisualizerSource(tabId, subscriberId);
 		visualizerSourceOwners.set(subscriberId, acquisition.lease);
-		if (!acquisition.active) {
+		if (!acquisition.active && acquisition.errorMessage !== null) {
 			// The enable request may have committed before an ACK was lost. Keep the
 			// pending owner reachable and schedule an idempotent release before the
 			// Popup's backoff admits another acquisition.
 			scheduleVisualizerSourceOwnerRetry();
-			throw new Error(acquisition.errorMessage ?? 'Visualizer Capture is unavailable');
+			throw new Error(acquisition.errorMessage);
 		}
 	}
 }

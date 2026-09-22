@@ -38,7 +38,7 @@ Exhaustive matrix for fields and operations in `control.contracts.ts`. Adding fe
 | A/B state | `mediaId + sourceRevision` | extension state + native seek executor | Validates `0 <= A < B`; updates same target only. |
 | Tab pinned | tab | `chrome.tabs.update({pinned})` | `tabs.onUpdated`/`tabs.get` readback. |
 | EQ/Bass/Compressor/Mono/Pan/Delay | explicit full audio | proven MediaElement WebAudio, then admitted full-tab Capture | Processor readback; page binding is allowed only with complete exact source coverage, otherwise Capture owns the full mix. |
-| Visualizer subscription | visible foreground Popup + current top-level document | analyser tap on acknowledged MediaElement WebAudio; fall back to one-shot admitted Capture only when complete safe page coverage is unavailable | Per-Popup `subscriberId + generation + sourceTabId` lease; 5s heartbeat. Background cards remain passive. Final release removes analyser demand and stops transient Capture unless independent DSP/subscriber demand remains. |
+| Visualizer subscription | visible foreground Popup + current top-level document | analyser tap on proven safe MediaElement WebAudio or Capture already required by non-neutral DSP; unsafe neutral source settles on bypass | Per-Popup `subscriberId + generation + sourceTabId` lease; 5s heartbeat. Background cards remain passive. Subscription cannot start or retain Capture; final release removes page analyser demand. |
 
 ### §8.2 Momentary and compound operations
 
@@ -109,7 +109,7 @@ One row per capability in `CONTROL_ALGORITHM_ADJUDICATIONS`. 17 native-only, 6 h
 | `abLoop` | augmentation-only metadata | media/source-keyed state | coordinator state + native seek ACK; 1 scheduler while enabled |
 | `tabPinned` | native-only via Chrome tab | none | `tabs.get`/tab event readback |
 | `eqValues`/`bass`/`compressor`/`mono`/`pan`/`delay` | augmentation-only | proven MediaElement WebAudio, then admitted Capture | processor topology/parameter/source-count readback; disabled nodes absent |
-| `visualizer` | observation-only | trusted visible-foreground subscription uses proven MediaElement WebAudio first and transient Capture only as fallback; background cards are passive | exact subscriber/document/processor ACK; max 15 Hz; hide, close, navigation, expiry, disconnect, or final release retires transient work |
+| `visualizer` | observation-only | trusted visible-foreground subscription uses proven safe MediaElement WebAudio or observes Capture required by non-neutral DSP; background cards are passive | exact subscriber/document/processor ACK; max 15 Hz; no Capture admission or retention; unsafe neutral sources settle without retry; hide, close, navigation, expiry, disconnect, or final release retires analyser demand |
 | `restore-page-settings` | augmentation-only | release extension-owned fields; native restores baseline | final per-field ACK releases leases |
 | `playback-toggle` | native-only: observe `playing`, execute plan | none | native play/pause event |
 | `seek-relative` | native-only: compute against time/ranges | none | same native seek ACK |
@@ -157,7 +157,7 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | `mono` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
 | `pan` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
 | `delay` | `augmentation-only` | `explicit-full-output-only` | `media-webaudio -> capture` | `forbidden` | `processor-readback` | `while-owned` |
-| `visualizer` | `observation-only` | `explicit-foreground-subscription` | `media-webaudio -> capture-observe` | `forbidden` | `subscription-state` | `while-subscribed` |
+| `visualizer` | `observation-only` | `explicit-foreground-subscription` | `safe-media-webaudio / existing-dsp-capture-observe` | `forbidden` | `subscription-state` | `while-subscribed` |
 | `restore-page-settings` | `augmentation-only` | `extension-owned-capability` | `extension-state` | `forbidden` | `coordinator-snapshot` | `none` |
 | `effective-volume` | `hybrid-extension-native` | `explicit-full-output-only` | `page-native -> dom-native -> extension-state -> media-webaudio -> capture` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter + processor-readback` | `none` |
 | `playback-toggle` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
@@ -199,7 +199,7 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | Rotate/mirror/fill/filters | N/A | CSS `rotate`/`scale`/`object-fit` | inline-style replacement, MAIN style |
 | Dim background | N/A | 4-region closed-shadow overlay | mutating `z-index` |
 | A/B and markers | N/A | state keyed by `mediaId+sourceRevision` | document-global state |
-| Visualizer | observe an acknowledged processor | one trusted visible-foreground subscriber uses exact-coverage MediaElement WebAudio first and may transiently admit Capture only as fallback; all background cards are passive | partial source binding, synthetic bars, all-tab acquisition, unbounded retry, or persistence of analysis demand |
+| Visualizer | observe an acknowledged processor | one trusted visible-foreground subscriber uses exact-coverage safe MediaElement WebAudio or Capture required by non-neutral DSP; all background cards are passive | observation-only Capture acquisition/retention, partial source binding, synthetic bars, all-tab acquisition, unbounded retry, or persistence of analysis demand |
 | Screenshot | `captureVisibleTab` | none | canvas CORS probing |
 | Actions/URL | Chrome API | none | content emulation |
 | User script | N/A | `userScripts` sandbox | sharing MAIN authority |

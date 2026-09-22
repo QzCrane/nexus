@@ -64,7 +64,6 @@ function state(mode: 'bypass' | 'webaudio' | 'capture' = 'capture'): PolicyExecu
 		userHasInteracted: true,
 		isPopupOpen: false,
 		visualizerSubscribers: new Set(),
-		processorHold: false,
 	};
 }
 
@@ -197,14 +196,13 @@ function installRouteRpc(initial: {
 }
 
 describe('three-owner audio mode executor', () => {
-	test('refreshes a same-document route in the policy queue and drops the previous route hold', async () => {
+	test('refreshes a same-document route in the policy queue and retires a neutral Capture owner', async () => {
 		const routeRpc = installRouteRpc({ mediaRoute: 'capture', source: 'user' });
 		const runtimeState = state('capture');
 		runtimeState.config = clone(DEFAULT_AUDIO_CONFIG);
 		runtimeState.appliedConfig = clone(DEFAULT_AUDIO_CONFIG);
 		runtimeState.actualMode = 'capture';
 		runtimeState.phase = 'active';
-		runtimeState.processorHold = true;
 		const request = mock(async () => ({
 			status: 'idle' as const,
 			phase: 'idle' as const,
@@ -222,7 +220,6 @@ describe('three-owner audio mode executor', () => {
 
 		await executor.applyNavigation(() => true);
 
-		expect(runtimeState.processorHold).toBe(false);
 		expect(runtimeState.mediaRoute).toBe('direct');
 		expect(request).toHaveBeenCalledWith(false, runtimeState.config, 6);
 		expect(runtimeState).toMatchObject({
@@ -793,6 +790,34 @@ describe('three-owner audio mode executor', () => {
 		expect(setVisualizerSubscribed).toHaveBeenCalledWith(true);
 		expect(runtimeState).toMatchObject({ actualMode: 'webaudio', phase: 'active' });
 		expect(runtimeState.appliedConfig.boost).toBe(1);
+	});
+
+	test.each(['auto', 'direct'] as const)('releases Capture if a neutral %s analyser fails to initialize', async (route) => {
+		const runtimeState = state('webaudio');
+		runtimeState.mediaRoute = route;
+		runtimeState.config = clone(DEFAULT_AUDIO_CONFIG);
+		runtimeState.actualMode = 'capture';
+		runtimeState.phase = 'active';
+		runtimeState.visualizerSubscribers.add('popup-visualizer');
+		const request = mock(async (enabled: boolean) => ({
+			status: enabled ? 'processing' as const : 'idle' as const,
+			phase: enabled ? 'active' as const : 'idle' as const,
+			active: enabled,
+			generation: 6,
+		}));
+		const runtimeDeps = deps({
+			isActive: () => true,
+			syncConfig: mock(async () => clone(DEFAULT_AUDIO_CONFIG)),
+			request,
+		}, { canAttachAll: () => true, initialize: mock(async () => false) }, [safeDataMedia()]);
+		bindCallbacks(runtimeDeps, runtimeState);
+
+		await executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+
+		expect(request).toHaveBeenCalledTimes(1);
+		expect(request).toHaveBeenCalledWith(false, runtimeState.config, 5);
+		expect(runtimeState).toMatchObject({ actualMode: 'bypass', desiredMode: 'bypass', phase: 'idle' });
+		expect(runtimeState.visualizerSubscribers.size).toBe(1);
 	});
 
 	test('never escalates a direct route to Capture when the page graph is unavailable', async () => {

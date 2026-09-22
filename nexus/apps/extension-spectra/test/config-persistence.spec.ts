@@ -149,7 +149,6 @@ describe('content config persistence queue', () => {
 				userHasInteracted: false,
 				isPopupOpen: false,
 				visualizerSubscribers: new Set(),
-				processorHold: false,
 			};
 			const deps = { captureManager: { isActive: () => false } } as unknown as PolicyExecutorDeps;
 			const internal = internalState();

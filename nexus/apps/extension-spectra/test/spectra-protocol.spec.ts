@@ -727,6 +727,15 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		const visualizerAdmission = createCaptureAdmission();
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			requestId: 'visualizer-observation-without-capture-authority',
+			tabId: 42,
+			documentId: 'document-42',
+			generation: 3,
+			type: 'spectra.audio.visualizer.demand.set',
+			payload: { subscriberId: 'popup-1', enabled: true },
+		})).toBe(true);
+		expect(isSpectraRequestEnvelope({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'visualizer-demand',
 			tabId: 42,
 			documentId: 'document-42',

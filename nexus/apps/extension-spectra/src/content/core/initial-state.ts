@@ -95,7 +95,6 @@ export function assembleInitialState(
 				userHasInteracted: handoff?.userHasInteracted ?? false,
 				isPopupOpen: false,
 				visualizerSubscribers: new Set<string>(),
-				processorHold: false,
 			},
 	};
 }

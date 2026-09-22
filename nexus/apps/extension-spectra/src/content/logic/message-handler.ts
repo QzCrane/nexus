@@ -177,7 +177,6 @@ function handleVisualizerDemand(
 	else deps.state.visualizerSubscribers.delete(message.payload.subscriberId);
 	const operation = deps.policyExecutor.applyState({
 		modeIntent: true,
-		...(message.payload.enabled ? { captureAdmission: message.payload.admission } : {}),
 	});
 	void operation.then(
 		() => sendResponse(rpcSuccess(createRuntimeStatus(deps))),

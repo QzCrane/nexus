@@ -57,7 +57,6 @@ export async function createPolicyExecutor(
 				media,
 				(element) => deps.mediaRegistry.getEligibilityEvidence(element),
 			),
-			hold: state.processorHold,
 		});
 		state.desiredMode = mode;
 		const modeChanged = mode !== state.activeMode;
@@ -114,10 +113,6 @@ export async function createPolicyExecutor(
 			modeExecutor.invalidate();
 			return enqueueApplication(async () => {
 				if (!isCurrentRoute() || expectedRouteRevision !== routeRevision) return;
-				// A same-document route is a new media ownership boundary. The previous
-				// route's neutral 100↔110 hold cannot keep Capture alive on this page;
-				// non-neutral DSP demand still selects a processor through normal policy.
-				state.processorHold = false;
 				await eligibilityCache.refresh();
 				if (!isCurrentRoute() || !isCurrent() || expectedRouteRevision !== routeRevision) return;
 				state.mediaRoute = eligibilityCache.getUserRoute();
@@ -133,7 +128,6 @@ export async function createPolicyExecutor(
 				state.mediaRoute = route;
 				if (route !== 'direct') return;
 				modeExecutor.invalidate();
-				state.processorHold = false;
 				await applyCurrentState({ modeIntent: true }, expectedRouteRevision);
 			});
 		},

@@ -174,8 +174,8 @@ export function requiresAudioProcessor(config: Pick<
 }
 
 export interface AudioProcessorDemand {
-	// A visible foreground visualizer needs an analyser backed by a real audio
-	// source, but owns that demand only for its acknowledged subscription.
+	// A visible analyser can use a proven-safe page graph. Observation alone
+	// never starts or retains full-tab Capture.
 	visualizer: boolean;
 	// True only when the current document can bind every media source to the
 	// page-lifetime MediaElementAudioSource graph without risking CORS silence.
@@ -184,10 +184,6 @@ export interface AudioProcessorDemand {
 	// processing in the page and never escalates to full-tab Capture; `capture`
 	// skips a known-bad page graph after an explicit Capture admission.
 	mediaRoute?: 'auto' | 'direct' | 'capture';
-	// Document-level processor hold: the document crossed the 100% boundary once,
-	// so the processor session must survive a return to a neutral boost so later
-	// crossings apply a gain change instead of a full wake/teardown cycle.
-	hold?: boolean;
 }
 
 const NO_AUDIO_PROCESSOR_DEMAND: Readonly<AudioProcessorDemand> = Object.freeze({
@@ -199,7 +195,11 @@ export function resolveDesiredAudioMode(
 	config: AudioConfig,
 	demand: Readonly<AudioProcessorDemand> = NO_AUDIO_PROCESSOR_DEMAND,
 ): SpectraAudioMode {
-	if (!config.enabled || (!requiresAudioProcessor(config) && !demand.visualizer && !demand.hold)) return 'bypass';
+	if (!config.enabled) return 'bypass';
+	if (!requiresAudioProcessor(config)) {
+		return demand.visualizer && demand.mediaWebAudio && demand.mediaRoute !== 'capture'
+			? 'webaudio' : 'bypass';
+	}
 	if (demand.mediaRoute === 'capture') return 'capture';
 	if (demand.mediaRoute === 'direct') return 'webaudio';
 	return demand.mediaWebAudio ? 'webaudio' : 'capture';

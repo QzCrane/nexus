@@ -312,7 +312,7 @@ Release and cross-platform lanes build the production SPECTRA candidate exactly 
 | Toast/OSD | Content feedback modules | One feedback owner on Popover; lean reuses existing gesture/feedback path |
 | Page media semantics | page-media bridge/native executor | Exact-element readback, DOM fallback, no polling |
 | PiP/fullscreen | fullscreen bridge/native executor | Actual native lifecycle preservation |
-| Visualizer | Popup scheduler + subscriber registry + coordinator/Content demand lease | Only visible foreground card owns analyser demand; proven page WebAudio precedes exact-document Capture fallback; background cards are passive; bounded heartbeat/tombstone/release retry |
+| Visualizer | Popup scheduler + subscriber registry + coordinator/Content demand lease | Only visible foreground card owns safe page analyser demand; observes Capture only while non-neutral DSP requires it; unsafe neutral sources settle on bypass without Capture admission or acquisition retry; background cards are passive; bounded heartbeat/tombstone/release retry |
 | Popup vertical geometry | `popup.css` + `views/navigation.ts` | Main view follows intrinsic card content; only `settings-view-active` owns the 600px settings viewport; navigation never writes inline height |
 | Favicon/QR | Popup/remote renderers | Validated payload, no undeclared capability |
 | Remote transport/session | `remote-site/vendor/peerjs.min.js` + `offscreen-remote/peerjs-loader.ts` + `remote-host.ts` | One workspace-owned JSON/DataChannel-only transport source, one lazy extension output, one Offscreen session/Peer owner, 16 KiB wire cap; epoch/command receipt/recovery remain bounded |

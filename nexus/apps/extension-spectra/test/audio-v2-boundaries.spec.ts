@@ -69,7 +69,7 @@ describe('content audio v2 boundary', () => {
 		}
 	});
 
-	test('owns foreground visualizer demand by subscriber and exact document', async () => {
+	test.each([false, true])('owns exact-document visualizer observation without Capture authority (legacy grant: %s)', async (legacyGrant) => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
 		Object.defineProperty(globalThis, 'chrome', {
@@ -95,10 +95,10 @@ describe('content audio v2 boundary', () => {
 			} as MessageHandlerDeps['state'];
 			const applyState = mock(async (options?: { captureAdmission?: unknown }) => {
 				if (state.visualizerSubscribers.size > 0) {
-					expect(options?.captureAdmission).toBeDefined();
-					state.activeMode = 'capture';
-					state.desiredMode = 'capture';
-					state.actualMode = 'capture';
+					expect(options?.captureAdmission).toBeUndefined();
+					state.activeMode = 'webaudio';
+					state.desiredMode = 'webaudio';
+					state.actualMode = 'webaudio';
 					state.phase = 'active';
 					state.generation += 1;
 				} else {
@@ -127,7 +127,7 @@ describe('content audio v2 boundary', () => {
 				payload: {
 					subscriberId: 'popup-visualizer-a',
 					enabled: true,
-					admission: createCaptureAdmission(),
+					...(legacyGrant ? { admission: createCaptureAdmission() } : {}),
 				},
 			} as const;
 			expect(handler(request, { id: 'spectra-test' }, (value) => { response = value; })).toBe(true);
@@ -151,7 +151,10 @@ describe('content audio v2 boundary', () => {
 			expect(handler({ ...request, documentId: 'document-old' }, { id: 'spectra-test' }, (value) => {
 				response = value;
 			})).toBe(false);
-			expect(response).toMatchObject({ ok: false, error: { code: 'invalid_request' } });
+			expect(response).toMatchObject({
+				ok: false,
+				error: { code: legacyGrant ? 'invalid_request' : 'stale_document' },
+			});
 			expect(state.visualizerSubscribers.size).toBe(0);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);

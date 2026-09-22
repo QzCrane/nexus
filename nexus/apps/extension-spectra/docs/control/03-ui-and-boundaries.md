@@ -14,7 +14,7 @@ last_reviewed: 2026-08-28
 
 - 所有 UI 文本/Tooltip/状态/Reset 行为统一使用 canonical locale key 映射（缺失走可观测英文 fallback）。
 - Reset 写入字面 `volume=1` 与 `rate=1`；恢复网页原始值为单独的 restore 操作。
-- **Visualizer 订阅**: 仅可见、启用、未静音的前台主卡可声明精确活动标签页的分析 demand。Background 重新确认可信 Popup、当前活动标签页与精确顶层文档；完整安全的媒体覆盖优先消费已 ACK 的 MediaElement WebAudio analyser，只有覆盖不足时才使用一次性 `CaptureAdmission` 建立 Capture lease。后台卡片只能消费已有处理器；采样必须等待 `actualMode: webaudio | capture` 且 `phase: active` 的精确 ACK，最高 15 Hz。隐藏、失焦、关闭、导航、断连、超时或最终 subscriber 释放都会退役临时 demand；独立 DSP demand 不受影响。
+- **Visualizer 订阅**: 仅可见、启用、未静音的前台主卡可声明精确活动标签页的分析 demand。Background 重新确认可信 Popup、当前活动标签页与精确顶层文档；完整安全的媒体覆盖可使用已 ACK 的 MediaElement WebAudio analyser，也可观察非中性 DSP 已经需要的 Capture。订阅不能创建 Capture admission 或保留中性 Capture；不安全的中性页面稳定为 bypass、返回空帧，不重试获取 Capture。后台卡片只能消费已有处理器；采样必须等待 `actualMode: webaudio | capture` 且 `phase: active` 的精确 ACK，最高 15 Hz。隐藏、失焦、关闭、导航、断连、超时或最终 subscriber 释放都会退役临时 demand；独立 DSP demand 不受影响。
 - **Popup 高度**: 主视图使用内容固有高度；只有 Settings 导航模式为容器施加 600px 滚动视口。CSS 是唯一尺寸 owner，导航只切换模式类，禁止读取 `offsetHeight` 后写 inline `min-height` 或调用 `resizeTo`。
 - Favicon 走标准 URL/service 机制，禁止未知 `_favicon` 权限。远程 QR 图显式生成本地 `data:`/SVG URL。
 

@@ -135,10 +135,7 @@ async function enterCapture(
 	captureAdmission?: CaptureAdmission,
 ): Promise<void> {
 	const { captureManager } = deps;
-	if (!state.config.enabled
-		|| (!requiresAudioProcessor(state.config)
-			&& state.visualizerSubscribers.size === 0
-			&& !state.processorHold)) {
+	if (!state.config.enabled || !requiresAudioProcessor(state.config)) {
 		throw new Error('Capture policy was selected without an enabled processor contribution');
 	}
 	if (!await neutralizeWebAudio(deps, state) || stale(deps, owner, run)) return;
@@ -305,6 +302,12 @@ async function fallbackFromWebAudio(
 	reason: string,
 ): Promise<void> {
 	if (stale(deps, owner, run)) return;
+	if (!state.config.enabled || !requiresAudioProcessor(state.config)) {
+		state.activeMode = 'bypass';
+		state.desiredMode = 'bypass';
+		await enterBypass(deps, state, owner, run, generation);
+		return;
+	}
 	if (state.mediaRoute === 'direct') {
 		await enterBypass(deps, state, owner, run, generation);
 		if (stale(deps, owner, run)) return;

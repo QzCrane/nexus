@@ -19,7 +19,7 @@ describe('shared sparse audio graph router', () => {
 		const boosted = { ...neutral, volume: 200, volumeBase: 100, boost: 2 };
 		expect(resolveDesiredAudioMode(neutral, { visualizer: false, mediaWebAudio: true })).toBe('bypass');
 		expect(resolveDesiredAudioMode(neutral, { visualizer: true, mediaWebAudio: true })).toBe('webaudio');
-		expect(resolveDesiredAudioMode(neutral, { visualizer: true, mediaWebAudio: false })).toBe('capture');
+		expect(resolveDesiredAudioMode(neutral, { visualizer: true, mediaWebAudio: false })).toBe('bypass');
 		expect(resolveDesiredAudioMode(boosted, { visualizer: false, mediaWebAudio: true })).toBe('webaudio');
 		expect(resolveDesiredAudioMode(boosted, { visualizer: false, mediaWebAudio: false })).toBe('capture');
 	});

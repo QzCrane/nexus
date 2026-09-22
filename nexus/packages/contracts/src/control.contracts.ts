@@ -814,8 +814,8 @@ export interface ControlIntent {
 	// chrome.commands transaction. It is deliberately absent from
 	// ControlSubmitRequest so callers cannot claim browser invocation authority.
 	captureAdmission?: CaptureAdmission;
-	// Document-level processor hold: apply the patch as a gain change while the
-	// processor session survives (100↔110 crossings must never teardown/wake).
+	// Retired optional v2 field: accepted for envelope compatibility only.
+	// It grants no processor demand and current producers never emit it.
 	processorHold?: boolean;
 }
 

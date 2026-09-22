@@ -5576,6 +5576,172 @@ describe('SPECTRA built extension smoke', () => {
 		expect(visualizerErrors).toEqual([]);
 	}, 40_000);
 
+	test('never starts Capture for a neutral visualizer on an unsafe stream source', async () => {
+		const settingsClient = await openExtensionClient('options.html');
+		const unsafePage = await browser.newPage();
+		let popup: Page | null = null;
+		const settings = await patchExtensionSettings(settingsClient, {
+			scope: 'global',
+			changes: { visualizerEnabled: true },
+		});
+		try {
+			await installSyntheticCaptureHarness();
+			await installTabCaptureStreamIdStub();
+			const unsafeUrl = `${fixtureUrl}?unsafe-neutral-visualizer=1`;
+			await unsafePage.goto(unsafeUrl, { waitUntil: 'domcontentloaded' });
+			await unsafePage.evaluate(async () => {
+				const video = document.querySelector<HTMLVideoElement>('#v');
+				if (!video) throw new Error('Unsafe visualizer fixture is missing');
+				const canvas = document.createElement('canvas');
+				canvas.width = 64;
+				canvas.height = 64;
+				canvas.getContext('2d')?.fillRect(0, 0, 64, 64);
+				video.srcObject = canvas.captureStream(1);
+				await video.play();
+			});
+			await waitForContentBootstrapStatus(unsafeUrl);
+			await acquireSmokeRuntime(unsafeUrl, 'unsafe-neutral-visualizer');
+			await unsafePage.bringToFront();
+			const tabId = await getTabId(unsafeUrl);
+			const captureCallsBeforePopup = (await readSyntheticCaptureState()).calls;
+			const popupTarget = await openActionPopupTarget();
+			popup = await popupTarget.asPage();
+			await popup.waitForSelector('#main-stage .viz-canvas');
+			const contentSubscriberId = `smoke-unsafe-${crypto.randomUUID()}`;
+			const subscriberAck = await popup.evaluate(async ({ targetTabId, subscriberId }) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.audio.visualizer.batch',
+					payload: {
+						subscriberId,
+						generation: 1,
+						tabIds: [targetTabId],
+						captureTabId: targetTabId,
+					},
+				})
+			), { targetTabId: tabId, subscriberId: contentSubscriberId });
+			expect(subscriberAck).toMatchObject({
+				ok: true,
+				data: {
+					subscriberId: contentSubscriberId,
+					generation: 1,
+					frames: { [String(tabId)]: null },
+				},
+			});
+
+			const neutral = await eventually(
+				() => readContentStatus(unsafeUrl),
+				(status) => status.config?.volume === 100
+					&& status.config.volumeBase === 100
+					&& status.config.boost === 1
+					&& status.actualMode === 'bypass'
+					&& status.phase === 'idle',
+				'unsafe neutral visualizer remains native bypass',
+			);
+			expect(neutral).toMatchObject({
+				actualMode: 'bypass',
+				phase: 'idle',
+				config: { volume: 100, volumeBase: 100, boost: 1 },
+				lastError: null,
+			});
+			expect(await hasOffscreenAudioTab(tabId)).toBe(false);
+			expect((await readSyntheticCaptureState()).calls).toBe(captureCallsBeforePopup);
+			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			expect((await readSyntheticCaptureState()).calls).toBe(captureCallsBeforePopup);
+			expect(await hasOffscreenAudioTab(tabId)).toBe(false);
+
+			const volumeTransitions = [
+				{ volume: 110, mode: 'capture', domVolume: 1 },
+				{ volume: 50, mode: 'bypass', domVolume: 0.5 },
+				{ volume: 110, mode: 'capture', domVolume: 1 },
+				{ volume: 100, mode: 'bypass', domVolume: 1 },
+			] as const;
+			let expectedCaptureStarts = captureCallsBeforePopup;
+			for (const transition of volumeTransitions) {
+				await popup.$eval('.vol-slider', (element, value) => {
+					const slider = element as HTMLInputElement;
+					slider.value = String(value);
+					slider.dispatchEvent(new Event('input', { bubbles: true }));
+					slider.dispatchEvent(new Event('change', { bubbles: true }));
+				}, transition.volume);
+				const expectedBoost = transition.volume > 100 ? transition.volume / 100 : 1;
+				const expectedBase = Math.min(transition.volume, 100);
+				const status = await eventually(
+					() => readContentStatus(unsafeUrl),
+					(current) => current.config?.volume === transition.volume
+						&& current.config.volumeBase === expectedBase
+						&& current.config.boost === expectedBoost
+						&& current.actualMode === transition.mode
+						&& current.phase === (transition.mode === 'capture' ? 'active' : 'idle'),
+					`unsafe visualizer volume ${transition.volume} physical ACK`,
+					15_000,
+				);
+				expect(status).toMatchObject({
+					actualMode: transition.mode,
+					phase: transition.mode === 'capture' ? 'active' : 'idle',
+					config: {
+						volume: transition.volume,
+						volumeBase: expectedBase,
+						boost: expectedBoost,
+					},
+				});
+				expect(await unsafePage.$eval('#v', (element) => (
+					Math.round((element as HTMLVideoElement).volume * 100) / 100
+				))).toBe(transition.domVolume);
+
+				if (transition.mode === 'capture') {
+					expectedCaptureStarts += 1;
+					expect(await readCurrentAudioSession(tabId)).toMatchObject({
+						ok: true,
+						data: { actualMode: 'capture', phase: 'active' },
+					});
+					expect(await hasOffscreenAudioTab(tabId)).toBe(true);
+					expect((await readSyntheticCaptureState()).calls).toBe(expectedCaptureStarts);
+				} else {
+					expect(await readCurrentAudioSession(tabId)).toMatchObject({
+						ok: true,
+						data: { actualMode: 'bypass', phase: 'idle' },
+					});
+					await eventually(
+						() => hasOffscreenAudioTab(tabId),
+						(active) => !active,
+						`unsafe visualizer Capture graph retired at ${transition.volume}`,
+					);
+					expect((await readSyntheticCaptureState()).calls).toBe(expectedCaptureStarts);
+				}
+			}
+			await new Promise((resolveWait) => setTimeout(resolveWait, 250));
+			expect((await readSyntheticCaptureState()).calls).toBe(expectedCaptureStarts);
+			expect(await hasOffscreenAudioTab(tabId)).toBe(false);
+			const subscriberRelease = await popup.evaluate(async ({ subscriberId }) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					type: 'spectra.audio.visualizer.batch',
+					payload: {
+						subscriberId,
+						generation: 2,
+						tabIds: [],
+						captureTabId: null,
+					},
+				})
+			), { subscriberId: contentSubscriberId });
+			expect(subscriberRelease).toMatchObject({
+				ok: true,
+				data: { subscriberId: contentSubscriberId, generation: 2, frames: {} },
+			});
+		} finally {
+			if (popup) await closeActionPopup(popup).catch(() => undefined);
+			await unsafePage.close().catch(() => undefined);
+			await patchExtensionSettings(settingsClient, {
+				scope: 'global',
+				changes: { visualizerEnabled: settings.previous.globalSettings.visualizerEnabled },
+			}).catch(() => undefined);
+			await settingsClient.close().catch(() => undefined);
+		}
+	}, 20_000);
+
 	test('keeps visualizer IPC and Capture at zero when the feature is disabled', async () => {
 		const settingsClient = await openExtensionClient('options.html');
 		const settings = await patchExtensionSettings(settingsClient, {
@@ -6649,150 +6815,87 @@ describe('SPECTRA built extension smoke', () => {
 			});
 			expect(await readBadgeColor(tabId)).toEqual([37, 99, 235, 255]);
 
-			await submitEffectiveVolume(tabId, 80);
-			await submitEffectiveVolume(tabId, 350);
-			await waitForContentStatus(
-				(status) => status.mode === 'capture' && status.phase === 'active'
-					&& status.config?.volume === 350,
-				15_000,
-			);
-			const capture350InitialPresentation = await readPopupVolumePresentation('#7c3aed');
-			expect(capture350InitialPresentation).toMatchObject({
-				sliderCount: 1,
-				min: '0',
-				max: '800',
-				value: '350',
-				fillColor: 'rgb(124, 58, 237)',
-				valueColor: 'rgb(124, 58, 237)',
-				sliderAccent: '#7c3aed',
-			});
-			expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
-			expect(await readPageMediaControllerHarness()).toMatchObject({ volumeBase: 100 });
+			const captureCycles = [
+				{ exitVolume: 80, domVolume: 0.49048 },
+				{ exitVolume: 0, domVolume: 0 },
+				{ exitVolume: 100, domVolume: 0.6131 },
+			] as const;
+			for (const [cycle, { exitVolume, domVolume }] of captureCycles.entries()) {
+				await submitEffectiveVolume(tabId, 350);
+				const captured = await waitForContentStatus(
+					(status) => status.mode === 'capture' && status.phase === 'active'
+						&& status.config?.volume === 350
+						&& status.config.volumeBase === 100
+						&& status.config.boost === 3.5,
+					15_000,
+				);
+				expect(captured).toMatchObject({
+					mode: 'capture',
+					actualMode: 'capture',
+					phase: 'active',
+					config: { volume: 350, volumeBase: 100, boost: 3.5 },
+				});
+				expect(await readPageMediaControllerHarness()).toMatchObject({ volumeBase: 100 });
+				expect(await readCurrentAudioSession(tabId)).toMatchObject({
+					ok: true,
+					data: { actualMode: 'capture', phase: 'active' },
+				});
+				expect((await readOffscreenSnapshot()).audioTabs).toEqual(
+					expect.arrayContaining([expect.objectContaining({ tabId })]),
+				);
+				const capturePresentation = await readPopupVolumePresentation('#7c3aed');
+				expect(capturePresentation).toMatchObject({
+					sliderCount: 1,
+					min: '0',
+					max: '800',
+					value: '350',
+					fillColor: 'rgb(124, 58, 237)',
+					valueColor: 'rgb(124, 58, 237)',
+					sliderAccent: '#7c3aed',
+				});
+				expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
 
-			await submitEffectiveVolume(tabId, 80);
-			const held80 = await waitForContentStatus(
-				(status) => status.mode === 'capture' && status.phase === 'active'
-					&& status.config?.volume === 80
-					&& status.config?.volumeBase === 80
-					&& status.config?.boost === 1,
-				15_000,
-			);
-			expect(held80).toMatchObject({
-				mode: 'capture',
-				phase: 'active',
-				config: { volume: 80, volumeBase: 80, boost: 1 },
-			});
-			const heldSnapshot = await extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
-				protocolVersion: 2,
-				requestId: crypto.randomUUID(),
-				tabId: targetTabId,
-				type: 'spectra.control.snapshot.get',
-				payload: { tabId: targetTabId },
-			}), tabId);
-			expect(heldSnapshot).toMatchObject({
-				ok: true,
-				data: {
-					fields: {
-						volumeBase: { actual: 80, strategy: 'page-native' },
-						boost: { actual: 1, strategy: 'capture', controlled: true },
-					},
-				},
-			});
-			expect(await readPageMediaControllerHarness()).toMatchObject({
-				volumeBase: 80,
-				domVolume: 0.49048,
-			});
-			const held80Presentation = await readPopupVolumePresentation('#7c3aed');
-			expect(held80Presentation).toMatchObject({
-				value: '80',
-				fillColor: 'rgb(124, 58, 237)',
-				valueColor: 'rgb(124, 58, 237)',
-				sliderAccent: '#7c3aed',
-			});
+				await submitEffectiveVolume(tabId, exitVolume);
+				const released = await waitForContentStatus(
+					(status) => status.mode === 'bypass' && status.actualMode === 'bypass'
+						&& status.phase === 'idle'
+						&& status.config?.volume === exitVolume
+						&& status.config.volumeBase === exitVolume
+						&& status.config.boost === 1,
+					15_000,
+				);
+				expect(released).toMatchObject({
+					mode: 'bypass',
+					actualMode: 'bypass',
+					phase: 'idle',
+					config: { volume: exitVolume, volumeBase: exitVolume, boost: 1 },
+				});
+				expect(await readPageMediaControllerHarness()).toMatchObject({
+					volumeBase: exitVolume,
+					domVolume,
+				});
+				expect(await readCurrentAudioSession(tabId)).toMatchObject({
+					ok: true,
+					data: { actualMode: 'bypass', phase: 'idle' },
+				});
+				await eventually(
+					() => readOffscreenSnapshot(),
+					(snapshot) => !snapshot.audioTabs.some((entry) => entry.tabId === tabId),
+					`Capture graph retired after cycle ${cycle + 1}`,
+				);
+				const releasedSnapshot = await extensionClient.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.snapshot.get',
+					payload: { tabId: targetTabId },
+				}), tabId);
+				expect(releasedSnapshot).toMatchObject({
+					ok: true,
+					data: { fields: { volumeBase: { actual: exitVolume, strategy: 'page-native' } } },
+				});
+			}
 
-			await submitEffectiveVolume(tabId, 350);
-			const capture350Again = await waitForContentStatus(
-				(status) => status.mode === 'capture' && status.phase === 'active'
-					&& status.config?.volume === 350,
-				15_000,
-			);
-			expect(await readPageMediaControllerHarness()).toMatchObject({ volumeBase: 100 });
-			expect(capture350Again).toMatchObject({
-				mode: 'capture',
-				phase: 'active',
-				config: { volume: 350, volumeBase: 100, boost: 3.5 },
-			});
-			const capture350Presentation = await readPopupVolumePresentation('#7c3aed');
-			expect(capture350Presentation).toMatchObject({
-				value: '350',
-				fillColor: 'rgb(124, 58, 237)',
-				valueColor: 'rgb(124, 58, 237)',
-				sliderAccent: '#7c3aed',
-			});
-			expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
-
-			await submitEffectiveVolume(tabId, 0);
-			const heldZero = await waitForContentStatus(
-				(status) => status.mode === 'capture' && status.phase === 'active'
-					&& status.config?.volume === 0
-					&& status.config?.volumeBase === 0
-					&& status.config?.boost === 1,
-				15_000,
-			);
-			expect(heldZero).toMatchObject({
-				mode: 'capture',
-				phase: 'active',
-				config: { volume: 0, volumeBase: 0, boost: 1 },
-			});
-			expect(await readPageMediaControllerHarness()).toMatchObject({
-				volumeBase: 0,
-				domVolume: 0,
-			});
-			expect((await readOffscreenSnapshot()).audioTabs).toEqual(
-				expect.arrayContaining([expect.objectContaining({ tabId })]),
-			);
-			const silent = await readPopupVolumePresentation();
-			expect(silent).toMatchObject({
-				value: '0',
-				fillColor: 'rgb(156, 163, 175)',
-				valueColor: 'rgb(156, 163, 175)',
-				sliderAccent: '#9ca3af',
-			});
-			expect(await readBadgeColor(tabId)).toEqual([156, 163, 175, 255]);
-
-			await submitEffectiveVolume(tabId, 100);
-			await waitForContentStatus(
-				(status) => status.mode === 'capture' && status.phase === 'active'
-					&& status.config?.volume === 100
-					&& status.config?.volumeBase === 100
-					&& status.config?.boost === 1,
-				15_000,
-			);
-			expect(await readPageMediaControllerHarness()).toMatchObject({
-				volumeBase: 100,
-				domVolume: 0.6131,
-			});
-			const held100Presentation = await readPopupVolumePresentation('#7c3aed');
-			expect(held100Presentation).toMatchObject({
-				value: '100',
-				fillColor: 'rgb(124, 58, 237)',
-				valueColor: 'rgb(124, 58, 237)',
-				sliderAccent: '#7c3aed',
-			});
-			expect(await readBadgeColor(tabId)).toEqual([124, 58, 237, 255]);
-
-			// Route ownership is document-scoped. Reload the same tab, then
-			// recreate its exact page controller at 100. The navigation is the
-			// natural release boundary for the document-level processor hold.
-			await fixturePage.reload({ waitUntil: 'domcontentloaded' });
-			await waitForContentBootstrapStatus(fixturePage.url());
-			await installPageMediaControllerHarness();
-			await submitEffectiveVolume(tabId, 100);
-			await waitForContentStatus(
-				(status) => status.mode === 'bypass' && status.phase === 'idle'
-					&& status.config?.volume === 100,
-				15_000,
-			);
 			const native100Presentation = await readPopupVolumePresentation('#2563eb');
 			expect(native100Presentation).toMatchObject({
 				value: '100',

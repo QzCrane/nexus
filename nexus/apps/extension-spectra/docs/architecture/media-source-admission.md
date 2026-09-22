@@ -103,7 +103,7 @@ Capture is an explicit tab/document-scoped fallback:
 4. Offscreen creates the tab stream, `AudioContext`, stream source, commit gate, and `AudioGraphRouter` for one generation.
 5. Active and idle ACKs must match the canonical identity/revision/graph readback; failure or stale completion never masquerades as a state transition.
 
-Capture is never inferred from a status read, background card, page observation, or persisted Visualizer demand. Target-only DSP cannot widen to full-tab Capture. A visible foreground Popup may request an analyser; it uses proven MediaElement WebAudio first and receives a Capture admission only when page coverage cannot safely provide the full source.
+Capture is never inferred from a status read, background card, page observation, or Visualizer demand. Target-only DSP cannot widen to full-tab Capture. A visible foreground Popup may request a proven safe MediaElement WebAudio analyser or observe Capture already required by non-neutral DSP. Unsafe neutral sources settle on bypass with empty frames; subscriptions never mint Capture admission or retain a volume-only Capture after returning to native volume.
 
 ## Owners
 

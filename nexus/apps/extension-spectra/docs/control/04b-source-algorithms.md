@@ -101,7 +101,7 @@ The catalog defines exactly what executable code fulfills a capability. Verifica
 | `ALG-010` | Sparse Capture DSP topology | controlled-augmentation| Enabled nodes only in the offscreen graph. | Snapshot reports normalized config and signature. |
 | `ALG-011` | Capture DSP apply/crossfade | controlled-augmentation| Reuse nodes; crossfade on change. | One active + one pending apply. |
 | `ALG-012` | Processor handoff | controlled-augmentation| Full requested audio scope, exact WebAudio coverage or explicit Capture admission. | Candidate readback precedes switch; failure restores acknowledged owner. |
-| `ALG-013` | Visualizer sampling | observation-only | Analyser on acknowledged MediaElement WebAudio first, Capture only as coverage fallback. | One analyser; cached 15 Hz limit while subscribed. |
+| `ALG-013` | Visualizer sampling | observation-only | Analyser on proven safe MediaElement WebAudio or Capture already required by non-neutral DSP; otherwise empty frame. | One analyser; cached 15 Hz limit while subscribed; never acquires or retains Capture. |
 | `ALG-014` | Target selection | observation-only | DOM/events provide facts. | Sticky scoring uses cached data. |
 | `ALG-015` | Native sync | observation-only | Genuine events commit directly. | Reuses registry events. |
 | `ALG-016` | Frame cadence | hybrid-state-native | Bounded median delta -> seek. | Max 8 samples/750ms; approximate. |
@@ -131,7 +131,7 @@ The catalog defines exactly what executable code fulfills a capability. Verifica
 | `ALG-040` | Popup observation | lifecycle-orchestration| One background-minted document token per admitted foreground card port. | Browser port disconnect releases the token, including late acquisition; 15s acquisition deadline. |
 | `ALG-041` | UI actual projection | observation-only | `ControlSnapshot` owns fields. | One render per domain revision. |
 | `ALG-042` | Remote observation | lifecycle-orchestration| Fixed tab observation. | Event-driven snapshot push. |
-| `ALG-043` | Visualizer source reconciliation | lifecycle-orchestration | Trusted Popup + active exact document; Content owns subscriber tokens and Background admits Capture only if page coverage fails. | Bounded lease/tombstone map and bounded release retry; final subscriber retires transient work. |
+| `ALG-043` | Visualizer source reconciliation | lifecycle-orchestration | Trusted Popup + active exact document; Content owns subscriber tokens; unsafe neutral sources settle on bypass without Capture admission or retry. | Bounded lease/tombstone map and bounded release retry; final subscriber retires page analyser demand. |
 | `ALG-044` | Hotkey runtime | lifecycle-orchestration| One listener runtime per handled site. | O(1) chord lookup. |
 | `ALG-045` | Marker/A-B runtime | lifecycle-orchestration| Source-keyed state retains runtime. | Survives worker restart. |
 | `ALG-046` | Video enhancement | lifecycle-orchestration| Loads explicitly. | Neutral reads DOM-free. |

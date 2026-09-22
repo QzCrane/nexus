@@ -173,10 +173,6 @@ type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & {
 	tabId: number;
 	captureAdmission?: CaptureAdmission;
 	observationDocumentId?: string;
-	// Background-internal hold marker (deliberately absent from
-	// ControlSubmitRequest like captureAdmission): routes the processor stage as
-	// a neutral-gain apply that keeps the capture/webaudio session alive.
-	processorHold?: boolean;
 };
 type ResolvedControlSubmitRequest = Omit<RoutedControlSubmitRequest, 'patch' | 'mutations'> & {
 	patch: ControlPatch;
@@ -535,9 +531,6 @@ async function resolveSubmitRequest(
 		patch,
 		...(request.captureAdmission
 			? { captureAdmission: request.captureAdmission }
-			: {}),
-		...(request.processorHold
-			? { processorHold: true }
 			: {}),
 		...(request.observedStrategies === undefined
 			? {}
@@ -1513,14 +1506,12 @@ async function executeFieldOperation(
 				stage: 'target' | 'processor',
 				patch: ControlPatch,
 				assertion: 'apply' | 'release' | 'probe',
-				processorHold?: boolean,
 			): Promise<PreparedControlIntent> => {
 				const prepared = await prepareIntent({
 					...common,
 					target,
 					requestedCoverage: stage === 'target' ? CONTROL_COVERAGE_TARGET : 'full',
 					patch,
-					...(processorHold ? { processorHold: true } : {}),
 				}, staged);
 				fields = { ...fields, ...prepared.fields };
 				if (assertion === 'apply') {
@@ -1625,16 +1616,13 @@ async function executeFieldOperation(
 				for (const stage of stageOrder) {
 					const patch = stage === 'target' ? targetPatch : processorPatch;
 					if (Object.keys(patch).length === 0) continue;
-					// Down-cross (>100 → ≤100): the processor is already running.
-					// Hold the session with a processorHold intent at neutral gain
-					// instead of releasing, so later crossings only change the gain.
+					// Neutral boost removes volume demand. The policy owner releases
+					// Capture unless independent non-neutral DSP still needs it.
 					const isProcessorRelease = stage === 'processor' && desired.boost === 1;
-					const holding = isProcessorRelease && current.boost > 1;
 					await runStage(
 						stage,
 						patch,
-						holding ? 'apply' : isProcessorRelease ? 'release' : 'apply',
-						holding,
+						isProcessorRelease ? 'release' : 'apply',
 					);
 				}
 			}
@@ -2261,7 +2249,7 @@ export interface PopupVisualizerSourceLease {
 	runtimeRevision: string;
 	capability: string;
 	subscriberId: string;
-	actualMode: 'webaudio' | 'capture' | null;
+	actualMode: 'bypass' | 'webaudio' | 'capture' | null;
 }
 
 export interface PopupVisualizerSourceAcquisition {
@@ -2270,25 +2258,25 @@ export interface PopupVisualizerSourceAcquisition {
 	errorMessage: string | null;
 }
 
-// post: a visible Popup subscriber receives one exact-document analyser source;
-// safe media stays in the page WebAudio owner, while unsafe media may consume
-// the one-shot Capture admission carried by the same retained runtime lease.
+// post: a visible Popup retains one document-scoped observation subscription.
+// It may use a safe page analyser or an existing DSP processor, but never grants
+// Capture admission. A bypass ACK is a settled inactive subscription, not failure.
 export async function acquirePopupVisualizerSource(
 	tabId: number,
 	subscriberId: string,
 ): Promise<PopupVisualizerSourceAcquisition> {
 	const invocation = await popupInvocation(tabId);
+	if (!sameExtensionDocument(invocation.foreground, invocation.target)) {
+		throw new Error('Visualizer observation requires the current foreground Popup tab');
+	}
 	await awaitDocumentInitialization(tabId, invocation.target.documentId);
 	return serialized(tabId, async () => {
 		await assertInvocationTargetCurrent(tabId, invocation);
+		const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
+		if (tabs[0]?.id !== tabId) {
+			throw new Error('Visualizer observation target is no longer foreground');
+		}
 		const snapshot = await getOrCreateSnapshot(tabId);
-		const admission = await captureAdmissionForInvocation(
-			tabId,
-			invocation,
-			snapshot,
-			`visualizer:${crypto.randomUUID()}`,
-		);
-		if (!admission) throw new Error('Visualizer Capture requires the current foreground Popup tab');
 		const capability = `visualizer:${crypto.randomUUID()}`;
 		let runtime: Awaited<ReturnType<typeof ensureContentRuntime>> | null = null;
 		try {
@@ -2314,7 +2302,7 @@ export async function acquirePopupVisualizerSource(
 				const response = await sendBackgroundTabRequestOnce(
 					tabId,
 					'spectra.audio.visualizer.demand.set',
-					{ subscriberId, enabled: true, admission },
+					{ subscriberId, enabled: true },
 					{ documentId: snapshot.documentId, generation: snapshot.generation },
 				);
 				if (!response.ok) {
@@ -2327,6 +2315,13 @@ export async function acquirePopupVisualizerSource(
 				if ((response.data.actualMode !== 'webaudio'
 					&& response.data.actualMode !== 'capture')
 					|| response.data.phase !== 'active') {
+					if (response.data.actualMode === 'bypass' && response.data.phase === 'idle') {
+						return {
+							lease: { ...pendingLease, generation: response.data.generation, actualMode: 'bypass' },
+							active: false,
+							errorMessage: null,
+						};
+					}
 					return {
 						lease: pendingLease,
 						active: false,
@@ -2358,8 +2353,6 @@ export async function acquirePopupVisualizerSource(
 				releaseContentRuntimeLease(tabId, runtime.documentId, 'visualizer', capability);
 			}
 			throw error;
-		} finally {
-			revokeCaptureAdmission(admission);
 		}
 	});
 }

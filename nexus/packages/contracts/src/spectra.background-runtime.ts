@@ -328,7 +328,7 @@ export function hasCanonicalRequestContext(
 			|| !isPositiveInteger(value.tabId)
 			|| !isDocumentId(value.documentId)
 			|| !isNonNegativeInteger(value.generation)) return false;
-		return payload.enabled === false || (
+		return payload.admission === undefined || (
 			value.tabId === payload.admission.document.tabId
 			&& value.documentId === payload.admission.document.documentId
 			&& value.generation === payload.admission.documentEpoch

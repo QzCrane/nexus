@@ -7,7 +7,7 @@ import { mergeControlFields } from '../src/popup/card/types';
 import { createCaptureAdmission } from './helpers/capture-admission';
 
 describe('audio runtime coverage boundary', () => {
-	test('forwards one intent-scoped Capture admission into policy application', async () => {
+	test('forwards Capture admission but gives the retired hold field no policy authority', async () => {
 		const captureAdmission = createCaptureAdmission({
 			document: { tabId: 7, frameId: 0, documentId: 'document:dsp' },
 			documentEpoch: 2,
@@ -37,13 +37,13 @@ describe('audio runtime coverage boundary', () => {
 			actualContext: {},
 			patch: { boost: 2 },
 			captureAdmission,
+			processorHold: true,
 		};
 
 		await delegate.apply(intent, intent.patch);
 
 		expect(updateConfig.mock.calls[0]?.[1]).toEqual({
 			captureAdmission,
-			hold: undefined,
 			deferPersistence: true,
 		});
 	});
@@ -77,7 +77,6 @@ describe('audio runtime coverage boundary', () => {
 			};
 			await delegate.apply(intent, intent.patch);
 		expect(updateConfig.mock.calls[0]?.[1]).toEqual({
-			hold: undefined,
 			deferPersistence: true,
 		});
 		}
