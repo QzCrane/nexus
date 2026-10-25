@@ -13,6 +13,7 @@ import { checkAiContextFiles } from './verify/check-ai-context.ts';
 import { checkContractsPurity } from './verify/check-contracts.ts';
 import { checkDeclarationOwnership } from './verify/check-declaration-ownership.ts';
 import { checkContentResponseCoverage } from './verify/check-content-response-coverage.ts';
+import { checkRpcDeadlines } from './verify/check-rpc-deadlines.ts';
 import { checkSourceFileLength } from './verify/check-file-length.ts';
 import { checkHardcodedActions } from './verify/check-actions.ts';
 import { checkDependencyDirection, checkReadmeAI, checkHtmlResources } from './verify/check-misc.ts';
@@ -37,6 +38,7 @@ const CHECKS: ReadonlyArray<readonly [string, (root: string) => void]> = [
 	['contracts-purity', checkContractsPurity],
 	['declaration-ownership', checkDeclarationOwnership],
 	['content-response-coverage', checkContentResponseCoverage],
+	['rpc-deadlines', checkRpcDeadlines],
 	['readme-entry', checkReadmeAI],
 	['dependency-direction', checkDependencyDirection],
 	['source-file-length', checkSourceFileLength],

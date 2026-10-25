@@ -1,0 +1,22 @@
+{
+  "$comment": "Files permitted to call chrome.runtime.sendMessage / chrome.tabs.sendMessage directly. Every other module must go through shared/transport.ts, background-rpc.ts or offscreen-coordinator.ts, which bound the round trip in shared/timeout.ts. A direct call is only acceptable when it is (a) wrapped in withDeadline, or (b) genuinely fire-and-forget (void + .catch). Adding a file here is a decision, not a formality. Checked by scripts/verify/check-rpc-deadlines.ts.",
+  "files": {
+    "apps/extension-spectra/src/shared/timeout.ts": "owns withDeadline; contains no sendMessage itself",
+    "apps/extension-spectra/src/shared/transport.ts": "wraps sendSpectraRpcMessage and deliverSpectraTabRpcMessage in withDeadline; the runtime-release envelope at the end is fire-and-forget",
+    "apps/extension-spectra/src/background/background-rpc.ts": "wraps the per-tab round trip in withDeadline; this is the closure every Background to Content call funnels through",
+    "apps/extension-spectra/src/background/offscreen-coordinator.ts": "wraps the offscreen round trip in withDeadline; document creation stays outside it on purpose",
+    "apps/extension-spectra/src/background/settings-projection.ts": "per-tab delivery wrapped in withDeadline and classified as an absent receiver on timeout; the two settings broadcasts are fire-and-forget",
+    "apps/extension-spectra/src/background/shortcuts.ts": "shortcut feedback wrapped in withDeadline",
+    "apps/extension-spectra/src/background/site-hotkey-owner.ts": "lean host configure wrapped in withDeadline; a deadline is classified as an absent host",
+    "apps/extension-spectra/src/background/site-hotkey-loader-adapter.ts": "heavy host settings wrapped in withDeadline; a deadline is classified as a missing receiver",
+    "apps/extension-spectra/src/shared/registry-client.ts": "route editor request wrapped in withDeadline",
+    "apps/extension-spectra/src/background/control-coordinator.ts": "fire-and-forget snapshot event",
+    "apps/extension-spectra/src/background/remote-service.ts": "fire-and-forget remote lifecycle events",
+    "apps/extension-spectra/src/background/lifecycle.ts": "fire-and-forget navigation and lease events",
+    "apps/extension-spectra/src/background/handlers/capture.ts": "fire-and-forget capture events",
+    "apps/extension-spectra/src/background/audio-session-store.ts": "awaited event publish whose rejection is already handled; the store must not fail a committed write because a listener is gone",
+    "apps/extension-spectra/src/content/core/bootstrap.ts": "raw document_start bootstrap transport; the caller owns the boundary and no response is required",
+    "apps/extension-spectra/src/content/input/lean-site-hotkey-host.ts": "raw site hotkey transport; the caller inspects the response for errors only",
+    "apps/extension-spectra/src/offscreen-remote/remote-host.ts": "raw transport in the offscreen remote host, where the injected dependency is the transport"
+  }
+}
