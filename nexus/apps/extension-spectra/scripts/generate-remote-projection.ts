@@ -1,4 +1,3 @@
-#!/usr/bin/env bun
 // goal: project every extension-owned remote artifact onto the buildless static page
 //
 // The remote site is deployed without a build step, so its wire protocol and
