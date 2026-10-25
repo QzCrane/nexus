@@ -2,11 +2,13 @@
 
 import {
 	audioConfigToProcessorConfig,
-	DEFAULT_AUDIO_CONFIG,
-	SPECTRA_PROTOCOL_VERSION,
 	createSpectraEvent,
+	DEFAULT_AUDIO_CONFIG,
 	isOffscreenHostEvent,
 	resolveAudioVolume,
+	rpcFailure,
+	rpcSuccess,
+	SPECTRA_PROTOCOL_VERSION,
 	type AudioCaptureState,
 	type AudioCaptureTransitionResult,
 	type AudioConfig,
@@ -27,11 +29,7 @@ import {
 	sendOffscreenMessageIfPresent,
 } from '../offscreen-coordinator';
 import { swLog } from '../../shared/logger';
-import {
-	isBackgroundRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
-RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 import {
 	getAudioSession,
 	identityFromSender,

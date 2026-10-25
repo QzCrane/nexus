@@ -1,10 +1,12 @@
 // goal: exposes the background-owned hotkey target through validated v2 RPC
 
 import {
+	rpcFailure,
+	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { hotkeyTargetRepository } from '../hotkey-target-repository';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 const HOTKEY_TARGET_REQUEST_TYPES = new Set([
 	'spectra.hotkey-target.get',

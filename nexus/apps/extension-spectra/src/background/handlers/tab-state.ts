@@ -9,12 +9,14 @@ import {
 import { injectContentScriptOnDemand } from '../upgrade-manager';
 import { swLog } from '../../shared/logger';
 import {
+	rpcFailure,
+	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { createMediaTabDiscovery, type MediaProbeResult } from '../media-tab-discovery';
 import { mediaFacts } from '../media-facts';
 import { currentTopDocumentId } from '../../shared/top-document';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 export type MediaReportOrdering =
 	| { status: 'ordered'; revision: number }

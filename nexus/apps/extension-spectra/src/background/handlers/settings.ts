@@ -1,6 +1,8 @@
 // goal: owns the runtime-validated SPECTRA settings RPC
 
 import {
+	rpcFailure,
+	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { toSettingsUiSnapshot } from '@nexus/contracts/ui-settings-runtime';
@@ -14,7 +16,7 @@ import {
 	initializeSettingsProjection,
 	scheduleSettingsProjection,
 } from '../settings-projection';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 function isAttemptedSettingsV2Message(message: unknown): boolean {
 	if (!message || typeof message !== 'object') return false;

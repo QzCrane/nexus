@@ -1,11 +1,13 @@
 // goal: handles messages for retrieving and updating audio configurations with session/preset separation
 
 import {
-	SPECTRA_PROTOCOL_VERSION,
 	normalizeHostname,
+	rpcFailure,
+	rpcSuccess,
+	SPECTRA_PROTOCOL_VERSION,
 	type AudioConfig,
-	type AudioSitePolicy,
 	type AudioSessionSnapshot,
+	type AudioSitePolicy,
 	type TabSessionIdentity,
 	type VisualizerBatchPayload,
 } from '@nexus/contracts';
@@ -27,11 +29,7 @@ import { updateBadgeFromSession } from './badge';
 import { swLog } from '../../shared/logger';
 import { sendSpectraTabRequest } from '../spectra-tab-client';
 import { forEachBounded } from '../bounded-fanout';
-import {
-	isBackgroundRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
-RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 import {
 	advanceVisualizerSubscriberLeases,
 	nextVisualizerSubscriberExpiry,

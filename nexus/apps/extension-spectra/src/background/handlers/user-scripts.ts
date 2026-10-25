@@ -2,10 +2,12 @@
 // note: provides a secure alternative to eval() for custom JS functionality
 
 import {
+	rpcFailure,
+	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { swLog } from '../../shared/logger';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 // eff: checks if userScripts API is available and enabled by user
 async function isUserScriptsAvailable(): Promise<boolean> {

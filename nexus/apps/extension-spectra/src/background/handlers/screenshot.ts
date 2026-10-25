@@ -1,12 +1,14 @@
 // goal: privileged, crop-verified Chrome-native screenshot pipeline without image IPC to content
 
 import {
+	rpcFailure,
+	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 	type ScreenshotCapturePayload,
 	type ScreenshotResult,
 } from '@nexus/contracts';
 import { sendSpectraTabRequest } from '../spectra-tab-client';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 function toPngDataUrl(blob: Blob): Promise<string> {
 	return blob.arrayBuffer().then((buffer) => {

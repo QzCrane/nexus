@@ -11,11 +11,13 @@ import type {
 	SpectraHotkeyActualFeedback,
 } from '@nexus/contracts';
 import {
-	DEFAULT_HOTKEY_SETTINGS,
-	SPECTRA_PROTOCOL_VERSION,
 	createSpectraEvent,
+	DEFAULT_HOTKEY_SETTINGS,
 	isSlotHotkeyAction,
 	resolveSpectraHotkeyActualFeedback,
+	rpcFailure,
+	rpcSuccess,
+	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { swLog } from '../shared/logger';
 import { settingsRepository } from './settings-repository';
@@ -26,7 +28,7 @@ import {
 } from './control-coordinator';
 import type { ExtensionInvocationContext } from './extension-invocation';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from './background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from './background-rpc';
 const HOTKEY_SEEK_RELATIVE = 'seek-relative' as const;
 const HOTKEY_EFFECTIVE_VOLUME = 'effective-volume' as const;
 const PROTO_DEFAULT_HOTKEY_TRIGGER = 'spectra.content.default-hotkey.trigger' as const;

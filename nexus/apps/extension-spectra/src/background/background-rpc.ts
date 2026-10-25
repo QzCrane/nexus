@@ -64,7 +64,6 @@ import {
 } from '@nexus/contracts/ui-settings-runtime';
 import { RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 import type {
-	RpcResult,
 	SpectraEventEnvelope,
 	SpectraRequestEnvelope,
 	SpectraRequestPayload,
@@ -274,18 +273,6 @@ export function isBackgroundResponse<T extends SpectraRequestType>(
 ): value is SpectraResponse<T> {
 	if (isRpcFailureResult(value)) return isRpcError(value.error);
 	return isRpcSuccessResult(value) && isBackgroundResponseData(type, value.data);
-}
-
-export function rpcSuccess<T>(data: T): RpcResult<T> {
-	return { ok: true, data };
-}
-
-export function rpcFailure(
-	code: string,
-	message: string,
-	retryable = false,
-): RpcResult<never> {
-	return { ok: false, error: { code, message, retryable } };
 }
 
 export const RPC_INVALID_REQUEST = 'invalid_request' as const;

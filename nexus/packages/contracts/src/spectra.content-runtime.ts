@@ -5,6 +5,7 @@
 // code carries only the guards and constants it can actually exercise. The
 // background/offscreen/UI contexts keep the complete protocol validator.
 
+import { rpcFailure, rpcSuccess } from './spectra.protocol-primitives.js';
 import {
 	audioConfigToProcessorConfig,
 	DEFAULT_AUDIO_CONFIG,
@@ -56,7 +57,6 @@ import type {
 } from './control.contracts.js';
 import type {
 	RpcError,
-	RpcResult,
 	SpectraEventEnvelope,
 	SpectraRequestEnvelope,
 	SpectraRequestType,
@@ -563,10 +563,4 @@ export function isSpectraResponse<T extends SpectraRequestType>(
 		&& isRpcError(value.error);
 }
 
-export function rpcSuccess<T>(data: T): RpcResult<T> {
-	return { ok: true, data };
-}
-
-export function rpcFailure(code: string, message: string, retryable = false): RpcResult<never> {
-	return { ok: false, error: { code, message, retryable } };
-}
+export { rpcFailure, rpcSuccess };

@@ -1,7 +1,8 @@
 // goal: bind Popup observation leases to browser-owned port lifetime, not a final pagehide message
 import type { ContentRuntimeReadyResult } from '@nexus/contracts';
 import { RUNTIME_OBSERVATION_PORT } from '../shared/runtime-observation';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess } from './background-rpc';
+import { isBackgroundRequestEnvelope } from './background-rpc';
+import { rpcFailure, rpcSuccess } from '@nexus/contracts';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 
 interface ObservationRuntime {

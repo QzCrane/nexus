@@ -1,13 +1,13 @@
 // goal: preserve the stable v2 site-route RPC while SettingsRepository remains
 // the only persistence, revision and migration owner
 
-import { SPECTRA_PROTOCOL_VERSION } from '@nexus/contracts';
+import { rpcFailure, rpcSuccess, SPECTRA_PROTOCOL_VERSION } from '@nexus/contracts';
 import { settingsRepository } from '../settings-repository';
 import {
 	scheduleAllMediaRouteProjection,
 	scheduleMediaRouteProjection,
 } from '../settings-projection';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 const PROTO_REGISTRY_GET = 'spectra.registry.get' as const;
 const PROTO_REGISTRY_ADD = 'spectra.registry.add' as const;

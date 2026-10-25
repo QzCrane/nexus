@@ -2,12 +2,14 @@
 // lifecycle belongs exclusively to offscreen-coordinator.
 
 import {
+	createSpectraEvent,
+	isOffscreenHostEvent,
 	REMOTE_COMMAND_PENDING_LIMIT,
 	REMOTE_COMMAND_RECEIPT_LIMIT,
 	REMOTE_COMMAND_TIMEOUT_MS,
+	rpcFailure,
+	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
-	createSpectraEvent,
-	isOffscreenHostEvent,
 	type RemoteHostEvent,
 	type RemoteHostSession,
 	type RemoteState,
@@ -32,11 +34,7 @@ import {
 import type { RemotePublicSession } from '../remote/protocol';
 import { isPairingWindowExpired } from '../remote/pairing-window';
 import { isTrustedExtensionUi } from './remote-sender-gate';
-import {
-	isBackgroundRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
-RPC_INVALID_REQUEST} from './background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from './background-rpc';
 
 const LOG = '[SPECTRA Remote BG]';
 const REMOTE_HOST_GET_STATUS = 'REMOTE_HOST_GET_STATUS';

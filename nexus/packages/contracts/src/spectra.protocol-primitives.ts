@@ -14,6 +14,20 @@ export type RpcResult<T> =
 	| { ok: true; data: T }
 	| { ok: false; error: RpcError };
 
+/**
+ * The constructors live here, next to the result type, because both protocol
+ * entry points need them: the complete validator used by background/offscreen/UI,
+ * and the slim `@nexus/contracts/content-runtime` surface the Content bundle
+ * aliases in. Keeping a copy beside each entry made the two drift independently.
+ */
+export function rpcSuccess<T>(data: T): RpcResult<T> {
+	return { ok: true, data };
+}
+
+export function rpcFailure(code: string, message: string, retryable = false): RpcResult<never> {
+	return { ok: false, error: { code, message, retryable } };
+}
+
 export type ProtocolRecord = Record<string, unknown>;
 
 const REQUEST_ENVELOPE_KEYS = new Set([

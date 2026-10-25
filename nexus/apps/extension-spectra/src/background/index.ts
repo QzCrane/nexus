@@ -15,8 +15,8 @@ import { setupLifecycleListeners } from './lifecycle';
 import { initRemoteService } from './remote-service';
 import { performWarmUpdate } from './upgrade-manager';
 import { swLog } from '../shared/logger';
-import { isBackgroundRequestType, rpcFailure } from './background-rpc';
-import { hasValidRequestEnvelopeBase, isProtocolRecord } from '@nexus/contracts';
+import { isBackgroundRequestType } from './background-rpc';
+import { hasValidRequestEnvelopeBase, isProtocolRecord, rpcFailure } from '@nexus/contracts';
 import {
 	initializeOffscreenCoordinator,
 	retireLegacyOffscreenDocument,

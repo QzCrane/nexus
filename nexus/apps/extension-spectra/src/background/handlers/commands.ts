@@ -1,10 +1,12 @@
 // goal: provide one validated owner for tab and extension-view hotkey commands
 
 import {
+	rpcFailure,
+	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { submitControlRequest } from '../control-coordinator';
-import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from '../background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 const COMMAND_REQUEST_TYPES: ReadonlySet<string> = new Set([
 	'spectra.tab.pinned.toggle',

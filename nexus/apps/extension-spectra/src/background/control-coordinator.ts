@@ -3,22 +3,25 @@
 import {
 	audioSessionMatchesControlDocument,
 	clampControlValue,
+	compileEffectiveVolume,
 	CONTROL_VALUE_LIMITS,
 	createSpectraEvent,
-	SPECTRA_PROTOCOL_VERSION,
+	isActiveCaptureLifecycle,
 	isControlApplyAck,
 	isControlOperationAck,
 	isControlSnapshot,
-	compileEffectiveVolume,
-	isActiveCaptureLifecycle,
 	normalizeHostname,
-	resolveAudioVolume,
 	resolveAcknowledgedAudioVolumeState,
+	resolveAudioVolume,
 	resolveControlAudioVolume,
+	rpcFailure,
+	rpcSuccess,
+	SPECTRA_PROTOCOL_VERSION,
 	splitEffectiveVolume,
 	type CaptureAdmission,
 	type ControlApplyAck,
 	type ControlCapability,
+	type ControlCoverage,
 	type ControlDirectField,
 	type ControlField,
 	type ControlFieldStates,
@@ -29,9 +32,8 @@ import {
 	type ControlOperationResult,
 	type ControlPatch,
 	type ControlSessionPatch,
-	type ControlStrategy,
-	type ControlCoverage,
 	type ControlSnapshot,
+	type ControlStrategy,
 	type ControlSubmitRequest,
 	type ControlValues,
 	type MediaTarget,
@@ -104,11 +106,7 @@ import {
 	retainSourceRuntimeLease,
 } from './runtime-loader';
 import { swLog } from '../shared/logger';
-import {
-	isBackgroundRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
-RPC_INVALID_REQUEST} from './background-rpc';
+import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from './background-rpc';
 import type {
 	PopupControlBatch,
 	PopupControlBatchResult,

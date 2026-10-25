@@ -1,22 +1,24 @@
 // goal: single-flight, document-scoped loader for the optional heavy content runtime
 
 import {
-	SPECTRA_CONTENT_RUNTIME_REVISION,
-	SPECTRA_PROTOCOL_VERSION,
 	controlCapabilityUsesStrategy,
-	selectControlCapabilityScope,
 	hasExtensionOnlyContribution,
 	isDefaultAudioConfig,
 	resolveAudioVolume,
+	rpcFailure,
+	rpcSuccess,
+	selectControlCapabilityScope,
+	SPECTRA_CONTENT_RUNTIME_REVISION,
+	SPECTRA_PROTOCOL_VERSION,
+	type AudioConfig,
 	type ContentRuntimeLeaseReason,
 	type ContentRuntimeReadyResult,
 	type ContentRuntimeSourceOwnership,
 	type ControlField,
 	type ControlPatch,
 	type ControlSessionPatch,
-	type MediaTarget,
 	type HotkeySettings,
-	type AudioConfig,
+	type MediaTarget,
 	type SpectraResponse,
 } from '@nexus/contracts';
 import { createSettlementPool, observeWithin } from '@nexus/kernel';
@@ -40,12 +42,7 @@ import {
 import { forEachBounded } from './bounded-fanout';
 import { isContentDocumentUrl } from './content-document-url';
 import { submitControlRequest } from './control-coordinator';
-import {
-	isBackgroundRequestEnvelope,
-	rpcFailure,
-	rpcSuccess,
-	sendBackgroundTabRequestOnce,
-RPC_INVALID_REQUEST} from './background-rpc';
+import { isBackgroundRequestEnvelope, sendBackgroundTabRequestOnce, RPC_INVALID_REQUEST } from './background-rpc';
 
 // Heavy SPA startup can legitimately spend several seconds restoring settings
 // and discovering media before the runtime publishes READY. Keep the handshake

@@ -155,6 +155,7 @@ export {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 } from './spectra.bootstrap.js';
 export { SPECTRA_PROTOCOL_VERSION } from './spectra.protocol-primitives.js';
+export { rpcFailure, rpcSuccess } from './spectra.protocol-primitives.js';
 export type { RpcError, RpcResult } from './spectra.protocol-primitives.js';
 
 export type ContentRuntimeLeaseReason =
@@ -1609,10 +1610,3 @@ export function isSpectraResponse<T extends SpectraRequestType>(
 	return isRpcFailureResult(value) && isRpcError(value.error);
 }
 
-export function rpcSuccess<T>(data: T): RpcResult<T> {
-	return { ok: true, data };
-}
-
-export function rpcFailure(code: string, message: string, retryable = false): RpcResult<never> {
-	return { ok: false, error: { code, message, retryable } };
-}
