@@ -29,6 +29,7 @@ import {
 import type { ExtensionInvocationContext } from './extension-invocation';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from './background-rpc';
+import { RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 const HOTKEY_SEEK_RELATIVE = 'seek-relative' as const;
 const HOTKEY_EFFECTIVE_VOLUME = 'effective-volume' as const;
 const PROTO_DEFAULT_HOTKEY_TRIGGER = 'spectra.content.default-hotkey.trigger' as const;
@@ -457,7 +458,11 @@ async function notifyShortcutFeedback(
 			tabId: active.id,
 			documentId: ready.documentId,
 		});
-		await chrome.tabs.sendMessage(active.id, event, { documentId: ready.documentId });
+		await withDeadline(
+			chrome.tabs.sendMessage(active.id, event, { documentId: ready.documentId }),
+			RPC_DEADLINE_MS.contentRequest,
+			'shortcut feedback',
+		);
 	} catch (error) {
 		/* @__PURE__ */ swLog.debug(`Shortcut feedback was unavailable: ${error instanceof Error ? error.message : String(error)}`);
 	} finally {

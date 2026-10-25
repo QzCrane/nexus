@@ -16,13 +16,20 @@ import {
 } from '@nexus/contracts/registry-runtime';
 import { createSpectraRequest } from '@nexus/contracts';
 import type { MediaRouteRulesSnapshot, MediaRouteScope, SpectraRequestPayload, SpectraResponse } from '@nexus/contracts';
+import { RPC_DEADLINE_MS, withDeadline } from './timeout';
 import { sendSpectraRequest } from './spectra-client';
 
 async function sendRegistryEnvelope<T extends SpectraRegistryRequestType>(
 	type: T,
 	payload: SpectraRequestPayload<T>,
 ): Promise<unknown> {
-	return chrome.runtime.sendMessage(createSpectraRequest(type, payload));
+	// The route editor is a UI action with no other deadline; a Background that never
+	// answers must not leave the panel waiting forever.
+	return withDeadline(
+		chrome.runtime.sendMessage(createSpectraRequest(type, payload)),
+		RPC_DEADLINE_MS.backgroundRequest,
+		`registry ${type}`,
+	);
 }
 
 async function sendRegistryRequest<T extends SpectraRegistryRequestType>(

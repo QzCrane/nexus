@@ -18,6 +18,7 @@ import {
 	SettingsProjectionQueue,
 	type SettingsProjectionWork,
 } from './settings-projection-queue';
+import { DeadlineExceededError, RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 
 const PROJECTION_REVISION_KEY = 'spectraSettingsProjectedRevision';
 const PROJECTION_RETRY_ALARM = 'spectra-settings-projection-retry';
@@ -37,6 +38,7 @@ function isHotkeyScope(scope: SettingsPatch['scope']): boolean {
 // durable snapshot at its next bootstrap. Every other delivery failure keeps
 // the revision pending so the queue retries instead of recording false success.
 export function isExpectedAbsentContentReceiver(error: unknown): boolean {
+	if (error instanceof DeadlineExceededError) return true;
 	const message = error instanceof Error ? error.message : String(error);
 	return message.includes('Receiving end does not exist')
 		|| message.includes('Could not establish connection')
@@ -52,7 +54,14 @@ async function deliverContentMessage(
 	message: unknown,
 ): Promise<void> {
 	try {
-		await chrome.tabs.sendMessage(tabId, message);
+		// A tab that never answers would hold one slot of the bounded projection
+		// pool forever, and the settings projection queue behind it. A deadline turns
+		// that into the same outcome as an absent receiver.
+		await withDeadline(
+			chrome.tabs.sendMessage(tabId, message),
+			RPC_DEADLINE_MS.contentRequest,
+			'settings projection',
+		);
 	} catch (error) {
 		if (isExpectedAbsentContentReceiver(error)) return;
 		throw error;

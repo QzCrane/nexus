@@ -13,6 +13,7 @@ import {
 	type ResolvedSiteHotkeys,
 } from '../shared/site-hotkey-mode';
 import { reconcileSiteHotkeyTransition } from './site-hotkey-transition';
+import { DeadlineExceededError, RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 
 const LEAN_HOST_FILE = 'content-site-hotkeys.js';
 const NO_RECEIVER_FRAGMENT = 'Receiving end does not exist';
@@ -46,7 +47,9 @@ export interface SiteHotkeyHostPort {
 	): Promise<LeanHostDelivery>;
 }
 
+/** A host that never acknowledges is as absent as one that was never injected. */
 function isMissingLeanReceiver(error: unknown): boolean {
+	if (error instanceof DeadlineExceededError) return true;
 	const message = error instanceof Error ? error.message : String(error);
 	return message.includes(NO_RECEIVER_FRAGMENT);
 }
@@ -74,7 +77,11 @@ const chromeHostPort: SiteHotkeyHostPort = {
 	},
 	async configure(tabId, documentId, message) {
 		try {
-			const response: unknown = await chrome.tabs.sendMessage(tabId, message, { documentId });
+			const response: unknown = await withDeadline(
+				chrome.tabs.sendMessage(tabId, message, { documentId }),
+				RPC_DEADLINE_MS.contentRequest,
+				'lean site hotkey configure',
+			);
 			// A document can contain the always-on bootstrap listener while the lean
 			// host is absent. Chrome resolves that unclaimed message as `undefined`
 			// instead of rejecting with "Receiving end does not exist".

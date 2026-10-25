@@ -10,6 +10,7 @@ import {
 	siteHotkeyDocumentOwner,
 	type FullSiteHotkeyRuntimePort,
 } from './site-hotkey-owner';
+import { DeadlineExceededError, RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 
 const NO_RECEIVER_FRAGMENT = 'Receiving end does not exist';
 
@@ -18,7 +19,9 @@ export interface HeavyRuntimeLeasePort {
 	release(capability: string): void;
 }
 
+/** A host that never acknowledges is as unusable as one that is not there. */
 function isMissingReceiver(error: unknown): boolean {
+	if (error instanceof DeadlineExceededError) return true;
 	const message = error instanceof Error ? error.message : String(error);
 	return message.includes(NO_RECEIVER_FRAGMENT);
 }
@@ -30,10 +33,14 @@ async function projectHeavySiteHotkeySettings(
 	allowAbsent: boolean,
 ): Promise<void> {
 	try {
-		await chrome.tabs.sendMessage(
-			tabId,
-			createSpectraEvent('spectra.hotkeys.changed', settings),
-			{ documentId },
+		await withDeadline(
+			chrome.tabs.sendMessage(
+				tabId,
+				createSpectraEvent('spectra.hotkeys.changed', settings),
+				{ documentId },
+			),
+			RPC_DEADLINE_MS.contentRequest,
+			'heavy site hotkey settings',
 		);
 	} catch (error) {
 		if (allowAbsent && isMissingReceiver(error)) return;
