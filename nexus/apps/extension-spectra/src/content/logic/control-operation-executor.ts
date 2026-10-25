@@ -248,7 +248,7 @@ export function registerControlOperationExecutor(nativeExecutor: NativeMediaExec
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| (candidate.type !== 'spectra.control.operation.execute'
 				&& candidate.type !== 'spectra.screenshot.target.verify')) return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Control operation execution is extension-internal only'));
 			return false;
 		}

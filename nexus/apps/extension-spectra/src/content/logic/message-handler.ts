@@ -160,7 +160,7 @@ function handleVisualizerDemand(
 		sendResponse(rpcFailure('invalid_request', 'Malformed visualizer demand request'));
 		return false;
 	}
-	if (sender.id && sender.id !== chrome.runtime.id) {
+	if (sender.id !== chrome.runtime.id) {
 		sendResponse(rpcFailure('forbidden', 'Visualizer demand is extension-internal only'));
 		return false;
 	}
@@ -200,7 +200,7 @@ function handleVisualizerFrame(
 		sendResponse(rpcFailure('invalid_request', 'Malformed visualizer frame request'));
 		return false;
 	}
-	if (sender.id && sender.id !== chrome.runtime.id) {
+	if (sender.id !== chrome.runtime.id) {
 		sendResponse(rpcFailure('forbidden', 'Visualizer frames are extension-internal only'));
 		return false;
 	}

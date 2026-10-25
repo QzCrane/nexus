@@ -148,7 +148,7 @@ function registerTabStateV2Listener(): void {
 				&& candidate.type !== 'spectra.tab.visible.list'
 				&& candidate.type !== 'spectra.tab.visible.settle'
 				&& candidate.type !== 'spectra.content.inject')) return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Tab-state RPC is extension-internal only'));
 			return false;
 		}

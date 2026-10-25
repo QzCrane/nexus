@@ -135,7 +135,7 @@ export function registerScreenshotHandler(): void {
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| candidate.type !== 'spectra.screenshot.capture-visible') return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Screenshot capture is extension-internal only'));
 			return false;
 		}

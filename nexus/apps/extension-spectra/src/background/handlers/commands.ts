@@ -54,7 +54,7 @@ function registerCommandsV2Listener(): void {
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| typeof candidate.type !== 'string'
 			|| !COMMAND_REQUEST_TYPES.has(candidate.type)) return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Command RPC is extension-internal only'));
 			return false;
 		}

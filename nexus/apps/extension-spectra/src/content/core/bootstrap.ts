@@ -429,7 +429,7 @@ if (!getContentBootstrapState()) {
 			state.dispose();
 			return false;
 		}
-		if (sender.id && sender.id !== chrome.runtime.id) return false;
+		if (sender.id !== chrome.runtime.id) return false;
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || typeof candidate.type !== 'string') {

@@ -2330,7 +2330,7 @@ export function initializeControlCoordinator(): void {
 			|| candidate.type === PROTO_SOURCE_RELEASED
 			|| candidate.type === PROTO_TARGET_CHANGED;
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || !isControlMessage) return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Control coordinator RPC is extension-internal only'));
 			return false;
 		}

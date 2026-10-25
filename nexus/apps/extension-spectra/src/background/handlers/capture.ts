@@ -632,7 +632,7 @@ function registerCaptureProtocolListener(): void {
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION
 			|| typeof candidate.type !== 'string'
 			|| !candidate.type.startsWith('spectra.audio.capture.')) return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Capture RPC is extension-internal only'));
 			return false;
 		}

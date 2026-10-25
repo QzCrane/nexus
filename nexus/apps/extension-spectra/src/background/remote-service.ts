@@ -30,6 +30,8 @@ import {
 	type BoundedSerialQueue,
 } from '../remote/operation-queue';
 import type { RemotePublicSession } from '../remote/protocol';
+import { isPairingWindowExpired } from '../remote/pairing-window';
+import { isTrustedExtensionUi } from './remote-sender-gate';
 import {
 	isBackgroundRequestEnvelope,
 	rpcFailure,
@@ -208,7 +210,8 @@ function isCurrentRemoteSession(session: HostSession): boolean {
 	return !closingTabs.has(session.tabId)
 		&& authorization?.valid === true
 		&& authorization.session.sessionId === session.sessionId
-		&& authorization.session.sessionEpoch === session.sessionEpoch;
+		&& authorization.session.sessionEpoch === session.sessionEpoch
+		&& !isPairingWindowExpired(session, Date.now());
 }
 
 async function acquireRemoteObservation(
@@ -441,6 +444,12 @@ async function getSessionOnce(tabId: number): Promise<{ session: RemotePublicSes
 	const session = await readAuthoritativeSession(tabId, known);
 	if (!session) return { session: null, connected: false };
 	if (isRemoteTabClosing(authority)) return { session: null, connected: false };
+	if (isPairingWindowExpired(session, Date.now())) {
+		// An unpaired session past its window must not stay available to the UI:
+		// the dialog would keep presenting a QR code that can no longer pair.
+		forgetSession(tabId);
+		return { session: null, connected: false };
+	}
 	if (session.connected) await acquireRemoteObservation(session, () => isCurrentRemoteSession(session)).catch(() => undefined);
 	if (isRemoteTabClosing(authority)) return { session: null, connected: false };
 	return { session: toPublicSession(session), connected: session.connected };
@@ -586,6 +595,10 @@ async function authorizeHostEvent(message: AuthorizedRemoteHostEvent): Promise<S
 		|| authorization.session.sessionId !== sessionId
 		|| authorization.session.capability !== capability
 		|| authorization.session.sessionEpoch !== message.sessionEpoch) return null;
+	// Host work for an unpaired session past its window must be refused here.
+	// Offscreen owns the same rule, but Background is the owner of the leases and
+	// state projections this event drives, so it cannot inherit that decision.
+	if (isPairingWindowExpired(authorization.session, Date.now())) return null;
 	return authorization;
 }
 
@@ -974,12 +987,6 @@ async function assertControllableTab(tabId: number): Promise<void> {
 		throw new Error('TAB_UNAVAILABLE');
 	}
 	if (protocol !== 'http:' && protocol !== 'https:' && protocol !== 'file:') throw new Error('TAB_NOT_CONTROLLABLE');
-}
-
-function isTrustedExtensionUi(sender: chrome.runtime.MessageSender): boolean {
-	if (sender.id && sender.id !== chrome.runtime.id) return false;
-	if (sender.tab) return false;
-	return !sender.url || sender.url.startsWith(chrome.runtime.getURL(''));
 }
 
 function isTrustedOffscreenSender(sender: chrome.runtime.MessageSender): boolean {

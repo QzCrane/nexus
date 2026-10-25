@@ -50,7 +50,7 @@ async function projectRouteMutation(domain?: string): Promise<void> {
 export function registerRegistryHandlers(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 		if (!isAttemptedRegistryMessage(message)) return false;
-		if (sender.id && sender.id !== chrome.runtime.id) {
+		if (sender.id !== chrome.runtime.id) {
 			sendResponse(rpcFailure('forbidden', 'Site route RPC is extension-internal only'));
 			return false;
 		}

@@ -56,7 +56,7 @@ initRemoteService();
 // caller, which surfaces as an opaque "invalid response" error.
 chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {
 	if (!isProtocolRecord(message) || !hasValidRequestEnvelopeBase(message)) return false;
-	if (sender.id && sender.id !== chrome.runtime.id) return false;
+	if (sender.id !== chrome.runtime.id) return false;
 	if (isBackgroundRequestType(message.type)) return false;
 	sendResponse(rpcFailure(
 		'unsupported_request',

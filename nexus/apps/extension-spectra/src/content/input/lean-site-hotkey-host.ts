@@ -266,7 +266,7 @@ if (existing?.revision !== 2) {
 	hostWindow.__SPECTRA_LEAN_SITE_HOTKEY_HOST__ = host;
 	physicalReleaseDispose = subscribeDocumentStartPhysicalHotkeyRelease(onPhysicalRelease);
 	runtimeMessageListener = (message, sender, sendResponse) => {
-		if (sender.id && sender.id !== chrome.runtime.id) return false;
+		if (sender.id !== chrome.runtime.id) return false;
 		if (!isSpectraLeanSiteHotkeyConfigureMessage(message)) return false;
 		applyConfiguration(
 			message.payload.epoch,

@@ -13,7 +13,7 @@ const subscribersByTab = new Map<number, Set<PopupUiEventSubscriber>>();
 let installedOwner: typeof chrome.runtime.onMessage | null = null;
 
 const runtimeListener = (message: unknown, sender: chrome.runtime.MessageSender = {}): false => {
-	if (sender.id && sender.id !== chrome.runtime.id) return false;
+	if (sender.id !== chrome.runtime.id) return false;
 	if (!isSpectraUiEventEnvelope(message) || typeof message.tabId !== 'number') return false;
 	const subscribers = subscribersByTab.get(message.tabId);
 	if (!subscribers) return false;
