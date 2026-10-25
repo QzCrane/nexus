@@ -75,4 +75,26 @@ describe('Content contracts facade boundary', () => {
 			expect(Object.hasOwn(facade, forbidden), `${forbidden} must stay outside Content`).toBe(false);
 		}
 	});
+
+	test('accepts the acknowledgements Content actually receives', async () => {
+		const facade = await import('../../../packages/contracts/src/spectra.content-runtime.ts');
+		// Both types were issued from Content while this facade returned false for
+		// them, so the shipped Content bundle rejected every well-formed answer. The
+		// complete protocol module accepted the same payloads, which is why unit
+		// tests never noticed.
+		expect(facade.isSpectraResponse('spectra.audio.page-scale.record', {
+			ok: true, data: { recorded: true },
+		})).toBe(true);
+		expect(facade.isSpectraResponse('spectra.content.default-hotkey.trigger', {
+			ok: true, data: { accepted: true },
+		})).toBe(true);
+		// Narrowing the guard must not become accepting anything that answers.
+		expect(facade.isSpectraResponse('spectra.audio.page-scale.record', {
+			ok: true, data: { recorded: false },
+		})).toBe(false);
+		expect(facade.isSpectraResponse('spectra.content.default-hotkey.trigger', {
+			ok: true, data: { accepted: 'yes' },
+		})).toBe(false);
+	});
+
 });

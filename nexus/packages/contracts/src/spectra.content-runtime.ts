@@ -511,6 +511,12 @@ function isContentResponseData(type: string, value: unknown): boolean {
 		|| type === 'spectra.content.source.released'
 		|| type === 'spectra.content.target.changed') return isRecord(value)
 		&& hasOnly(value, new Set(['accepted'])) && value.accepted === true;
+	// The page-issued default-hotkey trigger answers with the same accepted shape as
+	// the other content runtime acknowledgements.
+	if (type === 'spectra.content.default-hotkey.trigger') return isRecord(value)
+		&& hasOnly(value, new Set(['accepted'])) && value.accepted === true;
+	if (type === 'spectra.audio.page-scale.record') return isRecord(value)
+		&& value.recorded === true;
 	if (type === 'spectra.control.intent.submit') return isControlAck(value);
 	if (type === 'spectra.control.operation.submit') return isControlAck(value, true);
 	if (type === 'spectra.content.settings.get') return isContentSettings(value);
