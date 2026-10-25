@@ -205,6 +205,46 @@ describe('offscreen audio host', () => {
 		expect(switchDown?.startTime).toBe(switchUp?.startTime);
 	});
 
+	test('never acknowledges a capture that was cancelled inside the gate-switch window', async () => {
+		const tabId = 23;
+		await start(tabId, 1, DEFAULT_CONFIG);
+
+		const closeGate = deferred<void>();
+		const startPromise = start(tabId, 2, DEFAULT_CONFIG);
+		// The candidate becomes the owner immediately before the 25ms gate-switch
+		// sleep, so observing generation 2 in the host description means the start is
+		// parked inside that await with a committed candidate. Graph construction
+		// awaits real ramp timers, so this waits on macrotasks rather than draining
+		// microtasks.
+		await waitForMacrotask(() => describeAudioHost().some((entry) => (
+			entry.tabId === tabId && entry.generation === 2
+		)));
+		const candidateContext = requireValue(
+			audioHarness.contexts[1],
+			'Expected the replacement capture to create a second audio context',
+		);
+		candidateContext.closeGate = closeGate.promise;
+
+		const cancelPromise = handleAudioHostMessage({
+			type: 'OFFSCREEN_AUDIO_CANCEL_START',
+			tabId,
+			generation: 2,
+			stopCommitted: true,
+		});
+
+		// Cancellation has already claimed the candidate, so this acknowledgement
+		// must describe the host as idle. Reporting `active` here would hand the
+		// Background a complete-looking processor acknowledgement for a capture that
+		// is being torn down — the context is still `running` only because close()
+		// has not been reached yet.
+		expectIdle(await startPromise, tabId, 2, 1);
+		expect(describeAudioHost()).toEqual([]);
+
+		closeGate.resolve();
+		await cancelPromise;
+		expect(candidateContext.closeCalls).toBe(1);
+	});
+
 	test('advances processor generation only on an acknowledged config update', async () => {
 		await start(14, 2, DEFAULT_CONFIG);
 		const updated = await handleAudioHostMessage({
@@ -755,6 +795,12 @@ class FakeAudioContext {
 	state = 'suspended';
 	resumeCalls = 0;
 	closeCalls = 0;
+	/**
+	 * Lets a test hold the context open while it is being torn down. Disposal
+	 * closes the context last, so gating `close()` reproduces the window where a
+	 * processor is already being disposed but its context still reports `running`.
+	 */
+	closeGate: Promise<void> | null = null;
 
 	createMediaStreamSource(): FakeAudioNode {
 		return new FakeAudioNode();
@@ -815,6 +861,7 @@ class FakeAudioContext {
 
 	async close(): Promise<void> {
 		this.closeCalls += 1;
+		if (this.closeGate) await this.closeGate;
 		this.state = 'closed';
 	}
 }
@@ -831,9 +878,19 @@ function deferred<T>(): { promise: Promise<T>; resolve: (value: T) => void } {
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {
-	for (let attempt = 0; attempt < 50; attempt += 1) {
+	// Building a full graph crosses one await per node, so the tick budget has to
+	// cover a whole commit rather than a couple of promise hops.
+	for (let attempt = 0; attempt < 2_000; attempt += 1) {
 		if (predicate()) return;
 		await Promise.resolve();
 	}
 	throw new Error('Condition was not reached after flushing microtasks');
+}
+
+async function waitForMacrotask(predicate: () => boolean): Promise<void> {
+	for (let attempt = 0; attempt < 100; attempt += 1) {
+		if (predicate()) return;
+		await new Promise<void>((resolve) => setTimeout(resolve, 0));
+	}
+	throw new Error('Condition was not reached after flushing macrotasks');
 }

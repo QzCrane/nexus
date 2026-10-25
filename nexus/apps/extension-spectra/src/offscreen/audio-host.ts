@@ -87,7 +87,32 @@ function idleResult(tabId: number, generation: number, controlRevision: number):
 	};
 }
 
+/**
+ * A processor is only a truthful source of `active` while it is both still owned
+ * by the host and not being torn down.
+ *
+ * `disposeProcessor` claims `disposePromise` and removes the entry from
+ * `processors` synchronously, then disposes resources across later turns. So a
+ * processor can be "still running" from the AudioContext's point of view for
+ * several turns after its disposal began. Reporting `active` from that state
+ * hands the Background a well-formed acknowledgement for a resource that is
+ * already on its way out — the fields look complete, and only the physical owner
+ * knows they are stale.
+ */
+function isProcessorLive(processor: AudioProcessor): boolean {
+	return processor.disposePromise === null;
+}
+
 function activeResult(processor: AudioProcessor): AudioHostResult {
+	if (!isProcessorLive(processor)) {
+		return errorResult(
+			processor.tabId,
+			processor.generation,
+			processor.controlRevision,
+			'Capture processor is being disposed',
+			'capture_processor_disposed',
+		);
+	}
 	if (processor.ctx.state !== 'running') {
 		return errorResult(
 			processor.tabId,
@@ -111,7 +136,7 @@ function activeResult(processor: AudioProcessor): AudioHostResult {
 
 function describeCurrentState(tabId: number, fallbackGeneration: number): AudioHostResult {
 	const processor = processors.get(tabId);
-	if (processor) return activeResult(processor);
+	if (processor && isProcessorLive(processor)) return activeResult(processor);
 	const intent = latestIntents.get(tabId);
 	const generation = Math.max(fallbackGeneration, intent?.[0] ?? 0);
 	return idleResult(tabId, generation, intent?.[2] ?? 0);
@@ -390,6 +415,13 @@ async function startCapture(
 				CAPTURE_GATE_SWITCH_LEAD_MS + 5,
 			));
 			await disposeProcessor(current);
+		}
+		// The gate-switch delay is an await, so `OFFSCREEN_AUDIO_CANCEL_START` or a
+		// newer start can land inside it. Committing `active` here without asking
+		// again would describe a candidate this call no longer owns. Re-read the
+		// owner instead of assuming the commit that happened 25ms ago still holds.
+		if (processors.get(tabId) !== candidate || !isProcessorLive(candidate)) {
+			return describeCurrentState(tabId, generation);
 		}
 		return activeResult(candidate);
 	} catch (error) {
