@@ -7,8 +7,8 @@ import { toSettingsUiSnapshot } from '@nexus/contracts/ui-settings-runtime';
 import {
 	InvalidSettingsPatchError,
 	SettingsRevisionConflictError,
-	settingsRepository,
-} from '../settings-repository';
+} from '../settings-errors';
+import { settingsRepository } from '../settings-repository';
 import { withContentOSDMessages } from '../../shared/i18n/content-osd';
 import {
 	initializeSettingsProjection,

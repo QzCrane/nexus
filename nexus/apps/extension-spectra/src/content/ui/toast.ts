@@ -1,4 +1,5 @@
 // goal: transient visual notifications
+import { UI_COLORS } from '../../shared/ui-colors';
 import { activateFeedbackSurface, createFeedbackSurface } from './feedback-surface';
 
 const s: {
@@ -38,7 +39,7 @@ export function showToast(msg: string, options: ToastOptions = {}): void {
 		const st = document.createElement('style');
 		// note: toast must appear INSTANTLY (no fade-in delay). Only fade OUT when hiding.
 		// The previous `transition:0.3s;opacity:0` initial state caused a 300ms perceived delay.
-		st.textContent = '.t{background:rgba(20,20,30,0.92);backdrop-filter:blur(10px);padding:14px 24px;border-radius:14px;color:#fff;font-family:system-ui;opacity:1;transform:translateY(0);display:flex;align-items:center;box-shadow:0 8px 32px rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.1);transition:opacity 0.25s ease,transform 0.25s ease}.t.hide{opacity:0;transform:translateY(-15px)}.body{display:grid;gap:3px;min-width:0}.txt{font-size:14px;font-weight:500;white-space:nowrap}.meta{max-width:min(480px,70vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;opacity:.78}.meta[hidden]{display:none}';
+		st.textContent = `.t{background:${UI_COLORS.TOAST_SURFACE};backdrop-filter:blur(10px);padding:14px 24px;border-radius:14px;color:${UI_COLORS.TOAST_TEXT};font-family:system-ui;opacity:1;transform:translateY(0);display:flex;align-items:center;box-shadow:0 8px 32px ${UI_COLORS.TOAST_SHADOW};border:1px solid ${UI_COLORS.TOAST_BORDER};transition:opacity 0.25s ease,transform 0.25s ease}.t.hide{opacity:0;transform:translateY(-15px)}.body{display:grid;gap:3px;min-width:0}.txt{font-size:14px;font-weight:500;white-space:nowrap}.meta{max-width:min(480px,70vw);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;opacity:.78}.meta[hidden]{display:none}`;
 
 		const d = document.createElement('div');
 		d.className = 't'; d.id = 't';

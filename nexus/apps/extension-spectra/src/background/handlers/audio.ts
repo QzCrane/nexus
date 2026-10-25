@@ -40,12 +40,12 @@ import {
 	visualizerSubscriberUnion,
 	type VisualizerSubscriberLeases,
 } from '../visualizer-subscriber-registry';
+import type { PopupVisualizerSourceLease } from '../popup-visualizer-source';
 import {
 	abandonPopupVisualizerSource,
 	acquirePopupVisualizerSource,
 	isExtensionPopupSender,
 	releasePopupVisualizerSource,
-	type PopupVisualizerSourceLease,
 } from '../control-coordinator';
 const PROTO_AUDIO_SESSION_CURRENT = 'spectra.audio.session.current' as const;
 const PROTO_AUDIO_SESSION_PUBLISH = 'spectra.audio.session.publish' as const;

@@ -1,10 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { isSettingsPatchRequest } from '@nexus/contracts';
 import type { SettingsStorageArea } from '../src/background/settings-repository';
-import {
-	SettingsRepository,
-	SettingsRevisionConflictError,
-} from '../src/background/settings-repository';
+import { SettingsRevisionConflictError } from '../src/background/settings-errors';
+import { SettingsRepository } from '../src/background/settings-repository';
 import { EN_US } from '../src/popup/constants/i18n/en';
 import { DE_DE } from '../src/popup/constants/i18n/de-DE';
 import { ES_ES } from '../src/popup/constants/i18n/es-ES';

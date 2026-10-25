@@ -1,6 +1,6 @@
 // goal: renders the spectrum frequency bars on a canvas using provided spectral data
 
-import { COLORS, UI_SIZES, VIZ_PARAMS } from '../constants';
+import { COLORS, popupPrimaryColor, UI_SIZES, VIZ_PARAMS } from '../constants';
 
 // eff: clears the canvas and draws a series of vertical bars representing frequency amplitudes
 export function drawViz(
@@ -25,7 +25,7 @@ export function drawViz(
   // up or silent. These low idle ticks are presentation only; active frames
   // replace them with actual sampled amplitudes below.
   if (!data || isMuted) {
-    ctx.fillStyle = 'rgba(148, 163, 184, 0.28)';
+    ctx.fillStyle = COLORS.VIZ_IDLE;
     for (let i = 0; i < count; i++) {
       const idleHeight = i % 4 === 0 ? 3 : 2;
       ctx.fillRect(i * (barW + gap), h - idleHeight, barW, idleHeight);
@@ -36,7 +36,7 @@ export function drawViz(
   const step = Math.floor(data.length / count) || 1;
 
   // rule: use distinct colors to visually indicate whether audio is captured (high fidelity) or native (low fidelity)
-  ctx.fillStyle = isCapture ? COLORS.CAPTURE : COLORS.NATIVE;
+  ctx.fillStyle = isCapture ? COLORS.CAPTURE : popupPrimaryColor();
 
   for (let i = 0; i < count; i++) {
     // note: sample the frequency bin at a calculated step to fit the requested bar count

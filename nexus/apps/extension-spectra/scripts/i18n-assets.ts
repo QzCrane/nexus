@@ -3,12 +3,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
-import { HOTKEY_ACTIONS } from '../../../packages/contracts/src/hotkeys.contracts';
-import { I18N } from '../src/popup/constants/i18n';
 import type { I18NDict } from '../src/popup/types';
-import { DICT } from '../src/options/i18n-dict';
-import { getActionName } from '../src/options/i18n-actions';
-import { SUPPORTED_SPECTRA_LANGUAGES, sourceLanguage } from '../src/shared/i18n/locale-sections';
+import { createSourceLocaleCatalogs } from './i18n-source-catalog';
 
 const VALUE_MARKER = '__SPECTRA_I18N_VALUE__';
 
@@ -37,19 +33,13 @@ function encodePopupDictionary(dictionary: I18NDict): Record<string, string> {
 }
 
 export function createLocaleCatalogs(): Record<string, EncodedLocaleCatalog> {
-	const englishPopup = I18N['en-US'];
-	const englishOptions = DICT['en-US'] ?? {};
-	if (!englishPopup) throw new Error('English popup catalog is missing');
-
 	const catalogs: Record<string, EncodedLocaleCatalog> = {};
-	for (const language of SUPPORTED_SPECTRA_LANGUAGES) {
-		const source = sourceLanguage(language);
-		const popup = { ...englishPopup, ...(I18N[source] ?? {}) } as I18NDict;
-		const options = { ...englishOptions, ...(DICT[source] ?? {}) };
-		const actions = Object.fromEntries(
-			HOTKEY_ACTIONS.map((action) => [action, getActionName(action, source)]),
-		);
-		catalogs[language] = { popup: encodePopupDictionary(popup), options, actions };
+	for (const [language, catalog] of Object.entries(createSourceLocaleCatalogs())) {
+		catalogs[language] = {
+			popup: encodePopupDictionary(catalog.popup),
+			options: catalog.options,
+			actions: catalog.actions,
+		};
 	}
 	return catalogs;
 }

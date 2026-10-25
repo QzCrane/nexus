@@ -2,7 +2,9 @@
 
 import type { ControlDirectField, MediaTarget } from './control.contracts.js';
 
-export const SPECTRA_PROTOCOL_VERSION = 2 as const;
+import { SPECTRA_PROTOCOL_VERSION } from './spectra.wire.js';
+
+export { SPECTRA_PROTOCOL_VERSION, createSpectraRequest } from './spectra.wire.js';
 export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.3.2' as const;
 export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.6.0' as const;
 
@@ -165,6 +167,17 @@ export function isSpectraLeanSiteHotkeyConfiguration(
 		&& Array.isArray(value.bindings)
 		&& value.bindings.length <= 128
 		&& value.bindings.every(isSpectraLeanSiteHotkeyBinding);
+}
+
+/** Creates the lean site-hotkey configuration message; its wire version stays owned by spectra.wire.ts. */
+export function createSpectraLeanSiteHotkeyConfiguration(
+	configuration: SpectraLeanSiteHotkeyConfiguration,
+): SpectraLeanSiteHotkeyConfigureMessage {
+	return {
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		type: 'spectra.content.site-hotkeys.configure',
+		payload: configuration,
+	};
 }
 
 export function isSpectraLeanSiteHotkeyConfigureMessage(

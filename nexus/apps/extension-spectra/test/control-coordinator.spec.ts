@@ -19,8 +19,8 @@ import {
 import {
 	acquirePopupVisualizerSource,
 	controlCoordinatorTestApi,
-	type ExtensionInvocationContext,
 } from '../src/background/control-coordinator';
+import type { ExtensionInvocationContext } from '../src/background/extension-invocation';
 import { resetBadgeUsageForTests } from '../src/background/badge-usage';
 import { badgeState } from '../src/background/state';
 import {

@@ -1,51 +1,35 @@
 // goal: Options-only revisioned settings client that never transports audio settings
+// eff: delegates envelope creation and message dispatch to canonical transport
 
 import {
 	isSpectraSettingsUiEventEnvelope,
-	SPECTRA_PROTOCOL_VERSION,
 	isSpectraSettingsUiResponse,
 	type SettingsUiPatch,
 	type SettingsUiSnapshot,
 	type SpectraSettingsUiRequestType,
 } from '@nexus/contracts/ui-settings-runtime';
-import type {
-	SpectraRequestEnvelope,
-	SpectraRequestPayload,
-	SpectraResponse,
+import {
+	createSpectraRequest,
+	type SpectraRequestPayload,
+	type SpectraResponse,
 } from '@nexus/contracts';
 import {
 	createRevisionedSettingsClient,
 	type RevisionedSettingsTransport,
 } from './revisioned-settings-client';
+import { sendSpectraRpcMessage } from './transport';
 
 type OptionsSettingsRequestType = Extract<
 	SpectraSettingsUiRequestType,
 	'spectra.settings.ui.get' | 'spectra.settings.ui.patch' | 'spectra.settings.flush'
 >;
 
-function createRequestId(): string {
-	return typeof crypto.randomUUID === 'function'
-		? crypto.randomUUID()
-		: `${Date.now().toString(36)}-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`;
-}
-
-async function sendOptionsSettingsRequest<T extends OptionsSettingsRequestType>(
+function sendOptionsSettingsRequest<T extends OptionsSettingsRequestType>(
 	type: T,
 	payload: SpectraRequestPayload<T>,
 ): Promise<SpectraResponse<T>> {
-	const message: SpectraRequestEnvelope<T> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: createRequestId(),
-		type,
-		payload,
-	};
-	const response: unknown = await chrome.runtime.sendMessage(message);
-	if (!isSpectraSettingsUiResponse(type, response)) {
-		throw new Error(
-			`Background returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} settings UI response for ${type}`,
-		);
-	}
-	return response;
+	const message = createSpectraRequest(type, payload);
+	return sendSpectraRpcMessage(message, isSpectraSettingsUiResponse, 'Background');
 }
 
 const optionsSettingsTransport: RevisionedSettingsTransport<SettingsUiSnapshot, SettingsUiPatch> = {

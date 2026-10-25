@@ -2,9 +2,7 @@
 
 import { DICT_EXTENDED } from './i18n-dict-ext';
 
-export type I18nDict = Record<string, Record<string, string>>;
-
-const DICT_CORE: I18nDict = {
+const DICT_CORE = {
 	'en-US': {
 		opt_chrome_title: '🌐 Chrome Global Shortcuts',
 		opt_chrome_open: 'Open Chrome Settings',
@@ -242,7 +240,16 @@ const DICT_CORE: I18nDict = {
 		opt_diagnostics_exported: '診断 JSON をローカルに出力しました。データは送信されていません。',
 		opt_diagnostics_failed: '診断情報を出力できませんでした。もう一度お試しください。',
 	},
-};
+} satisfies Record<string, Record<string, string>>;
+
+// note: English is the key schema. Other locale shards may omit keys, which the
+// generator and runtime fill from the English baseline, but they cannot invent
+// keys or drift from the Options copy contract.
+export const DICT_EN = DICT_CORE['en-US'];
+
+export type OptionsI18nKey = keyof typeof DICT_EN;
+
+export type OptionsLocaleCatalog = Partial<Record<OptionsI18nKey, string>>;
 
 // note: merge core and extended dictionaries
-export const DICT: I18nDict = { ...DICT_CORE, ...DICT_EXTENDED };
+export const DICT: Record<string, OptionsLocaleCatalog> = { ...DICT_CORE, ...DICT_EXTENDED };

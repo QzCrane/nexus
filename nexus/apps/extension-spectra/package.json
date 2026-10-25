@@ -12,6 +12,7 @@
 		"build:sourcemap": "bun build.ts --sourcemap",
 		"build:analyze": "bun build.ts --analyze",
 		"check:dist": "bun scripts/check-dist-integrity.ts",
+		"generate:remote-projection": "bun scripts/generate-remote-projection.ts",
 		"lint": "bun ../../scripts/run-strict-biome.ts .",
 		"integrity": "bun scripts/check-production-artifacts.ts",
 		"package": "bun run --cwd ../.. release:spectra",
@@ -20,7 +21,7 @@
 		"test:unit": "bun scripts/run-tests.ts",
 		"test:watch": "bun test --watch test",
 		"test": "bun run test:unit && bun run test:chrome",
-		"test:smoke": "bun test test/smoke.spec.ts",
+		"test:smoke": "bun test test/smoke",
 		"test:smoke:en-US": "bun scripts/run-smoke-locale.ts en-US",
 		"test:smoke:zh-CN": "bun scripts/run-smoke-locale.ts zh-CN",
 		"test:chrome:dist": "bun scripts/test-chrome-dist.ts",
@@ -35,11 +36,14 @@
 	},
 	"dependencies": {
 		"@nexus/audio-engine": "workspace:*",
-		"@nexus/kernel": "workspace:*"
+		"@nexus/kernel": "workspace:*",
+		"qrcode": "^1.5.4"
 	},
 	"devDependencies": {
+		"@types/qrcode": "^1.5.6",
 		"chrome-types": "^0.1.440",
 		"esbuild": "^0.28.2",
+		"jsqr": "^1.4.0",
 		"puppeteer": "25.9.0",
 		"puppeteer-floor": "npm:puppeteer-core@24.7.2",
 		"sharp": "0.35.4",

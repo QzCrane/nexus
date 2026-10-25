@@ -76,6 +76,19 @@ function normalize(root, fullPath) {
 	return path.relative(root, fullPath).replaceAll('\\', '/');
 }
 
+/**
+ * 读取必需 owner 源文件：路径缺失时记为规则失败而不是让门禁崩溃。
+ * 重命名/搬迁任何 owner 都必须显式更新本检查，不能靠 ENOENT 静默通过。
+ */
+function readRequiredSource(root, relative, rule) {
+	const fullPath = path.join(root, relative);
+	if (!fs.existsSync(fullPath)) {
+		error(`${rule}: required owner source is missing (${relative})`);
+		return null;
+	}
+	return fs.readFileSync(fullPath, 'utf8');
+}
+
 function executableSource(source) {
 	return source
 		.replace(/\/\*[\s\S]*?\*\//gu, '')
@@ -300,7 +313,7 @@ function checkDefaultRuntime(root) {
 function checkAudioProcessorOwners(root) {
 	const captureOwnerRelative = `${SOURCE_PATH}/offscreen/audio-host.ts`;
 	const captureOwnerPath = path.join(root, captureOwnerRelative);
-	const mediaOwnerRelative = 'packages/features/audio-engine/src/WebAudioController.ts';
+	const mediaOwnerRelative = 'packages/features/audio-engine/src/web-audio-controller.ts';
 	const mediaOwnerPath = path.join(root, mediaOwnerRelative);
 	const retiredPaths = [
 		`${SOURCE_PATH}/content/core/lifecycle/media-observer.ts`,
@@ -567,18 +580,30 @@ function checkAudioProcessorOwners(root) {
 		path.join(root, SOURCE_PATH, 'background/control-coordinator.ts'),
 		'utf8',
 	);
+	const popupVisualizerSource = fs.readFileSync(
+		path.join(root, SOURCE_PATH, 'background/popup-visualizer-source.ts'),
+		'utf8',
+	);
 	for (const required of [
-		'export async function acquirePopupVisualizerSource(',
+		'createPopupVisualizerSource({',
+		'runExclusive: serialized',
+	]) {
+		if (!coordinator.includes(required)) {
+			error(`SCTRL-013/SCTRL-021: Visualizer observation must borrow the control transaction queue (${required})`);
+		}
+	}
+	for (const required of [
+		'export function createPopupVisualizerSource(',
 		'sameExtensionDocument(invocation.foreground, invocation.target)',
 		"'spectra.audio.visualizer.demand.set'",
 		"'visualizer'",
-		'export function releasePopupVisualizerSource(',
+		'function release(lease: PopupVisualizerSourceLease)',
 		'chrome.webNavigation.getFrame({',
 		'interface PopupVisualizerSourceAcquisition',
 		"actualMode: 'bypass' | 'webaudio' | 'capture' | null;",
 		'lease: pendingLease',
 	]) {
-		if (!coordinator.includes(required)) {
+		if (!popupVisualizerSource.includes(required)) {
 			error(`SCTRL-013/SCTRL-021/SCTRL-041: Visualizer observation lost foreground/document identity or release compensation (${required})`);
 		}
 	}
@@ -618,24 +643,16 @@ function checkAudioProcessorOwners(root) {
 }
 
 function checkSpectraV3EnvelopeOwner(root) {
+	const wireContract = fs.readFileSync(
+		path.join(root, 'packages/contracts/src/spectra.wire.ts'),
+		'utf8',
+	);
 	const bootstrapContract = fs.readFileSync(
 		path.join(root, 'packages/contracts/src/spectra.bootstrap.ts'),
 		'utf8',
 	);
 	const protocol = fs.readFileSync(
 		path.join(root, 'packages/contracts/src/spectra.protocol.ts'),
-		'utf8',
-	);
-	const runtimeClient = fs.readFileSync(
-		path.join(root, SOURCE_PATH, 'shared/spectra-client.ts'),
-		'utf8',
-	);
-	const uiClient = fs.readFileSync(
-		path.join(root, SOURCE_PATH, 'shared/ui-spectra-client.ts'),
-		'utf8',
-	);
-	const settingsClient = fs.readFileSync(
-		path.join(root, SOURCE_PATH, 'shared/ui-settings-spectra-client.ts'),
 		'utf8',
 	);
 	const runtimeArchitecture = fs.readFileSync(
@@ -647,12 +664,30 @@ function checkSpectraV3EnvelopeOwner(root) {
 		'utf8',
 	);
 
-	const protocolVersionDefinitions = bootstrapContract.match(
-		/^export const SPECTRA_PROTOCOL_VERSION\s*=/gmu,
-	) ?? [];
-	if (protocolVersionDefinitions.length !== 1
+	for (const required of [
+		'export const SPECTRA_PROTOCOL_VERSION',
+		'function createRequestId()',
+		'export function createSpectraRequest<',
+		'export function createSpectraEvent<',
+	]) {
+		if (!wireContract.includes(required)) {
+			error(`SCTRL-001/SCTRL-034: SPECTRA wire owner drifted (${required})`);
+		}
+	}
+	scanDir(path.join(root, 'packages/contracts/src'), (fullPath, entry) => {
+		if (!entry.name.endsWith('.ts') || entry.name.endsWith('.d.ts')) return;
+		const relative = normalize(root, fullPath);
+		if (relative === 'packages/contracts/src/spectra.wire.ts') return;
+		const source = fs.readFileSync(fullPath, 'utf8');
+		if (/^export const SPECTRA_PROTOCOL_VERSION\s*=/mu.test(source)
+			|| /\bfunction createRequestId\s*\(/u.test(source)) {
+			error(`SCTRL-001/SCTRL-034: SPECTRA protocol version and request identity must have exactly one owner (packages/contracts/src/spectra.wire.ts; duplicated at ${relative})`);
+		}
+	});
+	if (!bootstrapContract.includes("from './spectra.wire.js'")
+		|| /^export const SPECTRA_PROTOCOL_VERSION\s*=/mu.test(bootstrapContract)
 		|| !/^export const SPECTRA_CONTENT_RUNTIME_REVISION\s*=\s*'3\./mu.test(bootstrapContract)) {
-		error('SCTRL-001/SCTRL-034: SPECTRA v3 must have one canonical protocol/runtime version owner');
+		error('SCTRL-001/SCTRL-034: minimal bootstrap contract must project the wire owner instead of redeclaring it');
 	}
 	for (const required of [
 		'export type SpectraRequestEnvelope',
@@ -664,28 +699,17 @@ function checkSpectraV3EnvelopeOwner(root) {
 			error(`SCTRL-001/SCTRL-034: SPECTRA v3 envelope contract owner drifted (${required})`);
 		}
 	}
-	for (const required of [
-		'function createEnvelope<T extends SpectraRequestType>(',
-		'protocolVersion: SPECTRA_PROTOCOL_VERSION',
-		'requestId: createRequestId()',
-		'const message = createEnvelope(type, payload, context)',
-		'function deliverSpectraTabEnvelope<T extends SpectraRequestType>(',
-		'createEnvelope(type, payload, { ...context, tabId })',
-	]) {
-		if (!runtimeClient.includes(required)) {
-			error(`SCTRL-001/SCTRL-034: SPECTRA extension request transport lost the canonical envelope owner (${required})`);
+	scanDir(path.join(root, SOURCE_PATH), (fullPath, entry) => {
+		if (!/\.(?:ts|tsx)$/u.test(entry.name) || entry.name.endsWith('.d.ts')) return;
+		const relative = normalize(root, fullPath);
+		const source = executableSource(fs.readFileSync(fullPath, 'utf8'));
+		if (/protocolVersion\s*:\s*SPECTRA_PROTOCOL_VERSION/u.test(source)) {
+			error(`SCTRL-001/SCTRL-034: extension production must not mint SPECTRA envelopes outside the contracts wire owner (${relative})`);
 		}
-	}
-	for (const [name, source] of [
-		['ui-spectra-client.ts', uiClient],
-		['ui-settings-spectra-client.ts', settingsClient],
-	]) {
-		if (!source.includes('SpectraRequestEnvelope')
-			|| !source.includes('SPECTRA_PROTOCOL_VERSION')
-			|| !source.includes('requestId')) {
-			error(`SCTRL-001/SCTRL-034: focused SPECTRA transport must remain typed by the canonical envelope owner (${name})`);
+		if (/\bfunction (?:createRequestId|createEnvelope|createSpectraEnvelope|deliverSpectraTabEnvelope)\b/u.test(source)) {
+			error(`SCTRL-001/SCTRL-034: SPECTRA envelope factories and request identity belong to the contracts wire owner (${relative})`);
 		}
-	}
+	});
 	for (const [name, document, required] of [
 		['architecture/runtime.md', runtimeArchitecture, [
 			'## Protocol and envelope ownership',
@@ -1315,7 +1339,6 @@ function checkProductionLoadingTopology(root) {
 		}
 	}
 	for (const required of [
-		"export const SPECTRA_PROTOCOL_VERSION = 2 as const",
 		'export function isBootstrapInboundRequest(',
 		'export function isBootstrapHelloResponse(',
 	]) {
@@ -1377,9 +1400,11 @@ function checkProductionLoadingTopology(root) {
 		|| peerRuntimeLoader.includes('PEER_VENDOR_FILE')
 		|| !peerRuntimeLoader.includes("typeof module.default !== 'function'")
 		|| !peerRuntimeLoader.includes("throw new Error('Local PeerJS vendor runtime is unavailable')")
-		|| !peerRuntimeLoader.includes("from '../../../../../remote-site/vendor/peerjs.min.js'")
+		|| !peerRuntimeLoader.includes("from '../../vendor/peerjs/peerjs.min.js'")
+		|| peerRuntimeLoader.includes('remote-site/')
 		|| !peerVendor.includes('export default Peer')
-		|| !peerVendor.includes("import Peer from '../../../../../remote-site/vendor/peerjs.min.js'")
+		|| !peerVendor.includes("import Peer from '../../vendor/peerjs/peerjs.min.js'")
+		|| peerVendor.includes('remote-site/')
 		|| peerVendor.includes('globalThis.Peer')
 		|| !remoteHost.includes("import type { DataConnection, Peer } from './peerjs-loader'")
 		|| /(?:^|\n)import\s+[^;\n]*\bfrom\s+['"]peerjs['"]/u.test(
@@ -1549,10 +1574,11 @@ function checkRetiredPaths(root) {
 		}
 	}
 
-	const router = fs.readFileSync(
-		path.join(root, 'packages/features/audio-engine/src/AudioGraphRouter.ts'),
-		'utf8',
-	);
+	const router = readRequiredSource(
+		root,
+		'packages/features/audio-engine/src/audio-graph-router.ts',
+		'SCTRL-003/SCTRL-032',
+	) ?? '';
 	const processorContracts = fs.readFileSync(
 		path.join(root, 'packages/contracts/src/audio-processor.contracts.ts'),
 		'utf8',
@@ -2380,10 +2406,17 @@ function checkRetiredPaths(root) {
 	if (badge.includes('USED_BADGE_PLACEHOLDER') || badge.includes("text: '•'")) {
 		error('SCTRL-014: Badge usage without a complete acknowledged volume pair must remain completely blank');
 	}
-	const smoke = fs.readFileSync(
-		path.join(root, APP_PATH, 'test/smoke.spec.ts'),
-		'utf8',
-	);
+	const smokeFiles: string[] = [];
+	const collectSmokeFiles = (directory: string): void => {
+		for (const entry of fs.readdirSync(directory, { withFileTypes: true })
+			.sort((left, right) => left.name.localeCompare(right.name))) {
+			const entryPath = path.join(directory, entry.name);
+			if (entry.isDirectory()) collectSmokeFiles(entryPath);
+			else if (entry.isFile() && entry.name.endsWith('.spec.ts')) smokeFiles.push(entryPath);
+		}
+	};
+	collectSmokeFiles(path.join(root, APP_PATH, 'test/smoke'));
+	const smoke = smokeFiles.map((file) => fs.readFileSync(file, 'utf8')).join('\n');
 	for (const required of [
 		'restores durable acknowledged state and sticky badge after worker replacement plus refresh',
 		'applies a site preset before the default global preset after worker replacement',

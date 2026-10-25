@@ -1,5 +1,6 @@
 // goal: renders the EQ curve in the side panel by bridging input slider positions with the spline drawing utility
 
+import { popupPrimaryColor } from '../constants';
 import { MetricsCache, type MetricsCacheData } from '../visualizer/metrics-cache';
 import { drawEqCurve } from '../visualizer/draw-eq-curve';
 
@@ -18,7 +19,7 @@ function internalDraw(): void {
 	cachedInputs.forEach((inp) => {
 		values.push(parseFloat(inp.value) || 0);
 	});
-	drawEqCurve(ctx, values, metricsCache, '#2563eb');
+	drawEqCurve(ctx, values, metricsCache, popupPrimaryColor());
 }
 
 // eff: initializes the metrics observer and establishes the relationship between UI sliders and their canvas coordinates
@@ -53,7 +54,7 @@ export function drawSidePanelEqCurve(
 	});
 
 	if (metricsCache?.isValid) {
-		drawEqCurve(ctx, values, metricsCache, '#2563eb');
+		drawEqCurve(ctx, values, metricsCache, popupPrimaryColor());
 		return;
 	}
 
@@ -100,7 +101,7 @@ function fallbackDraw(
 		isValid: true,
 	};
 
-	drawEqCurve(ctx, values, cache, '#2563eb');
+	drawEqCurve(ctx, values, cache, popupPrimaryColor());
 }
 
 // post: cleans up DOM observers and shared references to prevent memory leaks after panel is dismissed

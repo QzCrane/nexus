@@ -193,9 +193,25 @@ export function sha256File(path) {
 	return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+/**
+ * A `dist` directory is a derived build output only when its owner package
+ * declares a build script. Deployment surfaces without a build step (the Remote
+ * site) commit their projection under `dist/`, and that projection must stay in
+ * the release source digest instead of being silently ignored.
+ */
+function isBuildOwnedDist(directory) {
+	const manifestPath = resolve(directory, 'package.json');
+	if (!existsSync(manifestPath)) return false;
+	const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+	return typeof manifest.scripts?.build === 'string';
+}
+
 function listReleaseSourceFiles(directory, root = directory) {
 	return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
-		if (entry.isDirectory() && SOURCE_DIGEST_IGNORED_DIRECTORIES.has(entry.name)) return [];
+		if (entry.isDirectory() && SOURCE_DIGEST_IGNORED_DIRECTORIES.has(entry.name)) {
+			const derivedBuildOutput = entry.name === 'dist' && isBuildOwnedDist(directory);
+			if (entry.name !== 'dist' || derivedBuildOutput) return [];
+		}
 		if (entry.isFile() && SOURCE_DIGEST_IGNORED_FILE_SUFFIXES.some((suffix) => (
 			entry.name.endsWith(suffix)
 		))) return [];

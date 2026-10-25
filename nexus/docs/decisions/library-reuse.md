@@ -479,7 +479,7 @@ last_reviewed: 2026-09-07
 ### R43 · Web Audio — 原生Web Audio节点 + 现有图owner
 
 **裁决：保留**。
-对应位置：`nexus/packages/features/audio-engine/src/AudioGraphRouter.ts`；`nexus/packages/features/audio-engine/src/WebAudioController.ts`。
+对应位置：`nexus/packages/features/audio-engine/src/audio-graph-router.ts`；`nexus/packages/features/audio-engine/src/web-audio-controller.ts`。
 **由轮子接管：**已复用BiquadFilter/Gain/Panner，不再加通用音乐引擎。
 **保留自有职责：**捕获授权、节点唯一持有、参数斜坡、读回和销毁。
 **边界与反转条件：**Tone.js类框架不解决此处Chrome捕获与恢复权威；未来有新DSP需求另评算法。
@@ -499,7 +499,7 @@ last_reviewed: 2026-09-07
 ### R45 · 现有专业库 — darkreader、qrcode、jsqr、pinyin-pro、preact
 
 **裁决：保留已有正确复用**。
-对应位置：`nexus/apps/extension-halo/package.json`。
+对应位置：`nexus/apps/extension-halo/package.json`（`qrcode`、`jsqr`、`darkreader`、`pinyin-pro`）；`nexus/apps/extension-spectra/package.json`（`qrcode` 是配对 QR 的唯一编码 owner，`jsqr` 仅用于测试解码）。
 **由轮子接管：**不把专业算法再改成自研。
 **保留自有职责：**生命周期、资源准入、用户隐私和升级证据。
 **边界与反转条件：**安装存在不意味着全部能力测试；不因依赖数量指标删除真实消费者。

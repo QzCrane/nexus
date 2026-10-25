@@ -77,6 +77,9 @@ export function checkSourceDerivedThirdParty(
 		previous = key;
 		assertPathUnderProduct(entry, entry.localPath, 'localPath');
 		assertPathUnderProduct(entry, entry.noticePath, 'noticePath');
+		if (!entry.noticePath.startsWith(`apps/extension-${entry.product}/public/`)) {
+			throw new Error(`${key}: noticePath must live under apps/extension-${entry.product}/public/ so the build copies it into the release`);
+		}
 		if (!safeRelative(entry.releaseEntry)) throw new Error(`${key}: releaseEntry must be a safe relative path`);
 		if (!/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/u.test(entry.upstreamRepository)) {
 			throw new Error(`${key}: upstreamRepository must be a canonical GitHub repository URL`);

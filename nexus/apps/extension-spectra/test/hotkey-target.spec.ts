@@ -34,8 +34,7 @@ describe('hotkey target contracts', () => {
 			rpcSuccess({ tabId: null }),
 		)).toBe(true);
 		// The v2 site-route wire stays live on its dedicated registry owner; the
-		// hotkey-target client only had to stop sharing its transport, which the
-		// source-level separation test in ui-contracts.spec.ts pins.
+		// hotkey-target client only had to stop sharing that transport.
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: 2,
 			requestId: 'retired-route-registry',

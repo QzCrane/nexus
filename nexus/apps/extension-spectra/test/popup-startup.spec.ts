@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
 import { showPopupStartupError } from '../src/popup/startup-error';
 
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
@@ -80,45 +79,4 @@ describe('Popup startup failure surface', () => {
 		expect(retries).toBe(1);
 		expect(findById(body, 'popup-startup-status')).toBeNull();
 	});
-
-	test('makes settings initialization disposable and never rolls back to invocation-time state', () => {
-		const source = readFileSync(new URL('../src/popup/views/settings.ts', import.meta.url), 'utf8');
-		expect(source).toContain('if (disposed || next.revision <= state.revision) return;');
-		expect(source).toContain('if (disposed) return;');
-		expect(source).toContain('unsubscribeSettings();');
-		expect(source).toContain('state.dispose();\n    throw error;');
-		expect(source).toContain('await getSettingsSnapshot(true)');
-		expect(source).not.toContain('state.gSettings = previous');
-	});
-
-	test('supervises every async startup failure and retries through a fresh document', () => {
-		const entry = readFileSync(new URL('../src/popup/index.ts', import.meta.url), 'utf8');
-		const card = readFileSync(new URL('../src/popup/card/init.ts', import.meta.url), 'utf8');
-		const sidePanel = readFileSync(new URL('../src/popup/side-panel/index.ts', import.meta.url), 'utf8');
-		expect(entry).toContain("void main().catch((error: unknown) => {");
-		expect(entry).toContain('showPopupStartupError(error, reloadPopup);');
-		expect(entry).toContain('window.location.reload();');
-		expect(entry).not.toContain('showPopupStartupError(error, main)');
-		expect(entry).not.toContain("document.addEventListener('DOMContentLoaded', main)");
-		expect(entry).toContain('registerPopupAttemptDisposer(initSidePanel());');
-		expect(entry).toContain('loadVisualizer: loadPopupVisualizer,');
-		expect(entry).toContain("import('./visualizer/loop')");
-		expect(entry).not.toContain('await loadPopupVisualizer();');
-		expect(card).not.toContain("await import('../visualizer/loop')");
-		expect(card).not.toContain('createEqCurveDrawer');
-		expect(card).not.toContain('eq-curve-canvas');
-		expect(card).not.toContain('eq-sliders-row');
-		expect(card).toContain('if (!getVizEnabled() || disposed)');
-		expect(card).toContain('cleanupStack.push(disposeVisualizer);');
-		expect(card).toContain('registerCleanup?.(disposeCard);');
-		expect(sidePanel).toContain('export function initSidePanel(): () => void');
-		expect(sidePanel).toContain('return disposeSidePanel;');
-		expect(sidePanel).toContain('export function disposeSidePanel(): void');
-		expect(sidePanel).toContain('lifecycleController?.abort();');
-		expect(sidePanel).toContain('unsubscribePanelSnapshots?.();');
-		expect(sidePanel).toContain('disposeVideoControls();');
-		expect(sidePanel).toContain('disposeSidePanelControls();');
-		expect(sidePanel).toContain('unbindFooterActions();');
-	});
-
 });

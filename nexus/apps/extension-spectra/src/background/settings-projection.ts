@@ -1,13 +1,12 @@
 // goal: project durable settings revisions without turning delivery failures into false commit failures
 
 import {
-	SPECTRA_PROTOCOL_VERSION,
+	createSpectraEvent,
 	normalizeHostname,
 	selectMediaRouteDecisionForUrl,
 	type MediaRouteSettings,
 	type SettingsPatch,
 	type SettingsSnapshot,
-	type SpectraEventEnvelope,
 } from '@nexus/contracts';
 import { toSettingsUiSnapshot } from '@nexus/contracts/ui-settings-runtime';
 import { withContentOSDMessages } from '../shared/i18n/content-osd';
@@ -61,16 +60,8 @@ async function deliverContentMessage(
 }
 
 async function projectSettings(work: SettingsProjectionWork<SettingsSnapshot>): Promise<void> {
-	const event: SpectraEventEnvelope<'spectra.settings.changed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.settings.changed',
-		payload: work.snapshot,
-	};
-	const uiEvent: SpectraEventEnvelope<'spectra.settings.ui.changed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.settings.ui.changed',
-		payload: toSettingsUiSnapshot(work.snapshot),
-	};
+	const event = createSpectraEvent('spectra.settings.changed', work.snapshot);
+	const uiEvent = createSpectraEvent('spectra.settings.ui.changed', toSettingsUiSnapshot(work.snapshot));
 	const extensionBroadcast = Promise.all([
 		chrome.runtime.sendMessage(event).catch(() => undefined),
 		chrome.runtime.sendMessage(uiEvent).catch(() => undefined),
@@ -88,25 +79,17 @@ async function projectSettings(work: SettingsProjectionWork<SettingsSnapshot>): 
 			if (!hostname || !work.mediaRoutesAll && !work.mediaRouteDomains.some((domain) => (
 				hostname === domain || hostname.endsWith(`.${domain}`)
 			))) return;
-			const routeEvent: SpectraEventEnvelope<'spectra.audio.route.changed'> = {
-				protocolVersion: SPECTRA_PROTOCOL_VERSION,
-				type: 'spectra.audio.route.changed',
-				payload: {
-					domain: hostname,
-					mediaRoute: selectMediaRouteDecisionForUrl(tab.url, mediaRoutes).mediaRoute,
-				},
-			};
+			const routeEvent = createSpectraEvent('spectra.audio.route.changed', {
+				domain: hostname,
+				mediaRoute: selectMediaRouteDecisionForUrl(tab.url, mediaRoutes).mediaRoute,
+			});
 			await deliverContentMessage(tab.id, routeEvent);
 		});
 	}
 
 	if (work.hotkeys) {
 		updateShortcutSettings(work.snapshot.hotkeySettings);
-		const hotkeyEvent: SpectraEventEnvelope<'spectra.hotkeys.changed'> = {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			type: 'spectra.hotkeys.changed',
-			payload: work.snapshot.hotkeySettings,
-		};
+		const hotkeyEvent = createSpectraEvent('spectra.hotkeys.changed', work.snapshot.hotkeySettings);
 		await forEachBounded(tabs, SETTINGS_PROJECTION_TAB_CONCURRENCY, async (tab) => {
 			if (tab.id === undefined) return;
 			await deliverContentMessage(tab.id, hotkeyEvent);
@@ -118,11 +101,7 @@ async function projectSettings(work: SettingsProjectionWork<SettingsSnapshot>): 
 
 	if (work.global) {
 		const settings = withContentOSDMessages(work.snapshot.globalSettings);
-		const contentEvent: SpectraEventEnvelope<'spectra.content.settings.changed'> = {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			type: 'spectra.content.settings.changed',
-			payload: settings,
-		};
+		const contentEvent = createSpectraEvent('spectra.content.settings.changed', settings);
 		await forEachBounded(tabs, SETTINGS_PROJECTION_TAB_CONCURRENCY, async (tab) => {
 			if (tab.id === undefined) return;
 			await deliverContentMessage(tab.id, contentEvent);

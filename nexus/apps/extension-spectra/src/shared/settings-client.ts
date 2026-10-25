@@ -1,25 +1,26 @@
 // goal: full revision-aware settings client for Popup and other full-snapshot consumers
+// eff: delegates envelope creation and message dispatch to canonical transport
 
-import type {
-	RpcResult,
-	SettingsPatch,
-	SettingsPatchRequest,
-	SettingsSnapshot,
-	SpectraRequestEnvelope,
-	SpectraRequestPayload,
-	SpectraResponse,
+import {
+	createSpectraRequest,
+	type RpcResult,
+	type SettingsPatch,
+	type SettingsPatchRequest,
+	type SettingsSnapshot,
+	type SpectraRequestPayload,
+	type SpectraResponse,
 } from '@nexus/contracts';
 import {
 	isSpectraFullSettingsEventEnvelope,
 	isSpectraFullSettingsResponse,
 } from '@nexus/contracts/full-settings-runtime';
-import { SPECTRA_PROTOCOL_VERSION } from '@nexus/contracts/ui-settings-runtime';
 import {
 	applyRevisionedPatchWithRetry,
 	createRevisionedSettingsClient,
 	selectNewestRevisionedSnapshot,
 	type RevisionedSettingsTransport,
 } from './revisioned-settings-client';
+import { sendSpectraRpcMessage } from './transport';
 
 export type SettingsPatchRetryTransport = RevisionedSettingsTransport<SettingsSnapshot, SettingsPatch>;
 
@@ -28,29 +29,12 @@ type FullSettingsRequestType =
 	| 'spectra.settings.patch'
 	| 'spectra.settings.flush';
 
-function createRequestId(): string {
-	return typeof crypto.randomUUID === 'function'
-		? crypto.randomUUID()
-		: `${Date.now().toString(36)}-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`;
-}
-
-async function sendFullSettingsRequest<T extends FullSettingsRequestType>(
+function sendFullSettingsRequest<T extends FullSettingsRequestType>(
 	type: T,
 	payload: SpectraRequestPayload<T>,
 ): Promise<SpectraResponse<T>> {
-	const message: SpectraRequestEnvelope<T> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: createRequestId(),
-		type,
-		payload,
-	};
-	const response: unknown = await chrome.runtime.sendMessage(message);
-	if (!isSpectraFullSettingsResponse(type, response)) {
-		throw new Error(
-			`Background returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} full-settings response for ${type}`,
-		);
-	}
-	return response;
+	const message = createSpectraRequest(type, payload);
+	return sendSpectraRpcMessage(message, isSpectraFullSettingsResponse, 'Background');
 }
 
 const fullSettingsTransport: SettingsPatchRetryTransport = {

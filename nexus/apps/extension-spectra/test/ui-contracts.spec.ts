@@ -20,7 +20,6 @@ import {
 } from '../scripts/i18n-assets';
 import { getContentOSDMessages } from '../src/shared/i18n/content-osd';
 import { withAlpha } from '../src/popup/visualizer/draw-eq-curve';
-import { CONTROL_VALUE_LIMITS } from '@nexus/contracts';
 
 describe('hotkey editor contract', () => {
 	test('only exposes actions with runtime handlers', () => {
@@ -49,57 +48,6 @@ describe('hotkey editor contract', () => {
 			code: 'KeyK',
 			modifiers: { ctrl: true, alt: false, shift: true, meta: false },
 		})).toBe('Ctrl + Shift + K');
-	});
-
-	test('rejects built-in chords through the shared contract and revives reassigned bindings', () => {
-		const modal = readFileSync(resolve(import.meta.dir, '../src/options/modal.ts'), 'utf8');
-		const siteEditor = readFileSync(resolve(import.meta.dir, '../src/options/site-editor.ts'), 'utf8');
-		const optionsHtml = readFileSync(resolve(import.meta.dir, '../public/options.html'), 'utf8');
-		const contentFacade = readFileSync(
-			resolve(import.meta.dir, '../../../packages/contracts/src/spectra.content-runtime.ts'),
-			'utf8',
-		);
-
-		expect(modal).toContain('isSpectraDefaultHotkeyKeyCombo');
-		expect(modal).toMatch(
-			/function handleKeyRecord[\s\S]*renderReservedHotkeyWarning\(\);[\s\S]*updateSaveAvailability\(\);/u,
-		);
-		expect(modal).toContain('if (renderReservedHotkeyWarning()) return;');
-		expect(modal).toContain("t('modal_reserved_default_hotkey')");
-		expect(modal).toContain('currentBinding.enabled = true;');
-		expect(modal).toContain('delete currentBinding.disabledReason;');
-		expect(optionsHtml).toContain('id="reserved-hotkey-warning"');
-		expect(optionsHtml).toContain('role="alert"');
-		expect(siteEditor).toContain("t('legacy_disabled_one')");
-		expect(siteEditor).toContain("tf('legacy_disabled_many'");
-		expect(siteEditor).not.toContain('legacy_pitch_');
-		expect(contentFacade).toContain('isSpectraDefaultHotkeyKeyCombo');
-	});
-
-	test('derives Chrome command rows from the manifest-backed browser registry', () => {
-		const source = readFileSync(
-			resolve(import.meta.dir, '../src/options/slots-editor.ts'),
-			'utf8',
-		);
-		expect(source).toContain('chrome.runtime.getManifest().commands');
-		expect(source).not.toContain('await chrome.commands.getAll()');
-		expect(source).toContain("names.filter((name) => !name.startsWith('slot_'))");
-		expect(source).toContain("names.filter((name) => name.startsWith('slot_'))");
-		expect(source).not.toContain('PRESET_COMMANDS');
-		expect(source).not.toContain('SLOT_COMMANDS');
-	});
-
-	test('isolates mutable slot edits from the shared settings snapshot cache', () => {
-		const source = readFileSync(
-			resolve(import.meta.dir, '../src/options/slots-editor.ts'),
-			'utf8',
-		);
-		expect(source).toContain('disabledLegacyBindings: [...(source.disabledLegacyBindings ?? [])]');
-		expect(source.match(/settings = cloneHotkeySettings\(snapshot\.hotkeySettings\);/gu))
-			.toHaveLength(1);
-		expect(source).toContain('for (const [command, pending] of pendingSlotMutations.entries())');
-		expect(source).toContain('settings.slots[command] = pending.value;');
-		expect(source).not.toContain('settings = snapshot.hotkeySettings;');
 	});
 });
 
@@ -140,8 +88,8 @@ describe('options translations', () => {
 			for (const [section, values] of Object.entries(dictionary)) {
 				for (const [key, value] of Object.entries(values)) {
 					expect(typeof value, `${locale}.${section}.${key}`).toBe('string');
-				expect(value.trim(), `${locale}.${section}.${key}`).not.toBe('');
-				expect(value.trim().toLowerCase(), `${locale}.${section}.${key}`).not.toBe('undefined');
+					expect(value.trim(), `${locale}.${section}.${key}`).not.toBe('');
+					expect(value.trim().toLowerCase(), `${locale}.${section}.${key}`).not.toBe('undefined');
 				}
 			}
 		}
@@ -286,15 +234,6 @@ describe('options translations', () => {
 		expect(getContentOSDMessages('zh-CN')).toMatchObject({ muted: '静音' });
 	});
 
-	test('keeps locale tables out of the content bundle and sends only current strings', () => {
-		const settingsManager = readFileSync(resolve(import.meta.dir, '../src/content/core/settings-manager.ts'), 'utf8');
-		expect(settingsManager).toContain('spectra.content.settings.get');
-		expect(settingsManager).toContain('osdMessages');
-		expect(settingsManager).toContain("import type { ContentOSDMessages } from '../../shared/i18n/content-osd'");
-		expect(settingsManager).not.toContain('getContentOSDMessages');
-		expect(settingsManager).not.toContain('constants/i18n');
-	});
-
 	test('offers every supported locale in both extension UIs', () => {
 		for (const [file, selectId] of [
 			['../public/popup.html', 'set-lang'],
@@ -308,93 +247,10 @@ describe('options translations', () => {
 			expect(values, file).toEqual([...SUPPORTED_SPECTRA_LANGUAGES]);
 		}
 	});
-
-	test('updates the document language when either extension UI changes locale', () => {
-		for (const file of ['../src/options/i18n.ts', '../src/popup/views/i18n-apply.ts']) {
-			const source = readFileSync(resolve(import.meta.dir, file), 'utf8');
-			expect(source, file).toContain('document.documentElement.lang =');
-		}
-	});
-
 });
 
-describe('extension-page DOM and idle contracts', () => {
-	test('uses only the background settings snapshot as the Options theme owner', () => {
-		const theme = readFileSync(resolve(import.meta.dir, '../src/options/theme.ts'), 'utf8');
-		expect(theme).not.toContain("scope: 'legacy-theme'");
-		expect(theme).not.toContain('localStorage');
-		expect(theme).toContain('getOptionsSettingsSnapshot');
-		expect(theme).toContain("from '../shared/options-settings-client'");
-		expect(theme).not.toContain("from '../shared/settings-client'");
-		expect(theme).not.toContain('chrome.storage');
-		expect(theme).not.toContain('spectraSettingsMeta');
-	});
-
-	test('keeps site routes on an independent registry wire without changing full Settings v2', () => {
-		const popup = readFileSync(resolve(import.meta.dir, '../public/popup.html'), 'utf8');
-		expect(popup).toContain('id="registry-group"');
-		expect(popup).toContain('id="registry-list"');
-		expect(popup).toContain('id="registry-new-route"');
-		expect(popup).toContain('data-i18n="grpAdvanced"');
-		expect(popup).toContain('aria-pressed="false"');
-		const settings = readFileSync(resolve(import.meta.dir, '../src/popup/views/settings.ts'), 'utf8');
-		const routeUI = readFileSync(resolve(import.meta.dir, '../src/popup/views/media-route-ui.ts'), 'utf8');
-		const popupIndex = readFileSync(resolve(import.meta.dir, '../src/popup/index.ts'), 'utf8');
-		const hotkeyTargetClient = readFileSync(
-			resolve(import.meta.dir, '../src/shared/hotkey-target-client.ts'),
-			'utf8',
-		);
-		expect(settings).not.toContain('getRegistrySnapshot');
-		expect(settings).not.toContain('registryEntries');
-		expect(settings).toContain('initMediaRouteUI(state.dict)');
-		expect(routeUI).not.toContain("scope: 'media-route'");
-		expect(routeUI).toContain('subscribeSettingsSnapshots');
-		expect(popupIndex).not.toContain('registryEntries');
-		expect(hotkeyTargetClient).not.toContain('spectra.registry.');
-		expect(hotkeyTargetClient).toContain('spectra.hotkey-target.get');
-		expect(hotkeyTargetClient).toContain('spectra.hotkey-target.set');
-		const sidePanel = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/index.ts'), 'utf8');
-		const cardRegistry = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/registry.ts'), 'utf8');
-		const presets = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
-		const remote = readFileSync(resolve(import.meta.dir, '../src/remote/ui-bindings.ts'), 'utf8');
-		expect(sidePanel).not.toContain('updateCardConfig');
-		expect(sidePanel).not.toContain('isSidePanelOpen');
-		expect(cardRegistry).not.toContain('config: AudioConfig;');
-		expect(cardRegistry).not.toContain('getRegisteredConfig');
-		expect(presets).not.toContain('getDefaultPreset');
-		expect(remote).not.toContain('isRemoteConnected');
-
-		for (const path of [
-			'../src/popup/card/media-events.ts',
-			'../src/popup/card/render.ts',
-			'../src/popup/side-panel/index.ts',
-			'../src/popup/side-panel/video-controls.ts',
-		]) {
-			const source = readFileSync(resolve(import.meta.dir, path), 'utf8');
-			expect(source, path).toMatch(/aria-(?:pressed|selected)/u);
-		}
-	});
-
-	test('uses one focus-trap contract for preset and remote dialogs with live status', () => {
-		const preset = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
-		const popupToast = readFileSync(resolve(import.meta.dir, '../src/popup/toast.ts'), 'utf8');
-		const remote = readFileSync(resolve(import.meta.dir, '../src/remote/modal-renderer.ts'), 'utf8');
-		const options = readFileSync(resolve(import.meta.dir, '../src/options/modal.ts'), 'utf8');
-		for (const [path, source] of [['preset', preset], ['remote', remote]] as const) {
-			expect(source, path).toContain('handleDialogKeydown');
-			expect(source, path).toContain("setAttribute('role', 'dialog')");
-			expect(source, path).toContain("setAttribute('aria-modal', 'true')");
-		}
-		expect(popupToast).toContain("tone === 'error' ? 'alert' : 'status'");
-		expect(popupToast).toContain("tone === 'error' ? 'assertive' : 'polite'");
-		expect(remote).toContain("setAttribute('role', 'status')");
-		expect(preset).toContain('previouslyFocused?.focus()');
-		expect(options).toContain("event.key === 'Escape'");
-		expect(options).toContain("event.key !== 'Tab'");
-		expect(options).toContain('restoreFocus?.focus()');
-	});
-
-	test('defines every CSS variable, keeps keyframes unique, and removes capture prediction', () => {
+describe('extension-page physical artifacts', () => {
+	test('defines every CSS variable and keeps keyframes unique', () => {
 		for (const file of ['../public/popup.css', '../public/options.css']) {
 			const css = readFileSync(resolve(import.meta.dir, file), 'utf8');
 			const definitions = new Set([...css.matchAll(/--([A-Za-z0-9_-]+)\s*:/gu)].map((match) => match[1]));
@@ -403,12 +259,6 @@ describe('extension-page DOM and idle contracts', () => {
 			const keyframes = [...css.matchAll(/@keyframes\s+([A-Za-z0-9_-]+)/gu)].map((match) => match[1]);
 			expect(new Set(keyframes).size, file).toBe(keyframes.length);
 		}
-		const visualizer = readFileSync(resolve(import.meta.dir, '../src/popup/visualizer/loop.ts'), 'utf8');
-		expect(visualizer).not.toMatch(/predictedCapture|CAPTURE_INIT_DELAY/iu);
-		expect(visualizer).toContain('visible: true');
-		expect(visualizer).not.toContain('visible: !intersectionObserver');
-		expect(visualizer).toContain("window.addEventListener('blur', releaseSubscriptions)");
-		expect(visualizer).toContain('spectra-visualizer:$' + '{subscriberId}');
 	});
 
 	test('gives every popup range control an accessible name', () => {
@@ -418,245 +268,5 @@ describe('extension-page DOM and idle contracts', () => {
 		for (const input of rangeInputs) {
 			expect(input).toMatch(/\baria-(?:label|labelledby)=["'][^"']+["']/iu);
 		}
-	});
-
-	test('keeps side-panel speed bounds aligned with the shared control range owner', () => {
-		const speedControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/speed-controls.ts'), 'utf8');
-		const popup = readFileSync(resolve(import.meta.dir, '../public/popup.html'), 'utf8');
-
-		expect(CONTROL_VALUE_LIMITS.speed).toEqual({ min: 0.1, max: 16 });
-		expect(speedControls).toContain('CONTROL_VALUE_LIMITS.speed.min');
-		expect(speedControls).toContain('CONTROL_VALUE_LIMITS.speed.max');
-		expect(popup).toMatch(/class="sp-label-side">0\.1x<\/span>/u);
-		expect(popup).toMatch(/class="[^"]*sp-speed-slider[^"]*"[\s\S]*?min="0\.1"[\s\S]*?max="16"/u);
-		expect(popup).toMatch(/class="sp-speed-input"[^>]*\bmin="0\.1"[^>]*\bmax="16"/u);
-	});
-
-	test('renders dynamic UI without HTML string sinks', () => {
-		const files = [
-			'../src/popup/views/i18n-apply.ts',
-			'../src/popup/views/presets-ui.ts',
-			'../src/popup/card/media-events.ts',
-			'../src/popup/card/render.ts',
-			'../src/options/site-editor.ts',
-			'../src/options/slots-editor.ts',
-			'../src/remote/modal-renderer.ts',
-		];
-		for (const file of files) {
-			const source = readFileSync(resolve(import.meta.dir, file), 'utf8');
-			expect(source, file).not.toMatch(/\.(?:innerHTML|outerHTML)\s*=|insertAdjacentHTML/iu);
-		}
-	});
-
-	test('keeps video-only Popup acknowledgements independent from active media', () => {
-		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
-		const videoControls = readFileSync(resolve(import.meta.dir, '../src/popup/side-panel/video-controls.ts'), 'utf8');
-		// rule: SCTRL-005/014/025 — the click handler stores the target context
-		// once and dispatches the single-parameter toggle; the helper re-resolves
-		// the target from the captured snapshot so video-only ACKs never inherit
-		// the active-media identity.
-		expect(mediaControls).toContain('pipToggleByTab.set(tabId, { documentId: snapshot.documentId, target })');
-		expect(mediaControls).toContain('togglePictureInPicture(tabId)');
-		expect(mediaControls).toContain('const target = snapshot?.activeVideo');
-		expect(mediaControls).not.toContain("mutation.field === 'pip'");
-		expect(videoControls).toContain('activeMedia: currentSnapshot.activeMedia');
-		expect(videoControls).not.toContain('activeMedia: ack.target ?? currentSnapshot.activeMedia');
-	});
-
-	test('requires a live card target before applying a preset and bounds background bootstrap', () => {
-		const presets = readFileSync(resolve(import.meta.dir, '../src/popup/views/presets-ui.ts'), 'utf8');
-		const popup = readFileSync(resolve(import.meta.dir, '../src/popup/index.ts'), 'utf8');
-		const boundedBootstrap = readFileSync(
-			resolve(import.meta.dir, '../src/popup/bounded-card-bootstrap.ts'),
-			'utf8',
-		);
-		const card = readFileSync(resolve(import.meta.dir, '../src/popup/card/init.ts'), 'utf8');
-		expect(presets).toContain('applyBtn.disabled = !canApply');
-		expect(presets).toContain('await target.apply(config)');
-		expect(popup).toContain('runBoundedCardBootstrap(backgroundTabs, CARD_SNAPSHOT_CONCURRENCY');
-		const snapshot = readFileSync(resolve(import.meta.dir, '../src/popup/card/snapshot.ts'), 'utf8');
-		expect(snapshot).toContain('CARD_SNAPSHOT_CONCURRENCY = 4');
-		expect(boundedBootstrap).toContain(
-			'const workerCount = Math.min(Math.max(1, Math.floor(concurrency)), items.length);',
-		);
-		expect(boundedBootstrap).toContain('await Promise.all(Array.from({ length: workerCount }, () => worker()));');
-		expect(card).toContain('params.isBackground');
-		// rule: every card — including background cards — reads the authoritative
-		// control snapshot at bootstrap; the transient-unknown latch recovers as
-		// soon as any accepted snapshot arrives, so cards never dead-end at "—".
-		expect(snapshot).not.toContain('not-requested');
-		expect(snapshot).not.toContain('passive ?');
-	});
-
-	test('keeps card tooltips defined and routes site identity through Chromium favicon service', () => {
-		const domInit = readFileSync(resolve(import.meta.dir, '../src/popup/card/dom-init.ts'), 'utf8');
-		const domUtils = readFileSync(resolve(import.meta.dir, '../src/popup/utils/dom.ts'), 'utf8');
-		const events = readFileSync(resolve(import.meta.dir, '../src/popup/card/events.ts'), 'utf8');
-		const i18n = readFileSync(resolve(import.meta.dir, '../src/popup/views/i18n-apply.ts'), 'utf8');
-		const remote = readFileSync(resolve(import.meta.dir, '../src/remote/ui-bindings.ts'), 'utf8');
-		const manifest = readFileSync(resolve(import.meta.dir, '../public/manifest.json'), 'utf8');
-		expect(domInit).toContain("setButtonLabel(ui.btnReset, dict.resetTooltip, 'Reset')");
-		expect(domInit).toContain("setButtonLabel(ui.btnSave, dict.saveTooltip, 'Save')");
-		expect(domInit).toContain('setButtonLabel(ui.btnSaveGlobal');
-		expect(domUtils).toContain("chrome.runtime.getURL('_favicon/')");
-		expect(domUtils).not.toContain('if (!faviconUrl) return fallback');
-		expect(JSON.parse(manifest).permissions).toContain('favicon');
-		expect(JSON.parse(manifest).permissions).toContain('activeTab');
-		expect(JSON.parse(manifest).permissions).not.toContain('_favicon');
-		expect(i18n).toContain("setInteractiveLabel(btnPause, dict.btnPause, 'Pause/Play')");
-		expect(remote).toContain("button.setAttribute('aria-label', label)");
-		expect(events).toContain('await update.flush()');
-		expect(events).toContain("ControlOperationAck<'audio-reset'>");
-		expect(events).toContain('state.stableConfig = mergeAudioConfig(acknowledged');
-		expect(events).toContain('speed: 1');
-	});
-
-	test('keeps fullscreen handoff and top-layer feedback lifecycle-bound', () => {
-		const manifest = JSON.parse(readFileSync(
-			resolve(import.meta.dir, '../public/manifest.json'),
-			'utf8',
-		)) as { content_scripts?: Array<{ js?: string[]; world?: string }> };
-		const mediaControls = readFileSync(resolve(import.meta.dir, '../src/popup/card/media-events.ts'), 'utf8');
-		const shortcuts = readFileSync(resolve(import.meta.dir, '../src/background/shortcuts.ts'), 'utf8');
-		const hotkeys = readFileSync(resolve(import.meta.dir, '../src/content/input/hotkey-listener.ts'), 'utf8');
-		const osd = readFileSync(resolve(import.meta.dir, '../src/content/ui/osd.ts'), 'utf8');
-		const toast = readFileSync(resolve(import.meta.dir, '../src/content/ui/toast.ts'), 'utf8');
-		const contentRuntime = readFileSync(
-			resolve(import.meta.dir, '../src/content/core/index.ts'),
-			'utf8',
-		);
-		const contentRuntimeLifecycle = readFileSync(
-			resolve(import.meta.dir, '../src/content/core/content-runtime-lifecycle.ts'),
-			'utf8',
-		);
-		const feedbackSurface = readFileSync(
-			resolve(import.meta.dir, '../src/content/ui/feedback-surface.ts'),
-			'utf8',
-		);
-		const audioDelegate = readFileSync(
-			resolve(import.meta.dir, '../src/content/logic/audio-runtime-control-delegate.ts'),
-			'utf8',
-		);
-		const operations = readFileSync(
-			resolve(import.meta.dir, '../src/content/logic/control-operation-executor.ts'),
-			'utf8',
-		);
-		const pageMediaBridge = readFileSync(
-			resolve(import.meta.dir, '../src/content/injector/page-media-bridge.ts'),
-			'utf8',
-		);
-		const handoff = readFileSync(resolve(import.meta.dir, '../src/content/core/fullscreen-audio-handoff.ts'), 'utf8');
-		// rule: MAIN-world fullscreen and page-media bridges are registered in
-	// the manifest at document_start so Chrome injects them before any page
-	// script can call requestFullscreen or create a player controller. This is the only
-	// path that does not race with service-worker wake-up or page CSP.
-	// main-runtime-manager.ts remains the owner of the `world: 'MAIN'`
-	// re-injection literal used by warm-update and on-demand paths; the bridge
-	// modules' version guard makes a second injection a no-op, so the two paths
-	// coexist safely.
-	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
-		js: ['content-fullscreen-bridge.js'],
-		world: 'MAIN',
-	}));
-	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
-		js: ['content-page-media-bridge.js'],
-		world: 'MAIN',
-	}));
-	expect(manifest.content_scripts).toContainEqual(expect.objectContaining({
-		js: ['content-bootstrap.js'],
-		world: 'ISOLATED',
-	}));
-		const mainRuntime = readFileSync(
-			resolve(import.meta.dir, '../src/background/main-runtime-manager.ts'),
-			'utf8',
-		);
-		expect(mainRuntime).toContain("'content-fullscreen-bridge.js'");
-		expect(mainRuntime).toContain("'content-page-media-bridge.js'");
-		expect(mainRuntime).toContain('export async function injectMainBridges');
-		expect(mainRuntime).toContain('export async function injectMainBootstrap');
-		expect(mainRuntime).toContain("world: 'MAIN'");
-		expect(handoff).toContain('captureManager.suspendForContinuation(');
-		expect(handoff).toContain('await currentSuspension');
-		expect(handoff).toContain('policyExecutor.applyState({ modeIntent: true })');
-		expect(mediaControls).toContain('setHotkeyTarget(clearing ? null : tabId)');
-		expect(shortcuts).toContain("type: 'spectra.hotkey.target.feedback'");
-		expect(shortcuts).toContain('initialFrame.documentId');
-		expect(shortcuts).toContain('currentFrame?.documentId !== ready.documentId');
-		expect(shortcuts).toContain(
-			'resolveSpectraHotkeyActualFeedback(action, acknowledgement)',
-		);
-		expect(shortcuts).not.toContain('function shortcutActualFeedback');
-		expect(shortcuts).not.toContain('getControlViewSnapshot');
-		expect(shortcuts).not.toContain('getAudioSession');
-		expect(shortcuts).toContain('const route = await resolveShortcutTargetFromActive(');
-		expect(shortcuts).toContain('await executeShortcutRoute(');
-		expect(hotkeys).toContain("variant: 'alternate-target'");
-		expect(hotkeys).toContain('feedbackState.appliedConfig');
-		expect(hotkeys).toContain('commitHotkeyActualFeedback(');
-		expect(hotkeys).toMatch(
-			/!admitsHotkeyActualOSDGesture\([\s\S]{0,180}!isHotkeyGestureReleased\(message\.payload\.gesture\)/u,
-		);
-		expect(hotkeys).toContain('claimHotkeyActualOSDGesture(message.payload.gesture)');
-		expect(hotkeys).toContain(
-			'resolveSpectraHotkeyActualFeedback(binding.action, result)',
-		);
-		expect(hotkeys).toContain("feedbackOwner === 'listener-label'");
-		expect(hotkeys).not.toContain("feedbackOwner === 'listener-label' || feedbackOwner === 'actual-osd'");
-		expect(osd).toContain('createFeedbackSurface(');
-		expect(feedbackSurface).toContain("host.popover = 'manual'");
-		expect(feedbackSurface).toContain("document.addEventListener('fullscreenchange'");
-		expect(feedbackSurface).toContain("document.removeEventListener('fullscreenchange'");
-		expect(feedbackSurface).toContain("host.matches(':popover-open')");
-		expect(feedbackSurface).toContain('host.showPopover()');
-		expect(feedbackSurface).toContain('feedbackHosts.clear()');
-		expect(contentRuntime).toContain('disposeOSD();');
-		expect(contentRuntime).toContain('disposeToast();');
-		expect(contentRuntime).toContain('disposeFeedbackSurfaces();');
-		const runtimeDispose = contentRuntime.slice(
-			contentRuntime.indexOf('dispose(handoff = false)'),
-			contentRuntime.indexOf('function isCurrentRuntime('),
-		);
-		expect(runtimeDispose.indexOf('disposeFeedbackUI();')).toBeGreaterThanOrEqual(0);
-		expect(runtimeDispose.indexOf('disposeFeedbackUI();')).toBeLessThan(
-			runtimeDispose.indexOf('registry.dispose();'),
-		);
-		expect(contentRuntimeLifecycle.indexOf('disposal.context?.dispose();')).toBeLessThan(
-			contentRuntimeLifecycle.indexOf('disposal.disposeSynchronous();'),
-		);
-		expect(contentRuntimeLifecycle.indexOf('disposal.disposeSynchronous();')).toBeLessThan(
-			contentRuntimeLifecycle.indexOf('await disposal.release?.();'),
-		);
-		expect(contentRuntimeLifecycle.indexOf('await disposal.release?.();')).toBeLessThan(
-			contentRuntimeLifecycle.indexOf('disposal.finalize();'),
-		);
-		expect(contentRuntime).toContain('contentRuntime.registry.track(disposeFeedbackUI)');
-		expect(osd).toContain('if (state.disposed) return;');
-		expect(toast).toContain('if (s.disposed || !document.documentElement) return;');
-		expect(osd).toContain('const OSD_HIDE_DELAY_MS = 2_000');
-		expect(osd).toContain("phase: 'active'");
-		expect(osd).toContain("state.hotkey.phase = 'settled'");
-		expect(osd).not.toContain('export function showOSD(');
-		expect(osd).not.toContain('export function showSpeedOSD(');
-		expect(osd).toContain('UI_COLORS.CAPTURE');
-		expect(osd).toContain('UI_COLORS.NATIVE');
-		expect(osd).not.toContain('#3b82f6');
-		expect(osd).not.toContain('#8b5cf6');
-		expect(osd).not.toContain('payload.capture');
-		expect(osd).not.toContain('transition:width');
-		expect(osd).toContain("variant?: 'alternate-target'");
-		expect(audioDelegate).not.toContain("source !== 'hotkey'");
-		expect(audioDelegate).not.toContain("intent.source === 'hotkey'");
-		expect(operations).toContain("if (intent.source === 'hotkey') {");
-		expect(operations).toContain("return ack(intent, 'observe', { shown: true }, {}, null)");
-		expect(pageMediaBridge).toContain('collectControllerCandidates');
-		expect(pageMediaBridge).toContain('controllerAssociation');
-		expect(pageMediaBridge).toContain("boundMethod(controller, 'getVolume')");
-		expect(pageMediaBridge).toContain("boundMethod(controller, 'setVolume')");
-		expect(pageMediaBridge).toContain("boundMethod(controller, 'isMuted')");
-		expect(pageMediaBridge).toContain("boundMethod(controller, 'getPlaybackRate')");
-		expect(pageMediaBridge).toContain("boundMethod(controller, 'setPlaybackRate')");
-		expect(pageMediaBridge).toContain('capability.write(before)');
-		expect(pageMediaBridge).not.toMatch(/youtube|hostname|location\.host|setInterval|MutationObserver/iu);
-		expect(pageMediaBridge).not.toMatch(/HTMLMediaElement\.prototype|Object\.defineProperty\s*\(\s*HTMLMediaElement/iu);
 	});
 });

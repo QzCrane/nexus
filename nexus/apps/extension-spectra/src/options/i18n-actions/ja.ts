@@ -1,5 +1,7 @@
 // goal: defines localized hotkey action names for Japanese locale
-export const ja: Record<string, string> = {
+import type { HotkeyAction } from '@nexus/contracts';
+
+export const ja: Partial<Record<HotkeyAction, string>> = {
 	none: '(未設定)', play_pause: '再生/一時停止', seek_forward_5s: '5秒進む',
 	seek_forward_10s: '10秒進む', seek_forward_30s: '30秒進む',
 	seek_backward_5s: '5秒戻る', seek_backward_10s: '10秒戻る',

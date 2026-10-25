@@ -22,6 +22,8 @@ const CONTENT_RUNTIME_VALUE_EXPORTS = [
 	'audioConfigToProcessorConfig',
 	'clampControlValue',
 	'compileEffectiveVolume',
+	'createSpectraEvent',
+	'createSpectraRequest',
 	'findBestHostnameMatch',
 	'isAudioConfig',
 	'isDefaultAudioConfig',

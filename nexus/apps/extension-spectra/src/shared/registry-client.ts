@@ -14,31 +14,15 @@ import {
 	isSpectraRegistryResponse,
 	type SpectraRegistryRequestType,
 } from '@nexus/contracts/registry-runtime';
-import type { MediaRouteRulesSnapshot, MediaRouteScope } from '@nexus/contracts';
+import { createSpectraRequest } from '@nexus/contracts';
+import type { MediaRouteRulesSnapshot, MediaRouteScope, SpectraRequestPayload, SpectraResponse } from '@nexus/contracts';
 import { sendSpectraRequest } from './spectra-client';
-import type {
-	SpectraRequestEnvelope,
-	SpectraRequestPayload,
-	SpectraResponse,
-} from '@nexus/contracts';
-
-function createRequestId(): string {
-	return typeof crypto.randomUUID === 'function'
-		? crypto.randomUUID()
-		: `${Date.now().toString(36)}-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`;
-}
 
 async function sendRegistryEnvelope<T extends SpectraRegistryRequestType>(
 	type: T,
 	payload: SpectraRequestPayload<T>,
 ): Promise<unknown> {
-	const message: SpectraRequestEnvelope<T> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: createRequestId(),
-		type,
-		payload,
-	};
-	return chrome.runtime.sendMessage(message);
+	return chrome.runtime.sendMessage(createSpectraRequest(type, payload));
 }
 
 async function sendRegistryRequest<T extends SpectraRegistryRequestType>(

@@ -1,5 +1,7 @@
 // goal: defines localized hotkey action names for French locale
-export const fr: Record<string, string> = {
+import type { HotkeyAction } from '@nexus/contracts';
+
+export const fr: Partial<Record<HotkeyAction, string>> = {
 	none: '(non défini)', play_pause: 'Lecture/Pause', seek_forward_5s: 'Avancer 5s',
 	seek_forward_10s: 'Avancer 10s', seek_forward_30s: 'Avancer 30s',
 	seek_backward_5s: 'Reculer 5s', seek_backward_10s: 'Reculer 10s',

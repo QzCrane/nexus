@@ -1,11 +1,17 @@
 dist
 build
+# The Remote site deploys without a build step: its protocol projection is a
+# committed release asset owned by remote-site/README.md, not a build output.
+!remote-site/dist/
+!remote-site/dist/protocol.js
 node_modules
 .venv
 venv
 *.log
 *.zip
 .aider*
+# AI tool session memory is environment state, never repository content.
+.workbuddy/
 chatgpt-conversation-timeline
 reference
 .graph-it

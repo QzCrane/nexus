@@ -8,12 +8,12 @@ import type {
 	HotkeySettings,
 	HotkeyAction,
 	SpectraDefaultHotkeyAction,
-	SpectraEventEnvelope,
 	SpectraHotkeyActualFeedback,
 } from '@nexus/contracts';
 import {
 	DEFAULT_HOTKEY_SETTINGS,
 	SPECTRA_PROTOCOL_VERSION,
+	createSpectraEvent,
 	isSlotHotkeyAction,
 	resolveSpectraHotkeyActualFeedback,
 } from '@nexus/contracts';
@@ -23,8 +23,8 @@ import { hotkeyTargetRepository } from './hotkey-target-repository';
 import {
 	submitExtensionInvokedControlOperation,
 	submitExtensionInvokedControlRequest,
-	type ExtensionInvocationContext,
 } from './control-coordinator';
+import type { ExtensionInvocationContext } from './extension-invocation';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 import { isBackgroundRequestEnvelope, rpcFailure, rpcSuccess , RPC_INVALID_REQUEST} from './background-rpc';
 const HOTKEY_SEEK_RELATIVE = 'seek-relative' as const;
@@ -444,20 +444,17 @@ async function notifyShortcutFeedback(
 		documentId = ready.documentId;
 		const currentFrame = await chrome.webNavigation.getFrame({ tabId: active.id, frameId: 0 });
 		if (currentFrame?.documentId !== ready.documentId) return;
-		const event: SpectraEventEnvelope<'spectra.hotkey.target.feedback'> = {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			type: 'spectra.hotkey.target.feedback',
+		const event = createSpectraEvent('spectra.hotkey.target.feedback', {
+			action,
+			targetTabId: target.id,
+			targetTitle: target.title?.trim() || targetHostname,
+			targetHostname,
+			...(gesture ? { gesture } : {}),
+			...(feedback ? { feedback } : {}),
+		}, {
 			tabId: active.id,
 			documentId: ready.documentId,
-			payload: {
-				action,
-				targetTabId: target.id,
-				targetTitle: target.title?.trim() || targetHostname,
-				targetHostname,
-				...(gesture ? { gesture } : {}),
-				...(feedback ? { feedback } : {}),
-			},
-		};
+		});
 		await chrome.tabs.sendMessage(active.id, event, { documentId: ready.documentId });
 	} catch (error) {
 		/* @__PURE__ */ swLog.debug(`Shortcut feedback was unavailable: ${error instanceof Error ? error.message : String(error)}`);

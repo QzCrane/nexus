@@ -55,10 +55,17 @@ describe('actual browser launch evidence owner', () => {
 		const owners = collectDefaultReleaseBrowserOwners();
 		expect(owners).toContain('apps/extension-halo/test/sidepanel-performance.spec.ts');
 		expect(owners).toContain('apps/extension-halo/test/smooth-scroll-keyboard-playwright.spec.ts');
-		expect(owners).toContain('apps/extension-spectra/test/smoke.spec.ts');
+		expect(owners).toContain('apps/extension-spectra/test/smoke/capture.spec.ts');
+		expect(owners).toContain('apps/extension-spectra/test/smoke/feedback.spec.ts');
+		expect(owners).toContain('apps/extension-spectra/test/smoke/hotkeys.spec.ts');
+		expect(owners).toContain('apps/extension-spectra/test/smoke/page-media.spec.ts');
+		expect(owners).toContain('apps/extension-spectra/test/smoke/popup-ui.spec.ts');
+		expect(owners).toContain('apps/extension-spectra/test/smoke/remote-session.spec.ts');
+		expect(owners).toContain('apps/extension-spectra/test/smoke/runtime-bootstrap.spec.ts');
+		expect(owners).toContain('apps/extension-spectra/test/smoke/visualizer.spec.ts');
 		expect(owners).not.toContain('apps/extension-spectra/test/service-worker-wake-performance.spec.ts');
 		expect(owners).not.toContain('apps/extension-halo/test/extension-worker.spec.ts');
-		expect(owners).toHaveLength(8);
+		expect(owners).toHaveLength(15);
 	});
 
 	test('keeps requested profile paths out of effective launch evidence', () => {

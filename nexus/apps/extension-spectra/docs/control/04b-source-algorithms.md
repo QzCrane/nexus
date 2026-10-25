@@ -81,7 +81,7 @@ Names and paths in the negative rows below are forbidden production owners. They
 | `src/background/control-coordinator.ts` | Coordinator transaction | intent-routing | extension-owned | forbidden | none |
 | `src/content/input/hotkey-helpers.ts` | Hotkey -> typed intent | intent-routing | extension-owned | forbidden | none |
 | `src/content/logic/audio-runtime-control.ts` | Compile intents | controlled-augmentation | extension-owned | forbidden | while-owned |
-| `packages/features/audio-engine/src/WebAudioController.ts` | proven MediaElement graph | controlled-augmentation | extension-owned | forbidden | while-owned |
+| `packages/features/audio-engine/src/web-audio-controller.ts` | proven MediaElement graph | controlled-augmentation | extension-owned | forbidden | while-owned |
 | `src/offscreen/audio-host.ts` | full-tab Capture graph | controlled-augmentation | extension-owned | forbidden | while-owned |
 | `contracts/src/control.contracts.ts` | Policy contracts | pure-computation | extension-owned | forbidden | none |
 

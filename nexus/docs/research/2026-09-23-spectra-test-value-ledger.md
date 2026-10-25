@@ -177,7 +177,7 @@ the invariant with fewer, stronger cases.
 - `popup-ui-event-hub.spec.ts` — KEEP
 - `popup-volume-ux.spec.ts` — KEEP
 - `protocol-mutation.spec.ts` — KEEP
-- `qr-encoder.spec.ts` — KEEP; independent uqr golden vectors
+- `qr-generator.spec.ts` — KEEP; jsQR decode round-trip of the real pairing URL and an over-213-byte payload
 - `registry.spec.ts` — KEEP
 - `release-tooling.spec.ts` — KEEP executable physical release owner
 - `remote-commands.spec.ts` — KEEP
@@ -237,6 +237,78 @@ the invariant with fewer, stronger cases.
   and the detached AudioSession `chrome is not defined` log is removed. One late
   offscreen-reconciliation log remains a separate offscreen lifecycle finding.
 - `git diff --check -- nexus/apps/extension-spectra/test`: passed.
+
+## 2026-10-25 wire-owner repair wave
+
+Scope: remove cases that only restated source literals after the wire owner
+moved to `packages/contracts/src/spectra.wire.ts`.
+
+| Removed case | Former location | New owner |
+|---|---|---|
+| `keeps runtime control roles bound to browser sender identity` | `release-tooling.spec.ts` | `control-source-authorization.spec.ts` (pure claim boundary) |
+| `advances remote delivered generation only inside a successful delivery acknowledgement` | `release-tooling.spec.ts` | `remote-reconciliation.spec.ts` (a failed state send must not consume the delivered generation) |
+| `keeps size governance out of the release path entirely` | `release-tooling.spec.ts` | none; the retired budget symbols no longer exist |
+| build-report/gate ordering assertions | `release-tooling.spec.ts` | the same case keeps the real dist-path and forbidden-artifact assertions |
+| `has no storage, Chrome, or repository dependency` | `settings-value-normalization.spec.ts` | behavioral cases import and execute the module without a Chrome global |
+| `keeps each runtime asset reference statically discoverable` | `i18n-assets.spec.ts` | `fetches only the asset owned by each surface` (default loader URL) |
+
+Structural change: `apps/extension-spectra/src/background/control-source-authorization.ts`
+owns the Runtime RPC source/sender decision; `control-coordinator.ts` delegates
+to it and keeps effect orchestration only.
+
+Added contracts: `spectra-client.spec.ts` proves the wire owner stamps one
+protocol version, mints a unique request identity, and never stamps an event
+with `requestId`. `content-runtime-facade.spec.ts` declares the two factories
+in the closed Content facade.
+
+Retained source reads are physical evidence (manifest, policy, ZIP, CSP,
+generated assets, vendor bytes) or generator contracts, not restatements of
+implementation literals.
+
+## 2026-10-26 remote projection and transport wave
+
+Scope: tests that imported a vendored transport or the wire protocol across
+the repository root now use the extension-owned source; committed deployment
+copies are verified once by the architecture gate instead of being re-asserted
+per test.
+
+| Case change | Former location | New owner |
+|---|---|---|
+| transport import path | `peerjs-data-only.spec.ts` imported `../../../remote-site/vendor/peerjs.min.js` | `../vendor/peerjs/peerjs.min.js` (the extension-owned source) |
+| deployment byte identity | not tested | `verify` `REMOTE-VENDOR-001` / `REMOTE-PROTO-001` compare every committed projection with its owner |
+| `qr-encoder.spec.ts` | hand-written Reed-Solomon encoder | `qr-generator.spec.ts` decodes the real pairing URL and a 380+ byte payload through jsQR, independent of the `qrcode` implementation |
+| remote wire literal | `remote-security.spec.ts` matched the version/handshake literal in `app.js` | the page must consume `dist/protocol.js` before `app.js` and own no wire primitive |
+
+Validation evidence (2026-10-26):
+
+- Default isolated matrix: 110/110 files passed.
+- Production Chrome smoke: 47/47 cases passed.
+- HALO default matrix: 441/441 passed, covering the shared Contracts change.
+- Targeted owners: `peerjs-data-only` 2, `remote-security` 21, `release-tooling` 38 passed.
+- A single shared-state flake was observed during audit-time full runs and
+  passed in isolation; roadmap P7 tracks the `smoke.spec.ts` monolith that
+  permits it.
+
+## 2026-10-26 P7–P9 completion wave
+
+- `test/smoke.spec.ts` (7444 lines, shared module state) → 8 suites under
+  `test/smoke/` (capture, feedback, hotkeys, page-media, popup-ui,
+  remote-session, runtime-bootstrap, visualizer) plus a read-only `harness.ts`.
+  Every suite owns its browser, temporary profile, and teardown; 47/47 cases and
+  456 assertions pass in 76.31s. `run-tests.ts` excludes `smoke/` from the
+  default unit matrix, so contract tests never inherit Chrome state.
+- `visual-baseline.spec.ts` volume case: the stale synchronous `label = 80%`
+  expectation contradicted the acknowledged-result contract from `b97da4a3`
+  (thumb follows the gesture; label and fill commit on settlement). The case now
+  asserts the thumb immediately and the acknowledged label afterwards; all three
+  visual states pass.
+- Deleted exclusions were removed from `run-tests.ts` rather than retained as
+  dead entries.
+- P8 retry coverage is behavioral: Popup and Options re-enter their bootstrap in
+  place after disposing the failed attempt; no test asserts a document reload.
+- P9 publishes `THIRD_PARTY_NOTICES.txt` and the `spectra` owner;
+  `check-source-derived-third-party.spec.ts` (5 cases) and `check:governance`
+  bind the notice path, upstream repository/commit, and license markers.
 
 This document is an audit ledger, not current behavior authority. Contracts,
 implementation, canonical verifiers, real Chrome evidence, and release gates

@@ -9,22 +9,22 @@ export {
 	DEFAULT_AUDIO_GRAPH_CONFIG,
 	audioGraphSignature,
 	normalizeAudioGraphConfig,
-} from './AudioGraphRouter.js';
+} from './audio-graph-router.js';
 export type {
 	AudioGraphApplyOptions,
 	AudioGraphConfig,
 	AudioGraphRouterOptions,
 	AudioGraphSnapshot,
-} from './AudioGraphRouter.js';
+} from './audio-graph-router.js';
 
 export {
 	WebAudioController,
 	assessMediaSourceCoverage,
 	assessMediaSourceEligibility,
-} from './WebAudioController.js';
+} from './web-audio-controller.js';
 export type {
 	MediaSourceCoverageAssessment,
 	MediaSourceEligibility,
 	MediaSourceEligibilityEvidence,
 	MediaSourceEligibilityReason,
-} from './WebAudioController.js';
+} from './web-audio-controller.js';

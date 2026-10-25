@@ -4,6 +4,7 @@ import {
 	audioSessionMatchesControlDocument,
 	clampControlValue,
 	CONTROL_VALUE_LIMITS,
+	createSpectraEvent,
 	SPECTRA_PROTOCOL_VERSION,
 	isControlApplyAck,
 	isControlOperationAck,
@@ -35,7 +36,6 @@ import {
 	type ControlValues,
 	type MediaTarget,
 	type RpcError,
-	type SpectraEventEnvelope,
 } from '@nexus/contracts';
 import {
 	AUDIO_PROJECTION_FIELDS,
@@ -65,6 +65,15 @@ import {
 	assignFieldState,
 } from './control-coordinator-values';
 import { controlApplyAckMatches, controlOperationAckMatches } from './control-coordinator-ack';
+import {
+	assertInvocationTargetCurrent,
+	assertPopupRequestDocument,
+	popupInvocation,
+	sameExtensionDocument,
+	type ExtensionInvocationContext,
+} from './extension-invocation';
+import { createPopupVisualizerSource } from './popup-visualizer-source';
+import { authorizeRuntimeControl } from './control-source-authorization';
 import {
 	mintCaptureAdmission,
 	revokeCaptureAdmission,
@@ -99,7 +108,6 @@ import {
 	isBackgroundRequestEnvelope,
 	rpcFailure,
 	rpcSuccess,
-	sendBackgroundTabRequestOnce,
 RPC_INVALID_REQUEST} from './background-rpc';
 import type {
 	PopupControlBatch,
@@ -181,16 +189,6 @@ type RoutedControlOperationRequest = ControlOperationRequest & {
 	tabId: number;
 	captureAdmission?: CaptureAdmission;
 };
-interface ExtensionDocumentIdentity {
-	tabId: number;
-	documentId: string;
-}
-
-export interface ExtensionInvocationContext {
-	origin: 'popup' | 'builtin-page' | 'site-page' | 'chrome-command';
-	foreground: ExtensionDocumentIdentity | null;
-	target: ExtensionDocumentIdentity;
-}
 
 // Shared with worker-restart startup recovery: a persisted processor-required
 // session must retain the content runtime with this exact owned-control lease so
@@ -616,14 +614,11 @@ async function publishSnapshot(
 	}
 	stalePersistedSnapshots.delete(snapshot.tabId);
 	rememberSnapshot(snapshot);
-	const event: SpectraEventEnvelope<'spectra.control.snapshot.changed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.control.snapshot.changed',
-		payload: snapshot,
+	const event = createSpectraEvent('spectra.control.snapshot.changed', snapshot, {
 		tabId: snapshot.tabId,
 		documentId: snapshot.documentId,
 		generation: snapshot.generation,
-	};
+	});
 	// Notify extension pages without blocking the requester. Receivers (Popup
 	// card, SidePanel, Remote) classify snapshots by document/generation and are
 	// idempotent, so delivery order relative to the submit ACK is irrelevant and
@@ -1985,26 +1980,6 @@ async function executeControlOperation(
 	return routeContentOperation(request, operationId);
 }
 
-function sameExtensionDocument(
-	left: ExtensionDocumentIdentity | null,
-	right: ExtensionDocumentIdentity,
-): boolean {
-	return left?.tabId === right.tabId && left.documentId === right.documentId;
-}
-
-async function assertInvocationTargetCurrent(
-	tabId: number,
-	invocation: ExtensionInvocationContext,
-): Promise<void> {
-	if (invocation.target.tabId !== tabId) {
-		throw new Error('Extension invocation target tab does not match the control request');
-	}
-	const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
-	if (frame?.documentId !== invocation.target.documentId) {
-		throw new Error('Extension invocation belongs to a stale target document');
-	}
-}
-
 async function captureAdmissionForInvocation(
 	tabId: number,
 	invocation: ExtensionInvocationContext,
@@ -2168,30 +2143,6 @@ function trustedContentHotkeyInvocation(
 	};
 }
 
-async function popupInvocation(tabId: number): Promise<ExtensionInvocationContext> {
-	const [frame, tabs] = await Promise.all([
-		chrome.webNavigation.getFrame({ tabId, frameId: 0 }),
-		chrome.tabs.query({ active: true, currentWindow: true }),
-	]);
-	if (!frame?.documentId) throw new Error('Popup target has no current document');
-	const target = { tabId, documentId: frame.documentId };
-	return {
-		origin: 'popup',
-		foreground: tabs[0]?.id === tabId ? target : null,
-		target,
-	};
-}
-
-function assertPopupRequestDocument(
-	invocation: ExtensionInvocationContext,
-	requestedDocumentId?: string,
-): void {
-	if (requestedDocumentId !== undefined
-		&& invocation.target.documentId !== requestedDocumentId) {
-		throw new Error('Popup control belongs to a stale document');
-	}
-}
-
 export async function submitPopupControlBatch(
 	batch: PopupControlBatch,
 ): Promise<PopupControlBatchResult> {
@@ -2242,178 +2193,14 @@ export async function submitPopupControlBatch(
 	return { volumeAck, fieldAcks, error: batchError };
 }
 
-export interface PopupVisualizerSourceLease {
-	tabId: number;
-	documentId: string;
-	generation: number;
-	runtimeRevision: string;
-	capability: string;
-	subscriberId: string;
-	actualMode: 'bypass' | 'webaudio' | 'capture' | null;
-}
+const popupVisualizerSource = createPopupVisualizerSource({
+	runExclusive: serialized,
+	getOrCreateSnapshot,
+});
 
-export interface PopupVisualizerSourceAcquisition {
-	lease: PopupVisualizerSourceLease;
-	active: boolean;
-	errorMessage: string | null;
-}
-
-// post: a visible Popup retains one document-scoped observation subscription.
-// It may use a safe page analyser or an existing DSP processor, but never grants
-// Capture admission. A bypass ACK is a settled inactive subscription, not failure.
-export async function acquirePopupVisualizerSource(
-	tabId: number,
-	subscriberId: string,
-): Promise<PopupVisualizerSourceAcquisition> {
-	const invocation = await popupInvocation(tabId);
-	if (!sameExtensionDocument(invocation.foreground, invocation.target)) {
-		throw new Error('Visualizer observation requires the current foreground Popup tab');
-	}
-	await awaitDocumentInitialization(tabId, invocation.target.documentId);
-	return serialized(tabId, async () => {
-		await assertInvocationTargetCurrent(tabId, invocation);
-		const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-		if (tabs[0]?.id !== tabId) {
-			throw new Error('Visualizer observation target is no longer foreground');
-		}
-		const snapshot = await getOrCreateSnapshot(tabId);
-		const capability = `visualizer:${crypto.randomUUID()}`;
-		let runtime: Awaited<ReturnType<typeof ensureContentRuntime>> | null = null;
-		try {
-			runtime = await ensureContentRuntime(
-				tabId,
-				snapshot.documentId,
-				'visualizer',
-				capability,
-			);
-			if (runtime.documentId !== snapshot.documentId) {
-				throw new Error('Visualizer runtime lease belongs to a stale document');
-			}
-			const pendingLease: PopupVisualizerSourceLease = {
-				tabId,
-				documentId: snapshot.documentId,
-				generation: snapshot.generation,
-				runtimeRevision: runtime.runtimeRevision,
-				capability,
-				subscriberId,
-				actualMode: null,
-			};
-			try {
-				const response = await sendBackgroundTabRequestOnce(
-					tabId,
-					'spectra.audio.visualizer.demand.set',
-					{ subscriberId, enabled: true },
-					{ documentId: snapshot.documentId, generation: snapshot.generation },
-				);
-				if (!response.ok) {
-					return {
-						lease: pendingLease,
-						active: false,
-						errorMessage: `${response.error.code}: ${response.error.message}`,
-					};
-				}
-				if ((response.data.actualMode !== 'webaudio'
-					&& response.data.actualMode !== 'capture')
-					|| response.data.phase !== 'active') {
-					if (response.data.actualMode === 'bypass' && response.data.phase === 'idle') {
-						return {
-							lease: { ...pendingLease, generation: response.data.generation, actualMode: 'bypass' },
-							active: false,
-							errorMessage: null,
-						};
-					}
-					return {
-						lease: pendingLease,
-						active: false,
-						errorMessage: response.data.lastError?.message
-							?? 'Visualizer demand did not acknowledge an active analyser source',
-					};
-				}
-				return {
-					lease: {
-						...pendingLease,
-						generation: response.data.generation,
-						actualMode: response.data.actualMode,
-					},
-					active: true,
-					errorMessage: null,
-				};
-			} catch (error) {
-				// Once the runtime lease exists, delivery becomes an ambiguous commit:
-				// Content may have installed the subscriber even when its ACK is lost.
-				// Return the pending owner so Background can retry an idempotent release.
-				return {
-					lease: pendingLease,
-					active: false,
-					errorMessage: error instanceof Error ? error.message : String(error),
-				};
-			}
-		} catch (error) {
-			if (runtime) {
-				releaseContentRuntimeLease(tabId, runtime.documentId, 'visualizer', capability);
-			}
-			throw error;
-		}
-	});
-}
-
-// post: returns false only when the current document still needs a retry; stale
-// documents are already retired by the browser navigation fence.
-export function releasePopupVisualizerSource(
-	lease: PopupVisualizerSourceLease,
-): Promise<boolean> {
-	return serialized(lease.tabId, async () => {
-		let frame: { documentId?: string } | null | undefined;
-		try {
-			frame = await chrome.webNavigation.getFrame({
-				tabId: lease.tabId,
-				frameId: 0,
-			});
-		} catch {
-			// A transient browser-query failure is not proof that the document was
-			// replaced. Retain the owner so the bounded reconciler can try again.
-			return false;
-		}
-		if (!frame) return false;
-		if (frame?.documentId !== lease.documentId) {
-			releaseContentRuntimeLease(
-				lease.tabId,
-				lease.documentId,
-				'visualizer',
-				lease.capability,
-			);
-			return true;
-		}
-		try {
-			const response = await sendBackgroundTabRequestOnce(
-				lease.tabId,
-				'spectra.audio.visualizer.demand.set',
-				{ subscriberId: lease.subscriberId, enabled: false },
-				{ documentId: lease.documentId, generation: lease.generation },
-			);
-			if (!response.ok) return false;
-			if (response.data.actualMode === 'capture' && response.data.phase === 'error') return false;
-			releaseContentRuntimeLease(
-				lease.tabId,
-				lease.documentId,
-				'visualizer',
-				lease.capability,
-			);
-			return true;
-		} catch {
-			return false;
-		}
-	});
-}
-
-export function abandonPopupVisualizerSource(lease: PopupVisualizerSourceLease): void {
-	releaseContentRuntimeLease(
-		lease.tabId,
-		lease.documentId,
-		'visualizer',
-		lease.capability,
-	);
-}
+export const acquirePopupVisualizerSource = popupVisualizerSource.acquire;
+export const releasePopupVisualizerSource = popupVisualizerSource.release;
+export const abandonPopupVisualizerSource = popupVisualizerSource.abandon;
 
 async function removeTab(tabId: number): Promise<void> {
 	const expectedEpoch = fenceNavigation(tabId);
@@ -2605,53 +2392,22 @@ export function initializeControlCoordinator(): void {
 			sendResponse(rpcFailure(RPC_INVALID_REQUEST, 'Control intent requires a target tab'));
 			return false;
 		}
-		const runtimeClaimedSource: string = message.payload.source;
-		if (runtimeClaimedSource === 'remote' || runtimeClaimedSource === 'system') {
-			sendResponse(rpcFailure(
-				'forbidden',
-				'Background-only control sources cannot be asserted by runtime RPC',
-			));
-			return false;
-		}
-		if (message.payload.source === 'restore' && (
-			sender.tab?.id !== tabId
-			|| sender.frameId !== 0
-			|| !sender.documentId
-			|| message.payload.target === null
-			|| message.payload.target.documentId !== sender.documentId
-		)) {
-			sendResponse(rpcFailure(
-				'forbidden',
-				'Restore control must match its exact top-level document sender',
-			));
-			return false;
-		}
-		const pageSource = message.payload.source === 'page';
-		if (pageSource && (
-			sender.tab?.id !== tabId
-			|| sender.frameId !== 0
-			|| !sender.documentId
-			|| message.payload.target !== null
-				&& message.payload.target.documentId !== sender.documentId
-		)) {
-			sendResponse(rpcFailure(
-				'forbidden',
-				'Page observation identity does not match its top-level sender',
-			));
-			return false;
-		}
-		const pageObservation = message.type === PROTO_INTENT_SUBMIT && pageSource;
 		const siteHotkeyInvocation = message.payload.source === 'hotkey'
 			? trustedContentHotkeyInvocation(sender, tabId)
 			: undefined;
-		if ((message.payload.source === 'popup' && !isExtensionPopupSender(sender))
-			|| (message.payload.source === 'hotkey' && !siteHotkeyInvocation)) {
-			sendResponse(rpcFailure(
-				'forbidden',
-				'Extension-invoked control requires a trusted Popup or top-level hotkey document',
-			));
+		const rejection = authorizeRuntimeControl({
+			sender,
+			tabId,
+			source: message.payload.source,
+			target: message.payload.target,
+			popupSender: message.payload.source === 'popup' && isExtensionPopupSender(sender),
+			hotkeySender: siteHotkeyInvocation !== undefined,
+		});
+		if (rejection) {
+			sendResponse(rpcFailure(rejection.code, rejection.message));
 			return false;
 		}
+		const pageObservation = message.type === PROTO_INTENT_SUBMIT && message.payload.source === 'page';
 		const operation = (async () => {
 			const invocation = message.payload.source === 'popup'
 				? await popupInvocation(tabId)

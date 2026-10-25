@@ -5,6 +5,8 @@ import { showOptionsError } from './status';
 import { requestOptionalPermission } from '../shared/optional-permission-admission';
 
 let focusListener: (() => void) | null = null;
+let listenersBound = false;
+let retired = false;
 
 // eff: checks if userScripts API is available and enabled
 async function checkUserScriptsAvailable(): Promise<boolean> {
@@ -40,30 +42,31 @@ function openExtensionSettings(): void {
 }
 
 // eff: initializes the userScripts section with event listeners and status check
+// inv: retry re-reads the live badge but never duplicates the enable/focus/pagehide listeners
 export async function initUserScriptsSection(): Promise<void> {
 	await updateStatusBadge();
+	if (listenersBound) return;
+	listenersBound = true;
 
 	const enableBtn = document.getElementById('userscripts-enable-btn');
+	let pending = false;
 	if (enableBtn instanceof HTMLElement) {
-		let disposed = false;
-		let pending = false;
 		enableBtn.onclick = () => {
-			if (disposed || pending) return;
+			if (retired || pending) return;
 			pending = true;
 			try {
 				void requestOptionalPermission('userScripts').then((granted) => {
-					if (disposed) return;
+					if (retired) return;
 					if (granted) openExtensionSettings();
 					else showOptionsError(new Error('User Scripts permission was not granted.'));
 				}).catch((error: unknown) => {
-					if (!disposed) showOptionsError(error);
+					if (!retired) showOptionsError(error);
 				}).finally(() => { pending = false; });
 			} catch (error) {
 				pending = false;
 				showOptionsError(error);
 			}
 		};
-		window.addEventListener('pagehide', () => { disposed = true; enableBtn.onclick = null; }, { once: true });
 	}
 
 	// note: re-check status when window regains focus (user may have enabled it)
@@ -72,6 +75,8 @@ export async function initUserScriptsSection(): Promise<void> {
 	};
 	window.addEventListener('focus', focusListener);
 	window.addEventListener('pagehide', () => {
+		retired = true;
+		if (enableBtn instanceof HTMLElement) enableBtn.onclick = null;
 		if (focusListener) window.removeEventListener('focus', focusListener);
 		focusListener = null;
 	}, { once: true });

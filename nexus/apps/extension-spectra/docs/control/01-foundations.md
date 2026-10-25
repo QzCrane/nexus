@@ -66,6 +66,8 @@ Concrete projection points:
 | --- | --- |
 | `control-coordinator.ts` | serialize lifecycle and intents; persist, publish, compensate, and commit actual snapshots |
 | `control-coordinator-values.ts` | pure intent/default/mutation, target-scope, ACK, reset, and session projection values; no Chrome or storage authority |
+| `extension-invocation.ts` | extension invocation origin, foreground/target document identity, and stale-document rejection |
+| `popup-visualizer-source.ts` | document-scoped Popup observation lease; borrows the coordinator queue and snapshot, never writes revisions or admits Capture |
 | `native-media-async.ts` | sole physical standard-media async setter/readback primitives, source-scoped cancellation, and frame-cadence cache |
 | `native-media-executor.ts` | registry/target orchestration, native ownership, page fallback, rollback, and page observation |
 | `media-registry.ts` | pure active-media/video selection, source revision |

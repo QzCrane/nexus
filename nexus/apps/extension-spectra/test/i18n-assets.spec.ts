@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { gunzipSync } from 'node:zlib';
+import { gunzipSync, gzipSync } from 'node:zlib';
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -13,6 +13,9 @@ import {
 	SUPPORTED_SPECTRA_LANGUAGES,
 	type EncodedLocaleSectionAsset,
 } from '../src/shared/i18n/catalog';
+import { clearActionsLocaleCatalogCache, loadActionsSection } from '../src/shared/i18n/actions-catalog';
+import { clearOptionsLocaleCatalogCache, loadOptionsSection } from '../src/shared/i18n/options-catalog';
+import { clearPopupLocaleCatalogCache, loadPopupSection } from '../src/shared/i18n/popup-catalog';
 
 const temporaryDirectories: string[] = [];
 
@@ -79,28 +82,42 @@ describe('generated locale surface assets', () => {
 		}
 	});
 
-	test('keeps each runtime asset reference statically discoverable', () => {
-		const languageToken = [String.fromCharCode(36), '{language}'].join('');
-		const assetReference = (surface: 'popup' | 'options' | 'actions') =>
-			`fetch(chrome.runtime.getURL(\`i18n/${surface}/${languageToken}.json.gz\`))`;
-		const references = [
-			[
-				'../src/shared/i18n/popup-catalog.ts',
-				assetReference('popup'),
-			],
-			[
-				'../src/shared/i18n/options-catalog.ts',
-				assetReference('options'),
-			],
-			[
-				'../src/shared/i18n/actions-catalog.ts',
-				assetReference('actions'),
-			],
-		] as const;
-
-		for (const [relativePath, reference] of references) {
-			const source = readFileSync(join(import.meta.dir, relativePath), 'utf8');
-			expect(source).toContain(reference);
+	test('fetches only the asset owned by each surface', async () => {
+		const requested: string[] = [];
+		const originalFetch = globalThis.fetch;
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const gzipped = gzipSync(JSON.stringify({}));
+		globalThis.fetch = (async (input: RequestInfo | URL) => {
+			requested.push(String(input));
+			return new Response(gzipped);
+		}) as typeof fetch;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					getURL: (path: string) => `chrome-extension://spectra-test/${path}`,
+				},
+			},
+		});
+		try {
+			for (const [surface, load] of [
+				['popup', loadPopupSection],
+				['options', loadOptionsSection],
+				['actions', loadActionsSection],
+			] as const) {
+				requested.length = 0;
+				await load('en-US');
+				expect(requested).toEqual([
+					`chrome-extension://spectra-test/i18n/${surface}/en-US.json.gz`,
+				]);
+			}
+		} finally {
+			globalThis.fetch = originalFetch;
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+			clearPopupLocaleCatalogCache();
+			clearOptionsLocaleCatalogCache();
+			clearActionsLocaleCatalogCache();
 		}
 	});
 });

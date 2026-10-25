@@ -15,6 +15,15 @@ describe('source-derived third-party release provenance', () => {
 		expect(() => checkSourceDerivedThirdParty(clonePolicy())).not.toThrow();
 	});
 
+	test('declares the shipped SPECTRA transport as a source-derived owner', () => {
+		expect(current.entries.find((entry: { product: string }) => entry.product === 'spectra')).toMatchObject({
+			id: 'peerjs-transport',
+			upstreamRepository: 'https://github.com/peers/peerjs',
+			upstreamCommit: '2d4605470188777e15be4ea47354cf9732b5c394',
+			releaseEntry: 'peerjs-vendor.js',
+		});
+	});
+
 	test('rejects non-exact upstream identity and unsafe local ownership', () => {
 		const shortSha = clonePolicy();
 		shortSha.entries[0].upstreamCommit = '70b8d7e';
@@ -23,6 +32,10 @@ describe('source-derived third-party release provenance', () => {
 		const escaped = clonePolicy();
 		escaped.entries[0].localPath = '../borrowed.js';
 		expect(() => checkSourceDerivedThirdParty(escaped)).toThrow('must stay inside');
+
+		const outsidePublic = clonePolicy();
+		outsidePublic.entries[0].noticePath = 'apps/extension-halo/THIRD_PARTY_NOTICES.txt';
+		expect(() => checkSourceDerivedThirdParty(outsidePublic)).toThrow('public/');
 	});
 
 	test('rejects stale local or notice provenance markers', () => {

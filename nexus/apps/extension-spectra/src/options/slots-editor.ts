@@ -28,13 +28,17 @@ let settings: HotkeySettings = cloneHotkeySettings(DEFAULT_HOTKEY_SETTINGS);
 let presetCommands: string[] = [];
 let slotCommands: string[] = [];
 const pendingSlotMutations = new LatestKeyedIntentRegistry<string, HotkeyAction | null>();
+let langBound = false;
 
 // eff: initializes the slots editor by loading persistence state and establishing an i18n re-render listener
+// inv: retry re-renders current state but never registers a second language listener
 export async function initSlotsEditor(initialSnapshot?: SettingsUiSnapshot): Promise<void> {
 	loadCommandRegistry();
 	if (initialSnapshot) acceptSettingsSnapshot(initialSnapshot);
 	else await loadSettings();
 	renderSlots();
+	if (langBound) return;
+	langBound = true;
 	onLangChange(renderSlots);
 }
 

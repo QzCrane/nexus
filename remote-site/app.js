@@ -2,20 +2,28 @@
   // biome-ignore lint/suspicious/noRedundantUseStrict: loaded as a classic script, not an ECMAScript module.
   'use strict';
 
-  const PROTOCOL_VERSION = 3;
+  // The wire protocol lives once in the extension and is projected to
+  // dist/protocol.js before this classic script runs. This page must never own a
+  // second copy of the version, challenge payload, HMAC, or wire validators.
+  const {
+    REMOTE_PROTOCOL_VERSION,
+    createRemoteProof,
+    generateRandomToken,
+    isRemoteAuthResultMessage,
+    isRemoteChallengeMessage,
+    isRemoteClosedMessage,
+    isRemoteCommand,
+    isRemotePeerId,
+    isRemoteStateMessage,
+    isSessionId,
+  } = globalThis.SpectraRemoteProtocol;
+
   const RECONNECT_WINDOW_MS = 2 * 60 * 1000;
   const CONNECT_TIMEOUT_MS = 12 * 1000;
   const STORAGE_KEY = 'spectra_remote_pairings_v3';
   const MAX_PAIRINGS = 16;
   const MAX_PAIRING_STORAGE_BYTES = 64 * 1024;
   const REMOTE_ORIGIN = 'https://nexus-remote.pages.dev';
-  const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/;
-  const NONCE_RE = /^[A-Za-z0-9_-]{43}$/;
-  const COMMANDS = new Set([
-    'volume_down', 'volume_up', 'volume_100', 'volume_max', 'mute', 'play_pause',
-    'seek_backward_30', 'seek_backward', 'seek_forward', 'seek_forward_30',
-    'speed_down', 'speed_reset', 'speed_up',
-  ]);
 
   const byId = (id) => document.getElementById(id);
   const statusDot = byId('status-dot');
@@ -80,7 +88,7 @@
     }
 
     connect() {
-      if (this.terminal || !TOKEN_RE.test(this.pairing.secret)) return;
+      if (this.terminal || !isSessionId(this.pairing.secret)) return;
       this.disposeTransport();
       const currentAttempt = ++this.attempt;
       this.authenticated = false;
@@ -110,7 +118,7 @@
             connection = currentPeer.connect(this.pairing.peerId, {
               reliable: true,
               serialization: 'json',
-              metadata: { protocolVersion: PROTOCOL_VERSION, sessionId: this.pairing.sessionId },
+              metadata: { protocolVersion: REMOTE_PROTOCOL_VERSION, sessionId: this.pairing.sessionId },
             });
           } catch (error) {
             this.handleDisconnect('Connection unavailable', false, currentAttempt, currentPeer);
@@ -211,23 +219,23 @@
     async handleMessage(data, attempt, peer, connection) {
       if (!this.isCurrentTransport(attempt, peer, connection)) return;
       if (!isObject(data)
-        || data.protocolVersion !== PROTOCOL_VERSION
+        || data.protocolVersion !== REMOTE_PROTOCOL_VERSION
         || data.sessionId !== this.pairing.sessionId) return;
 
       if (data.type === 'spectra.remote.challenge') {
-        if (this.authenticated || !NONCE_RE.test(data.nonce) || !Number.isFinite(data.pairingExpiresAt)) return;
+        if (this.authenticated || !isRemoteChallengeMessage(data)) return;
         if (Date.now() > data.pairingExpiresAt) {
           this.handleDisconnect('Pairing has expired', true);
           return;
         }
         try {
-           const proof = await createProof(this.pairing.secret, this.pairing.sessionId, data.nonce);
+           const proof = await createRemoteProof(this.pairing.secret, this.pairing.sessionId, data.nonce);
            if (this.isCurrentTransport(attempt, peer, connection)
              && !this.authenticated
              && connection.open) {
              connection.send({
               type: 'spectra.remote.authenticate',
-              protocolVersion: PROTOCOL_VERSION,
+              protocolVersion: REMOTE_PROTOCOL_VERSION,
               sessionId: this.pairing.sessionId,
               proof,
             });
@@ -244,7 +252,7 @@
         return;
       }
 
-       if (data.type === 'spectra.remote.auth-result' && isRemoteAuthResult(data)) {
+       if (data.type === 'spectra.remote.auth-result' && isRemoteAuthResultMessage(data)) {
         if (data.ok !== true) {
           const messages = {
             EXPIRED: 'Pairing has expired',
@@ -272,7 +280,7 @@
        if (data.type === 'spectra.remote.state'
          && this.authenticated
          && data.sessionEpoch === this.sessionEpoch
-         && isRemoteState(data)) {
+         && isRemoteStateMessage(data)) {
 		if (data.generation < this.generation
 			|| (data.generation === this.generation && data.revision < this.revision)) return;
         this.generation = data.generation;
@@ -297,7 +305,7 @@
        if (data.type === 'spectra.remote.closed'
          && this.authenticated
          && data.sessionEpoch === this.sessionEpoch
-         && isRemoteClosed(data)) {
+         && isRemoteClosedMessage(data)) {
          this.handleDisconnect(closeReasonMessage(data.reason), true, attempt, peer, connection);
       }
     }
@@ -307,16 +315,16 @@
         || !this.connection?.open
         || !Number.isSafeInteger(this.sessionEpoch)
         || this.sessionEpoch <= 0
-        || !COMMANDS.has(command)
-        || !TOKEN_RE.test(this.pairing.sessionId)) return;
+        || !isRemoteCommand(command)
+        || !isSessionId(this.pairing.sessionId)) return;
       this.sequence += 1;
       try {
         this.connection.send({
           type: 'spectra.remote.command',
-          protocolVersion: PROTOCOL_VERSION,
+          protocolVersion: REMOTE_PROTOCOL_VERSION,
           sessionId: this.pairing.sessionId,
           sessionEpoch: this.sessionEpoch,
-          commandId: randomToken(16),
+          commandId: generateRandomToken(16),
           sequence: this.sequence,
           generation: this.generation,
           command,
@@ -597,10 +605,10 @@
   }
 
   function isPairing(value) {
-    return value && value.protocolVersion === PROTOCOL_VERSION
-      && TOKEN_RE.test(value.sessionId)
-      && /^spectra-[a-f0-9]{32}$/.test(value.peerId)
-      && TOKEN_RE.test(value.secret)
+    return value && value.protocolVersion === REMOTE_PROTOCOL_VERSION
+      && isSessionId(value.sessionId)
+      && isRemotePeerId(value.peerId)
+      && isSessionId(value.secret)
       && (value.createdAt === undefined
         || (Number.isSafeInteger(value.createdAt) && value.createdAt >= 0))
       && Number.isSafeInteger(value.pairingExpiresAt)
@@ -670,84 +678,8 @@
     }
   }
 
-  function isRemoteState(data) {
-    return hasOnlyKeys(data, [
-      'type', 'protocolVersion', 'sessionId', 'sessionEpoch', 'generation', 'revision',
-      'volume', 'volumeBase', 'boost', 'actualMode', 'phase', 'volumeState', 'muted',
-      'playing', 'speed', 'tabTitle', 'tabDomain',
-    ])
-      && Number.isSafeInteger(data.sessionEpoch) && data.sessionEpoch >= 0
-      && Number.isSafeInteger(data.generation) && data.generation >= 0
-		&& Number.isSafeInteger(data.revision) && data.revision >= 0
-      && Number.isFinite(data.volume) && data.volume >= 0 && data.volume <= 800
-	  && Number.isFinite(data.volumeBase) && data.volumeBase >= 0 && data.volumeBase <= 100
-	  && Number.isFinite(data.boost) && data.boost >= 1 && data.boost <= 8
-      && (data.actualMode === 'bypass'
-		|| data.actualMode === 'capture')
-      && (data.phase === 'idle'
-        || data.phase === 'starting'
-        || data.phase === 'active'
-        || data.phase === 'stopping'
-        || data.phase === 'error')
-		&& (data.volumeState === 'silent'
-			|| data.volumeState === 'native'
-			|| data.volumeState === 'capture')
-      && typeof data.muted === 'boolean'
-      && typeof data.playing === 'boolean'
-      && Number.isFinite(data.speed) && data.speed >= 0.1 && data.speed <= 16
-      && (data.tabTitle === undefined
-        || (typeof data.tabTitle === 'string' && data.tabTitle.length <= 512))
-      && (data.tabDomain === undefined
-        || (typeof data.tabDomain === 'string' && data.tabDomain.length <= 253));
-  }
-
-  function isRemoteAuthResult(data) {
-    if (!isObject(data)
-      || data.type !== 'spectra.remote.auth-result'
-      || data.protocolVersion !== PROTOCOL_VERSION
-      || !isSessionId(data.sessionId)) return false;
-    if (data.ok === true) {
-      return hasOnlyKeys(data, [
-        'type', 'protocolVersion', 'sessionId', 'ok', 'sessionEpoch', 'reconnectUntil',
-      ])
-        && Number.isSafeInteger(data.sessionEpoch)
-        && data.sessionEpoch > 0
-        && Number.isSafeInteger(data.reconnectUntil)
-        && data.reconnectUntil >= 0;
-    }
-    return hasOnlyKeys(data, ['type', 'protocolVersion', 'sessionId', 'ok', 'error'])
-      && data.ok === false
-      && (data.error === 'AUTH_FAILED'
-        || data.error === 'EXPIRED'
-        || data.error === 'ALREADY_CONNECTED'
-        || data.error === 'INVALID_MESSAGE');
-  }
-
-  function isRemoteClosed(data) {
-    return isObject(data)
-      && hasOnlyKeys(data, ['type', 'protocolVersion', 'sessionId', 'sessionEpoch', 'reason'])
-      && data.type === 'spectra.remote.closed'
-      && data.protocolVersion === PROTOCOL_VERSION
-      && isSessionId(data.sessionId)
-      && Number.isSafeInteger(data.sessionEpoch)
-      && data.sessionEpoch >= 0
-      && isCloseReason(data.reason);
-  }
-
-  function isSessionId(value) {
-    return typeof value === 'string' && TOKEN_RE.test(value);
-  }
-
   function formatVolume(value) {
     return Number.isInteger(value) ? String(value) : value.toFixed(1).replace(/\.0$/, '');
-  }
-
-  function isCloseReason(value) {
-    return value === 'manual'
-      || value === 'tab-closed'
-      || value === 'pairing-expired'
-      || value === 'reconnect-expired'
-      || value === 'host-destroyed';
   }
 
   function closeReasonMessage(reason) {
@@ -764,47 +696,12 @@
     element.toggleAttribute('inert', !visible);
   }
 
-  async function createProof(secret, sessionId, nonce) {
-    const key = await crypto.subtle.importKey(
-      'raw',
-      decodeBase64Url(secret),
-      { name: 'HMAC', hash: 'SHA-256' },
-      false,
-      ['sign'],
-    );
-    const payload = new TextEncoder().encode(`spectra-remote-v3\n${sessionId}\n${nonce}\n${PROTOCOL_VERSION}`);
-    const signature = await crypto.subtle.sign('HMAC', key, payload);
-    return encodeBase64Url(new Uint8Array(signature));
-  }
-
-  function randomToken(byteLength) {
-    const bytes = new Uint8Array(byteLength);
-    crypto.getRandomValues(bytes);
-    return encodeBase64Url(bytes);
-  }
-
-  function decodeBase64Url(value) {
-    const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
-    const binary = atob(normalized + '='.repeat((4 - normalized.length % 4) % 4));
-    return Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  }
-
-  function encodeBase64Url(bytes) {
-    let binary = '';
-    for (const byte of bytes) binary += String.fromCharCode(byte);
-    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/u, '');
-  }
-
   function cleanText(value, maxLength) {
     return typeof value === 'string' ? value.slice(0, maxLength) : '';
   }
 
   function isObject(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
-  }
-
-  function hasOnlyKeys(value, keys) {
-    return Object.keys(value).every((key) => keys.includes(key));
   }
 
   function initializeTheme() {

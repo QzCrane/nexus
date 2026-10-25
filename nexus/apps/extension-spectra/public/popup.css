@@ -20,6 +20,15 @@
   --card-border: #ffffff;
   --switch-bg: #cbd5e1;
   --slider-accent: var(--primary);
+  /* Foreground for filled accent surfaces. Dark theme accents are light tints,
+     so white text would lose contrast; the token flips with the theme. */
+  --on-accent: #ffffff;
+  --star: #ffd700;
+  --tone-primary: color-mix(in srgb, var(--primary) 12%, var(--card-bg));
+  --tone-danger: color-mix(in srgb, var(--danger) 14%, var(--card-bg));
+  --ring-primary: color-mix(in srgb, var(--primary) 18%, transparent);
+  /* Neutral hover/separator ink derived from the theme's text color. */
+  --scrim-ink: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 /* Dark mode variables */
@@ -42,6 +51,7 @@
   --bg: #0f172a;
   --card-border: #334155;
   --switch-bg: #475569;
+  --on-accent: #0f172a;
 }
 html {
   width: 390px; /* default width */
@@ -92,11 +102,11 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background-color: rgba(0, 0, 0, 0.1);
+  background-color: color-mix(in srgb, var(--text) 12%, transparent);
   border-radius: 3px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background-color: rgba(0, 0, 0, 0.2);
+  background-color: color-mix(in srgb, var(--text) 22%, transparent);
 }
 
 :where(button, input, select, [role="button"]):focus-visible {
@@ -274,7 +284,7 @@ body {
   padding: 8px 14px;
   border: none;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-radius: 8px;
   font-size: 14px;
   font-weight: 700;
@@ -362,7 +372,7 @@ body {
   font-size: 10px;
   font-weight: 700;
   color: var(--primary);
-  background: #dbeafe;
+  background: var(--tone-primary);
   padding: 2px 6px;
   border-radius: 6px;
   margin-left: 4px;
@@ -388,7 +398,7 @@ body {
 
 .btn-icon:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.05);
+  background: var(--scrim-ink);
   border-color: var(--g2);
 }
 
@@ -521,7 +531,7 @@ body {
   padding: 12px 16px;
 
   /* visual separator */
-  border-bottom: 1px solid rgba(0, 0, 0, 0.04);
+  border-bottom: 1px solid var(--scrim-ink);
 
   display: flex;
   justify-content: space-between;
@@ -703,8 +713,8 @@ input:checked + .slider-round:before {
   position: absolute;
   inset: 0;
   /* can adjust top, or rely on z-index to let card-top cover it */
-  background: rgba(255, 255, 255, 0.85);
-  /* slightly increase opacity for better contrast */
+  background: color-mix(in srgb, var(--w) 85%, transparent);
+  /* theme-owned veil: solid white in light, solid card surface in dark */
   backdrop-filter: blur(4px);
   z-index: 20;
 
@@ -740,7 +750,7 @@ input:checked + .slider-round:before {
 
 .sleep-icon {
   font-size: 24px;
-  background: #dbeafe;
+  background: var(--tone-primary);
   width: 48px;
   height: 48px;
   display: flex;
@@ -774,7 +784,7 @@ input:checked + .slider-round:before {
   left: 0;
   right: 0;
   height: 1px;
-  background: rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--text) 8%, transparent);
 }
 
 .control-stack {
@@ -815,7 +825,7 @@ input:checked + .slider-round:before {
 }
 
 .btn-mute.active {
-  background: #fee2e2;
+  background: var(--tone-danger);
   color: var(--danger);
 }
 
@@ -919,7 +929,7 @@ input:checked + .slider-round:before {
 .empty-blob {
   width: 40px;
   height: 40px;
-  background: #e5e7eb;
+  background: var(--g1);
   border-radius: 50%;
   margin: 0 auto 10px;
 }
@@ -960,7 +970,7 @@ input:checked + .slider-round:before {
 
 .btn-speed:hover {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
@@ -984,7 +994,7 @@ input:checked + .slider-round:before {
 
 .speed-input:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 2px var(--ring-primary);
 }
 
 /* Media buttons group [⏸][⛶][←] */
@@ -1016,7 +1026,7 @@ input:checked + .slider-round:before {
 
 .btn-media:hover {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
@@ -1027,14 +1037,14 @@ input:checked + .slider-round:before {
 /* Pause button active state (playing) */
 .btn-pause.playing {
   background: var(--active);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--active);
 }
 
 /* Picture-in-Picture active state */
 .btn-pip.active {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
@@ -1046,7 +1056,7 @@ input:checked + .slider-round:before {
 /* Hotkey target button active state (blue) */
 .btn-hotkey-target.active {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
@@ -1147,7 +1157,7 @@ input:checked + .slider-round:before {
 .btn-pin.active {
   opacity: 1;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 /* Panel content area - scrollable */
@@ -1234,7 +1244,7 @@ input:checked + .slider-round:before {
 
 .sp-chip input:checked + span {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
@@ -1441,13 +1451,13 @@ input:checked + .slider-round:before {
 
 .sp-btn:hover {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
 .sp-btn.active {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
@@ -1480,7 +1490,7 @@ input:checked + .slider-round:before {
 
 .sp-btn-small:hover {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
@@ -1525,13 +1535,13 @@ input:checked + .slider-round:before {
 
 .sp-btn-save {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-color: var(--primary);
 }
 
 .sp-btn-save:hover {
   opacity: 0.9;
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .sp-btn-action:active {
@@ -1567,7 +1577,7 @@ input:checked + .slider-round:before {
 
 .setting-number-input:focus {
   border-color: var(--primary);
-  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+  box-shadow: 0 0 0 2px var(--ring-primary);
 }
 
 .setting-unit {
@@ -1645,7 +1655,7 @@ input:checked + .slider-round:before {
 }
 
 .preset-item.current {
-  background: rgba(100, 149, 237, 0.1);
+  background: var(--tone-primary);
 }
 
 .preset-info {
@@ -1681,12 +1691,12 @@ input:checked + .slider-round:before {
 
 .preset-badge.default {
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .preset-badge.current {
   background: var(--success);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .preset-summary {
@@ -1737,12 +1747,12 @@ input:checked + .slider-round:before {
 
 .btn-preset-action.apply:hover {
   background: var(--success);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn-preset-action.preview:hover {
   background: var(--info);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn-preset-action.default {
@@ -1750,17 +1760,17 @@ input:checked + .slider-round:before {
 }
 
 .btn-preset-action.default.active {
-  color: #ffd700;
+  color: var(--star);
 }
 
 .btn-preset-action.default:hover {
   background: var(--warning);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .btn-preset-action.delete:hover {
   background: var(--danger);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .preset-preview-modal {
@@ -1820,7 +1830,7 @@ input:checked + .slider-round:before {
   padding: 10px;
   border: none;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   border-radius: 6px;
   cursor: pointer;
   font-weight: 600;
@@ -1838,7 +1848,7 @@ input:checked + .slider-round:before {
   left: 50%;
   transform: translateX(-50%);
   background: var(--success);
-  color: #fff;
+  color: var(--on-accent);
   padding: 10px 20px;
   border-radius: 6px;
   font-size: 13px;
@@ -1877,7 +1887,7 @@ input:checked + .slider-round:before {
   border: 0;
   border-radius: 7px;
   background: var(--primary);
-  color: white;
+  color: var(--on-accent);
   cursor: pointer;
 }
 
@@ -1918,7 +1928,7 @@ input:checked + .slider-round:before {
 
 .btn-small-danger:hover {
   background: var(--danger);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 .preset-preview-content .btn-small {
@@ -1928,7 +1938,7 @@ input:checked + .slider-round:before {
 
 .preset-preview-content .btn-small-danger {
   background: var(--danger);
-  color: #111;
+  color: var(--on-accent);
 }
 
 .preset-preview-content button:disabled {
@@ -2000,7 +2010,7 @@ body:has(> .remote-modal) {
   align-items: center;
   padding: 16px 20px;
   background: var(--primary);
-  color: #fff;
+  color: var(--on-accent);
   font-weight: 700;
   font-size: 14px;
 }
@@ -2009,8 +2019,8 @@ body:has(> .remote-modal) {
   width: 24px;
   height: 24px;
   border: none;
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  background: color-mix(in srgb, var(--on-accent) 20%, transparent);
+  color: var(--on-accent);
   border-radius: 50%;
   cursor: pointer;
   font-size: 12px;
@@ -2018,7 +2028,7 @@ body:has(> .remote-modal) {
 }
 
 .remote-modal-close:hover {
-  background: rgba(255, 255, 255, 0.4);
+  background: color-mix(in srgb, var(--on-accent) 40%, transparent);
 }
 
 .remote-modal-body {
@@ -2077,7 +2087,7 @@ body:has(> .remote-modal) {
   color: var(--g2);
   margin: 8px 0 0;
   padding: 8px;
-  background: rgba(102, 126, 234, 0.1);
+  background: var(--tone-primary);
   border-radius: 6px;
   line-height: 1.4;
 }
@@ -2096,12 +2106,12 @@ body:has(> .remote-modal) {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #f44336;
+  background: var(--danger);
   animation: remotePulse 2s infinite;
 }
 
 .remote-status-dot.connected {
-  background: #4caf50;
+  background: var(--active);
   animation: none;
 }
 
@@ -2133,7 +2143,7 @@ body:has(> .remote-modal) {
 
 .remote-disconnect-btn:hover {
   background: var(--danger);
-  color: #fff;
+  color: var(--on-accent);
 }
 
 /* Button loading state */
@@ -2154,15 +2164,15 @@ body:has(> .remote-modal) {
 
 /* Remote connected state */
 .btn-icon.remote-connected {
-  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  color: #fff;
-  border-color: #059669;
-  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+  background: linear-gradient(135deg, var(--active) 0%, color-mix(in srgb, var(--active) 78%, black) 100%);
+  color: var(--on-accent);
+  border-color: color-mix(in srgb, var(--active) 78%, black);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--active) 50%, transparent);
   opacity: 1;
 }
 
 .btn-icon.remote-connected:hover {
-  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--active) 78%, black) 0%, color-mix(in srgb, var(--active) 60%, black) 100%);
   opacity: 1;
 }
 

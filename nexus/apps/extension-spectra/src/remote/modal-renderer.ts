@@ -219,22 +219,43 @@ function updateStatusNodes(modal: HTMLElement, connected: boolean): void {
 		: t('remoteWaiting', 'Waiting for authenticated connection…');
 }
 
+const SVG_DATA_URL_PREFIX = 'data:image/svg+xml;charset=utf-8,';
+const MAX_QR_DATA_URL_LENGTH = 1_000_000;
+// Only the elements an SVG QR symbol needs. Every other element (`script`,
+// `foreignObject`, `use`, `image`, animation elements, ...) can either execute
+// or fetch external content, so it is rejected instead of enumerated.
+const ALLOWED_SVG_ELEMENTS = new Set(['svg', 'path', 'rect', 'g', 'title', 'desc']);
+const ACTIVE_SVG_MARKUP = /<[!?]|\bon[a-z]+\s*=|\b(?:href|style)\s*=|\burl\s*\(|javascript:/iu;
+const SVG_TAG = /<(\/?)([A-Za-z][A-Za-z0-9:-]*)((?:\s+[A-Za-z][A-Za-z0-9:-]*\s*=\s*"[^"<>]*")*)\s*(\/?)>/gu;
+
 function isPngDataUrl(value: string): boolean {
 	return /^data:image\/png;base64,[A-Za-z0-9+/=]+$/u.test(value);
 }
 
+function hasOnlyQrSvgMarkup(svg: string): boolean {
+	if (ACTIVE_SVG_MARKUP.test(svg)) return false;
+	let cursor = 0;
+	for (const tag of svg.matchAll(SVG_TAG)) {
+		const index = tag.index ?? 0;
+		if (svg.slice(cursor, index).trim().length > 0) return false;
+		if (!ALLOWED_SVG_ELEMENTS.has((tag[2] ?? '').toLowerCase())) return false;
+		cursor = index + tag[0].length;
+	}
+	return svg.slice(cursor).trim().length === 0;
+}
+
 export function isSafeRemoteQrDataUrl(value: string): boolean {
 	if (isPngDataUrl(value)) return true;
-	const prefix = 'data:image/svg+xml;charset=utf-8,';
-	if (!value.startsWith(prefix) || value.length > 1_000_000) return false;
+	if (!value.startsWith(SVG_DATA_URL_PREFIX) || value.length > MAX_QR_DATA_URL_LENGTH) return false;
 	try {
-		const svg = decodeURIComponent(value.slice(prefix.length));
-		if (!/^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 \d+ \d+">/u.test(svg)
-			|| !/<rect fill="#[0-9A-Fa-f]{6}" width="\d+" height="\d+"\/>/u.test(svg)
-			|| !/<path fill="#[0-9A-Fa-f]{6}" d="[A-Za-z0-9,.\-\s]+"\/><\/svg>$/u.test(svg)) {
-			return false;
-		}
-		return !/<(?:script|foreignObject|iframe|object|embed)\b|\bon\w+\s*=|\b(?:href|style)\s*=/iu.test(svg);
+		const svg = decodeURIComponent(value.slice(SVG_DATA_URL_PREFIX.length));
+		const openingTag = /^<svg\s[^>]*>/u.exec(svg)?.[0];
+		if (!openingTag) return false;
+		return /\bxmlns="http:\/\/www\.w3\.org\/2000\/svg"/u.test(openingTag)
+			&& /\bviewBox="0 0 \d+ \d+"/u.test(openingTag)
+			&& /<path\s[^>]*\bd="/u.test(svg)
+			&& /<\/svg>\s*$/u.test(svg)
+			&& hasOnlyQrSvgMarkup(svg);
 	} catch {
 		return false;
 	}

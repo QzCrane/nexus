@@ -1,2 +1,4 @@
-// The wire version is a single cutover authority shared by the host and page.
-export const REMOTE_PROTOCOL_VERSION = 3 as const;
+// The wire version has one owner in @nexus/contracts. This module is the
+// extension-local import path so the host, validators, and the generated remote
+// page projection all read the same cutover authority.
+export { REMOTE_PROTOCOL_VERSION } from '@nexus/contracts';

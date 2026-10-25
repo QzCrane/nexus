@@ -2,9 +2,10 @@
 // inv: document reconciliations serialize; forgotten generations cannot publish later side effects
 
 import {
-	SPECTRA_PROTOCOL_VERSION,
+	createSpectraLeanSiteHotkeyConfiguration,
 	isSpectraDefaultHotkeyKeyCombo,
 	type SpectraLeanSiteHotkeyBinding,
+	type SpectraLeanSiteHotkeyConfigureMessage,
 } from '@nexus/contracts';
 import {
 	isLeanSiteHotkeyBinding,
@@ -41,15 +42,7 @@ export interface SiteHotkeyHostPort {
 	configure(
 		tabId: number,
 		documentId: string,
-		message: {
-			protocolVersion: typeof SPECTRA_PROTOCOL_VERSION;
-			type: 'spectra.content.site-hotkeys.configure';
-			payload: {
-				epoch: string;
-				generation: number;
-				bindings: SpectraLeanSiteHotkeyBinding[];
-			};
-		},
+		message: SpectraLeanSiteHotkeyConfigureMessage,
 	): Promise<LeanHostDelivery>;
 }
 
@@ -145,15 +138,11 @@ export class SiteHotkeyDocumentOwner {
 
 	private nextConfiguration(bindings: SpectraLeanSiteHotkeyBinding[]) {
 		this.generation += 1;
-		return {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			type: 'spectra.content.site-hotkeys.configure' as const,
-			payload: {
-				epoch: this.epoch,
-				generation: this.generation,
-				bindings,
-			},
-		};
+		return createSpectraLeanSiteHotkeyConfiguration({
+			epoch: this.epoch,
+			generation: this.generation,
+			bindings,
+		});
 	}
 
 	private async injectLeanHost(tabId: number, documentId: string, lifecycle: number): Promise<void> {

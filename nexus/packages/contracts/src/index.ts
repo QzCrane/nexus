@@ -232,15 +232,6 @@ export {
 	isControlReadResult,
 } from './control.contracts.js';
 
-// Messaging contracts
-export type {
-  NexusMessages,
-  NexusAction,
-  NexusRequest,
-  NexusResponse,
-  INexusMessenger,
-  INexusRouter
-} from './messages/index.js';
 
 // Settings contracts
 export type {
@@ -319,6 +310,8 @@ export {
 	rpcSuccess,
 	rpcFailure,
 } from './spectra.protocol.js';
+export { createSpectraEvent, createSpectraRequest } from './spectra.wire.js';
+export type { SpectraWireContext } from './spectra.wire.js';
 export {
 	SPECTRA_PROTOCOL_VERSION,
 	hasOnlyProtocolKeys,
@@ -371,6 +364,7 @@ export {
 } from './visualizer.contracts.js';
 export {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
+	createSpectraLeanSiteHotkeyConfiguration,
 	SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE,
 	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
 	SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS,
@@ -412,8 +406,10 @@ export {
 	REMOTE_PAIRING_STORAGE_LIMIT_BYTES,
 	REMOTE_COMMANDS,
 	REMOTE_COMMAND_DESCRIPTORS,
+	REMOTE_PROTOCOL_VERSION,
 	isRemoteCommand,
 	isRemoteCommandId,
+	isRemotePeerId,
 	isRemotePublicSession,
 	isRemoteSessionEpoch,
 	isRemoteSessionToken,
@@ -505,4 +501,10 @@ export {
 
 // Message Action constants
 export { Actions, NEXUS_ACTIONS } from './actions.js';
-export type { NexusActionName } from './actions.js';
+export type {
+	NexusAction,
+	NexusActionName,
+	NexusMessages,
+	NexusRequest,
+	NexusResponse,
+} from './actions.js';

@@ -23,6 +23,28 @@
         "Upstream license: MIT",
         "Copyright (c) 2024 Timothy Lau"
       ]
+    },
+    {
+      "product": "spectra",
+      "id": "peerjs-transport",
+      "localPath": "apps/extension-spectra/vendor/peerjs/peerjs.min.js",
+      "localMarker": "derived from PeerJS 1.5.5 (MIT)",
+      "releaseEntry": "peerjs-vendor.js",
+      "upstreamRepository": "https://github.com/peers/peerjs",
+      "upstreamCommit": "2d4605470188777e15be4ea47354cf9732b5c394",
+      "upstreamFiles": [
+        "lib/peer.ts",
+        "lib/socket.ts",
+        "lib/dataconnection/DataConnection.ts",
+        "lib/dataconnection/BufferedConnection/Json.ts"
+      ],
+      "licenseExpression": "MIT",
+      "noticePath": "apps/extension-spectra/public/THIRD_PARTY_NOTICES.txt",
+      "noticeMarkers": [
+        "PeerJS 1.5.5",
+        "Copyright (c) 2015 Michelle Bu and Eric Zhang",
+        "Permission is hereby granted"
+      ]
     }
   ]
 }

@@ -142,7 +142,9 @@ export function createRemotePairing(now = Date.now()): RemotePairing {
 }
 
 export function remoteChallengePayload(sessionId: string, nonce: string): Uint8Array {
-	return new TextEncoder().encode(`spectra-remote-v3\n${sessionId}\n${nonce}\n${REMOTE_PROTOCOL_VERSION}`);
+	return new TextEncoder().encode(
+		`spectra-remote-v${REMOTE_PROTOCOL_VERSION}\n${sessionId}\n${nonce}\n${REMOTE_PROTOCOL_VERSION}`,
+	);
 }
 
 export async function createRemoteProof(secret: string, sessionId: string, nonce: string): Promise<string> {

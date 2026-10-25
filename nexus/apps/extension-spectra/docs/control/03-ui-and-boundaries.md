@@ -68,4 +68,4 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 - Badge 在 `chrome.storage.session` 中记录 per-tab 插件使用事实；完全无控制的空白标签页保持 Badge 为空。
 - Toast 与 OSD 在全屏模式下自动挂载到 Popover top-layer 避免被全屏覆盖。
 - Popup 离散控制与合并后的 Filter 写入都必须把结构化失败投影为可访问错误 Toast；失败清除待发送值、先回滚到最后一次 ACK，再强制读取 authoritative snapshot，不得被吞掉或继续呈现为成功状态。
-- Options 只有在权威 settings snapshot 成功读取后才渲染持久化事实。启动或 mutation 失败使用统一页面错误面和明确的 Retry reload；不允许把 `DEFAULT_*` 伪装成已保存状态，失败 mutation 必须回滚或强制重读。
+- Options 只有在权威 settings snapshot 成功读取后才渲染持久化事实。启动或 mutation 失败使用统一页面错误面和明确的 Retry；Retry 先释放本次 attempt 注册的全部 owner，再原地重跑 bootstrap，禁止用 `window.location.reload()` 重载文档。不允许把 `DEFAULT_*` 伪装成已保存状态，失败 mutation 必须回滚或强制重读。

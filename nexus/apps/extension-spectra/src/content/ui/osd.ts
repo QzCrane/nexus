@@ -218,7 +218,7 @@ function paintOSDColor(root: ShadowRoot, payload: OSDPayload): void {
 	const fill = root.getElementById('f');
 	if (!fill) return;
 	fill.style.backgroundColor = payload.type === 'speed'
-		? '#10b981'
+		? UI_COLORS.SUCCESS
 		: payload.volumeState === 'capture'
 			? UI_COLORS.CAPTURE
 			: payload.volumeState === 'silent'
@@ -489,7 +489,7 @@ function renderOSD(
 		const h = surface.host;
 		const ws = surface.root;
 		const css = document.createElement('style');
-		css.textContent = `.o{background:rgba(20,20,30,0.85);backdrop-filter:blur(8px);padding:12px 20px;border-radius:30px;color:#fff;display:grid;gap:4px;font-family:system-ui;transition:0.2s;opacity:0;transform:translateY(-10px)}.v{opacity:1;transform:translateY(0)}.r{display:flex;align-items:center;gap:12px}.g{width:160px;height:26px;position:relative;flex:none}.b{position:absolute;left:0;right:0;top:10px;height:6px;background:rgba(255,255,255,0.2);border-radius:3px;overflow:hidden}.f{height:100%;width:0%}.marks{position:absolute;inset:0;pointer-events:none}.mk{position:absolute;top:9px;width:1px;height:8px;background:rgba(255,255,255,0.72);transform:translateX(-.5px);z-index:5}.mk::after{content:attr(data-label);position:absolute;left:50%;transform:translateX(-50%);font-size:8px;line-height:9px;font-weight:600;white-space:nowrap;color:rgba(255,255,255,0.76)}.mk.upper::after{bottom:9px}.mk.lower::after{top:9px}.t{font-weight:600;font-size:14px;min-width:58px;text-align:right;font-variant-numeric:tabular-nums}.meta{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:11px;opacity:.78}.meta[hidden]{display:none}`;
+		css.textContent = `.o{background:${UI_COLORS.OSD_SURFACE};backdrop-filter:blur(8px);padding:12px 20px;border-radius:30px;color:${UI_COLORS.TOAST_TEXT};display:grid;gap:4px;font-family:system-ui;transition:0.2s;opacity:0;transform:translateY(-10px)}.v{opacity:1;transform:translateY(0)}.r{display:flex;align-items:center;gap:12px}.g{width:160px;height:26px;position:relative;flex:none}.b{position:absolute;left:0;right:0;top:10px;height:6px;background:${UI_COLORS.OSD_TRACK};border-radius:3px;overflow:hidden}.f{height:100%;width:0%}.marks{position:absolute;inset:0;pointer-events:none}.mk{position:absolute;top:9px;width:1px;height:8px;background:${UI_COLORS.OSD_MARK};transform:translateX(-.5px);z-index:5}.mk::after{content:attr(data-label);position:absolute;left:50%;transform:translateX(-50%);font-size:8px;line-height:9px;font-weight:600;white-space:nowrap;color:${UI_COLORS.OSD_MARK_LABEL}}.mk.upper::after{bottom:9px}.mk.lower::after{top:9px}.t{font-weight:600;font-size:14px;min-width:58px;text-align:right;font-variant-numeric:tabular-nums}.meta{max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:center;font-size:11px;opacity:.78}.meta[hidden]{display:none}`;
 
 		const o = document.createElement('div'); o.className = 'o'; o.id = 'o';
 		const r = document.createElement('div'); r.className = 'r';

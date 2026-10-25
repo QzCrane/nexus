@@ -1,6 +1,7 @@
 // goal: reversible extension-owned video presentation effects that preserve site-authored inline styles
 
 import type { ControlField, ControlValues, VideoFilterState } from '@nexus/contracts';
+import { UI_COLORS } from '../../shared/ui-colors';
 import {
 	abortError,
 	ContentLifecycleError,
@@ -546,7 +547,7 @@ export class VideoEffectsController {
 			const root = host.attachShadow({ mode: 'closed' });
 			this.#dimRegions = Array.from({ length: 4 }, () => {
 				const region = document.createElement('div');
-				region.style.cssText = 'position:fixed;background:#000;pointer-events:none;';
+				region.style.cssText = `position:fixed;background:${UI_COLORS.OVERLAY_DIM};pointer-events:none;`;
 				root.appendChild(region);
 				return region;
 			});

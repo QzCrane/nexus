@@ -50,11 +50,21 @@ function disposePopupAttempt(): void {
   popupAttemptDisposers.clear();
 }
 
-async function reloadPopup(): Promise<void> {
-  // A failed run may already own card listeners, visualizer subscriptions and
-  // module-level registries. A document reload is the only complete retry
-  // boundary; re-entering main() in the same realm would duplicate owners.
-  window.location.reload();
+// retry: disposePopupAttempt() releases every owner the failed run registered,
+// so a retry re-enters the same bootstrap in place instead of reloading the
+// document and losing the Popup window's transient user context.
+async function startPopup(): Promise<void> {
+  try {
+    await main();
+  } catch (error) {
+    console.error('[SPECTRA Popup] Startup failed:', error);
+    disposePopupAttempt();
+    try {
+      showPopupStartupError(error, startPopup);
+    } catch (surfaceError: unknown) {
+      console.error('[SPECTRA Popup] Unable to present startup failure:', surfaceError);
+    }
+  }
 }
 
 // Intrinsic Action-popup sizing must not be determined by its transient initial
@@ -288,17 +298,5 @@ async function main(): Promise<void> {
   document.documentElement.dataset.spectraReady = 'true';
 }
 
-function startPopup(): void {
-  void main().catch((error: unknown) => {
-    console.error('[SPECTRA Popup] Startup failed:', error);
-    disposePopupAttempt();
-    try {
-      showPopupStartupError(error, reloadPopup);
-    } catch (surfaceError: unknown) {
-      console.error('[SPECTRA Popup] Unable to present startup failure:', surfaceError);
-    }
-  });
-}
-
 window.addEventListener('pagehide', () => { popupRetired = true; disposePopupAttempt(); }, { once: true });
-document.addEventListener('DOMContentLoaded', startPopup);
+document.addEventListener('DOMContentLoaded', () => { void startPopup(); });

@@ -8,8 +8,10 @@ import type {
 	SpectraAudioMode,
 } from './audio.contracts.js';
 
+export const REMOTE_PROTOCOL_VERSION = 3 as const;
+
 export interface RemotePublicSession {
-	protocolVersion: 3;
+	protocolVersion: typeof REMOTE_PROTOCOL_VERSION;
 	sessionId: string;
 	peerId: string;
 	secret: string;
@@ -146,7 +148,12 @@ const REMOTE_PUBLIC_SESSION_KEYS = new Set<keyof RemotePublicSession>([
 	'connected',
 ]);
 const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/u;
+const PEER_ID_RE = /^spectra-[a-f0-9]{32}$/u;
 const remoteCommandSet: ReadonlySet<string> = new Set(REMOTE_COMMANDS);
+
+export function isRemotePeerId(value: unknown): value is string {
+	return typeof value === 'string' && PEER_ID_RE.test(value);
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -156,11 +163,10 @@ export function isRemotePublicSession(value: unknown): value is RemotePublicSess
 	if (!isRecord(value) || !Object.keys(value).every((key) => REMOTE_PUBLIC_SESSION_KEYS.has(key as keyof RemotePublicSession))) {
 		return false;
 	}
-	return value.protocolVersion === 3
+	return value.protocolVersion === REMOTE_PROTOCOL_VERSION
 		&& typeof value.sessionId === 'string'
 		&& TOKEN_RE.test(value.sessionId)
-		&& typeof value.peerId === 'string'
-		&& /^spectra-[a-f0-9]{32}$/u.test(value.peerId)
+		&& isRemotePeerId(value.peerId)
 		&& typeof value.secret === 'string'
 		&& TOKEN_RE.test(value.secret)
 		&& typeof value.createdAt === 'number'

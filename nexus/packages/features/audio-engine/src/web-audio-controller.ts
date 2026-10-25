@@ -7,7 +7,7 @@ import {
 import {
 	AudioGraphRouter,
 	type AudioGraphSnapshot,
-} from './AudioGraphRouter.js';
+} from './audio-graph-router.js';
 
 export interface MediaSourceEligibilityEvidence {
 	kind: 'preload-cors';

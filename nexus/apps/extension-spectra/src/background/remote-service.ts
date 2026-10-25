@@ -6,11 +6,11 @@ import {
 	REMOTE_COMMAND_RECEIPT_LIMIT,
 	REMOTE_COMMAND_TIMEOUT_MS,
 	SPECTRA_PROTOCOL_VERSION,
+	createSpectraEvent,
 	isOffscreenHostEvent,
 	type RemoteHostEvent,
 	type RemoteHostSession,
 	type RemoteState,
-	type SpectraEventEnvelope,
 } from '@nexus/contracts';
 import {
 	acquireOffscreenLease,
@@ -82,22 +82,16 @@ function isAttemptedRemoteSessionMessage(message: unknown): boolean {
 }
 
 function publishRemoteChanged(tabId: number, sessionId: string, connected: boolean): void {
-	const event: SpectraEventEnvelope<'spectra.remote.session.changed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.remote.session.changed',
-		tabId,
-		payload: { tabId, sessionId, connected },
-	};
+	const event = createSpectraEvent(
+		'spectra.remote.session.changed',
+		{ tabId, sessionId, connected },
+		{ tabId },
+	);
 	void chrome.runtime.sendMessage(event).catch(() => undefined);
 }
 
 function publishRemoteClosed(tabId: number, sessionId: string): void {
-	const event: SpectraEventEnvelope<'spectra.remote.session.closed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.remote.session.closed',
-		tabId,
-		payload: { tabId, sessionId },
-	};
+	const event = createSpectraEvent('spectra.remote.session.closed', { tabId, sessionId }, { tabId });
 	void chrome.runtime.sendMessage(event).catch(() => undefined);
 }
 

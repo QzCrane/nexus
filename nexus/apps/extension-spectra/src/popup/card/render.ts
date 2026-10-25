@@ -2,7 +2,7 @@
 
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
-import { COLORS, AUDIO_UI } from '../constants';
+import { COLORS, AUDIO_UI, popupPrimaryColor } from '../constants';
 import type { GlobalSettings } from '@nexus/kernel';
 import type { AudioSessionPhase, SpectraAudioMode } from '@nexus/contracts';
 import { resolveAudioVolume, resolveAudioVolumeState } from '@nexus/contracts';
@@ -139,5 +139,5 @@ export function actualVolumeColor(
 ): string {
   const state = resolveAudioVolumeState({ muted, volume, actualMode, phase });
   if (state === 'silent') return COLORS.MUTED;
-  return state === 'capture' ? COLORS.CAPTURE : COLORS.NATIVE;
+  return state === 'capture' ? COLORS.CAPTURE : popupPrimaryColor();
 }

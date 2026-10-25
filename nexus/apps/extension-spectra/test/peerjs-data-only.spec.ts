@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import {
 	DataConnection,
 	PEER_MESSAGE_LIMIT_BYTES,
-} from '../../../../remote-site/vendor/peerjs.min.js';
+} from '../vendor/peerjs/peerjs.min.js';
 
 describe('workspace-owned Remote PeerJS transport', () => {
 	test('negotiates a JSON DataConnection and emits bounded messages', async () => {

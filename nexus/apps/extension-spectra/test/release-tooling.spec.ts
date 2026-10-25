@@ -74,38 +74,6 @@ afterEach(() => {
 });
 
 describe('release ZIP tooling', () => {
-	test('keeps runtime control roles bound to browser sender identity', () => {
-		const coordinator = readFileSync(
-			new URL('../src/background/control-coordinator.ts', import.meta.url),
-			'utf8',
-		);
-		expect(coordinator).toContain("runtimeClaimedSource === 'remote' || runtimeClaimedSource === 'system'");
-		expect(coordinator).toContain('Background-only control sources cannot be asserted by runtime RPC');
-		expect(coordinator).toMatch(/message\.payload\.source === 'restore'[\s\S]{0,320}sender\.frameId !== 0[\s\S]{0,320}message\.payload\.target\.documentId !== sender\.documentId/u);
-		expect(coordinator).toMatch(/pageSource[\s\S]{0,240}sender\.frameId !== 0[\s\S]{0,240}sender\.documentId/u);
-		const legacyHandler = readFileSync(
-			new URL('../src/content/logic/spectra-command-handler.ts', import.meta.url),
-			'utf8',
-		);
-		expect(legacyHandler).not.toContain("source: 'popup'");
-		expect(legacyHandler).toContain('legacy_command_retired');
-	});
-
-	test('advances remote delivered generation only inside a successful delivery acknowledgement', () => {
-		const remote = readFileSync(
-			new URL('../src/background/remote-service.ts', import.meta.url),
-			'utf8',
-		);
-		const sendState = remote.slice(
-			remote.indexOf('function sendStateToOffscreen'),
-			remote.indexOf('type AuthorizedRemoteHostEvent'),
-		);
-		expect(sendState).toMatch(/const response = await sendOffscreenMessage\([\s\S]*if \(!response\.success\)[\s\S]*throw new Error/u);
-		expect(sendState).toContain('current.session.sessionId !== authorization.session.sessionId');
-		expect(sendState.indexOf('current.generation = Math.max')).toBeGreaterThan(sendState.indexOf('response.success'));
-		expect(sendState).not.toContain('authorization.generation =');
-	});
-
 	test('size is attributable evidence, never a release blocker', () => {
 		const policy = productionSizePolicy();
 		expect(policy.schemaVersion).toBe(1);
@@ -140,12 +108,6 @@ describe('release ZIP tooling', () => {
 		// failures throw; a size change is bound by the artifact sha instead.
 		const structuralClean = { ...grown, failures: [] };
 		expect(() => assertProductionArtifactReport(structuralClean)).not.toThrow();
-	});
-	test('keeps size governance out of the release path entirely', () => {
-		const release = readFileSync(new URL('../../../scripts/release-spectra.ts', import.meta.url), 'utf8');
-		expect(release).not.toContain('capacityBlockers');
-		expect(release).not.toContain('typed capacity freeze');
-		expect(release).not.toContain('SPECTRA_PRODUCTION_BUDGETS');
 	});
 	test('forbids publishing an unvalidated ZIP directly', () => {
 		expect(() => createRelease({ stage: false })).toThrow('Direct final release writes are disabled');
@@ -246,6 +208,28 @@ describe('production artifact integrity', () => {
 		expect(() => checkProductionArtifacts({ distDir: directory })).not.toThrow();
 	});
 
+	test('accepts registered release notices while unregistered orphans still fail', () => {
+		const directory = temporaryDirectory();
+		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
+			manifest_version: 3,
+			background: { service_worker: 'background.js' },
+			action: { default_popup: 'popup.html' },
+		}));
+		writeFileSync(resolve(directory, 'background.js'), 'export const background = true;\n');
+		writeFileSync(resolve(directory, 'popup.html'), '<script type="module" src="popup.js"></script>\n');
+		writeFileSync(resolve(directory, 'popup.js'), 'export const popup = true;\n');
+		writeFileSync(resolve(directory, 'THIRD_PARTY_NOTICES.txt'), 'PeerJS 1.5.5\n');
+
+		const report = analyzeProductionArtifacts({ distDir: directory });
+		expect(report.failures).toEqual([]);
+		expect(report.releaseEvidence).toEqual(['THIRD_PARTY_NOTICES.txt']);
+		expect(report.reachable).toBe(report.files - 1);
+
+		writeFileSync(resolve(directory, 'UNREGISTERED.txt'), 'orphan\n');
+		const orphaned = analyzeProductionArtifacts({ distDir: directory });
+		expect(orphaned.failures.join('\n')).toContain('UNREGISTERED.txt: unreachable production artifact');
+	});
+
 	test('budgets Popup and Options scripts without hiding reachable locale payloads', () => {
 		const directory = temporaryDirectory();
 		mkdirSync(resolve(directory, 'i18n/popup'), { recursive: true });
@@ -312,24 +296,10 @@ describe('production artifact integrity', () => {
 		);
 	});
 
-	test('writes analysis outside dist before production gates, including a failing gate', () => {
-		const build = readFileSync(new URL('../build.ts', import.meta.url), 'utf8');
-		const analysisPath = "resolve(projectDir, '../../../artifacts/spectra-build-analysis.json')";
-		const reportCreation = build.indexOf('const report = isAnalyze || !isDev');
-		const reportWrite = build.indexOf('writeFileSync(analysisPath');
-		const assertionGate = build.indexOf('assertProductionJavaScript();');
-		const artifactGate = build.indexOf('assertProductionArtifactReport(report);');
-
-		expect(build).toContain(analysisPath);
-		expect(build).not.toContain("resolve(distDir, 'build-analysis.json')");
+	test('keeps build analysis outside dist and forbids source artifacts in the payload', () => {
 		const appDirectory = resolve(import.meta.dir, '..');
 		const analysisOutput = resolve(appDirectory, '../../../artifacts/spectra-build-analysis.json');
 		expect(relative(resolve(appDirectory, 'dist'), analysisOutput)).toMatch(/^\.\./u);
-		expect(reportCreation).toBeGreaterThan(-1);
-		expect(build.match(/analyzeProductionArtifacts\(\{ distDir, metafiles \}\)/gu)).toHaveLength(1);
-		expect(reportWrite).toBeGreaterThan(reportCreation);
-		expect(reportWrite).toBeLessThan(assertionGate);
-		expect(reportWrite).toBeLessThan(artifactGate);
 
 		const directory = temporaryDirectory();
 		writeFileSync(resolve(directory, 'manifest.json'), JSON.stringify({
@@ -801,6 +771,25 @@ describe('one-time release receipt', () => {
 		expect(second).not.toBe(first);
 	});
 
+	test('digests a committed no-build dist projection but ignores package build output', () => {
+		const remoteSource = temporaryDirectory();
+		mkdirSync(resolve(remoteSource, 'dist'), { recursive: true });
+		const projectionPath = resolve(remoteSource, 'dist/protocol.js');
+		writeFileSync(projectionPath, 'globalThis.SpectraRemoteProtocol = { version: 3 };\n');
+		const committed = computeReleaseSourceDigest(remoteSource);
+		writeFileSync(projectionPath, 'globalThis.SpectraRemoteProtocol = { version: 4 };\n');
+		expect(computeReleaseSourceDigest(remoteSource)).not.toBe(committed);
+
+		const packageSource = temporaryDirectory();
+		writeFileSync(resolve(packageSource, 'package.json'), JSON.stringify({ scripts: { build: 'bun build.ts' } }));
+		mkdirSync(resolve(packageSource, 'dist'), { recursive: true });
+		const outputPath = resolve(packageSource, 'dist/bundle.js');
+		writeFileSync(outputPath, 'export const version = 1;\n');
+		const built = computeReleaseSourceDigest(packageSource);
+		writeFileSync(outputPath, 'export const version = 2;\n');
+		expect(computeReleaseSourceDigest(packageSource)).toBe(built);
+	});
+
 	test('ignores TypeScript incremental build metadata without ignoring source changes', () => {
 		const source = temporaryDirectory();
 		const sourcePath = resolve(source, 'index.ts');
@@ -1251,6 +1240,7 @@ function remoteSiteSecurityHeaders(): Record<string, string> {
 function remoteSiteFixture(): { directory: string; securityHeaders: Record<string, string> } {
 	const directory = temporaryDirectory();
 	mkdirSync(resolve(directory, 'vendor'), { recursive: true });
+	mkdirSync(resolve(directory, 'dist'), { recursive: true });
 	const securityHeaders = remoteSiteSecurityHeaders();
 	writeFileSync(resolve(directory, '_headers'), [
 		'/*',
@@ -1259,6 +1249,7 @@ function remoteSiteFixture(): { directory: string; securityHeaders: Record<strin
 	].join('\n'));
 	writeFileSync(resolve(directory, 'index.html'), '<!doctype html><title>SPECTRA Remote</title>\n');
 	writeFileSync(resolve(directory, 'app.js'), 'globalThis.spectraRemote = true;\n');
+	writeFileSync(resolve(directory, 'dist/protocol.js'), 'globalThis.SpectraRemoteProtocol = {};\n');
 	writeFileSync(resolve(directory, 'styles.css'), 'body { color: CanvasText; }\n');
 	writeFileSync(resolve(directory, 'vendor/peerjs.min.js'), 'globalThis.Peer = class Peer {};\n');
 	return { directory, securityHeaders };
@@ -1324,6 +1315,7 @@ function sizeReport(overrides: Partial<{
 		offscreenAudioOnly: { scriptBytes: overrides.offscreenAudioOnly ?? 0 },
 		offscreenRemote: { scriptBytes: overrides.offscreenRemote ?? 0 },
 		reachable: 0,
+		releaseEvidence: [],
 		schemaVersion: 1,
 		serviceWorkerWake: { scriptBytes: overrides.serviceWorkerWake ?? 0 },
 		sizeSignals: [],

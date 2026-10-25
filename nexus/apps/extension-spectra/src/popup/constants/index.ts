@@ -1,6 +1,6 @@
 // goal: serves as the central aggregation point for all SPECTRA popup constants, ensuring consistent UI behavior
 
-export { COLORS, EQ_GRADIENT } from './colors';
+export { COLORS, popupColorToken, popupPrimaryColor } from './colors';
 export type { ColorKey } from './colors';
 
 export { AUDIO_UI } from './audio';

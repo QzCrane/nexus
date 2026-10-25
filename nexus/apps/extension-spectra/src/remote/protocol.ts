@@ -2,8 +2,13 @@
 // import protocol-core directly so page-only validators stay out of that
 // deferred runtime closure.
 
-import { isRemotePublicSession, isRemoteState, type RemoteState } from '@nexus/contracts';
 import {
+	isRemotePublicSession,
+	isRemoteState,
+	type RemoteState,
+} from '@nexus/contracts';
+import {
+	isNonce,
 	isRemoteSessionEpoch,
 	isSessionId,
 	type RemoteAuthenticateMessage,
@@ -34,6 +39,7 @@ export {
 	verifyRemoteProof,
 } from './protocol-core';
 export { REMOTE_PROTOCOL_VERSION } from './protocol-version';
+export { isRemotePeerId } from '@nexus/contracts';
 export type {
 	RemoteAuthenticateMessage,
 	RemoteChallengeMessage,
@@ -99,6 +105,23 @@ export function isRemotePairing(value: unknown): value is RemotePairing {
 		tabId: 1,
 		connected: false,
 	});
+}
+
+export function isRemoteChallengeMessage(value: unknown): value is RemoteChallengeMessage {
+	if (!isRecord(value)
+		|| value.type !== 'spectra.remote.challenge'
+		|| value.protocolVersion !== REMOTE_PROTOCOL_VERSION
+		|| !isSessionId(value.sessionId)
+		|| !isNonce(value.nonce)) return false;
+	return hasOnlyKeys(value, [
+		'type',
+		'protocolVersion',
+		'sessionId',
+		'nonce',
+		'pairingExpiresAt',
+	])
+		&& Number.isSafeInteger(value.pairingExpiresAt)
+		&& (value.pairingExpiresAt as number) >= 0;
 }
 
 export function isRemoteAuthResultMessage(value: unknown): value is RemoteAuthResultMessage {

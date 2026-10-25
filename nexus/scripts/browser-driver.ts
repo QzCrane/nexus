@@ -464,6 +464,24 @@ export function collectDefaultReleaseBrowserOwners(): string[] {
 			scripts?: Record<string, string>;
 		};
 		const scripts = manifest.scripts ?? {};
+		const expandTestPath = (value: string): string[] => {
+			if (/^test\/.+\.(?:spec|test)\.ts$/u.test(value)) return [value];
+			if (!/^test\/[A-Za-z0-9._/-]+$/u.test(value) || /\.[A-Za-z0-9]+$/u.test(value)) return [];
+			const absolute = resolve(workspaceDir, appDir, value);
+			if (!existsSync(absolute) || !statSync(absolute).isDirectory()) return [];
+			const files: string[] = [];
+			const walk = (directory: string, prefix: string): void => {
+				const entries = readdirSync(directory, { withFileTypes: true })
+					.sort((left, right) => left.name.localeCompare(right.name));
+				for (const entry of entries) {
+					const path = `${prefix}/${entry.name}`;
+					if (entry.isDirectory()) walk(resolve(directory, entry.name), path);
+					else if (entry.isFile() && /\.(?:spec|test)\.ts$/u.test(entry.name)) files.push(path);
+				}
+			};
+			walk(absolute, value);
+			return files;
+		};
 		const visited = new Set<string>();
 		const visitScript = (name: string): void => {
 			if (visited.has(name)) return;
@@ -471,7 +489,7 @@ export function collectDefaultReleaseBrowserOwners(): string[] {
 			const command = scripts[name];
 			if (!command) throw new Error(`${manifestPath} is missing default browser script ${name}`);
 			const tokens = packageScriptTokens(command);
-			const directTests = tokens.filter((token) => /^test\/.+\.(?:spec|test)\.ts$/u.test(token));
+			const directTests = tokens.flatMap(expandTestPath);
 			const invokesPlaywright = tokens.some((token) => /(?:^|[/\\])playwright$/u.test(token))
 				&& tokens.includes('test');
 			const invokesBunTest = tokens[0] === 'bun' && tokens[1] === 'test';
@@ -480,13 +498,13 @@ export function collectDefaultReleaseBrowserOwners(): string[] {
 			}
 			for (const token of tokens) {
 				if (scripts[token]) visitScript(token);
-				if (/^test\/.+\.(?:spec|test)\.ts$/u.test(token)) executableEntries.add(`${appDir}/${token}`);
+				for (const testFile of expandTestPath(token)) executableEntries.add(`${appDir}/${testFile}`);
 				if (/^(?:scripts\/).+\.ts$/u.test(token)) {
 					const path = resolve(workspaceDir, appDir, token);
 					if (!existsSync(path)) continue;
 					executableEntries.add(`${appDir}/${token}`);
 					for (const literal of stringLiterals(readFileSync(path, 'utf8'), path)) {
-						if (/^test\/.+\.(?:spec|test)\.ts$/u.test(literal)) executableEntries.add(`${appDir}/${literal}`);
+						for (const testFile of expandTestPath(literal)) executableEntries.add(`${appDir}/${testFile}`);
 					}
 				}
 			}

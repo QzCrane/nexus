@@ -11,7 +11,6 @@ import {
 	createMediaRouteRuleFingerprint,
 	createMediaRouteScopeKey,
 	findBestHostnameMatch,
-	isMediaRouteEntry,
 	isMediaRouteSettings,
 	isAudioConfigPatch,
 	isFiniteControlValue,
@@ -28,14 +27,11 @@ import {
 	type HotkeySiteMutation,
 	type SettingsPatch,
 	type SettingsSnapshot,
-	type MediaRouteEntry,
 	type MediaRouteSettings,
 	type MediaProcessingRoute,
 	type MediaRouteDecision,
-	type MediaRouteRuleEntry,
 	type MediaRouteRulesSnapshot,
 	type MediaRouteScope,
-	type DomainEntry,
 	type DomainSource,
 	type RegistryAddResult,
 	type RegistryQueryResult,
@@ -60,15 +56,27 @@ import {
 	snapshotAudioPatch,
 	syncDefaultPresetFlags,
 } from './settings-value-normalization';
+import {
+	LEGACY_MEDIA_ROUTE_KEYS,
+	MEDIA_ROUTES_KEY,
+	normalizeMediaRoutes,
+	projectMediaRouteEntry,
+	projectMediaRouteRulesSnapshot,
+	projectMediaRouteSnapshot,
+	selectMediaRouteStorageValue,
+} from './media-route-projection';
+import {
+	InvalidSettingsPatchError,
+	SettingsCapacityError,
+	SettingsRevisionConflictError,
+} from './settings-errors';
 
 const GLOBAL_KEY = 'globalSettings';
 const HOTKEY_KEY = 'hotkeySettings';
 const SITE_SETTINGS_KEY = 'siteSettings';
 const GLOBAL_PRESETS_KEY = 'globalPresets';
 const DEFAULT_PRESET_KEY = 'defaultPresetId';
-const MEDIA_ROUTES_KEY = 'siteProcessingRoutes';
 const PAGE_SCALES_KEY = 'siteVolumeScales';
-const LEGACY_MEDIA_ROUTE_KEYS = ['mediaRouteRegistry', 'restrictedRegistry', 'userRegistry'] as const;
 const META_KEY = 'spectraSettingsMeta';
 const SETTINGS_STORAGE_SCHEMA_VERSION = 3 as const;
 const MAX_SITE_HOTKEY_BINDINGS = 1000;
@@ -89,139 +97,6 @@ export interface SettingsStorageArea {
 	get(keys: string | string[]): Promise<Record<string, unknown>>;
 	set(items: Record<string, unknown>): Promise<void>;
 	remove?(keys: string | string[]): Promise<void>;
-}
-
-export class SettingsRevisionConflictError extends Error {
-	constructor(readonly currentRevision: number) {
-		super(`Settings revision changed to ${currentRevision}`);
-		this.name = 'SettingsRevisionConflictError';
-	}
-}
-
-export class InvalidSettingsPatchError extends Error {
-	constructor(message: string) {
-		super(message);
-		this.name = 'InvalidSettingsPatchError';
-	}
-}
-
-export class SettingsCapacityError extends InvalidSettingsPatchError {
-	constructor(
-		readonly audioSiteCount: number,
-		readonly audioPresetCount: number,
-		readonly mediaRouteCount = 0,
-	) {
-		super(
-			`Settings snapshot entry limit exceeded: ${audioSiteCount + audioPresetCount + mediaRouteCount} `
-			+ `of ${MAX_SETTINGS_SNAPSHOT_ENTRIES}`,
-		);
-		this.name = 'SettingsCapacityError';
-	}
-}
-
-function normalizeMediaRoutes(candidate: unknown): MediaRouteSettings {
-	const routes: MediaRouteSettings = {};
-	const accept = (
-		rawDomain: unknown,
-		rawEntry: unknown,
-		fallbackSource: 'user' | 'auto' = 'user',
-		rawPathPrefix?: unknown,
-	) => {
-		if (typeof rawDomain !== 'string') return;
-		const explicitPathPrefix = typeof rawPathPrefix === 'string' ? rawPathPrefix : undefined;
-		const scope = explicitPathPrefix !== undefined
-			? normalizeMediaRouteScope(rawDomain, explicitPathPrefix)
-			: parseMediaRouteScopeKey(rawDomain) ?? normalizeMediaRouteScope(rawDomain);
-		const key = scope ? createMediaRouteScopeKey(scope) : null;
-		if (!key) return;
-		let entry: MediaRouteEntry | null = null;
-		if (isMediaRouteEntry(rawEntry)) {
-			entry = rawEntry;
-		} else if (isRecord(rawEntry)) {
-			const route = rawEntry.route === 'direct' || rawEntry.restricted === false ? 'direct'
-				: rawEntry.route === 'capture' || rawEntry.restricted === true ? 'capture' : null;
-			if (route) {
-				entry = {
-					route,
-					source: rawEntry.source === 'auto' ? 'auto' : fallbackSource,
-					updatedAt: Number.isSafeInteger(rawEntry.updatedAt)
-						? Number(rawEntry.updatedAt)
-						: Number.isSafeInteger(rawEntry.addedAt) ? Number(rawEntry.addedAt) : 0,
-				};
-			}
-		} else if (typeof rawEntry === 'string') {
-			entry = { route: 'capture', source: fallbackSource, updatedAt: 0 };
-		}
-		if (!entry) return;
-		const previous = routes[key];
-		if (!previous
-			|| (entry.source === 'user' && previous.source !== 'user')
-			|| (entry.source === previous.source && entry.updatedAt >= previous.updatedAt)) {
-			routes[key] = entry;
-		}
-	};
-
-	if (isMediaRouteSettings(candidate, MAX_SETTINGS_SNAPSHOT_ENTRIES)) {
-		for (const [domain, entry] of Object.entries(candidate)) accept(domain, entry);
-	} else if (Array.isArray(candidate)) {
-		for (const value of candidate) {
-			if (typeof value === 'string') accept(value, value);
-			else if (isRecord(value)) accept(
-				value.domain,
-				value,
-				value.source === 'auto' ? 'auto' : 'user',
-				value.pathPrefix,
-			);
-		}
-	}
-	return routes;
-}
-
-function selectMediaRouteStorageValue(values: Record<string, unknown>): unknown {
-	if (Object.hasOwn(values, MEDIA_ROUTES_KEY)) return values[MEDIA_ROUTES_KEY];
-	for (const key of LEGACY_MEDIA_ROUTE_KEYS) {
-		if (Object.hasOwn(values, key)) return values[key];
-	}
-	return undefined;
-}
-
-function projectMediaRouteEntry(domain: string, entry: MediaRouteEntry): DomainEntry {
-	const fingerprint = createSiteRouteFingerprint(domain);
-	if (!fingerprint) throw new InvalidSettingsPatchError('Invalid media route hostname');
-	return { domain, fingerprint, ...entry };
-}
-
-function projectMediaRouteSnapshot(routes: MediaRouteSettings): RegistrySnapshot {
-	return {
-		entries: Object.entries(routes)
-			.flatMap(([key, entry]) => {
-				const scope = parseMediaRouteScopeKey(key);
-				return scope && !scope.pathPrefix ? [projectMediaRouteEntry(scope.domain, entry)] : [];
-			})
-			.sort((left, right) => left.domain.localeCompare(right.domain)),
-	};
-}
-
-function projectMediaRouteRulesSnapshot(routes: MediaRouteSettings): MediaRouteRulesSnapshot {
-	return {
-		entries: Object.entries(routes)
-			.flatMap(([key, entry]): MediaRouteRuleEntry[] => {
-				const scope = parseMediaRouteScopeKey(key);
-				if (!scope) return [];
-				const fingerprint = createMediaRouteRuleFingerprint(scope);
-				if (!fingerprint) return [];
-				return [{
-					domain: scope.domain,
-					...(scope.pathPrefix ? { pathPrefix: scope.pathPrefix } : {}),
-					fingerprint,
-					...entry,
-				}];
-			})
-			.sort((left, right) => (
-				left.domain.localeCompare(right.domain)
-				|| (left.pathPrefix ?? '').localeCompare(right.pathPrefix ?? '')
-			)),
-	};
 }
 
 function requireSite(

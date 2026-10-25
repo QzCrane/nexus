@@ -1,0 +1,780 @@
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
+import { SPECTRA_PAGE_MEDIA_EVENT, SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE, SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE } from '../../src/shared/page-media-bridge';
+import { acquireSmokeRuntime, browser, collectPageErrors, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, openExtensionClient, patchExtensionSettings, readBadgeText, readContentBootstrapStatus, readContentStatus, submitEffectiveVolume, submitPopupControlIntent, waitForContentBootstrapStatus, waitForContentStatus } from './harness';
+import { prepareSmokeSession, startSmokeSession, teardownSmokeSession } from './harness';
+
+describe('SPECTRA built extension smoke: page-media', () => {
+	beforeAll(async () => {
+		const options = await prepareSmokeSession();
+		const launched = await launchPuppeteerBrowser(options, {
+			owner: 'apps/extension-spectra/test/smoke/page-media.spec.ts',
+			profile: { kind: 'temporary', prefix: 'spectra-smoke-', isolated: true },
+		});
+		await startSmokeSession(launched);
+	}, 60_000);
+
+	afterAll(async () => {
+		await teardownSmokeSession();
+	});
+
+	test('restores cold page-native volume and speed across refresh without showing a badge', async () => {
+		const coldUrl = `${fixtureUrl}?cold-native-refresh=1`;
+		const coldPage = await browser.newPage();
+		const coldErrors: string[] = [];
+		collectPageErrors(coldPage, coldErrors);
+		try {
+			await coldPage.goto(coldUrl, { waitUntil: 'domcontentloaded' });
+			const initialBootstrap = await waitForContentBootstrapStatus(coldUrl);
+			const tabId = await getTabId(coldUrl);
+			expect(initialBootstrap).toMatchObject({ ready: false, runtimeRevision: null });
+			expect(await readBadgeText(tabId)).toBe('');
+
+			await coldPage.evaluate(() => {
+				const media = document.querySelector<HTMLMediaElement>('#v');
+				if (!media) throw new Error('Cold native fixture media is missing');
+				media.volume = 0.64;
+				media.playbackRate = 1.5;
+				media.preservesPitch = false;
+				media.dispatchEvent(new Event('volumechange'));
+				media.dispatchEvent(new Event('ratechange'));
+			});
+
+			await eventually(
+				() => evaluateServiceWorker(async (targetTabId) => {
+					const key = `tab_session_${targetTabId}`;
+					const stored = (await chrome.storage.session.get(key))[key] as {
+						patch?: Record<string, unknown>;
+					} | undefined;
+					return stored?.patch ?? null;
+				}, tabId),
+				(patch) => patch?.volumeBase === 64
+					&& patch.mediaMuted === false
+					&& patch.speed === 1.5
+					&& patch.preservePitch === false,
+				'cold native session projection',
+			);
+			expect(await readContentBootstrapStatus(coldUrl)).toMatchObject({
+				ready: false,
+				runtimeRevision: null,
+			});
+			expect(await readBadgeText(tabId)).toBe('');
+
+			await coldPage.reload({ waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(coldUrl);
+			await eventually(
+				() => coldPage.evaluate(() => {
+					const media = document.querySelector<HTMLMediaElement>('#v');
+					return {
+						volume: media?.volume ?? null,
+						speed: media?.playbackRate ?? null,
+						preservePitch: media?.preservesPitch ?? null,
+					};
+				}),
+				(state) => state.volume !== null
+					&& Math.abs(state.volume - 0.64) < 0.000_001
+					&& state.speed === 1.5
+					&& state.preservePitch === false,
+				'cold native refresh restoration',
+			);
+			expect(await readBadgeText(tabId)).toBe('');
+		} finally {
+			await coldPage.close().catch(() => undefined);
+		}
+		expect(coldErrors).toEqual([]);
+	}, 35_000);
+
+	test('drops a muted recommendation preview but preserves explicit intent for a same-origin detail', async () => {
+		const origin = new URL(fixtureUrl).origin;
+		const recommendationUrl = `${origin}/recommend.html`;
+		const detailUrl = `${origin}/watch/42`;
+		const page = await browser.newPage();
+		const pageErrors: string[] = [];
+		collectPageErrors(page, pageErrors);
+		try {
+			await page.goto(recommendationUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(recommendationUrl);
+			const tabId = await getTabId(recommendationUrl);
+			await page.evaluate(() => {
+				const media = document.querySelector<HTMLMediaElement>('#v');
+				if (!media) throw new Error('Recommendation preview media is missing');
+				media.muted = true;
+				media.dispatchEvent(new Event('volumechange'));
+			});
+			await eventually(
+				() => evaluateServiceWorker(async (targetTabId) => {
+					const key = `tab_session_${targetTabId}`;
+					const stored = (await chrome.storage.session.get(key))[key] as {
+						identity?: { resourceUrl?: string };
+						patch?: Record<string, unknown>;
+					} | undefined;
+					return stored ?? null;
+				}, tabId),
+				(stored) => stored?.identity?.resourceUrl === recommendationUrl
+					&& stored.patch?.mediaMuted === true,
+				'recommendation mute session projection',
+			);
+			await page.bringToFront();
+			const explicit = await submitPopupControlIntent(tabId, {
+				patch: { speed: 1.5 },
+			});
+			if (!explicit.ok) {
+				throw new Error(explicit.error?.message ?? 'Unable to set explicit recommendation speed');
+			}
+			await eventually(
+				() => evaluateServiceWorker(async (targetTabId) => {
+					const key = `tab_session_${targetTabId}`;
+					const stored = (await chrome.storage.session.get(key))[key] as {
+						portablePatch?: Record<string, unknown>;
+					} | undefined;
+					return stored?.portablePatch ?? null;
+				}, tabId),
+				(patch) => patch?.speed === 1.5,
+				'explicit cross-resource session projection',
+			);
+
+			await page.goto(detailUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(detailUrl);
+			await eventually(
+				() => page.evaluate(() => {
+					const media = document.querySelector<HTMLMediaElement>('#v');
+					return {
+						muted: media?.muted ?? null,
+						speed: media?.playbackRate ?? null,
+					};
+				}),
+				(state) => state.muted === false && state.speed === 1.5,
+				'detail document keeps native mute and explicit speed',
+			);
+			const detailProjection = await evaluateServiceWorker(async (targetTabId) => {
+				const key = `tab_session_${targetTabId}`;
+				return (await chrome.storage.session.get(key))[key] as {
+					identity?: { resourceUrl?: string };
+					patch?: Record<string, unknown>;
+					portablePatch?: Record<string, unknown>;
+				} | undefined;
+			}, tabId);
+			expect(detailProjection).toMatchObject({
+				identity: { resourceUrl: detailUrl },
+				patch: { speed: 1.5 },
+				portablePatch: { speed: 1.5 },
+			});
+			expect(detailProjection?.patch).toEqual({ speed: 1.5 });
+		} finally {
+			await page.close().catch(() => undefined);
+		}
+		expect(pageErrors).toEqual([]);
+	}, 35_000);
+
+	test('tracks SPA media additions and removals without activating Capture', async () => {
+		await acquireSmokeRuntime();
+		await fixturePage.evaluate(() => {
+			document.querySelector('#v')?.remove();
+			history.pushState({}, '', '/spa/empty');
+		});
+		expect((await waitForContentStatus((status) => !status.hasAudio)).hasAudio).toBe(false);
+
+		await fixturePage.evaluate(() => {
+			const container = document.createElement('section');
+			container.id = 'spa-media';
+			const video = document.createElement('video');
+			video.id = 'v';
+			video.controls = true;
+			video.setAttribute('aria-label', 'SPA smoke test video');
+			container.append(video);
+			document.body.append(container);
+			history.pushState({}, '', '/spa/media');
+		});
+		expect((await waitForContentStatus((status) => status.hasAudio)).hasAudio).toBe(true);
+		expect(await fixturePage.evaluate(() => {
+			return (window as Window & { __spectraAudioContextCount?: number })
+				.__spectraAudioContextCount;
+		})).toBe(0);
+
+		const initialGeneration = (await readContentStatus()).generation ?? 0;
+		await fixturePage.evaluate(() => history.pushState({}, '', '/spa/media?route=2'));
+		const queryGeneration = (await waitForContentStatus(
+			(status) => (status.generation ?? 0) > initialGeneration,
+		)).generation ?? 0;
+		await fixturePage.evaluate(() => { location.hash = 'details'; });
+		const hashGeneration = (await waitForContentStatus(
+			(status) => (status.generation ?? 0) > queryGeneration,
+		)).generation ?? 0;
+		expect(hashGeneration).toBeGreaterThan(queryGeneration);
+		expect(await fixturePage.evaluate(() => location.search)).toBe('?route=2');
+		expect(await fixturePage.evaluate(() => location.hash)).toBe('#details');
+	});
+
+	test('discovers one exact page-media controller for semantic volume, mute, and speed', async () => {
+		const state = await fixturePage.evaluate(({ eventName, requestAttribute, resultAttribute }) => {
+			const video = document.querySelector<HTMLVideoElement>('#v');
+			const player = video?.parentElement;
+			const outerPlayer = player?.parentElement;
+			if (!video || !player || !outerPlayer) throw new Error('SPA video is missing');
+			let volumeBase = 100;
+			let mediaMuted = false;
+			let speed = 1;
+			const volumeController = { video } as {
+				video: HTMLVideoElement;
+				getVolume(): number;
+				setVolume(value: number): void;
+			};
+			const controller = player as HTMLElement & {
+				spectraExactController?: typeof volumeController;
+				spectraRateController?: {
+					video: HTMLVideoElement;
+					playbackRate: number;
+					setPlaybackRateByUser(value: number): void;
+				};
+				isMuted(): boolean;
+				setMuted(value: boolean): void;
+			};
+			volumeController.getVolume = () => volumeBase;
+			volumeController.setVolume = (value) => {
+				volumeBase = value;
+				video.volume = value / 100 * 0.6131;
+			};
+			controller.spectraExactController = volumeController;
+			controller.isMuted = () => mediaMuted;
+			controller.setMuted = (value) => {
+				mediaMuted = value;
+				video.muted = value;
+			};
+			const rateController = {
+				video,
+				playbackRate: speed,
+				setPlaybackRateByUser(value: number) {
+					this.playbackRate = value;
+					speed = value;
+					video.playbackRate = value;
+				},
+			};
+			controller.spectraRateController = rateController;
+			const decoyState = { volumeBase: 17, mediaMuted: true, speed: 2.5, writes: 0 };
+			const decoy = outerPlayer as HTMLElement & {
+				getVolume(): number;
+				setVolume(value: number): void;
+				isMuted(): boolean;
+				setMuted(value: boolean): void;
+				getPlaybackRate(): number;
+				setPlaybackRate(value: number): void;
+			};
+			decoy.getVolume = () => decoyState.volumeBase;
+			decoy.setVolume = (value) => { decoyState.volumeBase = value; decoyState.writes += 1; };
+			decoy.isMuted = () => decoyState.mediaMuted;
+			decoy.setMuted = (value) => { decoyState.mediaMuted = value; decoyState.writes += 1; };
+			decoy.getPlaybackRate = () => decoyState.speed;
+			decoy.setPlaybackRate = (value) => { decoyState.speed = value; decoyState.writes += 1; };
+			video.volume = 0.6131;
+
+			const transact = (operation: 'read' | 'write', field: string, value?: number | boolean) => {
+				const requestId = crypto.randomUUID();
+				video.setAttribute(requestAttribute, JSON.stringify({ requestId, operation, field, value }));
+				video.dispatchEvent(new Event(eventName));
+				const result = JSON.parse(video.getAttribute(resultAttribute) ?? '{}');
+				video.removeAttribute(requestAttribute);
+				video.removeAttribute(resultAttribute);
+				return result;
+			};
+			const initialVolume = transact('read', 'volumeBase');
+			const writtenVolume = transact('write', 'volumeBase', 50);
+			const writtenMute = transact('write', 'mediaMuted', true);
+			const writtenSpeed = transact('write', 'speed', 1.5);
+			const result = {
+				initialVolume,
+				writtenVolume,
+				writtenMute,
+				writtenSpeed,
+				page: { volumeBase, mediaMuted, speed },
+				decoy: decoyState,
+				native: { volume: video.volume, muted: video.muted, speed: video.playbackRate },
+			};
+			Reflect.deleteProperty(controller, 'spectraExactController');
+			Reflect.deleteProperty(controller, 'spectraRateController');
+			for (const key of ['isMuted', 'setMuted'] as const) {
+				Reflect.deleteProperty(controller, key);
+			}
+			for (const key of [
+				'getVolume', 'setVolume', 'isMuted', 'setMuted', 'getPlaybackRate', 'setPlaybackRate',
+			] as const) Reflect.deleteProperty(decoy, key);
+			video.volume = 1;
+			video.muted = false;
+			video.playbackRate = 1;
+			return result;
+		}, {
+			eventName: SPECTRA_PAGE_MEDIA_EVENT,
+			requestAttribute: SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE,
+			resultAttribute: SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE,
+		});
+		expect(state.initialVolume).toMatchObject({ supported: true, actual: 100 });
+		expect(state.writtenVolume).toMatchObject({ supported: true, actual: 50 });
+		expect(state.writtenMute).toMatchObject({ supported: true, actual: true });
+		expect(state.writtenSpeed).toMatchObject({ supported: true, actual: 1.5 });
+		expect(state.page).toEqual({ volumeBase: 50, mediaMuted: true, speed: 1.5 });
+		expect(state.decoy).toEqual({ volumeBase: 17, mediaMuted: true, speed: 2.5, writes: 0 });
+		expect(state.native).toEqual({ volume: 0.30655, muted: true, speed: 1.5 });
+	});
+
+	test('falls through a capped page controller and acknowledges high DOM playback speed once', async () => {
+		const cappedUrl = `${fixtureUrl}?page-speed-cap=2`;
+		const cappedPage = await browser.newPage();
+		const extensionClient = await openExtensionClient();
+		try {
+			await cappedPage.goto(cappedUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(cappedUrl);
+			await cappedPage.bringToFront();
+			const tabId = await getTabId(cappedUrl);
+			const acknowledgement = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 4 } },
+			);
+			expect(acknowledgement).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							phase: 'applied',
+							strategy: 'dom-native',
+							actual: 4,
+						},
+					},
+				},
+			});
+			await eventually(
+				() => cappedPage.evaluate(() => {
+					const video = document.querySelector<HTMLVideoElement>('#v');
+					const state = (window as Window & {
+						__spectraPageMediaState?: { speed: number };
+					}).__spectraPageMediaState;
+					return {
+						pageSpeed: state?.speed ?? null,
+						domSpeed: video?.playbackRate ?? null,
+					};
+				}),
+				(state) => state.pageSpeed === 1 && state.domSpeed === 4,
+				'high-speed DOM fallback beyond the page controller range',
+			);
+			const snapshot = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.snapshot.get',
+					payload: { tabId: targetTabId },
+				})
+			), tabId);
+			expect(snapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							strategy: 'dom-native',
+							actual: 4,
+						},
+					},
+				},
+			});
+		} finally {
+			await extensionClient.close();
+			await cappedPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('automatically restores speed through a controller-backed same-document SPA modal', async () => {
+		const spaUrl = `${fixtureUrl}?spa-controller-shell=1`;
+		const spaPage = await browser.newPage();
+		const extensionClient = await openExtensionClient();
+		try {
+			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(spaUrl);
+			await spaPage.bringToFront();
+			const tabId = await getTabId(spaUrl);
+			const seeded = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 2 } },
+			);
+			expect(seeded).toMatchObject({
+				ok: true,
+				data: { fields: { speed: { phase: 'applied', actual: 2 } } },
+			});
+
+			const documentToken = await spaPage.evaluate(() => {
+				const previous = document.querySelector<HTMLVideoElement>('#v');
+				if (!previous) throw new Error('SPA shell video is missing');
+				const source = previous.currentSrc || previous.src;
+				previous.remove();
+				const container = document.createElement('div') as HTMLDivElement & {
+					xgplayer?: {
+						video: HTMLVideoElement;
+						playbackRate: number;
+						setPlaybackRateByUser(value: number): void;
+					};
+				};
+				container.style.width = '640px';
+				container.style.height = '360px';
+				const video = document.createElement('video');
+				video.id = 'v';
+				video.muted = true;
+				video.src = source;
+				video.style.width = '640px';
+				video.style.height = '360px';
+				const state = { speed: 1, writes: 0 };
+				container.xgplayer = {
+					video,
+					playbackRate: 1,
+					setPlaybackRateByUser(value) {
+						this.playbackRate = value;
+						state.speed = value;
+						state.writes += 1;
+						video.playbackRate = value;
+					},
+				};
+				container.append(video);
+				document.body.append(container);
+				const token = crypto.randomUUID();
+				(window as Window & {
+					__spectraPageMediaState?: typeof state;
+					__spectraSpaDocumentToken?: string;
+				}).__spectraPageMediaState = state;
+				(window as Window & {
+					__spectraSpaDocumentToken?: string;
+				}).__spectraSpaDocumentToken = token;
+				history.pushState({}, '', '/spa-modal?modal_id=spectra-fixture');
+				return token;
+			});
+			await eventually(
+				() => spaPage.evaluate(() => {
+					const video = document.querySelector<HTMLVideoElement>('#v');
+					const scope = window as Window & {
+						__spectraPageMediaState?: { speed: number; writes: number };
+						__spectraSpaDocumentToken?: string;
+					};
+					return {
+						documentToken: scope.__spectraSpaDocumentToken ?? null,
+						pageSpeed: scope.__spectraPageMediaState?.speed ?? null,
+						writes: scope.__spectraPageMediaState?.writes ?? null,
+						domSpeed: video?.playbackRate ?? null,
+						url: location.href,
+					};
+				}),
+				(state) => state.documentToken === documentToken
+					&& state.pageSpeed === 2
+					&& state.writes === 1
+					&& state.domSpeed === 2
+					&& state.url.includes('/spa-modal?modal_id='),
+				'automatic same-document SPA speed restore through the page controller',
+				8_000,
+			);
+			const snapshot = await extensionClient.evaluate(async (targetTabId) => (
+				chrome.runtime.sendMessage({
+					protocolVersion: 2,
+					requestId: crypto.randomUUID(),
+					tabId: targetTabId,
+					type: 'spectra.control.snapshot.get',
+					payload: { tabId: targetTabId },
+				})
+			), tabId);
+			expect(snapshot).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							phase: 'applied',
+							strategy: 'page-native',
+							actual: 2,
+						},
+					},
+				},
+			});
+		} finally {
+			await extensionClient.close();
+			await spaPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test.each([true, false])('replays speed when a pre-rendered same-document SPA modal becomes active (hide feed: %s)', async (hideFeed) => {
+		const spaUrl = `${fixtureUrl}?spa-prerendered-modal=1`;
+		const spaPage = await browser.newPage();
+		try {
+			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(spaUrl);
+			await spaPage.bringToFront();
+			const tabId = await getTabId(spaUrl);
+			await spaPage.evaluate(() => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (!feed) throw new Error('SPA feed video is missing');
+				feed.style.width = '320px';
+				feed.style.height = '180px';
+				const modal = document.createElement('video');
+				modal.id = 'modal-video';
+				modal.style.display = 'none';
+				modal.style.width = '1280px';
+				modal.style.height = '720px';
+				const rateLabel = document.createElement('span');
+				rateLabel.id = 'modal-rate-label';
+				rateLabel.textContent = '1.0x';
+				modal.addEventListener('ratechange', () => {
+					rateLabel.textContent = `${modal.defaultPlaybackRate.toFixed(1)}x`;
+				});
+				document.body.append(modal, rateLabel);
+			});
+
+			const restored = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 2 } },
+			);
+			expect(restored).toMatchObject({
+				ok: true,
+				data: { fields: { speed: { phase: 'applied', actual: 2 } } },
+			});
+			expect(await spaPage.evaluate(() => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				const modal = document.querySelector<HTMLVideoElement>('#modal-video');
+				return {
+					feedRate: feed?.playbackRate ?? null,
+					modalRate: modal?.playbackRate ?? null,
+					label: document.querySelector('#modal-rate-label')?.textContent ?? null,
+				};
+			})).toEqual({ feedRate: 2, modalRate: 1, label: '1.0x' });
+			await spaPage.click('#v');
+
+			await spaPage.evaluate((hidePrevious) => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (feed) {
+					feed.pause();
+					if (hidePrevious) feed.style.display = 'none';
+				}
+				const modal = document.querySelector<HTMLVideoElement>('#modal-video');
+				if (!modal) throw new Error('SPA modal video is missing');
+				modal.style.display = 'block';
+				history.pushState({}, '', '/spa-modal?modal_id=spectra-fixture');
+				// A pre-rendered player can become the active source without adding a
+				// new <video>. Its native play lifecycle is therefore the exact media
+				// identity boundary for desired-state replay.
+				modal.dispatchEvent(new Event('play'));
+			}, hideFeed);
+			await eventually(
+				() => spaPage.evaluate(() => {
+					const modal = document.querySelector<HTMLVideoElement>('#modal-video');
+					return {
+						currentRate: modal?.playbackRate ?? null,
+						defaultRate: modal?.defaultPlaybackRate ?? null,
+						label: document.querySelector('#modal-rate-label')?.textContent ?? null,
+						url: location.href,
+					};
+				}),
+				(state) => state.currentRate === 2
+					&& state.defaultRate === 2
+					&& state.label === '2.0x'
+					&& state.url.includes('/spa-modal?modal_id='),
+				'pre-rendered SPA modal speed and page-UI projection',
+				8_000,
+			);
+		} finally {
+			await spaPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('upgrades restored DOM speed when a same-document SPA modal controller mounts later', async () => {
+		const spaUrl = `${fixtureUrl}?spa-speed-shell=1`;
+		const spaPage = await browser.newPage();
+		try {
+			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(spaUrl);
+			await spaPage.bringToFront();
+			const tabId = await getTabId(spaUrl);
+			const documentToken = await spaPage.evaluate(() => {
+				const token = crypto.randomUUID();
+				(window as Window & { __spectraSpaDocumentToken?: string })
+					.__spectraSpaDocumentToken = token;
+				return token;
+			});
+			const restored = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 2 } },
+			);
+			expect(restored).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							phase: 'applied',
+							strategy: 'dom-native',
+							actual: 2,
+						},
+					},
+				},
+			});
+
+			const mounted = await spaPage.evaluate((expectedDocumentToken) => {
+				const video = document.querySelector<HTMLVideoElement>('#v');
+				const host = video?.parentElement as (HTMLElement & {
+					getPlaybackRate?: () => number;
+					setPlaybackRate?: (value: number) => void;
+				}) | null;
+				if (!video || !host) throw new Error('SPA modal speed fixture is missing');
+				const state = { speed: 1, writes: 0 };
+				(window as Window & {
+					__spectraPageMediaState?: typeof state;
+				}).__spectraPageMediaState = state;
+				host.getPlaybackRate = () => state.speed;
+				host.setPlaybackRate = (value) => {
+					state.speed = value;
+					state.writes += 1;
+					video.playbackRate = value;
+				};
+				history.pushState({}, '', '/spa-modal?modal_id=spectra-fixture');
+				return {
+					documentToken: (window as Window & {
+						__spectraSpaDocumentToken?: string;
+					}).__spectraSpaDocumentToken,
+					expectedDocumentToken,
+					pageSpeed: state.speed,
+					domSpeed: video.playbackRate,
+					url: location.href,
+				};
+			}, documentToken);
+			expect(mounted).toMatchObject({
+				documentToken,
+				expectedDocumentToken: documentToken,
+				pageSpeed: 1,
+				domSpeed: 2,
+			});
+			expect(mounted.url).toContain('/spa-modal?modal_id=');
+
+			const adjusted = await submitPopupControlIntent(
+				tabId,
+				{ patch: { speed: 2.5 } },
+			);
+			expect(adjusted).toMatchObject({
+				ok: true,
+				data: {
+					fields: {
+						speed: {
+							phase: 'applied',
+							strategy: 'page-native',
+							actual: 2.5,
+						},
+					},
+				},
+			});
+			await eventually(
+				() => spaPage.evaluate(() => {
+					const video = document.querySelector<HTMLVideoElement>('#v');
+					const state = (window as Window & {
+						__spectraPageMediaState?: { speed: number; writes: number };
+						__spectraSpaDocumentToken?: string;
+					}).__spectraPageMediaState;
+					return {
+						documentToken: (window as Window & {
+							__spectraSpaDocumentToken?: string;
+						}).__spectraSpaDocumentToken,
+						pageSpeed: state?.speed ?? null,
+						writes: state?.writes ?? null,
+						domSpeed: video?.playbackRate ?? null,
+					};
+				}),
+				(state) => state.documentToken === documentToken
+					&& state.pageSpeed === 2.5
+					&& state.writes === 1
+					&& state.domSpeed === 2.5,
+				'same-document SPA page-controller writer upgrade',
+			);
+		} finally {
+			await spaPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('keeps native volume on the visible live stream when a hidden preview starts and changes properties', async () => {
+		const settingsClient = await openExtensionClient('options.html');
+		const settings = await patchExtensionSettings(settingsClient, {
+			scope: 'global', changes: { visualizerEnabled: false },
+		});
+		const page = await browser.newPage();
+		try {
+			await page.goto(`${fixtureUrl}?live-preview-owner=1`, { waitUntil: 'load' });
+			await page.evaluate(async () => {
+				const video = document.querySelector<HTMLVideoElement>('#v');
+				if (!video) throw new Error('Missing main video');
+				video.style.cssText = 'width:640px;height:360px';
+				const canvas = document.createElement('canvas');
+				canvas.width = 640;
+				canvas.height = 360;
+				canvas.getContext('2d')?.fillRect(0, 0, 640, 360);
+				video.srcObject = canvas.captureStream(1);
+				await video.play();
+			});
+			await acquireSmokeRuntime(page.url(), 'live-preview-owner');
+			const tabId = await getTabId(page.url());
+			await page.bringToFront();
+			await submitEffectiveVolume(tabId, 80);
+			await page.evaluate(async () => {
+				const main = document.querySelector<HTMLVideoElement>('#v');
+				if (!(main?.srcObject instanceof MediaStream)) throw new Error('Missing live stream');
+				const preview = document.createElement('video');
+				preview.id = 'background-preview';
+				preview.style.display = 'none';
+				preview.muted = true;
+				preview.srcObject = main.srcObject.clone();
+				document.body.append(preview);
+				await preview.play();
+				preview.volume = 0.25;
+				preview.playbackRate = 1.5;
+				await new Promise<void>((resolve) => preview.addEventListener('volumechange', () => resolve(), { once: true }));
+			});
+			await page.bringToFront();
+			await submitEffectiveVolume(tabId, 40);
+			expect(await page.evaluate(() => ({
+				main: document.querySelector<HTMLVideoElement>('#v')?.volume,
+				preview: document.querySelector<HTMLVideoElement>('#background-preview')?.volume,
+			}))).toEqual({ main: 0.4, preview: 0.25 });
+		} finally {
+			await page.close();
+			await patchExtensionSettings(settingsClient, {
+				scope: 'global', changes: { visualizerEnabled: settings.previous.globalSettings.visualizerEnabled },
+			});
+			await settingsClient.close();
+		}
+	}, 25_000);
+
+	test('fullscreen lifecycle preserves the site volume, mute, and playback rate', async () => {
+		const preserved = await fixturePage.evaluate(async () => {
+			const video = document.querySelector<HTMLVideoElement>('#v');
+			if (!video) throw new Error('SPA video is missing');
+			video.volume = 0.37;
+			video.muted = true;
+			video.playbackRate = 0.75;
+			document.dispatchEvent(new Event('fullscreenchange'));
+			document.dispatchEvent(new Event('webkitfullscreenchange'));
+			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+			return {
+				volume: video.volume,
+				muted: video.muted,
+				playbackRate: video.playbackRate,
+				audioContexts: (window as Window & { __spectraAudioContextCount?: number })
+					.__spectraAudioContextCount,
+			};
+		});
+		expect(preserved).toEqual({
+			volume: 0.37,
+			muted: true,
+			playbackRate: 0.75,
+			audioContexts: 0,
+		});
+		const status = await readContentStatus();
+		expect(status).toMatchObject({
+			desiredMode: 'bypass',
+			actualMode: 'bypass',
+			mode: 'bypass',
+			phase: 'idle',
+			lastError: null,
+			config: {
+				volume: 37,
+				volumeBase: 37,
+				boost: 1,
+				muted: true,
+				speed: 0.75,
+			},
+		});
+	});
+});

@@ -481,7 +481,7 @@ export function runReleaseSmoke({ stage = false, promote = false, archivePath: r
 		const smokeEnvironment = { ...process.env, SPECTRA_EXTENSION_DIR: extractionDir };
 		delete smokeEnvironment[RELEASE_RECEIPT_PATH_ENV];
 		delete smokeEnvironment[RELEASE_RECEIPT_CAPABILITY_ENV];
-		const result = spawnSync(process.execPath, ['test', 'test/smoke.spec.ts'], {
+		const result = spawnSync(process.execPath, ['test', 'test/smoke'], {
 			cwd: projectDir,
 			env: smokeEnvironment,
 			stdio: 'inherit',

@@ -1,5 +1,7 @@
 // goal: defines localized hotkey action names for Korean locale
-export const ko: Record<string, string> = {
+import type { HotkeyAction } from '@nexus/contracts';
+
+export const ko: Partial<Record<HotkeyAction, string>> = {
 	none: '(미설정)', play_pause: '재생/일시정지', seek_forward_5s: '5초 앞으로',
 	seek_forward_10s: '10초 앞으로', seek_forward_30s: '30초 앞으로',
 	seek_backward_5s: '5초 뒤로', seek_backward_10s: '10초 뒤로',

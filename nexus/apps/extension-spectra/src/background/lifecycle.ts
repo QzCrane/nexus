@@ -1,9 +1,6 @@
 // goal: manages chrome tab lifecycle events to maintain accurate tab prioritization and state cleanup
 
-import {
-	SPECTRA_PROTOCOL_VERSION,
-	type SpectraEventEnvelope,
-} from '@nexus/contracts';
+import { createSpectraEvent } from '@nexus/contracts';
 
 import {
 	cleanupTabState,
@@ -84,13 +81,10 @@ interface SameDocumentNavigationDetails {
 // installed in an isolated content world cannot observe page-world pushState.
 export function notifySameDocumentNavigation(details: SameDocumentNavigationDetails): void {
 	if (!isTopLevelDocumentNavigation(details)) return;
-	const event: SpectraEventEnvelope<'spectra.navigation.changed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.navigation.changed',
+	const event = createSpectraEvent('spectra.navigation.changed', { url: details.url }, {
 		tabId: details.tabId,
 		documentId: details.documentId,
-		payload: { url: details.url },
-	};
+	});
 	void chrome.tabs.sendMessage(
 		details.tabId,
 		event,
@@ -130,13 +124,10 @@ export function setupLifecycleListeners(): void {
 	chrome.webNavigation.onCommitted.addListener((details) => {
 		if (!isTopLevelDocumentNavigation(details) || !details.documentId) return;
 		bindAudioSessionDocument(details.tabId, details.documentId);
-		const navigationEvent: SpectraEventEnvelope<'spectra.navigation.changed'> = {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			type: 'spectra.navigation.changed',
+		const navigationEvent = createSpectraEvent('spectra.navigation.changed', { url: details.url }, {
 			tabId: details.tabId,
 			documentId: details.documentId,
-			payload: { url: details.url },
-		};
+		});
 		void chrome.runtime.sendMessage(navigationEvent).catch(() => undefined);
 		let identity: ReturnType<typeof storage.tabSession.identity>;
 		try {

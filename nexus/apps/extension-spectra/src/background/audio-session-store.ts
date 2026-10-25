@@ -10,13 +10,12 @@ import {
 	normalizeLegacyAudioConfig,
 	resolveAudioVolume,
 	splitEffectiveVolume,
-	SPECTRA_PROTOCOL_VERSION,
+	createSpectraEvent,
 	type AudioConfig,
 	type LegacyAudioConfig,
 	type AudioSessionPhase,
 	type AudioSessionSnapshot,
 	type SpectraAudioMode,
-	type SpectraEventEnvelope,
 	type TabSessionIdentity,
 } from '@nexus/contracts';
 import { createKeyedSerializedQueue } from '@nexus/kernel';
@@ -352,14 +351,11 @@ function normalizeConfig(value: Partial<AudioConfig> | undefined): AudioConfig {
 }
 
 async function broadcast(snapshot: AudioSessionSnapshot): Promise<void> {
-	const event: SpectraEventEnvelope<'spectra.audio.session.changed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.audio.session.changed',
+	const event = createSpectraEvent('spectra.audio.session.changed', snapshot, {
 		tabId: snapshot.tabId,
 		documentId: snapshot.documentId,
 		generation: snapshot.generation,
-		payload: snapshot,
-	};
+	});
 	await chrome.runtime.sendMessage(event).catch((error: unknown) => {
 		// Extension pages are optional receivers; retain the diagnostic without
 		// turning their absence or failure into an audio-session failure.

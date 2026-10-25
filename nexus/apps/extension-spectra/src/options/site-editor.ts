@@ -23,14 +23,22 @@ let settings: HotkeySettings = { ...DEFAULT_HOTKEY_SETTINGS };
 let selectedSite: string | null = null;
 let siteInputErrorKey: 'invalid_domain' | 'site_exists' | null = null;
 let pendingDeleteDomain: string | null = null;
+let listenersBound = false;
+let langBound = false;
 
 // eff: initializes the site editor by loading saved configurations and populating the domain selector
+// inv: retry refreshes rendered state but never duplicates static listeners or language projection
 export async function initSiteEditor(initialSnapshot?: SettingsUiSnapshot): Promise<void> {
 	if (initialSnapshot) acceptSettingsSnapshot(initialSnapshot);
 	else await loadSettings();
 	renderLegacyWarning();
 	renderSiteSelector();
-	bindEvents();
+	if (!listenersBound) {
+		listenersBound = true;
+		bindEvents();
+	}
+	if (langBound) return;
+	langBound = true;
 	onLangChange(() => {
 		renderLegacyWarning();
 		renderBindings();

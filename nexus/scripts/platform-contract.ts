@@ -276,6 +276,7 @@ export function configProblems(repositoryRoot) {
 	for (const required of [
 		'* text=auto eol=lf',
 		'*.png -text',
+		'nexus/apps/extension-spectra/vendor/peerjs/peerjs.min.js -text',
 		'remote-site/vendor/peerjs.min.js -text',
 	]) {
 		if (!attributes.split('\n').includes(required)) {

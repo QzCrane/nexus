@@ -92,24 +92,43 @@ describe('strict Biome report contract', () => {
 		const repositoryRoot = resolve(fixtureRoot, 'repository');
 		const sourceRoot = resolve(repositoryRoot, 'src');
 		const skippedRoot = resolve(repositoryRoot, '.turbo');
+		const vendorRoot = resolve(repositoryRoot, 'vendor');
 		const outside = resolve(fixtureRoot, 'outside');
 		mkdirSync(sourceRoot, { recursive: true });
 		mkdirSync(skippedRoot);
+		mkdirSync(vendorRoot);
 		mkdirSync(outside);
 		writeFileSync(resolve(sourceRoot, 'valid.mts'), 'export const valid = true;\n');
 		writeFileSync(resolve(sourceRoot, 'valid.cts'), 'exports.valid = true;\n');
 		writeFileSync(resolve(sourceRoot, 'valid.mjs'), 'export const validMjs = true;\n');
+		writeFileSync(resolve(sourceRoot, 'notes.md'), '# notes\n');
 		writeFileSync(resolve(skippedRoot, 'omitted.ts'), 'export const omitted = true;\n');
+		writeFileSync(
+			resolve(vendorRoot, 'peerjs.min.js'),
+			'export const vendored = true;\n',
+		);
 		try {
 			expect(
 				collectBiomeFiles(['src'], repositoryRoot, repositoryRoot),
 			).toHaveLength(3);
-			expect(() =>
+			// biome.json owns the exclusion set. A path inside vendor/dist contributes
+			// no expected files whether it arrives as a directory or an explicit file;
+			// otherwise the expected count would disagree with Biome's real scan.
+			expect(
+				collectBiomeFiles(['.turbo'], repositoryRoot, repositoryRoot),
+			).toEqual([]);
+			expect(
+				collectBiomeFiles(['vendor/peerjs.min.js'], repositoryRoot, repositoryRoot),
+			).toEqual([]);
+			expect(
 				collectBiomeFiles(
-					['src', '.turbo'],
+					['src', 'vendor/peerjs.min.js'],
 					repositoryRoot,
 					repositoryRoot,
 				),
+			).toHaveLength(3);
+			expect(() =>
+				collectBiomeFiles(['src/notes.md'], repositoryRoot, repositoryRoot),
 			).toThrow('contributes no supported lint files');
 
 			symlinkSync(

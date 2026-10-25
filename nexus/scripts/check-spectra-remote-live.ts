@@ -8,6 +8,7 @@ export const REMOTE_SITE_BASE_URL_ENV = 'SPECTRA_REMOTE_SITE_BASE_URL';
 export const REMOTE_SITE_ASSET_PATHS = Object.freeze([
 	'index.html',
 	'app.js',
+	'dist/protocol.js',
 	'styles.css',
 	'vendor/peerjs.min.js',
 ]);
@@ -41,6 +42,12 @@ const remoteSiteResources = Object.freeze([
 		assetPath: 'app.js',
 		localAssetPath: 'app.js',
 		requestPath: 'app.js',
+		contentTypes: Object.freeze(['application/javascript', 'text/javascript']),
+	},
+	{
+		assetPath: 'dist/protocol.js',
+		localAssetPath: 'dist/protocol.js',
+		requestPath: 'dist/protocol.js',
 		contentTypes: Object.freeze(['application/javascript', 'text/javascript']),
 	},
 	{

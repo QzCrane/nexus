@@ -1,10 +1,10 @@
 // goal: load the local opaque PeerJS runtime only for an explicit Remote create
 // rule: one offscreen-local single flight; no network fallback or polling
 
-import type Peer from '../../../../../remote-site/vendor/peerjs.min.js';
+import type Peer from '../../vendor/peerjs/peerjs.min.js';
 
-export type { default as Peer } from '../../../../../remote-site/vendor/peerjs.min.js';
-export type { DataConnection } from '../../../../../remote-site/vendor/peerjs.min.js';
+export type { default as Peer } from '../../vendor/peerjs/peerjs.min.js';
+export type { DataConnection } from '../../vendor/peerjs/peerjs.min.js';
 
 const PEER_VENDOR_LOAD_TIMEOUT_MS = 10_000;
 

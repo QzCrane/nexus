@@ -50,6 +50,7 @@ import {
 	isSpectraDefaultHotkeyTriggerPayload,
 	isSettingsSnapshot,
 	SPECTRA_PROTOCOL_VERSION,
+	createSpectraRequest,
 	hasValidEventEnvelopeBase,
 	hasValidRequestEnvelopeBase,
 	isProtocolRecord,
@@ -68,6 +69,7 @@ import type {
 	SpectraRequestPayload,
 	SpectraRequestType,
 	SpectraResponse,
+	SpectraWireContext,
 } from '@nexus/contracts';
 
 export const BACKGROUND_REQUEST_TYPES = [
@@ -287,30 +289,14 @@ export function rpcFailure(
 
 export const RPC_INVALID_REQUEST = 'invalid_request' as const;
 
-export interface BackgroundRequestContext {
-	tabId?: number;
-	documentId?: string;
-	generation?: number;
-}
-
-function createRequestId(): string {
-	return typeof crypto.randomUUID === 'function'
-		? crypto.randomUUID()
-		: `${Date.now().toString(36)}-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`;
-}
+export type BackgroundRequestContext = SpectraWireContext;
 
 export function createBackgroundEnvelope<T extends SpectraRequestType>(
 	type: T,
 	payload: SpectraRequestPayload<T>,
 	context: BackgroundRequestContext = {},
 ): SpectraRequestEnvelope<T> {
-	return {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: createRequestId(),
-		type,
-		payload,
-		...context,
-	} as SpectraRequestEnvelope<T>;
+	return createSpectraRequest(type, payload, context);
 }
 
 // One bounded entry per canonical route, never per URL, tab, document or request.

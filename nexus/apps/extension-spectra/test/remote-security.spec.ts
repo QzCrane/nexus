@@ -18,6 +18,8 @@ import {
 	verifyRemoteProof,
 } from '../src/remote/protocol';
 
+const svgDataUrl = (svg: string): string => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+
 describe('remote protocol v3', () => {
 	test('uses independent 128-bit tokens and puts the secret only in the URL fragment', () => {
 		const pairing = createRemotePairing(1_000);
@@ -51,8 +53,17 @@ describe('remote protocol v3', () => {
 		// metadata field in the generated image.
 		expect(svg).not.toContain(pairing.secret);
 		expect(isSafeRemoteQrDataUrl(qr)).toBe(true);
-		expect(isSafeRemoteQrDataUrl('data:image/svg+xml;charset=utf-8,%3Csvg%20onload%3Dalert(1)%3E%3C%2Fsvg%3E')).toBe(false);
-		expect(isSafeRemoteQrDataUrl('https://remote.example.test/qr.svg')).toBe(false);
+		const unsafeValues = [
+			'https://remote.example.test/qr.svg',
+			'data:text/html;charset=utf-8,%3Csvg%3E',
+			'data:image/svg+xml;charset=utf-8,%3Csvg%20onload%3Dalert(1)%3E%3C%2Fsvg%3E',
+			svgDataUrl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><script>alert(1)</script><path d="M0 0h1"/></svg>'),
+			svgDataUrl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><foreignObject/><path d="M0 0h1"/></svg>'),
+			svgDataUrl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><path style="fill:red" d="M0 0h1"/></svg>'),
+			svgDataUrl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><path fill="url(https://evil.test)" d="M0 0h1"/></svg>'),
+			svgDataUrl('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 21 21"><text>x</text><path d="M0 0h1"/></svg>'),
+		];
+		for (const value of unsafeValues) expect(isSafeRemoteQrDataUrl(value)).toBe(false);
 	});
 
 	test('accepts only the correct HMAC proof', async () => {
@@ -762,10 +773,10 @@ describe('remote-site supply chain and metadata privacy', () => {
 		const html = readFileSync(resolve(root, 'index.html'), 'utf8');
 		const headers = readFileSync(resolve(root, '_headers'), 'utf8');
 		const remoteApp = readFileSync(resolve(root, 'app.js'), 'utf8');
-		const vendoredPeer = readFileSync(resolve(root, 'vendor/peerjs.min.js'), 'utf8');
-		const vendoredPeerTypes = readFileSync(resolve(root, 'vendor/peerjs.min.d.ts'), 'utf8');
+		const vendoredPeer = readFileSync(resolve(import.meta.dir, '../vendor/peerjs/peerjs.min.js'), 'utf8');
+		const vendoredPeerTypes = readFileSync(resolve(import.meta.dir, '../vendor/peerjs/peerjs.min.d.ts'), 'utf8');
 		const extensionVendor = readFileSync(resolve(import.meta.dir, '../src/offscreen-remote/peerjs-vendor.ts'), 'utf8');
-		const peerLicense = readFileSync(resolve(root, 'vendor/LICENSE.peerjs'), 'utf8');
+		const peerLicense = readFileSync(resolve(import.meta.dir, '../vendor/peerjs/LICENSE.peerjs'), 'utf8');
 		const extensionPackage = JSON.parse(readFileSync(resolve(import.meta.dir, '../package.json'), 'utf8'));
 		expect(html).not.toContain('src="vendor/peerjs.min.js"');
 		expect(html).not.toMatch(/unpkg|google\.com\/s2\/favicons|<script(?![^>]*\bsrc=)/iu);
@@ -773,7 +784,7 @@ describe('remote-site supply chain and metadata privacy', () => {
 		expect(remoteApp).not.toMatch(/(?:globalThis|window)\.Peer\s*=/u);
 		expect(headers).toContain("script-src 'self'");
 		expect(headers).toContain("frame-ancestors 'none'");
-		expect(extensionVendor).toContain("../../../../../remote-site/vendor/peerjs.min.js");
+		expect(extensionVendor).toContain("../../vendor/peerjs/peerjs.min.js");
 		expect(vendoredPeer).toContain('PeerJS 1.5.5');
 		expect(vendoredPeer).toContain('PEER_MESSAGE_LIMIT_BYTES = 16 * 1024');
 		expect(vendoredPeer).not.toMatch(/(?:globalThis|window)\.Peer\s*=/u);
@@ -783,7 +794,10 @@ describe('remote-site supply chain and metadata privacy', () => {
 		expect(peerLicense).toContain('PeerJS 1.5.5');
 		expect(extensionPackage.dependencies).not.toHaveProperty('peerjs');
 		expect(extensionPackage.dependencies).not.toHaveProperty('uqr');
-		expect(remoteApp).toMatch(/spectra-remote-v3\\n\$\{sessionId\}\\n\$\{nonce\}\\n\$\{PROTOCOL_VERSION\}/u);
+		expect(html).toContain('src="dist/protocol.js"');
+		expect(html.indexOf('dist/protocol.js')).toBeLessThan(html.indexOf('src="app.js"'));
+		expect(remoteApp).not.toContain('spectra-remote-v');
+		expect(remoteApp).not.toContain('crypto.subtle');
 		expect(remoteApp).toContain("data.type === 'spectra.remote.closed'");
 		expect(remoteApp).toContain("element.toggleAttribute('inert', !visible)");
 		expect(remoteApp).not.toContain("throw new AggregateError(failures, 'Remote transport disposal failed')");

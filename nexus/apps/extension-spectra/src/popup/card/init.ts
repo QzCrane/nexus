@@ -2,8 +2,8 @@
 
 import {
 	audioSessionMatchesControlDocument,
+	createSpectraRequest,
 	isActiveCaptureLifecycle,
-	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
 import { isSpectraUiResponse } from '@nexus/contracts/ui-runtime';
 import { RUNTIME_OBSERVATION_PORT } from '../../shared/runtime-observation';
@@ -56,10 +56,9 @@ function observePopupTab(tabId: number, documentId: string): () => void {
   const deadline = setTimeout(dispose, 15_000);
   port.onMessage.addListener(onMessage);
   port.onDisconnect.addListener(onDisconnect);
-  port.postMessage({
-    protocolVersion: SPECTRA_PROTOCOL_VERSION, requestId: crypto.randomUUID(),
-    type: 'spectra.content.runtime.ensure', payload: { tabId, documentId, reason: 'observation' },
-  });
+  port.postMessage(createSpectraRequest('spectra.content.runtime.ensure', {
+    tabId, documentId, reason: 'observation',
+  }));
   return dispose;
 }
 

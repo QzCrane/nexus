@@ -4,6 +4,7 @@ import {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
 	bootstrapRpcFailure,
+	createSpectraRequest,
 	bootstrapRpcSuccess,
 	isBootstrapHelloResponse,
 	isBootstrapInboundRequest,
@@ -580,10 +581,8 @@ function sendBootstrapRequest(
 		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {
-	return runWithValidExtensionContext(() => chrome.runtime.sendMessage({
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: crypto.randomUUID(),
-		type,
-		payload,
-	}), onInvalidated);
+	return runWithValidExtensionContext(
+		() => chrome.runtime.sendMessage(createSpectraRequest(type, payload)),
+		onInvalidated,
+	);
 }

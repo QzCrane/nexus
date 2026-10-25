@@ -1,8 +1,8 @@
 // goal: extends i18n dictionary with additional language translations (ko/es/fr/de/ru)
 
-import type { I18nDict } from './i18n-dict';
+import type { OptionsLocaleCatalog } from './i18n-dict';
 
-export const DICT_EXTENDED: I18nDict = {
+export const DICT_EXTENDED: Record<string, OptionsLocaleCatalog> = {
 	'ko-KR': {
 		opt_chrome_title: '🌐 Chrome 전역 단축키',
 		opt_chrome_open: 'Chrome 설정 열기',

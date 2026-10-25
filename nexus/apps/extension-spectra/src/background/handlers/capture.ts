@@ -4,6 +4,7 @@ import {
 	audioConfigToProcessorConfig,
 	DEFAULT_AUDIO_CONFIG,
 	SPECTRA_PROTOCOL_VERSION,
+	createSpectraEvent,
 	isOffscreenHostEvent,
 	resolveAudioVolume,
 	type AudioCaptureState,
@@ -12,7 +13,6 @@ import {
 	type AudioProcessorConfig,
 	type AudioSessionSnapshot,
 	type CaptureAdmission,
-	type SpectraEventEnvelope,
 	type SpectraAudioMode,
 	type TabSessionIdentity,
 } from '@nexus/contracts';
@@ -182,14 +182,11 @@ function publishCaptureState(tabId: number, state: CaptureRuntimeState): void {
 	captureStates.set(tabId, state.active);
 	const documentId = state.identity?.documentId;
 	if (!documentId) return;
-	const event: SpectraEventEnvelope<'spectra.audio.capture.changed'> = {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		type: 'spectra.audio.capture.changed',
+	const event = createSpectraEvent('spectra.audio.capture.changed', toCaptureState(tabId, state), {
 		tabId,
 		documentId,
 		generation: state.generation,
-		payload: toCaptureState(tabId, state),
-	};
+	});
 	chrome.tabs.sendMessage(tabId, event, { documentId }).catch((error: unknown) => {
 		reportBroadcastFailure('tab state', tabId, error);
 	});

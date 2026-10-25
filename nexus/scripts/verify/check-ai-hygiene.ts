@@ -116,7 +116,7 @@ function reportBrandedTypes(violations) {
 function reportDeletedContracts(violations) {
 	if (violations.length > 0) {
 		for (const v of violations) {
-			error(`${v.relPath}:${v.line}: 引用已删除的 messages.contracts.ts — 使用 messages/index.ts`);
+			error(`${v.relPath}:${v.line}: 引用已删除的 messages.contracts.ts — HALO action map 由 packages/contracts/src/actions.ts 拥有`);
 		}
 		return;
 	}

@@ -13,7 +13,9 @@ export function clearOptionsError(): void {
 	surface.hidden = true;
 }
 
-export function bindOptionsRetry(retry: () => void = () => window.location.reload()): void {
+// rule: recovery is an explicit caller-owned action. A document reload would
+// silently discard the page's live settings projection instead of re-running it.
+export function bindOptionsRetry(retry: () => void): void {
 	const button = document.getElementById('options-retry') as HTMLButtonElement | null;
 	if (!button) return;
 	button.onclick = retry;

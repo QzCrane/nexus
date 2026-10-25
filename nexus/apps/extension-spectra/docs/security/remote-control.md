@@ -16,6 +16,7 @@ This document is the sole owner of remote pairing, HMAC authentication, PeerJS/o
 - Background binds a random internal capability to `{tabId, sessionId}` and accepts command/sync events only from `offscreen.html` with that capability.
 - The offscreen host owns the live Peer transport, pairing secrets, HMAC verification, connection exclusivity, command sequences, and reconnect expiry. Both controller and host consume the same workspace-owned PeerJS 1.5.5-derived data-only ESM source; it admits JSON DataConnection traffic only, enforces a 16 KiB UTF-8 limit before parsing or sending, and contains no media, binary/raw serializer, runtime package, CDN, or global-owner path.
 - The remote page receives the secret through a URL fragment, which is absent from the Cloudflare Pages HTTP request, and moves it into tab-scoped `sessionStorage` immediately.
+- The static controller owns no wire implementation. `remote-site/dist/protocol.js` is generated from `src/remote/protocol.ts` and exposes `globalThis.SpectraRemoteProtocol`; version, challenge payload, HMAC proof, and wire validators therefore have one implementation.
 
 ## Pairing and authentication
 
@@ -23,7 +24,7 @@ Each session has independent Web Crypto values: 128-bit session ID, 128-bit Peer
 
 1. Host accepts a PeerJS data connection but sends no tab state.
 2. Host sends `spectra.remote.challenge` with a fresh 256-bit nonce.
-3. Controller signs `spectra-remote-v3\n<sessionId>\n<nonce>\n3` with HMAC-SHA-256.
+3. Controller signs the contract-owned payload `spectra-remote-v<version>\n<sessionId>\n<nonce>\n<version>` with HMAC-SHA-256. `REMOTE_PROTOCOL_VERSION` in `@nexus/contracts` is the only version source; `src/remote/protocol-core.ts` derives the payload from it.
 4. Host verifies the proof and sends `spectra.remote.auth-result`.
 5. Only then may the host send `spectra.remote.state` or accept `spectra.remote.command`.
 
@@ -31,7 +32,7 @@ Successful authentication advances `sessionEpoch`. Commands carry the exact sess
 
 ## Unified offscreen integration
 
-`src/offscreen-remote/remote-host.ts` exports `createRemoteHostController()` and does not register global listeners. Unified `src/offscreen/index.ts` owns integration and delegates exact message families. Capture/HELLO and empty Remote queries do not load the controller or transport. The first explicit `REMOTE_HOST_CREATE_SESSION` dynamically loads the Remote module. Its offscreen-local single-flight loader imports exactly one local `peerjs-vendor.js` ESM default export built from `remote-site/vendor/peerjs.min.js`, the same canonical source imported by the Remote page. The loader rejects a missing/non-callable export and never assigns `globalThis.Peer`; there is no CDN fallback, polling, background retry, compatibility global, runtime `peerjs` package, or second session owner. Timeout, disposal, and attempt fences settle only the initiating/current load.
+`src/offscreen-remote/remote-host.ts` exports `createRemoteHostController()` and does not register global listeners. Unified `src/offscreen/index.ts` owns integration and delegates exact message families. Capture/HELLO and empty Remote queries do not load the controller or transport. The first explicit `REMOTE_HOST_CREATE_SESSION` dynamically loads the Remote module. Its offscreen-local single-flight loader imports exactly one local `peerjs-vendor.js` ESM default export built from the extension-owned `vendor/peerjs/peerjs.min.js`, the canonical source projected to the Remote page. The loader rejects a missing/non-callable export and never assigns `globalThis.Peer`; there is no CDN fallback, polling, background retry, compatibility global, runtime `peerjs` package, or second session owner. Timeout, disposal, and attempt fences settle only the initiating/current load.
 
 The unified runtime calls the lazy Remote disposer during `pagehide`, aborting an in-flight vendor load before destroying pending/active sessions. Background owns the remote offscreen lease for the entire session and releases it only after explicit close, tab close, pairing expiry, or reconnect expiry.
 
@@ -51,7 +52,7 @@ The host emits capability-bound execute, sync, status, and closed events so Back
 
 The installed-Chromium gate loads the production extension and the checked-in Remote page. It observes the exact local PeerJS ESM request and default-export validation, then uses a DevTools call-frame breakpoint at the loader's `createPeer` boundary to replace only the external signaling constructor with a deterministic, in-process Peer-compatible transport. No production file, module graph, protocol handler, or runtime global is rewritten. The gate still executes the production HMAC challenge, authenticated epoch/command envelope, unified offscreen host, Background authorization, exact-state delivery, Content control, two service-worker restarts, and lease cleanup. A passing gate therefore proves product code and lifecycle behavior without turning availability of public `0.peerjs.com` into a source-code verdict. The separate provider lane owns real PeerJS/STUN/TURN availability.
 
-The release gate separately verifies the deployed Remote site's files, CSP, canonical local transport source, MIT provenance, JSON-only/16 KiB boundary, disclosure, and build identity. It also proves that the extension output is derived from that source and that neither surface imports the retired `peerjs` package or `uqr` runtime. Public PeerJS/STUN/TURN reachability remains an external service-availability fact: an outage is reported as transport infrastructure, not converted into a product failure or a fabricated product pass.
+The release gate separately verifies the deployed Remote site's files, CSP, canonical local transport source, MIT provenance, JSON-only/16 KiB boundary, disclosure, and build identity, including the generated `dist/protocol.js` and `vendor/` projections. It also proves that every projection matches its extension-owned source byte-for-byte, that the page consumes the protocol before its own scripts, that the extension output is derived from that transport source, and that neither surface imports the retired `peerjs` package or `uqr` runtime. Public PeerJS/STUN/TURN reachability remains an external service-availability fact: an outage is reported as transport infrastructure, not converted into a product failure or a fabricated product pass.
 
 ## Network disclosure
 

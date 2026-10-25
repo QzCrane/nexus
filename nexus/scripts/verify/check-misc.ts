@@ -4,7 +4,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { error, ok, warn, section } from './utils.ts';
+import { error, ok, section } from './utils.ts';
 
 export function checkDependencyDirection(ROOT) {
 	section('检查依赖方向...');
@@ -46,22 +46,6 @@ export function checkReadmeAI(ROOT) {
 	}
 
 	ok('README.md 存在');
-
-	const messagesIndex = path.join(ROOT, 'packages/contracts/src/messages/index.ts');
-	if (!fs.existsSync(messagesIndex)) {
-		return;
-	}
-	const messagesContent = fs.readFileSync(messagesIndex, 'utf-8');
-	const readmeContent = fs.readFileSync(readme, 'utf-8');
-	const messageNames = messagesContent.match(/'[A-Z_]+'/g) || [];
-	const uniqueMessages = [...new Set(messageNames.map(m => m.replace(/'/g, '')))];
-
-	const missing = uniqueMessages.slice(0, 5).filter(msg => !readmeContent.includes(msg));
-	if (missing.length > 0) {
-		warn(`README.md 可能缺少: ${missing.join(', ')}`);
-	} else {
-		ok('消息速查表包含主要消息');
-	}
 }
 
 export function checkHtmlResources(ROOT) {

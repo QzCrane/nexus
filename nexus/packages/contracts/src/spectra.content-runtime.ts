@@ -91,6 +91,8 @@ export {
 	selectHotkeyFeedbackOwner,
 	selectHotkeyRepeatPolicy,
 };
+export { createSpectraEvent, createSpectraRequest } from './spectra.wire.js';
+export type { SpectraWireContext } from './spectra.wire.js';
 export type {
 	MediaProcessingRoute,
 	MediaRouteDecision,

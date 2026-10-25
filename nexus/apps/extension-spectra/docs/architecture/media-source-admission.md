@@ -108,7 +108,7 @@ Capture is never inferred from a status read, background card, page observation,
 ## Owners
 
 - `content/core/media-registry.ts`: current elements, source revisions, and exact preload-CORS evidence.
-- `packages/features/audio-engine/src/WebAudioController.ts`: page-lifetime binding registry, sparse graph, readback, analyser lease, and deterministic disconnect.
+- `packages/features/audio-engine/src/web-audio-controller.ts`: page-lifetime binding registry, sparse graph, readback, analyser lease, and deterministic disconnect.
 - `content/logic/mode-executor.ts`: serialized three-owner handoff; candidate ACK precedes old-owner release and failed handoff restores the acknowledged owner.
 - `background/settings-repository.ts` + `media-route.contracts.ts`: durable site route, migration, exact guards, and parent-domain selection.
 - `background/capture-admission.ts` + `handlers/capture.ts`: one-shot Capture authority, serialized transition, exact ACK validation, session commit, and bounded cleanup.

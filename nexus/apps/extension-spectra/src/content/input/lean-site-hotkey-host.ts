@@ -2,8 +2,8 @@
 // inv: content receives only a Background-adjudicated exact-document lean binding projection
 
 import {
-	SPECTRA_PROTOCOL_VERSION,
 	SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS,
+	createSpectraRequest,
 	isSpectraLeanSiteHotkeyConfigureMessage,
 	resolveSpectraDefaultHotkeyAction,
 	type SpectraLeanSiteHotkeyBinding,
@@ -85,18 +85,13 @@ function isBrowserRefreshShortcut(event: KeyboardEvent): boolean {
 }
 
 function triggerRequest(active: ActiveBinding, phase: 'press' | 'release', repeated: boolean): unknown {
-	return {
-		protocolVersion: SPECTRA_PROTOCOL_VERSION,
-		requestId: crypto.randomUUID(),
-		type: 'spectra.content.default-hotkey.trigger',
-		payload: {
-			action: active.binding.action,
-			phase,
-			gesture: active.gesture,
-			repeated,
-			disposition: 'site-page',
-		},
-	};
+	return createSpectraRequest('spectra.content.default-hotkey.trigger', {
+		action: active.binding.action,
+		phase,
+		gesture: active.gesture,
+		repeated,
+		disposition: 'site-page',
+	});
 }
 
 function responseError(value: unknown): string | null {

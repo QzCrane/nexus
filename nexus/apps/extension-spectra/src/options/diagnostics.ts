@@ -7,10 +7,15 @@ import {
 } from '@nexus/kernel';
 import { onLangChange, t } from './i18n';
 
+let initialized = false;
+
+// inv: the export control is a singleton; retry must not attach a second click listener
 export function initDiagnosticsSection(): void {
 	const button = document.getElementById('diagnostics-export-btn') as HTMLButtonElement | null;
 	const status = document.getElementById('diagnostics-status');
 	if (!button || !status) return;
+	if (initialized) return;
+	initialized = true;
 	let retired = false;
 	let statusKey: 'opt_diagnostics_collecting' | 'opt_diagnostics_exported' | 'opt_diagnostics_failed' | null = null;
 	const showStatus = (key: typeof statusKey): void => {

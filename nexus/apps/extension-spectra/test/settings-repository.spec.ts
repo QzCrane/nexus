@@ -7,10 +7,10 @@ import {
 import type { SettingsStorageArea } from '../src/background/settings-repository';
 import {
 	InvalidSettingsPatchError,
-	SettingsRepository,
 	SettingsCapacityError,
 	SettingsRevisionConflictError,
-} from '../src/background/settings-repository';
+} from '../src/background/settings-errors';
+import { SettingsRepository } from '../src/background/settings-repository';
 
 class FakeStorageArea implements SettingsStorageArea {
 	readonly values: Record<string, unknown>;

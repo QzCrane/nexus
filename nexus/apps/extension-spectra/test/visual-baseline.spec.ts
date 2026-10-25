@@ -135,11 +135,14 @@ test('captures real media data, startup error and acknowledged dynamic SPECTRA s
 		await volume.focus();
 		await popup.keyboard.press('ArrowLeft');
 		await popup.keyboard.press('ArrowLeft');
+		// rule: the thumb follows the gesture immediately, while the result label
+		// and fill commit together only when Background acknowledges the volume.
+		expect(await popup.$eval('.glass-card .vol-slider', (element) => (element as HTMLInputElement).value)).toBe('80');
+		await popup.waitForFunction(() => document.querySelector('.glass-card .vol-number')?.textContent?.trim() === '80%', { timeout: 10_000 }); // volume-applied
 		expect(await popup.$eval('.glass-card', (card) => ({
 			slider: (card.querySelector('.vol-slider') as HTMLInputElement | null)?.value,
 			label: card.querySelector('.vol-number')?.textContent?.trim(),
 		}))).toEqual({ slider: '80', label: '80%' });
-		await popup.waitForFunction(() => document.querySelector('.glass-card .vol-number')?.textContent?.trim() === '80%', { timeout: 10_000 }); // volume-applied
 		await popup.click('.glass-card .btn-speed[data-delta="0.5"]');
 		await popup.waitForFunction(() => (document.querySelector('.glass-card .speed-input') as HTMLInputElement | null)?.value === '1.50', { timeout: 10_000 }); // speed-applied
 		await popup.click('#btn-settings');

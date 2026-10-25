@@ -1,5 +1,7 @@
 // goal: defines localized hotkey action names for Russian locale
-export const ru: Record<string, string> = {
+import type { HotkeyAction } from '@nexus/contracts';
+
+export const ru: Partial<Record<HotkeyAction, string>> = {
 	none: '(не назначено)', play_pause: 'Воспр./Пауза', seek_forward_5s: 'Вперёд 5с',
 	seek_forward_10s: 'Вперёд 10с', seek_forward_30s: 'Вперёд 30с',
 	seek_backward_5s: 'Назад 5с', seek_backward_10s: 'Назад 10с',

@@ -42,6 +42,7 @@
 		"sync-spectra": "bun scripts/sync-public.ts spectra",
 		"sync-halo": "bun scripts/sync-public.ts halo",
 		"generate-registry": "bun scripts/generate-tool-registry.ts",
+		"generate:remote-projection": "bun run --cwd apps/extension-spectra generate:remote-projection",
 		"sync:skills": "bun scripts/sync-skills.ts",
 		"test:visual:spectra": "bun run --cwd apps/extension-spectra test:visual",
 		"test:visual:halo": "bun run --cwd apps/extension-halo test:visual",

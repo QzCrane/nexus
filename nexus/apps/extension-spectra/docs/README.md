@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-documentation
-last_reviewed: 2026-07-26
+last_reviewed: 2026-10-05
 ---
 
 # SPECTRA documentation
@@ -18,7 +18,8 @@ docs/
 │   └── 01..08 topic owners
 ├── architecture/
 │   ├── runtime.md
-│   └── media-source-admission.md
+│   ├── media-source-admission.md
+│   └── unification-and-professionalism-audit.md
 ├── reference/
 │   └── protocols.md
 ├── security/
@@ -42,6 +43,7 @@ docs/
 ## Non-normative layers
 
 - [Roadmap](roadmap.md): sequencing and unresolved work.
+- [Unification audit roadmap](architecture/unification-and-professionalism-audit.md): dated audit conclusions and remediation ordering; never implementation authority.
 - [Proposals](proposals/README.md): candidate designs and their acceptance gates; proposals do not describe shipped behavior.
 - [Historical evidence](_archive/2026-Q3/README.md): dated implementation, regression, and release snapshots.
 - [Product README](../README.md), [privacy policy](../PRIVACY.md), and [store copy](../store-listings/README.md): public projections that must remain narrower than verified behavior.

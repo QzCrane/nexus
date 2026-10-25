@@ -1,5 +1,6 @@
 // goal: provides localized display names for all supported hotkey actions across different languages
 
+import type { HotkeyAction } from '@nexus/contracts';
 import { ja } from './i18n-actions/ja';
 import { ko } from './i18n-actions/ko';
 import { es } from './i18n-actions/es';
@@ -7,8 +8,9 @@ import { fr } from './i18n-actions/fr';
 import { de } from './i18n-actions/de';
 import { ru } from './i18n-actions/ru';
 
-// note: English serves as the primary fallback if a translation is missing in the target locale
-const en: Record<string, string> = {
+// note: English is the key schema. Every contract action must have an English
+// label; other locales may omit entries and fall back to English.
+export const en: Record<HotkeyAction, string> = {
 	none: '(unbound)', play_pause: 'Play/Pause', seek_forward_5s: 'Forward 5s',
 	seek_forward_10s: 'Forward 10s', seek_forward_30s: 'Forward 30s',
 	seek_backward_5s: 'Backward 5s', seek_backward_10s: 'Backward 10s',
@@ -30,7 +32,7 @@ const en: Record<string, string> = {
 	run_js: 'Run JS', open_url: 'Open URL',
 };
 
-const zh: Record<string, string> = {
+const zh: Partial<Record<HotkeyAction, string>> = {
 	none: '(未绑定)', play_pause: '播放/暂停', seek_forward_5s: '前进 5 秒',
 	seek_forward_10s: '前进 10 秒', seek_forward_30s: '前进 30 秒',
 	seek_backward_5s: '后退 5 秒', seek_backward_10s: '后退 10 秒',
@@ -51,7 +53,7 @@ const zh: Record<string, string> = {
 	run_js: '执行 JS', open_url: '打开 URL',
 };
 
-const zhTw: Record<string, string> = {
+const zhTw: Partial<Record<HotkeyAction, string>> = {
 	none: '(未綁定)', play_pause: '播放/暫停', seek_forward_5s: '前進 5 秒',
 	seek_forward_10s: '前進 10 秒', seek_forward_30s: '前進 30 秒',
 	seek_backward_5s: '後退 5 秒', seek_backward_10s: '後退 10 秒',
@@ -72,7 +74,7 @@ const zhTw: Record<string, string> = {
 	run_js: '執行 JS', open_url: '開啟網址',
 };
 
-const LANG_MAP: Record<string, Record<string, string>> = {
+const LANG_MAP: Record<string, Partial<Record<HotkeyAction, string>>> = {
 	'en-US': en, 'zh-CN': zh, 'zh-TW': zhTw, 'ja-JP': ja, 'ko-KR': ko,
 	'es-ES': es, 'fr-FR': fr, 'de-DE': de, 'ru-RU': ru,
 };
@@ -80,5 +82,5 @@ const LANG_MAP: Record<string, Record<string, string>> = {
 // post: returns the localized name for an action, falling back to English or an auto-formatted identifier if necessary
 export function getActionName(action: string, lang: string): string {
 	const dict = LANG_MAP[lang];
-	return dict?.[action] ?? en[action] ?? action.replace(/_/g, ' ');
+	return dict?.[action as HotkeyAction] ?? en[action as HotkeyAction] ?? action.replace(/_/g, ' ');
 }

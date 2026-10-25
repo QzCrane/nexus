@@ -56,8 +56,10 @@ last_reviewed: 2026-07-30
   - *原因*: 绕过 `exports` 字段，破坏模块封装；只能使用根/子路径导出。
   - *守门*: `ai-pitfall-detector.ts` (`deep-path-import`) / `verify-architecture.ts`
 
-- **3.4 `messages.contracts.ts` 已废弃**:
-  - *正例*: 引用 `packages/contracts/src/messages/index.ts`。
+- **3.4 `messages.contracts.ts` 与 `messages/` 目录已删除**:
+  - *原因*: 消息契约必须由唯一 owner 持有；不存在第二个 `messages` 兼容层。
+  - *正例*: HALO 的 action map 引用 `packages/contracts/src/actions.ts`；SPECTRA RPC 引用 `packages/contracts/src/spectra.protocol.ts`。
+  - *守门*: `check-ai-hygiene.ts` (`deletedRefRe`)。
 
 ## 4. 存储安全 (Storage Safety)
 

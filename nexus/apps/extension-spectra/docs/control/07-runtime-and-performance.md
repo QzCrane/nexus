@@ -31,10 +31,12 @@ Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge
 | --- | --- |
 | `packages/contracts/src/control.contracts.ts` | 完整字段/操作、策略类别、意图/快照/ACK guards 统一词汇表 |
 | `packages/contracts/src/spectra.bootstrap.ts` | 最小常驻协议常量、极简读回与 5 组默认快捷键映射 |
-| `packages/features/audio-engine/src/AudioGraphRouter.ts` | Offscreen Capture 使用的稀疏图、参数 ACK 与订阅式分析器 |
+| `packages/features/audio-engine/src/audio-graph-router.ts` | Offscreen Capture 使用的稀疏图、参数 ACK 与订阅式分析器 |
 | `src/background/control-coordinator.ts` | 生命周期/意图串行、代际 Revision、持久化、发布、补偿与 Capture 准入门禁 |
 | `src/background/control-coordinator-values.ts` | 无 Chrome/storage 副作用的 target scope、mutation、ACK、reset 与 session projection 纯值能力 |
 | `src/background/control-coordinator-ack.ts` | 无副作用的完整 intent/operation ACK 身份准入；不能提交、持久化或发布 |
+| `src/background/extension-invocation.ts` | 扩展调用来源身份、前景/目标文档绑定与陈旧文档拒绝 |
+| `src/background/popup-visualizer-source.ts` | Popup 观察订阅的文档级租约；借用 coordinator 的串行队列与 snapshot，不持有 revision 写入权，不授予 Capture 准入 |
 | `src/background/settings-value-normalization.ts` | Global/Hotkey/Site/Preset/Audio 的纯 canonical value 与旧数据修复 |
 | `src/background/settings-repository.ts` | revision/CAS、容量、迁移元数据与 durable storage 事务 |
 | `src/background/runtime-loader.ts` | 文档级重级 Runtime Lease 与 READY 握手 |

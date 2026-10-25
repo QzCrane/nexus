@@ -21,6 +21,7 @@ const onLangChangeCallbacks: (() => void)[] = [];
 let latestObservedRevision = -1;
 let projectionToken = 0;
 let unsubscribeSettings: (() => void) | null = null;
+let pagehideBound = false;
 
 function disposeI18nListeners(): void {
 	unsubscribeSettings?.();
@@ -82,7 +83,10 @@ export async function initI18n(): Promise<void> {
 			}
 		};
 	}
-	window.addEventListener('pagehide', disposeI18nListeners, { once: true });
+	if (!pagehideBound) {
+		pagehideBound = true;
+		window.addEventListener('pagehide', disposeI18nListeners, { once: true });
+	}
 }
 
 function applyI18n(): void {

@@ -952,8 +952,9 @@ only. Settings uses its separate restricted protocol and monotonic cache.
 One Popup startup attempt owns a disposer set. Settings, Remote UI, persistent
 ports, every Card, and the Side Panel register idempotent cleanup as soon as
 they acquire state. A failure after partial initialization disposes the whole
-attempt before showing the accessible retry surface. Retry reloads the document
-instead of re-entering `main()` in the same realm.
+attempt before showing the accessible retry surface. Retry releases that
+disposer set and re-enters `main()` in the same realm; the document is never
+reloaded.
 
 ### 10.2 Projection acceptance
 

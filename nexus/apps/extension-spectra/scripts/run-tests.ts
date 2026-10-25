@@ -14,7 +14,6 @@ const chromeIntegrationTests = new Set([
 	'runtime-long-session-performance.spec.ts',
 	'runtime-stress-performance.spec.ts',
 	'service-worker-wake-performance.spec.ts',
-	'smoke.spec.ts',
 	'tab-visibility-chrome.spec.ts',
 	'visual-baseline.spec.ts',
 ]);
@@ -29,7 +28,9 @@ function walk(directory) {
 export function listDefaultTests() {
 	return walk(testDir)
 		.map((path) => relative(testDir, path).replaceAll('\\', '/'))
-		.filter((path) => path.endsWith('.spec.ts') && !chromeIntegrationTests.has(path))
+		.filter((path) => path.endsWith('.spec.ts')
+			&& !chromeIntegrationTests.has(path)
+			&& !path.startsWith('smoke/'))
 		.sort((left, right) => left === right ? 0 : left < right ? -1 : 1);
 }
 

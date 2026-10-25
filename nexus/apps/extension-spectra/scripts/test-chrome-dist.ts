@@ -48,7 +48,7 @@ try {
 
 	const expectedFacts = currentCandidateFacts(readReleaseTreeIdentity(), distDir);
 	validateCandidateReceipt({ receiptPath, capability, expectedFacts });
-	run('production Chrome smoke', ['test', 'test/smoke.spec.ts']);
+	run('production Chrome smoke', ['test', 'test/smoke']);
 
 	// The source tree and dist must remain the exact candidate after Chrome has
 	// exited. This catches changes made by a test helper or an external process.

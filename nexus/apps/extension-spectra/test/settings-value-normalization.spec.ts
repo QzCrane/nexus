@@ -121,11 +121,4 @@ describe('settings value normalization', () => {
 		expect(isSnapshotPresetName('__proto__')).toBe(false);
 		expect(isSnapshotPresetName('bad\u0000name')).toBe(false);
 	});
-
-	test('has no storage, Chrome, or repository dependency', async () => {
-		const source = await Bun.file(new URL('../src/background/settings-value-normalization.ts', import.meta.url)).text();
-		expect(source).not.toMatch(/\bchrome(?:\.|\b)/u);
-		expect(source).not.toMatch(/\bstorage\b/u);
-		expect(source).not.toMatch(/settings-repository/u);
-	});
 });

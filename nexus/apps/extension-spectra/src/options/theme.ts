@@ -14,6 +14,7 @@ let currentMode: ThemeMode = 'system';
 let projectedRevision = -1;
 let unsubscribeSettings: (() => void) | null = null;
 let systemThemeListener: (() => void) | null = null;
+let pagehideBound = false;
 
 function disposeThemeListeners(): void {
 	unsubscribeSettings?.();
@@ -66,7 +67,10 @@ export async function initTheme(): Promise<void> {
 	};
 	systemTheme.addEventListener('change', systemThemeListener);
 
-	window.addEventListener('pagehide', disposeThemeListeners, { once: true });
+	if (!pagehideBound) {
+		pagehideBound = true;
+		window.addEventListener('pagehide', disposeThemeListeners, { once: true });
+	}
 }
 
 // eff: injects the theme identifier into the document root for CSS targeting, resolving 'system' to light/dark

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
-import { dirname, extname, posix, relative, resolve } from 'node:path';
+import { basename, dirname, extname, posix, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 // Size governance model (replaces the retired absolute byte ceilings):
@@ -702,8 +702,36 @@ function metafileEvidence(metafiles, root) {
 	};
 }
 
+const APP_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
+const WORKSPACE_DIR = dirname(dirname(APP_DIR));
+const SOURCE_DERIVED_POLICY = resolve(WORKSPACE_DIR, 'source-derived-third-party.json');
+
+// Shipped provenance notices have no manifest or bundle reference. The
+// source-derived third-party registry is the single owner of which notices
+// belong to this product and where they live; the governance gate verifies
+// their upstream repository, commit, license, and notice markers. Reachability
+// therefore yields to that explicit registry instead of treating a registered
+// release-evidence artifact as an orphan.
+function releaseEvidenceArtifacts(): Set<string> {
+	const product = basename(APP_DIR).replace(/^extension-/u, '');
+	const policy = JSON.parse(readFileSync(SOURCE_DERIVED_POLICY, 'utf8')) as {
+		entries?: Array<{ id?: string; product?: string; noticePath?: string }>;
+	};
+	const prefix = `apps/extension-${product}/public/`;
+	const names = new Set<string>();
+	for (const entry of Array.isArray(policy.entries) ? policy.entries : []) {
+		if (entry.product !== product) continue;
+		if (typeof entry.noticePath !== 'string' || !entry.noticePath.startsWith(prefix)) {
+			throw new Error(`${entry.id ?? 'unknown'}: noticePath must stay inside ${prefix}`);
+		}
+		names.add(entry.noticePath.slice(prefix.length));
+	}
+	return names;
+}
+
 export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 	const root = resolve(distDir);
+	const releaseEvidence = releaseEvidenceArtifacts();
 	const failures = [];
 	const files = walkArtifacts(root, root, failures);
 	const index = new Map(files.map((path) => [artifactName(root, path), path]));
@@ -801,7 +829,8 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 		}
 	}
 	for (const name of index.keys()) {
-		if (!graph.reachable.has(name)) failures.push(`${name}: unreachable production artifact`);
+		if (graph.reachable.has(name) || releaseEvidence.has(name)) continue;
+		failures.push(`${name}: unreachable production artifact`);
 	}
 
 	const duplicates = duplicateArtifacts(files, root);
@@ -864,6 +893,7 @@ export function analyzeProductionArtifacts({ distDir, metafiles = [] }) {
 		offscreenAudioOnly,
 		offscreenRemote,
 		reachable: graph.reachable.size,
+		releaseEvidence: [...releaseEvidence].filter((name) => index.has(name)).sort(),
 		schemaVersion: 1,
 		serviceWorkerWake,
 		topContributors: evidence.topContributors,
@@ -879,7 +909,8 @@ export function assertProductionArtifactReport(report) {
 		throw new Error(`Production artifact integrity failed:\n${report.failures.join('\n')}`);
 	}
 	console.log(
-		`✓ Production artifacts: ${report.reachable}/${report.files} reachable, 0 duplicate; `
+		`✓ Production artifacts: ${report.reachable}/${report.files} reachable, `
+		+ `${report.releaseEvidence.length} registered release notice(s), 0 duplicate; `
 		+ `service-worker wake ${format(report.serviceWorkerWake.scriptBytes)}, `
 		+ `document_start ${format(report.documentStart.scriptBytes)}, `
 		+ `JS ${format(report.javascript)}, dist ${format(report.total)}`,

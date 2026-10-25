@@ -1,5 +1,12 @@
 import { describe, expect, mock, test } from 'bun:test';
-import { DEFAULT_AUDIO_CONFIG, rpcSuccess } from '@nexus/contracts';
+import {
+	type AudioSessionSnapshot,
+	createSpectraEvent,
+	createSpectraRequest,
+	DEFAULT_AUDIO_CONFIG,
+	SPECTRA_PROTOCOL_VERSION,
+	rpcSuccess,
+} from '@nexus/contracts';
 import { sendSpectraRequest, sendSpectraTabRequest } from '../src/shared/spectra-client';
 
 const CONFIG = {
@@ -59,5 +66,31 @@ describe('SPECTRA extension RPC client boundaries', () => {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 			else Reflect.deleteProperty(globalThis, 'chrome');
 		}
+	});
+
+	test('stamps every request with the wire owner version and a unique identity', () => {
+		const first = createSpectraRequest('spectra.audio.runtime.get', {}, { tabId: 7, generation: 2 });
+		const second = createSpectraRequest('spectra.audio.runtime.get', {}, { tabId: 7, generation: 2 });
+		expect(first.protocolVersion).toBe(SPECTRA_PROTOCOL_VERSION);
+		expect(first.requestId.length).toBeGreaterThan(0);
+		expect(first.requestId).not.toBe(second.requestId);
+		expect(first).toMatchObject({ type: 'spectra.audio.runtime.get', tabId: 7, generation: 2 });
+
+		const session = {
+			tabId: 7,
+			documentId: 'document-7',
+			origin: 'https://example.test',
+			generation: 2,
+			desiredMode: 'bypass',
+			actualMode: 'bypass',
+			phase: 'idle',
+			configRevision: 1,
+			actualConfig: CONFIG,
+			lastError: null,
+		} satisfies AudioSessionSnapshot;
+		const event = createSpectraEvent('spectra.audio.session.changed', session, { tabId: 7 });
+		expect(event.protocolVersion).toBe(SPECTRA_PROTOCOL_VERSION);
+		expect(event).not.toHaveProperty('requestId');
+		expect(event).toMatchObject({ type: 'spectra.audio.session.changed', tabId: 7, payload: session });
 	});
 });

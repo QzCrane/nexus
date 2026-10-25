@@ -1,6 +1,6 @@
 // goal: one lightweight owner for SPECTRA wire-envelope and RpcResult primitives
 
-import { SPECTRA_PROTOCOL_VERSION } from './spectra.bootstrap.js';
+import { SPECTRA_PROTOCOL_VERSION } from './spectra.wire.js';
 
 export { SPECTRA_PROTOCOL_VERSION };
 

@@ -23,7 +23,7 @@ if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 
 test('renders continuous audio through repeated neutral and boosted gain updates', async () => {
 	const bundle = await build({
-		entryPoints: [resolve(import.meta.dir, '../../../packages/features/audio-engine/src/AudioGraphRouter.ts')],
+		entryPoints: [resolve(import.meta.dir, '../../../packages/features/audio-engine/src/audio-graph-router.ts')],
 		bundle: true, write: false, platform: 'browser', format: 'iife', globalName: 'AudioGraph',
 	});
 	const code = bundle.outputFiles?.[0]?.text;
@@ -42,7 +42,7 @@ test('renders continuous audio through repeated neutral and boosted gain updates
 		await page.addScriptTag({ content: code });
 		const result = await page.evaluate(async () => {
 			const { AudioGraphRouter, DEFAULT_AUDIO_GRAPH_CONFIG } = (window as Window & {
-				AudioGraph: typeof import('../../../packages/features/audio-engine/src/AudioGraphRouter');
+				AudioGraph: typeof import('../../../packages/features/audio-engine/src/audio-graph-router');
 			}).AudioGraph;
 			const context = new OfflineAudioContext(1, 24_000, 48_000);
 			// OfflineAudioContext supplies the real WebAudio node factories and clock;

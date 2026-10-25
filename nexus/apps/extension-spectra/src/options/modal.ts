@@ -39,19 +39,24 @@ const reservedHotkeyWarning = document.getElementById('reserved-hotkey-warning')
 const legacyWarning = document.getElementById('legacy-action-warning');
 let previouslyFocused: HTMLElement | null = null;
 
-// eff: initializes the modal singleton and attaches static event listeners
+let listenersBound = false;
+
+// eff: initializes the modal singleton and attaches static event listeners once
 export function initModal(): void {
 	populateActionSelect();
-	closeBtn.addEventListener('click', closeModal);
-	backdrop.addEventListener('click', closeModal);
-	cancelBtn.addEventListener('click', closeModal);
-	saveBtn.addEventListener('click', handleSave);
-	keyInput.addEventListener('keydown', handleKeyRecord);
-	keyInput.addEventListener('focus', () => keyInput.placeholder = t('modal_key_focus'));
-	keyInput.addEventListener('blur', () => keyInput.placeholder = t('modal_key_idle'));
+	if (!listenersBound) {
+		listenersBound = true;
+		closeBtn.addEventListener('click', closeModal);
+		backdrop.addEventListener('click', closeModal);
+		cancelBtn.addEventListener('click', closeModal);
+		saveBtn.addEventListener('click', handleSave);
+		keyInput.addEventListener('keydown', handleKeyRecord);
+		keyInput.addEventListener('focus', () => keyInput.placeholder = t('modal_key_focus'));
+		keyInput.addEventListener('blur', () => keyInput.placeholder = t('modal_key_idle'));
+		actionSelect.addEventListener('change', handleActionChange);
+		document.addEventListener('keydown', handleModalKeydown);
+	}
 	keyInput.placeholder = t('modal_key_idle');
-	actionSelect.addEventListener('change', handleActionChange);
-	document.addEventListener('keydown', handleModalKeydown);
 	setModalVisibility(false);
 }
 

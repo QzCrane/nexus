@@ -8,7 +8,7 @@ if (!locale || !/^[a-z]{2}(?:-[A-Z]{2})?$/u.test(locale)) {
 	throw new Error('Smoke locale must be a BCP-47 language or language-region tag');
 }
 
-const result = spawnSync(process.execPath, ['test', 'test/smoke.spec.ts'], {
+const result = spawnSync(process.execPath, ['test', 'test/smoke'], {
 	env: { ...process.env, SPECTRA_SMOKE_LOCALE: locale },
 	stdio: 'inherit',
 	shell: false,

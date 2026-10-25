@@ -63,6 +63,16 @@ function isPathInside(parent, candidate) {
 	);
 }
 
+// biome.json owns the lint scope: vendor, dist, caches, and generated output
+// directories are excluded there. A target that names one of those paths (or a
+// file inside one) contributes no expected files, whether it arrives as a
+// directory or as an explicit staged file. Deriving this from the same path
+// segment set keeps the expected-file count identical to Biome's real scan.
+function isScopeExcluded(absolutePath, repositoryRoot) {
+	const relativePath = path.relative(fs.realpathSync(repositoryRoot), absolutePath);
+	return relativePath.split(path.sep).some((segment) => SKIPPED_DIRECTORY_NAMES.has(segment));
+}
+
 function canonicalPathKey(value) {
 	const normalized = path.normalize(value);
 	return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
@@ -346,6 +356,7 @@ function collectBiomeFiles(
 		if (!stats.isFile() || !BIOME_LINT_EXTENSIONS.has(path.extname(absolutePath))) {
 			return;
 		}
+		if (isScopeExcluded(absolutePath, repositoryRoot)) return;
 		const canonicalFile = fs.realpathSync(absolutePath);
 		if (!isPathInside(canonicalRepositoryRoot, canonicalFile)) {
 			throw new Error(
@@ -368,6 +379,7 @@ function collectBiomeFiles(
 
 	for (const target of targetValues) {
 		const absolutePath = fs.realpathSync(path.resolve(cwd, target));
+		if (isScopeExcluded(absolutePath, repositoryRoot)) continue;
 		const targetFiles = [];
 		visit(absolutePath, targetFiles);
 		if (targetFiles.length === 0) {
@@ -440,6 +452,10 @@ function validateNoEmptyCatches(
 function main() {
 	validateTargets(targets);
 	const biomeFiles = collectBiomeFiles(targets);
+	if (biomeFiles.length === 0) {
+		console.log('✓ Strict Biome: no files inside the lint scope for the requested targets');
+		return;
+	}
 	const result = spawnSync(
 		process.execPath,
 		[

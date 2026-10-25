@@ -18,6 +18,7 @@
 *.wasm -text
 
 # Vendored supply-chain artifacts are byte-verified and must never receive EOL conversion.
+nexus/apps/extension-spectra/vendor/peerjs/peerjs.min.js -text
 remote-site/vendor/peerjs.min.js -text
 
 # Live-deployment assets are compared byte-for-byte with the published site.

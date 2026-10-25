@@ -2,7 +2,7 @@
 // eff: classification and heavy-listener projection stay outside the generic Content Runtime lease state machine
 
 import {
-	SPECTRA_PROTOCOL_VERSION,
+	createSpectraEvent,
 	type HotkeySettings,
 } from '@nexus/contracts';
 import { resolveSiteHotkeys } from '../shared/site-hotkey-mode';
@@ -30,11 +30,11 @@ async function projectHeavySiteHotkeySettings(
 	allowAbsent: boolean,
 ): Promise<void> {
 	try {
-		await chrome.tabs.sendMessage(tabId, {
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			type: 'spectra.hotkeys.changed',
-			payload: settings,
-		}, { documentId });
+		await chrome.tabs.sendMessage(
+			tabId,
+			createSpectraEvent('spectra.hotkeys.changed', settings),
+			{ documentId },
+		);
 	} catch (error) {
 		if (allowAbsent && isMissingReceiver(error)) return;
 		throw error;
