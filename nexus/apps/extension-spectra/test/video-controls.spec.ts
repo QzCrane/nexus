@@ -14,6 +14,13 @@ const originalPerformance = Object.getOwnPropertyDescriptor(globalThis, 'perform
 const originalSetTimeout = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');
 const originalClearTimeout = Object.getOwnPropertyDescriptor(globalThis, 'clearTimeout');
 
+/**
+ * The side panel schedules its own work at 50ms. Cross-context RPC deadlines are
+ * three orders of magnitude longer and are not the scheduling this spec drives by
+ * hand, so they are kept out of the timer set the assertions count.
+ */
+const HARNESS_TIMER_MAX_DELAY_MS = 1_000;
+
 class FakeInput {
 	value: string;
 	checked: boolean;
@@ -497,9 +504,9 @@ function installHarness(panel: FakePanel) {
 	});
 	Object.defineProperty(globalThis, 'setTimeout', {
 		configurable: true,
-		value: (callback: () => void) => {
+		value: (callback: () => void, delay = 0) => {
 			const id = ++nextTimerId;
-			timers.set(id, callback);
+			if (delay < HARNESS_TIMER_MAX_DELAY_MS) timers.set(id, callback);
 			return id;
 		},
 	});

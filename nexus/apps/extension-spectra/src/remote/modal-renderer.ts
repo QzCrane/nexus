@@ -5,6 +5,7 @@ import type { I18NDict } from '../popup/types';
 import { getRemoteUrl } from './constants.js';
 import type { RemotePairing } from './protocol';
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
+import { RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 import { handleDialogKeydown } from '../popup/utils/dialog';
 
 let isModalOpen = false;
@@ -180,10 +181,17 @@ export async function closeRemoteModal(closeConnection = false): Promise<void> {
 		modal.setAttribute('aria-busy', 'true');
 		if (button) button.disabled = true;
 		try {
-			const response = await sendSpectraRequest(
-				'spectra.remote.session.close',
-				{ tabId, sessionId: pairing.sessionId },
-				{ tabId },
+			// The dialog has already committed to a closing transaction. Without a
+			// deadline a stalled close leaves aria-busy set and the dismiss handler
+			// permanently short-circuited, so the user cannot close the dialog at all.
+			const response = await withDeadline(
+				sendSpectraRequest(
+					'spectra.remote.session.close',
+					{ tabId, sessionId: pairing.sessionId },
+					{ tabId },
+				),
+				RPC_DEADLINE_MS.contentRequest,
+				'remote session close',
 			);
 			if (!response.ok) throw new Error(response.error.message);
 		} catch {

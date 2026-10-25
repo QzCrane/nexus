@@ -12,6 +12,7 @@ import {
 	type SpectraWireContext,
 } from '@nexus/contracts';
 import { requiresContentRuntime } from './content-runtime';
+import { RPC_DEADLINE_MS, withDeadline } from './timeout';
 
 export type SpectraRpcContext = SpectraWireContext;
 
@@ -19,8 +20,13 @@ export async function sendSpectraRpcMessage<T extends SpectraRequestType, R exte
 	message: SpectraRequestEnvelope<T>,
 	validator: (type: T, response: unknown) => response is R,
 	errorPrefix: string,
+	deadlineMs: number = RPC_DEADLINE_MS.backgroundRequest,
 ): Promise<R> {
-	const response: unknown = await chrome.runtime.sendMessage(message);
+	const response: unknown = await withDeadline(
+		chrome.runtime.sendMessage(message),
+		deadlineMs,
+		`${errorPrefix} ${message.type}`,
+	);
 	if (!validator(message.type, response)) {
 		throw new Error(
 			`${errorPrefix} returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${message.type}`,
@@ -35,10 +41,12 @@ export async function deliverSpectraTabRpcMessage<T extends SpectraRequestType, 
 	validator: (type: T, response: unknown) => response is R,
 	errorPrefix: string,
 	documentId?: string,
+	deadlineMs: number = RPC_DEADLINE_MS.contentRuntime,
 ): Promise<R> {
-	const response: unknown = documentId
-		? await chrome.tabs.sendMessage(tabId, message, { documentId })
-		: await chrome.tabs.sendMessage(tabId, message);
+	const delivery = documentId
+		? chrome.tabs.sendMessage(tabId, message, { documentId })
+		: chrome.tabs.sendMessage(tabId, message);
+	const response: unknown = await withDeadline(delivery, deadlineMs, `${errorPrefix} ${message.type}`);
 	if (!validator(message.type, response)) {
 		throw new Error(
 			`${errorPrefix} returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${message.type}`,

@@ -8,6 +8,7 @@ import {
 	type OffscreenHostSnapshot,
 } from '@nexus/contracts';
 import { swLog } from '../shared/logger';
+import { RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 
 export type OffscreenLeaseKey = `audio:${number}` | `remote:${string}`;
 
@@ -206,7 +207,15 @@ async function dispatchOffscreenMessage<TRequest extends OffscreenHostRequest>(
 	if (!isOffscreenHostRequest(wireMessage)) {
 		throw new Error(`Invalid offscreen host request: ${message.type}`);
 	}
-	const response: unknown = await chrome.runtime.sendMessage(wireMessage);
+	// Only the round trip is bounded. ensureOffscreenDocument() above is a
+	// separate, legitimately slow step: a cold document creation routinely takes
+	// longer than an established host takes to answer, so wrapping both together
+	// would reject exactly the case the deadline is meant to protect.
+	const response: unknown = await withDeadline(
+		chrome.runtime.sendMessage(wireMessage),
+		RPC_DEADLINE_MS.offscreen,
+		`offscreen host request ${message.type}`,
+	);
 	if (!isOffscreenHostResponse(message.type, response)) {
 		throw new Error(`Invalid offscreen host response: ${message.type}`);
 	}

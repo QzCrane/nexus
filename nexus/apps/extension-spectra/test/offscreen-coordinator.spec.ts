@@ -12,6 +12,18 @@ import {
 
 type TimerCallback = () => void;
 
+/**
+ * Reconcile retries are scheduled at 25/75ms. Everything else that installs a
+ * timer in this test — the RPC deadline (20s) and the idle-close timer (30s) — is
+ * orders of magnitude longer, so a delay ceiling separates "the retry I want to
+ * drive" from "a budget I must leave alone".
+ */
+const RETRY_TIMER_MAX_DELAY_MS = 1_000;
+
+function pendingRetryTimerCount(timers: Map<number, { callback: TimerCallback; delay: number }>): number {
+	return [...timers.values()].filter((timer) => timer.delay < RETRY_TIMER_MAX_DELAY_MS).length;
+}
+
 describe('unified offscreen coordinator', () => {
 	test('serializes creation, rolls back failed leases, reconciles host state, and closes once when idle', async () => {
 		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
@@ -159,7 +171,7 @@ describe('unified offscreen coordinator', () => {
 			let reconcileFailure: unknown;
 			void reconcileOffscreenHost().catch((error) => { reconcileFailure = error; });
 			for (let retry = 0; retry < 2; retry += 1) {
-				await waitFor(() => timers.size === 1);
+				await waitFor(() => pendingRetryTimerCount(timers) === 1);
 				await fireOnlyTimer(timers);
 			}
 			await waitFor(() => reconcileFailure !== undefined);
@@ -193,7 +205,7 @@ describe('unified offscreen coordinator', () => {
 			let unownedReconcileFailure: unknown;
 			void reconcileOffscreenHost().catch((error) => { unownedReconcileFailure = error; });
 			for (let retry = 0; retry < 2; retry += 1) {
-				await waitFor(() => timers.size === 1);
+				await waitFor(() => pendingRetryTimerCount(timers) === 1);
 				await fireOnlyTimer(timers);
 			}
 			await waitFor(() => unownedReconcileFailure !== undefined);
@@ -261,11 +273,16 @@ async function fireOnlyAlarm(
 	await Promise.resolve();
 }
 
-async function fireOnlyTimer(timers: Map<number, { callback: TimerCallback }>): Promise<void> {
-	expect(timers.size).toBe(1);
+async function fireOnlyTimer(timers: Map<number, { callback: TimerCallback; delay: number }>): Promise<void> {
+	// Three kinds of timer share this map: reconcile retries (25/75ms), the RPC
+	// deadline (20s), and the idle-close timer (30s). Retry scheduling is what this
+	// test drives by hand, so select it by delay instead of assuming the map only
+	// ever holds one entry.
+	const retryTimers = [...timers.entries()].filter(([, timer]) => timer.delay < RETRY_TIMER_MAX_DELAY_MS);
+	expect(retryTimers).toHaveLength(1);
 	const [id, timer] = requireValue(
-		[...timers.entries()][0],
-		'Expected exactly one pending offscreen timer',
+		retryTimers[0],
+		'Expected exactly one pending reconcile retry timer',
 	);
 	timers.delete(id);
 	timer.callback();
@@ -273,7 +290,11 @@ async function fireOnlyTimer(timers: Map<number, { callback: TimerCallback }>): 
 }
 
 async function waitFor(condition: () => boolean): Promise<void> {
-	for (let attempt = 0; attempt < 20; attempt += 1) {
+	// Each cross-context dispatch now crosses a deadline wrapper, which adds
+	// microtask hops on top of the lifecycle lock and the mocked chrome calls. The
+	// budget is therefore generous: this helper waits for an effect, it does not
+	// assert how many turns the effect takes.
+	for (let attempt = 0; attempt < 200; attempt += 1) {
 		if (condition()) return;
 		await Promise.resolve();
 	}

@@ -62,6 +62,7 @@ import {
 	isSettingsUiPatchRequest,
 	isSettingsUiSnapshot,
 } from '@nexus/contracts/ui-settings-runtime';
+import { RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 import type {
 	RpcResult,
 	SpectraEventEnvelope,
@@ -323,9 +324,17 @@ export async function sendBackgroundTabRequestOnce<T extends SpectraRequestType>
 	activity.pending++;
 	tabRequestActivity.set(type, activity);
 	try {
-		const response: unknown = context.documentId
-			? await chrome.tabs.sendMessage(tabId, message, { documentId: context.documentId })
-			: await chrome.tabs.sendMessage(tabId, message);
+		// A Content host can be torn down between delivery and reply. Without a
+		// deadline the awaiting caller parks forever, and because the callers of
+		// this function sit inside per-tab serialized queues, one parked call
+		// blocks every later operation for that tab.
+		const response: unknown = await withDeadline(
+			context.documentId
+				? chrome.tabs.sendMessage(tabId, message, { documentId: context.documentId })
+				: chrome.tabs.sendMessage(tabId, message),
+			RPC_DEADLINE_MS.contentRequest,
+			`content request ${type} (tab ${tabId})`,
+		);
 		if (!isBackgroundResponse(type, response)) {
 			throw new Error(
 				`Content host returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${type}`,
