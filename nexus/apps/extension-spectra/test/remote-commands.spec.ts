@@ -386,7 +386,11 @@ describe('remote acknowledged audio state', () => {
 						lastError: { code: 'native_write_failed', message: 'Page rejected volume', retryable: true },
 					},
 					playing: {
-						...field(false), actual: null, phase: 'applying', controlled: false,
+						// `applying` was removed from ControlFieldPhase: it had no producer
+						// anywhere in src, so the only way to observe it was by hand-writing
+						// it here. `idle` carries the same meaning for this test — anything
+						// other than `applied` must fall back to the last applied value.
+						...field(false), actual: null, phase: 'idle', controlled: false,
 					},
 				},
 			},

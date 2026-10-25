@@ -18,7 +18,7 @@ const STRATEGIES = new Set<ControlStrategy>([
 	'extension-css', 'extension-overlay', 'media-webaudio', 'capture', 'unsupported',
 ]);
 const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);
-const PHASES = new Set(['idle', 'applying', 'applied', 'error']);
+const PHASES = new Set(['idle', 'applied', 'error']);
 const FIELD_STRATEGIES = {
 	audioEnabled: ['extension-state'],
 	volumeBase: ['page-native', 'dom-native'],

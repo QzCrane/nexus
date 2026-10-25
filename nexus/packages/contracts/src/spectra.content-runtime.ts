@@ -113,7 +113,7 @@ const STRATEGIES = new Set<ControlStrategy>([
 	'extension-css', 'extension-overlay', 'media-webaudio', 'capture', 'unsupported',
 ]);
 const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);
-const PHASES = new Set(['idle', 'applying', 'applied', 'error']);
+const PHASES = new Set(['idle', 'applied', 'error']);
 const SOURCES = new Set(['page', 'popup', 'remote', 'hotkey', 'restore', 'system']);
 const CONTENT_OPERATIONS = new Set<ControlOperation>([
 	'restore-page-settings', 'frame-step', 'screenshot', 'marker-add', 'marker-remove',

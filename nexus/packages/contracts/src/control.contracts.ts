@@ -124,7 +124,7 @@ export function shouldTryNextControlStrategy(failure: ControlStrategyFailure): b
 }
 export type ControlCoverage = 'full' | 'active-target' | 'partial' | 'opaque';
 export type ControlRequestedCoverage = Extract<ControlCoverage, 'full' | 'active-target'>;
-export type ControlFieldPhase = 'idle' | 'applying' | 'applied' | 'error';
+export type ControlFieldPhase = 'idle' | 'applied' | 'error';
 export type ControlIntentSource = 'page' | 'popup' | 'remote' | 'hotkey' | 'restore' | 'system';
 export type MediaKind = 'audio' | 'video';
 
@@ -999,7 +999,7 @@ export interface ControlReadResult {
 
 const strategySet: ReadonlySet<string> = new Set(CONTROL_STRATEGIES);
 const coverageSet: ReadonlySet<string> = new Set(['full', 'active-target', 'partial', 'opaque']);
-const phaseSet: ReadonlySet<string> = new Set(['idle', 'applying', 'applied', 'error']);
+const phaseSet: ReadonlySet<string> = new Set(['idle', 'applied', 'error']);
 const sourceSet: ReadonlySet<string> = new Set(['page', 'popup', 'remote', 'hotkey', 'restore', 'system']);
 const controlFields: ReadonlySet<string> = new Set(CONTROL_FIELDS);
 const controlDirectFields: ReadonlySet<string> = new Set(CONTROL_DIRECT_FIELDS);
