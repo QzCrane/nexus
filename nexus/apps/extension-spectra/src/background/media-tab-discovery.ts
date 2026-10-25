@@ -2,17 +2,10 @@
 // inv: only a complete successful observation proves no media; pending or failed coverage is always explicit
 
 import { createSettlementPool, observeWithin } from '@nexus/kernel';
+import type { MediaFact, MediaProbeCooldown, MediaProbeCooldownOutcome } from './media-facts';
 
 export type MediaProbeOutcome = 'found' | 'no-media' | 'denied' | 'stale' | 'unknown';
-export type MediaProbeCooldownOutcome = 'denied' | 'stale' | 'unknown' | 'pending';
 export interface MediaProbeResult { outcome: MediaProbeOutcome; documentId: string | null }
-export interface MediaFact {
-	documentId: string;
-	outcome: 'found' | 'no-media';
-	at: number;
-	source: 'report' | 'probe';
-}
-export interface MediaProbeCooldown { outcome: MediaProbeCooldownOutcome; until: number }
 export interface MediaInventoryCoverage {
 	status: 'complete' | 'degraded'; total: number; examined: number; pending: number;
 	failed: number; denied: number; stale: number; unknown: number;

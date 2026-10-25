@@ -50,6 +50,3 @@ export function isEditableHotkeyAction(action: HotkeyAction): boolean {
 	return EDITABLE_HOTKEY_ACTIONS.has(action);
 }
 
-export function isSlotHotkeyAction(action: HotkeyAction): boolean {
-	return isContractSlotHotkeyAction(action);
-}

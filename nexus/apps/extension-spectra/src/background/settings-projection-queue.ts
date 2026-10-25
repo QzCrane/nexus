@@ -1,8 +1,5 @@
+import type { RevisionedSnapshot } from '../shared/revisioned-settings-client';
 // goal: coalesce durable settings revisions into one bounded, retryable projection owner
-
-export interface RevisionedSnapshot {
-	revision: number;
-}
 
 export interface SettingsProjectionWork<T extends RevisionedSnapshot> {
 	snapshot: T;

@@ -12,7 +12,7 @@ import {
 	patchOptionsSettings,
 } from '../shared/options-settings-client';
 import { LatestKeyedIntentRegistry } from './latest-keyed-intent';
-import { isSlotHotkeyAction } from './supported-hotkey-actions';
+import { isSlotHotkeyAction } from '@nexus/contracts/ui-settings-runtime';
 import { clearOptionsError, showOptionsError } from './status';
 
 function cloneHotkeySettings(source: HotkeySettings): HotkeySettings {

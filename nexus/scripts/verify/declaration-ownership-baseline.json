@@ -1,0 +1,41 @@
+{
+  "$comment": "Known parallel declarations. A name may be exported from more than one file only when the second site serves a bundle boundary that must not import the first. Adding an entry requires naming the canonical owner and the reason; removing one is always preferred. Verified by scripts/verify/check-declaration-ownership.ts.",
+  "duplicates": {
+    "resolveAcknowledgedProcessorLifecycle": {
+      "owner": "packages/contracts/src/control.contracts.ts",
+      "reason": "spectra.ui-control-runtime.ts is the slim Popup entry and restates the lifecycle projection so the popup bundle does not pull the control contracts table."
+    },
+    "isMediaTarget": {
+      "owner": "packages/contracts/src/control.contracts.ts",
+      "reason": "spectra.content-runtime.ts is the slim Content entry; it keeps only the guards the content host can actually exercise."
+    },
+    "isSpectraRequestEnvelope": {
+      "owner": "packages/contracts/src/spectra.protocol.ts",
+      "reason": "Two protocol entries by design: Content aliases the slim entry in production, every other context keeps the complete validator. This pair must stay behaviourally identical; unknown payload types are rejected on both sides."
+    },
+    "isSpectraEventEnvelope": {
+      "owner": "packages/contracts/src/spectra.protocol.ts",
+      "reason": "Same bundle split as isSpectraRequestEnvelope."
+    },
+    "isSpectraResponse": {
+      "owner": "packages/contracts/src/spectra.protocol.ts",
+      "reason": "Same bundle split as isSpectraRequestEnvelope. The two differ on unlisted response types by construction - the slim entry only knows what Content can receive - so a change to either must be mirrored deliberately."
+    },
+    "sameMediaTarget": {
+      "owner": "apps/extension-spectra/src/background/control-coordinator-values.ts",
+      "reason": "Background tolerates null targets; Content requires a resolved target and lives in a different bundle. Merging them would give one side semantics it never needs."
+    },
+    "getActionName": {
+      "owner": "apps/extension-spectra/src/shared/i18n/actions-catalog.ts",
+      "reason": "Options resolves from a bundled static dictionary; Content resolves from the loaded locale catalog. Same verb, different data source per host."
+    },
+    "sendSpectraRequest": {
+      "owner": "apps/extension-spectra/src/shared/ui-spectra-client.ts",
+      "reason": "Two host adapters exposing the same verb surface: one sends from Content, one from Popup/Options. They cannot share because the transport lease and sender context differ."
+    },
+    "sendSpectraTabRequest": {
+      "owner": "apps/extension-spectra/src/shared/ui-spectra-client.ts",
+      "reason": "Same host split as sendSpectraRequest."
+    }
+  }
+}

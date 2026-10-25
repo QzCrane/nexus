@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 import { counters, error, quiet } from './verify/utils.ts';
 import { checkAiContextFiles } from './verify/check-ai-context.ts';
 import { checkContractsPurity } from './verify/check-contracts.ts';
+import { checkDeclarationOwnership } from './verify/check-declaration-ownership.ts';
 import { checkSourceFileLength } from './verify/check-file-length.ts';
 import { checkHardcodedActions } from './verify/check-actions.ts';
 import { checkDependencyDirection, checkReadmeAI, checkHtmlResources } from './verify/check-misc.ts';
@@ -33,6 +34,7 @@ const RESET = '\x1b[0m';
 const CHECKS: ReadonlyArray<readonly [string, (root: string) => void]> = [
 	['ai-context', checkAiContextFiles],
 	['contracts-purity', checkContractsPurity],
+	['declaration-ownership', checkDeclarationOwnership],
 	['readme-entry', checkReadmeAI],
 	['dependency-direction', checkDependencyDirection],
 	['source-file-length', checkSourceFileLength],
