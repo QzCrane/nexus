@@ -293,10 +293,31 @@ function normalizeMode(value: unknown, fallback: SpectraAudioMode): SpectraAudio
 	return fallback;
 }
 
-function normalizePhase(value: unknown, mode: SpectraAudioMode): AudioSessionPhase {
-	if (value === 'idle' || value === 'starting' || value === 'active'
-		|| value === 'stopping' || value === 'error') return value;
-	return mode === 'bypass' ? 'idle' : 'active';
+const AUDIO_SESSION_PHASE_VALUES: ReadonlySet<string> = new Set([
+	'idle',
+	'starting',
+	'active',
+	'stopping',
+	'error',
+]);
+
+function isAudioSessionPhaseValue(value: unknown): value is AudioSessionPhase {
+	return typeof value === 'string' && AUDIO_SESSION_PHASE_VALUES.has(value);
+}
+
+/**
+ * A phase is a claim about a processor, so it may never be inferred from an
+ * unrelated field. The previous fallback returned 'active' for any non-bypass
+ * mode, which let a write that simply omitted the phase establish an
+ * acknowledged session -- and therefore a Capture badge -- without any processor
+ * ever having started.
+ *
+ * Unknown input now falls back to the caller's own previous phase, and to 'idle'
+ * when there is none. It never upgrades the lifecycle.
+ */
+function resolvePhase(value: unknown, base: AudioSessionSnapshot | null): AudioSessionPhase {
+	if (isAudioSessionPhaseValue(value)) return value;
+	return base?.phase ?? 'idle';
 }
 
 function normalizeLegacyAudioSession(value: LegacyAudioSessionSnapshot): AudioSessionSnapshot | null {
@@ -304,8 +325,10 @@ function normalizeLegacyAudioSession(value: LegacyAudioSessionSnapshot): AudioSe
 	if (!actualConfig) return null;
 	const desiredMode = normalizeMode(value.desiredMode, 'bypass');
 	const actualMode = normalizeMode(value.actualMode, 'bypass');
-	const phase = actualMode === 'capture'
-		? normalizePhase(value.phase, actualMode)
+	// Legacy snapshots predate the acknowledged-lifecycle contract, so an
+	// unreadable phase is downgraded to 'idle' rather than guessed.
+	const phase: AudioSessionPhase = actualMode === 'capture'
+		? (isAudioSessionPhaseValue(value.phase) ? value.phase : 'idle')
 		: value.phase === 'error' ? 'error' : 'idle';
 	const normalized: AudioSessionSnapshot = {
 		tabId: value.tabId,
@@ -407,7 +430,7 @@ export async function updateAudioSession(
 		}
 		const actualMode = normalizeMode(update.actualMode, base?.actualMode ?? 'bypass');
 		const desiredMode = normalizeMode(update.desiredMode, base?.desiredMode ?? actualMode);
-		const phase = normalizePhase(update.phase, actualMode);
+		const phase = resolvePhase(update.phase, base);
 		if (base && !shouldAcceptAudioSessionPhase(
 			base.generation,
 			base.phase,
