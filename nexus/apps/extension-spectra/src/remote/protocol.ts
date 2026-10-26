@@ -48,7 +48,7 @@ export type {
 	RemotePairing,
 	RemoteState,
 } from './protocol-core';
-export type { RemotePublicSession } from '@nexus/contracts';
+export type { RemotePublicSession, RemoteSessionStatus, RemoteSessionView } from '@nexus/contracts';
 
 export type RemoteAuthResultMessage =
 	| {

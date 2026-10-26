@@ -67,6 +67,7 @@ import {
 } from './hotkeys.contracts.js';
 import {
 	isRemotePublicSession,
+	isRemoteSessionView,
 	isRemoteSessionToken,
 	type RemotePublicSession,
 	type RemoteSessionChangedEvent,
@@ -983,7 +984,7 @@ function isRemoteSessionStatus(value: unknown): value is RemoteSessionStatus {
 	}
 	return value.session === null
 		? value.connected === false
-		: isRemotePublicSession(value.session) && value.connected === value.session.connected;
+		: isRemoteSessionView(value.session) && value.connected === value.session.connected;
 }
 
 function isRemoteSessionChangedEvent(value: unknown): value is RemoteSessionChangedEvent {

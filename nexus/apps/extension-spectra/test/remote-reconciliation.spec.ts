@@ -273,6 +273,9 @@ describe('remote service-worker reconciliation', () => {
 			expect(isOffscreenHostStateUnknown()).toBe(false);
 			expect(getOffscreenLeaseCount()).toBe(1);
 			expect(timers.pendingLongCount()).toBe(0);
+			// SP-30: a status query answers "is this tab paired". The pairing
+			// secret is bearer authority and leaves Background only from `create`,
+			// whose caller is displaying a fresh QR code.
 			expect(response).toEqual({
 				ok: true,
 				data: {
@@ -280,7 +283,6 @@ describe('remote service-worker reconciliation', () => {
 						protocolVersion: 3,
 						sessionId,
 						peerId: hostSession.peerId,
-						secret: hostSession.secret,
 						createdAt: 100,
 						pairingExpiresAt: 10_000,
 						tabId: 71,
@@ -289,6 +291,8 @@ describe('remote service-worker reconciliation', () => {
 					connected: true,
 				},
 			});
+			expect((response as { data: { session: Record<string, unknown> } }).data.session)
+				.not.toHaveProperty('secret');
 
 			const command = invokeRuntimeEvent(listeners, {
 				type: 'REMOTE_HOST_EXECUTE_COMMAND',

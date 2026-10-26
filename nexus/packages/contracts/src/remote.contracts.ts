@@ -21,8 +21,28 @@ export interface RemotePublicSession {
 	connected: boolean;
 }
 
+/**
+ * A session as the UI may read it back. Identical to {@link RemotePublicSession}
+ * except that the pairing secret is absent.
+ *
+ * The secret is bearer authority: anyone holding it can pair a new device to
+ * this tab. Exactly one place may hand it out — the `create` response, whose
+ * caller has just minted the session and needs the QR payload. Every read path
+ * uses this view instead, so a status query can never become a second way to
+ * obtain pairing authority (SP-30).
+ */
+export interface RemoteSessionView {
+	protocolVersion: typeof REMOTE_PROTOCOL_VERSION;
+	sessionId: string;
+	peerId: string;
+	createdAt: number;
+	pairingExpiresAt: number;
+	tabId: number;
+	connected: boolean;
+}
+
 export interface RemoteSessionStatus {
-	session: RemotePublicSession | null;
+	session: RemoteSessionView | null;
 	connected: boolean;
 }
 
@@ -147,6 +167,15 @@ const REMOTE_PUBLIC_SESSION_KEYS = new Set<keyof RemotePublicSession>([
 	'tabId',
 	'connected',
 ]);
+const REMOTE_SESSION_VIEW_KEYS = new Set<keyof RemoteSessionView>([
+	'protocolVersion',
+	'sessionId',
+	'peerId',
+	'createdAt',
+	'pairingExpiresAt',
+	'tabId',
+	'connected',
+]);
 const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/u;
 const PEER_ID_RE = /^spectra-[a-f0-9]{32}$/u;
 const remoteCommandSet: ReadonlySet<string> = new Set(REMOTE_COMMANDS);
@@ -159,16 +188,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function isRemotePublicSession(value: unknown): value is RemotePublicSession {
-	if (!isRecord(value) || !Object.keys(value).every((key) => REMOTE_PUBLIC_SESSION_KEYS.has(key as keyof RemotePublicSession))) {
-		return false;
-	}
+/** The identity fields both session shapes share, checked once. */
+function isSessionIdentity(value: Record<string, unknown>): boolean {
 	return value.protocolVersion === REMOTE_PROTOCOL_VERSION
 		&& typeof value.sessionId === 'string'
 		&& TOKEN_RE.test(value.sessionId)
 		&& isRemotePeerId(value.peerId)
-		&& typeof value.secret === 'string'
-		&& TOKEN_RE.test(value.secret)
 		&& typeof value.createdAt === 'number'
 		&& Number.isSafeInteger(value.createdAt)
 		&& value.createdAt >= 0
@@ -179,6 +204,23 @@ export function isRemotePublicSession(value: unknown): value is RemotePublicSess
 		&& Number.isInteger(value.tabId)
 		&& value.tabId > 0
 		&& typeof value.connected === 'boolean';
+}
+
+export function isRemoteSessionView(value: unknown): value is RemoteSessionView {
+	if (!isRecord(value)
+		|| !Object.keys(value).every((key) => REMOTE_SESSION_VIEW_KEYS.has(key as keyof RemoteSessionView))) {
+		return false;
+	}
+	return isSessionIdentity(value);
+}
+
+export function isRemotePublicSession(value: unknown): value is RemotePublicSession {
+	if (!isRecord(value) || !Object.keys(value).every((key) => REMOTE_PUBLIC_SESSION_KEYS.has(key as keyof RemotePublicSession))) {
+		return false;
+	}
+	return isSessionIdentity(value)
+		&& typeof value.secret === 'string'
+		&& TOKEN_RE.test(value.secret);
 }
 
 export function isRemoteSessionToken(value: unknown): value is string {

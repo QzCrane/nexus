@@ -5,7 +5,7 @@ import {
 	isAudioRuntimeStatus,
 	isAudioSessionSnapshot,
 } from './audio.contracts.js';
-import { isRemotePublicSession } from './remote.contracts.js';
+import { isRemotePublicSession, isRemoteSessionView } from './remote.contracts.js';
 import { SPECTRA_PROTOCOL_VERSION } from './spectra.bootstrap.js';
 import {
 	isUiControlApplyAck,
@@ -127,7 +127,7 @@ function isRemoteSessionStatus(value: unknown): value is RemoteSessionStatus {
 		&& typeof value.connected === 'boolean'
 		&& (value.session === null
 			? value.connected === false
-			: isRemotePublicSession(value.session) && value.connected === value.session.connected);
+			: isRemoteSessionView(value.session) && value.connected === value.session.connected);
 }
 
 function isRemoteSessionChanged(value: unknown): value is RemoteSessionChangedEvent {

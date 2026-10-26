@@ -380,7 +380,10 @@ describe('capture manager acknowledged state', () => {
 				outcome: 'cancelled',
 				phase: 'error',
 			});
-			expect(manager.getPhase()).toBe('starting');
+			// SP-25: the request died before anything confirmed it. The mirror now
+			// reports the last acknowledged phase, not the abandoned intent — the
+			// reply already said `error`, so a `starting` mirror contradicted it.
+			expect(manager.getPhase()).toBe('idle');
 			expect(manager.getGeneration()).toBe(30);
 			await manager.waitForSettled();
 			expect(manager.hasLocalRequest()).toBe(false);

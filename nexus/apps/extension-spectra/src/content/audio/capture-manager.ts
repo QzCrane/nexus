@@ -106,6 +106,10 @@ export function createCaptureManager(options: CaptureManagerOptions) {
 	let active = false;
 	let phase: CaptureReply['phase'] = 'idle';
 	let generation = 0;
+	// Bumped by every confirmed transition. A request whose reply never confirms
+	// anything did not produce a state, and its optimistic phase must not outlive
+	// the request (SP-25).
+	let acknowledgedTransitions = 0;
 	let lastError: string | undefined;
 	let actualConfig: AudioConfig | null = null;
 	let pending: Promise<unknown> | null = null;
@@ -128,6 +132,7 @@ export function createCaptureManager(options: CaptureManagerOptions) {
 		if (!shouldAcceptAudioSessionPhase(generation, phase ?? 'idle', nextGeneration, nextPhase)) return false;
 		generation = nextGeneration;
 		phase = nextPhase;
+		acknowledgedTransitions += 1;
 		lastError = event.error;
 		// `phase` describes the in-flight transition; `enabled` is the last
 		// acknowledged processor state. Capture remains actual while stopping/erroring
@@ -143,6 +148,7 @@ export function createCaptureManager(options: CaptureManagerOptions) {
 		active = false;
 		phase = 'idle';
 		generation = 0;
+		acknowledgedTransitions = 0;
 		lastError = undefined;
 		actualConfig = null;
 		pending = null;
@@ -218,6 +224,13 @@ export function createCaptureManager(options: CaptureManagerOptions) {
 		const requestGeneration = requestedGeneration === undefined
 			? generation + 1
 			: Math.max(generation + 1, requestedGeneration);
+		// The optimistic phase is a UI intent, not a state: it describes what the
+		// user asked for while the request is in flight. Snapshotting the
+		// acknowledged values here is what lets `finally` put them back when the
+		// request dies without confirming anything.
+		const phaseBeforeRequest = phase;
+		const activeBeforeRequest = active;
+		const acknowledgementsBefore = acknowledgedTransitions;
 		generation = requestGeneration;
 		phase = enabled ? 'starting' : 'stopping';
 		lastError = undefined;
@@ -315,6 +328,14 @@ export function createCaptureManager(options: CaptureManagerOptions) {
 			return response;
 		} finally {
 			if (pending === operation) pending = null;
+			// Cancelled, timed out, or answered as stale: nothing confirmed the
+			// transition, so the mirror must not keep claiming it. The generation is
+			// deliberately not rolled back — it is an intent sequence, and reusing a
+			// number would let a late reply look current.
+			if (acknowledgedTransitions === acknowledgementsBefore) {
+				phase = phaseBeforeRequest;
+				active = activeBeforeRequest;
+			}
 		}
 	}
 

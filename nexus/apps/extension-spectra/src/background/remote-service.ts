@@ -11,7 +11,6 @@ import {
 	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 	type RemoteHostEvent,
-	type RemoteHostSession,
 	type RemoteState,
 } from '@nexus/contracts';
 import {
@@ -31,7 +30,12 @@ import {
 	enqueueBoundedSerial,
 	type BoundedSerialQueue,
 } from '../remote/operation-queue';
-import type { RemotePublicSession } from '../remote/protocol';
+import type { RemotePublicSession, RemoteSessionStatus } from '../remote/protocol';
+import {
+	type HostSession,
+	toPublicSession,
+	toSessionView,
+} from './remote-session-projection';
 import { isPairingWindowExpired } from '../remote/pairing-window';
 import { isTrustedExtensionUi } from './remote-sender-gate';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from './background-rpc';
@@ -39,7 +43,6 @@ import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from './background-r
 const LOG = '[SPECTRA Remote BG]';
 const REMOTE_HOST_GET_STATUS = 'REMOTE_HOST_GET_STATUS';
 
-type HostSession = RemoteHostSession;
 
 interface SessionAuthorization {
 	session: HostSession;
@@ -248,18 +251,6 @@ function forgetSession(tabId: number): void {
 	releaseRemoteObservation(tabId);
 }
 
-function toPublicSession(session: HostSession): RemotePublicSession {
-	const {
-		capability: _capability,
-		reconnectUntil: _reconnectUntil,
-		generation: _generation,
-		sessionEpoch: _sessionEpoch,
-		lastSequence: _lastSequence,
-		...publicSession
-	} = session;
-	return publicSession;
-}
-
 async function restoreSessions(): Promise<void> {
 	const snapshot = await reconcileOffscreenHost();
 	// HELLO is authoritative. An empty snapshot, including the empty snapshot
@@ -432,7 +423,7 @@ async function readAuthoritativeSession(
 	}
 }
 
-async function getSessionOnce(tabId: number): Promise<{ session: RemotePublicSession | null; connected: boolean }> {
+async function getSessionOnce(tabId: number): Promise<RemoteSessionStatus> {
 	await ensureRemoteSessionsRestored();
 	const authority = remoteTabAuthority(tabId);
 	if (isRemoteTabClosing(authority)) return { session: null, connected: false };
@@ -450,10 +441,10 @@ async function getSessionOnce(tabId: number): Promise<{ session: RemotePublicSes
 	}
 	if (session.connected) await acquireRemoteObservation(session, () => isCurrentRemoteSession(session)).catch(() => undefined);
 	if (isRemoteTabClosing(authority)) return { session: null, connected: false };
-	return { session: toPublicSession(session), connected: session.connected };
+	return { session: toSessionView(session), connected: session.connected };
 }
 
-function getSession(tabId: number): Promise<{ session: RemotePublicSession | null; connected: boolean }> {
+function getSession(tabId: number): Promise<RemoteSessionStatus> {
 	return enqueueRemoteTab(tabId, () => getSessionOnce(tabId));
 }
 

@@ -59,6 +59,15 @@ const readyDocuments = new Map<string, ContentRuntimeReadyResult>();
 const loadingDocuments = new Map<string, Promise<ContentRuntimeReadyResult>>();
 const disposingDocuments = new Map<string, Promise<void>>();
 const waiters = new Map<string, RuntimeWaiter>();
+/**
+ * Keys retired by a navigation or tab close. Two awaits inside
+ * `ensureContentRuntime` can outlive the document they started under, and a
+ * lease written after `forgetDocument` has no owner left to release it — the
+ * runtime then never disposes (SP-55). Bounded: a tab navigates finitely often,
+ * and the oldest entry is the one least likely to still be in flight.
+ */
+const retiredRuntimeKeys = new Set<string>();
+const MAX_RETIRED_RUNTIME_KEYS = 256;
 const leases = new Map<string, Set<string>>();
 const disposeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const documentInitializations = new Map<string, Promise<void>>();
@@ -77,6 +86,14 @@ export function getRuntimeLoaderDiagnostics(): Record<string, number> {
 
 function runtimeKey(tabId: number, documentId: string): string {
 	return `${tabId}:${documentId}`;
+}
+
+function markRuntimeKeyRetired(key: string): void {
+	if (retiredRuntimeKeys.size >= MAX_RETIRED_RUNTIME_KEYS) {
+		const oldest = retiredRuntimeKeys.values().next().value;
+		if (oldest !== undefined && oldest !== key) retiredRuntimeKeys.delete(oldest);
+	}
+	retiredRuntimeKeys.add(key);
 }
 
 function runtimeLeaseKey(reason: ContentRuntimeLeaseReason, capability: string): string {
@@ -135,6 +152,9 @@ function acquireRuntimeLease(
 	const timer = disposeTimers.get(key);
 	if (timer) clearTimeout(timer);
 	disposeTimers.delete(key);
+	// A fresh lease re-establishes the document as current, so a later retirement
+	// of the same key must be a new decision rather than a stale one.
+	retiredRuntimeKeys.delete(key);
 	const active = leases.get(key) ?? new Set<string>();
 	active.add(runtimeLeaseKey(reason, capability));
 	leases.set(key, active);
@@ -366,6 +386,17 @@ function commitReady(tabId: number, documentId: string, runtimeRevision: string)
 function forgetDocument(tabId: number, documentId?: string): void {
 	forgetDocumentSiteHotkeys(tabId, documentId);
 	const prefix = `${tabId}:`;
+	// Build the retirement set before dropping the maps: after this point the
+	// keys are gone and nothing else can tell an in-flight step that its
+	// document no longer exists.
+	for (const map of [readyDocuments, loadingDocuments, disposingDocuments, leases, documentInitializations]) {
+		for (const key of map.keys()) {
+			if (!key.startsWith(prefix)) continue;
+			if (documentId && key !== runtimeKey(tabId, documentId)) continue;
+			markRuntimeKeyRetired(key);
+		}
+	}
+	if (documentId) markRuntimeKeyRetired(runtimeKey(tabId, documentId));
 	for (const key of [...readyDocuments.keys()]) {
 		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
 			readyDocuments.delete(key);
@@ -435,20 +466,41 @@ async function ensureReadyDocument(
 	const key = runtimeKey(tabId, documentId);
 	const pending = loadingDocuments.get(key);
 	if (pending) return pending;
-	const loading = (async () => {
+	let loading!: Promise<ContentRuntimeReadyResult>;
+	loading = (async () => {
 		const known = readyDocuments.get(key);
 		if (known?.runtimeRevision === SPECTRA_CONTENT_RUNTIME_REVISION) return known;
 
 		const probed = await probeRuntime(tabId, documentId);
 		if (probed) {
+			// A navigation during the probe retires the document. Writing its READY
+			// entry afterwards would hand the next consumer a runtime for a document
+			// that no longer exists, and nothing would ever release it.
+			assertStillLoading(key, loading);
 			readyDocuments.set(key, probed);
 			return probed;
 		}
 		return loadRuntime(tabId, documentId);
 	})()
-		.finally(() => loadingDocuments.delete(key));
+		// Only the promise that owns the slot may clear it. A navigation during
+		// loading lets a fresh `ensureReadyDocument` install its own promise; the
+		// old one finishing later must not delete the new owner (SP-55).
+		.finally(() => {
+			if (loadingDocuments.get(key) === loading) loadingDocuments.delete(key);
+		});
 	loadingDocuments.set(key, loading);
 	return loading;
+}
+
+/**
+ * In-flight loader steps are only authoritative while they still own the
+ * `loadingDocuments` slot. `forgetDocument` removes that slot, so this check is
+ * exactly the "was this document retired while I awaited" question.
+ */
+function assertStillLoading(key: string, loading: Promise<ContentRuntimeReadyResult>): void {
+	if (loadingDocuments.get(key) !== loading) {
+		throw new Error('Content runtime document was released during loading');
+	}
 }
 
 export async function ensureContentRuntime(
@@ -464,6 +516,12 @@ export async function ensureContentRuntime(
 	await ensureCaptureStatesReconciled();
 	const currentDocumentId = await resolveDocumentId(tabId, documentId);
 	const key = runtimeKey(tabId, currentDocumentId);
+	// Resolving the document is an await, so the tab may have navigated while it
+	// was pending. Leasing a retired document creates a lease that no
+	// `forgetDocument` will ever see again.
+	if (retiredRuntimeKeys.has(key)) {
+		throw new Error('Content runtime document was retired before its lease was acquired');
+	}
 	acquireRuntimeLease(key, reason, capability);
 	try {
 		// A lease acquired while the last consumer is awaiting its RELEASE ACK
