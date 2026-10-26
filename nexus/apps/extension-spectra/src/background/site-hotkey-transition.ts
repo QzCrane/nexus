@@ -1,7 +1,14 @@
 // goal: deterministic ownership transition between lean exact-document host and full Content Runtime
 // inv: every transition first empties lean; lean/none also suspends any surviving heavy site-hotkey listener before ownership changes
 
-export type SiteHotkeyTransitionMode = 'none' | 'lean' | 'full';
+import type { SiteHotkeyRuntimeMode } from '../shared/site-hotkey-mode';
+
+/**
+ * A transition lands on the same three ownership modes the runtime resolves to,
+ * so there is one definition of "what owns site hotkeys here" rather than two
+ * structurally identical unions that could drift (SP-63).
+ */
+export type SiteHotkeyTransitionMode = SiteHotkeyRuntimeMode;
 
 export interface SiteHotkeyTransitionPort {
 	barrier(): Promise<void>;

@@ -4,7 +4,17 @@
 import { createSettlementPool, observeWithin } from '@nexus/kernel';
 import type { MediaFact, MediaProbeCooldown, MediaProbeCooldownOutcome } from './media-facts';
 
-export type MediaProbeOutcome = 'found' | 'no-media' | 'denied' | 'stale' | 'unknown';
+/**
+ * A probe can end in exactly two kinds of place: a fact (durable, `found` /
+ * `no-media`) or a transient outcome that only earns a cooldown. Deriving the
+ * union keeps those three declarations from drifting apart — adding a transient
+ * outcome to the cooldown type extends the probe result by construction, instead
+ * of silently leaving a value the probe may return but the cooldown may not
+ * record.
+ */
+export type MediaProbeOutcome =
+	| MediaFact['outcome']
+	| Exclude<MediaProbeCooldownOutcome, 'pending'>;
 export interface MediaProbeResult { outcome: MediaProbeOutcome; documentId: string | null }
 export interface MediaInventoryCoverage {
 	status: 'complete' | 'degraded'; total: number; examined: number; pending: number;
