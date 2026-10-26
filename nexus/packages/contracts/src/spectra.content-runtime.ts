@@ -5,7 +5,7 @@
 // code carries only the guards and constants it can actually exercise. The
 // background/offscreen/UI contexts keep the complete protocol validator.
 
-import { rpcFailure, rpcSuccess } from './spectra.protocol-primitives.js';
+import { isNavigationUrl, rpcFailure, rpcSuccess } from './spectra.protocol-primitives.js';
 import {
 	audioConfigToProcessorConfig,
 	DEFAULT_AUDIO_CONFIG,
@@ -459,7 +459,7 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 		&& value.generation === undefined
 		&& isRecord(value.payload)
 		&& hasOnly(value.payload, new Set(['url']))
-		&& isBoundedString(value.payload.url, 4096);
+		&& isNavigationUrl(value.payload.url);
 	return false;
 }
 

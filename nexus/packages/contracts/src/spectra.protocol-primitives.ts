@@ -153,3 +153,26 @@ export function isRpcFailureResult(value: unknown): value is RpcFailureResult {
 		&& value.ok === false
 		&& Object.hasOwn(value, 'error');
 }
+
+/**
+ * A `spectra.navigation.changed` payload carries the exact URL the tab committed
+ * to. Both protocol entries describe that same field, so both must answer the
+ * same question with the same words. They did not: the complete validator
+ * accepted up to 8192 characters and parsed the URL, while the slim Content
+ * entry stopped at 4096 and never parsed it — a long but perfectly valid
+ * navigation URL was legitimate on one side of the boundary and malformed on the
+ * other (SP-67).
+ */
+export const NAVIGATION_URL_MAX_LENGTH = 8192;
+
+export function isNavigationUrl(value: unknown): value is string {
+	if (typeof value !== 'string'
+		|| value.length === 0
+		|| value.length > NAVIGATION_URL_MAX_LENGTH) return false;
+	try {
+		new URL(value);
+		return true;
+	} catch {
+		return false;
+	}
+}

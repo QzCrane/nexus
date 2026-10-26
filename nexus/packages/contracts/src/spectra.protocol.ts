@@ -142,6 +142,7 @@ import {
 	isNonNegativeInteger,
 	isOptionalFiniteInRange,
 	isPositiveInteger,
+	isNavigationUrl,
 	isProtocolRecord as isRecord,
 	isRpcError,
 	isRpcFailureResult,
@@ -1003,17 +1004,9 @@ function isRemoteSessionClosedEvent(value: unknown): value is RemoteSessionClose
 }
 
 function isNavigationChangedEvent(value: unknown): value is NavigationChangedEvent {
-	if (!isRecord(value)
-		|| !hasOnlyKeys(value, NAVIGATION_CHANGED_KEYS)
-		|| typeof value.url !== 'string'
-		|| value.url.length === 0
-		|| value.url.length > 8192) return false;
-	try {
-		new URL(value.url);
-		return true;
-	} catch {
-		return false;
-	}
+	return isRecord(value)
+		&& hasOnlyKeys(value, NAVIGATION_CHANGED_KEYS)
+		&& isNavigationUrl(value.url);
 }
 
 const REQUEST_PAYLOAD_GUARDS = {

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	SPECTRA_PROTOCOL_VERSION,
 	compileEffectiveVolume as canonicalCompileEffectiveVolume,
 	requiresAudioProcessor as canonicalRequiresAudioProcessor,
 	resolveDesiredAudioMode as canonicalResolveDesiredAudioMode,
@@ -95,6 +96,28 @@ describe('Content contracts facade boundary', () => {
 		expect(facade.isSpectraResponse('spectra.content.default-hotkey.trigger', {
 			ok: true, data: { accepted: 'yes' },
 		})).toBe(false);
+	});
+
+	test('answers navigation URL validity identically in both protocol entries', async () => {
+		const facade = await import('../../../packages/contracts/src/spectra.content-runtime.ts');
+		const full = await import('../../../packages/contracts/src/spectra.protocol.ts');
+		// A 5000-character query is still a navigation the browser can commit to.
+		// The slim entry used to stop at 4096 and skip URL parsing entirely, so the
+		// same event was legal for Background and malformed for Content (SP-67).
+		const longButValid = `https://media.example/watch?q=${'a'.repeat(5_000)}`;
+		const event = (url: string) => ({
+			protocolVersion: SPECTRA_PROTOCOL_VERSION,
+			type: 'spectra.navigation.changed',
+			tabId: 7,
+			documentId: 'document-navigation',
+			payload: { url },
+		});
+		for (const url of [longButValid, 'not-a-url', '', `https://media.example/${'a'.repeat(9_000)}`]) {
+			expect(facade.isSpectraEventEnvelope(event(url)), url.slice(0, 40)).toBe(
+				full.isSpectraEventEnvelope(event(url)),
+			);
+		}
+		expect(facade.isSpectraEventEnvelope(event(longButValid))).toBe(true);
 	});
 
 });
