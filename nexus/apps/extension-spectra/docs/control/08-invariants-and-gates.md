@@ -37,25 +37,25 @@ last_reviewed: 2026-08-28
 - `SCTRL-023`: screenshot source and geometry are token-verified on both sides of browser capture.
 - `SCTRL-024`: document runtime ownership counts unique consumer tokens; only the last token disposes it.
 - `SCTRL-025`: `activeMedia` and `activeVideo` are independent actual identities; video-only surfaces route to `activeVideo`; UI accepts a different document only at a higher tab generation and rejects delayed old-document projections.
-- `SCTRL-026`: a neutral CSS value on a never-owned target is a DOM-free no-op.
-- `SCTRL-027`: native candidate admission and ACK are one-shot; rejected maturation restores page baseline & prior DOM state.
-- `SCTRL-028`: default pages have zero audio work; no Capture processor, offscreen audio lease or audio context survives a neutral release.
-- `SCTRL-029`: ACK target is projected only through contract scope; non-media operations write `target: null`.
-- `SCTRL-030`: runtime status/read is a pure projection with no document scan or synthetic event.
-- `SCTRL-031`: operations executing no media writer acknowledge `target: null`.
-- `SCTRL-032`: processor configuration exposes only `boostGain: 1–8`; page volume/mute cannot cross either processor boundary.
-- `SCTRL-033`: Background control consumers invoke serialized coordinator directly without SW self-RPC.
-- `SCTRL-034`: default content bootstrap uses minimal contract; MV3 SW is self-contained ESM; build has zero redundancy; extracted pure value/ACK/queue/async capabilities are direct owners rather than aliases or re-export shims, while coordinator commit/persist/publish remains the sole effect writer.
-- `SCTRL-035`: native event-driven writes install bounded listener before setter and ACK after quiet getter boundary.
-- `SCTRL-036`: strategy escalation consumes canonical failure codes; security/activation failures are terminal.
+- `SCTRL-026`: a neutral CSS value on a never-owned target is a DOM-free no-op Anchor: `releaseDomOwnership`.
+- `SCTRL-027`: native candidate admission and ACK are one-shot; rejected maturation restores page baseline & prior DOM state Anchor: `consumeCaptureAdmission`.
+- `SCTRL-028`: default pages have zero audio work; no Capture processor, offscreen audio lease or audio context survives a neutral release Anchor: `requiresAudioProcessor`.
+- `SCTRL-029`: ACK target is projected only through contract scope; non-media operations write `target: null` Anchor: `projectControlTarget`.
+- `SCTRL-030`: runtime status/read is a pure projection with no document scan or synthetic event Anchor: `getContentBootstrapState`.
+- `SCTRL-031`: operations executing no media writer acknowledge `target: null` Anchor: `operationField`.
+- `SCTRL-032`: processor configuration exposes only `boostGain: 1–8`; page volume/mute cannot cross either processor boundary Anchor: `audioConfigToProcessorConfig`.
+- `SCTRL-033`: Background control consumers invoke serialized coordinator directly without SW self-RPC Anchor: `submitControlRequest`.
+- `SCTRL-034`: default content bootstrap uses minimal contract; MV3 SW is self-contained ESM; build has zero redundancy; extracted pure value/ACK/queue/async capabilities are direct owners rather than aliases or re-export shims, while coordinator commit/persist/publish remains the sole effect writer Anchor: `SPECTRA_CONTENT_BOOTSTRAP_REVISION`.
+- `SCTRL-035`: native event-driven writes install bounded listener before setter and ACK after quiet getter boundary Anchor: `requestVideoFrameCallback`.
+- `SCTRL-036`: strategy escalation consumes canonical failure codes; security/activation failures are terminal Anchor: `capability-unavailable` Anchor: `isControlStrategyFailure`.
 - `SCTRL-037`: processor actual state comes only from normalized graph/host readback (`graphSignature`).
-- `SCTRL-038`: Capture generation replacement gates the candidate at zero gain, verifies running graph readback, switches once, and retires the old processor only after success.
-- `SCTRL-039`: visible Popup and authenticated remote synchronization require independent document observation tokens.
+- `SCTRL-038`: Capture generation replacement gates the candidate at zero gain, verifies running graph readback, switches once, and retires the old processor only after success Anchor: `OFFSCREEN_AUDIO_CANCEL_START`.
+- `SCTRL-039`: visible Popup and authenticated remote synchronization require independent document observation tokens Anchor: `remotePublicationToken`.
 - `SCTRL-040`: `CONTROL_SESSION_FIELDS` durable projection wins first, then site preset, then global preset.
-- `SCTRL-041`: new Capture requires volatile Background admission (`captureAdmission: 'extension-invocation'`).
-- `SCTRL-042`: video enhancement is a lazy capability-owned module; default control does not load it.
-- `SCTRL-043`: Popup, Options and remote use restricted protocol validators and cannot load Background request router; UI event routing cannot become a second settings/control protocol owner.
-- `SCTRL-044`: production application bundles have one esbuild optimization pass; only PeerJS vendor enters Terser.
+- `SCTRL-041`: new Capture requires volatile Background admission (`captureAdmission: 'extension-invocation'`) Anchor: `captureAdmission`.
+- `SCTRL-042`: video enhancement is a lazy capability-owned module; default control does not load it Anchor: `VideoEffectsController`.
+- `SCTRL-043`: Popup, Options and remote use restricted protocol validators and cannot load Background request router; UI event routing cannot become a second settings/control protocol owner Anchor: `isSpectraResponse`.
+- `SCTRL-044`: production application bundles have one esbuild optimization pass; only PeerJS vendor enters Terser Anchor: `productionMangleOptions`.
 
 ## §21 Migration and release gate
 

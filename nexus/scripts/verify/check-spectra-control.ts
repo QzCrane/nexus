@@ -31,7 +31,7 @@ import {
 } from '../../packages/contracts/src/hotkeys.contracts.ts';
 import { SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS } from './spectra-control-algorithm-catalog.ts';
 import { missingSourceEvidence } from './source-evidence.ts';
-import { error, ok, scanDir, section } from './utils.ts';
+import { error, ok, scanDir, section, warn } from './utils.ts';
 
 const APP_PATH = 'apps/extension-spectra';
 const SOURCE_PATH = `${APP_PATH}/src`;
@@ -1140,6 +1140,20 @@ function checkPolicyOwner(root) {
 			|| !architecture.includes("contextState: 'running'")) {
 			error('SCTRL-013/SCTRL-016/SCTRL-028: three-owner processor identity and running-state ACK must be explicit and bounded');
 		}
+		// A line in the owner document only proves an invariant was written down.
+		// Each one must also cite a symbol, and every cited symbol must still exist
+		// in the shipped sources; otherwise the document is describing a system
+		// that no longer exists (SP-81).
+		const invariantSources = (() => {
+			const parts: string[] = [];
+			for (const relative of [SOURCE_PATH, 'packages/contracts/src', `${APP_PATH}/scripts`]) {
+				scanDir(path.join(root, relative), (fullPath: string) => {
+					if (!/\.(ts|tsx)$/u.test(fullPath) || fullPath.includes('.spec.')) return;
+					parts.push(fs.readFileSync(fullPath, 'utf8'));
+				});
+			}
+			return parts.join('\n');
+		})();
 		for (const invariant of [
 			'SCTRL-025',
 			'SCTRL-026',
@@ -1162,8 +1176,25 @@ function checkPolicyOwner(root) {
 			'SCTRL-043',
 			'SCTRL-044',
 		]) {
-			if (!architecture.includes(`- \`${invariant}\``)) {
+			const marker = `- \`${invariant}\``;
+			if (!architecture.includes(marker)) {
 				error(`SCTRL-016: control owner is missing ${invariant}`);
+				continue;
+			}
+			const line = architecture.slice(architecture.indexOf(marker)).split('\n')[0] ?? '';
+			const cited = [...line.matchAll(/`([A-Za-z_$][\w$]{2,})`/gu)]
+				.map((match) => match[1])
+				.filter((symbol) => symbol !== invariant);
+			if (cited.length === 0) {
+				// Not an error yet: the invariant is real, it just has no anchor a
+				// machine can follow. Reported so the count can only go down.
+				warn(`SCTRL-016: ${invariant} cites no source symbol, so nothing can check it`, true);
+				continue;
+			}
+			for (const symbol of cited) {
+				if (!invariantSources.includes(symbol)) {
+					error(`SCTRL-016: ${invariant} cites \`${symbol}\`, which no shipped source declares`);
+				}
 			}
 		}
 		for (const staleCaptureClaim of [
