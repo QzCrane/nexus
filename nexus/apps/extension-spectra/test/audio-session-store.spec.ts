@@ -7,6 +7,7 @@ import {
 	flushAudioSessions,
 	forgetAudioSession,
 	getAudioSession,
+	getAudioSessionRejection,
 	isAudioSessionIdentityInvalidated,
 	removeAudioSession,
 	scheduleAudioSessionProjection,
@@ -500,6 +501,32 @@ describe('acknowledged audio session store', () => {
 			expect(persisted.phase).toBe('error');
 		} finally {
 			await removeAudioSession(identity.tabId);
+			restoreChrome(originalChrome);
+		}
+	});
+
+	test('names the reason a write was refused instead of returning silently', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const storage = new FakeSessionStorage();
+		installChrome(storage, []);
+
+		try {
+			const identity = identityFor(8_140, 'document-rejection-evidence');
+			await updateAudioSession(identity, { generation: 5, phase: 'idle', actualMode: 'bypass' });
+			expect(getAudioSessionRejection(identity.tabId)).toBeNull();
+
+			// A lower generation is settled, not pending: retrying it would only
+			// re-lose, and the caller can now tell that apart from "not yet provable".
+			await updateAudioSession(identity, { generation: 3, phase: 'idle' });
+			expect(getAudioSessionRejection(identity.tabId)).toEqual({
+				code: 'stale_sequence',
+				seen: 5,
+				got: 3,
+			});
+
+			await updateAudioSession(identity, { generation: 6, phase: 'idle' });
+			expect(getAudioSessionRejection(identity.tabId)).toBeNull();
+		} finally {
 			restoreChrome(originalChrome);
 		}
 	});

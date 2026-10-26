@@ -7,14 +7,15 @@ import type {
 	SiteHotkeyConfig,
 } from '@nexus/contracts';
 import {
+	createBoundedSet,
 	DEFAULT_HOTKEY_SETTINGS,
 	findBestHostnameMatch,
 	isSpectraEventEnvelope,
 	normalizeHostname,
 	resolveAudioVolume,
 	resolveAudioVolumeState,
-	resolveSpectraHotkeyActualFeedback,
 	resolveSpectraDefaultHotkeyAction,
+	resolveSpectraHotkeyActualFeedback,
 	selectHotkeyFeedbackOwner,
 	selectHotkeyRepeatPolicy,
 } from '@nexus/contracts';
@@ -66,8 +67,7 @@ const inFlightGestures = new Set<string>();
 // mid-execution, repeatedly, would grow it for the lifetime of the document
 // (SP-53). The oldest entry is the least likely to still matter, and dropping
 // it only costs one stale release call.
-const releasedFeedbackGestures = new Set<string>();
-const MAX_RELEASED_FEEDBACK_GESTURES = 64;
+const releasedFeedbackGestures = createBoundedSet<string>({ cap: 64, ttlMs: 300_000 });
 const pendingRepeatPulses = new Map<string, number>();
 const lastRepeatExecutionAt = new Map<string, number>();
 interface ActiveHotkeyBinding {
@@ -100,19 +100,10 @@ function leanSiteHotkeyOwnsConfiguredBindings(): boolean {
 	return marker?.revision === 2 && marker.active === true;
 }
 
-function markFeedbackGestureReleased(gesture: string): void {
-	if (releasedFeedbackGestures.size >= MAX_RELEASED_FEEDBACK_GESTURES) {
-		// Sets iterate in insertion order, so the first entry is the oldest.
-		const oldest = releasedFeedbackGestures.values().next().value;
-		if (oldest !== undefined) releasedFeedbackGestures.delete(oldest);
-	}
-	releasedFeedbackGestures.add(gesture);
-}
-
 function cancelActiveBindings(): void {
 	for (const held of activeBindingsByCode.values()) {
 		if (inFlightGestures.has(held.feedbackGesture)) {
-			markFeedbackGestureReleased(held.feedbackGesture);
+			releasedFeedbackGestures.add(held.feedbackGesture);
 		} else {
 			releaseHotkeyToast(held.feedbackGesture);
 			releaseHotkeyTargetOSD(held.feedbackGesture);
@@ -547,7 +538,7 @@ function releaseSiteHotkeys(signal: PhysicalHotkeyReleaseSignal): void {
 	}
 	for (const held of released) {
 		if (inFlightGestures.has(held.feedbackGesture)) {
-			markFeedbackGestureReleased(held.feedbackGesture);
+			releasedFeedbackGestures.add(held.feedbackGesture);
 		} else {
 			releaseHotkeyToast(held.feedbackGesture);
 			releaseHotkeyTargetOSD(held.feedbackGesture);

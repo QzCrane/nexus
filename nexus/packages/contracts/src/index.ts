@@ -87,6 +87,12 @@ export {
 // Audio contracts
 export type { AudioProcessorConfig } from './audio-processor.contracts.js';
 export { isAudioProcessorConfig } from './audio-processor.contracts.js';
+export type { BoundedMap, BoundedOptions, BoundedRegistry, BoundedSet } from './bounded.js';
+export type { ProcessorAck, StartIntent } from './offscreen.contracts.js';
+export { isProcessorAck, mintStartIntent, verifyProcessorAck } from './offscreen.contracts.js';
+export { createBoundedMap, createBoundedSet } from './bounded.js';
+export type { Effect, Fact, Rejection, Verdict } from './fact.js';
+export { accept, describeRejection, isRetryableRejection, reject } from './fact.js';
 
 export type {
   AudioConfig,

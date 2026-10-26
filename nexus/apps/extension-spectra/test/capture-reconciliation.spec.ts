@@ -272,7 +272,7 @@ describe('capture restart reconciliation barrier', () => {
 								},
 							};
 						}
-						return activeAck(72, message.generation, message.controlRevision);
+						return activeAck(72, message.generation, message.controlRevision, undefined, message);
 					}
 					if (message.type === 'OFFSCREEN_AUDIO_CANCEL_START'
 						|| message.type === 'OFFSCREEN_AUDIO_STOP') {
@@ -413,7 +413,7 @@ describe('capture restart reconciliation barrier', () => {
 				sendOffscreen: async (message) => {
 					if (message.type === 'OFFSCREEN_HOST_HELLO') return { audioTabs: [], remoteTabs: [] };
 					if (message.type === 'OFFSCREEN_AUDIO_START') {
-						return activeAck(73, message.generation, message.controlRevision, config);
+						return activeAck(73, message.generation, message.controlRevision, config, message);
 					}
 					if (message.type === 'OFFSCREEN_AUDIO_STOP') {
 						return idleAck(73, message.generation, 1);
@@ -619,7 +619,7 @@ describe('capture restart reconciliation barrier', () => {
 				sendOffscreen: async (message) => {
 					if (message.type === 'OFFSCREEN_HOST_HELLO') return { audioTabs: [], remoteTabs: [] };
 					if (message.type === 'OFFSCREEN_AUDIO_START') {
-						return activeAck(75, message.generation, message.controlRevision, config);
+						return activeAck(75, message.generation, message.controlRevision, config, message);
 					}
 					if (message.type === 'OFFSCREEN_AUDIO_STOP') {
 						return idleAck(75, message.generation, 1);
@@ -811,7 +811,13 @@ function activeAck(
 	generation: unknown,
 	controlRevision: unknown,
 	config = DEFAULT_AUDIO_CONFIG,
+	startIntent?: { intentId?: string; nonce?: string },
 ) {
+	// The host echoes the start it was given; an ACK without that echo is not
+	// evidence that *this* start's processor is running (INV-2).
+	const ack = startIntent?.intentId && startIntent?.nonce
+		? { intentId: startIntent.intentId, nonce: startIntent.nonce, ackSequence: 1 }
+		: undefined;
 	return {
 		ok: true,
 		tabId: Number(tabId),
@@ -829,6 +835,7 @@ function activeAck(
 			pan: config.pan,
 			delay: config.delay,
 		},
+		...(ack ? { ack } : {}),
 	};
 }
 

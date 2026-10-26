@@ -2,6 +2,7 @@
 
 import {
 	controlCapabilityUsesStrategy,
+	createBoundedSet,
 	hasExtensionOnlyContribution,
 	isDefaultAudioConfig,
 	resolveAudioVolume,
@@ -66,8 +67,7 @@ const waiters = new Map<string, RuntimeWaiter>();
  * runtime then never disposes (SP-55). Bounded: a tab navigates finitely often,
  * and the oldest entry is the one least likely to still be in flight.
  */
-const retiredRuntimeKeys = new Set<string>();
-const MAX_RETIRED_RUNTIME_KEYS = 256;
+const retiredRuntimeKeys = createBoundedSet<string>({ cap: 256, ttlMs: 300_000 });
 const leases = new Map<string, Set<string>>();
 const disposeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const documentInitializations = new Map<string, Promise<void>>();
@@ -86,14 +86,6 @@ export function getRuntimeLoaderDiagnostics(): Record<string, number> {
 
 function runtimeKey(tabId: number, documentId: string): string {
 	return `${tabId}:${documentId}`;
-}
-
-function markRuntimeKeyRetired(key: string): void {
-	if (retiredRuntimeKeys.size >= MAX_RETIRED_RUNTIME_KEYS) {
-		const oldest = retiredRuntimeKeys.values().next().value;
-		if (oldest !== undefined && oldest !== key) retiredRuntimeKeys.delete(oldest);
-	}
-	retiredRuntimeKeys.add(key);
 }
 
 function runtimeLeaseKey(reason: ContentRuntimeLeaseReason, capability: string): string {
@@ -393,10 +385,10 @@ function forgetDocument(tabId: number, documentId?: string): void {
 		for (const key of map.keys()) {
 			if (!key.startsWith(prefix)) continue;
 			if (documentId && key !== runtimeKey(tabId, documentId)) continue;
-			markRuntimeKeyRetired(key);
+			retiredRuntimeKeys.add(key);
 		}
 	}
-	if (documentId) markRuntimeKeyRetired(runtimeKey(tabId, documentId));
+	if (documentId) retiredRuntimeKeys.add(runtimeKey(tabId, documentId));
 	for (const key of [...readyDocuments.keys()]) {
 		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
 			readyDocuments.delete(key);

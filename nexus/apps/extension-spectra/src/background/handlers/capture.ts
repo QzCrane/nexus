@@ -5,6 +5,7 @@ import {
 	createSpectraEvent,
 	DEFAULT_AUDIO_CONFIG,
 	isOffscreenHostEvent,
+	mintStartIntent,
 	resolveAudioVolume,
 	rpcFailure,
 	rpcSuccess,
@@ -17,6 +18,7 @@ import {
 	type CaptureAdmission,
 	type SpectraAudioMode,
 	type TabSessionIdentity,
+	verifyProcessorAck,
 } from '@nexus/contracts';
 import { audioGraphSignature } from '@nexus/audio-engine';
 import { captureStates } from '../state';
@@ -347,6 +349,10 @@ async function startCapture(
 		assertCaptureStartAuthority(tabId, identity, authority, true);
 		const streamId = await getMediaStreamId(tabId);
 		assertCaptureStartAuthority(tabId, identity, authority, true);
+		// Minted once per start and echoed by the host. An `active` ACK that cannot
+		// be tied back to this pair came from some other start, so it is not
+		// evidence about the processor this transaction asked for (INV-2).
+		const startIntent = mintStartIntent();
 		const startHost = (startGeneration: number) => withTimeout(
 			sendOffscreenMessage({
 				type: 'OFFSCREEN_AUDIO_START',
@@ -355,6 +361,8 @@ async function startCapture(
 				config: audioConfigToProcessorConfig(config),
 				generation: startGeneration,
 				controlRevision,
+				intentId: startIntent.intentId,
+				nonce: startIntent.nonce,
 			}),
 			OFFSCREEN_ACK_TIMEOUT_MS,
 			'Offscreen audio processor did not acknowledge startup',
@@ -380,8 +388,12 @@ async function startCapture(
 		if (state.generation !== generation) {
 			return { status: 'processing' as const, phase: state.phase, generation: state.generation };
 		}
+		const ackIsCausal = result?.ok === true && result.phase === 'active'
+			? verifyProcessorAck(startIntent, result.ack)
+			: false;
 		if (result?.ok && result.phase === 'active' && result.generation > generation
-			&& audioGraphSignature(result.normalizedActualConfig) === result.graphSignature) {
+			&& audioGraphSignature(result.normalizedActualConfig) === result.graphSignature
+			&& ackIsCausal) {
 			// The host is authoritative after a worker restart. Preserve its processor
 			// and lease instead of treating a lower-generation retry as startup failure.
 			state.generation = result.generation;
@@ -409,6 +421,12 @@ async function startCapture(
 			|| result.contextState !== 'running'
 			|| audioGraphSignature(result.normalizedActualConfig) !== result.graphSignature) {
 			throw new Error(result?.error?.message || 'Offscreen audio processor rejected startup');
+		}
+		// Every physical claim above passed, but an ACK the host cannot tie to the
+		// start this transaction minted is still not evidence about it: a late ACK
+		// from a superseded start says `running` just as convincingly.
+		if (!ackIsCausal) {
+			throw new Error('Offscreen audio acknowledgement does not match this start intent');
 		}
 
 		state.active = true;

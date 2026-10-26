@@ -570,3 +570,9 @@ export function isSpectraResponse<T extends SpectraRequestType>(
 }
 
 export { rpcFailure, rpcSuccess };
+// Content is built against this entry instead of the full contracts package, so
+// every runtime value a content module imports must be reachable from here. The
+// bounded template is one of them: the content hotkey listener owns a bounded
+// set (SP-53).
+export { createBoundedMap, createBoundedSet } from './bounded.js';
+export type { BoundedMap, BoundedRegistry, BoundedSet } from './bounded.js';

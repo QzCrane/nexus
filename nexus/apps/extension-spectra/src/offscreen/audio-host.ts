@@ -4,6 +4,7 @@ import {
 	AudioGraphRouter,
 	type AudioGraphSnapshot,
 } from '@nexus/audio-engine';
+import { createBoundedMap, type ProcessorAck, type StartIntent } from '@nexus/contracts';
 import type {
 	AudioProcessorConfig,
 	OffscreenAudioEvent,
@@ -52,8 +53,14 @@ const processors = new Map<number, AudioProcessor>();
 // it must outlive its processor. It has no other eviction point, so the map
 // carries an explicit ceiling: the oldest tab record is the one least likely to
 // still receive a delayed envelope (SP-52).
-const latestIntents = new Map<number, AudioIntent>();
-const MAX_LATEST_INTENTS = 256;
+const latestIntents = createBoundedMap<number, AudioIntent>({ cap: 256, ttlMs: 1_800_000 });
+/**
+ * The start each processor came from, plus a per-tab monotonic ACK counter.
+ * Together they turn "the host says it is running" into "the host says the
+ * processor *this* start created is running" (INV-2).
+ */
+const startIntents = createBoundedMap<number, StartIntent>({ cap: 256, ttlMs: 1_800_000 });
+const ackSequences = createBoundedMap<number, number>({ cap: 256, ttlMs: 1_800_000 });
 const visualizerSubscriptions = new Set<number>();
 const EMPTY_VISUALIZER_FRAME: { buffer: number[] | null } = { buffer: null };
 const CAPTURE_GATE_SWITCH_LEAD_MS = 20;
@@ -61,10 +68,6 @@ const CAPTURE_GATE_SWITCH_LEAD_MS = 20;
 function recordIntent(tabId: number, generation: number, kind: AudioIntentKind): AudioIntent {
 	let current = latestIntents.get(tabId);
 	if (!current || generation > current[0]) {
-		if (!current && latestIntents.size >= MAX_LATEST_INTENTS) {
-			const oldest = latestIntents.keys().next().value;
-			if (oldest !== undefined && oldest !== tabId) latestIntents.delete(oldest);
-		}
 		current = [generation, kind, current?.[2] ?? 0];
 		latestIntents.set(tabId, current);
 	} else if (generation === current[0] && kind === INTENT_STOP) {
@@ -131,6 +134,9 @@ function activeResult(processor: AudioProcessor): AudioHostResult {
 			'capture_context_not_running',
 		);
 	}
+	const ackSequence = (ackSequences.get(processor.tabId) ?? 0) + 1;
+	ackSequences.set(processor.tabId, ackSequence);
+	const intent = startIntents.get(processor.tabId);
 	return {
 		ok: true,
 		tabId: processor.tabId,
@@ -140,6 +146,10 @@ function activeResult(processor: AudioProcessor): AudioHostResult {
 		contextState: 'running',
 		graphSignature: processor.snapshot.graphSignature,
 		normalizedActualConfig: processor.snapshot.normalizedActualConfig,
+		// Absent when the caller never minted a start intent (tests, and any
+		// caller that predates the binding). Background refuses an `active` ACK
+		// without one, so omitting it is the honest answer rather than a guess.
+		...(intent ? { ack: { intentId: intent.intentId, nonce: intent.nonce, ackSequence } satisfies ProcessorAck } : {}),
 	};
 }
 
@@ -517,7 +527,11 @@ export async function handleAudioHostMessage(
 	message: OffscreenAudioRequest,
 ): Promise<OffscreenHostResponse<OffscreenAudioRequestType>> {
 	switch (message.type) {
-		case 'OFFSCREEN_AUDIO_START':
+		case 'OFFSCREEN_AUDIO_START': {
+			const intent = message.intentId && message.nonce
+				? { intentId: message.intentId, nonce: message.nonce } satisfies StartIntent
+				: null;
+			if (intent) startIntents.set(message.tabId, intent);
 			return startCapture(
 				message.tabId,
 				message.streamId,
@@ -525,7 +539,10 @@ export async function handleAudioHostMessage(
 				message.generation,
 				message.controlRevision ?? 0,
 			);
+		}
 		case 'OFFSCREEN_AUDIO_STOP':
+			startIntents.delete(message.tabId);
+			ackSequences.delete(message.tabId);
 			return stopCapture(message.tabId, message.generation);
 		case 'OFFSCREEN_AUDIO_CANCEL_START':
 			return cancelPendingStart(message.tabId, message.generation, message.stopCommitted);

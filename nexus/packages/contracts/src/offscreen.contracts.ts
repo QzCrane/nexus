@@ -27,6 +27,66 @@ export interface OffscreenHostSnapshot {
 	remoteTabs: Array<{ tabId: number; sessionId: string }>;
 }
 
+/**
+ * Causal evidence for an `active` claim (INV-2).
+ *
+ * `contextState` and `graphSignature` say the host believes a processor is
+ * running. Neither ties that belief to the specific start this process asked
+ * for: a late ACK from a superseded start still reports `running`. The echoed
+ * `intentId` and `nonce` were minted by Background for one start, and the host
+ * cannot invent them, so an ACK carrying them can only have been produced by
+ * the processor that start created.
+ */
+export interface ProcessorAck {
+	readonly intentId: string;
+	readonly nonce: string;
+	readonly ackSequence: number;
+}
+
+/** Minted by Background for exactly one start; echoed back by the host. */
+export interface StartIntent {
+	readonly intentId: string;
+	readonly nonce: string;
+}
+
+const START_INTENT_ID_LENGTH = 64;
+
+function randomToken(bytes: number): string {
+	const buffer = new Uint8Array(bytes);
+	crypto.getRandomValues(buffer);
+	let out = '';
+	for (const byte of buffer) out += byte.toString(16).padStart(2, '0');
+	return out;
+}
+
+export function mintStartIntent(): StartIntent {
+	return { intentId: randomToken(16), nonce: randomToken(16) };
+}
+
+/**
+ * Fails closed. A missing intent, a missing ACK, a mismatched field or a
+ * non-positive sequence all mean "this ACK cannot be tied to my start", which
+ * is the same answer as "no evidence".
+ */
+export function verifyProcessorAck(
+	intent: StartIntent | null | undefined,
+	ack: ProcessorAck | null | undefined,
+): boolean {
+	if (!intent || !ack) return false;
+	if (ack.intentId !== intent.intentId || ack.intentId.length === 0) return false;
+	if (ack.nonce !== intent.nonce || ack.nonce.length === 0) return false;
+	return Number.isSafeInteger(ack.ackSequence) && ack.ackSequence > 0;
+}
+
+export function isProcessorAck(value: unknown): value is ProcessorAck {
+	return isRecord(value)
+		&& hasOnlyKeys(value, ['intentId', 'nonce', 'ackSequence'])
+		&& isBoundedString(value.intentId, START_INTENT_ID_LENGTH)
+		&& isBoundedString(value.nonce, START_INTENT_ID_LENGTH)
+		&& Number.isSafeInteger(value.ackSequence as number)
+		&& (value.ackSequence as number) > 0;
+}
+
 export type OffscreenAudioResult =
 	| {
 		ok: true;
@@ -37,6 +97,8 @@ export type OffscreenAudioResult =
 		contextState: 'running';
 		graphSignature: string;
 		normalizedActualConfig: AudioProcessorConfig;
+		/** Echoes the start this processor came from; see {@link ProcessorAck}. */
+		ack?: ProcessorAck;
 		error?: never;
 	}
 	| {
@@ -108,6 +170,9 @@ export interface OffscreenHostRequestMap {
 		config: AudioProcessorConfig;
 		generation: number;
 		controlRevision?: number;
+		/** Causal binding: see {@link ProcessorAck}. Absent only in tests. */
+		intentId?: string;
+		nonce?: string;
 	}, OffscreenAudioResult>;
 	OFFSCREEN_AUDIO_STOP: OffscreenHostRequestDefinition<{
 		tabId: number;
@@ -250,6 +315,8 @@ export function isOffscreenHostRequest(value: unknown): value is OffscreenHostWi
 				'config',
 				'generation',
 				'controlRevision',
+				'intentId',
+				'nonce',
 			])
 				&& isTabId(value.tabId)
 				&& typeof value.streamId === 'string'
@@ -257,7 +324,9 @@ export function isOffscreenHostRequest(value: unknown): value is OffscreenHostWi
 				&& value.streamId.length <= MAX_STREAM_ID_LENGTH
 				&& isAudioProcessorConfig(value.config)
 				&& isGeneration(value.generation)
-				&& (value.controlRevision === undefined || isGeneration(value.controlRevision));
+				&& (value.controlRevision === undefined || isGeneration(value.controlRevision))
+				&& (value.intentId === undefined || isBoundedString(value.intentId, START_INTENT_ID_LENGTH))
+				&& (value.nonce === undefined || isBoundedString(value.nonce, START_INTENT_ID_LENGTH));
 		case 'OFFSCREEN_AUDIO_STOP':
 			return hasOnlyKeys(value, ['target', 'type', 'tabId', 'generation'])
 				&& isTabId(value.tabId)
@@ -441,10 +510,12 @@ export function isOffscreenAudioResult(value: unknown): value is OffscreenAudioR
 				'contextState',
 				'graphSignature',
 				'normalizedActualConfig',
+				'ack',
 			])
 				&& value.contextState === 'running'
 				&& isBoundedString(value.graphSignature, 512)
-				&& isAudioProcessorConfig(value.normalizedActualConfig);
+				&& isAudioProcessorConfig(value.normalizedActualConfig)
+				&& (value.ack === undefined || isProcessorAck(value.ack));
 		}
 		return value.phase === 'idle'
 			&& hasOnlyKeys(value, [

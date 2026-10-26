@@ -5,6 +5,7 @@ import {
 	clampControlValue,
 	compileEffectiveVolume,
 	CONTROL_VALUE_LIMITS,
+	createBoundedMap,
 	createSpectraEvent,
 	isActiveCaptureLifecycle,
 	isControlApplyAck,
@@ -129,7 +130,12 @@ const serialized = createKeyedSerializedQueue<number>();
 // Deferred per-tab session projections. Each commit answers its requester
 // before the projection runs; chaining per tab preserves commit order while
 // keeping the projection off the serialized ACK path of later commits.
-const sessionProjectionTails = new Map<number, Promise<unknown>>();
+const sessionProjectionTails = createBoundedMap<number, Promise<unknown>>({
+	cap: 256,
+	// A projection tail is short-lived by construction; the ceiling and this age
+	// limit are backstops for a tail whose owner never settles (INV-12).
+	ttlMs: 60_000,
+});
 
 function scheduleSessionProjection(
 	tabId: number,

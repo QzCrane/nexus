@@ -3,7 +3,10 @@
 import {
 	clampControlValue,
 	compileEffectiveVolume,
+	createBoundedMap,
+	describeRejection,
 	DEFAULT_AUDIO_CONFIG,
+	isRetryableRejection,
 	isAudioSessionError,
 	isAudioSessionSnapshot,
 	isLegacyAudioConfig,
@@ -11,6 +14,7 @@ import {
 	resolveAudioVolume,
 	splitEffectiveVolume,
 	createSpectraEvent,
+	type Rejection,
 	type AudioConfig,
 	type LegacyAudioConfig,
 	type AudioSessionPhase,
@@ -45,6 +49,18 @@ const documentFences = new Map<number, AudioDocumentFence>();
 const pendingWrites = new Map<number, AudioSessionSnapshot>();
 const writeTimers = new Map<number, ReturnType<typeof setTimeout>>();
 const retryCounts = new Map<number, number>();
+/**
+ * Why the most recent write for a tab was refused, if it was.
+ *
+ * Every admission path used to answer `return base` — the refusal happened and
+ * nothing could say which kind it was, which is exactly how a dead state
+ * survived for months. The ledger is bounded because it exists per tab and has
+ * no eviction of its own (INV-12).
+ */
+const sessionRejections = createBoundedMap<number, Rejection>({
+	cap: 256,
+	ttlMs: 300_000,
+});
 
 type LegacyAudioSessionSnapshot = Omit<AudioSessionSnapshot, 'actualConfig' | 'desiredMode' | 'actualMode'> & {
 	desiredMode: 'bypass' | 'webaudio' | 'capture';
@@ -407,6 +423,33 @@ function scheduleBroadcast(snapshot: AudioSessionSnapshot): void {
 	});
 }
 
+/**
+ * Records why a write was refused and returns the last admitted snapshot.
+ *
+ * The return value deliberately stays the snapshot: callers already treat it as
+ * the current state, and a refused write genuinely leaves the state unchanged.
+ * What changes is that the refusal now has a name a caller can read back.
+ */
+function refuse(tabId: number, base: AudioSessionSnapshot, reason: Rejection): AudioSessionSnapshot {
+	sessionRejections.set(tabId, reason);
+	// `no_evidence` means the proof had not arrived, so a retry can still succeed.
+	// The other three mean the claim is settled; logging them at the same level
+	// would make a transient race look like a failure.
+	if (!isRetryableRejection(reason)) {
+		swLog.warn(`[AudioSession] Refused tab ${tabId}: ${describeRejection(reason)}`);
+	}
+	return base;
+}
+
+/**
+ * Why the most recent write for this tab was refused, or `null` if it was
+ * admitted. This is the consumer the rejection codes were missing: a caller can
+ * now distinguish "not yet provable" from "never".
+ */
+export function getAudioSessionRejection(tabId: number): Rejection | null {
+	return sessionRejections.get(tabId) ?? null;
+}
+
 export async function updateAudioSession(
 	identity: TabSessionIdentity,
 	update: {
@@ -426,7 +469,11 @@ export async function updateAudioSession(
 		const sameDocument = previous?.documentId === identity.documentId && previous.origin === identity.origin;
 		const base = sameDocument ? previous : null;
 		if (base && update.generation !== undefined && update.generation < base.generation) {
-			return base;
+			return refuse(identity.tabId, base, {
+				code: 'stale_sequence',
+				seen: base.generation,
+				got: update.generation,
+			});
 		}
 		const actualMode = normalizeMode(update.actualMode, base?.actualMode ?? 'bypass');
 		const desiredMode = normalizeMode(update.desiredMode, base?.desiredMode ?? actualMode);
@@ -435,19 +482,36 @@ export async function updateAudioSession(
 			: update.error
 				? { code: 'runtime_error', message: update.error, retryable: true }
 				: null;
+		const claimedPhase = resolvePhase(update.phase, base);
 		const phase = reconcileAudioSessionPhase(
-			resolvePhase(update.phase, base),
+			claimedPhase,
 			actualMode,
 			lastError?.message ?? null,
 			base?.phase ?? null,
 		);
+		// A refused claim is one thing; a claim quietly corrected by the evidence
+		// guard is another, and it was invisible before. Recording it is what makes
+		// "the store never said active without a processor" observable rather than
+		// merely true.
+		if (base && phase !== claimedPhase) {
+			sessionRejections.set(identity.tabId, {
+				code: 'no_evidence',
+				missing: phase === 'idle'
+					? ['actualMode', 'lastError']
+					: ['lastError'],
+			});
+		}
 		if (base && !shouldAcceptAudioSessionPhase(
 			base.generation,
 			base.phase,
 			update.generation ?? base.generation,
 			phase,
 		)) {
-			return base;
+			return refuse(identity.tabId, base, {
+				code: 'illegal_transition',
+				from: base.phase,
+				to: phase,
+			});
 		}
 		// A UI intent may be broadcast while a processor is starting/stopping. Keep
 		// the last acknowledged config until the owner reports a stable/error phase;
@@ -487,6 +551,7 @@ export async function updateAudioSession(
 			throw error;
 		}
 		snapshots.set(identity.tabId, snapshot);
+		sessionRejections.delete(identity.tabId);
 		try {
 			assertAudioSessionFence(identity, expectedEpoch);
 		} catch (error) {
