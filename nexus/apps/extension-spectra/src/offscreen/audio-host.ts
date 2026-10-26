@@ -48,7 +48,12 @@ type AudioIntent = [generation: number, kind: AudioIntentKind, controlRevision: 
 export type AudioHostResult = OffscreenAudioResult;
 
 const processors = new Map<number, AudioProcessor>();
+// The last intent per tab is what rejects a late, lower-generation message, so
+// it must outlive its processor. It has no other eviction point, so the map
+// carries an explicit ceiling: the oldest tab record is the one least likely to
+// still receive a delayed envelope (SP-52).
 const latestIntents = new Map<number, AudioIntent>();
+const MAX_LATEST_INTENTS = 256;
 const visualizerSubscriptions = new Set<number>();
 const EMPTY_VISUALIZER_FRAME: { buffer: number[] | null } = { buffer: null };
 const CAPTURE_GATE_SWITCH_LEAD_MS = 20;
@@ -56,6 +61,10 @@ const CAPTURE_GATE_SWITCH_LEAD_MS = 20;
 function recordIntent(tabId: number, generation: number, kind: AudioIntentKind): AudioIntent {
 	let current = latestIntents.get(tabId);
 	if (!current || generation > current[0]) {
+		if (!current && latestIntents.size >= MAX_LATEST_INTENTS) {
+			const oldest = latestIntents.keys().next().value;
+			if (oldest !== undefined && oldest !== tabId) latestIntents.delete(oldest);
+		}
 		current = [generation, kind, current?.[2] ?? 0];
 		latestIntents.set(tabId, current);
 	} else if (generation === current[0] && kind === INTENT_STOP) {
