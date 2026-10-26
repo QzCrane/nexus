@@ -19,6 +19,7 @@ import {
 import {
 	acquirePopupVisualizerSource,
 	controlCoordinatorTestApi,
+	getControlViewSnapshot,
 } from '../src/background/control-coordinator';
 import type { ExtensionInvocationContext } from '../src/background/extension-invocation';
 import { resetBadgeUsageForTests } from '../src/background/badge-usage';
@@ -396,6 +397,25 @@ afterEach(async () => {
 });
 
 describe('authoritative control coordinator', () => {
+	test('fails closed when the durable generation counter cannot be read', async () => {
+		const harness = installHarness();
+		const chromeMock = globalThis.chrome as unknown as {
+			storage: { session: { get: (keys: string | string[]) => Promise<Record<string, unknown>> } };
+		};
+		const readable = chromeMock.storage.session.get;
+		chromeMock.storage.session.get = async () => {
+			throw new Error('storage session unavailable');
+		};
+		try {
+			// SP-71: a read failure used to answer 0, which hands the next
+			// transaction a lower generation than a content runtime may still hold.
+			// An unavailable ordering authority must surface, not be guessed at.
+			await expect(getControlViewSnapshot(harness.activeTabId)).rejects.toThrow('storage session unavailable');
+		} finally {
+			chromeMock.storage.session.get = readable;
+		}
+	});
+
 	test('rejects background-tab analyser acquisition without issuing Content demand', async () => {
 		const harness = installHarness();
 		harness.activeTabId = 8;

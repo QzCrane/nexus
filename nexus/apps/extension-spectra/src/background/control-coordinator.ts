@@ -138,9 +138,20 @@ function scheduleSessionProjection(
 	const previous = sessionProjectionTails.get(tabId) ?? Promise.resolve();
 	const tail = previous.catch(() => undefined).then(run);
 	sessionProjectionTails.set(tabId, tail);
-	void tail.catch((error: unknown) => {
-		swLog.warn(`[Control] Session projection for tab ${tabId} failed: ${error instanceof Error ? error.message : String(error)}`);
-	});
+	void tail.then(
+		() => releaseProjectionTail(tabId, tail),
+		(error: unknown) => {
+			releaseProjectionTail(tabId, tail);
+			swLog.warn(`[Control] Session projection for tab ${tabId} failed: ${error instanceof Error ? error.message : String(error)}`);
+		},
+	);
+}
+
+// Only the newest tail is ever awaited, so a settled tail that nothing has
+// chained onto is dead weight. Keeping it keyed by tabId forever was SP-50:
+// every tab that ever committed a control transaction leaked one map entry.
+function releaseProjectionTail(tabId: number, tail: Promise<unknown>): void {
+	if (sessionProjectionTails.get(tabId) === tail) sessionProjectionTails.delete(tabId);
 }
 
 // Settles every scheduled per-tab session projection. Used by the test surface
@@ -266,12 +277,25 @@ async function readPersistedSnapshot(tabId: number): Promise<ControlSnapshot | n
 	return isControlSnapshot(value) ? value : null;
 }
 
+/**
+ * The persisted generation is the only ordering authority that survives a
+ * service-worker restart. A read failure is not the same fact as "nothing was
+ * ever stored": answering 0 would hand the next transaction a lower generation
+ * than a content runtime may still be holding, which silently revives exactly
+ * the requests that generation existed to reject (SP-71). Fail closed instead —
+ * an unavailable authority must not be replaced by a guess.
+ *
+ * A missing key is a legitimate 0: no transaction has ever run for this tab.
+ */
 async function readPersistedGeneration(tabId: number): Promise<number> {
 	const key = generationKey(tabId);
-	const stored = await chrome.storage.session.get(key)
-		.catch(() => ({})) as Record<string, unknown>;
+	const stored = await chrome.storage.session.get(key) as Record<string, unknown>;
 	const value = stored[key];
-	return Number.isSafeInteger(value) && Number(value) >= 0 ? Number(value) : 0;
+	if (value === undefined) return 0;
+	if (!Number.isSafeInteger(value) || Number(value) < 0) {
+		throw new Error(`Persisted control generation for tab ${tabId} is not a counter`);
+	}
+	return Number(value);
 }
 
 async function persistGeneration(tabId: number, generation: number): Promise<void> {
