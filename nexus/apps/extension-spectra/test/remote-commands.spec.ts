@@ -2,6 +2,7 @@ import { afterEach, describe, expect, mock, test } from 'bun:test';
 import {
 	REMOTE_COMMANDS,
 	REMOTE_COMMAND_DESCRIPTORS,
+	createSpectraEvent,
 	type ControlApplyAck,
 	type ControlOperationAck,
 	type ControlSnapshot,
@@ -29,6 +30,60 @@ afterEach(async () => {
 });
 
 describe('remote acknowledged audio state', () => {
+	// This must stay the first test in the file: the snapshot listener is
+	// installed exactly once per process, and this is the only test that needs
+	// the listener reference to prove a forged sender is rejected.
+	test('ignores a snapshot event that did not come from this extension', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		type Listener = (message: unknown, sender: { id?: string }) => boolean;
+		const listeners: Listener[] = [];
+		let tabReads = 0;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				runtime: {
+					id: 'spectra-test',
+					onMessage: { addListener: (listener: Listener) => { listeners.push(listener); } },
+				},
+				tabs: {
+					get: async () => {
+						tabReads += 1;
+						return { id: TAB_ID, title: 'Remote', url: 'https://media.example' };
+					},
+				},
+			},
+		});
+		try {
+			setStateCallback(() => undefined);
+			const listener = listeners[0];
+			expect(listener).toBeDefined();
+			const snapshot: ControlSnapshot = {
+				tabId: TAB_ID,
+				documentId: 'document-forged',
+				origin: 'https://media.example',
+				generation: 1,
+				revision: 1,
+				activeMedia: null,
+				activeVideo: null,
+				fields: { volumeBase: field(50) },
+			};
+			const event = createSpectraEvent('spectra.control.snapshot.changed', snapshot, {
+				tabId: TAB_ID,
+				documentId: snapshot.documentId,
+				generation: 1,
+			});
+			// A content script lives in a page this extension does not control, so a
+			// structurally perfect envelope proves nothing about who sent it.
+			expect(listener?.(event, { id: 'some-other-extension' })).toBe(false);
+			expect(listener?.(event, {})).toBe(false);
+			await Promise.resolve();
+			expect(tabReads).toBe(0);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
 	test('does not settle synchronization before the transport commits its delivered generation', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		let releaseDelivery: (() => void) | undefined;

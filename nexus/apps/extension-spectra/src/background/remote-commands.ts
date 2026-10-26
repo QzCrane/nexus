@@ -105,7 +105,13 @@ export function setStateCallback(callback: StateCallback | null): void {
 	// remote consumer is active.
 	if (!callback || snapshotListenerInstalled || typeof chrome === 'undefined') return;
 	snapshotListenerInstalled = true;
-	chrome.runtime.onMessage.addListener((message: unknown) => {
+	chrome.runtime.onMessage.addListener((message: unknown, sender) => {
+		// The envelope shape alone cannot establish that a snapshot really came
+		// from this extension's own Control authority: a content script runs in a
+		// page the extension does not control, so anything it can send is
+		// attacker-reachable. Without this check a compromised renderer could
+		// publish fabricated state to a paired remote peer.
+		if (sender.id !== chrome.runtime.id) return false;
 		if (!isBackgroundEventEnvelope(message)) return false;
 		if (message.type === 'spectra.control.snapshot.changed') {
 			void publishRemoteState(message.payload).catch(() => undefined);
