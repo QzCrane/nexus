@@ -1,0 +1,17 @@
+{
+	"$comment": "Exported interfaces that declare the same fields under different names. Shape is not meaning, so merging is not required; silence is. Every group names an owner and a reason, and SHAPE-002 warns when a group stops being duplicated, so this list can only shrink.",
+	"duplicateShapes": {
+		"AudioSessionError|ControlError|RpcError": {
+			"owner": "RpcError",
+			"reason": "one transport error shape, three domains. The `code` fields are different unions despite identical spelling, so collapsing them would erase the distinction between a protocol rejection and an audio processor failure; each domain keeps its own declaration and converts at the boundary."
+		},
+		"ControlMarker|TimeMarker|TimeMarkerResult": {
+			"owner": "TimeMarker",
+			"reason": "the video marker shape exists once in Content and once in each contract entry the two bundles can reach. The Content copy is the runtime owner; the contract copies are the wire form both hosts validate against."
+		},
+		"ControlScreenshotResult|ScreenshotResult": {
+			"owner": "ScreenshotResult",
+			"reason": "the protocol result and the control-plane alias of it. The control alias exists so the control vocabulary stays self-describing at call sites; they are structurally identical by design."
+		}
+	}
+}
