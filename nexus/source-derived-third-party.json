@@ -22,7 +22,8 @@
         "70b8d7ef5489d0ceba9e040173a9e458390f8549",
         "Upstream license: MIT",
         "Copyright (c) 2024 Timothy Lau"
-      ]
+      ],
+      "localSha256": "a72bd995c286c1b5d9f7627b11d2c022417e71f9dc1b29f7ac4b88bf5560d36a"
     },
     {
       "product": "spectra",
@@ -44,7 +45,8 @@
         "PeerJS 1.5.5",
         "Copyright (c) 2015 Michelle Bu and Eric Zhang",
         "Permission is hereby granted"
-      ]
+      ],
+      "localSha256": "baa953eab849746a6dac73729c1e427002f0765742fd0d25d7f3af1cca2fa498"
     }
   ]
 }

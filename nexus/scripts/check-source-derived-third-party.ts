@@ -1,6 +1,7 @@
 // goal: make non-npm source-derived third-party release provenance explicit and fail-closed
 // inv: exact upstream commit/license/notice must exist for every declared shipped derived source owner
 
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -13,6 +14,13 @@ interface SourceDerivedEntry {
 	id: string;
 	localPath: string;
 	localMarker: string;
+	/**
+	 * SHA-256 of the vendored file exactly as shipped. The commit and the marker
+	 * both describe where the code came from; neither notices when the local copy
+	 * is edited afterwards. A re-vendored file must therefore re-record this hash,
+	 * which makes every local modification an explicit, reviewable act.
+	 */
+	localSha256: string;
 	releaseEntry: string;
 	upstreamRepository: string;
 	upstreamCommit: string;
@@ -104,6 +112,13 @@ export function checkSourceDerivedThirdParty(
 		const localText = readFileSync(local, 'utf8');
 		if (!entry.localMarker.trim() || !localText.includes(entry.localMarker)) {
 			throw new Error(`${key}: local source provenance marker is stale`);
+		}
+		if (!/^[a-f0-9]{64}$/u.test(entry.localSha256)) {
+			throw new Error(`${key}: localSha256 must be the exact hash of the vendored file`);
+		}
+		const actualSha256 = createHash('sha256').update(readFileSync(local)).digest('hex');
+		if (actualSha256 !== entry.localSha256) {
+			throw new Error(`${key}: vendored file changed (${actualSha256}); re-record localSha256 after review`);
 		}
 		const noticeText = readFileSync(notice, 'utf8');
 		for (const marker of [

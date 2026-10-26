@@ -53,11 +53,11 @@ const LEGACY_WRITERS = Object.freeze({
 	loop: new Set(),
 	inlineVideoStyle: new Set([
 		`${SOURCE_PATH}/content/video/video-filter.ts`,
-		`${SOURCE_PATH}/content/video/video-transform.ts`,
+		`${SOURCE_PATH}/content/video/video-screenshot.ts`,
 	]),
 	focusRecovery: new Set([
 		`${SOURCE_PATH}/content/logic/media-control.ts`,
-		`${SOURCE_PATH}/content/video/video-transform.ts`,
+		`${SOURCE_PATH}/content/video/video-screenshot.ts`,
 	]),
 });
 
@@ -1794,12 +1794,12 @@ function checkRetiredPaths(root) {
 	}
 
 	const videoTransform = fs.readFileSync(
-		path.join(root, SOURCE_PATH, 'content/video/video-transform.ts'),
+		path.join(root, SOURCE_PATH, 'content/video/video-screenshot.ts'),
 		'utf8',
 	);
 	for (const duplicateWriter of ['requestFullscreen', '.style.transform', '.style.filter', '.style.objectFit', 'toggleCrop']) {
 		if (videoTransform.includes(duplicateWriter)) {
-			error(`SCTRL-003: video-transform.ts must stay screenshot-only (${duplicateWriter})`);
+			error(`SCTRL-003: video-screenshot.ts must stay screenshot-only (${duplicateWriter})`);
 		}
 	}
 	if (!videoTransform.includes('{ documentId: target.documentId, generation }')
@@ -2597,7 +2597,7 @@ function checkRetiredPaths(root) {
 		'utf8',
 	);
 	const screenshotContent = fs.readFileSync(
-		path.join(root, SOURCE_PATH, 'content/video/video-transform.ts'),
+		path.join(root, SOURCE_PATH, 'content/video/video-screenshot.ts'),
 		'utf8',
 	);
 	const screenshotBackground = fs.readFileSync(

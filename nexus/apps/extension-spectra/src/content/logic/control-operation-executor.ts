@@ -22,7 +22,7 @@ import {
 } from '../core/content-runtime-context';
 import { showToast } from '../ui/toast';
 import { clearABLoop, getABState, setPointA, setPointB, skipABLoop } from '../video/ab-loop';
-import { takeScreenshot, verifyScreenshotTarget } from '../video/video-transform';
+import { takeScreenshot, verifyScreenshotTarget } from '../video/video-screenshot';
 import {
 	addMarker,
 	jumpAdjacentMarker,

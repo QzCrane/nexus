@@ -460,7 +460,11 @@ export async function updateAudioSession(
 		const nextHash = JSON.stringify(actualConfig);
 		const snapshot: AudioSessionSnapshot = {
 			...identity,
-			generation: Math.max(base?.generation ?? 0, update.generation ?? 0),
+			// Two sources, one authority: the update is either explicit (already
+			// proven monotonic above) or absent, in which case the acknowledged
+			// generation stands. A Math.max here would silently paper over a caller
+			// that declared a number the guard had just rejected (SP-10).
+			generation: update.generation ?? base?.generation ?? 0,
 			desiredMode,
 			actualMode,
 			phase,

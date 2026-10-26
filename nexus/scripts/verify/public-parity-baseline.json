@@ -35,6 +35,7 @@
 		"src/content/core/lifecycle/popup-connection.ts",
 		"src/content/input/lean-site-hotkey-host.ts",
 		"src/content/logic/native-media-async.ts",
+		"src/content/video/video-screenshot.ts",
 		"src/offscreen-remote/peerjs-loader.ts",
 		"src/offscreen-remote/runtime.ts",
 		"src/options/diagnostics.ts",

@@ -357,8 +357,13 @@ export class MediaRegistry {
 		const source = sourceIdentity(element);
 		record.eligibilityEvidence = preloadCorsEvidence(element);
 		if (lifecycleBoundary && record.sourceTransitionOpen) {
-			record.source = source;
-			return;
+			// Still inside the transition this flag opened: adopt the source without
+			// re-registering. A *different* source means that transition never
+			// reached `loadedmetadata` (a failed load), and keeping the flag open
+			// would swallow every later boundary refresh — the new identity would
+			// never emit `registered` and would have no control owner (SP-54).
+			if (source === record.source) return;
+			record.sourceTransitionOpen = false;
 		}
 		if (!lifecycleBoundary && source === record.source) return;
 		// A reused <audio>/<video> element is a new control identity. Emit a
