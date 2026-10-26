@@ -1,6 +1,7 @@
 // goal: own the single MV3 offscreen document shared by audio capture and remote control
 
 import {
+	createBoundedSet,
 	isOffscreenHostRequest,
 	isOffscreenHostResponse,
 	type OffscreenHostRequest,
@@ -21,8 +22,11 @@ const RECONCILE_RETRY_DELAYS_MS = [25, 75] as const;
 // leases are the processors/sessions reported by an already-running offscreen host.
 // Keeping the sources separate prevents a failed duplicate acquire from deleting a
 // real lease recovered after a service-worker restart.
-const localLeases = new Set<OffscreenLeaseKey>();
-const recoveredLeases = new Set<OffscreenLeaseKey>();
+// Both ledgers are released by their holders, never by this module, so a holder
+// that dies without releasing leaks an entry for the lifetime of the worker.
+// The ceiling is what makes that a bounded mistake (INV-12).
+const localLeases = createBoundedSet<OffscreenLeaseKey>({ cap: 512, ttlMs: 1_800_000 });
+const recoveredLeases = createBoundedSet<OffscreenLeaseKey>({ cap: 512, ttlMs: 1_800_000 });
 // A live document whose HELLO failed may still own processors or remote secrets.
 // Unknown state is a bounded reconciliation quarantine, not durable ownership:
 // known leases retain the host, while an unowned host receives an idle grace

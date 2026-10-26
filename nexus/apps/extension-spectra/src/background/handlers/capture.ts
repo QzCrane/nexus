@@ -353,6 +353,9 @@ async function startCapture(
 		// be tied back to this pair came from some other start, so it is not
 		// evidence about the processor this transaction asked for (INV-2).
 		const startIntent = mintStartIntent();
+		// Monotonic within this start only: a new start mints a new intent, so the
+		// counter resets instead of carrying across restarts.
+		let highestAckSequence = 0;
 		const startHost = (startGeneration: number) => withTimeout(
 			sendOffscreenMessage({
 				type: 'OFFSCREEN_AUDIO_START',
@@ -389,8 +392,11 @@ async function startCapture(
 			return { status: 'processing' as const, phase: state.phase, generation: state.generation };
 		}
 		const ackIsCausal = result?.ok === true && result.phase === 'active'
-			? verifyProcessorAck(startIntent, result.ack)
+			? verifyProcessorAck(startIntent, result.ack, highestAckSequence)
 			: false;
+		if (ackIsCausal && result?.ok === true && result.phase === 'active') {
+			highestAckSequence = result.ack?.ackSequence ?? highestAckSequence;
+		}
 		if (result?.ok && result.phase === 'active' && result.generation > generation
 			&& audioGraphSignature(result.normalizedActualConfig) === result.graphSignature
 			&& ackIsCausal) {

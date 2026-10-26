@@ -67,15 +67,22 @@ export function mintStartIntent(): StartIntent {
  * Fails closed. A missing intent, a missing ACK, a mismatched field or a
  * non-positive sequence all mean "this ACK cannot be tied to my start", which
  * is the same answer as "no evidence".
+ *
+ * `previousSequence` enforces monotonicity within one start (§5.4). Checking
+ * only that the number is positive would accept the same ACK replayed, and a
+ * replayed ACK is exactly what a stale processor would produce.
  */
 export function verifyProcessorAck(
 	intent: StartIntent | null | undefined,
 	ack: ProcessorAck | null | undefined,
+	previousSequence = 0,
 ): boolean {
 	if (!intent || !ack) return false;
 	if (ack.intentId !== intent.intentId || ack.intentId.length === 0) return false;
 	if (ack.nonce !== intent.nonce || ack.nonce.length === 0) return false;
-	return Number.isSafeInteger(ack.ackSequence) && ack.ackSequence > 0;
+	// The sequence belongs to this start only, so it resets with every new intent
+	// instead of carrying across restarts.
+	return Number.isSafeInteger(ack.ackSequence) && ack.ackSequence > previousSequence;
 }
 
 export function isProcessorAck(value: unknown): value is ProcessorAck {

@@ -22,6 +22,15 @@ describe('processor ack', () => {
 		expect(verifyProcessorAck(intent, { intentId: intent.intentId, nonce: intent.nonce, ackSequence: 0 })).toBe(false);
 	});
 
+	test('rejects a replayed ack whose sequence does not advance', () => {
+		const intent = mintStartIntent();
+		const first = { intentId: intent.intentId, nonce: intent.nonce, ackSequence: 4 };
+		expect(verifyProcessorAck(intent, first, 3)).toBe(true);
+		// The same ACK twice: only "positive" was checked, a replay would pass.
+		expect(verifyProcessorAck(intent, first, 4)).toBe(false);
+		expect(verifyProcessorAck(intent, { ...first, ackSequence: 3 }, 3)).toBe(false);
+	});
+
 	test('mints a distinct intent every time', () => {
 		const first = mintStartIntent();
 		const second = mintStartIntent();

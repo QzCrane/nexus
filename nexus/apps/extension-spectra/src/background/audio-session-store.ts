@@ -13,8 +13,11 @@ import {
 	normalizeLegacyAudioConfig,
 	resolveAudioVolume,
 	splitEffectiveVolume,
+	accept,
 	createSpectraEvent,
+	reject,
 	type Rejection,
+	type Verdict,
 	type AudioConfig,
 	type LegacyAudioConfig,
 	type AudioSessionPhase,
@@ -424,30 +427,109 @@ function scheduleBroadcast(snapshot: AudioSessionSnapshot): void {
 }
 
 /**
- * Records why a write was refused and returns the last admitted snapshot.
- *
- * The return value deliberately stays the snapshot: callers already treat it as
- * the current state, and a refused write genuinely leaves the state unchanged.
- * What changes is that the refusal now has a name a caller can read back.
- */
-function refuse(tabId: number, base: AudioSessionSnapshot, reason: Rejection): AudioSessionSnapshot {
-	sessionRejections.set(tabId, reason);
-	// `no_evidence` means the proof had not arrived, so a retry can still succeed.
-	// The other three mean the claim is settled; logging them at the same level
-	// would make a transient race look like a failure.
-	if (!isRetryableRejection(reason)) {
-		swLog.warn(`[AudioSession] Refused tab ${tabId}: ${describeRejection(reason)}`);
-	}
-	return base;
-}
-
-/**
  * Why the most recent write for this tab was refused, or `null` if it was
  * admitted. This is the consumer the rejection codes were missing: a caller can
  * now distinguish "not yet provable" from "never".
  */
 export function getAudioSessionRejection(tabId: number): Rejection | null {
 	return sessionRejections.get(tabId) ?? null;
+}
+
+/**
+ * The single admission decision for a session write.
+ *
+ * Returns a {@link Verdict} rather than a snapshot-or-nothing so that a refusal
+ * says which kind it was and what still holds. Every refusal below is raised
+ * against an existing session, which is why `base` is non-null on every
+ * `reject` path.
+ */
+function admitAudioSessionUpdate(
+	identity: TabSessionIdentity,
+	update: {
+		config?: Partial<AudioConfig>;
+		desiredMode?: unknown;
+		actualMode?: unknown;
+		phase?: unknown;
+		generation?: number;
+		error?: string | null;
+	},
+	base: AudioSessionSnapshot | null,
+): Verdict<AudioSessionSnapshot> {
+	const rejections: Rejection[] = [];
+	if (base && update.generation !== undefined && update.generation < base.generation) {
+		return reject({
+			code: 'stale_sequence',
+			seen: base.generation,
+			got: update.generation,
+		}, base);
+	}
+	const actualMode = normalizeMode(update.actualMode, base?.actualMode ?? 'bypass');
+	const desiredMode = normalizeMode(update.desiredMode, base?.desiredMode ?? actualMode);
+	const lastError: AudioSessionSnapshot['lastError'] = update.error === undefined
+		? (base?.lastError ?? null)
+		: update.error
+			? { code: 'runtime_error', message: update.error, retryable: true }
+			: null;
+	const claimedPhase = resolvePhase(update.phase, base);
+	const phase = reconcileAudioSessionPhase(
+		claimedPhase,
+		actualMode,
+		lastError?.message ?? null,
+		base?.phase ?? null,
+	);
+	// A refused claim is one thing; a claim quietly corrected by the evidence
+	// guard is another, and it was invisible before. Recording it is what makes
+	// "the store never said active without a processor" observable rather than
+	// merely true.
+	if (base && phase !== claimedPhase) {
+		// The claim was admitted, but only after the evidence guard corrected it.
+		// That correction used to be invisible; recording it as a note is what
+		// makes "the store never says active without a processor" observable
+		// rather than merely true.
+		rejections.push({
+			code: 'no_evidence',
+			missing: phase === 'idle' ? ['actualMode', 'lastError'] : ['lastError'],
+		});
+	}
+	if (base && !shouldAcceptAudioSessionPhase(
+		base.generation,
+		base.phase,
+		update.generation ?? base.generation,
+		phase,
+	)) {
+		return reject({
+			code: 'illegal_transition',
+			from: base.phase,
+			to: phase,
+		}, base);
+	}
+	// A UI intent may be broadcast while a processor is starting/stopping. Keep
+	// the last acknowledged config until the owner reports a stable/error phase;
+	// otherwise AudioSessionSnapshot would relabel desired values as actual.
+	const configUpdate = phase === 'starting' || phase === 'stopping'
+		? base?.actualConfig ?? DEFAULT_AUDIO_CONFIG
+		: update.config ?? base?.actualConfig;
+	const actualConfig = normalizeConfig(configUpdate);
+	const previousHash = base ? JSON.stringify(base.actualConfig) : '';
+	const nextHash = JSON.stringify(actualConfig);
+	const snapshot: AudioSessionSnapshot = {
+		...identity,
+		// Two sources, one authority: the update is either explicit (already
+		// proven monotonic above) or absent, in which case the acknowledged
+		// generation stands. A Math.max here would silently paper over a caller
+		// that declared a number the guard had just rejected (SP-10).
+		generation: update.generation ?? base?.generation ?? 0,
+		desiredMode,
+		actualMode,
+		phase,
+		configRevision: (base?.configRevision ?? 0) + (previousHash === nextHash ? 0 : 1),
+		actualConfig,
+		lastError,
+	};
+	// An accepted claim that the evidence guard had to correct still carries the
+	// correction, so the caller can see that the phase is not the one it asked
+	// for rather than silently getting a different answer.
+	return accept(snapshot, rejections);
 }
 
 export async function updateAudioSession(
@@ -468,74 +550,20 @@ export async function updateAudioSession(
 		assertAudioSessionFence(identity, expectedEpoch);
 		const sameDocument = previous?.documentId === identity.documentId && previous.origin === identity.origin;
 		const base = sameDocument ? previous : null;
-		if (base && update.generation !== undefined && update.generation < base.generation) {
-			return refuse(identity.tabId, base, {
-				code: 'stale_sequence',
-				seen: base.generation,
-				got: update.generation,
-			});
+		const verdict = admitAudioSessionUpdate(identity, update, base);
+		if (!verdict.ok) {
+			sessionRejections.set(identity.tabId, verdict.reason);
+			// `no_evidence` means the proof had not arrived, so a retry can still
+			// succeed. Logging it alongside the settled refusals would make a
+			// transient race look like a failure.
+			if (!isRetryableRejection(verdict.reason)) {
+				swLog.warn(`[AudioSession] Refused tab ${identity.tabId}: ${describeRejection(verdict.reason)}`);
+			}
+			// Every refusal is raised against an existing session, so the state it
+			// declined to change is the answer.
+			return verdict.current as AudioSessionSnapshot;
 		}
-		const actualMode = normalizeMode(update.actualMode, base?.actualMode ?? 'bypass');
-		const desiredMode = normalizeMode(update.desiredMode, base?.desiredMode ?? actualMode);
-		const lastError: AudioSessionSnapshot['lastError'] = update.error === undefined
-			? (base?.lastError ?? null)
-			: update.error
-				? { code: 'runtime_error', message: update.error, retryable: true }
-				: null;
-		const claimedPhase = resolvePhase(update.phase, base);
-		const phase = reconcileAudioSessionPhase(
-			claimedPhase,
-			actualMode,
-			lastError?.message ?? null,
-			base?.phase ?? null,
-		);
-		// A refused claim is one thing; a claim quietly corrected by the evidence
-		// guard is another, and it was invisible before. Recording it is what makes
-		// "the store never said active without a processor" observable rather than
-		// merely true.
-		if (base && phase !== claimedPhase) {
-			sessionRejections.set(identity.tabId, {
-				code: 'no_evidence',
-				missing: phase === 'idle'
-					? ['actualMode', 'lastError']
-					: ['lastError'],
-			});
-		}
-		if (base && !shouldAcceptAudioSessionPhase(
-			base.generation,
-			base.phase,
-			update.generation ?? base.generation,
-			phase,
-		)) {
-			return refuse(identity.tabId, base, {
-				code: 'illegal_transition',
-				from: base.phase,
-				to: phase,
-			});
-		}
-		// A UI intent may be broadcast while a processor is starting/stopping. Keep
-		// the last acknowledged config until the owner reports a stable/error phase;
-		// otherwise AudioSessionSnapshot would relabel desired values as actual.
-		const configUpdate = phase === 'starting' || phase === 'stopping'
-			? base?.actualConfig ?? DEFAULT_AUDIO_CONFIG
-			: update.config ?? base?.actualConfig;
-		const actualConfig = normalizeConfig(configUpdate);
-		const previousHash = base ? JSON.stringify(base.actualConfig) : '';
-		const nextHash = JSON.stringify(actualConfig);
-		const snapshot: AudioSessionSnapshot = {
-			...identity,
-			// Two sources, one authority: the update is either explicit (already
-			// proven monotonic above) or absent, in which case the acknowledged
-			// generation stands. A Math.max here would silently paper over a caller
-			// that declared a number the guard had just rejected (SP-10).
-			generation: update.generation ?? base?.generation ?? 0,
-			desiredMode,
-			actualMode,
-			phase,
-			configRevision: (base?.configRevision ?? 0) + (previousHash === nextHash ? 0 : 1),
-			actualConfig,
-			lastError,
-		};
+		const snapshot = verdict.state;
 		// The public ACK is also restart-recovery authority. Persist the exact
 		// identity and stable state before publishing it; a service-worker
 		// replacement after the ACK must not observe an older session.
@@ -551,7 +579,12 @@ export async function updateAudioSession(
 			throw error;
 		}
 		snapshots.set(identity.tabId, snapshot);
-		sessionRejections.delete(identity.tabId);
+		// A clean admission clears the ledger; one the evidence guard had to correct
+		// records the correction instead, so "admitted" and "admitted after being
+		// changed" stay distinguishable.
+		const correction = verdict.corrections[0];
+		if (correction) sessionRejections.set(identity.tabId, correction);
+		else sessionRejections.delete(identity.tabId);
 		try {
 			assertAudioSessionFence(identity, expectedEpoch);
 		} catch (error) {

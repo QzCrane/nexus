@@ -20,6 +20,7 @@ export interface BoundedRegistry<K, V> {
 
 export interface BoundedMap<K, V> extends BoundedRegistry<K, V> {
 	get(key: K): V | undefined;
+	keys(): K[];
 	set(key: K, value: V): void;
 	has(key: K): boolean;
 	delete(key: K): boolean;
@@ -32,6 +33,8 @@ export interface BoundedSet<K> extends BoundedRegistry<K, true> {
 	has(key: K): boolean;
 	delete(key: K): boolean;
 	clear(): void;
+	keys(): K[];
+	[Symbol.iterator](): Iterator<K>;
 }
 
 export interface BoundedOptions<K, V> {
@@ -91,6 +94,7 @@ export function createBoundedMap<K, V>(options: BoundedOptions<K, V>): BoundedMa
 		delete: (key) => entries.delete(key),
 		clear: () => entries.clear(),
 		values: () => [...entries.values()].map((entry) => entry.value),
+		keys: () => [...entries.keys()],
 		acquire: (key, make) => {
 			const existing = entries.get(key);
 			if (existing) return existing.value;
@@ -122,6 +126,8 @@ export function createBoundedSet<K>(options: Omit<BoundedOptions<K, true>, 'onEv
 		has: (key) => map.has(key),
 		delete: (key) => map.delete(key),
 		clear: () => map.clear(),
+		keys: () => map.keys(),
+		[Symbol.iterator]: () => map.keys()[Symbol.iterator](),
 		acquire: (key) => map.acquire(key, () => true),
 		release: (key) => map.release(key),
 		sweep: (now?: number) => map.sweep(now),

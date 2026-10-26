@@ -13,22 +13,6 @@
 //   - Bounded:   how large, how old, and who sweeps it?
 
 /**
- * A claim that carries its own proof.
- *
- * `version` is a Lamport-style order, never an authority: a higher version
- * means "later", not "more true". Every admission decision must be reachable
- * from `proof` alone (§5.6).
- */
-export interface Fact<T, P> {
-	readonly authority: 'offscreen' | 'content' | 'background';
-	readonly identity: string;
-	readonly version: number;
-	readonly at: number;
-	readonly value: T;
-	readonly proof: P;
-}
-
-/**
  * The four ways a claim can fail to be admitted. Named because a silent
  * `return base` is how a dead state (`applying`) survived months: the refusal
  * happened, and nothing could say which kind it was.
@@ -39,21 +23,26 @@ export type Rejection =
 	| { readonly code: 'stale_sequence'; readonly seen: number; readonly got: number }
 	| { readonly code: 'illegal_transition'; readonly from: string; readonly to: string };
 
-export interface Effect {
-	readonly kind: 'persist' | 'broadcast' | 'acquire' | 'release';
-	readonly target: string;
-}
-
 export type Verdict<T> =
-	| { readonly ok: true; readonly state: T; readonly effects: readonly Effect[] }
-	| { readonly ok: false; readonly reason: Rejection };
+	| { readonly ok: true; readonly state: T; readonly corrections: readonly Rejection[] }
+	| { readonly ok: false; readonly reason: Rejection; readonly current: T | null };
 
-export function accept<T>(state: T, effects: readonly Effect[] = []): Verdict<T> {
-	return { ok: true, state, effects };
+/**
+ * `corrections` is what the admission had to fix before it could say yes. An
+ * accepted-but-corrected claim is not the same as a clean one, and collapsing
+ * the two is how a silently downgraded phase went unnoticed.
+ */
+export function accept<T>(state: T, corrections: readonly Rejection[] = []): Verdict<T> {
+	return { ok: true, state, corrections };
 }
 
-export function reject<T>(reason: Rejection): Verdict<T> {
-	return { ok: false, reason };
+/**
+ * `current` is the state the refusal left in place. A caller that only knows "it
+ * did not happen" cannot act; one that also gets "and here is what still holds"
+ * can carry on without a second read.
+ */
+export function reject<T>(reason: Rejection, current: T | null = null): Verdict<T> {
+	return { ok: false, reason, current };
 }
 
 /**
