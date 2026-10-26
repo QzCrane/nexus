@@ -19,7 +19,7 @@ import {
 	type TabSessionIdentity,
 } from '@nexus/contracts';
 import { createKeyedSerializedQueue } from '@nexus/kernel';
-import { shouldAcceptAudioSessionPhase } from '../shared/audio-session-phase';
+import { reconcileAudioSessionPhase, shouldAcceptAudioSessionPhase } from '../shared/audio-session-phase';
 import { swLog } from '../shared/logger';
 
 const KEY_PREFIX = 'spectra_audio_session_';
@@ -430,7 +430,17 @@ export async function updateAudioSession(
 		}
 		const actualMode = normalizeMode(update.actualMode, base?.actualMode ?? 'bypass');
 		const desiredMode = normalizeMode(update.desiredMode, base?.desiredMode ?? actualMode);
-		const phase = resolvePhase(update.phase, base);
+		const lastError: AudioSessionSnapshot['lastError'] = update.error === undefined
+			? (base?.lastError ?? null)
+			: update.error
+				? { code: 'runtime_error', message: update.error, retryable: true }
+				: null;
+		const phase = reconcileAudioSessionPhase(
+			resolvePhase(update.phase, base),
+			actualMode,
+			lastError?.message ?? null,
+			base?.phase ?? null,
+		);
 		if (base && !shouldAcceptAudioSessionPhase(
 			base.generation,
 			base.phase,
@@ -456,11 +466,7 @@ export async function updateAudioSession(
 			phase,
 			configRevision: (base?.configRevision ?? 0) + (previousHash === nextHash ? 0 : 1),
 			actualConfig,
-			lastError: update.error === undefined
-				? (base?.lastError ?? null)
-				: update.error
-					? { code: 'runtime_error', message: update.error, retryable: true }
-					: null,
+			lastError,
 		};
 		// The public ACK is also restart-recovery authority. Persist the exact
 		// identity and stable state before publishing it; a service-worker

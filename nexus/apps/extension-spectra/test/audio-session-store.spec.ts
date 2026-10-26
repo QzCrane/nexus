@@ -432,6 +432,78 @@ describe('acknowledged audio session store', () => {
 		}
 	});
 
+	test('refuses to persist a phase the same write contradicts', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const storage = new FakeSessionStorage();
+		const broadcasts: unknown[] = [];
+		installChrome(storage, broadcasts);
+
+		const identity = identityFor(8_120, 'document-phase-evidence');
+		try {
+			// SP-04: the first write for a document cannot already be mid-stop.
+			const firstStop = await updateAudioSession(identity, {
+				generation: 1,
+				actualMode: 'capture',
+				phase: 'stopping',
+			});
+			expect(firstStop.phase).toBe('idle');
+
+			// SP-08: `error -> active` needs a processor to become active about.
+			const failing = await updateAudioSession(identity, {
+				generation: 2,
+				actualMode: 'bypass',
+				phase: 'error',
+				error: 'permission denied',
+			});
+			expect(failing.phase).toBe('error');
+			const unbackedActive = await updateAudioSession(identity, {
+				generation: 2,
+				actualMode: 'bypass',
+				phase: 'active',
+			});
+			expect(unbackedActive.phase).not.toBe('active');
+			expect(unbackedActive.actualMode).toBe('bypass');
+
+			// SP-07: an error with no text cannot replace an acknowledged active.
+			await updateAudioSession(identity, {
+				generation: 3,
+				actualMode: 'capture',
+				phase: 'starting',
+			});
+			const active = await updateAudioSession(identity, {
+				generation: 3,
+				actualMode: 'capture',
+				phase: 'active',
+			});
+			expect(active.phase).toBe('active');
+			const silentError = await updateAudioSession(identity, {
+				generation: 3,
+				actualMode: 'capture',
+				phase: 'error',
+				error: null,
+			});
+			expect(silentError.phase).toBe('active');
+			expect(silentError.lastError).toBeNull();
+
+			// A failure that can name itself still lands, and keeps the bad news.
+			const named = await updateAudioSession(identity, {
+				generation: 3,
+				actualMode: 'capture',
+				phase: 'error',
+				error: 'device lost',
+			});
+			expect(named.phase).toBe('error');
+			expect(named.lastError?.message).toBe('device lost');
+
+			await flushAudioSessions(identity.tabId);
+			const persisted = storage.values.spectra_audio_session_8120 as { phase: string };
+			expect(persisted.phase).toBe('error');
+		} finally {
+			await removeAudioSession(identity.tabId);
+			restoreChrome(originalChrome);
+		}
+	});
+
 	test('never revives an invalidated document after navigation', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const storage = new FakeSessionStorage();

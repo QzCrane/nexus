@@ -1,8 +1,41 @@
 // goal: reject same-generation phase regressions at every audio-state boundary
 
-import type { AudioSessionPhase } from '@nexus/contracts';
+import type { AudioSessionPhase, SpectraAudioMode } from '@nexus/contracts';
 
 const TRANSITIONAL_PHASES = new Set<AudioSessionPhase>(['starting', 'stopping']);
+
+/**
+ * A phase is a claim about a processor, and three combinations of the claim and
+ * its supporting fields cannot both be true at once:
+ *
+ * 1. `active` + `bypass` mode. `active` means "a processor of this document is
+ *    running". `bypass` means "no processor is attributable to this document".
+ *    Neither the mode may be inferred from the phase (that was SP-03) nor the
+ *    phase accepted while the mode denies it. This is what let a same-generation
+ *    `error -> active` (SP-08) and an evidence-free `starting -> active` (SP-05)
+ *    hand out a Capture lifecycle without a processor.
+ * 2. `error` with no error text. A failure that cannot name itself is a missing
+ *    field, not a failure report. Accepting it is how an overdue `active -> error`
+ *    (SP-07) replaced an acknowledged `active` with an empty, unretryable error.
+ * 3. `stopping` with no previous phase. A stop needs an origin; a first-ever
+ *    write cannot be mid-stop (SP-04).
+ *
+ * Each contradiction resolves toward the *least* capable state that remains
+ * supportable, never toward a more capable one. Reporting `active` while saying
+ * `bypass` therefore degrades to `idle`, not to a preserved `active`.
+ */
+export function reconcileAudioSessionPhase(
+	next: AudioSessionPhase,
+	actualMode: SpectraAudioMode,
+	lastErrorText: string | null,
+	basePhase: AudioSessionPhase | null,
+): AudioSessionPhase {
+	const unsupportedActive = next === 'active' && actualMode === 'bypass';
+	const unsupportedStop = next === 'stopping' && basePhase === null;
+	if (unsupportedActive || unsupportedStop) return 'idle';
+	if (next === 'error' && !lastErrorText) return basePhase ?? 'idle';
+	return next;
+}
 
 export function shouldAcceptAudioSessionPhase(
 	currentGeneration: number,
