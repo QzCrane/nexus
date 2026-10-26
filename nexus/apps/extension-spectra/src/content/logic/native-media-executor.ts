@@ -64,7 +64,6 @@ import {
 
 interface PendingWrite {
 	intentId: string;
-	revision: number;
 	expected: unknown;
 	tolerance: number;
 	timeoutId: ReturnType<typeof setTimeout>;
@@ -1046,7 +1045,6 @@ export class NativeMediaExecutor {
 		}
 		this.markPending(target.mediaId, field, {
 			intentId: intent.intentId,
-			revision: intent.baseRevision + 1,
 			expected: effectiveDesired,
 			tolerance,
 			timeoutId: setTimeout(() => this.clearPending(target.mediaId, field, intent.intentId), 1_000),
@@ -1580,8 +1578,12 @@ export class NativeMediaExecutor {
 					this.observe(mediaId, field, actual as ControlValues[ControlField]);
 				}
 				// The executor's event/getter transaction owns every event for this
-				// field until its stable boundary settles. A transient mismatch is
-				// evidence for that transaction, not a competing page revision.
+				// field until its stable boundary settles. A mismatch here is not
+				// proof of a page bounce: a DOM-channel write is observed through the
+				// page bridge, so the two channels legitimately disagree for up to the
+				// 1s guard (SP-70 keeps this suppression deliberately for that reason).
+				// Suppression is bounded by that guard, so a real page revision is
+				// always republished within one second.
 				continue;
 			}
 			if (field === 'currentTime' && ownedSeek) {
