@@ -342,6 +342,9 @@ describe('control operation truthfulness', () => {
 			expect(result.skipped).toBe(true);
 			expect(result.currentTime).toBe(readbackTime);
 			expect(skipped.fields.currentTime?.actual).toBe(readbackTime);
+			// SP-76: playback is past B, so no loop can fire again. The ACK must not
+			// claim a loop that the suppressed scheduler will never arm.
+			expect((skipped.result as { abLoop: { enabled: boolean } }).abLoop.enabled).toBe(false);
 
 			media.dispatchEvent(new Event('seeked'));
 			expect(timers.size).toBe(0);

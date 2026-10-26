@@ -73,6 +73,20 @@ const DEFAULT_FILTER: VideoFilterState = {
 	invert: false,
 };
 
+/**
+ * Field-by-field because `JSON.stringify` compares key order too: a filter
+ * rebuilt through a different literal would look configured while carrying the
+ * default values, which kept DOM ownership alive for an effect nobody enabled
+ * (SP-74).
+ */
+function matchesDefaultFilter(filter: VideoFilterState): boolean {
+	return filter.brightness === DEFAULT_FILTER.brightness
+		&& filter.contrast === DEFAULT_FILTER.contrast
+		&& filter.saturate === DEFAULT_FILTER.saturate
+		&& filter.grayscale === DEFAULT_FILTER.grayscale
+		&& filter.invert === DEFAULT_FILTER.invert;
+}
+
 const DEFAULT_STATE: VideoEffectState = {
 	rotation: 0,
 	mirrored: false,
@@ -276,7 +290,7 @@ export class VideoEffectsController {
 	#hasConfiguredState(state: VideoEffectState): boolean {
 		return this.#hasActiveEffect(state)
 			|| state.dimOpacity !== DEFAULT_STATE.dimOpacity
-			|| JSON.stringify(state.filter) !== JSON.stringify(DEFAULT_FILTER);
+			|| !matchesDefaultFilter(state.filter);
 	}
 
 	#commit(video: HTMLVideoElement, state: VideoEffectState): void {

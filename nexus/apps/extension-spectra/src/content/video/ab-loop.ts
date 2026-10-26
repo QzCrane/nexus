@@ -295,6 +295,11 @@ export async function skipABLoop(target: MediaTarget | null = null): Promise<num
 		if (!stillCurrent(state)) {
 			throw new ContentLifecycleError('stale-media-source', 'A/B source changed during skip');
 		}
+		// Playback is now past B, so this loop will never arm again. Leaving
+		// `enabled` set made every projection report a loop that cannot fire while
+		// `skipSuppressed` blocked the only code path that would have noticed
+		// (SP-76). Ending the loop here keeps the report and the behaviour equal.
+		retireState(state, true);
 		return currentTime;
 	} catch (error) {
 		if (isContentLifecycleError(error)) {
