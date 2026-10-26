@@ -242,7 +242,10 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				sendResponse(rpcFailure('invalid_request', 'Malformed content command'));
 				return false;
 			}
-			if (_sender.id && _sender.id !== chrome.runtime.id) {
+			// Fail closed: an absent sender id is not evidence of an internal
+			// caller. Two `sender.id &&` forms survived the first sweep because the
+			// parameter is spelled `_sender` here (SP-34/INV-11).
+			if (_sender.id !== chrome.runtime.id) {
 				sendResponse(rpcFailure('forbidden', 'Content command is extension-internal only'));
 				return false;
 			}
@@ -258,7 +261,7 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				sendResponse(rpcFailure('invalid_request', 'Malformed audio runtime request'));
 				return false;
 			}
-			if (_sender.id && _sender.id !== chrome.runtime.id) {
+			if (_sender.id !== chrome.runtime.id) {
 				sendResponse(rpcFailure('forbidden', 'Audio runtime RPC is extension-internal only'));
 				return false;
 			}

@@ -432,6 +432,45 @@ describe('content audio v2 boundary', () => {
 		}
 	});
 
+	test('rejects an internal request whose sender carries no extension id', () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: { runtime: { id: 'spectra-test' } },
+		});
+
+		try {
+			const handler = createMessageHandler({
+				state: {
+					config: CONFIG,
+					activeMode: null,
+					desiredMode: null,
+					actualMode: 'bypass',
+					phase: 'idle',
+					generation: 0,
+					userHasInteracted: false,
+					isPopupOpen: false,
+				},
+				captureManager: { handleMessage: () => false },
+			} as unknown as MessageHandlerDeps);
+
+			// Both guards used `sender.id && sender.id !== runtimeId`. An absent id
+			// short-circuited the condition, so "I cannot prove who sent this" was read
+			// as "internal caller" (INV-11: a missing sender check must reject).
+			for (const [type, payload] of [
+				['spectra.media.play.toggle', {}],
+				['spectra.audio.runtime.get', {}],
+			] as const) {
+				let response: unknown;
+				handler(envelope(type, payload), {}, (value) => { response = value; });
+				expect((response as { error?: { code?: string } }).error?.code, type).toBe('forbidden');
+			}
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
 	test('delays runtime.configure ACK until persistence is accepted by background', async () => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');

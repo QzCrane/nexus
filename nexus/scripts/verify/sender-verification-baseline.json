@@ -1,0 +1,9 @@
+{
+	"$comment": "Files that register a message or port listener inside Background or Content but do not compare sender.id themselves. Each entry must name the symbol that makes the decision, so a reviewer can find it. This list may only shrink: SENDER-003 warns on entries that no longer register a listener.",
+	"delegates": {
+		"apps/extension-spectra/src/content/core/index.ts": {
+			"owner": "createMessageHandler",
+			"reason": "only registers the shared content message handler; every sender decision lives in content/logic/message-handler.ts, which compares sender.id strictly"
+		}
+	}
+}

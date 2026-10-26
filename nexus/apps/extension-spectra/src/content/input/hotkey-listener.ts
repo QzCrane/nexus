@@ -208,7 +208,12 @@ function handleHotkeyActualFeedback(message: unknown): void {
 	}
 }
 
-function handleSettingsEvent(message: unknown): false {
+function handleSettingsEvent(message: unknown, sender?: chrome.runtime.MessageSender): false {
+	// This listener rewrites the live hotkey bindings, so it must prove who sent
+	// the event. Every other Content entry point checks `sender.id`; this one
+	// never did, so a well-formed `spectra.hotkeys.changed` from any context that
+	// reaches the runtime could replace the bindings (INV-11).
+	if (sender?.id !== undefined && sender.id !== chrome.runtime.id) return false;
 	if (isSpectraEventEnvelope(message) && message.type === 'spectra.hotkeys.changed') {
 		cancelActiveBindings();
 		settings = message.payload;

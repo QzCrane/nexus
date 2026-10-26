@@ -157,25 +157,62 @@ export interface RemoteState {
 	tabDomain?: string;
 }
 
-const REMOTE_PUBLIC_SESSION_KEYS = new Set<keyof RemotePublicSession>([
-	'protocolVersion',
-	'sessionId',
-	'peerId',
-	'secret',
-	'createdAt',
-	'pairingExpiresAt',
-	'tabId',
-	'connected',
-]);
-const REMOTE_SESSION_VIEW_KEYS = new Set<keyof RemoteSessionView>([
-	'protocolVersion',
-	'sessionId',
-	'peerId',
-	'createdAt',
-	'pairingExpiresAt',
-	'tabId',
-	'connected',
-]);
+/**
+ * The single owner of "which fields may leave Background".
+ *
+ * A mapped record rather than a literal array: adding a field to either
+ * interface without adding it here is a compile error, and the runtime key list
+ * is derived from the record instead of being restated next to it. The
+ * projection below and the validator after it both read this one list, so they
+ * cannot describe different shapes (INV-8).
+ *
+ * They did before: a denylist projection sat beside an allowlist validator, and
+ * keeping the two in step was a human responsibility. That exact failure has
+ * already produced two production defects here — a response the extension
+ * accepts but the slim Content bundle rejects (SP-64), and one event field with
+ * two different length limits (SP-67).
+ */
+const REMOTE_SESSION_VIEW_FIELDS: { readonly [K in keyof RemoteSessionView]: true } = {
+	protocolVersion: true,
+	sessionId: true,
+	peerId: true,
+	createdAt: true,
+	pairingExpiresAt: true,
+	tabId: true,
+	connected: true,
+};
+
+const REMOTE_PUBLIC_SESSION_FIELDS: { readonly [K in keyof RemotePublicSession]: true } = {
+	...REMOTE_SESSION_VIEW_FIELDS,
+	secret: true,
+};
+
+export const REMOTE_SESSION_VIEW_KEYS: readonly (keyof RemoteSessionView)[] =
+	Object.keys(REMOTE_SESSION_VIEW_FIELDS) as (keyof RemoteSessionView)[];
+
+export const REMOTE_PUBLIC_SESSION_KEYS: readonly (keyof RemotePublicSession)[] =
+	Object.keys(REMOTE_PUBLIC_SESSION_FIELDS) as (keyof RemotePublicSession)[];
+
+const SESSION_VIEW_KEY_SET: ReadonlySet<string> = new Set(REMOTE_SESSION_VIEW_KEYS as string[]);
+const PUBLIC_SESSION_KEY_SET: ReadonlySet<string> = new Set(REMOTE_PUBLIC_SESSION_KEYS as string[]);
+
+/**
+ * Projects by picking from {@link REMOTE_SESSION_VIEW_KEYS} instead of deleting
+ * what must not be shown. A denylist silently forwards every field added later;
+ * an allowlist that is the same list the validator accepts cannot.
+ */
+export function toRemoteSessionView<T extends RemoteSessionView>(session: T): RemoteSessionView {
+	const projected: Record<string, unknown> = {};
+	for (const key of REMOTE_SESSION_VIEW_KEYS) projected[key] = session[key];
+	return projected as unknown as RemoteSessionView;
+}
+
+/** As {@link toRemoteSessionView}, but keeps the pairing secret: see SP-30. */
+export function toRemotePublicSession<T extends RemotePublicSession>(session: T): RemotePublicSession {
+	const projected: Record<string, unknown> = {};
+	for (const key of REMOTE_PUBLIC_SESSION_KEYS) projected[key] = session[key];
+	return projected as unknown as RemotePublicSession;
+}
 const TOKEN_RE = /^[A-Za-z0-9_-]{22}$/u;
 const PEER_ID_RE = /^spectra-[a-f0-9]{32}$/u;
 const remoteCommandSet: ReadonlySet<string> = new Set(REMOTE_COMMANDS);
@@ -207,17 +244,20 @@ function isSessionIdentity(value: Record<string, unknown>): boolean {
 }
 
 export function isRemoteSessionView(value: unknown): value is RemoteSessionView {
-	if (!isRecord(value)
-		|| !Object.keys(value).every((key) => REMOTE_SESSION_VIEW_KEYS.has(key as keyof RemoteSessionView))) {
-		return false;
-	}
+	if (!isRecord(value)) return false;
+	const keys = Object.keys(value);
+	// Exact, not merely contained: a projection and its validator disagree the
+	// moment one tolerates an extra field the other never emits.
+	if (keys.length !== REMOTE_SESSION_VIEW_KEYS.length) return false;
+	if (!keys.every((key) => SESSION_VIEW_KEY_SET.has(key))) return false;
 	return isSessionIdentity(value);
 }
 
 export function isRemotePublicSession(value: unknown): value is RemotePublicSession {
-	if (!isRecord(value) || !Object.keys(value).every((key) => REMOTE_PUBLIC_SESSION_KEYS.has(key as keyof RemotePublicSession))) {
-		return false;
-	}
+	if (!isRecord(value)) return false;
+	const keys = Object.keys(value);
+	if (keys.length !== REMOTE_PUBLIC_SESSION_KEYS.length) return false;
+	if (!keys.every((key) => PUBLIC_SESSION_KEY_SET.has(key))) return false;
 	return isSessionIdentity(value)
 		&& typeof value.secret === 'string'
 		&& TOKEN_RE.test(value.secret);

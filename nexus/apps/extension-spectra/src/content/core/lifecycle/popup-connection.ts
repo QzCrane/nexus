@@ -8,6 +8,10 @@ export function setupPopupConnectionListener(state: PolicyExecutorState): () => 
 	const disconnectors = new Set<() => void>();
 	const listener = (port: chrome.runtime.Port): void => {
 		if (port.name !== 'popup-connection') return;
+		// The port name is a public string, not evidence of origin. Anything that
+		// can name a port can flip `isPopupOpen`, so the sender must be this
+		// extension (INV-11).
+		if (port.sender?.id === undefined || port.sender.id !== chrome.runtime.id) return;
 		state.isPopupOpen = true;
 		let disconnected = false;
 		const onDisconnect = (): void => {

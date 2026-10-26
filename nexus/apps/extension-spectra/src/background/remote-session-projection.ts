@@ -1,7 +1,17 @@
 // goal: the two projections of an Offscreen host session that may leave Background
+//
+// The key lists these pick from live beside the validators in
+// `@nexus/contracts` (remote.contracts.ts). Nothing is restated here on purpose:
+// a denylist projection sitting next to an allowlist validator is exactly how
+// this repository produced SP-64 and SP-67, where two descriptions of one shape
+// had to be kept in step by a human.
 
-import type { RemotePublicSession, RemoteSessionView } from '@nexus/contracts';
+import {
+	toRemotePublicSession,
+	toRemoteSessionView,
+} from '@nexus/contracts';
 import type { RemoteHostSession } from '@nexus/contracts';
+import type { RemotePublicSession, RemoteSessionView } from '../remote/protocol';
 
 export type HostSession = RemoteHostSession;
 
@@ -12,15 +22,7 @@ export type HostSession = RemoteHostSession;
  * code. Everything else uses {@link toSessionView}.
  */
 export function toPublicSession(session: HostSession): RemotePublicSession {
-	const {
-		capability: _capability,
-		reconnectUntil: _reconnectUntil,
-		generation: _generation,
-		sessionEpoch: _sessionEpoch,
-		lastSequence: _lastSequence,
-		...publicSession
-	} = session;
-	return publicSession;
+	return toRemotePublicSession(session);
 }
 
 /**
@@ -30,9 +32,5 @@ export function toPublicSession(session: HostSession): RemotePublicSession {
  * obtain pairing authority.
  */
 export function toSessionView(session: HostSession): RemoteSessionView {
-	const {
-		secret: _secret,
-		...view
-	} = toPublicSession(session);
-	return view;
+	return toRemoteSessionView(session);
 }

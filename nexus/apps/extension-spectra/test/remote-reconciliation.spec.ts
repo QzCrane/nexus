@@ -1,9 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import {
+	isRemoteSessionView,
+	REMOTE_PUBLIC_SESSION_KEYS,
+	REMOTE_SESSION_VIEW_KEYS,
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
+import { toSessionView } from '../src/background/remote-session-projection';
 import { initRemoteService } from '../src/background/remote-service';
 import {
 	acquireOffscreenLease,
@@ -21,6 +25,42 @@ type RuntimeListener = (
 ) => boolean | undefined;
 
 describe('remote service-worker reconciliation', () => {
+	test('projects the session view from the same key list the validator accepts', () => {
+		// INV-8: two descriptions of one shape have already produced two production
+		// defects here — a response the full protocol accepts and the slim Content
+		// bundle rejects (SP-64), and one event field with two length limits
+		// (SP-67). The public list is the view list plus the secret, so neither can
+		// move without the other.
+		expect([...REMOTE_PUBLIC_SESSION_KEYS].filter((key) => key !== 'secret').sort())
+			.toEqual([...REMOTE_SESSION_VIEW_KEYS].sort());
+
+		const host = {
+			protocolVersion: 3,
+			sessionId: 'aaaaaaaaaaaaaaaaaaaaaa',
+			peerId: 'spectra-0123456789abcdef0123456789abcdef',
+			secret: 'bbbbbbbbbbbbbbbbbbbbbb',
+			createdAt: 100,
+			pairingExpiresAt: 10_000,
+			tabId: 71,
+			connected: true,
+			capability: 'control',
+			reconnectUntil: null,
+			generation: 4,
+			sessionEpoch: 2,
+			lastSequence: 9,
+			// A field added after the projection was written. A denylist projection
+			// would forward it, and a validator that tolerates extra keys would then
+			// reject the very response it is meant to accept.
+			aFuturePrivateField: 'must not escape',
+		};
+
+		const projected = toSessionView(host as never);
+		expect(Object.keys(projected).sort()).toEqual([...REMOTE_SESSION_VIEW_KEYS].sort());
+		expect(projected).not.toHaveProperty('secret');
+		expect(projected).not.toHaveProperty('aFuturePrivateField');
+		expect(isRemoteSessionView(projected)).toBe(true);
+	});
+
 	test('quarantines an unowned failed host and recovers its session on the next GET', async () => {
 		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const timers = installFastTimerHarness();

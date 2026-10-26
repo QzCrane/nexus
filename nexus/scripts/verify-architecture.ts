@@ -24,6 +24,7 @@ import { checkSpectraControlArchitecture } from './verify/check-spectra-control.
 import { checkAiHygiene } from './verify/check-ai-hygiene.ts';
 import { checkSourcePurity } from './verify/check-source-purity.ts';
 import { checkPublicParity } from './verify/check-public-parity.ts';
+import { checkSenderVerification } from './verify/check-sender-verification.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -52,6 +53,7 @@ const CHECKS: ReadonlyArray<readonly [string, (root: string) => void]> = [
 	['ai-hygiene', checkAiHygiene],
 	['source-purity', checkSourcePurity],
 	['public-parity', checkPublicParity],
+	['sender-verification', checkSenderVerification],
 ];
 
 interface CheckResult {
