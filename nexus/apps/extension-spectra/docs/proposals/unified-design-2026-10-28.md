@@ -417,8 +417,12 @@ INV-7（与现行转移矩阵矛盾）；`Fact` 本体仍未实现，暂不引�
 
 ## 12. 未决项与失效条件
 
-仍未完成：度量未闭环（可观测性已打通，见下）、badge 静音误显、pre-push 已补但仅 SPECTRA、
-公开同步工具链损坏、6 项真实 Chrome 取证不在 CI、**Options 与 Popup 仍是两套 token**（§5.1.1）。
+仍未完成：**音量路径的 Chrome workload 未注册**（可观测性已打通，见下）、
+**popup 静音路径一条 smoke 未通过**（`controller-only mute ACK`，与 `writeState` 修复无关）、
+6 项真实 Chrome 取证不在 CI、**Options 与 Popup 仍是两套 token**（§5.1.1）。
+
+已关闭（2026-10-28）：badge 静音误显、冻结条件上提、pre-push 单测（已覆盖 SPECTRA 与 HALO）、
+`sync-spectra`（端到端通过：369 文件 + lint/typecheck/build）。
 
 度量现状（2026-10-28 更新）：`getPopupControlDiagnostics()` 现在输出
 `popupControlSettleSamples` / `P50Ms` / `P95Ms` / `MaxMs`，即 intent → settled 的

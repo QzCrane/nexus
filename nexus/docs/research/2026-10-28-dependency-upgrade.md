@@ -147,22 +147,30 @@ HALO 的差异主要是内容哈希改名（chunk 文件名变化），真实体
 
 SPECTRA 的 smoke 套件（8 个文件 / 47 条）**不是 CI 门禁**，CI 只跑 4 条定点 Chrome 用例；
 它是**发布门禁**：`release:spectra` 的 `production Chrome integration` 步骤调用
-`test:chrome:dist`。本机用三种浏览器二进制跑，得到三种不同结果：
+`test:chrome:dist`。
 
-| 浏览器 | 结果 | 观察到的现象 |
-|---|---|---|
-| 升级前工作树（同 Chromium 156） | 3 通过 / 7 失败 | 与升级后**失败集合逐条相同** |
-| Chromium 156（Playwright CfT） | 大面积失败 | 扩展已加载，`spectra.control.intent.execute` 的 content host 回应通不过 `isControlApplyAck` |
-| Chrome 135（CfT 归档） | 0 通过 | floor 驱动路径，全部未通过 |
-| 系统 Chrome 144 | 会话未建立 | 只出现 `about:blank`，service worker 从未启动，扩展未加载 |
+**这里我最初写过一个错误结论，现予更正。** 当时我拿三种浏览器二进制对比，看到三种不同
+结果，就判定「变量是浏览器二进制，不是代码」。实际结果是：**全部三种都是同一个产品缺陷**，
+只是失败点不同，我把它当成了环境差异。
 
-而仓库自带的 closeout 证据（`nexus/artifacts/closeout-evidence.*.attempt-2.json`）记录：
-win32、Chrome 152、`SPECTRA local release => PASS`，即同一套件在**发布配置下是通过的**。
+真实根因（2026-10-28 追加修复）：`ControlFieldState` 在「写入与确认分离」改造中新增了可选
+字段 `writeState`，但运行时允许键集合 `fieldStateKeys` 没有同步。于是内容脚本返回的 ACK
+被判为非法，Background 丢弃每一次原生写入的确认：
 
-因此结论是：这不是本次升级的回归，也不是产品缺陷，而是**本机浏览器二进制与加载方式**
-不满足该套件的运行前提。值得记住的是两点维护事实，而不是待办：
-套件只在发布时被执行（两次发布之间没有回归网），且新版 Chrome 对
-`--load-extension` 的收紧使只有 CfT 构建才可靠地加载未打包扩展。
+- 用户可见症状一：弹窗提示 `Content host returned an invalid SPECTRA extension RPC v2
+  response for spectra.control.intent.execute` / `intent.submit`；
+- 用户可见症状二：**音量回弹**——意图未落地，界面退回上一个已确认值。
+
+修复后同一套件从 **3 通过 / 7 失败** 变为 **9 通过 / 1 失败**，且新增两条守卫：
+「填满全部可选字段的 ACK 必须通过校验」「执行器产出的 ACK 必须端到端通过校验」。
+
+剩余 1 条失败（`synchronizes page-native media bidirectionally…`）停在
+「Popup controller-only mute ACK」：点静音后页面侧 `mediaMuted` 始终为 false。
+对照实验确认它与 `writeState` 修复无关（撤掉修复时它更早就失败），是**另一个独立问题**，
+尚未定位。
+
+由此得到的维护事实仍然成立，只是不再作为结论：套件只在发布时执行（两次发布之间没有回归网），
+且新版 Chrome 对 `--load-extension` 的收紧使只有 CfT 构建才可靠地加载未打包扩展。
 
 `check:governance` 在本机默认 PATH 下会有一条
 `Executable not found in $PATH: "powershell.exe"`。`closeout-evidence.ts` 在 Windows 上

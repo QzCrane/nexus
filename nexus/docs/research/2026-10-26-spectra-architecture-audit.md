@@ -183,7 +183,7 @@ G6 建立当天就补出 3 处真实缺口——两处把参数写成 `_sender`�
 | 3 | 冻结条件仍内联在 `state.ts` | **已关闭（2026-10-28）**：提炼为 `shouldHoldVolumeTone()` / `crossesVolumeRoute()`，边界引用 `CONTROL_VALUE_LIMITS.volumeBase.max`，8 条独立断言 | `packages/contracts/src/volume-presentation.contracts.ts` |
 | 4 | pre-push 缺 `test:unit` | **已关闭（2026-10-28）**：`lefthook.yml` 新增 unit-tests，覆盖 SPECTRA 118 文件 + HALO 441 条，共 14s。同时修复运行器挂死：任一文件超时即杀并点名，门禁不再无限等待 | `lefthook.yml`、`scripts/run-tests.ts` |
 | 5 | `bun run sync-spectra` 损坏 | **已修（待提交生效）**：真因不是 allowlist 缺项，而是 `i18n-assets.ts` 用无扩展名导入，与 `.ts` allowlist 无法匹配；已统一为显式 `.ts` 并登记 `i18n-source-catalog.ts`。注意 sync 校验的是 **HEAD 提交内容**，提交后才生效 | `scripts/sync-public.ts`、`apps/extension-spectra/scripts/i18n-assets.ts` |
-| 6 | 6 项真实 Chrome 取证 | 非代码缺陷，但不在 CI，无法防回归 | 集成测试 |
+| 6 | 6 项真实 Chrome 取证 | 非代码缺陷，但不在 CI，无法防回归。**2026-10-28 追加**：这批 smoke 的失败曾被误判为浏览器二进制差异，实为 `writeState` 校验缺口（见 [依赖升级](2026-10-28-dependency-upgrade.md)），修复后 9/10 通过；剩 1 条 mute 路径独立未定位 | 集成测试 |
 | 7 | 视觉数值曾冻结 | 已修，证据见 [音量时延](2026-10-28-spectra-volume-latency.md) | `src/popup/card/render.ts` |
 
 ### 唯一存在的真实采样（2026-10-27，Chrome 152，head `aee2cec`）
