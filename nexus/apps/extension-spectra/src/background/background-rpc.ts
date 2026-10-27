@@ -6,6 +6,7 @@ import {
 	isAudioSitePolicy,
 	isAudioRuntimeStatus,
 	isAudioSessionSnapshot,
+	explainControlApplyAck,
 	isControlApplyAck,
 	isControlOperationAck,
 	isControlReadResult,
@@ -324,7 +325,7 @@ export async function sendBackgroundTabRequestOnce<T extends SpectraRequestType>
 		);
 		if (!isBackgroundResponse(type, response)) {
 			throw new Error(
-				`Content host returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${type}`,
+				`Content host returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${type}${type.startsWith('spectra.control.') ? ` (${explainControlApplyAck(response) ?? 'unknown reason'})` : ''}`,
 			);
 		}
 		return response;

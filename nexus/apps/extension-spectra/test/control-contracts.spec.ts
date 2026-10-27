@@ -17,6 +17,7 @@ import {
 	classifyControlStrategy,
 	isControlIntent,
 	isCaptureAdmission,
+	explainControlApplyAck,
 	isControlApplyAck,
 	isControlOperationAck,
 	isControlPatch,
@@ -729,5 +730,38 @@ describe('per-field SPECTRA control contracts', () => {
 		// An allowlist that admits everything proves nothing: an unknown key still
 		// has to fail.
 		expect(isControlApplyAck({ ...ack, writeState: 'written' })).toBe(false);
+	});
+
+	test('names the offending key instead of only rejecting', () => {
+		// A boolean rejection forces the boundary to log a blob. Naming the key is
+		// what turns a production symptom into a one-line diagnosis, which is how
+		// the missing `writeState` entry should have surfaced the first time.
+		const ack = {
+			intentId: 'intent:explain',
+			tabId: 7,
+			documentId: 'document:explain',
+			generation: 1,
+			revision: 2,
+			target: null,
+			fields: {
+				volumeBase: {
+					desired: 40,
+					actual: 40,
+					revision: 2,
+					phase: 'applied' as const,
+					strategy: 'dom-native' as const,
+					coverage: 'active-target' as const,
+					controlled: true,
+					lastError: null,
+					writeStateTypo: 'written',
+				},
+			},
+		};
+
+		expect(isControlApplyAck(ack)).toBe(false);
+		expect(explainControlApplyAck(ack)).toBe(
+			'fields.volumeBase has unexpected keys: writeStateTypo',
+		);
+		expect(explainControlApplyAck({ ...ack, fields: {} })).toBeNull();
 	});
 });

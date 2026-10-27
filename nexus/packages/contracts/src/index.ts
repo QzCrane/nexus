@@ -243,6 +243,7 @@ export {
 	isControlOperationAck,
 	isControlSnapshot,
 	isControlApplyAck,
+	explainControlApplyAck,
 	isControlReadRequest,
 	isControlReadResult,
 } from './control.contracts.js';

@@ -1700,6 +1700,32 @@ export function isControlApplyAck(value: unknown): value is ControlApplyAck {
 			|| isControlAudioVolumeProjection(value.audioVolume));
 }
 
+/**
+ * Names the first reason a payload fails the apply-ack contract.
+ *
+ * A boolean tells the caller "invalid" and nothing else, so a boundary can only
+ * reject and log a blob. This returns the offending key path instead, which is
+ * what turns a production symptom into a diagnosis. It is only ever called on
+ * the failure path.
+ */
+export function explainControlApplyAck(value: unknown): string | null {
+	if (!isRecord(value)) return 'payload is not an object';
+	const unexpected = Object.keys(value).filter((key) => !ackKeys.has(key));
+	if (unexpected.length > 0) return `unexpected keys: ${unexpected.join(', ')}`;
+	if (!isRecord(value.fields)) return 'fields is not an object';
+	for (const [field, state] of Object.entries(value.fields)) {
+		if (!isRecord(state)) return `fields.${field} is not an object`;
+		const fieldUnexpected = Object.keys(state).filter((key) => !fieldStateKeys.has(key));
+		if (fieldUnexpected.length > 0) {
+			return `fields.${field} has unexpected keys: ${fieldUnexpected.join(', ')}`;
+		}
+		if (!isControlFieldState(field as ControlField, state)) {
+			return `fields.${field} violates its field-state contract`;
+		}
+	}
+	return isControlApplyAck(value) ? null : 'payload does not satisfy the apply-ack contract';
+}
+
 export function isControlReadRequest(value: unknown): value is ControlReadRequest {
 	return isRecord(value)
 		&& hasOnlyKeys(value, readRequestKeys)

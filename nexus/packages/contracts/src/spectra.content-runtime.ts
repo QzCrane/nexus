@@ -50,11 +50,16 @@ import {
 	resolveSpectraDefaultHotkeyAction,
 } from './spectra.bootstrap.js';
 import type {
+	ControlApplyAck,
 	ControlField,
+	ControlFieldState,
+	ControlIntent,
 	ControlOperation,
+	ControlOperationAck,
 	ControlStrategy,
 	MediaTarget,
 } from './control.contracts.js';
+import { keySetOf } from './key-set.js';
 import type {
 	RpcError,
 	SpectraEventEnvelope,
@@ -147,9 +152,27 @@ const CONTENT_COMMAND_TYPES = new Set([
 const MEDIA_TARGET_KEYS = new Set(['frameId', 'documentId', 'mediaId', 'sourceRevision', 'kind']);
 const FILTER_KEYS = new Set(['brightness', 'contrast', 'saturate', 'grayscale', 'invert']);
 const AB_LOOP_KEYS = new Set(['pointA', 'pointB', 'enabled']);
-const CONTROL_FIELD_STATE_KEYS = new Set([
-	'desired', 'actual', 'restoreBaseline', 'revision', 'phase', 'strategy',
+// This facade keeps its own guards so Content does not pull the whole control
+// contract into its bundle, but a second copy is a second chance to drift: the
+// copy below was missing `writeState` and rejected every native acknowledgement.
+// `keySetOf` binds each list to the same type the canonical guard uses, so a new
+// field breaks the build here at the same moment it breaks it there.
+const CONTROL_FIELD_STATE_KEYS = keySetOf<ControlFieldState<unknown>>()([
+	'desired', 'actual', 'restoreBaseline', 'revision', 'phase', 'writeState', 'strategy',
 	'coverage', 'controlled', 'intentId', 'lastError',
+]);
+const CONTROL_INTENT_KEYS = keySetOf<ControlIntent>()([
+	'intentId', 'tabId', 'documentId', 'generation', 'baseRevision', 'source',
+	'requestedCoverage', 'target', 'actualContext', 'patch', 'captureAdmission',
+	'processorHold',
+]);
+const CONTROL_APPLY_ACK_KEYS = keySetOf<ControlApplyAck>()([
+	'intentId', 'tabId', 'documentId', 'generation', 'revision', 'target',
+	'fields', 'audioVolume',
+]);
+const CONTROL_OPERATION_ACK_KEYS = keySetOf<ControlOperationAck<'restore-page-settings'>>()([
+	'operationId', 'tabId', 'documentId', 'generation', 'revision', 'target',
+	'operation', 'strategy', 'coverage', 'fields', 'audioVolume', 'result',
 ]);
 const DELTA_KEYS = new Set(['delta']);
 const LABEL_KEYS = new Set(['label']);
@@ -248,11 +271,7 @@ function isControlFieldStates(value: unknown): boolean {
 
 function isControlIntent(value: unknown): boolean {
 	if (!isRecord(value)
-		|| !hasOnly(value, new Set([
-			'intentId', 'tabId', 'documentId', 'generation', 'baseRevision', 'source',
-			'requestedCoverage', 'target', 'actualContext', 'patch', 'captureAdmission',
-			'processorHold',
-		]))) return false;
+		|| !hasOnly(value, CONTROL_INTENT_KEYS)) return false;
 	return isBoundedString(value.intentId, 128)
 		&& isInteger(value.tabId, true)
 		&& isBoundedString(value.documentId, 256)
@@ -488,14 +507,8 @@ function isControlAck(value: unknown, operation = false): boolean {
 				|| value.audioVolume.volumeState === 'native'
 				|| value.audioVolume.volumeState === 'capture')
 		))) return false;
-	if (!operation) return hasOnly(value, new Set([
-		'intentId', 'tabId', 'documentId', 'generation', 'revision', 'target',
-		'fields', 'audioVolume',
-	]));
-	return hasOnly(value, new Set([
-		'operationId', 'tabId', 'documentId', 'generation', 'revision', 'target',
-		'operation', 'strategy', 'coverage', 'fields', 'audioVolume', 'result',
-	]))
+	if (!operation) return hasOnly(value, CONTROL_APPLY_ACK_KEYS);
+	return hasOnly(value, CONTROL_OPERATION_ACK_KEYS)
 		&& typeof value.operation === 'string'
 		&& STRATEGIES.has(value.strategy as ControlStrategy)
 		&& COVERAGES.has(value.coverage as string)
