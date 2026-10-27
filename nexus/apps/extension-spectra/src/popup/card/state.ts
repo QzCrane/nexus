@@ -4,6 +4,7 @@ import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import {
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
+	shouldHoldVolumeTone,
 	type ControlField,
 	type ControlFieldStates,
 	type ControlPatch,
@@ -221,12 +222,21 @@ export function createUpdateFn(
 			pendingFields.set(rawField as keyof AudioConfig, inputRevision);
 		}
 		if (volumeChanged) {
-			state.pendingVolumePresentation ??= {
-				effectiveVolume: previousVolume,
-				muted: previous.muted,
-				actualMode: state.actualMode,
-				phase: state.phase,
-			};
+			// Only the tone is held, and only while the route may actually change.
+			// The contract owns the boundary and the mute case so this call site
+			// cannot drift from the documented rule again.
+			if (shouldHoldVolumeTone({
+				previousEffectiveVolume: previousVolume,
+				nextEffectiveVolume: nextVolume,
+				mutedChanged: changes.muted !== undefined,
+			})) {
+				state.pendingVolumePresentation ??= {
+					effectiveVolume: previousVolume,
+					muted: previous.muted,
+					actualMode: state.actualMode,
+					phase: state.phase,
+				};
+			}
 			pendingFields.set('volume', inputRevision);
 			pendingFields.set('volumeBase', inputRevision);
 			pendingFields.set('boost', inputRevision);

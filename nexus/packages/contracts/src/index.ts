@@ -73,6 +73,12 @@ export {
 	isFiniteControlValue,
 } from './control-value-limits.js';
 
+export {
+	crossesVolumeRoute,
+	shouldHoldVolumeTone,
+} from './volume-presentation.contracts.js';
+export type { VolumeRouteHoldInput } from './volume-presentation.contracts.js';
+
 export type {
 	CaptureAdmission,
 	CaptureAdmissionKind,
@@ -146,6 +152,7 @@ export type {
 	ControlCoverage,
 	ControlRequestedCoverage,
 	ControlFieldPhase,
+	ControlWriteState,
 	ControlIntentSource,
 	MediaKind,
 	MediaTarget,
@@ -222,6 +229,8 @@ export {
 	isControlStrategyAdmittedForCapability,
 	isControlStrategyFailure,
 	shouldTryNextControlStrategy,
+	isControlWriteDrift,
+	isControlWriteSettled,
 	isControlError,
 	isMediaTarget,
 	isControlPatch,

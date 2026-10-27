@@ -2,22 +2,29 @@
 
 import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
-import { COLORS, AUDIO_UI, popupPrimaryColor } from '../constants';
+import { COLORS, popupPrimaryColor } from '../constants';
 import type { GlobalSettings } from '@nexus/kernel';
 import type { AudioSessionPhase, SpectraAudioMode } from '@nexus/contracts';
 import { resolveAudioVolume, resolveAudioVolumeState } from '@nexus/contracts';
 import { renderPlaybackButton } from './media-events';
+import type { VolumeView } from './volume-view';
 
 export interface RenderParams {
   ui: CardUIElements;
   state: CardInternalState;
+  volumeView: VolumeView;
   getVizEnabled: () => boolean;
   getGlobalSettings: () => GlobalSettings;
 }
 
 // post: returns a sync-render function that updates HTML elements, CSS variables, and canvas overlays based on current state
 export function createRenderFn(params: RenderParams): () => void {
-  const { ui, state, getVizEnabled } = params;
+  const { ui, state, volumeView, getVizEnabled } = params;
+  // A volume drag repaints at input rate (often >60Hz) but never changes which
+  // icon glyph category applies. Rebuilding the mute emoji's DOM on every step
+  // cost main-thread time between frames and read as the bar lagging the
+  // pointer, so the glyph only recomputes when its category actually changes.
+  let lastIconKey = '';
 
   return () => {
     if (!ui.card) return;
@@ -51,22 +58,31 @@ export function createRenderFn(params: RenderParams): () => void {
     // Dragging is tracked in card state; reading the slider back here would make
     // the DOM a second authority for the same value.
     const newSliderValue = resolveAudioVolume(config).effectiveVolume;
-    if (state.draggingField !== 'volume') {
-      ui.slider.value = String(newSliderValue);
-    }
-    ui.fill.style.width = `${(volumePresentation.effectiveVolume / AUDIO_UI.MAX_VOLUME) * 100}%`;
-    ui.val.innerText = muted ? 'MUTE' : `${formatVolume(volumePresentation.effectiveVolume)}%`;
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));
 
 		// Pending session/broadcast events cannot recolor the retained result.
 		const fillColor = volumePresentation.color;
 
-    ui.fill.style.backgroundColor = fillColor;
-    ui.val.style.color = fillColor;
+    // Every write to the fill, the readout and the thumb goes through the
+    // card's single volume projection writer, so the frame-coalesced
+    // reconciliation and the synchronous pointer path cannot disagree.
+    volumeView.commit({
+      value: volumePresentation.effectiveVolume,
+      color: fillColor,
+      muted,
+      thumb: state.draggingField === 'volume' ? null : newSliderValue,
+    });
     ui.slider.style.setProperty('--slider-accent', fillColor);
 
-    renderVolumeIcon(ui.mute, muted, volumePresentation.effectiveVolume);
+    const displayedVolume = volumePresentation.effectiveVolume;
+    const iconKey = muted
+      ? 'muted'
+      : displayedVolume <= 0 ? 'zero' : displayedVolume > 100 ? 'boost' : 'normal';
+    if (iconKey !== lastIconKey) {
+      lastIconKey = iconKey;
+      renderVolumeIcon(ui.mute, muted, displayedVolume);
+    }
 
     if (ui.speedInput) {
       // rule: only update speed input if not focused to avoid interfering with user typing
@@ -116,9 +132,20 @@ export function resolveVolumePresentation(
   state: CardInternalState,
 ): { effectiveVolume: number; color: string } {
   const presentation = state.pendingVolumePresentation;
-  const effectiveVolume = presentation?.effectiveVolume ?? resolveAudioVolume(state.config).effectiveVolume;
+  // The number is *always* live. Holding it on the pre-change presentation froze
+  // the bar and the readout at the gesture's starting value for as long as the
+  // route transaction stayed open, which on a 0..800 slider means any drag that
+  // crosses 100 stopped tracking the thumb for the rest of the gesture. That is
+  // the "bar does not follow the thumb" symptom, and no amount of render-side
+  // optimization can hide it.
+  const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
   return {
     effectiveVolume,
+    // Only the *tone* waits. A route transaction (native <-> boost, or a capture
+    // hand-off) cannot be predicted, so the acknowledged route from before the
+    // transaction still owns the color until its ACK lands. That keeps a new
+    // number from appearing in the previous route's color while leaving the
+    // number itself free to track the gesture.
     color: actualVolumeColor(
       presentation?.muted ?? state.config.muted,
       effectiveVolume,
@@ -126,10 +153,6 @@ export function resolveVolumePresentation(
       presentation?.phase ?? state.phase,
     ),
   };
-}
-
-function formatVolume(volume: number): string {
-  return Number.isInteger(volume) ? String(volume) : volume.toFixed(1).replace(/\.0$/u, '');
 }
 
 export function actualVolumeColor(

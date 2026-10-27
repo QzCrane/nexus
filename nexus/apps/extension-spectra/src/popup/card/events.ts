@@ -14,10 +14,12 @@ import { submitControlIntent } from './intent-recovery';
 import { mergeAudioConfig, mergeControlFields } from './types';
 import { showPopupToast } from '../toast';
 import { isReportedControlFailure } from './control-port';
+import type { VolumeView } from './volume-view';
 
 export interface EventsParams {
   ui: CardUIElements;
   state: CardInternalState;
+  volumeView: VolumeView;
   tabId: number;
   tabUrl: string;
   update: ConfigUpdateFn;
@@ -47,7 +49,7 @@ function showSaveFeedback(button: HTMLElement, success: boolean, dict: { saveSuc
 
 // eff: attaches event listeners to the card UI components, managing the lifecycle of user interactions
 export function bindCardEvents(params: EventsParams): void {
-  const { ui, state, tabId, tabUrl, update, render, onError } = params;
+  const { ui, state, volumeView, tabId, tabUrl, update, render, onError } = params;
   const domain = getDomain(tabUrl);
 
 	const readActualSpeed = async (): Promise<number | null> => {
@@ -115,7 +117,20 @@ export function bindCardEvents(params: EventsParams): void {
 
   ui.slider.oninput = (e) => {
     setDragging('volume');
-    handleVolume((e.target as HTMLInputElement).value);
+    const raw = (e.target as HTMLInputElement).value;
+    const value = Number.parseFloat(raw);
+    handleVolume(raw);
+    // Paint the fill and readout straight from the pointer value, synchronously
+    // in the input handler, before any state merge or cross-process work. The
+    // fill therefore cannot trail the thumb even when a full render is still
+    // busy on this frame; the frame-coalesced render then reconciles tone and
+    // mute.
+    //
+    // This runs unconditionally: the renderer's number is live too, so the two
+    // paths agree and there is nothing to flicker. Mute is the one exception —
+    // the renderer owns the MUTE label, so painting a number over it would
+    // visibly blink once per frame.
+    if (!state.config.muted) volumeView.paintPointer(value);
   };
 
   // note: manage dragging state across various input modalities to prevent "flicker" during external UI sync
@@ -147,8 +162,9 @@ export function bindCardEvents(params: EventsParams): void {
       : Math.max(currentVolume - AUDIO_UI.VOLUME_STEP, 0);
     handleVolume(nextVolume);
     // The thumb is DOM presentation, so writing it after the state update is the
-    // one direction allowed: state -> DOM, never DOM -> state.
-    ui.slider.value = String(nextVolume);
+    // one direction allowed: state -> DOM, never DOM -> state. Wheel steps are
+    // not driven by the browser, so the card's single projection writer moves it.
+    volumeView.setThumb(nextVolume);
 
     // Clear dragging state after wheel stops (300ms debounce)
     if (wheelTimer) clearTimeout(wheelTimer);

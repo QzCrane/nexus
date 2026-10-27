@@ -262,13 +262,15 @@ describe('Popup Background-owned control transport projection', () => {
 
 		update({ volume: 110 });
 		expect(state.config.volume).toBe(110);
-		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
+		// The number tracks the gesture; the tone is still the pre-transaction
+		// route's, so a boost/capture hand-off cannot flash the wrong color.
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.NATIVE });
 		harness.emit(settlement(1, { volume: 110, processor: 'capture' }));
 		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.CAPTURE });
 
 		update({ volume: 100 });
 		expect(state.config.volume).toBe(100);
-		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.CAPTURE });
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.CAPTURE });
 		harness.emit(settlement(2, { volume: 100, processor: 'observe' }));
 		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
 	});
@@ -283,7 +285,7 @@ describe('Popup Background-owned control transport projection', () => {
 		state.phase = 'active';
 		harness.emit(settlement(1, { volume: 110, processor: 'capture' }));
 		expect(state.config.volume).toBe(50);
-		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 50, color: COLORS.NATIVE });
 		harness.emit(settlement(2, { volume: 50, processor: 'observe' }));
 		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 50, color: COLORS.NATIVE });
 		expect(state.pendingVolumePresentation).toBeUndefined();
@@ -309,7 +311,7 @@ describe('Popup Background-owned control transport projection', () => {
 		update({ volume: 110, muted: true });
 		expect(state.config.muted).toBe(true);
 		expect(state.pendingVolumePresentation?.muted).toBe(false);
-		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 110, color: COLORS.NATIVE });
 		harness.emit(settlement(1, {
 			volume: 110,
 			processor: 'capture',
@@ -317,6 +319,54 @@ describe('Popup Background-owned control transport projection', () => {
 		}));
 		expect(state.pendingVolumePresentation).toBeUndefined();
 		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 110, color: COLORS.MUTED });
+	});
+
+	test('renders a same-route drag live instead of freezing at the drag-start value', () => {
+		const harness = installHarness();
+		const state = createState();
+		const frames: number[] = [];
+		const update = createUpdate(harness.transport, state, () => undefined, () => {
+			frames.push(resolveVolumePresentation(state).effectiveVolume);
+		});
+
+		// A drag that stays inside the native range cannot change the processor
+		// route, so there is no (value, colour) pair to keep coherent and the
+		// readout must track the gesture instead of holding the previous value.
+		update({ volume: 40 });
+		harness.emit(settlement(1, { volume: 40, processor: 'observe' }));
+		expect(state.pendingVolumePresentation).toBeUndefined();
+
+		update({ volume: 70 });
+		expect(state.pendingVolumePresentation).toBeUndefined();
+		expect(frames.at(-1)).toBe(70);
+		expect(resolveVolumePresentation(state).effectiveVolume).toBe(70);
+
+		// The hold still applies the moment the drag would cross the boundary —
+		// it now governs the tone only, so the number keeps tracking.
+		update({ volume: 110 });
+		expect(state.pendingVolumePresentation).toBeDefined();
+		expect(resolveVolumePresentation(state).effectiveVolume).toBe(110);
+		expect(resolveVolumePresentation(state).color).toBe(COLORS.NATIVE);
+	});
+
+	test('a drag that crosses the 100 boundary still tracks the thumb every step', () => {
+		const harness = installHarness();
+		const state = createState();
+		const update = createUpdate(harness.transport, state, () => undefined);
+		update({ volume: 40 });
+		harness.emit(settlement(1, { volume: 40, processor: 'observe' }));
+
+		// Regression lock. The slider spans 0..800, so an ordinary drag crosses
+		// 100 constantly. Holding the *number* on the pre-crossing presentation
+		// froze the bar and the readout at the gesture's starting value for the
+		// whole remaining drag — the long-standing "bar does not follow the
+		// thumb" report. The hold now governs the tone only.
+		for (const volume of [90, 110, 240, 480, 700]) {
+			update({ volume });
+			expect(resolveVolumePresentation(state).effectiveVolume).toBe(volume);
+		}
+		expect(state.pendingVolumePresentation).toBeDefined();
+		expect(resolveVolumePresentation(state).color).toBe(COLORS.NATIVE);
 	});
 });
 

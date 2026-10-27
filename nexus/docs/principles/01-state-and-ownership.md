@@ -2,7 +2,7 @@
 type: explanation
 status: stable
 audience: contributor
-last_reviewed: 2026-07-30
+last_reviewed: 2026-10-28
 ---
 
 # 01. State & ownership (EPR-001..009)
@@ -40,3 +40,23 @@ Capture 仅服务明确 full-output DSP 或安全 WebAudio 无法覆盖的场景
 ## EPR-009: 网站一元路径映射
 缓存模型: `{ domain, fingerprint: 'site:${string}', route: 'direct' | 'capture', source: 'user' | 'auto', updatedAt }`
 - 规范化网站仅一个 route (`site:*` 为唯一持久化身份)。自动观察更新不覆盖用户固定路径；颜色与 UI 仅读取当前实际 ACK；视频实例与 `currentSrc` 变更不增加持久化列表行。
+
+## EPR-002a: 写入与确认可以分离，但证明不能被删除
+对 native 字段（`volumeBase` / `mediaMuted` / `speed`），"物理写入"与"稳定证明"是两个不同事实：
+- `writeState: 'written'` — setter 已执行且元素当前反映请求值。事务可以据此作答。
+- `writeState: 'confirmed'` — 经过事件静默窗与两个渲染边界后值仍然成立。
+- `writeState: 'drifted'` — 页面在我们写入后又恢复了别的值。这是静默窗存在的理由，现在作为**可观测信号**输出，而不是被当作延迟花掉。
+- `writeState: 'unconfirmed'` — 稳定化未能结束（生命周期中止 / DRM 不触发事件 / 超时）。明确**不是**失败：不报错、不补偿。
+
+约束：
+- `phase` 保持原义（`applied` 表示读回判定），不得复用 `applied` 表达写入阶段。
+- 证明在事务作答之后以可取消的后台任务运行；更新的写入取消上一个写入的证明，避免乱序覆盖。
+- `drifted` 必须回写 observed actual，并计入站点 ledger。同一站点在窗口内累计达到阈值即降级为历史 verified 路径（先证明后作答）。
+- 写入仍串行（EPR-012 不变）；被降级的是"等待"，不是"顺序"。
+- 不适用：Capture/WebAudio 增益、处理器生命周期、跨 100 路由边界——这些仍然事务化。
+
+## EPR-006a: 投影元素单一写者
+同一投影元素（卡片的填充条、读数、原生滑块）在**同一个投影面内**只能由一个模块写入。两个写者时后执行的静默获胜，表现为填充条落后于拇指或一帧闪回。
+- 卡片的音量投影写入集中在 `popup/card/volume-view.ts`；帧合并渲染与指针直绘都通过它。
+- 投影面之间（card / side-panel / content OSD）不得互相 import，见 `architecture-layers.json`。
+- 机械化：`scripts/verify/check-ui-authority.ts` 的 UI-004 与 `scripts/verify/check-architecture-layers.ts` 的 LAYER-001。

@@ -21,6 +21,7 @@ import {
 import { createGetCapturing, createUpdateFn } from './state';
 import { isReportedControlFailure, openPopupControlTransport } from './control-port';
 import { createRenderFn } from './render';
+import { createVolumeView } from './volume-view';
 import { bindCardEvents } from './events';
 import { setupCardMessaging } from './messaging';
 import { reportCardControlFailure } from './error';
@@ -217,18 +218,43 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
       if (request === visualizerRequest) visualizerLoading = false;
     });
   };
+  // One writer for the volume projection, shared by the frame-coalesced render
+  // and the synchronous pointer path so they cannot disagree mid-drag.
+  const volumeView = createVolumeView(ui);
   const renderCard = createRenderFn({
     ui,
     state,
+    volumeView,
     getVizEnabled,
     getGlobalSettings,
   });
-  render = () => {
+  const renderImmediate = () => {
     if (disposed) return;
     reconcileVisualizer();
     renderCard();
     if (getCurrentPanelTabId() === tabId) syncSidePanelState(state.config);
     document.dispatchEvent(new Event(VISUALIZER_STATE_CHANGED_EVENT));
+  };
+  // A volume drag fires oninput at input rate (often >60Hz). Rendering the whole
+  // card synchronously per event queued redundant work between frames and
+  // starved the main thread, which reads as the slider not tracking the pointer.
+  // Coalesce to one frame-aligned paint so the bar advances once per frame with
+  // the pointer instead of stuttering behind a growing render backlog.
+  let renderScheduled = false;
+  render = () => {
+    if (disposed || renderScheduled) return;
+    // A hidden or background document does not run animation frames, so
+    // scheduling there would latch `renderScheduled` and silently block every
+    // later paint. Those documents paint synchronously instead.
+    if (params.isBackground || document.hidden) {
+      renderImmediate();
+      return;
+    }
+    renderScheduled = true;
+    requestAnimationFrame(() => {
+      renderScheduled = false;
+      renderImmediate();
+    });
   };
 
   const onControlError = (error: unknown): void => {
@@ -254,6 +280,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   bindCardEvents({
     ui,
     state,
+    volumeView,
     tabId,
     tabUrl: tab.url || '',
     update,
@@ -301,7 +328,9 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     render();
   }));
 
-  render();
+  // Paint the initial card synchronously so it is visible on the first frame;
+  // only subsequent high-frequency updates are frame-coalesced.
+  renderImmediate();
 
   // Snapshot reads stay side-effect free. Once the foreground card is visible,
   // a document-scoped observation lease installs only event listeners/registry
