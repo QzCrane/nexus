@@ -1365,7 +1365,7 @@ tests, ZIP, and promotion consume the same candidate identity.
 ### 15.2 CandidateReceipt
 
 It records schema; repository/commit/tree/source manifest; package version;
-Bun 1.4.0 and lockfile; production flags; artifact/file/ZIP hashes; typed graph
+Bun version and lockfile; production flags; artifact/file/ZIP hashes; typed graph
 closures; actual budgets; trace summaries; Chrome/OS/locale/workload; projection
 model and locale/privacy/permission/network hashes. It proves candidate identity,
 not release authorization.
