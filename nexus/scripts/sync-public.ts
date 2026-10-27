@@ -12,12 +12,11 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { BUN_VERSION } from './toolchain-versions.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Keep in sync with scripts/toolchain-versions.ts.
-const BUN_VERSION = '1.4.0';
 const PACKAGE_MANAGER = `bun@${BUN_VERSION}`;
 const SUPPORTED_APPS = new Set(['spectra', 'halo']);
 const PUBLIC_TURBO_CACHE_DIR = 'node_modules/.cache/turbo-public-sync';

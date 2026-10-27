@@ -3,10 +3,16 @@ import { spawnSync } from 'node:child_process';
 import { extname, join, relative, resolve } from 'node:path';
 
 // goal: distinguish executable toolchain pins from immutable historical evidence
-// inv: only the exact source-disposition ledger and archived documents are historical
+// inv: only source-disposition records, archived documents, research evidence and decision records are historical
 export function findBunVersionDrift(path: string, content: string, expected: string): string[] {
 	const normalized = path.replaceAll('\\', '/');
-	if (normalized.includes('/docs/_archive/') || normalized === 'nexus/integration-decisions.json') return [];
+	// Research and decision records state the toolchain they measured or adopted at
+	// the time. Rewriting those literals to today's pin would falsify the evidence;
+	// treating them as live pins would make every future upgrade fail.
+	if (normalized.includes('/docs/_archive/')
+		|| normalized.includes('/docs/research/')
+		|| normalized.includes('/docs/decisions/')
+		|| normalized === 'nexus/integration-decisions.json') return [];
 	const patterns = [
 		/\bbun@(\d+\.\d+\.\d+)\b/giu,
 		/\bBun\s+(\d+\.\d+\.\d+)\b/gu,

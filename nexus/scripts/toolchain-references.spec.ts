@@ -47,6 +47,11 @@ describe('current toolchain reference authority', () => {
 		expect(findBunVersionDrift('nexus/integration-decisions.json', `rejected Bun ${old}`, BUN_VERSION)).toEqual([]);
 		expect(findBunVersionDrift('nexus/docs/_archive/prior.md', `Bun ${old}`, BUN_VERSION)).toEqual([]);
 		expect(findBunVersionDrift('nexus/other-decisions.json', `Bun ${old}`, BUN_VERSION)).toHaveLength(1);
+		// Research evidence and decision records keep the toolchain they measured;
+		// live instructions in the same tree must still track the current pin.
+		expect(findBunVersionDrift('nexus/docs/research/2026-09-23-measurement.md', `Bun ${old}`, BUN_VERSION)).toEqual([]);
+		expect(findBunVersionDrift('nexus/docs/decisions/adoption.md', `Bun ${old}`, BUN_VERSION)).toEqual([]);
+		expect(findBunVersionDrift('nexus/docs/engineering/README.md', `Bun ${old}`, BUN_VERSION)).toHaveLength(1);
 	});
 	test('accepts exact current references on repeated runs', () => {
 		for (let i = 0; i < 2; i++) expect(findBunVersionDrift('nexus/package.json', `bun@${BUN_VERSION}`, BUN_VERSION)).toEqual([]);
