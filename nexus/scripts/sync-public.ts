@@ -108,12 +108,25 @@ const APP_CONFIGS = {
       lint: 'bun ../../scripts/run-strict-biome.ts .',
     },
     publicApplicationScriptFiles: [
+      // `build` runs this as a second step, so it is a build entry point even
+      // though nothing imports it. A missing entry fails the projected build.
+      'apps/extension-spectra/scripts/check-lean-hotkey-artifact.ts',
       'apps/extension-spectra/scripts/check-production-artifacts.ts',
       'apps/extension-spectra/scripts/i18n-assets.ts',
       'apps/extension-spectra/scripts/i18n-source-catalog.ts',
       'apps/extension-spectra/scripts/minification-policy.ts',
     ],
+    // check-production-artifacts.ts reads this file at runtime, so it is never an
+    // import edge. Dropping it left the projected tree unable to run its own
+    // build while the projection itself reported success.
+    publicApplicationScriptAssets: [
+      'apps/extension-spectra/scripts/production-size-policy.json',
+    ],
     publicApplicationDevDependencies: [
+      // src/remote/qr-generator.ts imports `qrcode`, which ships no declaration
+      // file. Without this entry the projected tree installs cleanly and then
+      // fails its own typecheck, which is exactly how the public mirror stalled.
+      '@types/qrcode',
       'chrome-types',
       'esbuild',
       'sharp',
@@ -157,6 +170,7 @@ const APP_CONFIGS = {
       lint: 'bun ../../scripts/run-strict-biome.ts .',
     },
     publicApplicationScriptFiles: [],
+    publicApplicationScriptAssets: [],
     publicApplicationDevDependencies: [
       '@playwright/test',
       '@types/qrcode',
@@ -194,6 +208,7 @@ const APP_CONFIG = APP_CONFIGS[targetApp] ?? {
   publicApplicationScripts: [],
   publicApplicationScriptOverrides: {},
   publicApplicationScriptFiles: [],
+  publicApplicationScriptAssets: [],
   publicApplicationDevDependencies: [],
   readme: '',
   privacy: '',
@@ -259,12 +274,10 @@ function shouldExcludeForConfig(relativePath, patterns, config) {
   const applicationScriptsPrefix = config.applicationPath
     ? `${config.applicationPath}/scripts/`
     : '';
-  if (
-    applicationScriptsPrefix &&
-    normalized.startsWith(applicationScriptsPrefix) &&
-    !config.publicApplicationScriptFiles.includes(normalized)
-  ) {
-    return true;
+  if (applicationScriptsPrefix && normalized.startsWith(applicationScriptsPrefix)) {
+    const retained = config.publicApplicationScriptFiles.includes(normalized)
+      || config.publicApplicationScriptAssets.includes(normalized);
+    if (!retained) return true;
   }
   return shouldExcludeWithPatterns(normalized, patterns);
 }

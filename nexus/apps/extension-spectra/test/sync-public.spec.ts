@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import {
 	APP_CONFIGS,
 	BASE_EXCLUDES,
@@ -61,6 +61,7 @@ describe('public repository source projection', () => {
 	test('keeps an explicit allowlist of application build scripts', () => {
 		const patterns = [...BASE_EXCLUDES, ...APP_CONFIGS.spectra.excludes];
 		expect(APP_CONFIGS.spectra.publicApplicationScriptFiles).toEqual([
+			'apps/extension-spectra/scripts/check-lean-hotkey-artifact.ts',
 			'apps/extension-spectra/scripts/check-production-artifacts.ts',
 			'apps/extension-spectra/scripts/i18n-assets.ts',
 			'apps/extension-spectra/scripts/i18n-source-catalog.ts',
@@ -81,6 +82,84 @@ describe('public repository source projection', () => {
 				shouldExcludeForConfig(relativePath, patterns, APP_CONFIGS.spectra),
 				relativePath,
 			).toBe(true);
+		}
+	});
+
+	test('projects a declaration package for every typed third-party import', () => {
+		// The public mirror installs and then typechecks itself, so a stripped
+		// @types entry surfaces as a typecheck failure, not as a projection
+		// failure. `qrcode` sat exactly there: imported by src, declared via
+		// @types/qrcode, and missing from the allowlist.
+		const applicationPackage = JSON.parse(
+			readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+		) as { devDependencies?: Record<string, string> };
+		const projected = new Set(APP_CONFIGS.spectra.publicApplicationDevDependencies);
+		const imported = new Set<string>();
+
+		for (const file of readdirSync(new URL('../src', import.meta.url), { recursive: true })) {
+			if (!file.endsWith('.ts')) continue;
+			const source = readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8');
+			for (const match of source.matchAll(/from '([^']+)'/gu)) {
+				const specifier = match[1];
+				if (specifier.startsWith('.') || specifier.startsWith('node:') || specifier.startsWith('@nexus/')) continue;
+				imported.add(specifier.split('/').slice(0, specifier.startsWith('@') ? 2 : 1).join('/'));
+			}
+		}
+
+		expect([...imported].sort()).toEqual(['qrcode']);
+		for (const dependency of imported) {
+			const types = `@types/${dependency.replace(/^@[^/]+\//u, '')}`;
+			if (!Object.hasOwn(applicationPackage.devDependencies ?? {}, types)) continue;
+			expect(projected.has(types), `${types} is declared but not projected`).toBe(true);
+		}
+	});
+
+	test('projects the data files its build scripts read at runtime', () => {
+		// A runtime read is not an import edge, so the dependency closure cannot
+		// see it. `production-size-policy.json` was dropped this way: projection
+		// succeeded, and the projected tree then failed its own build.
+		const projected = new Set(APP_CONFIGS.spectra.publicApplicationScriptAssets);
+		const referenced = new Set<string>();
+
+		for (const scriptPath of APP_CONFIGS.spectra.publicApplicationScriptFiles) {
+			const source = readFileSync(
+				new URL(`../../../${scriptPath}`, import.meta.url),
+				'utf8',
+			);
+			for (const match of source.matchAll(/['"](\.\/[^'"]+\.(?:csv|json|md|txt))['"]/gu)) {
+				referenced.add(new URL(match[1], new URL(`../../../${scriptPath}`, import.meta.url)).pathname);
+			}
+		}
+
+		expect(referenced.size).toBeGreaterThan(0);
+		for (const file of referenced) {
+			const relativePath = decodeURIComponent(file).replace(/^\/[A-Za-z]:/u, '').replaceAll('\\', '/');
+			const matched = [...projected].some((entry) => relativePath.endsWith(entry.replace(/^[^/]+\/[^/]+\//u, '/')));
+			expect(matched, `${relativePath} is read at runtime but not projected`).toBe(true);
+		}
+	});
+
+	test('projects every script its public package scripts execute', () => {
+		// A command can name a script that nothing imports: `build` runs
+		// check-lean-hotkey-artifact.ts as a second step. Import-graph closure
+		// cannot see that, so the command text is the authority here.
+		const applicationPackage = JSON.parse(
+			readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
+		) as { scripts?: Record<string, string> };
+		const projectedScripts = new Set(APP_CONFIGS.spectra.publicApplicationScriptFiles);
+		const executed = new Set<string>();
+
+		for (const name of APP_CONFIGS.spectra.publicApplicationScripts) {
+			const command = applicationPackage.scripts?.[name];
+			if (!command) continue;
+			for (const match of command.matchAll(/(?:^|\s)(scripts\/[\w.-]+\.ts)/gu)) {
+				executed.add(`apps/extension-spectra/${match[1]}`);
+			}
+		}
+
+		expect(executed.size).toBeGreaterThan(0);
+		for (const script of executed) {
+			expect(projectedScripts.has(script), `${script} is executed but not projected`).toBe(true);
 		}
 	});
 
