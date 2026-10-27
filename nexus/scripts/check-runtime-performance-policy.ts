@@ -2,12 +2,30 @@
 // inv: every required workload is release-gated, every metric is source-owned, and baseline mode forbids arbitrary budgets
 
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, resolve } from 'node:path';
+import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const workspaceDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const policyPath = resolve(workspaceDir, 'runtime-performance-policy.json');
 const METRIC_ID = /^[a-z0-9]+(?:[.-][a-z0-9]+)*$/u;
+
+/**
+ * A package script owns its workloads either inline or through one local runner
+ * file that sets the replay environment. Both surfaces count as ownership; a
+ * spec that appears in neither is unowned, which is what this gate forbids.
+ */
+function ownershipSurface(packageDir: string, command: string): string {
+	const surfaces = [command];
+	for (const token of command.split(/\s+/u)) {
+		if (!/[\w./-]+\.(?:cjs|js|mjs|ts)$/u.test(token)) continue;
+		const candidate = resolve(packageDir, token);
+		const inside = relative(packageDir, candidate);
+		if (!inside || inside.startsWith('..') || isAbsolute(inside)) continue;
+		if (!existsSync(candidate)) continue;
+		surfaces.push(readFileSync(candidate, 'utf8'));
+	}
+	return surfaces.join('\n');
+}
 
 interface Workload {
 	id: string;
@@ -83,6 +101,7 @@ export function checkRuntimePerformancePolicy(
 		const pkg = readJson<{ scripts?: Record<string, string> }>(packagePath);
 		const command = pkg.scripts?.[config.script];
 		if (!command) throw new Error(`${product}: package script ${config.script} is missing`);
+		const ownedSurface = ownershipSurface(dirname(packagePath), command);
 		if (!Array.isArray(config.workloads) || config.workloads.length === 0) {
 			throw new Error(`${product}: no runtime performance workloads are registered`);
 		}
@@ -105,7 +124,7 @@ export function checkRuntimePerformancePolicy(
 			const testPath = resolve(workspaceDir, workload.testPath);
 			if (!existsSync(testPath)) throw new Error(`${product}: performance test is missing: ${workload.testPath}`);
 			const basename = workload.testPath.split('/').at(-1);
-			if (!basename || !command.includes(basename)) {
+			if (!basename || !ownedSurface.includes(basename)) {
 				throw new Error(`${product}: ${workload.testPath} is not owned by package script ${config.script}`);
 			}
 			if (!Array.isArray(workload.metrics) || workload.metrics.length === 0) {
