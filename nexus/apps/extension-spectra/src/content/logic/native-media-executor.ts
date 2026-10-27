@@ -21,6 +21,7 @@ import {
 	type ControlStrategy,
 	type ControlStrategyFailure,
 	type ControlValues,
+	type ControlWriteState,
 	type MediaTarget,
 } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/spectra-client';
@@ -53,6 +54,17 @@ import {
 	type NativeMediaOperationOptions,
 } from './native-media-async';
 import {
+	NativeWriteConfirmationRegistry,
+	type RestorableMediaField,
+} from './native-write-confirmation';
+import {
+	resolveNativeWriteMode,
+	resolveNativeWriteSiteKey,
+} from './native-write-policy';
+import {
+	recordNativeWrite,
+} from './native-write-telemetry';
+import {
 	probePageMediaCapability,
 	readPageMediaField,
 	writePageMediaField,
@@ -69,7 +81,6 @@ interface PendingWrite {
 	timeoutId: ReturnType<typeof setTimeout>;
 }
 
-type RestorableMediaField = 'volumeBase' | 'mediaMuted' | 'speed' | 'preservePitch' | 'loop';
 type RestorableMediaWriter = 'page-native' | 'dom-native';
 
 class PageMediaCapabilityUnavailableError extends Error {
@@ -446,6 +457,11 @@ export class NativeMediaExecutor {
 	private disposed = false;
 	private readonly lifecycleController = new AbortController();
 	private readonly sourceOperationScopes = new Map<string, Set<AbortController>>();
+	// Deferred stabilization proofs, keyed `<mediaId>:<field>`. At most one runs
+	// per field: a newer write cancels the proof of the one it supersedes, so a
+	// fast drag cannot stack listeners or let a stale verdict overwrite a newer
+	// value.
+	private readonly writeConfirmations = new NativeWriteConfirmationRegistry();
 
 	constructor(registry: MediaRegistry, effects?: VideoEffectsControllerPort) {
 		// MediaRegistry is a document-owned singleton.  Constructing a fallback
@@ -1072,8 +1088,46 @@ export class NativeMediaExecutor {
 				}
 				const pageWriterAlreadyOwned = nativeMediaOwnership.byElement.get(element)?.get(field)?.writer
 					=== 'page-native';
-				let actual: ControlValues[typeof field];
-				try {
+				// Split-ack eligibility. Only the standard-DOM writer qualifies: a
+				// page-controller write still has to prove its capability and may
+				// fall through to the DOM writer, and that verdict is precisely
+				// what the awaited path exists to produce. Fields with no native
+				// event (preservePitch, loop) keep their cheap two-frame readback
+				// because deferring them would trade ~33ms for a detached 750ms
+				// listener with no user-visible gain.
+				const siteKey = resolveNativeWriteSiteKey();
+				const canSplitAck = mediaWriter === 'dom-native'
+					&& writerUpgrade === undefined
+					&& resolveNativeWriteMode(siteKey) === 'optimistic';
+				if (canSplitAck) {
+					// The whole latency win is these three lines: the setter lands
+					// and the transaction answers in the same task instead of
+					// waiting out the event-quiet window plus two render frames.
+					const startedAt = performance.now();
+					const written = writeRestorableMediaField(
+						element,
+						field,
+						effectiveDesired as ControlValues[typeof field],
+						'dom-native',
+					) as ControlValues[typeof field];
+					const sampleId = recordNativeWrite(field, performance.now() - startedAt);
+					this.putState(fields, field, effectiveDesired, written, intent, 'dom-native', 'written');
+					this.observe(target.mediaId, field, written);
+					this.writeConfirmations.schedule(`${target.mediaId}:${field}`, {
+						element,
+						field: field as RestorableMediaField,
+						desired: effectiveDesired as ControlValues[RestorableMediaField],
+						tolerance,
+						siteKey,
+						sampleId,
+						startedAt,
+						signal,
+						isCurrent,
+						onDrift: (actual) => this.observe(target.mediaId, field, actual),
+					});
+				} else {
+					let actual: ControlValues[typeof field];
+					try {
 					actual = await writeRestorableMediaFieldWithStableAck(
 						element,
 						field,
@@ -1130,9 +1184,10 @@ export class NativeMediaExecutor {
 						{ signal, isCurrent },
 					) as ControlValues[typeof field];
 					assertCurrent();
+					}
+					this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter, 'confirmed');
+					this.observe(target.mediaId, field, actual);
 				}
-				this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter);
-				this.observe(target.mediaId, field, actual);
 			} else switch (field) {
 				case 'preservePitch': {
 					writeNativePreservesPitch(element, value as boolean);
@@ -1379,12 +1434,17 @@ export class NativeMediaExecutor {
 		actual: ControlValues[ControlField],
 		intent: ControlIntent,
 		strategy: ControlStrategy,
+		writeState?: ControlWriteState,
 	): void {
 		(fields as Record<string, unknown>)[field] = {
 			desired,
 			actual,
 			revision: intent.baseRevision + 1,
 			phase: nativeValuesMatch(desired, actual, field === 'currentTime' ? 0.05 : 0.01) ? 'applied' : 'error',
+			// Absent means "write and proof were the same act", which keeps the
+			// declared contract honest for processors and CSS effects instead of
+			// labelling them with a state they never passed through.
+			...(writeState === undefined ? {} : { writeState }),
 			strategy,
 			coverage: 'active-target',
 			controlled: nativeValuesMatch(desired, actual, field === 'currentTime' ? 0.05 : 0.01),
@@ -1394,6 +1454,21 @@ export class NativeMediaExecutor {
 				: { code: 'readback-mismatch', message: 'Actual state differs from the requested value', retryable: true },
 		};
 	}
+
+	/**
+	 * Run a native field's stabilization proof *after* the transaction already
+	 * answered `written`.
+	 *
+	 * Why this is safe rather than merely fast:
+	 * - Nothing here can fail the transaction. A rollback is reported as
+	 *   `drifted`, never thrown, so the control path cannot regress.
+	 * - A newer write cancels the proof of the write it supersedes, so verdicts
+	 *   cannot arrive out of order and overwrite a fresher value.
+	 * - A drift updates the observed actual, so every later read, snapshot and
+	 *   projection reports what the page really holds instead of our wish.
+	 * - The outcome feeds the per-site ledger, which demotes origins that keep
+	 *   taking fields back to the historical verified path.
+	 */
 
 	private synchronizeAppliedNative(fields: ControlFieldStates): void {
 		if (!this.audioRuntimeDelegate) return;
@@ -1786,6 +1861,9 @@ export class NativeMediaExecutor {
 			for (const pending of fields.values()) clearTimeout(pending.timeoutId);
 		}
 		this.pending.clear();
+		// Detached proofs own element listeners; leaving them behind would keep
+		// reading a document the executor no longer serves.
+		this.writeConfirmations.abortAll();
 		this.observed.clear();
 		this.appliedDesiredRevision.clear();
 		this.replayPending.clear();

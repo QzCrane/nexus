@@ -2,10 +2,10 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-08-28
+last_reviewed: 2026-10-28
 ---
 
-# 08. Invariants & Gates (SCTRL-001..044 and migration gate)
+# 08. Invariants & Gates (SCTRL-001..048 and migration gate)
 
 > 主题 owner 段: §20 Static invariants · §21 Migration and release gate
 > 完整目录: [README.md](README.md)
@@ -56,6 +56,10 @@ last_reviewed: 2026-08-28
 - `SCTRL-042`: video enhancement is a lazy capability-owned module; default control does not load it Anchor: `VideoEffectsController`.
 - `SCTRL-043`: Popup, Options and remote use restricted protocol validators and cannot load Background request router; UI event routing cannot become a second settings/control protocol owner Anchor: `isSpectraResponse`.
 - `SCTRL-044`: production application bundles have one esbuild optimization pass; only PeerJS vendor enters Terser Anchor: `productionMangleOptions`.
+- `SCTRL-045`: a native field's physical write and its stabilization proof are separate facts; the transaction answers `written` after the setter and the proof runs as a cancellable deferred task yielding `confirmed` / `drifted` / `unconfirmed`, while `phase` keeps its readback meaning and is never reused for the write stage Anchor: `ControlWriteState` Anchor: `confirmStableNativeEvent`.
+- `SCTRL-046`: a newer write cancels the proof of the write it supersedes, and a proven `drifted` result republishes the page's true value and feeds a per-site ledger that demotes that origin to the verified path Anchor: `NativeWriteConfirmationRegistry` Anchor: `recordNativeWriteOutcome`.
+- `SCTRL-047`: within one projection surface every projection element (fill, readout, native thumb) has exactly one writing module, and no projection surface imports another Anchor: `createVolumeView` Anchor: `check-architecture-layers`.
+- `SCTRL-048`: the presented volume number is always the live optimistic value; a route transaction holds the tone and mute only, never the number Anchor: `resolveVolumePresentation`.
 
 ## §21 Migration and release gate
 

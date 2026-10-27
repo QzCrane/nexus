@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-08-28
+last_reviewed: 2026-10-28
 ---
 
 # 05. Control state (Field states, volume/mute, audio processing)
@@ -52,6 +52,29 @@ effective output ~= volumeBase / 100 * boost
 - **Mute**: 仅修改原生静音属性，保持数值音量与处理器 DSP 状态不变。
 - **Reset**: 同一协调器事务把音量恢复到 100%、取消静音、速度恢复到 1，并释放 DSP；速度必须由原生 writer 回读确认后才显示成功。处理器阶段失败时，速度与音量一起补偿回重置前的实际值。
 - **无隐式 Limiter**: 禁用隐式限幅器，Compressor 为独立显式能力。
+
+### §11.1 写入与确认分离 (Split acknowledgement)
+
+对原生字段（`volumeBase` / `mediaMuted` / `speed`），**物理写入**与**稳定证明**是两个不同事实，分开作答：
+
+```text
+desired -> 物理写入(同步) -> written
+                          -> 稳定证明(可取消后台任务) -> confirmed | drifted | unconfirmed
+```
+
+- `written`：setter 已执行且元素当前反映请求值。事务据此作答。
+- `confirmed`：经过事件静默窗（`NATIVE_EVENT_QUIET_MS = 64`）与两个渲染边界后值仍成立。
+- `drifted`：页面在我们写入后恢复了别的值。这是静默窗存在的理由，现在作为**可观测信号**输出，而不是被当作延迟花掉。
+- `unconfirmed`：稳定化未结束（生命周期中止 / DRM 不触发事件 / 超时）。**不是失败**：不报错、不补偿。
+
+约束：
+
+- `phase` 保持原义（`applied` 表示读回判定）；表达写入阶段必须 `ControlWriteState`，**不得复用 `applied`**。
+- 证明在事务作答之后运行；更新的写入取消上一个写入的证明，避免乱序覆盖。
+- `drifted` 回写 observed actual，并按站点计入 ledger；窗口内累计达阈值即降级为历史 verified 路径（先证明后作答）。`unconfirmed` 不计 drift。
+- 写入仍串行；被降级的是**等待**，不是**顺序**。
+- 适用边界：仅标准 DOM writer 的原生字段。page controller 的能力发现与回退、Capture/WebAudio 增益、处理器生命周期、跨 100 路由边界**仍完全事务化**。
+- 数值显示永不冻结：`resolveVolumePresentation` 的数值恒取 `state.config` 的实时值。路由事务只管辖**色调**（`actualMode` / `phase`）与 `muted`，避免新数值配上一条未确认路由的色调。冻结数值曾使 0–800 滑块在跨过 100 后整个手势停在起始值。
 
 ## §12 Audio processing
 

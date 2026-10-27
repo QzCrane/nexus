@@ -87,25 +87,29 @@ function bindAudioChips(c: SidePanelControls, config: AudioConfig, updateFn: (ch
 
 function bindPanControl(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	if (c.panSlider) {
-		c.panSlider.value = String(config.pan ?? 0);
-		c.panSlider.oninput = (e) => updateFn({ pan: parseFloat((e.target as HTMLInputElement).value) });
-		addWheelSupport(c.panSlider, 0.1, -1, 1, (v) => updateFn({ pan: v }));
+		let currentPan = config.pan ?? 0;
+		const updatePan = (pan: number): void => {
+			currentPan = pan;
+			updateFn({ pan });
+		};
+		c.panSlider.value = String(currentPan);
+		c.panSlider.oninput = (e) => updatePan(parseFloat((e.target as HTMLInputElement).value));
+		addWheelSupport(c.panSlider, 0.1, -1, 1, updatePan, () => currentPan);
 	}
 }
 
 function bindDelayControl(c: SidePanelControls, config: AudioConfig, updateFn: (changes: Partial<AudioConfig>) => void): void {
 	if (c.delaySlider) {
-		c.delaySlider.value = String(config.delay ?? 0);
-		if (c.delayVal) c.delayVal.textContent = `${config.delay ?? 0}ms`;
-		c.delaySlider.oninput = (e) => {
-			const delay = parseInt((e.target as HTMLInputElement).value, 10);
+		let currentDelay = config.delay ?? 0;
+		const updateDelay = (delay: number): void => {
+			currentDelay = delay;
 			if (c.delayVal) c.delayVal.textContent = `${delay}ms`;
 			updateFn({ delay });
 		};
-		addWheelSupport(c.delaySlider, 10, 0, 500, (v) => {
-			if (c.delayVal) c.delayVal.textContent = `${v}ms`;
-			updateFn({ delay: v });
-		});
+		c.delaySlider.value = String(currentDelay);
+		if (c.delayVal) c.delayVal.textContent = `${currentDelay}ms`;
+		c.delaySlider.oninput = (e) => updateDelay(parseInt((e.target as HTMLInputElement).value, 10));
+		addWheelSupport(c.delaySlider, 10, 0, 500, updateDelay, () => currentDelay);
 	}
 }
 

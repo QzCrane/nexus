@@ -6,6 +6,16 @@ import {
 	writeNativePlaybackRate,
 } from '../src/content/logic/native-media-executor';
 import { seekNativeMedia } from '../src/content/logic/native-media-async';
+import {
+	configureNativeWritePolicy,
+	resetNativeWritePolicy,
+	resolveNativeWriteMode,
+	resolveNativeWriteSiteKey,
+} from '../src/content/logic/native-write-policy';
+import {
+	resetNativeWriteTelemetry,
+	snapshotNativeWriteTelemetry,
+} from '../src/content/logic/native-write-telemetry';
 import { writePageMediaField } from '../src/content/logic/page-media-bridge';
 import type { VideoEffectsController } from '../src/content/video/video-effects-controller';
 import {
@@ -248,6 +258,11 @@ describe('native media single-writer correlation', () => {
 	});
 
 	test('waits through microtask, rAF and 50ms page rollbacks before rejecting native ACKs', async () => {
+		// This case asserts the *verified* guarantee: the transaction itself must
+		// reject when a page rolls the value back. The split-ack default moves
+		// that proof off the critical path, so pin the historical mode here and
+		// assert the new behaviour separately.
+		configureNativeWritePolicy({ defaultMode: 'verified' });
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -301,9 +316,14 @@ describe('native media single-writer correlation', () => {
 				executor.dispose();
 			}
 		}
+		resetNativeWritePolicy();
 	}, 5_000);
 
 	test('rejects a getter match when no native event acknowledges the setter', async () => {
+		// Same split-ack carve-out as the rollback case above: a missing native
+		// event is only an error on the verified path, where the event *is* the
+		// acknowledgement.
+		configureNativeWritePolicy({ defaultMode: 'verified' });
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -347,6 +367,7 @@ describe('native media single-writer correlation', () => {
 			expect(registry.element.volume).toBe(1);
 		} finally {
 			executor.dispose();
+			resetNativeWritePolicy();
 		}
 	}, 2_000);
 
@@ -1600,7 +1621,177 @@ describe('native media single-writer correlation', () => {
 			executor.dispose();
 		}
 	}, 2_000);
+
+	test('answers a standard-DOM volume write as written without waiting for stabilization', async () => {
+		resetNativeWritePolicy();
+		resetNativeWriteTelemetry();
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		const startedAt = performance.now();
+		try {
+			const result = await executor.execute({
+				intentId: 'intent:split-ack',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { volumeBase: 40 },
+			});
+			// The entire point of the split: the control path no longer pays the
+			// 64ms event-quiet window plus two render boundaries. The verified
+			// path takes longer than this budget by construction.
+			expect(performance.now() - startedAt).toBeLessThan(50);
+			expect(result.fields.volumeBase).toMatchObject({
+				phase: 'applied',
+				writeState: 'written',
+				controlled: true,
+			});
+			expect(registry.element.volume).toBeCloseTo(0.4, 5);
+		} finally {
+			executor.dispose();
+			resetNativeWritePolicy();
+			resetNativeWriteTelemetry();
+		}
+	}, 2_000);
+
+	test('confirms a well-behaved write after the boundary and keeps the site optimistic', async () => {
+		resetNativeWritePolicy();
+		resetNativeWriteTelemetry();
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			await executor.execute({
+				intentId: 'intent:split-ack-confirm',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { volumeBase: 40 },
+			});
+			await settleConfirmationWindow();
+			const telemetry = snapshotNativeWriteTelemetry();
+			expect(telemetry.byState.confirmed).toBe(1);
+			expect(telemetry.byState.drifted).toBe(0);
+			expect(resolveNativeWriteMode(resolveNativeWriteSiteKey())).toBe('optimistic');
+		} finally {
+			executor.dispose();
+			resetNativeWritePolicy();
+			resetNativeWriteTelemetry();
+		}
+	}, 5_000);
+
+	test('records a late page rollback as drift and demotes that site to verified', async () => {
+		resetNativeWritePolicy();
+		resetNativeWriteTelemetry();
+		// One proven rollback is enough here so the demotion is observable without
+		// staging two drags; the production threshold stays at two.
+		configureNativeWritePolicy({ defaultMode: 'optimistic', driftLimit: 1 });
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		registry.element.volumeWriteHook = (value) => {
+			if (Math.abs(value - 0.4) > 0.001) return;
+			setTimeout(() => registry.element.forceVolume(1), 50);
+		};
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const result = await executor.execute({
+				intentId: 'intent:split-ack-drift',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { volumeBase: 40 },
+			});
+			// The transaction itself still succeeded: the rollback is reported,
+			// not thrown, so a hostile page cannot regress the control path.
+			expect(result.fields.volumeBase?.writeState).toBe('written');
+			await settleConfirmationWindow();
+			expect(snapshotNativeWriteTelemetry().byState.drifted).toBe(1);
+			expect(resolveNativeWriteMode(resolveNativeWriteSiteKey())).toBe('verified');
+		} finally {
+			executor.dispose();
+			resetNativeWritePolicy();
+			resetNativeWriteTelemetry();
+		}
+	}, 5_000);
+
+	test('a page that never emits the native event keeps the site optimistic', async () => {
+		resetNativeWritePolicy();
+		resetNativeWriteTelemetry();
+		configureNativeWritePolicy({ defaultMode: 'optimistic', driftLimit: 1 });
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		// DRM/EME-shaped media: the setter takes, the event never fires. The
+		// deferred proof must not mistake silence for a rollback.
+		registry.element.emitVolumeChange = false;
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			await executor.execute({
+				intentId: 'intent:split-ack-silent',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { volumeBase: 40 },
+			});
+			await new Promise((resolve) => setTimeout(resolve, 900));
+			expect(snapshotNativeWriteTelemetry().pending).toBe(0);
+			expect(snapshotNativeWriteTelemetry().byState.unconfirmed).toBe(0);
+			expect(resolveNativeWriteMode(resolveNativeWriteSiteKey())).toBe('optimistic');
+		} finally {
+			executor.dispose();
+			resetNativeWritePolicy();
+			resetNativeWriteTelemetry();
+		}
+	}, 5_000);
 });
+
+function settleConfirmationWindow(): Promise<void> {
+	// Past the 64ms event-quiet window plus two render boundaries, with room for
+	// the 50ms rollback the drift case stages.
+	return new Promise((resolve) => setTimeout(resolve, 500));
+}
+
+function installFakeMediaGlobals(): void {
+	Object.defineProperty(globalThis, 'HTMLMediaElement', {
+		configurable: true,
+		value: FakeMediaElement,
+	});
+	Object.defineProperty(globalThis, 'HTMLVideoElement', {
+		configurable: true,
+		value: class FakeVideoElement extends FakeMediaElement { },
+	});
+	Object.defineProperty(globalThis, 'document', {
+		configurable: true,
+		value: { pictureInPictureElement: null, fullscreenElement: null },
+	});
+	Object.defineProperty(globalThis, 'requestAnimationFrame', {
+		configurable: true,
+		value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+	});
+}
 
 function restore(key: string, descriptor?: PropertyDescriptor): void {
 	if (descriptor) Object.defineProperty(globalThis, key, descriptor);

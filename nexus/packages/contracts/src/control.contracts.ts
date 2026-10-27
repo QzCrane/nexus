@@ -125,6 +125,42 @@ export function shouldTryNextControlStrategy(failure: ControlStrategyFailure): b
 export type ControlCoverage = 'full' | 'active-target' | 'partial' | 'opaque';
 export type ControlRequestedCoverage = Extract<ControlCoverage, 'full' | 'active-target'>;
 export type ControlFieldPhase = 'idle' | 'applied' | 'error';
+/**
+ * Physical write and verified stability are two different facts, reported
+ * separately so a control transaction no longer has to *await* the
+ * stabilization boundary before it can answer.
+ *
+ * `phase` keeps its original meaning (the readback verdict for the value that
+ * was written). `writeState` is deliberately named this way and never reuses the
+ * word `applied`, because `phase: 'applied'` already exists with a different
+ * meaning and reusing it would create a contract-level double meaning.
+ *
+ * - `written`: the setter was invoked and the element reflects the request right
+ *   now. Nothing has been proven about whether the page will keep it.
+ * - `confirmed`: the value still holds past the event-quiet window and two
+ *   render boundaries, i.e. the page did not roll it back.
+ * - `drifted`: the page restored a different value after our write. This is the
+ *   signal the stabilization window exists to produce, now surfaced instead of
+ *   being spent as latency.
+ * - `unconfirmed`: stabilization could not conclude (lifecycle abort, DRM/EME
+ *   media that never fires the event, timeout). Explicitly *not* a failure: no
+ *   error is reported and no compensation runs.
+ */
+export type ControlWriteState = 'written' | 'confirmed' | 'drifted' | 'unconfirmed';
+/**
+ * A `drifted` result is a correction, not a success and not a hard error: the
+ * write physically happened and the page then took the field back.
+ */
+export function isControlWriteDrift(state: ControlWriteState | undefined): boolean {
+	return state === 'drifted';
+}
+/**
+ * Only a `confirmed` sample may be treated as durable proof. `written` is still
+ * provisional and `unconfirmed` says nothing either way.
+ */
+export function isControlWriteSettled(state: ControlWriteState | undefined): boolean {
+	return state === 'confirmed' || state === 'drifted' || state === 'unconfirmed';
+}
 export type ControlIntentSource = 'page' | 'popup' | 'remote' | 'hotkey' | 'restore' | 'system';
 export type MediaKind = 'audio' | 'video';
 
@@ -716,6 +752,12 @@ export interface ControlFieldState<T> {
 	restoreBaseline?: T;
 	revision: number;
 	phase: ControlFieldPhase;
+	/**
+	 * Split-ack provenance for native fields. Absent on processors and on any
+	 * field whose write and its confirmation are the same synchronous act (CSS
+	 * effects, capture gain), where `phase` alone already tells the whole story.
+	 */
+	writeState?: ControlWriteState;
 	strategy: ControlStrategy;
 	coverage: ControlCoverage;
 	controlled: boolean;

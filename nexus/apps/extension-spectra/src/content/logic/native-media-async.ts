@@ -234,6 +234,73 @@ export async function writeWithStableEventAck<T>(
 	}
 }
 
+/**
+ * Observe an *already written* native field across the same stabilization
+ * boundary a write would pay, without invoking a second setter.
+ *
+ * This exists because the split-ack path performs the physical write inside the
+ * transaction and defers the proof. A plain `stableReadback` would skip the
+ * event-quiet window, which is the part that actually catches a page player
+ * acknowledging a value and restoring its own in a timer — so the deferred
+ * proof would be strictly weaker than the one it replaced.
+ *
+ * Resolving `matched` (rather than throwing) is deliberate: the caller is no
+ * longer in a position to fail the transaction, so a rollback becomes a
+ * reportable observation instead of an error.
+ */
+export async function confirmStableNativeEvent<T>(
+	target: EventTarget,
+	type: string,
+	read: () => T,
+	expected: T,
+	tolerance: number,
+	timeoutMs = 750,
+	options: NativeMediaOperationOptions = {},
+): Promise<{ actual: T; matched: boolean }> {
+	assertNativeOperationCurrent(options);
+	let finish!: (matched: boolean) => void;
+	let quietTimer: ReturnType<typeof setTimeout> | null = null;
+	let timeoutId: ReturnType<typeof setTimeout> | null = null;
+	let abortListener: (() => void) | null = null;
+	let cancellation: ContentLifecycleError | null = null;
+	const settled = new Promise<boolean>((resolve) => {
+		finish = resolve;
+	});
+	const onEvent = (): void => {
+		if (quietTimer !== null) clearTimeout(quietTimer);
+		// Restart the quiet window on every event instead of judging on the
+		// first one: a player that reports an intermediate value on its way back
+		// must still be caught once it settles.
+		quietTimer = setTimeout(
+			() => finish(nativeValuesMatch(expected, read(), tolerance)),
+			NATIVE_EVENT_QUIET_MS,
+		);
+	};
+	target.addEventListener(type, onEvent);
+	if (options.signal) {
+		abortListener = () => {
+			cancellation = abortError(options.signal);
+			finish(false);
+		};
+		options.signal.addEventListener('abort', abortListener, { once: true });
+	}
+	timeoutId = setTimeout(
+		() => finish(nativeValuesMatch(expected, read(), tolerance)),
+		timeoutMs,
+	);
+	try {
+		const matched = await settled;
+		assertNativeOperationCurrent(options);
+		if (cancellation) throw cancellation;
+		return { actual: read(), matched };
+	} finally {
+		target.removeEventListener(type, onEvent);
+		if (quietTimer !== null) clearTimeout(quietTimer);
+		if (timeoutId !== null) clearTimeout(timeoutId);
+		if (options.signal && abortListener) options.signal.removeEventListener('abort', abortListener);
+	}
+}
+
 export async function measureVideoFrameDuration(
 	video: HTMLVideoElement,
 	sourceRevision: number,

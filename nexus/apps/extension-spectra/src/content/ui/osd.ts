@@ -391,6 +391,17 @@ function animateScalarValue(
 		paintScalarValue(root, payload, to, s);
 		return;
 	}
+	// A held hotkey emits targets faster than a fixed ease can finish. When this
+	// update is part of a continuous gesture (the previous target landed only a
+	// moment ago), commit the live value immediately so the bar, number and tone
+	// track the key-repeat instead of perpetually chasing one step behind and
+	// then jumping when the actual ACK lands. An isolated, discrete press keeps
+	// the short easing for a smooth single-step feel.
+	if (targetIntervalMs !== undefined && targetIntervalMs <= 120) {
+		state.displayedValue = to;
+		paintScalarValue(root, payload, to, s);
+		return;
+	}
 	const duration = scalarFeedbackAnimationDuration(payload.type, from, to, targetIntervalMs);
 	// Commit the discrete shortcut target in the input task while preserving the
 	// current interpolated fill. A busy frame cannot swallow a physical step's

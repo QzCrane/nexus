@@ -18,34 +18,43 @@ interface SpeedControls {
 }
 
 // eff: attaches a wheel listener to a numeric slider or input, enabling high-precision adjustments with defined steps and bounds
+//
+// `readValue` supplies the authoritative current value. A wheel step must never
+// be computed from `slider.value`: the slider is presentation, and a render that
+// has not caught up would silently win the arithmetic.
 export function addWheelSupport(
 	slider: HTMLInputElement | null,
 	step: number,
 	min: number,
 	max: number,
-	onUpdate: (value: number) => void
+	onUpdate: (value: number) => void,
+	readValue: () => number,
 ): void {
 	if (!slider) return;
 	// note: passive: false is required to support preventDefault() and block page scrolling during adjustment
 	slider.onwheel = (e) => {
 		e.preventDefault();
-		let v = parseFloat(slider.value);
-		v = e.deltaY < 0 ? Math.min(v + step, max) : Math.max(v - step, min);
-		slider.value = String(v);
-		onUpdate(v);
+		const current = readValue();
+		const next = e.deltaY < 0 ? Math.min(current + step, max) : Math.max(current - step, min);
+		slider.value = String(next);
+		onUpdate(next);
 	};
 }
 
 // eff: binds side panel speed slider and input to the update function, using unified config flow
 // note: speed now uses same update flow as volume - through updateFn instead of direct MEDIA_SET_SPEED
 export function bindSpeedControls(c: SpeedControls, updateFn: (changes: Partial<AudioConfig>) => void, initialSpeed: number = 1): void {
+	// The tracked value is the authority for relative gestures; the DOM only ever
+	// receives it.
+	let currentSpeed = clampSpeed(initialSpeed);
 	const updateSpeed = (speed: number) => {
 		const clampedSpeed = clampSpeed(speed);
+		currentSpeed = clampedSpeed;
 		if (c.speedSlider) c.speedSlider.value = String(clampedSpeed);
 		if (c.speedInput) c.speedInput.value = clampedSpeed.toFixed(2);
 		updateFn({ speed: clampedSpeed });
 	};
-	const normalizedInitialSpeed = clampSpeed(initialSpeed);
+	const normalizedInitialSpeed = currentSpeed;
 
 	if (c.speedSlider) {
 		c.speedSlider.value = String(normalizedInitialSpeed);
@@ -57,7 +66,7 @@ export function bindSpeedControls(c: SpeedControls, updateFn: (changes: Partial<
 			const speed = parseFloat((e.target as HTMLInputElement).value);
 			updateSpeed(speed);
 		};
-		addWheelSupport(c.speedSlider, 0.05, SPEED_MIN, SPEED_MAX, updateSpeed);
+		addWheelSupport(c.speedSlider, 0.05, SPEED_MIN, SPEED_MAX, updateSpeed, () => currentSpeed);
 	}
 
 	const speedInput = c.speedInput;
