@@ -138,7 +138,7 @@ async function main(): Promise<void> {
 
   const reconcileCardInventory = (): void => {
     if (popupRetired) return;
-    if (bgBadge) bgBadge.innerText = String(bgStack.children.length);
+    if (bgBadge) bgBadge.textContent = String(bgStack.children.length);
     bgHeader?.classList.toggle('hidden', bgStack.children.length === 0);
     emptyState.classList.toggle('hidden', mainStage.children.length > 0 || bgStack.children.length > 0);
   };

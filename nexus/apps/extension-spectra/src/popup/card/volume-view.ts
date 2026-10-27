@@ -66,7 +66,7 @@ export function createVolumeView(ui: Pick<CardUIElements, 'slider' | 'fill' | 'v
 	const writeLabel = (label: string): void => {
 		if (label === lastLabel) return;
 		lastLabel = label;
-		ui.val.innerText = label;
+		ui.val.textContent = label;
 	};
 	const writeColor = (color: string): void => {
 		if (color === lastColor) return;

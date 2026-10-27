@@ -38,7 +38,7 @@ function showSaveFeedback(button: HTMLElement, success: boolean, dict: { saveSuc
   button.classList.remove('saved', 'failed');
   button.classList.add('feedback', success ? 'saved' : 'failed');
   const candidate = success ? dict.saveSuccess : dict.saveFailed;
-  button.innerText = typeof candidate === 'string' && candidate.trim().length > 0
+  button.textContent = typeof candidate === 'string' && candidate.trim().length > 0
     ? candidate
     : success ? 'Saved' : 'Failed';
   setTimeout(() => {

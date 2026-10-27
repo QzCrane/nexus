@@ -44,9 +44,9 @@ export function prepareCardDom(params: {
 	resume.className = 'sleep-resume-hint';
 	resume.textContent = dict.clickToResume;
 	ui.maskText.append(paused, resume);
-	ui.title.innerText = tab.title || '';
+	ui.title.textContent = tab.title || '';
 	ui.title.title = tab.title || '';
-	ui.domain.innerText = domain;
+	ui.domain.textContent = domain;
 	// Stable identity hook so the popup can retire a card whose media tab left
 	// the visible inventory during the same open (convergence re-render).
 	if (typeof tab.id === 'number') cardEl.dataset.tabId = String(tab.id);

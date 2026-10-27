@@ -118,11 +118,11 @@ function renderVolumeIcon(
   iconSpan.style.fontSize = '16px';
 
   if (muted || volume === 0) {
-    iconSpan.innerText = '🔇';
+    iconSpan.textContent = '🔇';
     muteBtn.style.opacity = '0.7';
   } else {
     muteBtn.style.opacity = '1';
-    iconSpan.innerText = volume > 100 ? '🚀' : '🔊';
+    iconSpan.textContent = volume > 100 ? '🚀' : '🔊';
   }
 
   muteBtn.replaceChildren(iconSpan);

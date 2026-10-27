@@ -35,8 +35,8 @@ function installVolumeElements(): {
 			set color(next: string) { state.color = next; },
 			get color(): string { return state.color; },
 		},
-		set innerText(next: string) { counts.label += 1; state.label = next; },
-		get innerText(): string { return state.label; },
+		set textContent(next: string) { counts.label += 1; state.label = next; },
+		get textContent(): string { return state.label; },
 	};
 	const slider = {
 		set value(next: string) { counts.thumb += 1; state.thumb = next; },

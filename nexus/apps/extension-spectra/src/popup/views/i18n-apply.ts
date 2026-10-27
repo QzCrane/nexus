@@ -22,7 +22,7 @@ export function applyLang(lang: string): I18NDict {
 		const key = el.dataset.i18n as keyof I18NDict;
 		const value = dict[key];
 		if (typeof value === 'string') {
-			el.innerText = value;
+			el.textContent = value;
 		}
 	});
 

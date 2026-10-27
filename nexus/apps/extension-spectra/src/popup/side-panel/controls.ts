@@ -156,7 +156,7 @@ function bindEq(c: SidePanelControls, config: AudioConfig, updateFn: (changes: P
 }
 
 function updateValDisplay(el: HTMLElement | undefined, v: number): void {
-	if (el) el.innerText = (v > 0 ? '+' : '') + v.toFixed(1);
+	if (el) el.textContent = (v > 0 ? '+' : '') + v.toFixed(1);
 }
 
 // eff: bulk updates the side panel UI elements when the active tab's audio configuration changes externally
