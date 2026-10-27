@@ -24,13 +24,13 @@ const UAParserPanel: React.FC = () => {
 	const [result, setResult] = useState<UAResult | null>(null);
 
 	const handleParse = useCallback(() => setResult(parseUserAgent(ua)), [ua]);
-	const useCurrent = () => setUA(navigator.userAgent);
+	const applyCurrentUA = () => setUA(navigator.userAgent);
 
 	return (
 		<div style={styles.wrapper}>
 			<div style={styles.row}>
 				<span style={styles.label}>{t('network.ua.input')}</span>
-				<button type="button" style={styles.btnSecondary} onClick={useCurrent}>{t('network.ua.current')}</button>
+				<button type="button" style={styles.btnSecondary} onClick={applyCurrentUA}>{t('network.ua.current')}</button>
 			</div>
 			<textarea style={styles.textarea} value={ua} onChange={(e) => setUA(e.target.value)} placeholder="Mozilla/5.0..." />
 			<button type="button" style={styles.btn} onClick={handleParse}>{t('network.ua.parse')}</button>
