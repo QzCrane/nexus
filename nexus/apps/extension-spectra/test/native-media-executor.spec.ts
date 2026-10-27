@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
+import { isControlApplyAck } from '@nexus/contracts';
 import type { ControlIntent, MediaTarget } from '@nexus/contracts';
 import type { MediaRegistry, MediaRegistryEvent } from '../src/content/core/media-registry';
 import {
@@ -1722,6 +1723,12 @@ describe('native media single-writer correlation', () => {
 			// The transaction itself still succeeded: the rollback is reported,
 			// not thrown, so a hostile page cannot regress the control path.
 			expect(result.fields.volumeBase?.writeState).toBe('written');
+			// The ack is re-validated after it crosses the process boundary. Asserting
+			// only the fields this test cares about is precisely how a new optional
+			// key reached production while every test stayed green: Background
+			// rejected every native write as an invalid response, and the popup fell
+			// back to the last confirmed value, which the user sees as a spring-back.
+			expect(isControlApplyAck(result)).toBe(true);
 			await settleConfirmationWindow();
 			expect(snapshotNativeWriteTelemetry().byState.drifted).toBe(1);
 			expect(resolveNativeWriteMode(resolveNativeWriteSiteKey())).toBe('verified');

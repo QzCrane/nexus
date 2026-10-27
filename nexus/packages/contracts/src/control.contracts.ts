@@ -1042,6 +1042,7 @@ export interface ControlReadResult {
 const strategySet: ReadonlySet<string> = new Set(CONTROL_STRATEGIES);
 const coverageSet: ReadonlySet<string> = new Set(['full', 'active-target', 'partial', 'opaque']);
 const phaseSet: ReadonlySet<string> = new Set(['idle', 'applied', 'error']);
+const writeStateSet: ReadonlySet<string> = new Set(['written', 'confirmed', 'drifted', 'unconfirmed']);
 const sourceSet: ReadonlySet<string> = new Set(['page', 'popup', 'remote', 'hotkey', 'restore', 'system']);
 const controlFields: ReadonlySet<string> = new Set(CONTROL_FIELDS);
 const controlDirectFields: ReadonlySet<string> = new Set(CONTROL_DIRECT_FIELDS);
@@ -1128,6 +1129,10 @@ const fieldStateKeys = new Set<keyof ControlFieldState<unknown>>([
 	'restoreBaseline',
 	'revision',
 	'phase',
+	// Split-ack provenance. It is optional on the type, but the runtime check has
+	// to admit it: a producer that sets it and a validator that rejects it turn
+	// every native write into an invalid response.
+	'writeState',
 	'strategy',
 	'coverage',
 	'controlled',
@@ -1519,6 +1524,8 @@ function isControlFieldState(field: ControlField, value: unknown): boolean {
 		&& isSafeNonNegativeInteger(value.revision)
 		&& typeof value.phase === 'string'
 		&& phaseSet.has(value.phase)
+		&& (value.writeState === undefined
+			|| (typeof value.writeState === 'string' && writeStateSet.has(value.writeState)))
 		&& admittedStrategy
 		&& typeof value.coverage === 'string'
 		&& coverageSet.has(value.coverage)

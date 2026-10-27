@@ -17,6 +17,7 @@ import {
 	classifyControlStrategy,
 	isControlIntent,
 	isCaptureAdmission,
+	isControlApplyAck,
 	isControlOperationAck,
 	isControlPatch,
 	isControlReadResult,
@@ -687,5 +688,46 @@ describe('per-field SPECTRA control contracts', () => {
 			volumeBase: field(100),
 			boost: field(1),
 		})).toBeNull();
+	});
+	test('accepts an ack that populates every optional field', () => {
+		// The runtime allowlist and the type have to move together. A field that a
+		// producer sets while the allowlist omits it invalidates the whole ack, and
+		// the only visible symptom is a popup that falls back to its previous
+		// value. `writeState` shipped exactly that way.
+		const ack = {
+			intentId: 'intent:maximal',
+			tabId: 7,
+			documentId: 'document:maximal',
+			generation: 1,
+			revision: 3,
+			target: {
+				frameId: 0,
+				documentId: 'document:maximal',
+				mediaId: 'media:maximal',
+				sourceRevision: 1,
+				kind: 'audio' as const,
+			},
+			fields: {
+				volumeBase: {
+					desired: 40,
+					actual: 40,
+					restoreBaseline: 100,
+					revision: 3,
+					phase: 'applied' as const,
+					writeState: 'written' as const,
+					strategy: 'dom-native' as const,
+					coverage: 'active-target' as const,
+					controlled: true,
+					intentId: 'intent:maximal',
+					lastError: null,
+				},
+			},
+			audioVolume: { effectiveVolume: 40, volumeState: 'native' as const },
+		};
+
+		expect(isControlApplyAck(ack)).toBe(true);
+		// An allowlist that admits everything proves nothing: an unknown key still
+		// has to fail.
+		expect(isControlApplyAck({ ...ack, writeState: 'written' })).toBe(false);
 	});
 });
