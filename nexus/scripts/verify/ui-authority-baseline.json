@@ -1,0 +1,12 @@
+{
+	"captureRenderers": {
+		"apps/extension-spectra/src/popup/visualizer/draw-viz.ts": {
+			"owner": "popup visualizer renderer",
+			"reason": "Receives isCapture from the acknowledged lifecycle. It derives no Capture verdict itself."
+		},
+		"apps/extension-spectra/src/content/ui/osd.ts": {
+			"owner": "content OSD renderer",
+			"reason": "Consumes volumeState emitted by resolveAudioVolumeState. It derives no Capture verdict itself."
+		}
+	}
+}

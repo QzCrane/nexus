@@ -35,6 +35,7 @@ import {
 	type HostSession,
 	toPublicSession,
 	toSessionView,
+	canDriveSideEffects,
 } from './remote-session-projection';
 import { isPairingWindowExpired } from '../remote/pairing-window';
 import { isTrustedExtensionUi } from './remote-sender-gate';
@@ -720,6 +721,10 @@ async function handleHostCommand(
 			() => isCurrentRemoteCommandTicket(ticket),
 		);
 		if (!isCurrentRemoteCommandTicket(ticket)) return;
+		// The ticket proves this command is current; it does not prove the session
+		// may still act on the tab. An authenticated but reconnect-expired session
+		// is still a session, it just may not drive side effects (§5.8).
+		if (!canDriveSideEffects(authorization.session)) return;
 		await executeCommand(message.command, authorization.session.tabId, undefined, abortController.signal);
 		// Execution is an external await. Do not publish/continue any old result
 		// after close, epoch rotation, document replacement, worker restore, or

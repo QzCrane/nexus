@@ -4,6 +4,7 @@ import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import type { ConfigErrorHandler, ConfigUpdateFn } from './state';
 import type { ControlOperationAck } from '@nexus/contracts';
+import { resolveAudioVolume } from '@nexus/contracts';
 import { AUDIO_UI, TIMING } from '../constants';
 import { getDomain } from '../utils/dom';
 import { bindMediaControls } from './media-events';
@@ -137,11 +138,17 @@ export function bindCardEvents(params: EventsParams): void {
     // Set dragging state to prevent render from updating slider.value
     setDragging('volume');
 
-    let v = parseInt(ui.slider.value, 10);
-    v = e.deltaY < 0
-      ? Math.min(v + AUDIO_UI.VOLUME_STEP, AUDIO_UI.MAX_VOLUME)
-      : Math.max(v - AUDIO_UI.VOLUME_STEP, 0);
-    handleVolume(v);
+    // The wheel gesture is synthetic: it must read the authoritative card state,
+    // not the DOM slider. Reading `ui.slider.value` here made the DOM a second
+    // source of truth whenever a render had not caught up yet.
+    const currentVolume = resolveAudioVolume(state.config).effectiveVolume;
+    const nextVolume = e.deltaY < 0
+      ? Math.min(currentVolume + AUDIO_UI.VOLUME_STEP, AUDIO_UI.MAX_VOLUME)
+      : Math.max(currentVolume - AUDIO_UI.VOLUME_STEP, 0);
+    handleVolume(nextVolume);
+    // The thumb is DOM presentation, so writing it after the state update is the
+    // one direction allowed: state -> DOM, never DOM -> state.
+    ui.slider.value = String(nextVolume);
 
     // Clear dragging state after wheel stops (300ms debounce)
     if (wheelTimer) clearTimeout(wheelTimer);

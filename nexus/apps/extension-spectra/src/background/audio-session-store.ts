@@ -432,7 +432,7 @@ function scheduleBroadcast(snapshot: AudioSessionSnapshot): void {
  * now distinguish "not yet provable" from "never".
  */
 export function getAudioSessionRejection(tabId: number): Rejection | null {
-	return sessionRejections.get(tabId) ?? null;
+	return sessionRejections.get(tabId) ?? snapshots.get(tabId)?.lastRejection ?? null;
 }
 
 /**
@@ -525,6 +525,11 @@ function admitAudioSessionUpdate(
 		configRevision: (base?.configRevision ?? 0) + (previousHash === nextHash ? 0 : 1),
 		actualConfig,
 		lastError,
+		// Carried on the snapshot because a refusal that stays inside the store
+		// cannot be acted on by anything: the UI surface and the Content mirror
+		// both read this snapshot, and both should be able to say why a write did
+		// not take effect.
+		lastRejection: rejections[0] ?? null,
 	};
 	// An accepted claim that the evidence guard had to correct still carries the
 	// correction, so the caller can see that the phase is not the one it asked
@@ -579,12 +584,11 @@ export async function updateAudioSession(
 			throw error;
 		}
 		snapshots.set(identity.tabId, snapshot);
-		// A clean admission clears the ledger; one the evidence guard had to correct
-		// records the correction instead, so "admitted" and "admitted after being
-		// changed" stay distinguishable.
-		const correction = verdict.corrections[0];
-		if (correction) sessionRejections.set(identity.tabId, correction);
-		else sessionRejections.delete(identity.tabId);
+		// The ledger is refusal-only. An admission the evidence guard had to
+		// correct still carries that correction on `snapshot.lastRejection`, so
+		// "admitted" and "admitted after being changed" stay distinguishable
+		// without giving one write two competing owners.
+		sessionRejections.delete(identity.tabId);
 		try {
 			assertAudioSessionFence(identity, expectedEpoch);
 		} catch (error) {

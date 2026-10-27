@@ -570,6 +570,8 @@ export function isSpectraResponse<T extends SpectraRequestType>(
 }
 
 export { rpcFailure, rpcSuccess };
+export { isRejection } from './fact.js';
+export type { Rejection } from './fact.js';
 // Content is built against this entry instead of the full contracts package, so
 // every runtime value a content module imports must be reachable from here. The
 // bounded template is one of them: the content hotkey listener owns a bounded

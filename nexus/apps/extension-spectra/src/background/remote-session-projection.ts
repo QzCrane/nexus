@@ -34,3 +34,19 @@ export function toPublicSession(session: HostSession): RemotePublicSession {
 export function toSessionView(session: HostSession): RemoteSessionView {
 	return toRemoteSessionView(session);
 }
+
+/**
+ * Whether this session may drive side effects on a tab (§5.8).
+ *
+ * Authentication establishes an epoch; being *live* is a second question. A
+ * session whose reconnect window has lapsed is still a session — it just may not
+ * mute, seek or change volume any more. Both parts are required, so neither the
+ * epoch nor `connected` alone is treated as authority.
+ */
+export function canDriveSideEffects(session: HostSession, now = Date.now()): boolean {
+	if (session.sessionEpoch <= 0) return false;
+	if (session.connected) return true;
+	// An authenticated session survives a brief disconnect inside its reconnect
+	// window; outside it, commands must stop.
+	return session.reconnectUntil !== null && session.reconnectUntil > now;
+}

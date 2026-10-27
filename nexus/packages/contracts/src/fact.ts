@@ -53,6 +53,24 @@ export function reject<T>(reason: Rejection, current: T | null = null): Verdict<
  * This is the first consumer of {@link Rejection}: a named reason is what lets
  * a caller distinguish "not yet" from "never".
  */
+export function isRejection(value: unknown): value is Rejection {
+	if (!value || typeof value !== 'object') return false;
+	const candidate = value as Record<string, unknown>;
+	switch (candidate.code) {
+		case 'no_evidence':
+			return Array.isArray(candidate.missing)
+				&& candidate.missing.every((entry) => typeof entry === 'string');
+		case 'intent_cancelled':
+			return typeof candidate.intentId === 'string';
+		case 'stale_sequence':
+			return Number.isSafeInteger(candidate.seen) && Number.isSafeInteger(candidate.got);
+		case 'illegal_transition':
+			return typeof candidate.from === 'string' && typeof candidate.to === 'string';
+		default:
+			return false;
+	}
+}
+
 export function isRetryableRejection(reason: Rejection): boolean {
 	return reason.code === 'no_evidence';
 }

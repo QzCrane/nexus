@@ -92,7 +92,7 @@ export type { ProcessorAck, StartIntent } from './offscreen.contracts.js';
 export { isProcessorAck, mintStartIntent, verifyProcessorAck } from './offscreen.contracts.js';
 export { createBoundedMap, createBoundedSet } from './bounded.js';
 export type { Rejection, Verdict } from './fact.js';
-export { accept, describeRejection, isRetryableRejection, reject } from './fact.js';
+export { accept, describeRejection, isRejection, isRetryableRejection, reject } from './fact.js';
 
 export type {
   AudioConfig,

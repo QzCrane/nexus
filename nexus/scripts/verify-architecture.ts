@@ -26,6 +26,7 @@ import { checkSourcePurity } from './verify/check-source-purity.ts';
 import { checkPublicParity } from './verify/check-public-parity.ts';
 import { checkSenderVerification } from './verify/check-sender-verification.ts';
 import { checkShapeDuplication } from './verify/check-shape-duplication.ts';
+import { checkUiAuthority } from './verify/check-ui-authority.ts';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,6 +57,7 @@ const CHECKS: ReadonlyArray<readonly [string, (root: string) => void]> = [
 	['public-parity', checkPublicParity],
 	['sender-verification', checkSenderVerification],
 	['shape-duplication', checkShapeDuplication],
+	['ui-authority', checkUiAuthority],
 ];
 
 interface CheckResult {

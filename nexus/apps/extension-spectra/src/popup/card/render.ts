@@ -48,9 +48,10 @@ export function createRenderFn(params: RenderParams): () => void {
 
     // The thumb follows the gesture immediately. The result label, fill and
     // route color commit together, never a new number with the previous route.
-    const currentSliderValue = parseFloat(ui.slider.value);
+    // Dragging is tracked in card state; reading the slider back here would make
+    // the DOM a second authority for the same value.
     const newSliderValue = resolveAudioVolume(config).effectiveVolume;
-    if (currentSliderValue !== newSliderValue) {
+    if (state.draggingField !== 'volume') {
       ui.slider.value = String(newSliderValue);
     }
     ui.fill.style.width = `${(volumePresentation.effectiveVolume / AUDIO_UI.MAX_VOLUME) * 100}%`;

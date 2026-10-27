@@ -7,6 +7,7 @@ import {
   splitEffectiveVolume,
 } from './control-value-limits.js';
 import type { AudioProcessorConfig } from './audio-processor.contracts.js';
+import { isRejection, type Rejection } from './fact.js';
 
 export interface AudioConfig {
   enabled: boolean;
@@ -83,6 +84,7 @@ const AUDIO_SESSION_KEYS = new Set<keyof AudioSessionSnapshot>([
   'configRevision',
   'actualConfig',
   'lastError',
+  'lastRejection',
 ]);
 
 const AUDIO_RUNTIME_STATUS_KEYS = new Set<keyof AudioRuntimeStatus>([
@@ -381,6 +383,12 @@ export interface AudioSessionSnapshot extends TabSessionIdentity {
 	configRevision: number;
 	actualConfig: AudioConfig;
 	lastError: AudioSessionError | null;
+	/**
+	 * Why the most recent write was refused, or what the evidence guard had to
+	 * correct before admitting it. Carried on the snapshot because a refusal that
+	 * never leaves the store cannot be acted on by anything (INV-1/INV-2).
+	 */
+	lastRejection?: Rejection | null;
 }
 
 export type AudioSessionIdentity = TabSessionIdentity & { generation: number };
@@ -483,7 +491,12 @@ export function isAudioSessionSnapshot(value: unknown): value is AudioSessionSna
     && AUDIO_SESSION_PHASES.has(value.phase as AudioSessionPhase)
     && isNonNegativeInteger(value.configRevision)
     && isAudioConfig(value.actualConfig)
-    && (value.lastError === null || isAudioSessionError(value.lastError));
+    && (value.lastError === null || isAudioSessionError(value.lastError))
+    // Optional and nullable: a snapshot recorded before this field existed, and
+    // one whose last write was admitted cleanly, both legitimately omit it.
+    && (value.lastRejection === undefined
+      || value.lastRejection === null
+      || isRejection(value.lastRejection));
 }
 
 export function isAudioRuntimeStatus(value: unknown): value is AudioRuntimeStatus {
