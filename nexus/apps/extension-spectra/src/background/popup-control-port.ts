@@ -14,9 +14,45 @@ let receivedInputs = 0;
 let pendingBatches = 0;
 let failedBatches = 0;
 
+// The user-facing control latency is intent-to-settled-response, and Background
+// is the only place that can observe both ends of it without a new protocol
+// message. Samples are bounded so diagnostics stay a fixed-size projection.
+const SETTLE_SAMPLE_LIMIT = 128;
+let settleSamples: number[] = [];
+
+export function appendBoundedSample(
+	samples: readonly number[],
+	value: number,
+	limit: number,
+): number[] {
+	const next = [...samples, value];
+	return next.length > limit ? next.slice(next.length - limit) : next;
+}
+
+export function summarizeSettleLatency(samples: readonly number[]): {
+	p50: number;
+	p95: number;
+	max: number;
+} {
+	if (samples.length === 0) return { p50: 0, p95: 0, max: 0 };
+	const sorted = [...samples].sort((left, right) => left - right);
+	const at = (quantile: number): number => sorted[
+		Math.min(sorted.length - 1, Math.max(0, Math.ceil(quantile * sorted.length) - 1))
+	] ?? 0;
+	return { p50: at(0.5), p95: at(0.95), max: sorted[sorted.length - 1] ?? 0 };
+}
+
 export function getPopupControlDiagnostics(): Record<string, number> {
-	return { popupControlReceivedInputs: receivedInputs, popupControlPendingBatches: pendingBatches,
-		popupControlFailedBatches: failedBatches };
+	const settle = summarizeSettleLatency(settleSamples);
+	return {
+		popupControlReceivedInputs: receivedInputs,
+		popupControlPendingBatches: pendingBatches,
+		popupControlFailedBatches: failedBatches,
+		popupControlSettleSamples: settleSamples.length,
+		popupControlSettleP50Ms: settle.p50,
+		popupControlSettleP95Ms: settle.p95,
+		popupControlSettleMaxMs: settle.max,
+	};
 }
 
 export interface PopupControlBatch {
@@ -108,12 +144,22 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 		const batch = takeBatch();
 		if (!batch) return;
 		pendingBatches++;
+		const settleStartedAt = performance.now();
+		const recordSettle = (): void => {
+			settleSamples = appendBoundedSample(
+				settleSamples,
+				performance.now() - settleStartedAt,
+				SETTLE_SAMPLE_LIMIT,
+			);
+		};
 		inFlight = runner.submit(batch).then(
 			(result) => {
+				recordSettle();
 				if (result.error) failedBatches = Math.min(Number.MAX_SAFE_INTEGER, failedBatches + 1);
 				postSettled(batch.inputRevision, result);
 			},
 			(error: unknown) => {
+				recordSettle();
 				failedBatches = Math.min(Number.MAX_SAFE_INTEGER, failedBatches + 1);
 				postSettled(batch.inputRevision, {
 				volumeAck: null,

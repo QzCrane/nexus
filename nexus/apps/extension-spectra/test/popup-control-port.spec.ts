@@ -1,7 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import type { ControlOperationAck } from '@nexus/contracts';
 import {
+	appendBoundedSample,
 	bindPopupControlPort,
+	summarizeSettleLatency,
 	type PopupControlBatch,
 	type PopupControlBatchResult,
 } from '../src/background/popup-control-port';
@@ -257,3 +259,24 @@ async function waitFor(condition: () => boolean): Promise<void> {
 	}
 	throw new Error('Condition did not become true');
 }
+
+describe('Popup control settle latency', () => {
+	test('keeps the sample window bounded and ordered by arrival', () => {
+		let samples: number[] = [];
+		for (const value of [1, 2, 3, 4]) {
+			samples = appendBoundedSample(samples, value, 3);
+		}
+		expect(samples).toEqual([2, 3, 4]);
+	});
+
+	test('reports percentiles from an independent nearest-rank oracle', () => {
+		// Twenty samples 1..20: ceil(0.5*20)=10 -> 10, ceil(0.95*20)=19 -> 19.
+		const samples = Array.from({ length: 20 }, (_, index) => index + 1);
+		expect(summarizeSettleLatency(samples)).toEqual({ p50: 10, p95: 19, max: 20 });
+	});
+
+	test('reports zeros rather than inventing a latency before any sample', () => {
+		expect(summarizeSettleLatency([])).toEqual({ p50: 0, p95: 0, max: 0 });
+		expect(summarizeSettleLatency([7])).toEqual({ p50: 7, p95: 7, max: 7 });
+	});
+});
