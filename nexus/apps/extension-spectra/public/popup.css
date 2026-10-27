@@ -1881,6 +1881,7 @@ input:checked + .slider-round:before {
   margin: 0;
 }
 
+/* biome-ignore lint/style/noDescendingSpecificity: the earlier higher-specificity rule targets .preset-preview-content .presets-actions, a different subtree; no element can match both. */
 .popup-startup-status button {
   justify-self: start;
   padding: 7px 14px;

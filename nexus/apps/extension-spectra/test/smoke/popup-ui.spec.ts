@@ -816,6 +816,7 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				readyState: document.readyState,
 				mainChildren: document.querySelector('#main-stage')?.childElementCount ?? -1,
 				emptyHidden: document.querySelector('#empty-state')?.classList.contains('hidden') ?? false,
+				// biome-ignore lint/performance/useDomNodeTextContent: failure diagnostics must report the text a user can actually see, not hidden nodes.
 				bodyText: document.body.innerText.slice(0, 500),
 				activeTabs: (await chrome.tabs.query({ active: true, currentWindow: true }))
 					.map(({ id, url, active, windowId }) => ({ id, url, active, windowId })),

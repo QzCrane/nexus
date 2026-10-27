@@ -103,6 +103,7 @@ describe('workspace lint path boundary', () => {
 					'!**/release',
 					'!**/test-results',
 					'!**/vendor',
+					'!**/*.md',
 				],
 			},
 			linter: {

@@ -309,6 +309,7 @@ test.describe('HALO SidePanel runtime in Chromium', () => {
 			];
 			for (const xml of vectors) {
 				await input.fill(xml);
+				// biome-ignore lint/performance/useDomNodeTextContent: failure diagnostics must report the text a user can actually see, not hidden nodes.
 				await expect(page.locator('pre'), `XML ${xml}; UI: ${await page.locator('body').innerText()}`).toHaveCount(2);
 				const outputs = await page.locator('pre').allTextContents();
 				for (const output of outputs) {

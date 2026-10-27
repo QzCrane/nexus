@@ -47,6 +47,7 @@ const EXPECTED_BIOME_INCLUDES = [
 	'!**/release',
 	'!**/test-results',
 	'!**/vendor',
+	'!**/*.md',
 ];
 const STRICT_RUNNER_PATH = realpathSync(
 	resolve(workspaceDir, 'scripts', 'run-strict-biome.ts'),

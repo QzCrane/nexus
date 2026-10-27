@@ -544,7 +544,7 @@ function operationAck(
 	fields: ControlApplyAck['fields'],
 	effectiveVolume: number,
 ): ControlOperationAck<'effective-volume'> {
-	const volumeBase = effectiveVolume <= 100 ? effectiveVolume : 100;
+	const volumeBase = Math.min(effectiveVolume, 100);
 	const boost = effectiveVolume <= 100 ? 1 : effectiveVolume / 100;
 	return {
 		operationId: 'remote-operation',
