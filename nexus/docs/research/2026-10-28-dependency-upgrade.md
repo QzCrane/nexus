@@ -145,14 +145,24 @@ HALO 的差异主要是内容哈希改名（chunk 文件名变化），真实体
 
 ## 6. 已知环境限制（不是升级回归）
 
-`test/smoke/popup-ui.spec.ts` 在本机 10 条里 7 条失败，报
-`invalid SPECTRA extension RPC v2 response`。用升级前的备份分支建独立工作树、
-装它自己的锁、跑同一条命令，**失败集合逐条相同**。
+SPECTRA 的 smoke 套件（8 个文件 / 47 条）**不是 CI 门禁**，CI 只跑 4 条定点 Chrome 用例；
+它是**发布门禁**：`release:spectra` 的 `production Chrome integration` 步骤调用
+`test:chrome:dist`。本机用三种浏览器二进制跑，得到三种不同结果：
 
-进一步用 `browser-floor.json` 声明的 Chrome 135（win64 官方归档
-`135.0.7049.114`）复跑，症状同样是 content host 返回无效 RPC 响应，其中 10 条全部失败。
-两次对照说明：这既不是本次升级引入的回归，也不能归因为浏览器版本；它是本机 headless
-扩展会话的环境限制，需要在 CI 的 Linux 环境里复现才有定论。
+| 浏览器 | 结果 | 观察到的现象 |
+|---|---|---|
+| 升级前工作树（同 Chromium 156） | 3 通过 / 7 失败 | 与升级后**失败集合逐条相同** |
+| Chromium 156（Playwright CfT） | 大面积失败 | 扩展已加载，`spectra.control.intent.execute` 的 content host 回应通不过 `isControlApplyAck` |
+| Chrome 135（CfT 归档） | 0 通过 | floor 驱动路径，全部未通过 |
+| 系统 Chrome 144 | 会话未建立 | 只出现 `about:blank`，service worker 从未启动，扩展未加载 |
+
+而仓库自带的 closeout 证据（`nexus/artifacts/closeout-evidence.*.attempt-2.json`）记录：
+win32、Chrome 152、`SPECTRA local release => PASS`，即同一套件在**发布配置下是通过的**。
+
+因此结论是：这不是本次升级的回归，也不是产品缺陷，而是**本机浏览器二进制与加载方式**
+不满足该套件的运行前提。值得记住的是两点维护事实，而不是待办：
+套件只在发布时被执行（两次发布之间没有回归网），且新版 Chrome 对
+`--load-extension` 的收紧使只有 CfT 构建才可靠地加载未打包扩展。
 
 `check:governance` 在本机默认 PATH 下会有一条
 `Executable not found in $PATH: "powershell.exe"`。`closeout-evidence.ts` 在 Windows 上
