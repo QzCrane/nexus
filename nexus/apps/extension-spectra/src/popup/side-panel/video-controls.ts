@@ -365,10 +365,8 @@ function bindButtons(panel: HTMLElement): void {
 
 			switch (action) {
 			case 'rotate': {
-					const ack = await submitMutation({ field: 'rotation', operation: 'delta', value: 90 }, fence);
+					await submitMutation({ field: 'rotation', operation: 'delta', value: 90 }, fence);
 					if (!isCurrentTarget(fence)) return;
-					const rotation = ack?.fields.rotation?.actual;
-					if (typeof rotation === 'number') btn.title = `Rotation: ${rotation}°`;
 					break;
 				}
 				case 'mirror': {

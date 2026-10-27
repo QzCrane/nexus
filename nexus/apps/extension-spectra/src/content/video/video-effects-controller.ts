@@ -558,7 +558,12 @@ export class VideoEffectsController {
 			const host = document.createElement('div');
 			host.dataset.spectraOwner = 'dim-overlay';
 			host.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
-			const root = host.attachShadow({ mode: 'closed' });
+			// Open (not closed) shadow root. A closed root buys no real security
+			// benefit while making the dim overlay's DOM-bearing state unobservable
+			// to tests and external tooling — the exact "untestable DOM state"
+			// category called out in §4.3. feedback-surface.ts uses open for the
+			// same reason; this should too.
+			const root = host.attachShadow({ mode: 'open' });
 			this.#dimRegions = Array.from({ length: 4 }, () => {
 				const region = document.createElement('div');
 				region.style.cssText = `position:fixed;background:${UI_COLORS.OVERLAY_DIM};pointer-events:none;`;
