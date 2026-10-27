@@ -111,6 +111,7 @@ const APP_CONFIGS = {
     publicApplicationScriptFiles: [
       'apps/extension-spectra/scripts/check-production-artifacts.ts',
       'apps/extension-spectra/scripts/i18n-assets.ts',
+      'apps/extension-spectra/scripts/i18n-source-catalog.ts',
       'apps/extension-spectra/scripts/minification-policy.ts',
     ],
     publicApplicationDevDependencies: [

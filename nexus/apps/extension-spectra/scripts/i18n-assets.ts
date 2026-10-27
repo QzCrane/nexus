@@ -4,7 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { gzipSync } from 'node:zlib';
 import type { I18NDict } from '../src/popup/types';
-import { createSourceLocaleCatalogs } from './i18n-source-catalog';
+import { createSourceLocaleCatalogs } from './i18n-source-catalog.ts';
 
 const VALUE_MARKER = '__SPECTRA_I18N_VALUE__';
 
