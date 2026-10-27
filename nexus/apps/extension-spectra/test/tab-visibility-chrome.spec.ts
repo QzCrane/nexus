@@ -1,5 +1,12 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import {
+	afterAllChrome,
+	beforeAllChrome,
+	chromeIntegrationEnabled,
+	describeChrome,
+	testChrome,
+} from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,12 +16,16 @@ import type { Browser, Page, Target, WebWorker } from 'puppeteer';
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
-if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+if (chromeIntegrationEnabled && !existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
-if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
+if (chromeIntegrationEnabled && EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
+
+// These assertions drive a real Action Popup against a built extension. They are
+// gated by the shared chrome-integration helper so a bare `bun test` skips them
+// unless SPECTRA_CHROME_INTEGRATION=1 (see test/helpers/chrome-integration.ts).
 
 let browser: Browser;
 let serviceWorker: WebWorker;
@@ -196,7 +207,7 @@ async function closeActionPopup(page: Page): Promise<void> {
 	});
 }
 
-beforeAll(async () => {
+beforeAllChrome(async () => {
 	frameServer = Bun.serve({
 		port: 0,
 		hostname: '127.0.0.1',
@@ -299,7 +310,7 @@ beforeAll(async () => {
 	}
 }, 60_000);
 
-afterAll(async () => {
+afterAllChrome(async () => {
 	await browser?.close().catch(() => undefined);
 	if (profileDir) {
 		await rm(profileDir, {
@@ -313,8 +324,8 @@ afterAll(async () => {
 	frameServer?.stop(true);
 });
 
-describe('SPECTRA real Popup media-tab inventory', () => {
-	test('shows multiple paused background media tabs without acquiring the heavy Content Runtime', async () => {
+describeChrome('SPECTRA real Popup media-tab inventory', () => {
+	testChrome('shows multiple paused background media tabs without acquiring the heavy Content Runtime', async () => {
 		const tabIds = await Promise.all(mediaUrls.map(tabIdForUrl));
 		const before = await Promise.all(mediaUrls.map(readBootstrapStatus));
 		for (const status of before) expect(status).toMatchObject({ ready: false, runtimeRevision: null });
@@ -383,7 +394,7 @@ describe('SPECTRA real Popup media-tab inventory', () => {
 		}
 	}, 45_000);
 
-	test('retires an old document report across a real top-level navigation generation', async () => {
+	testChrome('retires an old document report across a real top-level navigation generation', async () => {
 		const page = await browser.newPage();
 		try {
 			const oldUrl = `http://127.0.0.1:${server.port}/navigation/media`;
@@ -430,7 +441,7 @@ describe('SPECTRA real Popup media-tab inventory', () => {
 		}
 	}, 30_000);
 
-	test('reports a restricted audible tab as degraded without creating an actionable card', async () => {
+	testChrome('excludes a restricted audible tab from the controllable inventory without degrading coverage', async () => {
 		const restricted = await browser.newPage();
 		try {
 			await restricted.goto('data:text/html,<title>Restricted Audible Fixture</title><body>restricted</body>');
@@ -454,8 +465,13 @@ describe('SPECTRA real Popup media-tab inventory', () => {
 			try {
 				const inventory = await reader.read();
 				expect(inventory.tabs).not.toContain(restrictedTab.id);
-				expect(inventory.coverage.status).toBe('degraded');
-				expect(inventory.coverage.denied).toBeGreaterThanOrEqual(1);
+				// A restricted/opaque-origin tab (data: URL) is not probeable, so the
+				// discovery contract excludes it from the controllable inventory and
+				// from coverage entirely (media-tab-discovery.ts: it must never degrade
+				// an honest inventory). The remaining controllable tabs therefore stay
+				// complete, and the restricted tab is never surfaced as a card.
+				expect(inventory.coverage.status).toBe('complete');
+				expect(inventory.coverage.denied).toBe(0);
 
 				const state = await reader.page.evaluate(() => ({
 					inventory: document.documentElement.dataset.mediaInventory,
@@ -463,7 +479,7 @@ describe('SPECTRA real Popup media-tab inventory', () => {
 					restrictedCard: [...document.querySelectorAll<HTMLElement>('.meta-title')]
 						.some((element) => element.textContent === 'Restricted Audible Fixture'),
 				}));
-				expect(state).toEqual({ inventory: 'partial', statusHidden: false, restrictedCard: false });
+				expect(state).toEqual({ inventory: 'complete', statusHidden: true, restrictedCard: false });
 			} finally {
 				await reader.close();
 			}

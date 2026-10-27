@@ -222,7 +222,7 @@ function assertReceiptPath(receiptPath, consumed = false) {
 	const relativeReceipt = relative(resolve(tmpdir()), normalized).replaceAll('\\', '/');
 	const suffix = consumed ? '\\.consumed' : '';
 	if (!relativeReceipt || relativeReceipt.startsWith('..') || isAbsolute(relativeReceipt)
-		|| !new RegExp(`^spectra-release-receipt-[^/]+/receipt\\.json${suffix}$`, 'u').test(relativeReceipt)) {
+		|| new RegExp(`^spectra-release-receipt-[^/]+/receipt\\.json${suffix}$`, 'u').exec(relativeReceipt) === null) {
 		throw new Error('Release promotion receipt path is invalid');
 	}
 	return normalized;

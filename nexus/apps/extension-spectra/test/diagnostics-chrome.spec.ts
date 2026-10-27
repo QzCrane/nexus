@@ -1,5 +1,12 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import {
+	afterAllChrome,
+	beforeAllChrome,
+	chromeIntegrationEnabled,
+	describeChrome,
+	testChrome,
+} from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -9,10 +16,10 @@ import type { Browser, Page, Target } from 'puppeteer';
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
-if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+if (chromeIntegrationEnabled && !existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
-if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
+if (chromeIntegrationEnabled && EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
 
@@ -23,7 +30,7 @@ let privatePage: Page;
 let server: ReturnType<typeof Bun.serve>;
 let privateUrl = '';
 
-beforeAll(async () => {
+beforeAllChrome(async () => {
 	server = Bun.serve({
 		port: 0,
 		hostname: '127.0.0.1',
@@ -63,7 +70,7 @@ beforeAll(async () => {
 	await privatePage.goto(privateUrl, { waitUntil: 'domcontentloaded' });
 }, 60_000);
 
-afterAll(async () => {
+afterAllChrome(async () => {
 	await browser?.close().catch(() => undefined);
 	if (profileDir) {
 		await rm(profileDir, {
@@ -76,8 +83,8 @@ afterAll(async () => {
 	server?.stop(true);
 });
 
-describe('SPECTRA local diagnostic export privacy', () => {
-	test('exports useful browser and owner facts without tab URL/title/token content', async () => {
+describeChrome('SPECTRA local diagnostic export privacy', () => {
+	testChrome('exports useful browser and owner facts without tab URL/title/token content', async () => {
 		const options = await browser.newPage();
 		try {
 			await options.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });

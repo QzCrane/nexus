@@ -1,5 +1,6 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import { chromeIntegrationEnabled, testChrome } from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -18,10 +19,10 @@ const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
 const SAMPLE_COUNT = 20;
 const OUTPUT_PATH = runtimePerformanceOutputPath('spectra-worker-wake.json');
-if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+if (chromeIntegrationEnabled && !existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
-if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
+if (chromeIntegrationEnabled && EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
 
@@ -53,7 +54,7 @@ function waitForWorkerVersion(
 	});
 }
 
-test('records twenty browser-owned MV3 service-worker wake samples', async () => {
+testChrome('records twenty browser-owned MV3 service-worker wake samples', async () => {
 	const profileDir = await mkdtemp(join(tmpdir(), 'spectra-worker-wake-'));
 	let browser: Browser | null = null;
 	let client: CDPSession | null = null;

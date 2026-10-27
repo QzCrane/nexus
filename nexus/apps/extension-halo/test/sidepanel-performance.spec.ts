@@ -121,7 +121,7 @@ async function waitForTextareaValue(page: Page, pattern: RegExp, timeoutMs: numb
 	await eventually(async () => page.evaluate((source) => {
 		const el = document.querySelector('textarea');
 		if (!el) return false;
-		return new RegExp(source).test(el.value);
+		return new RegExp(source).exec(el.value) !== null;
 	}, pattern.source), `textarea matches ${pattern}`, timeoutMs);
 }
 

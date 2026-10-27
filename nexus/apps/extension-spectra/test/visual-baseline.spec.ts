@@ -1,5 +1,6 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import { chromeIntegrationEnabled, testChrome } from './helpers/chrome-integration';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -12,9 +13,15 @@ const workspaceDir = resolve(EXTENSION_DIR, '../../..');
 const updateBaseline = process.env.NEXUS_UPDATE_VISUAL_BASELINE === '1';
 const explicitChrome = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 const expectedChrome = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
-if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
-if (explicitChrome && !existsSync(explicitChrome)) throw new Error(`Pinned Chrome executable is missing: ${explicitChrome}`);
-if (updateBaseline && !explicitChrome) throw new Error('SPECTRA visual baseline update requires NEXUS_CHROME_EXECUTABLE');
+if (chromeIntegrationEnabled && !existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
+}
+if (chromeIntegrationEnabled && explicitChrome && !existsSync(explicitChrome)) {
+	throw new Error(`Pinned Chrome executable is missing: ${explicitChrome}`);
+}
+if (chromeIntegrationEnabled && updateBaseline && !explicitChrome) {
+	throw new Error('SPECTRA visual baseline update requires NEXUS_CHROME_EXECUTABLE');
+}
 
 const states = {
 	data: {
@@ -79,7 +86,7 @@ async function capture(
 	console.log(`✓ SPECTRA ${state.scenario} visual ${verification.mode} ${verification.sha256}: ${screenshotPath}`);
 }
 
-test('captures real media data, startup error and acknowledged dynamic SPECTRA states', async () => {
+testChrome('captures real media data, startup error and acknowledged dynamic SPECTRA states', async () => {
 	const profileDir = await mkdtemp(join(tmpdir(), 'spectra-visual-'));
 	let browser: Browser | null = null;
 	let server: ReturnType<typeof Bun.serve> | null = null;

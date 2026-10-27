@@ -1,5 +1,6 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import { chromeIntegrationEnabled, testChrome } from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -17,11 +18,11 @@ const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.m
 const SAMPLE_COUNT = 20;
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 const EXPECTED_CHROME_VERSION = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
-if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
+if (chromeIntegrationEnabled && EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
 
-test('renders continuous audio through repeated neutral and boosted gain updates', async () => {
+testChrome('renders continuous audio through repeated neutral and boosted gain updates', async () => {
 	const bundle = await build({
 		entryPoints: [resolve(import.meta.dir, '../../../packages/features/audio-engine/src/audio-graph-router.ts')],
 		bundle: true, write: false, platform: 'browser', format: 'iife', globalName: 'AudioGraph',
@@ -110,7 +111,7 @@ async function extensionId(browser: Browser): Promise<string> {
 	}
 }
 
-test('records twenty independent SPECTRA Popup cold-interactive samples', async () => {
+testChrome('records twenty independent SPECTRA Popup cold-interactive samples', async () => {
 	const samples: RuntimePerformanceSample[] = [];
 	let observedBrowserVersion = '';
 

@@ -1,5 +1,6 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import { chromeIntegrationEnabled, testChrome } from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,10 +20,10 @@ const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
 const MEDIA_TAB_COUNT = 20;
 const SAMPLE_COUNT = 20;
 const OUTPUT_PATH = runtimePerformanceOutputPath('spectra-runtime-stress.json');
-if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+if (chromeIntegrationEnabled && !existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
-if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
+if (chromeIntegrationEnabled && EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
 
@@ -124,7 +125,7 @@ async function closeActionPopup(page: Page): Promise<void> {
 	});
 }
 
-test('records scaled inventory, full Popup rendering, and first-hotkey physical runtime latency', async () => {
+testChrome('records scaled inventory, full Popup rendering, and first-hotkey physical runtime latency', async () => {
 	const profileDir = await mkdtemp(join(tmpdir(), 'spectra-runtime-stress-'));
 	let browser: Browser | null = null;
 	let server: ReturnType<typeof Bun.serve> | null = null;

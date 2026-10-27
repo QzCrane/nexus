@@ -11,7 +11,7 @@ export function getMatchingScripts(scripts: UserScript[], url: string): UserScri
 export function matchesUrl(patterns: string[], url: string): boolean {
 	for (const pattern of patterns) {
 		const regex = patternToRegex(pattern);
-		if (regex.test(url)) return true;
+		if (regex.exec(url) !== null) return true;
 	}
 	return false;
 }

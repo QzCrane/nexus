@@ -1,5 +1,12 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import {
+	afterAllChrome,
+	beforeAllChrome,
+	chromeIntegrationEnabled,
+	describeChrome,
+	testChrome,
+} from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -11,10 +18,10 @@ import { createRemotePairing } from '../src/remote/protocol';
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
 const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
-if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+if (chromeIntegrationEnabled && !existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
-if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
+if (chromeIntegrationEnabled && EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
 
@@ -22,7 +29,7 @@ let browser: Browser;
 let profileDir = '';
 let extensionId = '';
 
-test('commits the latest physical speed settlement when a held OSD gesture releases', async () => {
+testChrome('commits the latest physical speed settlement when a held OSD gesture releases', async () => {
 	const bundled = await build({
 		entryPoints: [resolve(import.meta.dir, '../src/content/ui/osd.ts')],
 		bundle: true,
@@ -98,7 +105,7 @@ test('commits the latest physical speed settlement when a held OSD gesture relea
 	}
 }, 20_000);
 
-test('keeps remote disconnect visible through failure and fences a late close from a newer dialog', async () => {
+testChrome('keeps remote disconnect visible through failure and fences a late close from a newer dialog', async () => {
 	const bundled = await build({
 		entryPoints: [resolve(import.meta.dir, '../src/remote/modal-renderer.ts')],
 		bundle: true, write: false, platform: 'browser', format: 'iife', globalName: 'RemoteModal',
@@ -162,7 +169,7 @@ test('keeps remote disconnect visible through failure and fences a late close fr
 	}
 }, 20_000);
 
-test('renders automatically detected and manually configured site audio routes together', async () => {
+testChrome('renders automatically detected and manually configured site audio routes together', async () => {
 	const bundled = await build({
 		entryPoints: [resolve(import.meta.dir, '../src/popup/views/media-route-ui.ts')],
 		bundle: true,
@@ -255,7 +262,7 @@ test('renders automatically detected and manually configured site audio routes t
 	}
 }, 20_000);
 
-beforeAll(async () => {
+beforeAllChrome(async () => {
 	profileDir = await mkdtemp(join(tmpdir(), 'spectra-accessibility-'));
 	browser = await launchPuppeteerBrowser({
 		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
@@ -281,7 +288,7 @@ beforeAll(async () => {
 	extensionId = new URL(workerTarget.url()).host;
 }, 60_000);
 
-afterAll(async () => {
+afterAllChrome(async () => {
 	await browser?.close().catch(() => undefined);
 	if (profileDir) {
 		await rm(profileDir, {
@@ -547,8 +554,8 @@ async function assertSurface(path: 'popup.html' | 'options.html'): Promise<void>
 	}
 }
 
-describe('SPECTRA extension-page accessibility', () => {
-	test('Popup and Options preserve focus, dynamic motion preference, contrast, and 320px reflow', async () => {
+describeChrome('SPECTRA extension-page accessibility', () => {
+	testChrome('Popup and Options preserve focus, dynamic motion preference, contrast, and 320px reflow', async () => {
 		await assertSurface('popup.html');
 		await assertSurface('options.html');
 	}, 90_000);

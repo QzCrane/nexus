@@ -1,6 +1,12 @@
 // goal: measure real Popup -> media-card first-paint latency under cold and warm service-worker states
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { afterAll, beforeAll, expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import {
+	afterAllChrome,
+	beforeAllChrome,
+	chromeIntegrationEnabled,
+	testChrome,
+} from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { performance } from 'node:perf_hooks';
@@ -10,7 +16,7 @@ import type { Browser, Page, Target } from 'puppeteer';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
-if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+if (chromeIntegrationEnabled && !existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
 
@@ -85,7 +91,7 @@ async function measurePopupOpen(expectedCards: number, label: string, stopFirst:
 	}
 }
 
-beforeAll(async () => {
+beforeAllChrome(async () => {
 	server = Bun.serve({
 		port: 0,
 		hostname: '127.0.0.1',
@@ -145,7 +151,7 @@ beforeAll(async () => {
 	}
 }, 90_000);
 
-afterAll(async () => {
+afterAllChrome(async () => {
 	await browser?.close().catch(() => undefined);
 	if (profileDir) {
 		await rm(profileDir, { force: true, recursive: true, maxRetries: 5, retryDelay: 100 });
@@ -153,7 +159,7 @@ afterAll(async () => {
 	server?.stop(true);
 });
 
-test('records cold and warm popup media-list first-paint latency', async () => {
+testChrome('records cold and warm popup media-list first-paint latency', async () => {
 	const cold: number[] = [];
 	const warm: number[] = [];
 	await measurePopupOpen(3, 'prime', false);

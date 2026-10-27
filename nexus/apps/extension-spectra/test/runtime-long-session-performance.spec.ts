@@ -1,5 +1,6 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
-import { expect, test } from 'bun:test';
+import { expect } from 'bun:test';
+import { chromeIntegrationEnabled, testChrome } from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -19,10 +20,10 @@ const EXPECTED_CHROME = process.env.NEXUS_EXPECTED_CHROME_VERSION?.trim();
 const BATCH_COUNT = 20;
 const HOTKEY_PAIRS_PER_BATCH = 10;
 const OUTPUT_PATH = runtimePerformanceOutputPath('spectra-long-session.json');
-if (!existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
+if (chromeIntegrationEnabled && !existsSync(join(EXTENSION_DIR, 'manifest.json'))) {
 	throw new Error(`SPECTRA extension directory is missing manifest.json: ${EXTENSION_DIR}`);
 }
-if (EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
+if (chromeIntegrationEnabled && EXPLICIT_CHROME && !existsSync(EXPLICIT_CHROME)) {
 	throw new Error(`Pinned Chrome executable is missing: ${EXPLICIT_CHROME}`);
 }
 
@@ -81,7 +82,7 @@ async function readRuntimeStatus(options: Page, tabId: number): Promise<{
 	}, tabId);
 }
 
-test('records long-session hotkey, heap, CPU, context and long-task evidence', async () => {
+testChrome('records long-session hotkey, heap, CPU, context and long-task evidence', async () => {
 	const profileDir = await mkdtemp(join(tmpdir(), 'spectra-long-session-'));
 	let browser: Browser | null = null;
 	let server: ReturnType<typeof Bun.serve> | null = null;
