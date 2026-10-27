@@ -179,7 +179,7 @@ G6 建立当天就补出 3 处真实缺口——两处把参数写成 `_sender`�
 | # | 项 | 性质 | 锚点 |
 |---|---|---|---|
 | 1 | 度量未闭环 | **部分完成（2026-10-28）**：`getPopupControlDiagnostics()` 已输出 `popupControlSettleSamples / P50Ms / P95Ms / MaxMs`（intent → settled 往返），随现有诊断端口可读；**仍缺**注册进 `runtime-performance-policy.json` 的 Chrome workload（策略要求 20 样本 × 2 次独立运行） | `src/background/popup-control-port.ts` |
-| 2 | badge 静音误显 | OPEN，两版方案已证伪，需先诊断再改 | badge 投影 |
+| 2 | badge 静音误显 | **已关闭（2026-10-28）**：根因不是取值来源，而是**跨文档陈旧投影**——旧文档的 `M` 被当作「最后真实 ACK」保留到新文档，而新文档从未在此被确认过。规则改为：能比对新旧 `documentId` 时清除；无法比对（worker 重启）时保留。7 条测试，含用户症状的直接复现 | `src/background/handlers/badge.ts` |
 | 3 | 冻结条件仍内联在 `state.ts` | **已关闭（2026-10-28）**：提炼为 `shouldHoldVolumeTone()` / `crossesVolumeRoute()`，边界引用 `CONTROL_VALUE_LIMITS.volumeBase.max`，8 条独立断言 | `packages/contracts/src/volume-presentation.contracts.ts` |
 | 4 | pre-push 缺 `test:unit` | **已关闭（2026-10-28）**：`lefthook.yml` 新增 unit-tests（118 文件 / 11s）。同时修复运行器挂死：任一文件超时即杀并点名，门禁不再无限等待 | `lefthook.yml`、`scripts/run-tests.ts` |
 | 5 | `bun run sync-spectra` 损坏 | **已修（待提交生效）**：真因不是 allowlist 缺项，而是 `i18n-assets.ts` 用无扩展名导入，与 `.ts` allowlist 无法匹配；已统一为显式 `.ts` 并登记 `i18n-source-catalog.ts`。注意 sync 校验的是 **HEAD 提交内容**，提交后才生效 | `scripts/sync-public.ts`、`apps/extension-spectra/scripts/i18n-assets.ts` |

@@ -146,12 +146,17 @@ export async function updateBadgeFromSession(
 	// AudioSessionSnapshot owns lifecycle only. Without a matching actual control
 	// projection, hiding the badge is safer than publishing stale volume/color.
 	if (!keepControlActual) {
+		const documentChanged = previous?.documentId != null
+			&& previous.documentId !== snapshot.documentId;
 		badgeState.delete(snapshot.tabId);
 		// Chrome retains the last per-tab Action projection across navigation and
-		// worker suspension. Once this tab has used SPECTRA, do not erase that
-		// truthful last ACK while the new document is still establishing its own
-		// matching control projection; equally, do not invent a Capture color.
-		if (stickyInteraction) return;
+		// worker suspension. Two different situations hide behind that:
+		// - the projection belongs to another document: keeping its volume or M
+		//   would claim something about this page that was never acknowledged here;
+		// - a restarted worker has no identity at all: clearing would erase the last
+		//   truthful ACK of the very document this session is re-establishing.
+		// Only the second case preserves the visible badge.
+		if (stickyInteraction && !documentChanged) return;
 		// Badge rendering is a best-effort projection of acknowledged audio state.
 		// A missing/unavailable Action API must never turn a successful processor
 		// transition into a failed Capture operation.

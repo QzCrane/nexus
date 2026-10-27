@@ -78,7 +78,7 @@ describe('actual volume badge state', () => {
 		expect(colors.at(-1)).toBe(BADGE_COLORS.MUTED);
 	});
 
-	test('preserves the last truthful badge while a used tab establishes a new document projection', async () => {
+	test('clears the previous document projection instead of keeping a stale mute', async () => {
 		const texts: string[] = [];
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
@@ -92,7 +92,17 @@ describe('actual volume badge state', () => {
 			},
 		});
 
-		await updateBadgeFromControlProjection(identity(), projection(), false, true);
+		// The old document was muted by the user, so the tab shows M.
+		await updateBadgeFromControlProjection(identity(), projection({
+			volumeBase: 0,
+			boost: 1,
+			mediaMuted: true,
+		}), false, true);
+		expect(texts.at(-1)).toBe('M');
+
+		// The replacement document is unmuted and has no control ACK yet. Keeping
+		// the old M would claim this page is muted, which is exactly the reported
+		// "badge shows mute" symptom.
 		await updateBadgeFromSession({
 			...session('active'),
 			documentId: 'document-new',
@@ -100,7 +110,36 @@ describe('actual volume badge state', () => {
 		}, true);
 
 		expect(badgeState.has(TAB_ID)).toBe(false);
-		expect(texts.at(-1)).toBe('100');
+		expect(texts.at(-1)).toBe('');
+	});
+
+	test('leaves an existing projection alone when a restarted worker has no document identity', async () => {
+		const values: Record<string, unknown> = { [`spectra.badge.used.${TAB_ID}`]: true };
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				storage: { session: {
+					get: async (key: string) => key in values ? { [key]: values[key] } : {},
+					set: async (items: Record<string, unknown>) => { Object.assign(values, items); },
+					remove: async (key: string) => { delete values[key]; },
+				} },
+				action: {
+					setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+					setBadgeBackgroundColor: async () => undefined,
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		// A restarted worker has no badgeState, so it cannot prove the visible
+		// projection belongs to another document. Preserving it is the only
+		// non-inventing option; a document we *can* compare is cleared below.
+		await updateBadgeFromSession(session('active'), true);
+
+		expect(badgeState.has(TAB_ID)).toBe(false);
+		expect(texts).toHaveLength(0);
 	});
 
 	test('hides untouched native observations but restores sticky usage after a worker restart', async () => {
