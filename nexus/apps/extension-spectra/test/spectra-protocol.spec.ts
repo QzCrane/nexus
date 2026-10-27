@@ -19,6 +19,7 @@ import {
 	rpcFailure,
 	rpcSuccess,
 	splitEffectiveVolume,
+	toRemoteSessionView,
 	type AudioConfig,
 	type AudioRuntimeStatus,
 	type AudioSessionSnapshot,
@@ -1103,10 +1104,17 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		expect(isSpectraResponse('spectra.audio.session.get', rpcSuccess(null))).toBe(true);
 		expect(isSpectraResponse('spectra.audio.session.flush', rpcSuccess({ flushed: true }))).toBe(true);
 		expect(isSpectraResponse('spectra.remote.session.create', rpcSuccess(createRemoteSession()))).toBe(true);
+		// SP-30: a read path (.get) must return the secret-free view, never the
+		// public session minted by .create. Both the producer (remote-service
+		// getSessionOnce) and the validator agree on toRemoteSessionView.
+		const remoteGetView = toRemoteSessionView(createRemoteSession());
 		expect(isSpectraResponse('spectra.remote.session.get', rpcSuccess({
-			session: createRemoteSession(),
-			connected: false,
+			session: remoteGetView,
+			connected: remoteGetView.connected,
 		}))).toBe(true);
+		// The same payload carrying the pairing secret must be rejected: a status
+		// query must never become a second way to obtain bearer pairing authority.
+		expect(isSpectraResponse('spectra.remote.session.get', rpcSuccess(createRemoteSession()))).toBe(false);
 		expect(isSpectraResponse('spectra.remote.session.get', rpcSuccess({
 			session: null,
 			connected: true,

@@ -9,6 +9,7 @@ import {
 	isSpectraResponse,
 	rpcFailure,
 	rpcSuccess,
+	toRemoteSessionView,
 	type AudioRuntimeStatus,
 	type AudioSessionSnapshot,
 	type ControlOperationAck,
@@ -188,7 +189,9 @@ function createUiSuccessData(): Record<SpectraUiRequestType, unknown> {
 		'spectra.audio.session.flush': { flushed: true },
 		'spectra.hotkey-target.get': { tabId },
 		'spectra.hotkey-target.set': { tabId },
-		'spectra.remote.session.get': { session: remoteSession, connected: false },
+		// SP-30: .get is a read path and returns the secret-free view, not the
+		// public session (which keeps the pairing secret for .create only).
+		'spectra.remote.session.get': { session: toRemoteSessionView(remoteSession), connected: remoteSession.connected },
 		'spectra.remote.session.create': remoteSession,
 		'spectra.remote.session.close': { closed: true },
 		'spectra.audio.session.get': createAudioSession(),
