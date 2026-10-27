@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-documentation
-last_reviewed: 2026-10-05
+last_reviewed: 2026-10-28
 ---
 
 # SPECTRA documentation
@@ -26,6 +26,7 @@ docs/
 │   └── remote-control.md
 ├── proposals/
 │   ├── README.md
+│   ├── unified-design-2026-10-28.md
 │   ├── unified-control-runtime-v3.md
 │   └── unified-control-runtime-v3-implementation.md
 ├── roadmap.md
@@ -61,6 +62,6 @@ The control owner mirrors these executable totals:
 - 51 contract capabilities;
 - 28 persistent snapshot fields and 23 momentary operations;
 - 50 audited source algorithms (`ALG-001..ALG-050`);
-- 44 static invariants (`SCTRL-001..SCTRL-044`).
+- 48 static invariants (`SCTRL-001..SCTRL-048`).
 
 A total changes only with the corresponding contract, implementation catalog, tests, owner documentation, and verifier.

@@ -34,3 +34,8 @@ artifacts/
 
 # Halo local public-candidate build output
 halo-public-candidate-*/
+
+# Windows: a shell redirect to `nul` creates a literal file with a reserved
+# name. It is removable (rename, then delete) but reappears easily; keep it
+# out of `git status` without pretending it is permanent.
+/nul
