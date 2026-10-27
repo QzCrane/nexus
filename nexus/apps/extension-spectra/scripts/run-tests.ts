@@ -36,6 +36,14 @@ export function listDefaultTests() {
 
 const TEST_PROCESS_CONCURRENCY = Math.min(8, Math.max(1, availableParallelism()));
 
+// A gate that can block forever is worse than a gate that fails: the 2026-10-28
+// full run finished 117/118 files and then waited indefinitely on a child that
+// kept its event loop alive. Every file now has a bounded budget, and a kill is
+// reported as that specific file's failure instead of a silent stall.
+const TEST_FILE_TIMEOUT_MS = Number(
+	process.env.NEXUS_TEST_FILE_TIMEOUT_MS ?? 120_000,
+);
+
 interface TestProcessResult {
 	test: string;
 	status: number | null;
@@ -54,16 +62,34 @@ function runIsolatedTest(test: string): Promise<TestProcessResult> {
 		});
 		let stdout = '';
 		let stderr = '';
+		let settled = false;
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const finish = (result: TestProcessResult): void => {
+			if (settled) return;
+			settled = true;
+			if (timer !== undefined) clearTimeout(timer);
+			resolveTest(result);
+		};
 		child.stdout.setEncoding('utf8');
 		child.stderr.setEncoding('utf8');
 		child.stdout.on('data', (chunk: string) => { stdout += chunk; });
 		child.stderr.on('data', (chunk: string) => { stderr += chunk; });
 		child.once('error', (error) => {
-			resolveTest({ test, status: null, stdout, stderr, error });
+			finish({ test, status: null, stdout, stderr, error });
 		});
 		child.once('close', (status) => {
-			resolveTest({ test, status, stdout, stderr, error: null });
+			finish({ test, status, stdout, stderr, error: null });
 		});
+		timer = setTimeout(() => {
+			child.kill('SIGKILL');
+			finish({
+				test,
+				status: null,
+				stdout,
+				stderr: `${stderr}\n[run-tests] no exit within ${TEST_FILE_TIMEOUT_MS}ms; killed`,
+				error: new Error(`${test} exceeded ${TEST_FILE_TIMEOUT_MS}ms without exiting`),
+			});
+		}, TEST_FILE_TIMEOUT_MS);
 	});
 }
 
