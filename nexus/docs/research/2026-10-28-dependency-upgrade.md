@@ -147,9 +147,12 @@ HALO 的差异主要是内容哈希改名（chunk 文件名变化），真实体
 
 `test/smoke/popup-ui.spec.ts` 在本机 10 条里 7 条失败，报
 `invalid SPECTRA extension RPC v2 response`。用升级前的备份分支建独立工作树、
-装它自己的锁、跑同一条命令，**失败集合逐条相同**，因此判定为环境所致：
-该套件面向 `browser-floor.json` 声明的 Chrome 135，本机只有 Chrome 156 与
-Playwright 自带 Chromium 156。
+装它自己的锁、跑同一条命令，**失败集合逐条相同**。
+
+进一步用 `browser-floor.json` 声明的 Chrome 135（win64 官方归档
+`135.0.7049.114`）复跑，症状同样是 content host 返回无效 RPC 响应，其中 10 条全部失败。
+两次对照说明：这既不是本次升级引入的回归，也不能归因为浏览器版本；它是本机 headless
+扩展会话的环境限制，需要在 CI 的 Linux 环境里复现才有定论。
 
 `check:governance` 在本机默认 PATH 下会有一条
 `Executable not found in $PATH: "powershell.exe"`。`closeout-evidence.ts` 在 Windows 上
