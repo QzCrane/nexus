@@ -15,7 +15,7 @@
 		"generate-registry": "bun --cwd nexus generate-registry",
 		"sync:skills": "bun --cwd nexus sync:skills",
 		"hooks:test": "bun --cwd nexus scripts/hooks/test.ts",
-		"test:unit": "bun --cwd nexus/apps/extension-spectra test:unit",
+		"test:unit": "bun --cwd nexus/apps/extension-spectra test:unit && bun --cwd nexus/apps/extension-halo test:unit",
 		"test:watch:spectra": "bun --cwd nexus test:watch:spectra",
 		"test:watch:halo": "bun --cwd nexus test:watch:halo",
 		"postinstall": "bun run sync:skills && bun nexus/scripts/install-repository-hooks.ts",

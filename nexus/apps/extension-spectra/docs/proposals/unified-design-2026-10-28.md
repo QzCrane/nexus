@@ -390,7 +390,7 @@ INV-7（与现行转移矩阵矛盾）；`Fact` 本体仍未实现，暂不引�
    仍缺 `runtime-performance-policy.json` 的 Chrome workload（需 20 样本 × 2 次独立运行）。
 2. **冻结条件上提** — 已完成：`shouldHoldVolumeTone()` 归契约层，边界只引用
    `CONTROL_VALUE_LIMITS.volumeBase.max`。
-3. **pre-push 补 `test:unit`** — 已完成（118 文件 / 11s）。同时修掉运行器无限等待：
+3. **pre-push 补 `test:unit`** — 已完成（SPECTRA 118 文件 + HALO 441 条，共 14s）。同时修掉运行器无限等待：
    任一文件超时即杀并点名，门禁失败而不是挂死。
 4. **修 `sync-spectra`** — 已修，但**提交后才生效**：sync 校验的是 `git show HEAD:` 内容，
    不是工作区；真因是无扩展名导入与 `.ts` allowlist 不匹配。
@@ -412,7 +412,7 @@ INV-7（与现行转移矩阵矛盾）；`Fact` 本体仍未实现，暂不引�
       （取值分歧见 §5.1.1，属产品决策而非绕过 token）
 - [ ] 音量路径有真实浏览器采样，且进入 `runtime-performance-policy.json`
       （诊断字段已就位，Chrome workload 未注册）
-- [x] `test:unit` 在 pre-push 中执行
+- [x] `test:unit` 在 pre-push 中执行（SPECTRA 118 文件 + HALO 441 条，共 14s）
 - [x] `docs:check`、`verify`、`typecheck`、`test:unit` 同时通过
 
 ## 12. 未决项与失效条件
