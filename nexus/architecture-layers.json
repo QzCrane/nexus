@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "reason": "Declared layering for SPECTRA. `dependency-domains.json` governs install isolation and is deliberately left untouched; this file governs architecture only.",
+  "scope": [
+    "apps/extension-spectra/src"
+  ],
+  "surfaces": [
+    "apps/extension-spectra/src/popup/card",
+    "apps/extension-spectra/src/popup/side-panel",
+    "apps/extension-spectra/src/content/ui"
+  ],
+  "rule": "A projection surface renders one view of the same acknowledged state. No surface may import another surface's modules: every cross-surface edge is a second, independently-evolving projection of the same value, and when they disagree the user sees whichever happened to render last.",
+  "exceptions": [
+    {
+      "from": "apps/extension-spectra/src/popup/card",
+      "to": "apps/extension-spectra/src/popup/side-panel",
+      "owner": "spectra-popup-projection",
+      "rationale": "The card registers itself with the panel session and pushes its acknowledged config into the panel, which is the existing single direction of state flow (state -> both surfaces), not a panel-owned second authority.",
+      "decompositionTrigger": "Remove once card registration and panel sync move behind one popup projection port that both surfaces subscribe to."
+    },
+    {
+      "from": "apps/extension-spectra/src/popup/side-panel",
+      "to": "apps/extension-spectra/src/popup/card",
+      "owner": "spectra-popup-projection",
+      "rationale": "The panel reuses one pure config-merge helper that currently lives under popup/card/types rather than in a shared module.",
+      "decompositionTrigger": "Move the pure merge helper out of popup/card so the two surfaces share a module rather than each other."
+    }
+  ]
+}
