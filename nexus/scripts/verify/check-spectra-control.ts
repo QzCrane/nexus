@@ -985,8 +985,12 @@ function checkPolicyOwner(root) {
 		|| /\b(?:storage|persist|publish)\s*\(/u.test(coordinatorAck)) {
 		error('SCTRL-006/SCTRL-034: extracted ACK admission must remain pure and the coordinator must remain its only effect consumer');
 	}
+	// Two spellings of the same declaration: a bare set, or a set bound to its
+	// type by keySetOf. Matching only the first made this gate fail whenever the
+	// binding changed, which is a false positive on a refactor rather than a
+	// finding about the payload.
 	const submitKeys = contracts.match(
-		/const submitKeys = new Set<keyof ControlSubmitRequest>\(\[(.*?)\]\);/su,
+		/const submitKeys = (?:new Set<keyof ControlSubmitRequest>|keySetOf<ControlSubmitRequest>\(\))\(\[(.*?)\]\);/su,
 	)?.[1] ?? '';
 	const contentRuntimeContracts = fs.readFileSync(
 		path.join(root, 'packages/contracts/src/spectra.content-runtime.ts'),

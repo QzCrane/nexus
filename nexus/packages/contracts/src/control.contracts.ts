@@ -16,6 +16,7 @@ import {
 	isCaptureAdmission,
 	type CaptureAdmission,
 } from './capture-admission.contracts.js';
+import { keySetOf } from './key-set.js';
 
 export const CONTROL_STRATEGIES = [
 	'observe',
@@ -1058,7 +1059,7 @@ const bootstrapObservationFields: ReadonlySet<ControlDirectField> = new Set(
 	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS.flat(),
 );
 
-const intentKeys = new Set<keyof ControlIntent>([
+const intentKeys = keySetOf<ControlIntent>()([
 	'intentId',
 	'tabId',
 	'documentId',
@@ -1072,7 +1073,7 @@ const intentKeys = new Set<keyof ControlIntent>([
 	'captureAdmission',
 	'processorHold',
 ]);
-const submitKeys = new Set<keyof ControlSubmitRequest>([
+const submitKeys = keySetOf<ControlSubmitRequest>()([
 	'tabId',
 	'source',
 	'requestedCoverage',
@@ -1082,19 +1083,19 @@ const submitKeys = new Set<keyof ControlSubmitRequest>([
 	'mutations',
 	'observedStrategies',
 ]);
-const mutationKeys = new Set<keyof ControlMutation>(['field', 'operation', 'value']);
-const operationRequestKeys = new Set([
+const mutationKeys = keySetOf<ControlMutation>()(['field', 'operation', 'value']);
+const operationRequestKeys = keySetOf<ControlOperationRequest>()([
 	'tabId', 'source', 'target', 'baseRevision', 'operation', 'payload',
 ]);
-const operationIntentKeys = new Set([
+const operationIntentKeys = keySetOf<ControlOperationIntent>()([
 	'operationId', 'tabId', 'documentId', 'generation', 'baseRevision',
 	'source', 'target', 'operation', 'payload',
 ]);
-const operationAckKeys = new Set([
+const operationAckKeys = keySetOf<ControlOperationAck<'restore-page-settings'>>()([
 	'operationId', 'tabId', 'documentId', 'generation', 'revision', 'target',
 	'operation', 'strategy', 'coverage', 'fields', 'audioVolume', 'result',
 ]);
-const ackKeys = new Set<keyof ControlApplyAck>([
+const ackKeys = keySetOf<ControlApplyAck>()([
 	'intentId',
 	'tabId',
 	'documentId',
@@ -1104,9 +1105,9 @@ const ackKeys = new Set<keyof ControlApplyAck>([
 	'fields',
 	'audioVolume',
 ]);
-const readRequestKeys = new Set<keyof ControlReadRequest>(['fields', 'target']);
-const readResultKeys = new Set<keyof ControlReadResult>(['target', 'patch', 'observedStrategies']);
-const snapshotKeys = new Set<keyof ControlSnapshot>([
+const readRequestKeys = keySetOf<ControlReadRequest>()(['fields', 'target']);
+const readResultKeys = keySetOf<ControlReadResult>()(['target', 'patch', 'observedStrategies']);
+const snapshotKeys = keySetOf<ControlSnapshot>()([
 	'tabId',
 	'documentId',
 	'origin',
@@ -1116,22 +1117,23 @@ const snapshotKeys = new Set<keyof ControlSnapshot>([
 	'activeVideo',
 	'fields',
 ]);
-const targetKeys = new Set<keyof MediaTarget>([
+const targetKeys = keySetOf<MediaTarget>()([
 	'frameId',
 	'documentId',
 	'mediaId',
 	'sourceRevision',
 	'kind',
 ]);
-const fieldStateKeys = new Set<keyof ControlFieldState<unknown>>([
+const fieldStateKeys = keySetOf<ControlFieldState<unknown>>()([
 	'desired',
 	'actual',
 	'restoreBaseline',
 	'revision',
 	'phase',
-	// Split-ack provenance. It is optional on the type, but the runtime check has
-	// to admit it: a producer that sets it and a validator that rejects it turn
-	// every native write into an invalid response.
+	// Split-ack provenance. Optional on the type, admitted here because a
+	// producer that sets it and a validator that rejects it invalidates every
+	// native write. `keySetOf` makes forgetting it a compile error, not a
+	// production incident.
 	'writeState',
 	'strategy',
 	'coverage',
@@ -1139,19 +1141,19 @@ const fieldStateKeys = new Set<keyof ControlFieldState<unknown>>([
 	'intentId',
 	'lastError',
 ]);
-const errorKeys = new Set<keyof ControlError>(['code', 'message', 'retryable']);
-const filterKeys = new Set<keyof VideoFilterState>([
+const errorKeys = keySetOf<ControlError>()(['code', 'message', 'retryable']);
+const filterKeys = keySetOf<VideoFilterState>()([
 	'brightness',
 	'contrast',
 	'saturate',
 	'grayscale',
 	'invert',
 ]);
-const actualContextKeys = new Set<keyof ControlActualContext>([
+const actualContextKeys = keySetOf<ControlActualContext>()([
 	'volumeBase', 'mediaMuted', 'speed', 'preservePitch',
 ]);
-const abLoopKeys = new Set<keyof ABLoopState>(['pointA', 'pointB', 'enabled']);
-const audioVolumeKeys = new Set<keyof ControlAudioVolumeProjection>([
+const abLoopKeys = keySetOf<ABLoopState>()(['pointA', 'pointB', 'enabled']);
+const audioVolumeKeys = keySetOf<ControlAudioVolumeProjection>()([
 	'effectiveVolume', 'volumeState',
 ]);
 const operationSet: ReadonlySet<string> = new Set(CONTROL_OPERATIONS);
