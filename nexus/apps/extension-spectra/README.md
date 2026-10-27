@@ -39,7 +39,7 @@ A page or browser may not expose every operation. SPECTRA reports unsupported or
 
 ## Development
 
-The repository is pinned to **Bun 1.4.0**. From the repository root:
+The repository is pinned to **Bun 1.4.4**. From the repository root:
 
 ```bash
 bun install

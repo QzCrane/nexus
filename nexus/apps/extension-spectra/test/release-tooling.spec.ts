@@ -845,9 +845,9 @@ describe('one-time release receipt', () => {
 
 describe('release gate orchestration', () => {
 	test('pins Bun and promotes only after every preceding gate', () => {
-		expect(EXPECTED_BUN_VERSION).toBe('1.4.0');
+		expect(EXPECTED_BUN_VERSION).toBe('1.4.4');
 		expect(PRODUCTION_REMOTE_SITE_BASE_URL).toBe('https://nexus-remote.pages.dev/');
-		expect(() => assertReleaseRuntime('1.3.6')).toThrow('requires Bun 1.4.0');
+		expect(() => assertReleaseRuntime('1.3.6')).toThrow('requires Bun 1.4.4');
 		expect(RELEASE_STEPS.map((step) => step.label)).toEqual([
 			'architecture verify',
 			'documentation architecture',

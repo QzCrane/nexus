@@ -28,7 +28,7 @@ The legacy root `spectra.md` was a deprecated alias removed after its migration 
 
 ## Toolchain
 
-The repository and generated public workspaces are pinned to **Bun 1.4.0**.
+The repository and generated public workspaces are pinned to **Bun 1.4.4**.
 
 Run from the repository root:
 

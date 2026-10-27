@@ -6,9 +6,9 @@
     {
       "dependency": "@swaggerexpert/jsonpath",
       "packagePaths": ["apps/extension-halo/package.json"],
-      "lockedVersion": "4.0.4",
-      "observedLatest": "4.0.4",
-      "observedAt": "2026-09-12",
+      "lockedVersion": "4.0.5",
+      "observedLatest": "4.0.5",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/@swaggerexpert/jsonpath",
       "lane": "query-engine-runtime",
       "risk": "high",
@@ -19,7 +19,7 @@
       "packagePaths": ["apps/extension-halo/package.json"],
       "lockedVersion": "1.1.8",
       "observedLatest": "1.1.8",
-      "observedAt": "2026-09-12",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/csp_evaluator",
       "lane": "security-analysis-runtime",
       "risk": "high",
@@ -30,8 +30,9 @@
       "packagePaths": [
         "apps/extension-halo/package.json"
       ],
-      "lockedVersion": "1.62.1",
-      "observedLatest": "1.62.1",
+      "lockedVersion": "1.64.1",
+      "observedLatest": "1.64.1",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/@playwright/test",
       "lane": "browser-tooling-epoch",
       "risk": "high",
@@ -42,8 +43,9 @@
       "packagePaths": [
         "apps/extension-halo/package.json"
       ],
-      "lockedVersion": "1.62.1",
-      "observedLatest": "1.62.1",
+      "lockedVersion": "1.64.1",
+      "observedLatest": "1.64.1",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/playwright",
       "lane": "browser-tooling-epoch",
       "risk": "high",
@@ -57,7 +59,8 @@
         "apps/extension-spectra/package.json"
       ],
       "lockedVersion": "0.28.2",
-      "observedLatest": "0.28.1",
+      "observedLatest": "0.28.2",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/esbuild",
       "lane": "production-build-epoch",
       "risk": "high",
@@ -68,8 +71,9 @@
       "packagePaths": [
         "package.json"
       ],
-      "lockedVersion": "2.5.11",
-      "observedLatest": "2.5.7",
+      "lockedVersion": "2.6.3",
+      "observedLatest": "2.6.3",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/@biomejs/biome",
       "lane": "tooling-patch",
       "risk": "medium",
@@ -80,8 +84,9 @@
       "packagePaths": [
         "package.json"
       ],
-      "lockedVersion": "2.10.12",
-      "observedLatest": "2.10.8",
+      "lockedVersion": "2.11.10",
+      "observedLatest": "2.11.10",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/turbo",
       "lane": "tooling-patch",
       "risk": "medium",
@@ -93,7 +98,8 @@
         "apps/extension-spectra/package.json"
       ],
       "lockedVersion": "5.51.2",
-      "observedLatest": "5.49.0",
+      "observedLatest": "5.51.2",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/terser",
       "lane": "production-minifier",
       "risk": "high",
@@ -104,8 +110,9 @@
       "packagePaths": [
         "apps/extension-halo/package.json"
       ],
-      "lockedVersion": "4.9.128",
-      "observedLatest": "4.9.128",
+      "lockedVersion": "4.9.133",
+      "observedLatest": "4.9.133",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/darkreader",
       "lane": "feature-runtime",
       "risk": "medium",
@@ -116,8 +123,9 @@
       "packagePaths": [
         "apps/extension-halo/package.json"
       ],
-      "lockedVersion": "6.2.10",
-      "observedLatest": "6.2.7",
+      "lockedVersion": "6.2.13",
+      "observedLatest": "6.2.13",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/jose",
       "lane": "security-runtime",
       "risk": "high",
@@ -128,8 +136,9 @@
       "packagePaths": [
         "apps/extension-halo/package.json"
       ],
-      "lockedVersion": "3.29.3",
-      "observedLatest": "3.28.2",
+      "lockedVersion": "3.29.5",
+      "observedLatest": "3.29.5",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/pinyin-pro",
       "lane": "feature-runtime",
       "risk": "medium",
@@ -148,12 +157,13 @@
       ],
       "lockedVersion": "7.0.2",
       "observedLatest": "7.0.2",
+      "observedAt": "2026-10-28",
       "source": "https://www.npmjs.com/package/typescript",
       "lane": "TYPESCRIPT-7-EPOCH",
       "risk": "epoch",
       "reason": "This is a compiler-generation migration, not a dependency bump. It requires a dedicated diagnostic/build/runtime equivalence epoch and explicit removal or replacement of TypeScript 5 compatibility assumptions."
     }
   ],
-  "lockObservedAt": "2026-10-26",
-  "lockSha256": "96348d32989511e3a7f8ed523ece018aa45e6ced184690065e69ac6224c1c027"
+  "lockObservedAt": "2026-10-28",
+  "lockSha256": "82af748937f6d07ed9103bf9ee4f4365d880cfebbb13b5bd6de66ec4cda5fda8"
 }
