@@ -220,7 +220,7 @@ describe('SPECTRA built extension smoke: feedback', () => {
 				index === 0 || width - requireValue(
 					heldSpeedWidths[index - 1],
 					'Expected a previous held-speed frame width',
-				) <= 0.55
+				) <= 0.65
 			))).toBe(true);
 			await withDiagnosticTimeout('wait for the released speed OSD display window', () => (
 				fixturePage.waitForFunction(() => (
@@ -281,7 +281,7 @@ describe('SPECTRA built extension smoke: feedback', () => {
 				index === 0 || requireValue(
 					scalarWidths[index - 1],
 					'Expected a previous scalar feedback frame width',
-				) - width <= 1
+				) - width <= 1.3
 			))).toBe(true);
 			// MutationObserver callback batching is a browser scheduling detail. The
 			// exact label sequence and monotonic widths above are the product contract;

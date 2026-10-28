@@ -1,3 +1,4 @@
+import { keySetOf } from './key-set.js';
 // goal: strict, one-shot capabilities for starting a physical tab-capture owner
 
 export const CAPTURE_ADMISSION_KINDS = ['capture-start', 'capture-resume'] as const;
@@ -21,7 +22,7 @@ export interface CaptureAdmission {
 	readonly oneShot: true;
 }
 
-const CAPTURE_ADMISSION_KEYS = new Set<keyof CaptureAdmission>([
+const CAPTURE_ADMISSION_KEYS = keySetOf<CaptureAdmission>()([
 	'id',
 	'kind',
 	'operationId',
@@ -32,7 +33,7 @@ const CAPTURE_ADMISSION_KEYS = new Set<keyof CaptureAdmission>([
 	'expiresAtMonotonicMs',
 	'oneShot',
 ]);
-const CAPTURE_DOCUMENT_KEYS = new Set<keyof CaptureDocumentKey>([
+const CAPTURE_DOCUMENT_KEYS = keySetOf<CaptureDocumentKey>()([
 	'tabId',
 	'frameId',
 	'documentId',

@@ -8,6 +8,7 @@ import {
 } from './control-value-limits.js';
 import type { AudioProcessorConfig } from './audio-processor.contracts.js';
 import { isRejection, type Rejection } from './fact.js';
+import { keySetOf } from './key-set.js';
 
 export interface AudioConfig {
   enabled: boolean;
@@ -57,7 +58,7 @@ export const DEFAULT_AUDIO_CONFIG: Readonly<AudioConfig> = {
   preservePitch: true,
 } as const;
 
-const AUDIO_CONFIG_KEYS = new Set<keyof AudioConfig>([
+const AUDIO_CONFIG_KEYS = keySetOf<AudioConfig>()([
   'enabled',
   'volume',
   'volumeBase',
@@ -73,7 +74,7 @@ const AUDIO_CONFIG_KEYS = new Set<keyof AudioConfig>([
   'preservePitch',
 ]);
 
-const AUDIO_SESSION_KEYS = new Set<keyof AudioSessionSnapshot>([
+const AUDIO_SESSION_KEYS = keySetOf<AudioSessionSnapshot>()([
   'tabId',
   'documentId',
   'origin',
@@ -87,7 +88,7 @@ const AUDIO_SESSION_KEYS = new Set<keyof AudioSessionSnapshot>([
   'lastRejection',
 ]);
 
-const AUDIO_RUNTIME_STATUS_KEYS = new Set<keyof AudioRuntimeStatus>([
+const AUDIO_RUNTIME_STATUS_KEYS = keySetOf<AudioRuntimeStatus>()([
   'config',
   'hasAudio',
   'isPlaying',
@@ -100,7 +101,7 @@ const AUDIO_RUNTIME_STATUS_KEYS = new Set<keyof AudioRuntimeStatus>([
   'lastError',
 ]);
 
-const AUDIO_CAPTURE_STATE_KEYS = new Set<keyof AudioCaptureState>([
+const AUDIO_CAPTURE_STATE_KEYS = keySetOf<AudioCaptureState>()([
   'tabId',
   'generation',
   'phase',
@@ -112,7 +113,7 @@ const AUDIO_CAPTURE_STATE_KEYS = new Set<keyof AudioCaptureState>([
 
 const AUDIO_SESSION_MODES = new Set<SpectraAudioMode>(['bypass', 'webaudio', 'capture']);
 const AUDIO_SESSION_PHASES = new Set<AudioSessionPhase>(['idle', 'starting', 'active', 'stopping', 'error']);
-const AUDIO_SESSION_ERROR_KEYS = new Set<keyof AudioSessionError>(['code', 'message', 'retryable']);
+const AUDIO_SESSION_ERROR_KEYS = keySetOf<AudioSessionError>()(['code', 'message', 'retryable']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

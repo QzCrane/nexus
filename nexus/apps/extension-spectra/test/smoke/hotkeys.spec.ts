@@ -84,12 +84,17 @@ describe('SPECTRA built extension smoke: hotkeys', () => {
 			await coldPage.waitForFunction(() => (
 				document.hasFocus() && document.activeElement === document.body
 			));
-			await coldPage.evaluate(() => {
-				const media = document.querySelector<HTMLMediaElement>('video,audio');
-				if (media) {
-					media.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
-				}
-			});
+			await coldPage.evaluate(async () => {
+const media = document.querySelector<HTMLMediaElement>('video,audio');
+if (media) {
+media.src = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=';
+await new Promise<void>((resolveReady) => {
+if (media.readyState >= 2) return resolveReady();
+media.addEventListener('canplay', () => resolveReady(), { once: true });
+setTimeout(resolveReady, 500);
+});
+}
+});
 			// Chromium's headless Input domain does not deterministically dispatch a
 			// browser-reserved extension accelerator to either commands.onCommand or
 			// the renderer. The manifest/getAll assertion above owns that admission

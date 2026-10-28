@@ -26,7 +26,7 @@ describe('SPECTRA built extension smoke: capture', () => {
 		await secondary.goto(secondaryUrl, { waitUntil: 'domcontentloaded' });
 		await waitForContentBootstrapStatus(secondaryUrl);
 		const extensionClient = await browser.newPage();
-		await extensionClient.goto(`chrome-extension://${extensionId}/popup.html`, {
+		await extensionClient.goto(`chrome-extension://${extensionId}/options.html`, {
 			waitUntil: 'domcontentloaded',
 		});
 

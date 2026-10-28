@@ -1,6 +1,7 @@
 // goal: own one explicit direct/capture processing route per normalized site
 
 import { hostnameMatchesRule, normalizeHostname } from './domain.contracts.js';
+import { keySetOf } from './key-set.js';
 
 export type MediaProcessingRoute = 'direct' | 'capture';
 export type MediaRouteSource = 'user' | 'auto';
@@ -94,12 +95,12 @@ export interface MediaRouteRecordRequest {
 	force?: boolean;
 }
 
-const MEDIA_ROUTE_ENTRY_KEYS = /* @__PURE__ */ new Set<keyof MediaRouteEntry>([
+const MEDIA_ROUTE_ENTRY_KEYS = /* @__PURE__ */ keySetOf<MediaRouteEntry>()([
 	'route',
 	'source',
 	'updatedAt',
 ]);
-const MEDIA_ROUTE_RULE_ENTRY_KEYS = /* @__PURE__ */ new Set<keyof MediaRouteRuleEntry>([
+const MEDIA_ROUTE_RULE_ENTRY_KEYS = /* @__PURE__ */ keySetOf<MediaRouteRuleEntry>()([
 	'domain',
 	'pathPrefix',
 	'fingerprint',
@@ -107,22 +108,22 @@ const MEDIA_ROUTE_RULE_ENTRY_KEYS = /* @__PURE__ */ new Set<keyof MediaRouteRule
 	'source',
 	'updatedAt',
 ]);
-const DOMAIN_ENTRY_KEYS = /* @__PURE__ */ new Set<keyof DomainEntry>([
+const DOMAIN_ENTRY_KEYS = /* @__PURE__ */ keySetOf<DomainEntry>()([
 	'domain',
 	'fingerprint',
 	'route',
 	'source',
 	'updatedAt',
 ]);
-const MEDIA_ROUTE_CHANGED_KEYS = /* @__PURE__ */ new Set<keyof MediaRouteChangedEvent>(['domain', 'mediaRoute']);
-const REGISTRY_SNAPSHOT_KEYS = /* @__PURE__ */ new Set<keyof RegistrySnapshot>(['entries']);
-const REGISTRY_ADD_RESULT_KEYS = /* @__PURE__ */ new Set<keyof RegistryAddResult>(['entries', 'entry', 'created']);
-const REGISTRY_REMOVE_RESULT_KEYS = /* @__PURE__ */ new Set<keyof RegistryRemoveResult>(['entries', 'removed']);
-const REGISTRY_QUERY_RESULT_KEYS = /* @__PURE__ */ new Set<keyof RegistryQueryResult>(['entry']);
-const REGISTRY_ADD_PAYLOAD_KEYS = /* @__PURE__ */ new Set<keyof RegistryAddPayload>(['domain', 'route', 'force']);
-const REGISTRY_REMOVE_PAYLOAD_KEYS = /* @__PURE__ */ new Set<keyof RegistryRemovePayload>(['fingerprint']);
-const REGISTRY_QUERY_PAYLOAD_KEYS = /* @__PURE__ */ new Set<keyof RegistryQueryPayload>(['domain', 'fingerprint']);
-const REGISTRY_RECORD_PAYLOAD_KEYS = /* @__PURE__ */ new Set<keyof RegistryRecordPayload>([
+const MEDIA_ROUTE_CHANGED_KEYS = /* @__PURE__ */ keySetOf<MediaRouteChangedEvent>()(['domain', 'mediaRoute']);
+const REGISTRY_SNAPSHOT_KEYS = /* @__PURE__ */ keySetOf<RegistrySnapshot>()(['entries']);
+const REGISTRY_ADD_RESULT_KEYS = /* @__PURE__ */ keySetOf<RegistryAddResult>()(['entries', 'entry', 'created']);
+const REGISTRY_REMOVE_RESULT_KEYS = /* @__PURE__ */ keySetOf<RegistryRemoveResult>()(['entries', 'removed']);
+const REGISTRY_QUERY_RESULT_KEYS = /* @__PURE__ */ keySetOf<RegistryQueryResult>()(['entry']);
+const REGISTRY_ADD_PAYLOAD_KEYS = /* @__PURE__ */ keySetOf<RegistryAddPayload>()(['domain', 'route', 'force']);
+const REGISTRY_REMOVE_PAYLOAD_KEYS = /* @__PURE__ */ keySetOf<RegistryRemovePayload>()(['fingerprint']);
+const REGISTRY_QUERY_PAYLOAD_KEYS = /* @__PURE__ */ keySetOf<RegistryQueryPayload>()(['domain', 'fingerprint']);
+const REGISTRY_RECORD_PAYLOAD_KEYS = /* @__PURE__ */ keySetOf<RegistryRecordPayload>()([
 	'domain',
 	'fingerprint',
 	'route',

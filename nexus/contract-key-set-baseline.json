@@ -2,12 +2,12 @@
   "generated": "2026-10-28",
   "note": "Hand-written runtime key sets that still parallel a type. Every entry is debt: replace with keySetOf<T>() and lower the number. The gate fails if any file grows.",
   "files": {
-    "packages/contracts/src/audio-processor.contracts.ts": 1,
-    "packages/contracts/src/audio.contracts.ts": 5,
-    "packages/contracts/src/capture-admission.contracts.ts": 2,
-    "packages/contracts/src/media-route.contracts.ts": 12,
-    "packages/contracts/src/settings-ui.contracts.ts": 9,
-    "packages/contracts/src/settings.contracts.ts": 5,
-    "packages/contracts/src/spectra.protocol-primitives.ts": 1
+    "packages/contracts/src/audio-processor.contracts.ts": 0,
+    "packages/contracts/src/audio.contracts.ts": 0,
+    "packages/contracts/src/capture-admission.contracts.ts": 0,
+    "packages/contracts/src/media-route.contracts.ts": 0,
+    "packages/contracts/src/settings-ui.contracts.ts": 0,
+    "packages/contracts/src/settings.contracts.ts": 0,
+    "packages/contracts/src/spectra.protocol-primitives.ts": 0
   }
 }

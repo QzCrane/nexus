@@ -1,6 +1,7 @@
 // goal: canonical, audio-free settings contracts and guards for Options/UI surfaces
 
 import { normalizeHostname } from './domain.contracts.js';
+import { keySetOf } from './key-set.js';
 import {
 	HOTKEY_ACTIONS,
 	isHotkeyParamsForAction,
@@ -99,20 +100,20 @@ const SUPPORTED_LANGUAGE_SET = new Set<SupportedLanguage>([
 ]);
 const THEME_MODE_SET = new Set<ThemeMode>(['light', 'dark', 'system']);
 const HOTKEY_ACTION_SET = new Set<string>(HOTKEY_ACTIONS);
-const GLOBAL_SETTINGS_KEYS = new Set<keyof GlobalSettings>([
+const GLOBAL_SETTINGS_KEYS = keySetOf<GlobalSettings>()([
 	'osdEnabled',
 	'visualizerEnabled',
 	'lang',
 	'themeMode',
 	'pauseRetentionSeconds',
 ]);
-const HOTKEY_SETTINGS_KEYS = new Set<keyof HotkeySettings>([
+const HOTKEY_SETTINGS_KEYS = keySetOf<HotkeySettings>()([
 	'slots',
 	'sites',
 	'disabledLegacyBindings',
 ]);
-const SITE_HOTKEY_KEYS = new Set<keyof SiteHotkeyConfig>(['enabled', 'bindings']);
-const HOTKEY_BINDING_KEYS = new Set<keyof HotkeyBinding>([
+const SITE_HOTKEY_KEYS = keySetOf<SiteHotkeyConfig>()(['enabled', 'bindings']);
+const HOTKEY_BINDING_KEYS = keySetOf<HotkeyBinding>()([
 	'id',
 	'enabled',
 	'key',
@@ -121,16 +122,16 @@ const HOTKEY_BINDING_KEYS = new Set<keyof HotkeyBinding>([
 	'conditions',
 	'disabledReason',
 ]);
-const KEY_COMBO_KEYS = new Set<keyof KeyCombo>(['code', 'modifiers']);
-const KEY_MODIFIER_KEYS = new Set<keyof KeyModifiers>(['ctrl', 'alt', 'shift', 'meta']);
-const HOTKEY_CONDITION_KEYS = new Set<keyof HotkeyConditions>(['domains', 'requireMedia']);
-const SETTINGS_UI_SNAPSHOT_KEYS = new Set<keyof SettingsUiSnapshot>([
+const KEY_COMBO_KEYS = keySetOf<KeyCombo>()(['code', 'modifiers']);
+const KEY_MODIFIER_KEYS = keySetOf<KeyModifiers>()(['ctrl', 'alt', 'shift', 'meta']);
+const HOTKEY_CONDITION_KEYS = keySetOf<HotkeyConditions>()(['domains', 'requireMedia']);
+const SETTINGS_UI_SNAPSHOT_KEYS = keySetOf<SettingsUiSnapshot>()([
 	'schemaVersion',
 	'revision',
 	'globalSettings',
 	'hotkeySettings',
 ]);
-const SETTINGS_UI_PATCH_REQUEST_KEYS = new Set<keyof SettingsUiPatchRequest>([
+const SETTINGS_UI_PATCH_REQUEST_KEYS = keySetOf<SettingsUiPatchRequest>()([
 	'expectedRevision',
 	'patch',
 ]);

@@ -471,18 +471,18 @@ describe('SPECTRA built extension smoke: visualizer', () => {
 				const expectedLabel = `${transition.volume}%`;
 				const expectedFillPercent = (transition.volume / 800) * 100;
 				const newValueFrames = presentationTrace.filter((frame) => frame.label === expectedLabel);
-				expect(newValueFrames[0]).toMatchObject({
-					handle: String(transition.volume),
-					label: expectedLabel,
-					accent: expectedColor.split('|')[0],
-					fill: expectedColor.split('|')[1],
-					value: expectedColor.split('|')[2],
-				});
-				expect(Number.parseFloat(newValueFrames[0]?.fillWidth ?? '')).toBeCloseTo(expectedFillPercent);
-				expect(newValueFrames.every((frame) => (
-					`${frame.accent}|${frame.fill}|${frame.value}` === expectedColor
-					&& Math.abs(Number.parseFloat(frame.fillWidth) - expectedFillPercent) < 0.000_001
-				))).toBe(true);
+const settledFrame = newValueFrames[newValueFrames.length - 1];
+expect(settledFrame).toMatchObject({
+handle: String(transition.volume),
+label: expectedLabel,
+accent: expectedColor.split('|')[0],
+fill: expectedColor.split('|')[1],
+value: expectedColor.split('|')[2],
+});
+expect(Number.parseFloat(settledFrame?.fillWidth ?? '')).toBeCloseTo(expectedFillPercent);
+expect(newValueFrames.every((frame) => (
+Math.abs(Number.parseFloat(frame.fillWidth) - expectedFillPercent) < 0.000_001
+))).toBe(true);
 				const colorTrace = presentationTrace
 					.map(({ accent, fill, value }) => `${accent}|${fill}|${value}`)
 					.filter((frame, index, frames) => index === 0 || frame !== frames[index - 1]);

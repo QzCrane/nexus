@@ -1,6 +1,7 @@
 // goal: exact runtime contract for the admitted SPECTRA Capture processor graph
 
 import { isFiniteControlValue } from './control-value-limits.js';
+import { keySetOf } from './key-set.js';
 
 // Playback speed, native page volume/mute and the product enable switch are
 // intentionally outside this physical processor boundary.
@@ -17,7 +18,7 @@ export interface AudioProcessorConfig {
 	delay: number;
 }
 
-const AUDIO_PROCESSOR_CONFIG_KEYS = new Set<keyof AudioProcessorConfig>([
+const AUDIO_PROCESSOR_CONFIG_KEYS = keySetOf<AudioProcessorConfig>()([
 	'boostGain',
 	'compressor',
 	'mono',

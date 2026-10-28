@@ -1,15 +1,24 @@
 // goal: focused canonical-parity control guards for extension UI bundles
 
 import type {
+	ABLoopState,
 	ControlApplyAck,
+	ControlAudioVolumeProjection,
+	ControlError,
 	ControlField,
+	ControlFieldState,
 	ControlFieldStates,
+	ControlMarker,
 	ControlOperation,
 	ControlOperationAck,
+	ControlOperationResultMap,
 	ControlSnapshot,
 	ControlStrategy,
+	ControlWriteState,
 	MediaTarget,
+	VideoFilterState,
 } from './control.contracts.js';
+import { keySetOf } from './key-set.js';
 import type { AudioSessionPhase, SpectraAudioMode } from './audio.contracts.js';
 import { isFiniteControlValue } from './control-value-limits.js';
 
@@ -89,35 +98,78 @@ const OPERATIONS = new Set<ControlOperation>(Object.keys(OPERATION_STRATEGIES) a
 // These schemas are exercised for every control snapshot/ACK. Keep their
 // fixed key sets outside the validators so polling and rapid input do not
 // allocate a new Set for every field and operation result.
-const keySet = (keys: string): ReadonlySet<string> => new Set(keys.split(','));
-const AUDIO_VOLUME_PROJECTION_KEYS = keySet('effectiveVolume,volumeState');
-const CONTROL_ERROR_KEYS = keySet('code,message,retryable');
-const MEDIA_TARGET_KEYS = keySet('frameId,documentId,mediaId,sourceRevision,kind');
-const FILTER_KEYS = keySet('brightness,contrast,saturate,grayscale,invert');
-const AB_LOOP_KEYS = keySet('pointA,pointB,enabled');
-const CONTROL_FIELD_STATE_KEYS = keySet('desired,actual,restoreBaseline,revision,phase,strategy,coverage,controlled,intentId,lastError');
-const MARKER_KEYS = keySet('id,time,label');
-const RELEASED_FIELDS_RESULT_KEYS = keySet('releasedFields');
-const EFFECTIVE_VOLUME_RESULT_KEYS = keySet('effectiveVolume,volumeBase,boost');
-const PLAYBACK_TOGGLE_RESULT_KEYS = keySet('playing');
-const SEEK_RESULT_KEYS = keySet('currentTime');
-const FRAME_STEP_RESULT_KEYS = keySet('currentTime,frameDuration,approximate');
-const SCREENSHOT_RESULT_KEYS = keySet('saved,method,width,height');
-const MARKER_ADD_RESULT_KEYS = keySet('marker,remaining');
-const MARKER_REMOVE_RESULT_KEYS = keySet('removed,remaining');
-const MARKER_JUMP_RESULT_KEYS = keySet('jumped,time');
-const MARKER_INDEX_RESULT_KEYS = keySet('jumped,actualTime,marker');
-const AB_SET_RESULT_KEYS = keySet('abLoop');
-const AB_CLEAR_RESULT_KEYS = keySet('abLoop,cleared');
-const AB_SKIP_RESULT_KEYS = keySet('abLoop,skipped,currentTime');
-const RESET_RESULT_KEYS = keySet('reset');
-const ENABLED_RESULT_KEYS = keySet('enabled');
-const SHOWN_RESULT_KEYS = keySet('shown');
-const OPENED_RESULT_KEYS = keySet('opened');
-const EXECUTED_RESULT_KEYS = keySet('executed');
-const CONTROL_SNAPSHOT_KEYS = keySet('tabId,documentId,origin,generation,revision,activeMedia,activeVideo,fields');
-const APPLY_ACK_KEYS = keySet('intentId,tabId,documentId,generation,revision,target,fields,audioVolume');
-const OPERATION_ACK_KEYS = keySet('operationId,tabId,documentId,generation,revision,target,operation,strategy,coverage,fields,audioVolume,result');
+const WRITE_STATES = new Set<ControlWriteState>(['written', 'confirmed', 'drifted', 'unconfirmed']);
+const AUDIO_VOLUME_PROJECTION_KEYS = keySetOf<ControlAudioVolumeProjection>()(['effectiveVolume', 'volumeState']);
+const CONTROL_ERROR_KEYS = keySetOf<ControlError>()(['code', 'message', 'retryable']);
+const MEDIA_TARGET_KEYS = keySetOf<MediaTarget>()(['frameId', 'documentId', 'mediaId', 'sourceRevision', 'kind']);
+const FILTER_KEYS = keySetOf<VideoFilterState>()(['brightness', 'contrast', 'saturate', 'grayscale', 'invert']);
+const AB_LOOP_KEYS = keySetOf<ABLoopState>()(['pointA', 'pointB', 'enabled']);
+const CONTROL_FIELD_STATE_KEYS = keySetOf<ControlFieldState<unknown>>()([
+	'desired',
+	'actual',
+	'restoreBaseline',
+	'revision',
+	'phase',
+	'writeState',
+	'strategy',
+	'coverage',
+	'controlled',
+	'intentId',
+	'lastError',
+]);
+const MARKER_KEYS = keySetOf<ControlMarker>()(['id', 'time', 'label']);
+const RELEASED_FIELDS_RESULT_KEYS = keySetOf<ControlOperationResultMap['restore-page-settings']>()(['releasedFields']);
+const EFFECTIVE_VOLUME_RESULT_KEYS = keySetOf<ControlOperationResultMap['effective-volume']>()(['effectiveVolume', 'volumeBase', 'boost']);
+const PLAYBACK_TOGGLE_RESULT_KEYS = keySetOf<ControlOperationResultMap['playback-toggle']>()(['playing']);
+const SEEK_RESULT_KEYS = keySetOf<ControlOperationResultMap['seek-relative']>()(['currentTime']);
+const FRAME_STEP_RESULT_KEYS = keySetOf<ControlOperationResultMap['frame-step']>()(['currentTime', 'frameDuration', 'approximate']);
+const SCREENSHOT_RESULT_KEYS = keySetOf<ControlOperationResultMap['screenshot']>()(['saved', 'method', 'width', 'height']);
+const MARKER_ADD_RESULT_KEYS = keySetOf<ControlOperationResultMap['marker-add']>()(['marker', 'remaining']);
+const MARKER_REMOVE_RESULT_KEYS = keySetOf<ControlOperationResultMap['marker-remove']>()(['removed', 'remaining']);
+const MARKER_JUMP_RESULT_KEYS = keySetOf<ControlOperationResultMap['marker-jump']>()(['jumped', 'time']);
+const MARKER_INDEX_RESULT_KEYS = keySetOf<ControlOperationResultMap['marker-jump-previous']>()(['jumped', 'actualTime', 'marker']);
+const AB_SET_RESULT_KEYS = keySetOf<ControlOperationResultMap['ab-set-a']>()(['abLoop']);
+const AB_CLEAR_RESULT_KEYS = keySetOf<ControlOperationResultMap['ab-clear']>()(['abLoop', 'cleared']);
+const AB_SKIP_RESULT_KEYS = keySetOf<ControlOperationResultMap['ab-skip']>()(['abLoop', 'skipped', 'currentTime']);
+const RESET_RESULT_KEYS = keySetOf<ControlOperationResultMap['audio-reset']>()(['reset']);
+const ENABLED_RESULT_KEYS = keySetOf<ControlOperationResultMap['video-effects-toggle']>()(['enabled']);
+const SHOWN_RESULT_KEYS = keySetOf<ControlOperationResultMap['show-info']>()(['shown']);
+const OPENED_RESULT_KEYS = keySetOf<ControlOperationResultMap['open-popup']>()(['opened']);
+const EXECUTED_RESULT_KEYS = keySetOf<ControlOperationResultMap['run-user-script']>()(['executed']);
+const CONTROL_SNAPSHOT_KEYS = keySetOf<ControlSnapshot>()([
+	'tabId',
+	'documentId',
+	'origin',
+	'generation',
+	'revision',
+	'activeMedia',
+	'activeVideo',
+	'fields',
+]);
+const APPLY_ACK_KEYS = keySetOf<ControlApplyAck>()([
+	'intentId',
+	'tabId',
+	'documentId',
+	'generation',
+	'revision',
+	'target',
+	'fields',
+	'audioVolume',
+]);
+const OPERATION_ACK_KEYS = keySetOf<ControlOperationAck<ControlOperation>>()([
+	'operationId',
+	'tabId',
+	'documentId',
+	'generation',
+	'revision',
+	'target',
+	'operation',
+	'strategy',
+	'coverage',
+	'fields',
+	'audioVolume',
+	'result',
+]);
 
 // Processor lifecycle is a projection of the field ACKs, not an independent
 // UI guess.  The UI facade already owns the admitted field strategies; using
@@ -265,6 +317,7 @@ function isControlFieldStates(value: unknown): boolean {
 			&& isInteger(state.revision)
 			&& typeof state.phase === 'string'
 			&& PHASES.has(state.phase)
+			&& (state.writeState === undefined || (typeof state.writeState === 'string' && WRITE_STATES.has(state.writeState as ControlWriteState)))
 			&& isStrategyAdmitted(field, state)
 			&& typeof state.coverage === 'string'
 			&& COVERAGES.has(state.coverage)

@@ -1,3 +1,4 @@
+import { keySetOf } from './key-set.js';
 // goal: one lightweight owner for SPECTRA wire-envelope and RpcResult primitives
 
 import { SPECTRA_PROTOCOL_VERSION } from './spectra.wire.js';
@@ -49,7 +50,7 @@ const EVENT_ENVELOPE_KEYS = new Set([
 ]);
 const RPC_SUCCESS_KEYS = new Set(['ok', 'data']);
 const RPC_FAILURE_KEYS = new Set(['ok', 'error']);
-const RPC_ERROR_KEYS = new Set<keyof RpcError>(['code', 'message', 'retryable']);
+const RPC_ERROR_KEYS = keySetOf<RpcError>()(['code', 'message', 'retryable']);
 
 export function isProtocolRecord(value: unknown): value is ProtocolRecord {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);

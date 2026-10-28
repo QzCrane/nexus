@@ -1,6 +1,7 @@
 // goal: defines contracts for persistent settings and the storage abstraction layer
 
 import { normalizeHostname } from './domain.contracts.js';
+import { keySetOf } from './key-set.js';
 import { isAudioConfig, isAudioConfigPatch, type AudioConfig } from './audio.contracts.js';
 import {
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
@@ -81,7 +82,7 @@ export interface SettingsPatchRequest {
 	patch: SettingsPatch;
 }
 
-const SETTINGS_SNAPSHOT_KEYS = new Set<keyof SettingsSnapshot>([
+const SETTINGS_SNAPSHOT_KEYS = keySetOf<SettingsSnapshot>()([
 	'schemaVersion',
 	'revision',
 	'globalSettings',
@@ -90,14 +91,14 @@ const SETTINGS_SNAPSHOT_KEYS = new Set<keyof SettingsSnapshot>([
 	'audioPresets',
 	'defaultPresetId',
 ]);
-const SETTINGS_PATCH_REQUEST_KEYS = new Set<keyof SettingsPatchRequest>(['expectedRevision', 'patch']);
+const SETTINGS_PATCH_REQUEST_KEYS = keySetOf<SettingsPatchRequest>()(['expectedRevision', 'patch']);
 const AUDIO_SITE_PATCH_KEYS = new Set(['scope', 'domain', 'value', 'mode']);
 const AUDIO_PRESET_PATCH_KEYS = new Set(['scope', 'name', 'value']);
 const DEFAULT_PRESET_PATCH_KEYS = new Set(['scope', 'value']);
 const AUDIO_PRESETS_CLEAR_PATCH_KEYS = new Set(['scope']);
-const AUDIO_PRESET_VALUE_KEYS = new Set<keyof AudioPresetValue>(['config', 'meta']);
-const AUDIO_PRESET_META_KEYS = new Set<keyof AudioPresetMeta>(['type', 'name', 'createdAt', 'isDefault']);
-const AUDIO_SITE_POLICY_KEYS = new Set<keyof AudioSitePolicy>(['config', 'mediaRoute']);
+const AUDIO_PRESET_VALUE_KEYS = keySetOf<AudioPresetValue>()(['config', 'meta']);
+const AUDIO_PRESET_META_KEYS = keySetOf<AudioPresetMeta>()(['type', 'name', 'createdAt', 'isDefault']);
+const AUDIO_SITE_POLICY_KEYS = keySetOf<AudioSitePolicy>()(['config', 'mediaRoute']);
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
