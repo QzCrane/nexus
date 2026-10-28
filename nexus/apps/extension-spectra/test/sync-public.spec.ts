@@ -225,8 +225,10 @@ describe('public repository source projection', () => {
 	});
 
 	test('allows amend only for the single unpushed generated commit', () => {
-		expect(parseArguments(['spectra'])).toEqual({ targetApp: 'spectra', amend: false });
-		expect(parseArguments(['spectra', '--amend'])).toEqual({ targetApp: 'spectra', amend: true });
+		expect(parseArguments(['spectra'])).toEqual({ targetApp: 'spectra', amend: false, plan: false });
+		expect(parseArguments(['spectra', '--amend'])).toEqual({ targetApp: 'spectra', amend: true, plan: false });
+		expect(parseArguments(['spectra', '--plan'])).toEqual({ targetApp: 'spectra', amend: false, plan: true });
+		expect(() => parseArguments(['spectra', '--amend', '--plan'])).toThrow('--amend and --plan are mutually exclusive');
 		expect(parseDivergence('0\t1\n')).toEqual({ behind: 0, ahead: 1 });
 		expect(() => validateDestinationDivergence({ behind: 0, ahead: 1 }, true)).not.toThrow();
 		expect(() => validateDestinationDivergence({ behind: 0, ahead: 0 }, true)).toThrow();

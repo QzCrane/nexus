@@ -1,6 +1,15 @@
 name: Sync public repository
 
 on:
+  pull_request:
+    branches:
+      - main
+      - 'codex/**'
+    paths:
+      - 'apps/extension-spectra/**'
+      - 'packages/**'
+      - 'scripts/sync-public.ts'
+      - 'nexus/scripts/sync-public.ts'
   workflow_dispatch:
     inputs:
       target:
@@ -20,15 +29,41 @@ permissions:
   contents: read
 
 concurrency:
-  group: sync-public-${{ github.event.inputs.target }}
+  group: sync-public-${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target || github.ref }}
   cancel-in-progress: false
 
 jobs:
+  plan:
+    name: plan (${{ matrix.app }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [spectra]
+    steps:
+      - name: Checkout private source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: private
+          fetch-depth: 0
+
+      - name: Set up Bun 1.4.4
+        uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.4.4
+
+      - name: Install private dependencies
+        run: bun install --cwd private/nexus --frozen-lockfile
+
+      - name: Plan public synchronization
+        run: bun --cwd private/nexus sync-${{ matrix.app }} -- --plan
+
   sync:
     name: sync (${{ github.event.inputs.target }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    if: github.repository == 'QzCrane/nexus'
+    if: github.event_name == 'workflow_dispatch' && github.repository == 'QzCrane/nexus'
     env:
       SYNC_PUBLIC_DEST: ${{ github.workspace }}/public
     steps:

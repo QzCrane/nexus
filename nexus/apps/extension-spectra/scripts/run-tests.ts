@@ -54,7 +54,7 @@ interface TestProcessResult {
 
 function runIsolatedTest(test: string): Promise<TestProcessResult> {
 	return new Promise((resolveTest) => {
-		const child = spawn(process.execPath, ['test', `test/${test}`], {
+		const child = spawn(process.execPath, ['test', '--timeout', '30000', `test/${test}`], {
 			cwd: projectDir,
 			stdio: ['ignore', 'pipe', 'pipe'],
 			shell: false,
@@ -64,10 +64,12 @@ function runIsolatedTest(test: string): Promise<TestProcessResult> {
 		let stderr = '';
 		let settled = false;
 		let timer: ReturnType<typeof setTimeout> | undefined;
+let slowWarningTimer: ReturnType<typeof setTimeout> | undefined;
 		const finish = (result: TestProcessResult): void => {
 			if (settled) return;
 			settled = true;
 			if (timer !== undefined) clearTimeout(timer);
+if (slowWarningTimer !== undefined) clearTimeout(slowWarningTimer);
 			resolveTest(result);
 		};
 		child.stdout.setEncoding('utf8');
@@ -80,16 +82,31 @@ function runIsolatedTest(test: string): Promise<TestProcessResult> {
 		child.once('close', (status) => {
 			finish({ test, status, stdout, stderr, error: null });
 		});
-		timer = setTimeout(() => {
-			child.kill('SIGKILL');
-			finish({
-				test,
-				status: null,
-				stdout,
-				stderr: `${stderr}\n[run-tests] no exit within ${TEST_FILE_TIMEOUT_MS}ms; killed`,
-				error: new Error(`${test} exceeded ${TEST_FILE_TIMEOUT_MS}ms without exiting`),
-			});
-		}, TEST_FILE_TIMEOUT_MS);
+		slowWarningTimer = setTimeout(() => {
+if (!settled) {
+console.warn(`[run-tests] SLOW TEST (>15s): ${test} is still executing...`);
+}
+}, 15_000);
+
+timer = setTimeout(() => {
+clearTimeout(slowWarningTimer);
+const diagnostic = [
+`[run-tests] TIMEOUT DIAGNOSTIC for ${test}:`,
+`Budget: ${TEST_FILE_TIMEOUT_MS}ms`,
+`Buffered stdout length: ${stdout.length}`,
+`Buffered stderr length: ${stderr.length}`,
+stdout.trim() ? `--- stdout tail ---\n${stdout.slice(-1000)}` : '(no stdout)',
+stderr.trim() ? `--- stderr tail ---\n${stderr.slice(-1000)}` : '(no stderr)',
+].join('\n');
+child.kill('SIGKILL');
+finish({
+test,
+status: null,
+stdout,
+stderr: `${stderr}\n${diagnostic}`,
+error: new Error(`${test} exceeded ${TEST_FILE_TIMEOUT_MS}ms without exiting`),
+});
+}, TEST_FILE_TIMEOUT_MS);
 	});
 }
 

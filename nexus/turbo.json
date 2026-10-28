@@ -4,7 +4,8 @@
 		"**/.env.*local"
 	],
 	"globalPassThroughEnv": [
-		"SYNC_PUBLIC_DEST"
+		"SYNC_PUBLIC_DEST",
+		"SYNC_PUBLIC_KEEP_PLAN"
 	],
 	"tasks": {
 		"build": {

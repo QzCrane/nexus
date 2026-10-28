@@ -8,6 +8,7 @@
  */
 
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { performance } from 'node:perf_hooks';
@@ -24,23 +25,29 @@ const PUBLIC_VALIDATION_SCRIPTS = ['lint', 'typecheck', 'build'];
 
 function parseArguments(args) {
   const [target, ...options] = args;
-  const unknownOptions = options.filter((option) => option !== '--amend');
+  const unknownOptions = options.filter((option) => option !== '--amend' && option !== '--plan');
   if (!SUPPORTED_APPS.has(target) || unknownOptions.length > 0) {
-    throw new Error('Usage: bun scripts/sync-public.ts <spectra|halo> [--amend]');
+    throw new Error('Usage: bun scripts/sync-public.ts <spectra|halo> [--amend] [--plan]');
+  }
+  const amend = options.includes('--amend');
+  const plan = options.includes('--plan');
+  if (amend && plan) {
+    throw new Error('--amend and --plan are mutually exclusive');
   }
   return {
     targetApp: target,
-    amend: options.includes('--amend'),
+    amend,
+    plan,
   };
 }
 
 const invocation = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url
   ? parseArguments(process.argv.slice(2))
-  : { targetApp: undefined, amend: false };
-const { targetApp, amend } = invocation;
+  : { targetApp: undefined, amend: false, plan: false };
+const { targetApp, amend, plan } = invocation;
 
 const sourceRoot = path.resolve(__dirname, '..');
-const destinationRoot = process.env.SYNC_PUBLIC_DEST
+let destinationRoot = process.env.SYNC_PUBLIC_DEST
   ? path.resolve(process.env.SYNC_PUBLIC_DEST)
   : path.resolve(__dirname, `../../${targetApp}-public`);
 
@@ -795,47 +802,72 @@ function createGeneratedCommit() {
 
 function main() {
   const startedAt = performance.now();
-  console.log(`NEXUS → ${targetApp.toUpperCase()} public repository`);
+  console.log(`NEXUS → ${targetApp.toUpperCase()} public repository (${plan ? 'PLAN' : 'APPLY'})`);
   console.log(`Toolchain: ${PACKAGE_MANAGER}`);
 
-  runStage('verify source and destination', () => {
-    verifySourceToolchain();
-    verifyPublicApplicationScriptClosure();
-    verifyDestinationState();
-  });
-
-  if (!fs.existsSync(destinationRoot)) {
-    fs.mkdirSync(destinationRoot, { recursive: true });
-    run('git', ['init'], { cwd: destinationRoot });
+  let isTempDestination = false;
+  if (plan && !process.env.SYNC_PUBLIC_DEST) {
+    destinationRoot = fs.mkdtempSync(path.join(os.tmpdir(), `nexus-sync-plan-${targetApp}-`));
+    isTempDestination = true;
   }
 
-  runStage('clean destination', cleanDestination);
-  const projection = runStage('read and project committed source', copyCommittedFiles);
-  console.log(
-    `[sync-public] projected ${projection.count} file(s), ${projection.totalBytes} byte(s)`,
-  );
-  runStage('project public metadata', () => {
-    copyPublicEntrypoints(projection.filesByPath);
-    patchPublicPackage();
-    validatePublicMarkdownLinks();
-  });
+  try {
+    runStage('verify source and destination', () => {
+      verifySourceToolchain();
+      verifyPublicApplicationScriptClosure();
+      if (!plan) {
+        verifyDestinationState();
+      }
+    });
 
-  runStage('install dependencies', () => run(process.execPath, ['install'], { cwd: destinationRoot }));
-  for (const script of PUBLIC_VALIDATION_SCRIPTS) {
-    runStage(`validate public ${script}`, () => runPublicValidationScript(script));
+    if (!fs.existsSync(destinationRoot)) {
+      fs.mkdirSync(destinationRoot, { recursive: true });
+      run('git', ['init'], { cwd: destinationRoot });
+    } else if (!fs.existsSync(path.join(destinationRoot, '.git'))) {
+      run('git', ['init'], { cwd: destinationRoot });
+    }
+
+    runStage('clean destination', cleanDestination);
+    const projection = runStage('read and project committed source', copyCommittedFiles);
+    console.log(
+      `[sync-public] projected ${projection.count} file(s), ${projection.totalBytes} byte(s)`,
+    );
+    runStage('project public metadata', () => {
+      copyPublicEntrypoints(projection.filesByPath);
+      patchPublicPackage();
+      validatePublicMarkdownLinks();
+    });
+
+    runStage('install dependencies', () => run(process.execPath, ['install'], { cwd: destinationRoot }));
+    for (const script of PUBLIC_VALIDATION_SCRIPTS) {
+      runStage(`validate public ${script}`, () => runPublicValidationScript(script));
+    }
+    runStage('remove generated artifacts', cleanGeneratedArtifacts);
+
+    const generatedPackage = readJson(path.join(destinationRoot, 'package.json'));
+    if (generatedPackage.packageManager !== PACKAGE_MANAGER) {
+      throw new Error(`Generated packageManager drifted from ${PACKAGE_MANAGER}`);
+    }
+
+    if (plan) {
+      console.log(`[sync-public:plan] SUCCESS: public candidate builds and passes all gates without error.`);
+      console.log(`[sync-public:plan] destination: ${destinationRoot}`);
+    } else {
+      runStage('create generated candidate', createGeneratedCommit);
+      console.log(`[sync-public] complete: ${destinationRoot}`);
+      console.log('[sync-public] inspect the generated diff before any push');
+    }
+
+    console.log(`[sync-public] total: ${formatDuration(performance.now() - startedAt)}`);
+  } finally {
+    if (isTempDestination && !process.env.SYNC_PUBLIC_KEEP_PLAN) {
+      try {
+        fs.rmSync(destinationRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+      } catch (err) {
+        console.warn(`[sync-public:plan] Failed to clean temp dir ${destinationRoot}:`, err);
+      }
+    }
   }
-  runStage('remove generated artifacts', cleanGeneratedArtifacts);
-
-  const generatedPackage = readJson(path.join(destinationRoot, 'package.json'));
-  if (generatedPackage.packageManager !== PACKAGE_MANAGER) {
-    throw new Error(`Generated packageManager drifted from ${PACKAGE_MANAGER}`);
-  }
-
-  runStage('create generated candidate', createGeneratedCommit);
-
-  console.log(`[sync-public] complete: ${destinationRoot}`);
-  console.log(`[sync-public] total: ${formatDuration(performance.now() - startedAt)}`);
-  console.log('[sync-public] inspect the generated diff before any push');
 }
 
 if (process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url) main();
