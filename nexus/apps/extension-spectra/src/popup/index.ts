@@ -186,6 +186,7 @@ async function main(): Promise<void> {
     });
   }
 
+  const BG_TABS_CACHE_KEY = 'spectra.popup.visible_background_tabs';
   let hasBgAudio = false;
   const renderedBackgroundTabIds = new Set<number>();
 
@@ -217,6 +218,7 @@ async function main(): Promise<void> {
   const renderBackgroundTabs = async (
     visibleTabIds: readonly number[],
     tabMap: Map<number, chrome.tabs.Tab>,
+    options?: { allowCached?: boolean },
   ): Promise<void> => {
     const liveIds = new Set(visibleTabIds);
     // Retire cards whose media tab left the visible inventory during this open.
@@ -245,6 +247,7 @@ async function main(): Promise<void> {
         loadVisualizer: loadPopupVisualizer,
         registerCleanup: registerPopupAttemptDisposer,
         isBackground: true,
+        allowCached: options?.allowCached,
       });
       if (initialized && typeof tab.id === 'number') renderedBackgroundTabIds.add(tab.id);
       return initialized;
@@ -254,15 +257,43 @@ async function main(): Promise<void> {
     if (summary.failures.length > 0) {
       console.warn(`[SPECTRA Popup] ${summary.failures.length} background card(s) failed to initialize.`);
     }
+    try {
+      if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+        void chrome.storage.session.set({ [BG_TABS_CACHE_KEY]: [...renderedBackgroundTabIds] }).catch((error: unknown) => {
+          console.debug('[SPECTRA Popup] Background tab cache write failed:', error);
+        });
+      }
+    } catch (error) {
+      console.debug('[SPECTRA Popup] Storage session write failed:', error);
+    }
   };
+
+  const preloadBackgroundTabs = (async () => {
+    try {
+      if (typeof chrome === 'undefined' || !chrome.storage?.session) return;
+      const stored = await chrome.storage.session.get(BG_TABS_CACHE_KEY) as Record<string, unknown>;
+      const cachedTabIds = stored?.[BG_TABS_CACHE_KEY] as number[] | undefined;
+      if (Array.isArray(cachedTabIds) && cachedTabIds.length > 0) {
+        const allTabs = await chrome.tabs.query({});
+        const tabMap = tabIdMap(allTabs);
+        const validCachedIds = cachedTabIds.filter((id) => id !== activeTabId && tabMap.has(id));
+        if (validCachedIds.length > 0 && !popupRetired) {
+          await renderBackgroundTabs(validCachedIds, tabMap, { allowCached: true });
+        }
+      }
+    } catch (error) {
+      console.debug('[SPECTRA Popup] Background tab preload skipped:', error);
+    }
+  })();
 
   try {
     // goal: render discovered media tabs while retaining the configured display-retention policy
+    await preloadBackgroundTabs;
     const result = await inventoryRequest;
     if (!result.ok) throw new Error(result.error.message);
     applyInventoryEvidence(result.data.coverage);
     const allTabs = await chrome.tabs.query({});
-    await renderBackgroundTabs(result.data.tabs, tabIdMap(allTabs));
+    await renderBackgroundTabs(result.data.tabs, tabIdMap(allTabs), { allowCached: true });
 
     // Convergence pass: the background sweep solidifies facts for tabs that had
     // no prior report or probe. Re-read once it settles and grow the list in
@@ -274,7 +305,7 @@ async function main(): Promise<void> {
         if (popupRetired || !settled.ok) return;
         applyInventoryEvidence(settled.data.coverage);
         const settledTabs = await chrome.tabs.query({});
-        await renderBackgroundTabs(settled.data.tabs, tabIdMap(settledTabs));
+        await renderBackgroundTabs(settled.data.tabs, tabIdMap(settledTabs), { allowCached: true });
       } catch (error) {
         console.debug('[SPECTRA Popup] Inventory convergence update failed:', error);
       }

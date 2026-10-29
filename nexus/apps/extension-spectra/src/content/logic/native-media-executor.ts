@@ -983,6 +983,11 @@ export class NativeMediaExecutor {
 		signal: AbortSignal = this.lifecycleController.signal,
 	): Promise<void> {
 		if (!resolved) {
+			if (intent.source !== 'restore' && isRestorableMediaField(field)) {
+				this.rememberDesired(field, value);
+				this.putState(fields, field, value, value, intent, 'dom-native');
+				return;
+			}
 			this.putError(fields, field, value, intent, 'capability-unavailable', 'No active media target');
 			return;
 		}

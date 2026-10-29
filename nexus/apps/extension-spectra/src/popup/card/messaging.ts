@@ -11,6 +11,8 @@ import { projectAcknowledgedProcessorLifecycle } from './state';
 import { classifyControlSnapshot, isControlClockStale } from '../control-snapshot-order';
 import { subscribePopupTabUiEvents, type PopupUiEvent } from '../ui-event-hub';
 import { currentTopDocumentId } from '../../shared/top-document';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { updateCachedControlSnapshot } from './snapshot';
 
 export interface MessagingParams {
 	tabId: number;
@@ -111,6 +113,7 @@ export function applyControlSnapshot(
 	}
 	state.lastError = Object.values(snapshot.fields)
 		.find((field) => field?.lastError)?.lastError ?? null;
+	updateCachedControlSnapshot(snapshot.tabId, snapshot);
 	render();
 	return true;
 }
@@ -199,6 +202,29 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 	if (rawMessage.type === 'spectra.audio.capture.changed') return;
   };
 
+  let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
+  if (!state.controlSnapshotKnown) {
+    recoveryTimer = setTimeout(() => {
+      if (disposed || state.controlSnapshotKnown) return;
+      void sendSpectraRequest('spectra.control.snapshot.get', { tabId }).then((response) => {
+        if (!disposed && response.ok) {
+          if (response.data) {
+            applyControlSnapshot(state, response.data, render);
+          } else {
+            state.controlSnapshotKnown = true;
+            render();
+          }
+        }
+      }).catch((error: unknown) => {
+        console.debug('[SPECTRA Card] Snapshot recovery skipped:', error);
+      });
+    }, 250);
+  }
+
   const unsubscribe = subscribePopupTabUiEvents(tabId, onMessage);
-  return () => { disposed = true; unsubscribe(); };
+  return () => {
+    disposed = true;
+    if (recoveryTimer !== null) clearTimeout(recoveryTimer);
+    unsubscribe();
+  };
 }

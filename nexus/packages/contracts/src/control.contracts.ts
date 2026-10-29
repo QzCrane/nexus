@@ -1712,6 +1712,12 @@ export function explainControlApplyAck(value: unknown): string | null {
 	if (!isRecord(value)) return 'payload is not an object';
 	const unexpected = Object.keys(value).filter((key) => !ackKeys.has(key));
 	if (unexpected.length > 0) return `unexpected keys: ${unexpected.join(', ')}`;
+	if (!isBoundedString(value.intentId, 128)) return 'intentId is invalid';
+	if (!Number.isInteger(value.tabId) || Number(value.tabId) <= 0) return 'tabId is invalid';
+	if (!isBoundedString(value.documentId, 256)) return 'documentId is invalid';
+	if (!isSafeNonNegativeInteger(value.generation)) return 'generation is invalid';
+	if (!isSafeNonNegativeInteger(value.revision)) return 'revision is invalid';
+	if (value.target !== null && !isMediaTarget(value.target)) return 'target is invalid';
 	if (!isRecord(value.fields)) return 'fields is not an object';
 	for (const [field, state] of Object.entries(value.fields)) {
 		if (!isRecord(state)) return `fields.${field} is not an object`;
@@ -1722,6 +1728,9 @@ export function explainControlApplyAck(value: unknown): string | null {
 		if (!isControlFieldState(field as ControlField, state)) {
 			return `fields.${field} violates its field-state contract`;
 		}
+	}
+	if (value.audioVolume !== undefined && !isControlAudioVolumeProjection(value.audioVolume)) {
+		return 'audioVolume is invalid';
 	}
 	return isControlApplyAck(value) ? null : 'payload does not satisfy the apply-ack contract';
 }

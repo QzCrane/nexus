@@ -119,6 +119,7 @@ const STRATEGIES = new Set<ControlStrategy>([
 ]);
 const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);
 const PHASES = new Set(['idle', 'applied', 'error']);
+const WRITE_STATES = new Set(['written', 'confirmed']);
 const SOURCES = new Set(['page', 'popup', 'remote', 'hotkey', 'restore', 'system']);
 const CONTENT_OPERATIONS = new Set<ControlOperation>([
 	'restore-page-settings', 'frame-step', 'screenshot', 'marker-add', 'marker-remove',
@@ -261,11 +262,12 @@ function isControlFieldStates(value: unknown): boolean {
 			&& (item.restoreBaseline === undefined || isControlValue(field as ControlField, item.restoreBaseline))
 			&& isInteger(item.revision)
 			&& PHASES.has(item.phase as string)
+			&& (item.writeState === undefined || WRITE_STATES.has(item.writeState as string))
 			&& STRATEGIES.has(item.strategy as ControlStrategy)
 			&& COVERAGES.has(item.coverage as string)
 			&& typeof item.controlled === 'boolean'
 			&& (item.intentId === undefined || isBoundedString(item.intentId, 128))
-			&& (item.lastError === null || isRpcError(item.lastError));
+			&& (item.lastError === null || item.lastError === undefined || isRpcError(item.lastError));
 	});
 }
 
@@ -384,6 +386,7 @@ export function isSpectraRequestEnvelope(value: unknown): value is SpectraReques
 			&& value.generation === value.payload.generation;
 	}
 	if (value.type === 'spectra.control.actual.read') return isControlReadRequest(value.payload);
+	if (value.type === 'spectra.control.page.scale.probe') return isEmpty(value.payload);
 	if (value.type === 'spectra.control.operation.execute') {
 		return isControlOperationIntent(value.payload)
 			&& isRecord(value.payload)
@@ -515,6 +518,18 @@ function isControlAck(value: unknown, operation = false): boolean {
 		&& isRecord(value.result);
 }
 
+function isControlReadResult(value: unknown): boolean {
+	if (!isRecord(value)
+		|| !hasOnly(value, new Set(['target', 'patch', 'observedStrategies']))
+		|| (value.target !== null && value.target !== undefined && !isMediaTarget(value.target))
+		|| !isControlPatch(value.patch, true)
+		|| !isRecord(value.observedStrategies)
+		|| !hasOnly(value.observedStrategies, DIRECT_FIELDS)) return false;
+	return Object.values(value.observedStrategies).every((strategy) => (
+		typeof strategy === 'string' && STRATEGIES.has(strategy as ControlStrategy)
+	));
+}
+
 function isContentResponseData(type: string, value: unknown): boolean {
 	if (type === 'spectra.content.runtime.identity') return isRecord(value)
 		&& hasOnly(value, new Set(['documentId', 'frameId']))
@@ -530,8 +545,14 @@ function isContentResponseData(type: string, value: unknown): boolean {
 		&& hasOnly(value, new Set(['accepted'])) && value.accepted === true;
 	if (type === 'spectra.audio.page-scale.record') return isRecord(value)
 		&& value.recorded === true;
-	if (type === 'spectra.control.intent.submit') return isControlAck(value);
-	if (type === 'spectra.control.operation.submit') return isControlAck(value, true);
+
+	if (type === 'spectra.control.intent.submit'
+		|| type === 'spectra.control.intent.execute') return isControlAck(value);
+	if (type === 'spectra.control.operation.submit'
+		|| type === 'spectra.control.operation.execute') return isControlAck(value, true);
+	if (type === 'spectra.control.actual.read') return isControlReadResult(value);
+	if (type === 'spectra.control.page.scale.probe') return isRecord(value)
+		&& hasOnly(value, new Set(['supported'])) && typeof value.supported === 'boolean';
 	if (type === 'spectra.content.settings.get') return isContentSettings(value);
 	if (type === 'spectra.audio.config.get') return isAudioConfig(value);
 	if (type === 'spectra.audio.policy.get') return isAudioSitePolicy(value);

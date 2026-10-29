@@ -82,5 +82,5 @@
 		"src/shared/transport.ts",
 		"src/shared/ui-colors.ts"
 	],
-	"publishedVersion": "1.4.1"
+	"publishedVersion": "1.4.2"
 }

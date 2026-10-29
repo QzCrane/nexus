@@ -324,8 +324,12 @@ export async function sendBackgroundTabRequestOnce<T extends SpectraRequestType>
 			`content request ${type} (tab ${tabId})`,
 		);
 		if (!isBackgroundResponse(type, response)) {
+			const ackCandidate = isRpcSuccessResult(response) ? response.data : response;
+			const explanation = type.startsWith('spectra.control.')
+				? (explainControlApplyAck(ackCandidate) ?? explainControlApplyAck(response))
+				: null;
 			throw new Error(
-				`Content host returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${type}${type.startsWith('spectra.control.') ? ` (${explainControlApplyAck(response) ?? 'unknown reason'})` : ''}`,
+				`Content host returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${type}${explanation ? ` (${explanation})` : ''}`,
 			);
 		}
 		return response;

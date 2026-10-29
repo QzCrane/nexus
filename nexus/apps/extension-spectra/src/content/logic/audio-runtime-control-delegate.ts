@@ -209,7 +209,7 @@ export function createAudioRuntimeControlDelegate(
 					? null
 					: {
 						code: 'readback-mismatch',
-						message: state.lastError ?? 'Audio runtime did not apply the requested value',
+						message: typeof state.lastError === 'string' && state.lastError.trim().length > 0 ? state.lastError.trim() : 'Audio runtime did not apply the requested value',
 						retryable: true,
 					},
 			};

@@ -13,6 +13,7 @@ import { resolveAcknowledgedProcessorLifecycle } from '@nexus/contracts/ui-runti
 import type { PopupControlPortResponse } from '../../shared/popup-control-port';
 import { isReportedControlFailure, PopupControlChannelError, type PopupControlTransport } from './control-port';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
+import { updateCachedControlSnapshot } from './snapshot';
 import { classifyControlSnapshot, isControlClockStale } from '../control-snapshot-order';
 
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
@@ -86,7 +87,7 @@ function splitByCoverage(patch: ControlPatch): Array<{
 
 export function createUpdateFn(
 	state: CardInternalState,
-	_tabId: number,
+	tabId: number,
 	_getCapturing: () => boolean,
 	render: () => void,
 	_getGlobalSettings: () => GlobalSettings,
@@ -145,6 +146,9 @@ export function createUpdateFn(
 		}
 		if (acceptedAcknowledgement) {
 			state.controlSnapshotKnown = true;
+			if (state.controlSnapshot) {
+				updateCachedControlSnapshot(tabId, state.controlSnapshot);
+			}
 		}
 		state.lastError = response.error;
 		state.config = mergeAudioConfig(state.stableConfig, {

@@ -1425,10 +1425,7 @@ async function executeFieldOperation(
 			const known = field === 'volumeBase' ? knownVolumeBase : knownBoost;
 			return known;
 		};
-		const currentVolumeBase = actualField('volumeBase');
-		if (currentVolumeBase === null) {
-			throw new Error('Effective volume requires an observable page or standard native volume');
-		}
+		const currentVolumeBase = actualField('volumeBase') ?? CONTROL_VALUE_LIMITS.volumeBase.max;
 		const current = {
 			volumeBase: currentVolumeBase,
 			boost: actualField('boost') ?? 1,

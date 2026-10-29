@@ -60,9 +60,10 @@ export type CardObservation<T> =
 export interface CardSnapshot {
   documentId: string;
   status: CardObservation<AudioRuntimeStatus>;
-  controlSnapshot: CardObservation<ControlSnapshot>;
+  controlSnapshot: CardObservation<ControlSnapshot | null>;
   sessionSnapshot: CardObservation<AudioSessionSnapshot | null>;
   isRemoteActive: CardObservation<boolean>;
+  fromCache?: boolean;
 }
 
 export interface InitCardParams {
@@ -74,6 +75,7 @@ export interface InitCardParams {
   getDictionary?: () => I18NDict;
   onCardSetChanged?: () => void;
   isBackground?: boolean;
+  allowCached?: boolean;
   loadVisualizer?: () => Promise<PopupVisualizerFactories>;
   registerCleanup?: (cleanup: () => void) => () => void;
 }
