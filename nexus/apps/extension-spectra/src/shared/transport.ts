@@ -10,9 +10,11 @@ import {
 	type SpectraRequestType,
 	type SpectraResponse,
 	type SpectraWireContext,
+	explainControlApplyAck,
 } from '@nexus/contracts';
 import { requiresContentRuntime } from './content-runtime';
 import { RPC_DEADLINE_MS, withDeadline } from './timeout';
+
 
 export type SpectraRpcContext = SpectraWireContext;
 
@@ -28,8 +30,16 @@ export async function sendSpectraRpcMessage<T extends SpectraRequestType, R exte
 		`${errorPrefix} ${message.type}`,
 	);
 	if (!validator(message.type, response)) {
+		let detail = '';
+		if (response === undefined) {
+			detail = ' (no response: undefined)';
+		} else if (message.type.startsWith('spectra.control.')) {
+			const ackCandidate = (response && typeof response === 'object' && 'data' in response) ? (response as { data: unknown }).data : response;
+			const explanation = explainControlApplyAck(ackCandidate) ?? explainControlApplyAck(response);
+			if (explanation) detail = ` (${explanation})`;
+		}
 		throw new Error(
-			`${errorPrefix} returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${message.type}`,
+			`${errorPrefix} returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${message.type}${detail}`,
 		);
 	}
 	return response;
@@ -48,8 +58,16 @@ export async function deliverSpectraTabRpcMessage<T extends SpectraRequestType, 
 		: chrome.tabs.sendMessage(tabId, message);
 	const response: unknown = await withDeadline(delivery, deadlineMs, `${errorPrefix} ${message.type}`);
 	if (!validator(message.type, response)) {
+		let detail = '';
+		if (response === undefined) {
+			detail = ' (no response: undefined)';
+		} else if (message.type.startsWith('spectra.control.')) {
+			const ackCandidate = (response && typeof response === 'object' && 'data' in response) ? (response as { data: unknown }).data : response;
+			const explanation = explainControlApplyAck(ackCandidate) ?? explainControlApplyAck(response);
+			if (explanation) detail = ` (${explanation})`;
+		}
 		throw new Error(
-			`${errorPrefix} returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${message.type}`,
+			`${errorPrefix} returned an invalid SPECTRA extension RPC v${SPECTRA_PROTOCOL_VERSION} response for ${message.type}${detail}`,
 		);
 	}
 	return response;

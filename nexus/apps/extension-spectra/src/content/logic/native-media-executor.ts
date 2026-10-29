@@ -952,7 +952,7 @@ export class NativeMediaExecutor {
 						}
 						break;
 					case 'playing': actual = !element.paused; observedStrategies.playing = 'dom-native'; break;
-					case 'currentTime': actual = element.currentTime; observedStrategies.currentTime = 'dom-native'; break;
+					case 'currentTime': actual = Number.isFinite(element.currentTime) && element.currentTime >= 0 ? element.currentTime : 0; observedStrategies.currentTime = 'dom-native'; break;
 					case 'loop': actual = element.loop; observedStrategies.loop = 'dom-native'; break;
 					case 'pip': actual = document.pictureInPictureElement === element; observedStrategies.pip = 'dom-native'; break;
 					case 'fullscreen': actual = fullscreenOwnsMedia(element); observedStrategies.fullscreen = 'dom-native'; break;
@@ -1907,15 +1907,20 @@ export function registerNativeMediaExecutor(executor: NativeMediaExecutor): () =
 			|| (message.type !== 'spectra.control.intent.execute'
 				&& message.type !== 'spectra.control.actual.read'
 				&& message.type !== 'spectra.control.page.scale.probe')) {
-			sendResponse(rpcFailure('invalid_request', 'Malformed native control intent'));
+			const reqType = (message as { type?: unknown })?.type;
+			sendResponse(rpcFailure('invalid_request', `Malformed native control intent for ${String(reqType)}`));
 			return false;
 		}
-		executor.bindRequestContext(message.tabId, message.documentId);
-		const operation = message.type === 'spectra.control.actual.read'
-			? Promise.resolve().then(() => executor.read(message.payload))
-			: message.type === 'spectra.control.page.scale.probe'
-				? Promise.resolve().then(() => executor.probePageScale())
-				: executor.execute(message.payload);
+		const operation: Promise<ControlApplyAck | ControlReadResult | { supported: boolean }> = Promise.resolve().then(async () => {
+			executor.bindRequestContext(message.tabId, message.documentId);
+			if (message.type === 'spectra.control.actual.read') {
+				return executor.read(message.payload);
+			}
+			if (message.type === 'spectra.control.page.scale.probe') {
+				return executor.probePageScale();
+			}
+			return await executor.execute(message.payload);
+		});
 		void operation.then(
 			(ack) => sendResponse(rpcSuccess(ack)),
 			(error) => {

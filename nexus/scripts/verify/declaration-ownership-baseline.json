@@ -36,6 +36,10 @@
     "sendSpectraTabRequest": {
       "owner": "apps/extension-spectra/src/shared/ui-spectra-client.ts",
       "reason": "Same host split as sendSpectraRequest."
+    },
+    "explainControlApplyAck": {
+      "owner": "packages/contracts/src/control.contracts.ts",
+      "reason": "spectra.content-runtime.ts is the slim Content entry and exports explainControlApplyAck for diagnostic error reporting in transport boundaries."
     }
   }
 }

@@ -612,3 +612,16 @@ export { rpcFailure, rpcSuccess };
 // (they break the §G3 facade-closure contract otherwise).
 export { createBoundedSet } from './bounded.js';
 export type { BoundedSet } from './bounded.js';
+
+export function explainControlApplyAck(value: unknown): string | null {
+	if (!isRecord(value)) return "payload is not an object";
+	if (!isBoundedString(value.intentId, 128)) return "intentId is invalid";
+	if (!isInteger(value.tabId, true)) return "tabId is invalid";
+	if (!isBoundedString(value.documentId, 256)) return "documentId is invalid";
+	if (!isInteger(value.generation)) return "generation is invalid";
+	if (!isInteger(value.revision)) return "revision is invalid";
+	if (value.target !== null && !isMediaTarget(value.target)) return "target is invalid";
+	if (!isControlFieldStates(value.fields)) return "fields violate field-state contract";
+	if (value.audioVolume !== undefined && !isAudioVolumeProjection(value.audioVolume)) return "audioVolume is invalid";
+	return null;
+}

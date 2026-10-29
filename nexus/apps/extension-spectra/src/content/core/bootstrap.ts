@@ -260,7 +260,7 @@ if (!getContentBootstrapState()) {
 					}
 					break;
 				case 'playing': actual = !element.paused; observedStrategies.playing = 'dom-native'; break;
-				case 'currentTime': actual = element.currentTime; observedStrategies.currentTime = 'dom-native'; break;
+				case 'currentTime': actual = Number.isFinite(element.currentTime) && element.currentTime >= 0 ? element.currentTime : 0; observedStrategies.currentTime = 'dom-native'; break;
 				case 'loop': actual = element.loop; observedStrategies.loop = 'dom-native'; break;
 				case 'pip': actual = document.pictureInPictureElement === element; observedStrategies.pip = 'dom-native'; break;
 				case 'fullscreen': actual = fullscreen === element

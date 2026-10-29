@@ -323,7 +323,7 @@ function isControlFieldStates(value: unknown): boolean {
 			&& COVERAGES.has(state.coverage)
 			&& typeof state.controlled === 'boolean'
 			&& (state.intentId === undefined || isBoundedString(state.intentId, 128))
-			&& (state.lastError === null || isControlError(state.lastError)))) return false;
+			&& (state.lastError === null || state.lastError === undefined || isControlError(state.lastError)))) return false;
 	}
 	return true;
 }

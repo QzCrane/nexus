@@ -1533,7 +1533,7 @@ function isControlFieldState(field: ControlField, value: unknown): boolean {
 		&& coverageSet.has(value.coverage)
 		&& typeof value.controlled === 'boolean'
 		&& (value.intentId === undefined || isBoundedString(value.intentId, 128))
-		&& (value.lastError === null || isControlError(value.lastError));
+		&& (value.lastError === null || value.lastError === undefined || isControlError(value.lastError));
 }
 
 function isControlFieldStates(value: unknown): value is ControlFieldStates {

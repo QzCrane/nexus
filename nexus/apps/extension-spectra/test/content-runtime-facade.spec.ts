@@ -26,6 +26,7 @@ const CONTENT_RUNTIME_VALUE_EXPORTS = [
 	'createSpectraEvent',
 	'createSpectraRequest',
 	'createBoundedSet',
+	'explainControlApplyAck',
 	'findBestHostnameMatch',
 	'isAudioConfig',
 	'isDefaultAudioConfig',
