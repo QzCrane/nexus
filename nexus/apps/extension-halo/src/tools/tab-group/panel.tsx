@@ -12,9 +12,10 @@ import { StorageRecoveryActions } from '../../components/sidepanel/StorageRecove
 
 
 const COLORS = ['grey', 'blue', 'red', 'yellow', 'green', 'pink', 'purple', 'cyan', 'orange'] as const satisfies readonly chrome.tabGroups.Color[];
-const tabGroupColorCodec: ToolStateCodec<chrome.tabGroups.Color> = {
+type TabGroupColor = typeof COLORS[number];
+const tabGroupColorCodec: ToolStateCodec<TabGroupColor> = {
 	decode: (value) => typeof value === 'string' && (COLORS as readonly string[]).includes(value)
-		? { kind: 'valid', value: value as chrome.tabGroups.Color } : { kind: 'invalid', reason: 'Tab group color is invalid.' },
+		? { kind: 'valid', value: value as TabGroupColor } : { kind: 'invalid', reason: 'Tab group color is invalid.' },
 	encode: (value) => value,
 };
 
@@ -24,7 +25,7 @@ export const TabGroupPanel: React.FC = () => {
     const [groups, setGroups] = useState<TabGroupInfo[]>([]);
     const [showCreate, setShowCreate] = useToolState<boolean>('tab-group-show-create', false);
     const [newTitle, setNewTitle] = useToolState<string>('tab-group-title', '');
-	const [newColor, setNewColor, , colorRecovery] = useToolState<chrome.tabGroups.Color>('tab-group-color', 'blue', { codec: tabGroupColorCodec });
+	const [newColor, setNewColor, , colorRecovery] = useToolState<TabGroupColor>('tab-group-color', 'blue', { codec: tabGroupColorCodec });
 	const task = useOwnedAsyncTask();
 
 

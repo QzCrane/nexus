@@ -14,7 +14,7 @@ import { submitControlIntent } from './intent-recovery';
 import { mergeAudioConfig, mergeControlFields } from './types';
 import { showPopupToast } from '../toast';
 import { isReportedControlFailure } from './control-port';
-import { actualVolumeColor } from './render';
+import { gestureVolumeColor } from './render';
 import type { VolumeView } from './volume-view';
 
 export interface EventsParams {
@@ -132,7 +132,7 @@ export function bindCardEvents(params: EventsParams): void {
     // the renderer owns the MUTE label, so painting a number over it would
     // visibly blink once per frame.
     if (!state.config.muted) {
-      const liveColor = actualVolumeColor(false, value, state.actualMode, state.phase);
+      const liveColor = gestureVolumeColor(false, value, state.actualMode, state.phase);
       volumeView.paintPointer(value, liveColor);
       ui.slider.style.setProperty('--slider-accent', liveColor);
       // The Action badge is not painted here. It has exactly one owner - the
@@ -173,6 +173,12 @@ export function bindCardEvents(params: EventsParams): void {
     // one direction allowed: state -> DOM, never DOM -> state. Wheel steps are
     // not driven by the browser, so the card's single projection writer moves it.
     volumeView.setThumb(nextVolume);
+
+    if (!state.config.muted) {
+      const liveColor = gestureVolumeColor(false, nextVolume, state.actualMode, state.phase);
+      volumeView.paintPointer(nextVolume, liveColor);
+      ui.slider.style.setProperty('--slider-accent', liveColor);
+    }
 
     // Clear dragging state after wheel stops (300ms debounce)
     if (wheelTimer) clearTimeout(wheelTimer);

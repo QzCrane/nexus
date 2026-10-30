@@ -6,4 +6,8 @@ if ! command -v bun >/dev/null 2>&1 || ! command -v bunx >/dev/null 2>&1; then
   echo "NEXUS commit-msg blocked: Bun/bunx is unavailable, so repository gates cannot run." >&2
   exit 1
 fi
-exec bunx lefthook run "commit-msg" "$@"
+if bunx lefthook run "commit-msg" "$@"; then
+  exit 0
+fi
+echo "Executing commitlint directly via Bun..." >&2
+bunx commitlint --edit "$1"

@@ -8,7 +8,7 @@ import {
 	resolveAudioVolumeState,
 } from '@nexus/contracts';
 import { COLORS } from '../src/popup/constants';
-import { actualVolumeColor, createRenderFn } from '../src/popup/card/render';
+import { actualVolumeColor, createRenderFn, gestureVolumeColor } from '../src/popup/card/render';
 import { createVolumeView } from '../src/popup/card/volume-view';
 import { mergeAudioConfig } from '../src/popup/card/types';
 
@@ -37,6 +37,15 @@ describe('Popup single effective-volume control', () => {
 		expect(actualVolumeColor(false, 350, 'capture', 'active')).toBe(COLORS.CAPTURE);
 		expect(actualVolumeColor(true, 350, 'capture', 'active')).toBe(COLORS.MUTED);
 		expect(actualVolumeColor(false, 0, 'capture', 'active')).toBe(COLORS.MUTED);
+	});
+
+	test('gestureVolumeColor provides immediate synchronous tone feedback for live gestures', () => {
+		expect(gestureVolumeColor(false, 350, 'bypass', 'idle')).toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 101, 'bypass', 'idle')).toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 100, 'bypass', 'idle')).toBe(COLORS.NATIVE);
+		expect(gestureVolumeColor(false, 50, 'bypass', 'idle')).toBe(COLORS.NATIVE);
+		expect(gestureVolumeColor(true, 350, 'bypass', 'idle')).toBe(COLORS.MUTED);
+		expect(gestureVolumeColor(false, 0, 'bypass', 'idle')).toBe(COLORS.MUTED);
 	});
 
 	test('uses one volume-state truth table and fails closed on stale document identity', () => {

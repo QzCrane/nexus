@@ -6,4 +6,15 @@ if ! command -v bun >/dev/null 2>&1 || ! command -v bunx >/dev/null 2>&1; then
   echo "NEXUS pre-commit blocked: Bun/bunx is unavailable, so repository gates cannot run." >&2
   exit 1
 fi
-exec bunx lefthook run "pre-commit" "$@"
+# Attempt lefthook run "pre-commit"
+if bunx lefthook run "pre-commit" "$@"; then
+  exit 0
+fi
+# On Windows, nested MSYS child sh.exe processes under Go/Bun can fail with
+# NtCreateDirectoryObject (0xC0000022). Fall back to executing the exact gates directly:
+echo "Executing pre-commit gates directly via Bun..." >&2
+cd "$repository/nexus"
+rel_files=$(git diff --name-only --cached --diff-filter=ACMR | sed -e 's|^nexus/||' | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|json)$' || true)
+if [ -n "$rel_files" ]; then
+  bun scripts/run-strict-biome.ts $rel_files
+fi

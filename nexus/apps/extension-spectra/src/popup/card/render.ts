@@ -74,19 +74,22 @@ export function createRenderFn(params: RenderParams): () => void {
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));
 
-		// Pending session/broadcast events cannot recolor the retained result.
-		const fillColor = volumePresentation.color;
-
     // Every write to the fill, the readout and the thumb goes through the
     // card's single volume projection writer, so the frame-coalesced
     // reconciliation and the synchronous pointer path cannot disagree.
+    const inVolumeGesture = state.draggingField === 'volume'
+      || state.pendingVolumePresentation !== undefined;
+    const liveTone = inVolumeGesture
+      ? gestureVolumeColor(muted, volumePresentation.effectiveVolume, state.actualMode, state.phase)
+      : volumePresentation.color;
+
     volumeView.commit({
       value: volumePresentation.effectiveVolume,
-      color: fillColor,
+      color: liveTone,
       muted,
       thumb: state.draggingField === 'volume' ? null : newSliderValue,
     });
-    ui.slider.style.setProperty('--slider-accent', fillColor);
+    ui.slider.style.setProperty('--slider-accent', liveTone);
 
     const displayedVolume = volumePresentation.effectiveVolume;
 
@@ -178,4 +181,20 @@ export function actualVolumeColor(
   if (muted || volume <= 0) return COLORS.MUTED;
   const state = resolveAudioVolumeState({ muted, volume, actualMode, phase });
   return state === 'capture' ? COLORS.CAPTURE : popupPrimaryColor();
+}
+
+/**
+ * Immediate predictive tone feedback during pointer or wheel gestures.
+ * Crossing 100 provides immediate boost/native tone responsiveness so that
+ * the user never perceives a lag or delayed recoloring while dragging.
+ */
+export function gestureVolumeColor(
+  muted: boolean,
+  volume: number,
+  actualMode: SpectraAudioMode | null,
+  phase: AudioSessionPhase,
+): string {
+  if (muted || volume <= 0) return COLORS.MUTED;
+  if (volume > 100) return COLORS.CAPTURE;
+  return actualVolumeColor(muted, volume, actualMode, phase);
 }

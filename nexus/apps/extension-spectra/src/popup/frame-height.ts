@@ -98,6 +98,7 @@ export function releasePopupFrame(): void {
 	measuredHeight = null;
 	measuredOverflowY = null;
   const html = document.documentElement;
+  html.classList.remove('spectra-frame-stable');
   html.style.height = '';
   html.style.overflowY = '';
   // The head script's reservation is spent; leaving the marker behind would
@@ -156,7 +157,14 @@ export function trackPopupFrame(): void {
     // growing. Overflow is decided by the content, never by the target, so it
     // is compared on its own: a tall document that was first measured short
     // used to keep `hidden` and silently clip the cards below the fold.
-    if (target === measuredHeight && overflowY === measuredOverflowY) return;
+    if (target === measuredHeight && overflowY === measuredOverflowY) {
+      if (published && !html.classList.contains('spectra-frame-stable')) {
+        requestAnimationFrame(() => {
+          html.classList.add('spectra-frame-stable');
+        });
+      }
+      return;
+    }
     measuredHeight = target;
     measuredOverflowY = overflowY;
     html.style.height = `${target}px`;
@@ -167,7 +175,16 @@ export function trackPopupFrame(): void {
     // reserve a height this content never lands on, so every open had to jump
     // from it to the real one. The reservation is a promise about the settled
     // layout, so only the settled layout may write it.
-    if (published) schedulePersist(target);
+    if (published) {
+      schedulePersist(target);
+      // Once the settled published frame is applied without transitions, enable
+      // transition for subsequent runtime layout mutations (side-panel, etc.) on next frame.
+      if (!html.classList.contains('spectra-frame-stable')) {
+        requestAnimationFrame(() => {
+          html.classList.add('spectra-frame-stable');
+        });
+      }
+    }
   };
 
 	const resizeObserver = new ResizeObserver(apply);
