@@ -195,7 +195,15 @@ describe('SPECTRA built extension smoke: capture', () => {
 				actualMode: 'capture',
 			});
 			latestCaptureGeneration = startGeneration;
-			expect((await readOffscreenSnapshot()).audioTabs).toEqual(expect.arrayContaining([
+			const initialSnapshot = await eventually(
+				readOffscreenSnapshot,
+				(snapshot) => snapshot.audioTabs.some((entry) => (
+					entry.tabId === tabId && entry.generation === startGeneration
+				)),
+				'shared offscreen host acknowledges initial active capture tab',
+				10_000,
+			);
+			expect(initialSnapshot.audioTabs).toEqual(expect.arrayContaining([
 				expect.objectContaining({ tabId, generation: startGeneration }),
 			]));
 			expect(await readOffscreenPeerRuntimeProbe()).toMatchObject({
@@ -517,7 +525,7 @@ describe('SPECTRA built extension smoke: capture', () => {
 				volumeBase: 130,
 				domVolume: 0.79703,
 			});
-			const native130Presentation = await readPopupVolumePresentation('#2563eb');
+			const native130Presentation = await readPopupVolumePresentation('#2563eb', '130');
 			expect(native130Presentation).toMatchObject({
 				sliderCount: 1,
 				min: '0',
@@ -554,10 +562,16 @@ describe('SPECTRA built extension smoke: capture', () => {
 					ok: true,
 					data: { actualMode: 'capture', phase: 'active' },
 				});
-				expect((await readOffscreenSnapshot()).audioTabs).toEqual(
+				const cycleSnapshot = await eventually(
+					readOffscreenSnapshot,
+					(snapshot) => snapshot.audioTabs.some((entry) => entry.tabId === tabId),
+					'offscreen host acknowledges cycle capture tab',
+					10_000,
+				);
+				expect(cycleSnapshot.audioTabs).toEqual(
 					expect.arrayContaining([expect.objectContaining({ tabId })]),
 				);
-				const capturePresentation = await readPopupVolumePresentation('#7c3aed');
+				const capturePresentation = await readPopupVolumePresentation('#7c3aed', '350');
 				expect(capturePresentation).toMatchObject({
 					sliderCount: 1,
 					min: '0',
@@ -610,7 +624,7 @@ describe('SPECTRA built extension smoke: capture', () => {
 				});
 			}
 
-			const native100Presentation = await readPopupVolumePresentation('#2563eb');
+			const native100Presentation = await readPopupVolumePresentation('#2563eb', '100');
 			expect(native100Presentation).toMatchObject({
 				value: '100',
 				fillColor: 'rgb(37, 99, 235)',
@@ -643,7 +657,7 @@ describe('SPECTRA built extension smoke: capture', () => {
 				15_000,
 			);
 			expect((await readSyntheticCaptureState()).calls).toBe(captureCallsBeforeShortcut);
-			const native110Presentation = await readPopupVolumePresentation('#2563eb');
+			const native110Presentation = await readPopupVolumePresentation('#2563eb', '110');
 			expect(native110Presentation).toMatchObject({
 				value: '110',
 				fillColor: 'rgb(37, 99, 235)',

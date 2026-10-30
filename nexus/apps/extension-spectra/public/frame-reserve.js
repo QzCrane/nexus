@@ -14,14 +14,17 @@
 // content security policy forbids inline script.
 //
 // It reads the same hint key as `src/popup/frame-height.ts` and writes nothing,
-// so the reservation and the module's own bookkeeping can never disagree.
+// so the reservation and the module's own bookkeeping can never disagree. The
+// key itself is not written here: this file carries a placeholder token and
+// the build injects the key the Popup module persists under, so the two can
+// never drift apart.
 (() => {
   // Chrome grants an Action Popup at most 600px of height; past it the
   // document scrolls instead of the window growing.
   const maxHeight = 600;
   const html = document.documentElement;
   const storage = window.localStorage;
-  const raw = storage ? storage.getItem('spectra.popup.frameHeight') : null;
+  const raw = storage ? storage.getItem('__SPECTRA_FRAME_HEIGHT_KEY__') : null;
   if (raw === null) return;
   const stored = Number(raw);
   if (!Number.isFinite(stored) || stored <= 0) return;

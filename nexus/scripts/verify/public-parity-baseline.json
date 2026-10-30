@@ -4,7 +4,9 @@
 	"maxDiffering": 89,
 	"knownMissing": [
 		"src/background/media-inventory.ts",
+		"src/popup/constants/frame-height.ts",
 		"src/popup/frame-height.ts",
+		"src/popup/frame-observers.ts",
 		"src/popup/media-inventory-from-storage.ts",
 		"src/shared/media-presence.ts"
 	],

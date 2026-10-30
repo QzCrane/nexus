@@ -3,6 +3,8 @@
 // inv: the document height must never be the reason a card appears to move
 
 import { logger } from '../shared/logger';
+import { FRAME_HEIGHT_KEY } from './constants/frame-height';
+import { createFrameObserverHolder } from './frame-observers';
 
 // Chrome sizes an Action Popup window from the document, and the document is a
 // brand new realm on every open. Nothing that decides the layout - the tab
@@ -18,7 +20,6 @@ import { logger } from '../shared/logger';
 // 600ms tween). A prediction that is too small is held as a floor until the
 // inventory is published, so the window can never dip before it grows.
 
-const FRAME_HEIGHT_KEY = 'spectra.popup.frameHeight';
 // Chrome grants an Action Popup at most 600px of height, and no layout can
 // change that. Above it the Popup scrolls as one document rather than giving
 // the background list its own scroll area: a single scroll surface keeps the
@@ -30,6 +31,12 @@ const FRAME_MAX_HEIGHT_PX = 600;
 let measuredHeight: number | null = null;
 let measuredOverflowY: string | null = null;
 let predictedHeight: number | null = null;
+// The observers are the frame's only continuous presence in the document. A
+// Popup that retries its bootstrap would stack a second pair on the same
+// container, and a released frame would still be re-sized by the pair that was
+// never disconnected - which is how a failed bootstrap ended up with the
+// reservation painted back over the error surface.
+const frameObservers = createFrameObserverHolder();
 
 function clampFrameHeight(value: number): number {
   return Math.max(0, Math.min(Math.round(value), FRAME_MAX_HEIGHT_PX));
@@ -86,9 +93,10 @@ export function reservePopupFrame(): void {
 
 // eff: drops the reservation so a failed bootstrap shows its own surface
 export function releasePopupFrame(): void {
-  predictedHeight = null;
-  measuredHeight = null;
-  measuredOverflowY = null;
+	frameObservers.release();
+	predictedHeight = null;
+	measuredHeight = null;
+	measuredOverflowY = null;
   const html = document.documentElement;
   html.style.height = '';
   html.style.overflowY = '';
@@ -125,9 +133,12 @@ export function resolveFrameTarget(
 
 // eff: retargets the frame whenever the rendered content changes height
 export function trackPopupFrame(): void {
-  const container = document.querySelector<HTMLElement>('.view-container');
-  if (!container) return;
-  const html = document.documentElement;
+	const container = document.querySelector<HTMLElement>('.view-container');
+	// Tracking is idempotent: a second call replaces the first pair instead of
+	// stacking on it.
+	frameObservers.release();
+	if (!container) return;
+	const html = document.documentElement;
 
   const apply = (): void => {
     const content = container.getBoundingClientRect().height;
@@ -159,17 +170,20 @@ export function trackPopupFrame(): void {
     if (published) schedulePersist(target);
   };
 
-  new ResizeObserver(apply).observe(container);
-  // Publishing the inventory is what lifts the floor, and it writes an attribute
-  // rather than changing the container's size, so the ResizeObserver above cannot
-  // see it. Whatever corrected the frame anyway used to be an unrelated later
-  // tick - a scrollbar appearing, a card re-laying out - which is why a short
-  // Popup that followed a tall one sometimes opened with a few hundred pixels of
-  // blank below its only card. Retargeting on the publish makes that correction
-  // unconditional instead of lucky.
-  new MutationObserver(apply).observe(document.documentElement, {
-    attributes: true,
-    attributeFilter: ['data-spectra-ready'],
-  });
-  apply();
+	const resizeObserver = new ResizeObserver(apply);
+	resizeObserver.observe(container);
+	// Publishing the inventory is what lifts the floor, and it writes an attribute
+	// rather than changing the container's size, so the ResizeObserver above cannot
+	// see it. Whatever corrected the frame anyway used to be an unrelated later
+	// tick - a scrollbar appearing, a card re-laying out - which is why a short
+	// Popup that followed a tall one sometimes opened with a few hundred pixels of
+	// blank below its only card. Retargeting on the publish makes that correction
+	// unconditional instead of lucky.
+	const mutationObserver = new MutationObserver(apply);
+	mutationObserver.observe(document.documentElement, {
+		attributes: true,
+		attributeFilter: ['data-spectra-ready'],
+	});
+	frameObservers.replace({ resize: resizeObserver, mutation: mutationObserver });
+	apply();
 }

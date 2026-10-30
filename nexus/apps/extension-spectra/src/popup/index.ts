@@ -103,6 +103,11 @@ const storageInventoryRequest = allTabsRequest
 async function main(): Promise<void> {
 	disposePopupAttempt();
 	clearPopupStartupError();
+	// A retried bootstrap starts from the released frame again, so the
+	// reservation has to be re-applied here: without it the retry opens on an
+	// empty document and grows into the layout, which is the jump this whole
+	// mechanism exists to remove.
+	reservePopupFrame();
 	trackPopupFrame();
 	void installAccessibilityPolicy().catch((error: unknown) => {
 		console.debug('[SPECTRA Popup] Accessibility policy was not installed:', error);

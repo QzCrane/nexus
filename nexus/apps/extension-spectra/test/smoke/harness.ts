@@ -54,6 +54,7 @@ export let server: ReturnType<typeof Bun.serve>;
 export let browserProfileDir = '';
 
 export let runtimeLeaseClient: Page | null = null;
+export let runtimeLeaseClientPromise: Promise<Page> | null = null;
 
 export let serviceWorkerRefreshPromise: Promise<void> | null = null;
 
@@ -582,21 +583,35 @@ export async function waitForContentBootstrapStatus(
 
 export async function getRuntimeLeaseClient(): Promise<Page> {
 	if (runtimeLeaseClient && !runtimeLeaseClient.isClosed()) return runtimeLeaseClient;
-	runtimeLeaseClient = await browser.newPage();
-	await runtimeLeaseClient.goto(`chrome-extension://${extensionId}/options.html`, {
-		waitUntil: 'domcontentloaded',
-	});
-	return runtimeLeaseClient;
+	if (!runtimeLeaseClientPromise) {
+		runtimeLeaseClientPromise = (async () => {
+			const page = await browser.newPage();
+			await page.goto(`chrome-extension://${extensionId}/options.html`, {
+				waitUntil: 'domcontentloaded',
+			});
+			runtimeLeaseClient = page;
+			return page;
+		})().finally(() => {
+			runtimeLeaseClientPromise = null;
+		});
+	}
+	return runtimeLeaseClientPromise;
 }
 
 export function resetRuntimeLeaseClient(): void {
 	runtimeLeaseClient = null;
+	runtimeLeaseClientPromise = null;
 }
 
 export function isDetachedServiceWorkerError(error: unknown): boolean {
 	const message = error instanceof Error ? error.message : String(error);
 	return message.includes('detached frame or worker')
-		|| message.includes('Execution context was destroyed');
+		|| message.includes('Execution context was destroyed')
+		|| message.includes('Target closed')
+		|| message.includes('Session closed')
+		|| message.includes('Cannot find context with specified id')
+		|| message.includes('Worker was destroyed')
+		|| message.includes('Target.detachedFromTarget');
 }
 
 export async function refreshSuspendedServiceWorker(): Promise<void> {
@@ -638,15 +653,19 @@ export async function evaluateServiceWorker<
 			return false;
 		}
 	};
-	if (!await hasCurrentIdentity()) await refreshSuspendedServiceWorker();
-	const evaluate = () => serviceWorker.evaluate<Params, Func>(func, ...args);
-	try {
-		return await evaluate();
-	} catch (error) {
-		if (!isDetachedServiceWorkerError(error)) throw error;
-		await refreshSuspendedServiceWorker();
-		return evaluate();
+	let lastError: unknown;
+	for (let attempt = 1; attempt <= 3; attempt += 1) {
+		if (attempt > 1 || !await hasCurrentIdentity()) {
+			await refreshSuspendedServiceWorker();
+		}
+		try {
+			return await serviceWorker.evaluate<Params, Func>(func, ...args);
+		} catch (error) {
+			lastError = error;
+			if (!isDetachedServiceWorkerError(error)) throw error;
+		}
 	}
+	throw lastError;
 }
 
 export async function reinjectContentBootstrap(
@@ -1210,21 +1229,30 @@ export async function openActionPopupTarget(timeoutMs = 10_000): Promise<Target>
 	}
 }
 
-export async function readPopupVolumePresentation(expectedAccent?: string): Promise<PopupVolumePresentation> {
+export async function readPopupVolumePresentation(
+	expectedAccent?: string,
+	expectedValue?: string,
+): Promise<PopupVolumePresentation> {
 	await fixturePage.bringToFront();
 	const target = await openActionPopupTarget();
 	const popup = await target.asPage();
 	try {
 		await popup.waitForSelector('.glass-card .vol-slider', { timeout: 8_000 });
-		if (expectedAccent) {
-			await popup.waitForFunction((accent) => {
-				const slider = document.querySelector<HTMLElement>('.vol-slider');
-				return slider
-					&& getComputedStyle(slider).getPropertyValue('--slider-accent').trim() === accent;
-			}, { timeout: 8_000 }, expectedAccent).catch(async (error) => {
+		if (expectedAccent || expectedValue !== undefined) {
+			await popup.waitForFunction((accent, val) => {
+				const slider = document.querySelector<HTMLInputElement>('.vol-slider');
+				if (!slider) return false;
+				if (accent && getComputedStyle(slider).getPropertyValue('--slider-accent').trim() !== accent) {
+					return false;
+				}
+				if (val !== undefined && slider.value !== val) {
+					return false;
+				}
+				return true;
+			}, { timeout: 8_000 }, expectedAccent, expectedValue).catch(async (error) => {
 				const diagnostic = await popup.evaluate(async () => {
 					const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-					const slider = document.querySelector<HTMLElement>('.vol-slider');
+					const slider = document.querySelector<HTMLInputElement>('.vol-slider');
 					if (!slider) throw new Error('Popup volume slider is missing');
 					const request = (type: string, payload: Record<string, unknown>) => chrome.runtime.sendMessage({
 						protocolVersion: 2,
@@ -1237,6 +1265,7 @@ export async function readPopupVolumePresentation(expectedAccent?: string): Prom
 					return {
 						accent: getComputedStyle(slider)
 							.getPropertyValue('--slider-accent').trim(),
+						value: slider.value,
 						card: card ? {
 							controlCoverage: card.dataset.controlCoverage ?? null,
 							lifecycleCoverage: card.dataset.lifecycleCoverage ?? null,
@@ -1249,7 +1278,7 @@ export async function readPopupVolumePresentation(expectedAccent?: string): Prom
 						control: tab?.id ? await request('spectra.control.snapshot.get', { tabId: tab.id }) : null,
 					};
 				});
-				throw new Error(`Popup accent did not reach ${expectedAccent}: ${JSON.stringify(diagnostic)}`, {
+				throw new Error(`Popup presentation did not reach accent=${expectedAccent} value=${expectedValue}: ${JSON.stringify(diagnostic)}`, {
 					cause: error,
 				});
 			});
@@ -2421,6 +2450,7 @@ export async function prepareSmokeSession(): Promise<SmokeLaunchOptions> {
 	peerRuntimeDebugEvents.length = 0;
 	smokeRuntimeLeases.clear();
 	runtimeLeaseClient = null;
+	runtimeLeaseClientPromise = null;
 	serviceWorkerRefreshPromise = null;
 	peerRuntimeDebugClient = null;
 	serviceWorkerConnection = null;
@@ -2544,7 +2574,9 @@ export async function teardownSmokeSession(): Promise<void> {
 	await restoreOffscreenPeerRuntimeProbe().catch(() => undefined);
 	await cleanupSyntheticCaptureHarness();
 	await releaseSmokeRuntimes();
+	runtimeLeaseClientPromise = null;
 	await runtimeLeaseClient?.close().catch(() => undefined);
+	runtimeLeaseClient = null;
 	await serviceWorkerConnection?.disconnect().catch(() => undefined);
 	await browser?.close().catch(() => undefined);
 	if (browserProfileDir) {

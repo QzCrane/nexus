@@ -119,6 +119,7 @@ const APP_CONFIGS = {
       // though nothing imports it. A missing entry fails the projected build.
       'apps/extension-spectra/scripts/check-lean-hotkey-artifact.ts',
       'apps/extension-spectra/scripts/check-production-artifacts.ts',
+      'apps/extension-spectra/scripts/frame-reserve-key.ts',
       'apps/extension-spectra/scripts/i18n-assets.ts',
       'apps/extension-spectra/scripts/i18n-source-catalog.ts',
       'apps/extension-spectra/scripts/minification-policy.ts',

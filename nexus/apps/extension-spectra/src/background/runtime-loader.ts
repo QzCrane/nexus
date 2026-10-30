@@ -431,10 +431,18 @@ async function loadRuntime(tabId: number, documentId: string): Promise<ContentRu
 	const key = runtimeKey(tabId, documentId);
 	const waitForReady = createReadyWaiter(key);
 	try {
-		const waitForInjection = chrome.scripting.executeScript({
+		const inject = () => chrome.scripting.executeScript({
 			target: { tabId, documentIds: [documentId] },
 			files: ['content-runtime.js'],
 			world: 'ISOLATED',
+		});
+		const waitForInjection = inject().catch(async (error: unknown) => {
+			const message = error instanceof Error ? error.message : String(error);
+			if (message.includes('Could not load file')) {
+				await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+				return inject();
+			}
+			throw error;
 		});
 		const first = await Promise.race([
 			waitForReady.then((result) => ({ kind: 'ready' as const, result })),

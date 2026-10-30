@@ -13,6 +13,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Browser, Page, Target } from 'puppeteer';
+import { FRAME_HEIGHT_KEY } from '../src/popup/constants/frame-height';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 // Chrome grants an Action Popup at most 600px; past that the document scrolls.
@@ -247,10 +248,10 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 	// allows, while this open's content is short. Nothing about this open can
 	// change the container's size after the inventory publishes, so only a
 	// retarget on the publish itself can bring the frame back down.
-	const seeded = await controlPage.evaluate(() => {
-		localStorage.setItem('spectra.popup.frameHeight', '600');
-		return localStorage.getItem('spectra.popup.frameHeight');
-	});
+	const seeded = await controlPage.evaluate((key) => {
+		localStorage.setItem(key, '600');
+		return localStorage.getItem(key);
+	}, FRAME_HEIGHT_KEY);
 	expect(seeded).toBe('600');
 	const withoutBackground = await openPopup(1);
 

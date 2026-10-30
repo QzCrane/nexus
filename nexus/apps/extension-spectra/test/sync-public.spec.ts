@@ -63,6 +63,7 @@ describe('public repository source projection', () => {
 		expect(APP_CONFIGS.spectra.publicApplicationScriptFiles).toEqual([
 			'apps/extension-spectra/scripts/check-lean-hotkey-artifact.ts',
 			'apps/extension-spectra/scripts/check-production-artifacts.ts',
+			'apps/extension-spectra/scripts/frame-reserve-key.ts',
 			'apps/extension-spectra/scripts/i18n-assets.ts',
 			'apps/extension-spectra/scripts/i18n-source-catalog.ts',
 			'apps/extension-spectra/scripts/minification-policy.ts',
@@ -172,6 +173,7 @@ describe('public repository source projection', () => {
 			APP_CONFIGS.spectra,
 		)).toEqual([
 			'apps/extension-spectra/scripts/check-production-artifacts.ts',
+			'apps/extension-spectra/scripts/frame-reserve-key.ts',
 			'apps/extension-spectra/scripts/i18n-assets.ts',
 			'apps/extension-spectra/scripts/minification-policy.ts',
 		]);

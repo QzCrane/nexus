@@ -23,6 +23,7 @@ import {
 	assertProductionArtifactReport,
 } from './scripts/check-production-artifacts.ts';
 import { writeI18nAssets } from './scripts/i18n-assets.ts';
+import { injectFrameHeightKey } from './scripts/frame-reserve-key.ts';
 import { productionMangleOptions } from './scripts/minification-policy.ts';
 
 const projectDir = dirname(fileURLToPath(import.meta.url));
@@ -211,6 +212,17 @@ function contractRuntimeFacadePlugin() {
 	};
 }
 
+// The head script that reserves the Popup frame cannot import the Popup
+// module, so it carries a placeholder and the key is injected here. Writing the
+// key twice would make the reservation and the module's own bookkeeping drift
+// apart the first time either changed, and the Popup would then reserve a
+// height it never persists - a silent, one-frame-late regression.
+function injectFrameHeightKeyIntoDist(): void {
+	const target = resolve(distDir, 'frame-reserve.js');
+	if (!existsSync(target)) return;
+	writeFileSync(target, injectFrameHeightKey(readFileSync(target, 'utf8')));
+}
+
 function prepareDist() {
 	rmSync(distDir, {
 		recursive: true,
@@ -220,6 +232,7 @@ function prepareDist() {
 	});
 	mkdirSync(distDir, { recursive: true });
 	cpSync(publicDir, distDir, { recursive: true });
+	injectFrameHeightKeyIntoDist();
 
 	const manifestPath = resolve(distDir, 'manifest.json');
 	const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
