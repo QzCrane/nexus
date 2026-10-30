@@ -1,9 +1,6 @@
 // goal: defines messaging listeners for the tab card to handle state synchronization between the popup, background, and content scripts
 
-import {
-	audioSessionMatchesControlDocument,
-	isActiveCaptureLifecycle,
-} from '@nexus/contracts';
+import { isActiveCaptureLifecycle } from '@nexus/contracts';
 import type { CardInternalState } from './types';
 import type { AudioConfig } from '@nexus/kernel';
 import { mergeAudioConfig, mergeControlSnapshot } from './types';
@@ -12,7 +9,14 @@ import { classifyControlSnapshot, isControlClockStale } from '../control-snapsho
 import { subscribePopupTabUiEvents, type PopupUiEvent } from '../ui-event-hub';
 import { currentTopDocumentId } from '../../shared/top-document';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
-import { updateCachedControlSnapshot } from './snapshot';
+import { sessionBelongsToCard, updateCachedControlSnapshot } from './snapshot';
+
+// The card probes its own control snapshot until the content host answers. The
+// budget is short because the alternative - a status line that stays on screen
+// - is what the budget exists to prevent. Eight probes cover roughly 1.2s,
+// which is longer than a content host takes to boot on a normal page load.
+const CONTROL_SYNC_ATTEMPTS = 8;
+const CONTROL_SYNC_RETRY_MS = 150;
 
 export interface MessagingParams {
 	tabId: number;
@@ -48,6 +52,7 @@ export function applyControlSnapshot(
 	// snapshot must recover the card from the transient unknown state instead
 	// of leaving controls inert and the volume label at "—" until reopen.
 	state.controlSnapshotKnown = true;
+	state.controlSyncExpired = false;
 	if (current) {
 		if (snapshot.documentId !== current.documentId || snapshot.origin !== current.origin) {
 			delete state.pendingVolumePresentation;
@@ -118,6 +123,41 @@ export function applyControlSnapshot(
 	return true;
 }
 
+// post: applies one session snapshot. Only processor lifecycle may come from
+// here; every field-level actual stays owned by the control projection.
+export function applyAudioSessionSnapshot(
+	tabId: number,
+	state: CardInternalState,
+	snapshot: import('@nexus/contracts').AudioSessionSnapshot,
+	render: () => void,
+	documentId?: string,
+): boolean {
+	if (snapshot.tabId !== tabId) return false;
+	// A session for another document would describe a page this card is not
+	// showing. The card's own document id is the fence when the control
+	// projection has not answered yet.
+	if (!sessionBelongsToCard(snapshot, state.controlSnapshot, documentId ?? '')) return false;
+	const newer = snapshot.generation > state.audioGeneration
+		|| (snapshot.generation === state.audioGeneration
+			&& snapshot.configRevision >= state.audioConfigRevision);
+	if (!newer) return false;
+	state.actualMode = snapshot.actualMode;
+	state.desiredMode = snapshot.desiredMode;
+	state.phase = snapshot.phase;
+	state.audioDocumentId = snapshot.documentId;
+	state.audioOrigin = snapshot.origin;
+	state.audioGeneration = snapshot.generation;
+	state.audioConfigRevision = snapshot.configRevision;
+	state.lastError = snapshot.lastError;
+	state.lifecycleSnapshotKnown = true;
+	state.isCaptureActive = isActiveCaptureLifecycle({
+		actualMode: snapshot.actualMode,
+		phase: snapshot.phase,
+	});
+	render();
+	return true;
+}
+
 // post: returns a cleanup function that removes the chrome.runtime.onMessage listener
 export function setupCardMessaging(params: MessagingParams): () => void {
   const { tabId, state, render } = params;
@@ -171,30 +211,10 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 	}
 	if (rawMessage.type === 'spectra.audio.session.changed') {
 		const snapshot = rawMessage.payload;
-		const control = state.controlSnapshot;
-		const matchesControl = audioSessionMatchesControlDocument(snapshot, control);
-		if (snapshot.tabId === tabId
-			&& matchesControl
-			&& (snapshot.generation > state.audioGeneration
-				|| snapshot.generation === state.audioGeneration
-					&& snapshot.configRevision >= state.audioConfigRevision)) {
-			// ControlSnapshot is the sole per-field actual authority. Session events
-			// contribute processor lifecycle only and cannot overwrite a newer
-			// page-native volume/speed revision.
-			state.actualMode = snapshot.actualMode;
-			state.desiredMode = snapshot.desiredMode;
-			state.phase = snapshot.phase;
-			state.audioDocumentId = snapshot.documentId;
-			state.audioOrigin = snapshot.origin;
-			state.audioGeneration = snapshot.generation;
-			state.audioConfigRevision = snapshot.configRevision;
-			state.lastError = snapshot.lastError;
-			state.isCaptureActive = isActiveCaptureLifecycle({
-				actualMode: snapshot.actualMode,
-				phase: snapshot.phase,
-			});
-			render();
-		}
+		// ControlSnapshot is the sole per-field actual authority. Session events
+		// contribute processor lifecycle only and cannot overwrite a newer
+		// page-native volume/speed revision.
+		applyAudioSessionSnapshot(tabId, state, snapshot, render, documentId);
 		return;
 	}
 	// Exact-document Capture lifecycle events belong to the content runtime, not
@@ -203,22 +223,78 @@ export function setupCardMessaging(params: MessagingParams): () => void {
   };
 
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
-  if (!state.controlSnapshotKnown) {
-    recoveryTimer = setTimeout(() => {
-      if (disposed || state.controlSnapshotKnown) return;
-      void sendSpectraRequest('spectra.control.snapshot.get', { tabId }).then((response) => {
-        if (!disposed && response.ok) {
-          if (response.data) {
-            applyControlSnapshot(state, response.data, render);
-          } else {
-            state.controlSnapshotKnown = true;
-            render();
-          }
+  const controlPending = () => state.controlSnapshotKnown !== true;
+  const lifecyclePending = () => state.lifecycleSnapshotKnown !== true;
+  if (controlPending() || lifecyclePending()) {
+    // A card that has not answered for its own controls cannot show them, and a
+    // card that has not answered for its route cannot colour them. Both reads
+    // are retried while their owner may still be booting, but both must
+    // terminate: a rejected or unanswered read settles the card into an explicit
+    // state instead of a promise that never resolves while the tab is listed.
+    let attempts = 0;
+    const settled = (): boolean => !controlPending() && !lifecyclePending();
+    const expireOrRetry = (): void => {
+      if (disposed || settled()) return;
+      if (attempts >= CONTROL_SYNC_ATTEMPTS) {
+        // Only the control projection owns the status line: an unknown route with
+        // known controls is a colour, not a message about synchronization.
+        if (controlPending()) {
+          state.controlSyncExpired = true;
+          render();
         }
-      }).catch((error: unknown) => {
+        return;
+      }
+      recoveryTimer = setTimeout(pollSnapshot, CONTROL_SYNC_RETRY_MS);
+    };
+    const pollControlSnapshot = async (): Promise<boolean> => {
+      try {
+        const response = await sendSpectraRequest('spectra.control.snapshot.get', { tabId });
+        if (disposed || state.controlSnapshotKnown) return true;
+        if (!response.ok) return false;
+        if (response.data) return applyControlSnapshot(state, response.data, render);
+        // A known-empty snapshot is an answer: this tab has no control state.
+        state.controlSnapshotKnown = true;
+        state.controlSyncExpired = false;
+        render();
+        return true;
+      } catch (error) {
         console.debug('[SPECTRA Card] Snapshot recovery skipped:', error);
+        return false;
+      }
+    };
+    const pollAudioSession = async (): Promise<boolean> => {
+      try {
+        const response = await sendSpectraRequest('spectra.audio.session.get', { tabId });
+        if (disposed || state.lifecycleSnapshotKnown) return true;
+        if (!response.ok) return false;
+        if (!response.data) {
+          // No session for this tab is an answer too: nothing is routed here.
+          state.lifecycleSnapshotKnown = true;
+          render();
+          return true;
+        }
+        // An accepted session settles the route; one that names another document
+        // (or one older than an acknowledgment the card already has) is not an
+        // answer, so the bounded probe keeps asking.
+        return applyAudioSessionSnapshot(tabId, state, response.data, render, documentId);
+      } catch (error) {
+        console.debug('[SPECTRA Card] Session recovery skipped:', error);
+        return false;
+      }
+    };
+    const pollSnapshot = (): void => {
+      if (disposed || settled()) return;
+      attempts += 1;
+      const reads: Array<Promise<boolean>> = [];
+      if (controlPending()) reads.push(pollControlSnapshot());
+      if (lifecyclePending()) reads.push(pollAudioSession());
+      void Promise.all(reads).then((accepted) => {
+        if (disposed || settled()) return;
+        if (accepted.every((value) => value)) return;
+        expireOrRetry();
       });
-    }, 250);
+    };
+    pollSnapshot();
   }
 
   const unsubscribe = subscribePopupTabUiEvents(tabId, onMessage);

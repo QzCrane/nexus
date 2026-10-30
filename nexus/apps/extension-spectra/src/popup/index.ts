@@ -10,6 +10,7 @@ import { disableSmoothScroll, enableSmoothScroll } from '../shared/smooth-scroll
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { clearPopupStartupError, showPopupStartupError } from './startup-error';
 import { runBoundedCardBootstrap } from './bounded-card-bootstrap';
+import { releasePopupFrame, reservePopupFrame, trackPopupFrame } from './frame-height';
 
 type PopupVisualizerModule = typeof import('./visualizer/loop');
 
@@ -59,6 +60,10 @@ async function startPopup(): Promise<void> {
   } catch (error) {
     console.error('[SPECTRA Popup] Startup failed:', error);
     disposePopupAttempt();
+    // A failed bootstrap owns no card geometry: drop the reserved frame so the
+    // error surface is measured as itself instead of sitting below a card row.
+    releasePopupFrame();
+    document.documentElement.dataset.spectraReady = 'failed';
     try {
       showPopupStartupError(error, startPopup);
     } catch (surfaceError: unknown) {
@@ -72,10 +77,20 @@ async function startPopup(): Promise<void> {
 document.documentElement.dataset.spectraSurface = chrome.extension.getViews({ type: 'popup' })
   .some((view) => view === window) ? 'action-popup' : 'extension-page';
 
+// The Action Popup is a fresh document on every open, so nothing that decides
+// its layout exists at first paint. frame-height.ts replays the last settled
+// height before paint and animates every later correction, so the window gains
+// the card list in one motion instead of resizing once per arriving stage.
+// Runs while the module body executes, before the document is first painted.
+reservePopupFrame();
+
 // eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
 async function main(): Promise<void> {
   disposePopupAttempt();
   clearPopupStartupError();
+  // Installed before any card exists: the frame then follows every commit from
+  // the very first measurement instead of re-anchoring itself later.
+  trackPopupFrame();
   await installAccessibilityPolicy();
   if (popupRetired) return;
   enableSmoothScroll();
@@ -138,9 +153,15 @@ async function main(): Promise<void> {
 
   const reconcileCardInventory = (): void => {
     if (popupRetired) return;
-    if (bgBadge) bgBadge.textContent = String(bgStack.children.length);
-    bgHeader?.classList.toggle('hidden', bgStack.children.length === 0);
-    emptyState.classList.toggle('hidden', mainStage.children.length > 0 || bgStack.children.length > 0);
+    const backgroundCount = bgStack.children.length;
+    if (bgBadge) bgBadge.textContent = String(backgroundCount);
+    bgHeader?.classList.toggle('hidden', backgroundCount === 0);
+    // The empty state is a result, never a starting point: the card inventory
+    // decides it. Painting it before the first card arrives is what made every
+    // open look like the cards were being rebuilt from scratch.
+    const hasCards = mainStage.children.length > 0 || backgroundCount > 0;
+    emptyState.classList.toggle('hidden', hasCards);
+    emptyState.hidden = hasCards;
   };
 
   // rule: main-stage is reserved for the current active tab only
@@ -186,7 +207,6 @@ async function main(): Promise<void> {
     });
   }
 
-  const BG_TABS_CACHE_KEY = 'spectra.popup.visible_background_tabs';
   let hasBgAudio = false;
   const renderedBackgroundTabIds = new Set<number>();
 
@@ -231,7 +251,10 @@ async function main(): Promise<void> {
       .filter((tabId) => tabId !== activeTabId && !renderedBackgroundTabIds.has(tabId))
       .map((tabId) => tabMap.get(tabId))
       .filter((tab): tab is chrome.tabs.Tab => tab !== undefined && !isRestrictedUrl(tab.url));
-    if (backgroundTabs.length === 0) return;
+    if (backgroundTabs.length === 0) {
+      reconcileCardInventory();
+      return;
+    }
     // Bound card bootstrap work so a large visible-tab list cannot serialize
     // dozens of status probes or create an unbounded burst of DOM/visualizer
     // work. Every item settles before badge/empty-state reconciliation.
@@ -257,38 +280,32 @@ async function main(): Promise<void> {
     if (summary.failures.length > 0) {
       console.warn(`[SPECTRA Popup] ${summary.failures.length} background card(s) failed to initialize.`);
     }
-    try {
-      if (typeof chrome !== 'undefined' && chrome.storage?.session) {
-        void chrome.storage.session.set({ [BG_TABS_CACHE_KEY]: [...renderedBackgroundTabIds] }).catch((error: unknown) => {
-          console.debug('[SPECTRA Popup] Background tab cache write failed:', error);
-        });
-      }
-    } catch (error) {
-      console.debug('[SPECTRA Popup] Storage session write failed:', error);
-    }
+    reconcileCardInventory();
   };
 
-  const preloadBackgroundTabs = (async () => {
+  // Chrome's `audible` flag is the authority for "this tab is emitting media
+  // right now". Rendering from it before the inventory round-trip cannot invent
+  // a tab that is not playing, and the inventory replaces it with the settled
+  // set a moment later. No remembered tab list is consulted: a cached list is a
+  // second opinion about a question Chrome already answers.
+  const preloadAudibleTabs = (async () => {
     try {
-      if (typeof chrome === 'undefined' || !chrome.storage?.session) return;
-      const stored = await chrome.storage.session.get(BG_TABS_CACHE_KEY) as Record<string, unknown>;
-      const cachedTabIds = stored?.[BG_TABS_CACHE_KEY] as number[] | undefined;
-      if (Array.isArray(cachedTabIds) && cachedTabIds.length > 0) {
-        const allTabs = await chrome.tabs.query({});
-        const tabMap = tabIdMap(allTabs);
-        const validCachedIds = cachedTabIds.filter((id) => id !== activeTabId && tabMap.has(id));
-        if (validCachedIds.length > 0 && !popupRetired) {
-          await renderBackgroundTabs(validCachedIds, tabMap, { allowCached: true });
-        }
+      const allTabs = await chrome.tabs.query({});
+      const tabMap = tabIdMap(allTabs);
+      const audibleIds = allTabs
+        .filter((tab) => typeof tab.id === 'number' && tab.id !== activeTabId && tab.audible)
+        .map((tab) => tab.id as number);
+      if (audibleIds.length > 0 && !popupRetired) {
+        await renderBackgroundTabs(audibleIds, tabMap, { allowCached: true });
       }
     } catch (error) {
-      console.debug('[SPECTRA Popup] Background tab preload skipped:', error);
+      console.debug('[SPECTRA Popup] Audible tab preload skipped:', error);
     }
   })();
 
   try {
     // goal: render discovered media tabs while retaining the configured display-retention policy
-    await preloadBackgroundTabs;
+    await preloadAudibleTabs;
     const result = await inventoryRequest;
     if (!result.ok) throw new Error(result.error.message);
     applyInventoryEvidence(result.data.coverage);

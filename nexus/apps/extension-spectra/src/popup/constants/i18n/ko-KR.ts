@@ -48,6 +48,7 @@ export const KO_KR: I18NDict = {
 	btnShortcutsTooltip: '전역 단축키 (Chrome)',
 	effectsLabel: '효과',
 	controlSyncing: '현재 컨트롤 동기화 중…',
+	controlSyncUnavailable: '제어 상태를 사용할 수 없음',
 	spAudio: '🔊 오디오',
 	spPan: '팬',
 	spDelay: '지연',

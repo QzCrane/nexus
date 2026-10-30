@@ -48,6 +48,7 @@ export const ZH_TW: I18NDict = {
 	btnShortcutsTooltip: '全域快速鍵 (Chrome)',
 	effectsLabel: '效果',
 	controlSyncing: '正在同步目前控制狀態…',
+	controlSyncUnavailable: '控制狀態暫不可用',
 	spAudio: '🔊 音訊',
 	spPan: '聲道平衡',
 	spDelay: '延遲',

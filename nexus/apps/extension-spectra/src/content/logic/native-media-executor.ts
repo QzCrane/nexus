@@ -14,7 +14,7 @@ import {
 	type ControlIntent,
 	type ControlOperationIntent,
 	type ControlFrameStepResult,
-	type ControlNativeObservationStrategies,
+	type ControlObservationStrategies,
 	type ControlPatch,
 	type ControlReadRequest,
 	type ControlReadResult,
@@ -156,9 +156,13 @@ const nativeMediaOwnership = ownershipScope.__nexusSpectraNativeMediaOwnershipV3
 	?? { byElement: new WeakMap<HTMLMediaElement, Map<RestorableMediaField, OwnedMediaField>>() };
 ownershipScope.__nexusSpectraNativeMediaOwnershipV3 = nativeMediaOwnership;
 
+// note: the audio runtime is the only component that knows which writer owns a
+// field right now, so it returns each value with that provenance.
+export type AudioRuntimeReadResult = Pick<ControlReadResult, 'patch' | 'observedStrategies'>;
+
 export interface AudioRuntimeControlDelegate {
 	apply(intent: ControlIntent, patch: ControlPatch): Promise<ControlFieldStates>;
-	read(fields: readonly ControlField[]): ControlPatch;
+	read(fields: readonly ControlField[]): AudioRuntimeReadResult;
 	readAudioVolume?(volumeBase: number, muted: boolean): NonNullable<ControlApplyAck['audioVolume']>;
 	synchronizeNative(context: ControlActualContext): void;
 	runFullscreenTransition?<T>(operation: () => Promise<T>): Promise<T>;
@@ -908,10 +912,12 @@ export class NativeMediaExecutor {
 	read(request: ControlReadRequest): ControlReadResult {
 		if (this.disposed) throw new Error('Native media executor is disposed');
 		const patch: ControlPatch = {};
-		const observedStrategies: ControlNativeObservationStrategies = {};
+		const observedStrategies: ControlObservationStrategies = {};
 		const runtimeFields = request.fields.filter((field) => AUDIO_RUNTIME_FIELDS.has(field));
 		if (runtimeFields.length > 0 && this.audioRuntimeDelegate) {
-			Object.assign(patch, this.audioRuntimeDelegate.read(runtimeFields));
+			const runtime = this.audioRuntimeDelegate.read(runtimeFields);
+			Object.assign(patch, runtime.patch);
+			Object.assign(observedStrategies, runtime.observedStrategies);
 		}
 		const onlyVideoFields = request.fields.length > 0
 			&& request.fields.every((field) => VIDEO_EFFECT_FIELDS.has(field)
@@ -956,13 +962,13 @@ export class NativeMediaExecutor {
 					case 'loop': actual = element.loop; observedStrategies.loop = 'dom-native'; break;
 					case 'pip': actual = document.pictureInPictureElement === element; observedStrategies.pip = 'dom-native'; break;
 					case 'fullscreen': actual = fullscreenOwnsMedia(element); observedStrategies.fullscreen = 'dom-native'; break;
-					case 'rotation': actual = effectState?.rotation; break;
-					case 'mirrored': actual = effectState?.mirrored; break;
-					case 'fill': actual = effectState?.fill; break;
-					case 'filterEnabled': actual = effectState?.filterEnabled; break;
-					case 'filter': actual = effectState?.filter; break;
-					case 'dimEnabled': actual = effectState?.dimEnabled; break;
-					case 'dimOpacity': actual = effectState?.dimOpacity; break;
+					case 'rotation': actual = effectState?.rotation; observedStrategies.rotation = 'extension-css'; break;
+					case 'mirrored': actual = effectState?.mirrored; observedStrategies.mirrored = 'extension-css'; break;
+					case 'fill': actual = effectState?.fill; observedStrategies.fill = 'extension-css'; break;
+					case 'filterEnabled': actual = effectState?.filterEnabled; observedStrategies.filterEnabled = 'extension-css'; break;
+					case 'filter': actual = effectState?.filter; observedStrategies.filter = 'extension-css'; break;
+					case 'dimEnabled': actual = effectState?.dimEnabled; observedStrategies.dimEnabled = 'extension-overlay'; break;
+					case 'dimOpacity': actual = effectState?.dimOpacity; observedStrategies.dimOpacity = 'extension-overlay'; break;
 				}
 				if (actual !== undefined) (patch as Record<string, unknown>)[field] = actual;
 			}
@@ -1649,7 +1655,7 @@ export class NativeMediaExecutor {
 			&& consumeOwnedSeek(element, element.currentTime);
 		const observed = this.observed.get(mediaId) ?? {};
 		const patch: ControlPatch = {};
-		const observedStrategies: ControlNativeObservationStrategies = {};
+		const observedStrategies: ControlObservationStrategies = {};
 		for (const [rawField, actual] of Object.entries(candidates)) {
 			const field = rawField as ControlField;
 			const write = pending?.get(field);
@@ -1673,9 +1679,9 @@ export class NativeMediaExecutor {
 			if (nativeValuesMatch(observed[field], actual, field === 'currentTime' ? 0.05 : 0.01)) continue;
 			this.observe(mediaId, field, actual as ControlValues[ControlField]);
 			(patch as Record<string, unknown>)[field] = actual;
-			const strategy = candidateStrategies[field as keyof ControlNativeObservationStrategies];
+			const strategy = candidateStrategies[field as keyof ControlObservationStrategies];
 			if (!strategy) throw new Error(`Native observation strategy is missing for ${field}`);
-			observedStrategies[field as keyof ControlNativeObservationStrategies] = strategy;
+			observedStrategies[field as keyof ControlObservationStrategies] = strategy;
 		}
 		if (event === 'volumechange' && Object.keys(patch).length > 0) {
 			// Page volume and page mute are one semantic transaction even when only

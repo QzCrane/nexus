@@ -1984,7 +1984,9 @@ function checkRetiredPaths(root) {
 		|| !audioResetTargetPatch.includes('mediaMuted: false')
 		|| !audioResetTargetPatch.includes('speed: 1')
 		|| audioResetTargetPatch.includes('preservePitch')
-		|| !coordinator.includes('nativeObservationFields(targetActual, baseline.revision)')
+		// The baseline the reset stages must come from the pre-reset native read
+		// (patch plus its strategy provenance), never from the reset patch itself.
+		|| !coordinator.includes('nativeObservationFields(targetCapture.observation, baseline.revision)')
 		|| !coordinatorTest.includes("not.toHaveProperty('preservePitch')")) {
 		error('SCTRL-002/SCTRL-003: audio reset must restore native volume, mute and speed while preserving pitch policy');
 	}

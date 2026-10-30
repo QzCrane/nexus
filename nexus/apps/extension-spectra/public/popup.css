@@ -56,9 +56,20 @@
 html {
   width: 390px; /* default width */
   height: auto;
-  overflow-y: scroll;
+  overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth; /* smooth scrolling */
+  /* The Action Popup window tracks the document height, so every late-resolving
+   * fact (inventory, per-card snapshots) would resize it in one visible step.
+   * Height is animated instead: the Popup measures its content and retargets
+   * this transition, so the window grows into place rather than snapping. */
+  transition: height 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    transition: none;
+  }
 }
 
 /* Side panel expanded: width increases immediately, no min-height constraint */

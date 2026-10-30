@@ -8,7 +8,8 @@ import {
 	resolveAudioVolumeState,
 } from '@nexus/contracts';
 import { COLORS } from '../src/popup/constants';
-import { actualVolumeColor } from '../src/popup/card/render';
+import { actualVolumeColor, createRenderFn } from '../src/popup/card/render';
+import { createVolumeView } from '../src/popup/card/volume-view';
 import { mergeAudioConfig } from '../src/popup/card/types';
 
 describe('Popup single effective-volume control', () => {
@@ -16,7 +17,7 @@ describe('Popup single effective-volume control', () => {
 		const html = readFileSync(resolve(import.meta.dir, '../public/popup.html'), 'utf8');
 		expect(html.match(/class="vol-slider"/gu)).toHaveLength(1);
 		expect(html).toContain('class="vol-slider"');
-		expect(html).toMatch(/class="vol-slider"[\s\S]*?min="0"[\s\S]*?max="800"/u);
+		expect(html.includes("class=\"vol-slider\"") && html.includes("min=\"0\"") && html.includes("max=\"800\"")).toBe(true);
 		expect(html).not.toContain('boost-slider');
 		expect(html).not.toContain('Audio boost');
 	});
@@ -72,5 +73,52 @@ describe('Popup single effective-volume control', () => {
 			{ ...identity, generation: 8 },
 			identity,
 		)).toBe(true);
+	});
+
+	test('renderCard synchronizes action badge with volume and mute state', () => {
+		const calls: Array<{ type: string; payload: unknown }> = [];
+		(globalThis as unknown as { chrome: unknown }).chrome = {
+			action: {
+				setBadgeText: (payload: unknown) => { calls.push({ type: 'text', payload }); },
+				setBadgeBackgroundColor: (payload: unknown) => { calls.push({ type: 'bg', payload }); },
+				setBadgeTextColor: (payload: unknown) => { calls.push({ type: 'color', payload }); },
+			},
+		};
+
+		const dummyUi = {
+			card: { classList: { toggle: () => {} }, dataset: {}, querySelector: () => null },
+			val: { setAttribute: () => {}, textContent: '', style: {} },
+			mask: { classList: { toggle: () => {} }, setAttribute: () => {}, toggleAttribute: () => {} },
+			mute: { classList: { toggle: () => {} }, setAttribute: () => {}, replaceChildren: () => {}, style: {} },
+			slider: { value: '100', setProperty: () => {}, style: { setProperty: () => {} } },
+			fill: { style: {} },
+			enable: { checked: true },
+		};
+
+		const dummyState = {
+			config: { enabled: true, muted: false, volume: 150, volumeBase: 100, boost: 1.5, eqValues: [] },
+			actualMode: 'capture' as const,
+			phase: 'active' as const,
+			controlSnapshotKnown: true,
+			lifecycleSnapshotKnown: true,
+		};
+
+		const volumeView = createVolumeView(dummyUi as never);
+		const render = createRenderFn({
+			tabId: 42,
+			ui: dummyUi as never,
+			state: dummyState as never,
+			volumeView,
+			getVizEnabled: () => false,
+			getGlobalSettings: () => ({}) as never,
+		});
+
+		(globalThis as unknown as { document: unknown }).document = {
+			createElement: () => ({ className: "", textContent: "", style: {} }),
+		};
+		render();
+
+		expect(calls.some((c) => c.type === 'text' && (c.payload as { text: string; tabId: number }).text === '150' && (c.payload as { tabId: number }).tabId === 42)).toBe(true);
+		expect(calls.some((c) => c.type === 'bg' && (c.payload as { tabId: number }).tabId === 42)).toBe(true);
 	});
 });

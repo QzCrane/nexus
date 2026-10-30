@@ -23,6 +23,9 @@ export interface CardInternalState {
   stableConfig: AudioConfig;
   controlSnapshot: ControlSnapshot | null;
   controlSnapshotKnown?: boolean;
+  // Set when the bounded snapshot probe gave up: the card has no authoritative
+  // control state, and must say so instead of promising a sync forever.
+  controlSyncExpired?: boolean;
   lifecycleSnapshotKnown?: boolean;
   isCaptureActive: boolean;
   userInteracted: boolean;

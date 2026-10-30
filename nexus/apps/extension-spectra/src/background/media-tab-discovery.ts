@@ -33,7 +33,7 @@ export interface MediaDiscoveryDependencies {
 	probe(tabId: number, generation: number): Promise<MediaProbeResult>;
 	/** Solidified media fact (null when absent) - a current fact skips probing. */
 	readFact(tabId: number): MediaFact | null;
-	/** found is durable until invalidated; no-media is only current within its TTL. */
+	/** found is durable for its own document; no-media is only current within its TTL. */
 	isFactCurrent(fact: MediaFact, now?: number): boolean;
 	/** Solidify a fact only on probe settle to found/no-media; never for transient results. */
 	rememberFact(tabId: number, documentId: string | null, outcome: 'found' | 'no-media', source: 'report' | 'probe'): void;
@@ -70,9 +70,19 @@ function probeable(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: number 
 }
 // Discarded tabs are unloaded: their renderer is suspended, so they cannot host
 // active media, and probing them would force Chrome to wake (reload) the page.
-// They are excluded from probing, the visible set, and coverage entirely.
+// A tab that is still committing a document is in the same position for a
+// different reason: the media it will host does not exist yet, and whatever the
+// previous document reported belongs to a page that is already gone. Both are
+// excluded from probing, the visible set, and coverage entirely, so neither can
+// appear as a card the user cannot act on.
+//
+// `audible` is the one exception, because it is Chrome's own statement that
+// sound is coming out of the tab right now: a page that keeps a request open
+// past its load event still belongs in the list, a page that has not committed
+// yet never does.
 function probeableNow(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: number } {
-	return probeable(tab) && tab.discarded !== true;
+	const documentSettled = tab.status === 'complete' || tab.audible === true;
+	return probeable(tab) && tab.discarded !== true && documentSettled;
 }
 function increment(value: number): number { return Math.min(Number.MAX_SAFE_INTEGER, value + 1); }
 
@@ -145,13 +155,13 @@ export function createMediaTabDiscovery(
 				// A solidified fact skips probing: found counts as visible and
 				// no-media counts as examined. The probe result is persisted once
 				// and reused by every later scan (never re-decided per scan).
+				const generation = dependencies.documentGeneration(tab.id);
 				const fact = dependencies.readFact(tab.id);
 				if (fact && dependencies.isFactCurrent(fact)) {
 					if (fact.outcome === 'found') visible.add(tab.id);
 					coverage.examined++;
 					continue;
 				}
-				const generation = dependencies.documentGeneration(tab.id);
 				const key = `${tab.id}:${generation}`;
 				if (probes.getPending(key)) { coverage.pending++; continue; }
 				// A tab that just failed (denied/stale/unknown/timeout) is projected

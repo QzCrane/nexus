@@ -328,7 +328,11 @@ export async function sendBackgroundTabRequestOnce<T extends SpectraRequestType>
 			if (response === undefined) {
 				explanation = 'no listener responded (undefined)';
 			} else if (isRpcFailureResult(response)) {
-				explanation = `failure result: ${response.error?.code ?? 'unknown'}: ${response.error?.message ?? ''}`;
+				// `error` is `unknown` on the envelope by design: the contract never
+				// promises a shaped error until the guard says so.
+				explanation = isRpcError(response.error)
+					? `failure result: ${response.error.code}: ${response.error.message}`
+					: `failure result: ${JSON.stringify(response.error).slice(0, 100)}`;
 			} else if (!isRpcSuccessResult(response)) {
 				explanation = `raw response without RPC envelope: ${JSON.stringify(response).slice(0, 100)}`;
 			} else if (type.startsWith('spectra.control.')) {

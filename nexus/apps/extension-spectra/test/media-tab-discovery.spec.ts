@@ -9,6 +9,9 @@ function deferred<T>() {
 const tabs = Array.from({ length: 8 }, (_, index) => ({
 	id: index + 1,
 	url: `https://media.example/${index}`,
+	status: 'complete',
+	discarded: false,
+	audible: false,
 })) as chrome.tabs.Tab[];
 const policy = { concurrency: 2, probeTimeoutMs: 10, scanTimeoutMs: 100 };
 const flush = async () => { for (let i = 0; i < 8; i++) await Promise.resolve(); };

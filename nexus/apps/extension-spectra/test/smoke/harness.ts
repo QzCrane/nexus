@@ -1230,9 +1230,18 @@ export async function readPopupVolumePresentation(expectedAccent?: string): Prom
 						type,
 						payload,
 					});
+					const card = slider.closest<HTMLElement>('.glass-card');
 					return {
 						accent: getComputedStyle(slider)
 							.getPropertyValue('--slider-accent').trim(),
+						card: card ? {
+							controlCoverage: card.dataset.controlCoverage ?? null,
+							lifecycleCoverage: card.dataset.lifecycleCoverage ?? null,
+							syncStatus: card.querySelector('.control-sync-status')?.textContent ?? null,
+							syncHidden: (card.querySelector('.control-sync-status') as HTMLElement | null)?.hidden ?? null,
+							volume: card.querySelector('.vol-number')?.textContent ?? null,
+							tabId: card.dataset.tabId ?? null,
+						} : null,
 						session: tab?.id ? await request('spectra.audio.session.get', { tabId: tab.id }) : null,
 						control: tab?.id ? await request('spectra.control.snapshot.get', { tabId: tab.id }) : null,
 					};

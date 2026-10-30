@@ -877,6 +877,12 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				document.querySelector('.view-container')?.classList.contains('settings-view-active') === false
 				&& document.querySelector('#view-main')?.hasAttribute('hidden') === false
 				&& window.innerHeight < 600
+				// The window follows a height transition, so "back in main" is only
+				// settled once the frame has caught up with the content it shows.
+				&& Math.abs(
+					window.innerHeight
+					- (document.querySelector('.view-container')?.getBoundingClientRect().height ?? 0),
+				) <= 1
 			));
 			const restoredMain = await readPopupGeometry();
 			expect(restoredMain.inlineMinHeight).toBe('');

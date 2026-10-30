@@ -48,6 +48,7 @@ export const JA_JP: I18NDict = {
 	btnShortcutsTooltip: 'グローバルショートカット (Chrome)',
 	effectsLabel: 'エフェクト',
 	controlSyncing: '現在のコントロールを同期中…',
+	controlSyncUnavailable: 'コントロール状態を取得できません',
 	spAudio: '🔊 オーディオ',
 	spPan: 'パン',
 	spDelay: '遅延',

@@ -9,6 +9,7 @@ import {
 import {
 	CONTROL_VALUE_LIMITS,
 	compileEffectiveVolume,
+	isAudioVolumeProjection,
 	isFiniteControlValue,
 } from './control-value-limits.js';
 export { compileEffectiveVolume, splitEffectiveVolume } from './control-value-limits.js';
@@ -225,10 +226,30 @@ export type ControlField = keyof ControlValues;
 // "unsupported" ACK for an algorithm that has a different authoritative
 // entry point.
 export type ControlDirectField = Exclude<ControlField, 'abLoop' | 'visualizer'>;
-export type ControlNativeObservationStrategy = Extract<ControlStrategy, 'page-native' | 'dom-native'>;
-export type ControlNativeObservationStrategies = Partial<
-	Record<ControlDirectField, ControlNativeObservationStrategy>
+// A field's observed value must name the writer that produced it. Every
+// strategy that owns a writer can report the value it wrote; `observe` and
+// `capture-observe` never write, and `unsupported` never executes, so none of
+// them can be the provenance of a value that was read back. The list is derived
+// from the wire enum rather than restated, because a second copy is exactly how
+// this contract fell behind the executors that report `extension-css`,
+// `extension-overlay` and `chrome-native`.
+export type ControlObservationStrategy =
+	Exclude<ControlStrategy, 'observe' | 'capture-observe' | 'unsupported'>;
+export const CONTROL_OBSERVATION_STRATEGIES: readonly ControlObservationStrategy[] =
+	/* @__PURE__ */ CONTROL_STRATEGIES.filter(
+		(strategy): strategy is ControlObservationStrategy =>
+			strategy !== 'observe' && strategy !== 'capture-observe' && strategy !== 'unsupported',
+	);
+export type ControlObservationStrategies = Partial<
+	Record<ControlDirectField, ControlObservationStrategy>
 >;
+// Which strategy a capability admits is still decided by the capability matrix,
+// never by this list: reporting `extension-css` for a field that cannot be
+// styled stays rejected.
+const controlObservationStrategies: ReadonlySet<string> = new Set(CONTROL_OBSERVATION_STRATEGIES);
+export function isControlObservationStrategy(value: unknown): value is ControlObservationStrategy {
+	return typeof value === 'string' && controlObservationStrategies.has(value);
+}
 export type ControlPatch = Partial<Pick<ControlValues, ControlDirectField>>;
 
 // The always-on bootstrap has no MediaRegistry identity. It may therefore
@@ -875,7 +896,7 @@ export interface ControlSubmitRequest {
 	// Required only for source=page. Every observed patch field carries the
 	// exact native getter/writer boundary that produced it; other sources must
 	// not claim observation provenance.
-	observedStrategies?: ControlNativeObservationStrategies;
+	observedStrategies?: ControlObservationStrategies;
 }
 
 export interface ControlMarker {
@@ -1037,7 +1058,7 @@ export interface ControlReadResult {
 	// Native semantic fields may be read through a complete page controller or
 	// the standard DOM getter. Keep that provenance with the value instead of
 	// reconstructing it in Background.
-	observedStrategies: ControlNativeObservationStrategies;
+	observedStrategies: ControlObservationStrategies;
 }
 
 const strategySet: ReadonlySet<string> = new Set(CONTROL_STRATEGIES);
@@ -1051,7 +1072,6 @@ const controlSessionFields: ReadonlySet<string> = new Set(CONTROL_SESSION_FIELDS
 const numericMutationFields: ReadonlySet<ControlField> = new Set([
 	'volumeBase', 'boost', 'speed', 'currentTime', 'rotation', 'dimOpacity', 'pan', 'delay',
 ]);
-const nativeObservationStrategies: ReadonlySet<string> = new Set(['page-native', 'dom-native']);
 const pageNativeObservationFields: readonly ControlDirectField[] = [
 	'volumeBase', 'mediaMuted', 'speed',
 ];
@@ -1153,9 +1173,6 @@ const actualContextKeys = keySetOf<ControlActualContext>()([
 	'volumeBase', 'mediaMuted', 'speed', 'preservePitch',
 ]);
 const abLoopKeys = keySetOf<ABLoopState>()(['pointA', 'pointB', 'enabled']);
-const audioVolumeKeys = keySetOf<ControlAudioVolumeProjection>()([
-	'effectiveVolume', 'volumeState',
-]);
 const operationSet: ReadonlySet<string> = new Set(CONTROL_OPERATIONS);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -1176,17 +1193,6 @@ function isFiniteInRange(value: unknown, minimum: number, maximum: number): valu
 
 function isBoundedString(value: unknown, maximum: number): value is string {
 	return typeof value === 'string' && value.length > 0 && value.length <= maximum;
-}
-
-function isControlAudioVolumeProjection(
-	value: unknown,
-): value is ControlAudioVolumeProjection {
-	return isRecord(value)
-		&& hasOnlyKeys(value, audioVolumeKeys)
-		&& isFiniteControlValue(value.effectiveVolume, 'volume')
-		&& (value.volumeState === 'silent'
-			|| value.volumeState === 'native'
-			|| value.volumeState === 'capture');
 }
 
 function isCanonicalOrigin(value: unknown): value is string {
@@ -1460,11 +1466,11 @@ function isNonDefaultFilter(filter: VideoFilterState | undefined): boolean {
 		|| filter.invert === true;
 }
 
-function isControlNativeObservationStrategies(
+function isControlObservationProvenance(
 	value: unknown,
 	patch: ControlPatch,
 	requireExactPatchKeys: boolean,
-): value is ControlNativeObservationStrategies {
+): value is ControlObservationStrategies {
 	if (!isRecord(value) || !hasOnlyKeys(value, controlDirectFields)) return false;
 	const patchKeys = Object.keys(patch);
 	const strategyKeys = Object.keys(value);
@@ -1475,10 +1481,10 @@ function isControlNativeObservationStrategies(
 	return Object.entries(value).every(([rawField, rawStrategy]) => {
 		if (!Object.hasOwn(patch, rawField)
 			|| typeof rawStrategy !== 'string'
-			|| !nativeObservationStrategies.has(rawStrategy)) return false;
+			|| !controlObservationStrategies.has(rawStrategy)) return false;
 		return isControlStrategyAdmittedForCapability(
 			rawField as ControlDirectField,
-			rawStrategy as ControlNativeObservationStrategy,
+			rawStrategy as ControlObservationStrategy,
 		);
 	});
 }
@@ -1571,7 +1577,7 @@ export function isControlSubmitRequest(value: unknown): value is ControlSubmitRe
 			&& !hasMutations
 			&& isControlPatch(value.patch)
 			&& (value.target !== null || isBootstrapNativeObservationPatch(value.patch))
-			&& isControlNativeObservationStrategies(value.observedStrategies, value.patch, true)
+			&& isControlObservationProvenance(value.observedStrategies, value.patch, true)
 		: value.observedStrategies === undefined;
 	return observationShapeIsValid
 		&& (value.tabId === undefined || (Number.isInteger(value.tabId) && Number(value.tabId) > 0))
@@ -1647,7 +1653,7 @@ export function isControlOperationAck(value: unknown): value is ControlOperation
 		&& coverageSet.has(value.coverage)
 		&& isControlFieldStates(value.fields)
 		&& (value.audioVolume === undefined
-			|| isControlAudioVolumeProjection(value.audioVolume))
+			|| isAudioVolumeProjection(value.audioVolume))
 		&& isOperationResult(value.operation as ControlOperation, value.result);
 }
 
@@ -1697,7 +1703,7 @@ export function isControlApplyAck(value: unknown): value is ControlApplyAck {
 		&& (value.target === null || isMediaTarget(value.target))
 		&& isControlFieldStates(value.fields)
 		&& (value.audioVolume === undefined
-			|| isControlAudioVolumeProjection(value.audioVolume));
+			|| isAudioVolumeProjection(value.audioVolume));
 }
 
 /**
@@ -1729,7 +1735,7 @@ export function explainControlApplyAck(value: unknown): string | null {
 			return `fields.${field} violates its field-state contract`;
 		}
 	}
-	if (value.audioVolume !== undefined && !isControlAudioVolumeProjection(value.audioVolume)) {
+	if (value.audioVolume !== undefined && !isAudioVolumeProjection(value.audioVolume)) {
 		return 'audioVolume is invalid';
 	}
 	return isControlApplyAck(value) ? null : 'payload does not satisfy the apply-ack contract';
@@ -1753,7 +1759,10 @@ export function isControlReadResult(value: unknown): value is ControlReadResult 
 	if (!hasOnlyKeys(value, readResultKeys)
 		|| (value.target !== null && !isMediaTarget(value.target))
 		|| !isControlPatch(patch)
-		|| !isControlNativeObservationStrategies(observedStrategies, patch, false)) {
+		// A read result is an observation: every value it carries must name the
+		// writer that produced it. Accepting a partial answer here is what let a
+		// reader hand Background a value nobody could attribute.
+		|| !isControlObservationProvenance(observedStrategies, patch, true)) {
 		return false;
 	}
 	return pageNativeObservationFields.every((field) => (

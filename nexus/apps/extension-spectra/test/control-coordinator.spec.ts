@@ -321,17 +321,30 @@ function actualReadAck(payload: ControlReadRequest, target: ControlApplyAck['tar
 		visualizer: false,
 		...overrides,
 	};
+	// A real content host reports a value only for the fields it could observe,
+	// and always names the writer that produced it. The fake answers the same
+	// way, so a partial answer can never look like a legitimate read result.
+	// Native fields come from the page; processor fields come from the audio
+	// runtime, which reports its own writer.
+	const pageFields = new Set<ControlField>([
+		'volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing',
+		'currentTime', 'loop', 'pip', 'fullscreen',
+	]);
+	const runtimeFields = new Set<ControlField>([
+		'audioEnabled', 'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay',
+	]);
+	const observable = payload.fields.filter((field) => pageFields.has(field) || runtimeFields.has(field));
 	return {
 		ok: true,
 		data: {
 			target,
-			patch: Object.fromEntries(payload.fields.map((field) => [field, defaults[field]])),
-			observedStrategies: Object.fromEntries(payload.fields
-				.filter((field) => new Set<ControlField>([
-					'volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing',
-					'currentTime', 'loop', 'pip', 'fullscreen',
-				]).has(field))
-				.map((field) => [field, 'dom-native'])),
+			patch: Object.fromEntries(observable.map((field) => [field, defaults[field]])),
+			observedStrategies: Object.fromEntries(observable.map((field) => [
+				field,
+				field === 'audioEnabled' ? 'extension-state'
+					: runtimeFields.has(field) ? 'media-webaudio'
+					: 'dom-native',
+			])),
 		},
 	};
 }

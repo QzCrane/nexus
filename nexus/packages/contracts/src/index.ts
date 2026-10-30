@@ -161,8 +161,8 @@ export type {
 	ControlValues,
 	ControlField,
 	ControlDirectField,
-	ControlNativeObservationStrategy,
-	ControlNativeObservationStrategies,
+	ControlObservationStrategy,
+	ControlObservationStrategies,
 	ControlOperation,
 	ControlMarker,
 	ControlScreenshotResult,
@@ -202,6 +202,7 @@ export type {
 } from './control.contracts.js';
 export {
 	CONTROL_STRATEGIES,
+	CONTROL_OBSERVATION_STRATEGIES,
 	CONTROL_STRATEGY_RULES,
 	CONTROL_RETRYABLE_STRATEGY_FAILURES,
 	CONTROL_TERMINAL_STRATEGY_FAILURES,
@@ -226,6 +227,7 @@ export {
 	resolveAcknowledgedAudioVolumeState,
 	resolveControlAudioVolume,
 	classifyControlStrategy,
+	isControlObservationStrategy,
 	isControlStrategyAdmittedForCapability,
 	isControlStrategyFailure,
 	shouldTryNextControlStrategy,

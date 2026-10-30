@@ -3,7 +3,6 @@
 import type {
 	ABLoopState,
 	ControlApplyAck,
-	ControlAudioVolumeProjection,
 	ControlError,
 	ControlField,
 	ControlFieldState,
@@ -20,7 +19,7 @@ import type {
 } from './control.contracts.js';
 import { keySetOf } from './key-set.js';
 import type { AudioSessionPhase, SpectraAudioMode } from './audio.contracts.js';
-import { isFiniteControlValue } from './control-value-limits.js';
+import { isAudioVolumeProjection, isFiniteControlValue } from './control-value-limits.js';
 
 const STRATEGIES = new Set<ControlStrategy>([
 	'observe', 'capture-observe', 'page-native', 'dom-native', 'chrome-native', 'extension-state',
@@ -99,7 +98,6 @@ const OPERATIONS = new Set<ControlOperation>(Object.keys(OPERATION_STRATEGIES) a
 // fixed key sets outside the validators so polling and rapid input do not
 // allocate a new Set for every field and operation result.
 const WRITE_STATES = new Set<ControlWriteState>(['written', 'confirmed', 'drifted', 'unconfirmed']);
-const AUDIO_VOLUME_PROJECTION_KEYS = keySetOf<ControlAudioVolumeProjection>()(['effectiveVolume', 'volumeState']);
 const CONTROL_ERROR_KEYS = keySetOf<ControlError>()(['code', 'message', 'retryable']);
 const MEDIA_TARGET_KEYS = keySetOf<MediaTarget>()(['frameId', 'documentId', 'mediaId', 'sourceRevision', 'kind']);
 const FILTER_KEYS = keySetOf<VideoFilterState>()(['brightness', 'contrast', 'saturate', 'grayscale', 'invert']);
@@ -216,15 +214,6 @@ function isInteger(value: unknown, positive = false): value is number {
 
 function isFiniteInRange(value: unknown, minimum: number, maximum: number): value is number {
 	return typeof value === 'number' && Number.isFinite(value) && value >= minimum && value <= maximum;
-}
-
-function isAudioVolumeProjection(value: unknown): boolean {
-	return isRecord(value)
-		&& hasOnly(value, AUDIO_VOLUME_PROJECTION_KEYS)
-		&& isFiniteControlValue(value.effectiveVolume, 'volume')
-		&& (value.volumeState === 'silent'
-			|| value.volumeState === 'native'
-			|| value.volumeState === 'capture');
 }
 
 function isBoundedString(value: unknown, maximum: number): value is string {

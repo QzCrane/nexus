@@ -14,6 +14,7 @@ import { submitControlIntent } from './intent-recovery';
 import { mergeAudioConfig, mergeControlFields } from './types';
 import { showPopupToast } from '../toast';
 import { isReportedControlFailure } from './control-port';
+import { actualVolumeColor, writeCardBadge } from './render';
 import type { VolumeView } from './volume-view';
 
 export interface EventsParams {
@@ -130,7 +131,17 @@ export function bindCardEvents(params: EventsParams): void {
     // paths agree and there is nothing to flicker. Mute is the one exception —
     // the renderer owns the MUTE label, so painting a number over it would
     // visibly blink once per frame.
-    if (!state.config.muted) volumeView.paintPointer(value);
+    if (!state.config.muted) {
+      const liveColor = actualVolumeColor(false, value, state.actualMode, state.phase);
+      volumeView.paintPointer(value, liveColor);
+      ui.slider.style.setProperty('--slider-accent', liveColor);
+      writeCardBadge(tabId, {
+        enabled: state.config.enabled,
+        muted: false,
+        volume: value,
+        color: liveColor,
+      });
+    }
   };
 
   // note: manage dragging state across various input modalities to prevent "flicker" during external UI sync

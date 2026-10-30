@@ -8,18 +8,21 @@ import type { AudioSessionPhase, SpectraAudioMode } from '@nexus/contracts';
 import { resolveAudioVolume, resolveAudioVolumeState } from '@nexus/contracts';
 import { renderPlaybackButton } from './media-events';
 import type { VolumeView } from './volume-view';
+import type { I18NDict } from '../types';
 
 export interface RenderParams {
+  tabId?: number;
   ui: CardUIElements;
   state: CardInternalState;
   volumeView: VolumeView;
   getVizEnabled: () => boolean;
   getGlobalSettings: () => GlobalSettings;
+  getDictionary: () => I18NDict;
 }
 
 // post: returns a sync-render function that updates HTML elements, CSS variables, and canvas overlays based on current state
 export function createRenderFn(params: RenderParams): () => void {
-  const { ui, state, volumeView, getVizEnabled } = params;
+  const { ui, state, volumeView, getVizEnabled, getDictionary } = params;
   // A volume drag repaints at input rate (often >60Hz) but never changes which
   // icon glyph category applies. Rebuilding the mute emoji's DOM on every step
   // cost main-thread time between frames and read as the bar lagging the
@@ -33,6 +36,7 @@ export function createRenderFn(params: RenderParams): () => void {
     const volumePresentation = resolveVolumePresentation(state);
     const disabled = !config.enabled;
 		const controlUnknown = state.controlSnapshotKnown === false;
+		const controlUnavailable = controlUnknown && state.controlSyncExpired === true;
     const muted = state.pendingVolumePresentation?.muted ?? config.muted;
 
     ui.card.classList.toggle('disabled', disabled);
@@ -40,7 +44,16 @@ export function createRenderFn(params: RenderParams): () => void {
 		ui.card.dataset.controlCoverage = controlUnknown ? 'unknown' : 'known';
 		ui.card.dataset.lifecycleCoverage = state.lifecycleSnapshotKnown === false ? 'unknown' : 'known';
 		const syncStatus = ui.card.querySelector<HTMLElement>('.control-sync-status');
-		if (syncStatus) syncStatus.hidden = !controlUnknown;
+		if (syncStatus) {
+			// Two states, one line: still asking, or answered with nothing. The key
+			// travels with the text so a language switch keeps whichever one applies.
+			const key = controlUnavailable ? 'controlSyncUnavailable' : 'controlSyncing';
+			syncStatus.hidden = !controlUnknown;
+			if (syncStatus.dataset.i18n !== key) {
+				syncStatus.dataset.i18n = key;
+				syncStatus.textContent = getDictionary()[key];
+			}
+		}
 		ui.val.setAttribute('aria-busy', String(controlUnknown));
 
     ui.mask.classList.toggle('hidden', !disabled);
@@ -76,6 +89,13 @@ export function createRenderFn(params: RenderParams): () => void {
     ui.slider.style.setProperty('--slider-accent', fillColor);
 
     const displayedVolume = volumePresentation.effectiveVolume;
+
+    writeCardBadge(params.tabId, {
+      enabled: config.enabled,
+      muted,
+      volume: displayedVolume,
+      color: fillColor,
+    });
     const iconKey = muted
       ? 'muted'
       : displayedVolume <= 0 ? 'zero' : displayedVolume > 100 ? 'boost' : 'normal';
@@ -128,6 +148,25 @@ function renderVolumeIcon(
   muteBtn.replaceChildren(iconSpan);
 }
 
+// The Action badge is one projection with one rule. Both the frame-coalesced
+// render and the synchronous pointer path call this, so a drag cannot paint a
+// different badge than the renderer would, and no second copy of the rule can
+// drift from the first.
+export function writeCardBadge(
+  tabId: number | undefined,
+  state: { enabled: boolean; muted: boolean; volume: number; color: string },
+): void {
+  if (tabId === undefined || typeof chrome === 'undefined' || !chrome.action?.setBadgeText) return;
+  const isMuted = state.muted || state.volume <= 0;
+  // A disabled card still reports its number: the switch, not the volume, is the
+  // reason nothing is applied. Only an enabled card says "muted".
+  const text = state.enabled && isMuted ? 'M' : state.volume.toString();
+  const badgeBg = !state.enabled ? COLORS.DISABLED : isMuted ? COLORS.MUTED : state.color;
+  void chrome.action.setBadgeText({ tabId, text });
+  void chrome.action.setBadgeBackgroundColor({ tabId, color: badgeBg });
+  void chrome.action.setBadgeTextColor({ tabId, color: COLORS.WHITE });
+}
+
 export function resolveVolumePresentation(
   state: CardInternalState,
 ): { effectiveVolume: number; color: string } {
@@ -161,7 +200,7 @@ export function actualVolumeColor(
   actualMode: SpectraAudioMode | null,
   phase: AudioSessionPhase,
 ): string {
+  if (muted || volume <= 0) return COLORS.MUTED;
   const state = resolveAudioVolumeState({ muted, volume, actualMode, phase });
-  if (state === 'silent') return COLORS.MUTED;
   return state === 'capture' ? COLORS.CAPTURE : popupPrimaryColor();
 }

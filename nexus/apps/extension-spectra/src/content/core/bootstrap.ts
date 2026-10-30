@@ -72,7 +72,7 @@ if (!getContentBootstrapState()) {
 	}>();
 	type BootstrapNativeObservation = {
 		patch: import('@nexus/contracts').ControlPatch;
-		observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies;
+		observedStrategies: import('@nexus/contracts').ControlObservationStrategies;
 	};
 	let pendingObservation: BootstrapNativeObservation | null = null;
 	let lastReportedMediaPresence: boolean | null = null;
@@ -231,7 +231,7 @@ if (!getContentBootstrapState()) {
 			?? media[0];
 		if (!element) return null;
 		const patch: import('@nexus/contracts').ControlPatch = {};
-		const observedStrategies: import('@nexus/contracts').ControlNativeObservationStrategies = {};
+		const observedStrategies: import('@nexus/contracts').ControlObservationStrategies = {};
 		for (const field of request.fields) {
 			let actual: unknown;
 			switch (field) {

@@ -1,5 +1,7 @@
 // goal: one executable owner for finite numeric control-value boundaries
 
+import { keySetOf } from './key-set.js';
+
 export interface ControlValueLimit {
 	readonly min: number;
 	readonly max: number;
@@ -60,4 +62,26 @@ export function splitEffectiveVolume(volume: number): { volumeBase: number; boos
 			volumeBase: CONTROL_VALUE_LIMITS.volumeBase.max,
 			boost: normalized / CONTROL_VALUE_LIMITS.volumeBase.max,
 		};
+}
+
+// The ACK projection of an audio volume is one shape, read by the canonical
+// surface and by both narrow runtime entries (Content and UI). It is defined
+// here, below all three, so a surface can no longer validate a shape the others
+// do not: `audioVolume` is either exactly this projection or it is rejected.
+export interface AudioVolumeProjectionShape {
+	readonly effectiveVolume: number;
+	readonly volumeState: 'silent' | 'native' | 'capture';
+}
+
+const audioVolumeProjectionKeys: ReadonlySet<string> =
+	keySetOf<AudioVolumeProjectionShape>()(['effectiveVolume', 'volumeState']);
+
+export function isAudioVolumeProjection(value: unknown): value is AudioVolumeProjectionShape {
+	if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+	const record = value as Record<string, unknown>;
+	if (!Object.keys(record).every((key) => audioVolumeProjectionKeys.has(key))) return false;
+	return isFiniteControlValue(record.effectiveVolume, 'volume')
+		&& (record.volumeState === 'silent'
+			|| record.volumeState === 'native'
+			|| record.volumeState === 'capture');
 }

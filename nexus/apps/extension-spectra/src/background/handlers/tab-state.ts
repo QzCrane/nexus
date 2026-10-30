@@ -109,6 +109,12 @@ async function hasNativeMedia(tabId: number, generation: number): Promise<MediaP
 	return { outcome: 'unknown', documentId: top.documentId };
 }
 
+// The inventory is a statement about what a tab is doing now, so it is seeded
+// from Chrome's own tab state and from the content document's report - never
+// from how recently the tab happened to make noise. Recency only prunes the
+// audio bookkeeping that other surfaces read; it never puts a tab in the list,
+// because a tab that navigated to a blank page stays "recently audible" for
+// minutes while hosting nothing the user can control.
 function seedVisibleMedia(allTabs: readonly chrome.tabs.Tab[], now: number): Set<number> {
 	const visible = new Set<number>();
 	const liveTabIds = new Set<number>();
@@ -120,10 +126,10 @@ function seedVisibleMedia(allTabs: readonly chrome.tabs.Tab[], now: number): Set
 	}
 	for (const [tabId, state] of tabAudioStates) {
 		if (!liveTabIds.has(tabId)) { tabAudioStates.delete(tabId); continue; }
-		const recentlyAudible = isRecent(state.lastAudibleTime, now);
-		const activatedMedia = isRecent(state.lastActivatedTime, now) && (state.hasMediaElement || recentlyAudible);
-		if (recentlyAudible || activatedMedia) visible.add(tabId);
-		else if (!visible.has(tabId)) tabAudioStates.delete(tabId);
+		if (visible.has(tabId)) continue;
+		if (!isRecent(state.lastAudibleTime, now) && !isRecent(state.lastActivatedTime, now)) {
+			tabAudioStates.delete(tabId);
+		}
 	}
 	return visible;
 }

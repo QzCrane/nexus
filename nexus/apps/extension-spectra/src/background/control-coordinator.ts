@@ -9,6 +9,7 @@ import {
 	createSpectraEvent,
 	isActiveCaptureLifecycle,
 	isControlApplyAck,
+	isControlObservationStrategy,
 	isControlOperationAck,
 	isControlSnapshot,
 	normalizeHostname,
@@ -30,8 +31,10 @@ import {
 	type ControlOperationAck,
 	type ControlOperationIntent,
 	type ControlOperationRequest,
+	type ControlObservationStrategies,
 	type ControlOperationResult,
 	type ControlPatch,
+	type ControlReadResult,
 	type ControlSessionPatch,
 	type ControlSnapshot,
 	type ControlStrategy,
@@ -433,14 +436,12 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 	const fields = {
 		...base.fields,
 		...(mediaResponse?.ok ? nativeObservationFields(
-			mediaResponse.data.patch,
+			mediaResponse.data,
 			base.revision,
-			mediaResponse.data.observedStrategies,
 		) : {}),
 		...(videoResponse?.ok ? nativeObservationFields(
-			videoResponse.data.patch,
+			videoResponse.data,
 			base.revision,
-			videoResponse.data.observedStrategies,
 		) : {}),
 	};
 	const activeMedia = mediaResponse?.ok
@@ -1027,13 +1028,27 @@ async function executeIntent(
 	};
 }
 
+interface ControlActualCapture {
+	patch: ControlPatch;
+	// The same values restricted to the fields whose writer is known, so a
+	// consumer that needs an observation cannot accidentally claim provenance
+	// for a value nobody attributed.
+	observation: Pick<ControlReadResult, 'patch' | 'observedStrategies'>;
+}
+
 async function captureActualPatch(
 	snapshot: ControlSnapshot,
 	target: ControlSnapshot['activeMedia'],
 	fields: readonly ControlDirectField[],
 	controlledOnly = false,
-): Promise<ControlPatch> {
+): Promise<ControlActualCapture> {
 	const patch = snapshotActualPatch(snapshot, fields, controlledOnly);
+	const observedStrategies: ControlObservationStrategies = {};
+	// A value carried over from the snapshot keeps the strategy it settled with.
+	for (const field of Object.keys(patch) as ControlDirectField[]) {
+		const strategy = snapshot.fields[field]?.strategy;
+		if (isControlObservationStrategy(strategy)) observedStrategies[field] = strategy;
+	}
 	const response = await sendSpectraTabRequest(
 		snapshot.tabId,
 		PROTO_ACTUAL_READ,
@@ -1045,9 +1060,21 @@ async function captureActualPatch(
 			const field = rawField as ControlField;
 			if (controlledOnly && !snapshot.fields[field]?.controlled) continue;
 			(patch as Record<string, unknown>)[field] = value;
+			const strategy = response.data.observedStrategies[field as ControlDirectField];
+			if (isControlObservationStrategy(strategy)) observedStrategies[field as ControlDirectField] = strategy;
+			else delete observedStrategies[field as ControlDirectField];
 		}
 	}
-	return patch;
+	const observationPatch: ControlPatch = {};
+	const observationStrategies: ControlObservationStrategies = {};
+	for (const [rawField, strategy] of Object.entries(observedStrategies)) {
+		const field = rawField as ControlDirectField;
+		const value = (patch as Record<string, unknown>)[field];
+		if (value === undefined) continue;
+		(observationPatch as Record<string, unknown>)[field] = value;
+		observationStrategies[field] = strategy;
+	}
+	return { patch, observation: { patch: observationPatch, observedStrategies: observationStrategies } };
 }
 
 interface CompensationResult {
@@ -1277,9 +1304,8 @@ async function handleTargetChanged(
 			: `${response.error.code}: ${response.error.message}`);
 	}
 	const fields = nativeObservationFields(
-		response.data.patch,
+		response.data,
 		baseline.revision + 1,
-		response.data.observedStrategies,
 	);
 	await commitControlFields(
 		baseline,
@@ -1512,9 +1538,8 @@ async function executeFieldOperation(
 		}
 		const observedFields: ControlFieldStates = readback?.ok
 			? nativeObservationFields(
-				nativeReadbackPatch,
+				{ patch: nativeReadbackPatch, observedStrategies: readback.data.observedStrategies },
 				baseline.revision + 1,
-				readback.data.observedStrategies,
 			)
 			: {};
 		let fields: ControlFieldStates = { ...observedFields };
@@ -1747,7 +1772,7 @@ async function executeFieldOperation(
 			).catch(() => null);
 			if (observed?.ok) target = observed.data.target;
 		}
-		const targetActual = await captureActualPatch(
+		const targetCapture = await captureActualPatch(
 			baseline,
 			target,
 			[
@@ -1755,16 +1780,17 @@ async function executeFieldOperation(
 				'preservePitch',
 			],
 		);
+		const targetActual = targetCapture.patch;
 		const targetRollback: ControlPatch = {};
 		for (const field of Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[]) {
 			const value = targetActual[field];
 			if (value !== undefined) (targetRollback as Record<string, unknown>)[field] = value;
 		}
-		const processorRollback = await captureActualPatch(
+		const processorRollback = (await captureActualPatch(
 			baseline,
 			target,
 			Object.keys(RESET_AUDIO_PROCESSOR_PATCH) as ControlDirectField[],
-		);
+		)).patch;
 		let staged = baseline;
 		let fields: ControlFieldStates = {};
 		try {
@@ -1788,7 +1814,7 @@ async function executeFieldOperation(
 				// Reset explicitly normalizes playback speed. Pitch preservation is
 				// observation-only and is carried into the processor's native context.
 				staged = stageSnapshot(baseline, {
-					...nativeObservationFields(targetActual, baseline.revision),
+					...nativeObservationFields(targetCapture.observation, baseline.revision),
 					...fields,
 				}, targetPrepared.activeMedia ?? target);
 			}
@@ -1927,17 +1953,17 @@ async function executeControlOperation(
 	if (request.operation === 'restore-page-settings') {
 		const baseline = await getOrCreateSnapshot(request.tabId);
 		const target = request.target ?? baseline.activeMedia;
-		const targetRollback = await captureActualPatch(
+		const targetRollback = (await captureActualPatch(
 			baseline,
 			target,
 			RESTORABLE_TARGET_FIELDS,
 			true,
-		);
-		const processorRollback = await captureActualPatch(
+		)).patch;
+		const processorRollback = (await captureActualPatch(
 			baseline,
 			target,
 			RESTORABLE_PROCESSOR_FIELDS,
-		);
+		)).patch;
 		let fields: ControlFieldStates = {};
 		try {
 			const contentRequest = {

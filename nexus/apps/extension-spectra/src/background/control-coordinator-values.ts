@@ -11,10 +11,11 @@ import {
 	type ControlFieldStates,
 	type ControlIntent,
 	type ControlMutation,
-	type ControlNativeObservationStrategies,
+	type ControlObservationStrategies,
 	type ControlOperationIntent,
 	type ControlOperationRequest,
 	type ControlPatch,
+	type ControlReadResult,
 	type ControlSessionPatch,
 	type ControlSnapshot,
 	type ControlSubmitRequest,
@@ -122,20 +123,28 @@ export function sameMediaTarget(
 		&& left.kind === right.kind);
 }
 
+// An observation is a value and the writer that produced it. The two travel
+// together so no caller can synthesise an "actual" value and guess its
+// provenance: `applyPageObservation` already refuses that, and native
+// observations obey the same rule. A field whose strategy is missing is a
+// programming error, not a value that can be attributed to DOM.
 export function nativeObservationFields(
-	patch: ControlPatch,
+	observation: Pick<ControlReadResult, 'patch' | 'observedStrategies'>,
 	revision: number,
-	observedStrategies: ControlNativeObservationStrategies = {},
 ): ControlFieldStates {
 	const fields: ControlFieldStates = {};
-	for (const [rawField, actual] of Object.entries(patch)) {
+	for (const [rawField, actual] of Object.entries(observation.patch)) {
 		const field = rawField as ControlDirectField;
+		const strategy = observation.observedStrategies[field];
+		if (!strategy) {
+			throw new Error(`Native observation is missing strategy provenance for ${field}`);
+		}
 		(fields as Record<string, unknown>)[field] = {
 			desired: actual,
 			actual,
 			revision,
 			phase: 'applied',
-			strategy: observedStrategies[field] ?? 'dom-native',
+			strategy,
 			coverage: 'active-target',
 			controlled: false,
 			lastError: null,
@@ -290,7 +299,7 @@ export function assignFieldState<K extends ControlField>(
 
 export function applyPageObservation(
 	intent: ControlIntent,
-	observedStrategies: ControlNativeObservationStrategies | undefined,
+	observedStrategies: ControlObservationStrategies | undefined,
 ): ControlFieldStates {
 	if (intent.requestedCoverage !== 'active-target') {
 		throw new Error('A page observation cannot claim full-output coverage');

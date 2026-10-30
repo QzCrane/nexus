@@ -96,9 +96,8 @@ describe('control coordinator pure values', () => {
 			lastError: { code: 'readback-mismatch', retryable: true },
 		});
 		const observed = nativeObservationFields(
-			{ volumeBase: 80 },
+			{ patch: { volumeBase: 80 }, observedStrategies: { volumeBase: 'page-native' } },
 			5,
-			{ volumeBase: 'page-native' },
 		);
 		expect(observed.volumeBase).toMatchObject({
 			actual: 80,
@@ -109,7 +108,10 @@ describe('control coordinator pure values', () => {
 	});
 
 	test('projects only acknowledged session fields and preserves source scope', () => {
-		const fields = nativeObservationFields({ volumeBase: 80 }, 5);
+		const fields = nativeObservationFields(
+			{ patch: { volumeBase: 80 }, observedStrategies: { volumeBase: 'dom-native' } },
+			5,
+		);
 		expect(projectControlSessionPatch(fields)).toEqual({ volumeBase: 80 });
 		expect(controlSessionScopeForSource('popup')).toBe('origin');
 		expect(controlSessionScopeForSource('page')).toBe('resource');

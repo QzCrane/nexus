@@ -48,6 +48,7 @@ export const ZH_CN: I18NDict = {
 	btnShortcutsTooltip: '全局快捷键 (Chrome)',
 	effectsLabel: '效果',
 	controlSyncing: '正在同步当前控制状态…',
+	controlSyncUnavailable: '控制状态暂不可用',
 	spAudio: '🔊 音频',
 	spPan: '声道平衡',
 	spDelay: '延迟',

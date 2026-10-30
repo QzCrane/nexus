@@ -48,6 +48,7 @@ export const EN_US: I18NDict = {
   btnShortcutsTooltip: 'Global Shortcuts (Chrome)',
   effectsLabel: 'Effects',
   controlSyncing: 'Syncing current controls…',
+  controlSyncUnavailable: 'Control state unavailable',
   spAudio: '🔊 Audio',
   spPan: 'Pan',
   spDelay: 'Delay',

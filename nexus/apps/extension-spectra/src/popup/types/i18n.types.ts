@@ -46,6 +46,7 @@ export interface I18NDict {
 	btnShortcutsTooltip: string;
 	effectsLabel: string;
 	controlSyncing: string;
+	controlSyncUnavailable: string;
 
 	// note: side panel specific labels for advanced audio and video effects
 	spAudio: string;

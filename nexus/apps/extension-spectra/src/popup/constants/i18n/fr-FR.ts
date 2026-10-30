@@ -48,6 +48,7 @@ export const FR_FR: I18NDict = {
 	btnShortcutsTooltip: 'Raccourcis Globaux (Chrome)',
 	effectsLabel: 'Effets',
 	controlSyncing: 'Synchronisation des commandes actuelles…',
+	controlSyncUnavailable: 'État des contrôles indisponible',
 	spAudio: '🔊 Audio',
 	spPan: 'Balance',
 	spDelay: 'Délai',

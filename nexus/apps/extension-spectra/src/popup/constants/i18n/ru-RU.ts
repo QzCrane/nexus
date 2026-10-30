@@ -48,6 +48,7 @@ export const RU_RU: I18NDict = {
 	btnShortcutsTooltip: 'Глобальные сочетания (Chrome)',
 	effectsLabel: 'Эффекты',
 	controlSyncing: 'Синхронизация текущих элементов управления…',
+	controlSyncUnavailable: 'Состояние управления недоступно',
 	spAudio: '🔊 Аудио',
 	spPan: 'Баланс',
 	spDelay: 'Задержка',

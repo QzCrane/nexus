@@ -92,6 +92,24 @@ describe('complete visible media tab lifecycle', () => {
 			.toEqual([1, 3, 4]);
 	});
 
+	test('never turns a tab whose document has not committed into a card', async () => {
+		const now = 1_000_000;
+		const { sendMessage } = installChrome([
+			tab(60, { status: 'loading' }),
+			tab(61, { status: 'loading', audible: true }),
+		], new Map([
+			[60, 'media'],
+			[61, 'media'],
+		]));
+
+		// 60 还在提交文档：无法注入，页面里的媒体也还不存在。它既不是卡片，
+		// 也不进覆盖面——否则一个卡住的加载会永久污染清单的完整度。
+		// 61 同样没加载完，但 Chrome 自己说它正在出声：这条事实不依赖文档，
+		// 所以它直接进清单，不必等加载结束。
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [61], coverage: complete(1) });
+		expect(sendMessage.mock.calls).toHaveLength(0);
+	});
+
 	test('never admits ordinary active tabs from another window without media truth', async () => {
 		const { sendMessage } = installChrome([
 			tab(6, { active: true, windowId: 1 }),
@@ -119,23 +137,32 @@ describe('complete visible media tab lifecycle', () => {
 		expect(await resolveVisibleTabs()).toEqual({ tabs: [10], coverage: complete(2) });
 	});
 
-	test('retains bounded recent activity only for known media/audio state while probing current truth', async () => {
+	test('re-decides a just-silenced tab from its current media instead of its audible lease', async () => {
 		const now = 1_000_000;
 		const { sendMessage } = installChrome([
 			tab(20),
 			tab(21),
 			tab(22),
 		], new Map([
+			[21, 'media'],
 			[22, 'media'],
 		]));
 		recordMediaState(20, 'document-20', { hasMediaElement: true, userInteracted: false, reportRevision: 1 });
 		markTabActivated(20, now - 1_000);
+		// 21 两秒前还在出声，半秒前停了（暂停）。卡片由「当前是否有媒体」决定：
+		// 暂停的视频元素仍在文档里，探测说 found，所以卡片必须留住；而 audible
+		// 时间戳本身不能替它作证。
 		markTabAudible(21, true, now - 2_000);
 		markTabAudible(21, false, now - 500);
 
 		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [20, 21, 22], coverage: complete(3) });
-		// Recent media/audio evidence is already admitted and does not pay a probe.
-		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId)).toEqual([22]);
+		// 20 有上报固化的事实、22 还在出声，两者都不付探测；21 必须重新探测。
+		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId).sort((a, b) => Number(a) - Number(b)))
+			.toEqual([21, 22]);
+
+		// 页面真的移除了媒体元素：同一文档的 no-media 上报是唯一剪枝信号。
+		recordMediaState(21, 'document-21', { hasMediaElement: false, userInteracted: true, reportRevision: 1 });
+		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [20, 22], coverage: complete(3) });
 	});
 
 	test('does not create or retain a recent media lease for an activated non-media tab', async () => {
@@ -251,7 +278,10 @@ type DocumentResolver = (tabId: number, readIndex: number) => string | null | Pr
 
 function tab(
 	id: number,
-	overrides: { active?: boolean; audible?: boolean; url?: string; windowId?: number } = {},
+	overrides: {
+		active?: boolean; audible?: boolean; url?: string; windowId?: number;
+		status?: chrome.tabs.Tab['status']; discarded?: boolean;
+	} = {},
 ): chrome.tabs.Tab {
 	return {
 		id,
@@ -262,10 +292,11 @@ function tab(
 		active: overrides.active ?? false,
 		incognito: false,
 		selected: overrides.active ?? false,
-		discarded: false,
+		discarded: overrides.discarded ?? false,
 		autoDiscardable: true,
 		groupId: -1,
 		audible: overrides.audible ?? false,
+		status: overrides.status ?? 'complete',
 		url: overrides.url ?? `https://example-${id}.test/watch`,
 	};
 }

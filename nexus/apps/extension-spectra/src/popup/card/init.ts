@@ -7,7 +7,12 @@ import {
 } from '@nexus/contracts';
 import { isSpectraUiResponse } from '@nexus/contracts/ui-runtime';
 import { RUNTIME_OBSERVATION_PORT } from '../../shared/runtime-observation';
-import { hasKnownBackgroundRetentionInputs, readCardSnapshot, resolveInitialProcessorLifecycle } from './snapshot';
+import {
+	acknowledgedProcessorLifecycle,
+	hasKnownBackgroundRetentionInputs,
+	readCardSnapshot,
+	resolveInitialProcessorLifecycle,
+} from './snapshot';
 import { isCurrentTopDocument } from '../../shared/top-document';
 import { registerCardRenderCallback } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
@@ -76,7 +81,10 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   } = params;
 
   if (!tab.id || popupClosing) return false;
-  const dict = params.getDictionary?.() ?? initialDictionary;
+  // Live accessor: the card must be able to re-read the dictionary when a
+  // status line changes key, not only when the Popup reopens.
+  const getDictionary = params.getDictionary ?? (() => initialDictionary);
+  const dict = getDictionary();
   const tabId = tab.id;
 
   const snapshot = await readCardSnapshot(tabId, { allowCached: params.allowCached });
@@ -90,7 +98,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 	// Both observations are fenced to this card's exact document. Prefer the
 	// latest settled lifecycle instead of painting an older cached session first.
 	if (!audioSessionMatchesControlDocument(acknowledgedSession, controlSnapshot)) acknowledgedSession = null;
-	const lifecycle = resolveInitialProcessorLifecycle(status, acknowledgedSession);
+	// The control snapshot's own processor ACK is a lifecycle statement, so the
+	// route colour never depends on a second read that may be slower than this
+	// one; the runtime and session can only make it fresher.
+	const acknowledgedLifecycle = acknowledgedProcessorLifecycle(controlSnapshot);
+	const lifecycle = resolveInitialProcessorLifecycle(status, acknowledgedSession, acknowledgedLifecycle);
 	const lifecycleFromSession = lifecycle !== null && lifecycle === acknowledgedSession;
 	const isCaptureActive = isActiveCaptureLifecycle({
 		actualMode: lifecycle?.actualMode,
@@ -118,8 +130,8 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     config,
     stableConfig: mergeAudioConfig(config, { eqValues: [...config.eqValues] }),
     controlSnapshot,
-    controlSnapshotKnown: snapshot.controlSnapshot.state === 'known',
-    lifecycleSnapshotKnown: snapshot.status.state === 'known' && snapshot.sessionSnapshot.state === 'known',
+		controlSnapshotKnown: snapshot.controlSnapshot.state === 'known',
+		lifecycleSnapshotKnown: lifecycle !== null,
     isCaptureActive,
     userInteracted: status?.userInteracted ?? (controlSnapshot?.revision ?? 0) > 0,
     actualMode: lifecycle?.actualMode ?? 'bypass',
@@ -222,11 +234,13 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // and the synchronous pointer path so they cannot disagree mid-drag.
   const volumeView = createVolumeView(ui);
   const renderCard = createRenderFn({
+    tabId,
     ui,
     state,
     volumeView,
     getVizEnabled,
     getGlobalSettings,
+    getDictionary,
   });
   const renderImmediate = () => {
     if (disposed) return;

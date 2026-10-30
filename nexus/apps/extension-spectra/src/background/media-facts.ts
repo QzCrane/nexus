@@ -1,6 +1,13 @@
 // goal: persist per-document media presence facts and probe cooldowns durably
 // inv: a complete observation (probe settle or authoritative content report) is the
 //      only writer; transient outcomes (denied/stale/unknown) never become facts
+//
+// A fact names one document by `documentId` and is retired by events, not by a
+// counter: the lifecycle forgets it synchronously on a top-level navigation, and
+// every probe verifies the frame identity it observed around the injection. An
+// in-memory document counter would be a second, weaker witness - it restarts with
+// the service worker, so a fact that is still perfectly true would be discarded
+// after every worker stop, and the inventory would re-probe the whole browser.
 
 import { swLog } from '../shared/logger';
 

@@ -31,7 +31,7 @@ export interface VolumeView {
 	 * cannot trail the pointer while a full render is still pending. It paints
 	 * only what the gesture itself determines and leaves tone to `commit`.
 	 */
-	paintPointer(value: number): void;
+	paintPointer(value: number, color?: string): void;
 	/**
 	 * Move the native thumb for a gesture the browser does not drive itself, such
 	 * as a wheel step. Still one direction only: state -> DOM.
@@ -88,10 +88,14 @@ export function createVolumeView(ui: Pick<CardUIElements, 'slider' | 'fill' | 'v
 			writeLabel(projection.muted ? 'MUTE' : `${formatVolume(projection.value)}%`);
 			writeColor(projection.color);
 		},
-		paintPointer(value: number): void {
+		paintPointer(value: number, color?: string): void {
 			if (!Number.isFinite(value)) return;
 			writeWidth(percentage(value));
 			writeLabel(`${formatVolume(value)}%`);
+			// The tone follows the gesture only when the caller knows the route it
+			// is painting; the renderer's `commit` remains the single tone owner
+			// for every non-gesture update.
+			if (color !== undefined) writeColor(color);
 		},
 		setThumb(value: number): void {
 			if (!Number.isFinite(value)) return;

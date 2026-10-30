@@ -29,6 +29,7 @@ import {
 	compileEffectiveVolume,
 	isFiniteControlValue,
 	splitEffectiveVolume,
+	isAudioVolumeProjection,
 } from './control-value-limits.js';
 import { isCaptureAdmission } from './capture-admission.contracts.js';
 import { isAudioVisualizerDemandPayload } from './visualizer.contracts.js';

@@ -146,6 +146,7 @@ export function createUpdateFn(
 		}
 		if (acceptedAcknowledgement) {
 			state.controlSnapshotKnown = true;
+			state.controlSyncExpired = false;
 			if (state.controlSnapshot) {
 				updateCachedControlSnapshot(tabId, state.controlSnapshot);
 			}

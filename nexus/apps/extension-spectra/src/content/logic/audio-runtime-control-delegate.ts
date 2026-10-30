@@ -10,13 +10,14 @@ import {
 	type ControlField,
 	type ControlFieldStates,
 	type ControlIntent,
+	type ControlObservationStrategies,
 	type ControlPatch,
 	type ControlStrategy,
 	type ControlValues,
 } from '@nexus/contracts';
 import type { PolicyExecutor } from './policy-executor';
 import type { PolicyExecutorState } from '../types';
-import type { AudioRuntimeControlDelegate } from './native-media-executor';
+import type { AudioRuntimeControlDelegate, AudioRuntimeReadResult } from './native-media-executor';
 import type { FullscreenAudioHandoff } from '../core/fullscreen-audio-handoff';
 
 const AUDIO_RUNTIME_CONTROL_FIELDS = new Set<ControlDirectField>([
@@ -71,9 +72,13 @@ export function createAudioRuntimeControlDelegate(
 			state.appliedConfig.preservePitch = context.preservePitch;
 		}
 	};
-	const read = (fields: readonly ControlField[]): ControlPatch => {
+	const read = (fields: readonly ControlField[]): AudioRuntimeReadResult => {
 		const applied = state.appliedConfig;
 		const patch: ControlPatch = {};
+		const observedStrategies: ControlObservationStrategies = {};
+		// Capture owns the same fields as the WebAudio graph when it is the active
+		// path; naming the path here keeps Background from re-deciding it.
+		const processorStrategy = state.actualMode === 'capture' ? 'capture' : 'media-webaudio';
 		for (const field of fields) {
 			let actual: unknown;
 			switch (field) {
@@ -86,9 +91,14 @@ export function createAudioRuntimeControlDelegate(
 				case 'pan': actual = applied.pan; break;
 				case 'delay': actual = applied.delay; break;
 			}
-			if (actual !== undefined) (patch as Record<string, unknown>)[field] = actual;
+			if (actual !== undefined) {
+				(patch as Record<string, unknown>)[field] = actual;
+				observedStrategies[field as ControlDirectField] = field === 'audioEnabled'
+					? 'extension-state'
+					: processorStrategy;
+			}
 		}
-		return patch;
+		return { patch, observedStrategies };
 	};
 	const apply = async (intent: ControlIntent, patch: ControlPatch): Promise<ControlFieldStates> => {
 		const requestedRuntimeFields = Object.keys(patch)

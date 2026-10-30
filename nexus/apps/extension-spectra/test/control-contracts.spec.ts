@@ -217,6 +217,26 @@ describe('per-field SPECTRA control contracts', () => {
 			...readResult,
 			observedStrategies: { ...readResult.observedStrategies, boost: 'page-native' },
 		})).toBe(false);
+
+		// Video effect fields are written by the extension's own CSS and overlay
+		// layers. Those writers must be able to report the value they produced;
+		// reporting them as DOM-native - or reporting nothing at all - is a lie
+		// the contract now rejects on both ends.
+		expect(isControlReadResult({
+			target,
+			patch: { rotation: 90, dimEnabled: true },
+			observedStrategies: { rotation: 'extension-css', dimEnabled: 'extension-overlay' },
+		})).toBe(true);
+		expect(isControlReadResult({
+			target,
+			patch: { rotation: 90, dimEnabled: true },
+			observedStrategies: { rotation: 'dom-native', dimEnabled: 'extension-overlay' },
+		})).toBe(false);
+		expect(isControlReadResult({
+			target,
+			patch: { rotation: 90 },
+			observedStrategies: {},
+		})).toBe(false);
 	});
 
 	test('validates actual per-field strategy and ownership without inferring it from 100% or 1x', () => {
