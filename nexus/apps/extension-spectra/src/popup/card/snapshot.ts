@@ -17,32 +17,37 @@ const pendingReads = createSettlementPool<string, unknown>(64);
 // does not know its own route paints the wrong colour until the Popup reopens.
 const CARD_SNAPSHOT_TIMEOUT_MS = 5_000;
 const CARD_CACHE_PREFIX = 'spectra.popup.card_cache.';
-const SNAPSHOT_CACHE_TTL_MS = 60_000;
 
+// The card cache is the last known-good CardSnapshot for one document. It is
+// document-fenced, not time-bounded: a stored record is retired when the read
+// fence sees a different document (navigation), and it lives in
+// chrome.storage.local so a Popup opened after a browser restart does not start
+// from a blank list and re-read every cross-context source. There is
+// deliberately no TTL - a fact stops being true when its document changes,
+// never because a counter ran out.
 interface CachedCardSnapshotRecord {
 	snapshot: CardSnapshot;
-	cachedAt: number;
 }
 
 const memoryCardSnapshotCache = new Map<number, CachedCardSnapshotRecord>();
 
 export async function readCachedCardSnapshot(tabId: number): Promise<CardSnapshot | null> {
 	const inMem = memoryCardSnapshotCache.get(tabId);
-	if (inMem && Date.now() - inMem.cachedAt < SNAPSHOT_CACHE_TTL_MS) {
+	if (inMem) {
 		return { ...inMem.snapshot, fromCache: true };
 	}
 	try {
-		if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+		if (typeof chrome !== 'undefined' && chrome.storage?.local) {
 			const key = `${CARD_CACHE_PREFIX}${tabId}`;
-			const stored = (await chrome.storage.session.get(key)) as Record<string, unknown>;
+			const stored = (await chrome.storage.local.get(key)) as Record<string, unknown>;
 			const record = stored?.[key] as CachedCardSnapshotRecord | undefined;
-			if (record?.snapshot && Date.now() - record.cachedAt < SNAPSHOT_CACHE_TTL_MS) {
+			if (record?.snapshot) {
 				memoryCardSnapshotCache.set(tabId, record);
 				return { ...record.snapshot, fromCache: true };
 			}
 		}
 	} catch (error) {
-		console.debug('[SPECTRA Snapshot] Session storage read failed:', error);
+		console.debug('[SPECTRA Snapshot] Local storage read failed:', error);
 	}
 	return null;
 }
@@ -55,31 +60,68 @@ export function writeCachedCardSnapshot(tabId: number, snapshot: CardSnapshot): 
 		sessionSnapshot: snapshot.sessionSnapshot,
 		isRemoteActive: snapshot.isRemoteActive,
 	};
-	const record: CachedCardSnapshotRecord = { snapshot: cleanSnapshot, cachedAt: Date.now() };
+	const record: CachedCardSnapshotRecord = { snapshot: cleanSnapshot };
 	memoryCardSnapshotCache.set(tabId, record);
 	try {
-		if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+		if (typeof chrome !== 'undefined' && chrome.storage?.local) {
 			const key = `${CARD_CACHE_PREFIX}${tabId}`;
-			void chrome.storage.session.set({ [key]: record }).catch((error: unknown) => {
+			void chrome.storage.local.set({ [key]: record }).catch((error: unknown) => {
 				console.debug('[SPECTRA Snapshot] Storage set failed:', error);
 			});
 		}
 	} catch (error) {
-		console.debug('[SPECTRA Snapshot] Session storage write failed:', error);
+		console.debug('[SPECTRA Snapshot] Local storage write failed:', error);
 	}
 }
 
 export function evictCachedCardSnapshot(tabId: number): void {
 	memoryCardSnapshotCache.delete(tabId);
 	try {
-		if (typeof chrome !== 'undefined' && chrome.storage?.session) {
+		if (typeof chrome !== 'undefined' && chrome.storage?.local) {
 			const key = `${CARD_CACHE_PREFIX}${tabId}`;
-			void chrome.storage.session.remove(key).catch((error: unknown) => {
+			void chrome.storage.local.remove(key).catch((error: unknown) => {
 				console.debug('[SPECTRA Snapshot] Storage remove failed:', error);
 			});
 		}
 	} catch (error) {
 		console.debug('[SPECTRA Snapshot] Storage operation failed:', error);
+	}
+}
+
+// The background owns these two durable keys and retires them on navigation and
+// tab removal: the control snapshot and the audio session are persisted to
+// chrome.storage.local on every commit and deleted when the document changes. A
+// present value is therefore a value for the current document, so the card can
+// paint its controls and route from them before any RPC answers. They are never
+// a second source of truth - the RPC below still reconciles drift on open.
+const CONTROL_SNAPSHOT_KEY_PREFIX = 'spectra.control.tab.';
+const AUDIO_SESSION_KEY_PREFIX = 'spectra_audio_session_';
+
+interface DurableCardFacts {
+	control: ControlSnapshot | null;
+	session: AudioSessionSnapshot | null;
+}
+
+async function readDurableCardFacts(
+	tabId: number,
+	documentId: string,
+): Promise<DurableCardFacts> {
+	if (typeof chrome === 'undefined' || !chrome.storage?.local) {
+		return { control: null, session: null };
+	}
+	const controlKey = `${CONTROL_SNAPSHOT_KEY_PREFIX}${tabId}`;
+	const sessionKey = `${AUDIO_SESSION_KEY_PREFIX}${tabId}`;
+	try {
+		const stored = (await chrome.storage.local.get([controlKey, sessionKey])) as Record<string, unknown>;
+		const control = (stored[controlKey] as ControlSnapshot | undefined) ?? null;
+		const session = (stored[sessionKey] as AudioSessionSnapshot | undefined) ?? null;
+		return {
+			control: control && control.documentId === documentId ? control : null,
+			session: session && session.documentId === documentId ? session : null,
+		};
+	} catch (error) {
+		console.debug('[SPECTRA Snapshot] Durable fact read failed:', error);
+		return { control: null, session: null };
 	}
 }
 
@@ -185,6 +227,12 @@ export async function collectCardSnapshot(tabId: number): Promise<CardSnapshot |
 	const documentId = await currentTopDocumentId(tabId);
 	if (!documentId) return null;
 	const key = `${tabId}:${documentId}`;
+	// Control and session are durable facts the background retires on navigation,
+	// so a present value is a value for this exact document. Reading them first
+	// removes the two service-worker round trips that dominated the cold open; the
+	// runtime and remote observations still round-trip because they have no
+	// durable mirror and are corrected by the card's own bounded re-read anyway.
+	const durable = await readDurableCardFacts(tabId, documentId);
 	const [status, controlSnapshot, sessionSnapshot, isRemoteActive] = await Promise.all([
 		observeSource<AudioRuntimeStatus>(
 			`${key}:runtime`,
@@ -194,26 +242,30 @@ export async function collectCardSnapshot(tabId: number): Promise<CardSnapshot |
 				return response.ok && response.data ? { value: response.data } : null;
 			},
 		),
-		observeSource<ControlSnapshot | null>(
-			`${key}:control`,
-			() => sendSpectraRequest('spectra.control.snapshot.get', { tabId }, { tabId, documentId }),
-			(value) => {
-				const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.control.snapshot.get'>>>;
-				return response.ok && (!response.data || response.data.documentId === documentId)
-					? { value: response.data }
-					: null;
-			},
-		),
-		observeSource<AudioSessionSnapshot | null>(
-			`${key}:session`,
-			() => sendSpectraRequest('spectra.audio.session.get', { tabId }, { tabId }),
-			(value) => {
-				const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.audio.session.get'>>>;
-				return response.ok && (!response.data || response.data.documentId === documentId)
-					? { value: response.data }
-					: null;
-			},
-		),
+		durable.control !== null
+			? Promise.resolve<CardObservation<ControlSnapshot | null>>({ state: 'known', value: durable.control })
+			: observeSource<ControlSnapshot | null>(
+				`${key}:control`,
+				() => sendSpectraRequest('spectra.control.snapshot.get', { tabId }, { tabId, documentId }),
+				(value) => {
+					const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.control.snapshot.get'>>>;
+					return response.ok && (!response.data || response.data.documentId === documentId)
+						? { value: response.data }
+						: null;
+				},
+			),
+		durable.session !== null
+			? Promise.resolve<CardObservation<AudioSessionSnapshot | null>>({ state: 'known', value: durable.session })
+			: observeSource<AudioSessionSnapshot | null>(
+				`${key}:session`,
+				() => sendSpectraRequest('spectra.audio.session.get', { tabId }, { tabId }),
+				(value) => {
+					const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.audio.session.get'>>>;
+					return response.ok && (!response.data || response.data.documentId === documentId)
+						? { value: response.data }
+						: null;
+				},
+			),
 		observeSource<boolean>(
 			`${key}:remote`,
 			() => sendSpectraRequest('spectra.remote.session.get', { tabId }, { tabId }),
@@ -225,53 +277,11 @@ export async function collectCardSnapshot(tabId: number): Promise<CardSnapshot |
 	]);
 	if (!await isCurrentTopDocument(tabId, documentId)) return null;
 
-	let effectiveControl: CardObservation<ControlSnapshot | null> = controlSnapshot;
-	if (effectiveControl.state === 'unknown') {
-		const cached = memoryCardSnapshotCache.get(tabId)?.snapshot;
-		if (cached?.documentId === documentId && cached.controlSnapshot.state === 'known') {
-			effectiveControl = cached.controlSnapshot;
-		} else {
-			try {
-				if (typeof chrome !== 'undefined' && chrome.storage?.session) {
-					const storageKey = `spectra.control.tab.${tabId}`;
-					const stored = (await chrome.storage.session.get(storageKey)) as Record<string, unknown>;
-					const bgSnapshot = stored?.[storageKey] as ControlSnapshot | undefined;
-					if (bgSnapshot && bgSnapshot.documentId === documentId) {
-						effectiveControl = { state: 'known', value: bgSnapshot };
-					}
-				}
-			} catch (error) {
-				console.debug('[SPECTRA Snapshot] Storage operation failed:', error);
-			}
-		}
-	}
-
-	let effectiveSession: CardObservation<AudioSessionSnapshot | null> = sessionSnapshot;
-	if (effectiveSession.state === 'unknown') {
-		const cached = memoryCardSnapshotCache.get(tabId)?.snapshot;
-		if (cached?.documentId === documentId && cached.sessionSnapshot.state === 'known') {
-			effectiveSession = cached.sessionSnapshot;
-		} else {
-			try {
-				if (typeof chrome !== 'undefined' && chrome.storage?.session) {
-					const storageKey = `spectra.audio.session.${tabId}`;
-					const stored = (await chrome.storage.session.get(storageKey)) as Record<string, unknown>;
-					const bgSession = stored?.[storageKey] as AudioSessionSnapshot | undefined;
-					if (bgSession && bgSession.documentId === documentId) {
-						effectiveSession = { state: 'known', value: bgSession };
-					}
-				}
-			} catch (error) {
-				console.debug('[SPECTRA Snapshot] Storage operation failed:', error);
-			}
-		}
-	}
-
 	const snapshot: CardSnapshot = {
 		documentId,
 		status,
-		controlSnapshot: effectiveControl,
-		sessionSnapshot: effectiveSession,
+		controlSnapshot,
+		sessionSnapshot,
 		isRemoteActive,
 	};
 	writeCachedCardSnapshot(tabId, snapshot);
@@ -296,14 +306,13 @@ export async function readCardSnapshot(
 	if (!Number.isSafeInteger(tabId) || tabId <= 0) throw new Error('card snapshot requires a valid tab');
 	if (options?.allowCached ?? true) {
 		const cached = await readCachedCardSnapshot(tabId);
-		if (cached) {
-			// The cache saves the four cross-context reads, never the document
-			// fence: a tab that navigated inside the TTL would otherwise hand the
-			// card a snapshot the card is then forced to reject, painting no card
-			// at all.
-			const currentDocumentId = await currentTopDocumentId(tabId);
-			if (currentDocumentId && currentDocumentId === cached.documentId) return cached;
-		}
+		// The background retires the cache key on navigation and tab removal, so a
+		// stored record is a record for the tab's current document. There is no
+		// document fence to re-verify: the card paints this forecast immediately
+		// and re-confirms its control projection once through its own bounded
+		// read, so a stale value (navigation raced the retirement) is corrected in
+		// place instead of standing until the next reopen.
+		if (cached) return cached;
 	}
 	return collectCardSnapshot(tabId);
 }

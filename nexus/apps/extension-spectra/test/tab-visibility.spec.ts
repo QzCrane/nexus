@@ -1,52 +1,149 @@
-import { afterEach, describe, expect, mock, test } from 'bun:test';
+// goal: pin the inventory boundary - a card exists only for a tab that said so
+//
+// The rules this file protects, in order of importance:
+//   1. nothing is injected into a tab to decide whether it is a media tab;
+//   2. a tab with no claim is not listed, not "pending", and not retried;
+//   3. Chrome's audible flag is a claim, and it needs no document evidence;
+//   4. a claim never outlives the document that made it or the tab that held it.
+
+import { afterEach, describe, expect, test, mock } from 'bun:test';
 import {
 	captureStates,
 	cleanupTabState,
 	markTabActivated,
 	markTabAudible,
 	tabAudioStates,
-	TAB_VISIBLE_THRESHOLD_MS,
 } from '../src/background/state';
+import { mediaFacts } from '../src/background/media-facts';
 import {
 	classifyMediaReport,
+	readMediaTabInventory,
 	recordMediaState,
-	resolveVisibleTabs,
 } from '../src/background/handlers/tab-state';
 
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
-const complete = (total: number) => ({
-	status: 'complete', total, examined: total, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0,
-});
+
+// The durable store is a module singleton, so every tab id this file touches is
+// retired between cases. Isolation is explicit: a test may not inherit another
+// test's verdict just because it reused an id.
+const TOUCHED_TAB_IDS = [
+	1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 20, 21, 22, 23, 24, 25, 30, 46, 50, 60, 61,
+];
 
 afterEach(() => {
+	for (const tabId of TOUCHED_TAB_IDS) mediaFacts.forgetMediaFact(tabId);
 	tabAudioStates.clear();
 	captureStates.clear();
 	if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 	else Reflect.deleteProperty(globalThis, 'chrome');
 });
 
-describe('complete visible media tab lifecycle', () => {
-	test('discovers cold paused media in a child frame without loading the content runtime', async () => {
-		const frames = [
-			{ frameId: 0, documentId: 'document-top' },
-			{ frameId: 3, documentId: 'document-child' },
+describe('media tab inventory', () => {
+	test('lists a tab only when its own document reported media or Chrome says it is audible', async () => {
+		const tabs = [
+			tab(1, { active: true }),
+			tab(2, { audible: true }),
+			tab(3),
+			tab(4),
+			tab(5, { url: 'chrome://settings/' }),
 		];
-		const executeScript = mock(async () => [
-			{ frameId: 0, documentId: 'document-top', result: false },
-			{ frameId: 3, documentId: 'document-child', result: true },
-		]);
-		Object.defineProperty(globalThis, 'chrome', {
-			configurable: true,
-			value: {
-				tabs: { query: async () => [tab(70)] },
-				webNavigation: { getAllFrames: async () => frames },
-				scripting: { executeScript },
-			},
-		});
-		expect(await resolveVisibleTabs()).toEqual({ tabs: [70], coverage: complete(1) });
-		expect(executeScript.mock.calls[0]?.[0]).toMatchObject({ target: { tabId: 70, allFrames: true } });
+		const { queries, injected } = installChrome(tabs);
+		recordMediaState(3, 'document-3', { hasMediaElement: true, userInteracted: true, reportRevision: 1 });
+		recordMediaState(4, 'document-4', { hasMediaElement: false, userInteracted: true, reportRevision: 1 });
+
+		expect(await readMediaTabInventory()).toEqual({ tabs: [2, 3] });
+		expect(queries()).toBe(1);
+		// The whole point of the projection: deciding a tab is a media tab is a
+		// read of what the tab already said, never an injection into the tab.
+		expect(injected()).toEqual([]);
 	});
 
+	test('reports nothing as pending: a tab that never spoke is simply not a media tab', async () => {
+		installChrome([tab(10), tab(11), tab(12)]);
+		// A silent browser is an empty answer, not an outstanding question.
+		expect(await readMediaTabInventory()).toEqual({ tabs: [] });
+		expect(await readMediaTabInventory()).toEqual({ tabs: [] });
+	});
+
+	test('never probes a tab that is still committing its document', async () => {
+		const { injected } = installChrome([
+			tab(60, { status: 'loading' }),
+			tab(61, { status: 'loading', audible: true }),
+		]);
+		// 60 没有说过任何话：它既不是卡片，也不会被唤醒去证明自己不是。
+		// 61 同样没加载完，但 Chrome 自己说它正在出声——这条事实不依赖文档。
+		expect(await readMediaTabInventory()).toEqual({ tabs: [61] });
+		expect(injected()).toEqual([]);
+	});
+
+	test('drops a tab whose document is suspended, restricted, or gone', async () => {
+		installChrome([
+			tab(20),
+			tab(21, { discarded: true }),
+			tab(22, { url: 'chrome-extension://abc/popup.html' }),
+			tab(23, { url: 'data:text/html,hi' }),
+		]);
+		for (const tabId of [20, 21, 22, 23]) {
+			recordMediaState(tabId, `document-${tabId}`, {
+				hasMediaElement: true, userInteracted: true, reportRevision: 1,
+			});
+		}
+		// Only 20 is a page the Popup could control. A discarded renderer cannot
+		// play, an extension page is not a media document, and an opaque origin has
+		// no URL the card could name.
+		expect(await readMediaTabInventory()).toEqual({ tabs: [20] });
+	});
+
+	test('retires a card when the same document reports that the media is gone', async () => {
+		installChrome([tab(30)]);
+		recordMediaState(30, 'document-30', { hasMediaElement: true, userInteracted: true, reportRevision: 1 });
+		expect(await readMediaTabInventory()).toEqual({ tabs: [30] });
+
+		recordMediaState(30, 'document-30', { hasMediaElement: false, userInteracted: true, reportRevision: 2 });
+		expect(await readMediaTabInventory()).toEqual({ tabs: [] });
+	});
+
+	test('never revives a removed tab from its remembered report', async () => {
+		installChrome([tab(25)]);
+		recordMediaState(24, 'document-24', { hasMediaElement: true, userInteracted: false, reportRevision: 1 });
+		expect(tabAudioStates.has(24)).toBe(true);
+
+		expect(await readMediaTabInventory()).toEqual({ tabs: [] });
+		// The bookkeeping row for a tab Chrome no longer reports is garbage; the
+		// inventory read is what prunes it.
+		expect(tabAudioStates.has(24)).toBe(false);
+	});
+
+	test('does not create or retain an activity lease for an activated non-media tab', async () => {
+		const now = 1_000_000;
+		installChrome([tab(46, { active: true })]);
+		markTabActivated(46, now - 1_000);
+		expect(tabAudioStates.has(46)).toBe(false);
+		expect(await readMediaTabInventory(now)).toEqual({ tabs: [] });
+
+		recordMediaState(46, 'document-46', { hasMediaElement: false, userInteracted: true, reportRevision: 1 });
+		markTabActivated(46, now - 500);
+		// 最近激活只是一条遥测，不是媒体事实：它不产生卡片。
+		expect(await readMediaTabInventory(now)).toEqual({ tabs: [] });
+	});
+
+	test('ignores a never-audible Chrome update', () => {
+		markTabAudible(50, false, 10);
+		expect(tabAudioStates.has(50)).toBe(false);
+	});
+
+	test('returns ascending ids so the card list never depends on query order', async () => {
+		installChrome([tab(9), tab(3), tab(7)]);
+		for (const tabId of [9, 3, 7]) {
+			recordMediaState(tabId, `document-${tabId}`, {
+				hasMediaElement: true, userInteracted: true, reportRevision: 1,
+			});
+		}
+		expect(await readMediaTabInventory()).toEqual({ tabs: [3, 7, 9] });
+	});
+});
+
+describe('media report ordering', () => {
 	test('keeps the newest report revision for one exact document', () => {
 		recordMediaState(71, 'document-71', { hasMediaElement: true, userInteracted: false, reportRevision: 2 });
 		recordMediaState(71, 'document-71', { hasMediaElement: false, userInteracted: false, reportRevision: 1 });
@@ -72,209 +169,7 @@ describe('complete visible media tab lifecycle', () => {
 			hasMediaElement: true,
 		});
 	});
-
-	test('discovers paused or muted media tabs without treating active non-media tabs as media', async () => {
-		const now = 1_000_000;
-		const { sendMessage } = installChrome([
-			tab(1, { active: true }),
-			tab(2, { audible: true }),
-			tab(3),
-			tab(4),
-			tab(5, { url: 'chrome://settings/' }),
-		], new Map([
-			[1, 'empty'],
-			[3, 'media'],
-			[4, 'empty'],
-		]));
-
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [2, 3], coverage: complete(4) });
-		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId).sort((a, b) => Number(a) - Number(b)))
-			.toEqual([1, 3, 4]);
-	});
-
-	test('never turns a tab whose document has not committed into a card', async () => {
-		const now = 1_000_000;
-		const { sendMessage } = installChrome([
-			tab(60, { status: 'loading' }),
-			tab(61, { status: 'loading', audible: true }),
-		], new Map([
-			[60, 'media'],
-			[61, 'media'],
-		]));
-
-		// 60 还在提交文档：无法注入，页面里的媒体也还不存在。它既不是卡片，
-		// 也不进覆盖面——否则一个卡住的加载会永久污染清单的完整度。
-		// 61 同样没加载完，但 Chrome 自己说它正在出声：这条事实不依赖文档，
-		// 所以它直接进清单，不必等加载结束。
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [61], coverage: complete(1) });
-		expect(sendMessage.mock.calls).toHaveLength(0);
-	});
-
-	test('never admits ordinary active tabs from another window without media truth', async () => {
-		const { sendMessage } = installChrome([
-			tab(6, { active: true, windowId: 1 }),
-			tab(7, { active: true, windowId: 2 }),
-		], new Map([
-			[6, 'empty'],
-			[7, 'empty'],
-		]));
-
-		expect(await resolveVisibleTabs()).toEqual({ tabs: [], coverage: complete(2) });
-		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId).sort((a, b) => Number(a) - Number(b)))
-			.toEqual([6, 7]);
-	});
-
-	test('reconstructs media inventory after service-worker heap loss', async () => {
-		installChrome([
-			tab(10),
-			tab(11),
-		], new Map([
-			[10, 'media'],
-			[11, 'empty'],
-		]));
-
-		expect(tabAudioStates.size).toBe(0);
-		expect(await resolveVisibleTabs()).toEqual({ tabs: [10], coverage: complete(2) });
-	});
-
-	test('re-decides a just-silenced tab from its current media instead of its audible lease', async () => {
-		const now = 1_000_000;
-		const { sendMessage } = installChrome([
-			tab(20),
-			tab(21),
-			tab(22),
-		], new Map([
-			[21, 'media'],
-			[22, 'media'],
-		]));
-		recordMediaState(20, 'document-20', { hasMediaElement: true, userInteracted: false, reportRevision: 1 });
-		markTabActivated(20, now - 1_000);
-		// 21 两秒前还在出声，半秒前停了（暂停）。卡片由「当前是否有媒体」决定：
-		// 暂停的视频元素仍在文档里，探测说 found，所以卡片必须留住；而 audible
-		// 时间戳本身不能替它作证。
-		markTabAudible(21, true, now - 2_000);
-		markTabAudible(21, false, now - 500);
-
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [20, 21, 22], coverage: complete(3) });
-		// 20 有上报固化的事实、22 还在出声，两者都不付探测；21 必须重新探测。
-		expect(sendMessage.mock.calls.map(([request]) => request.target.tabId).sort((a, b) => Number(a) - Number(b)))
-			.toEqual([21, 22]);
-
-		// 页面真的移除了媒体元素：同一文档的 no-media 上报是唯一剪枝信号。
-		recordMediaState(21, 'document-21', { hasMediaElement: false, userInteracted: true, reportRevision: 1 });
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [20, 22], coverage: complete(3) });
-	});
-
-	test('does not create or retain a recent media lease for an activated non-media tab', async () => {
-		const now = 1_000_000;
-		installChrome([tab(23, { active: true })], new Map([[23, 'empty']]));
-		markTabActivated(23, now - 1_000);
-		expect(tabAudioStates.has(23)).toBe(false);
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
-
-		recordMediaState(23, 'document-23', { hasMediaElement: false, userInteracted: true, reportRevision: 1 });
-		markTabActivated(23, now - 500);
-		expect(tabAudioStates.get(23)?.lastActivatedTime).toBe(now - 500);
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
-	});
-
-	test('never revives a removed tab from a stale recent media row', async () => {
-		const now = 1_000_000;
-		installChrome([tab(25)], new Map([[25, 'empty']]));
-		recordMediaState(24, 'document-24', { hasMediaElement: true, userInteracted: false, reportRevision: 1 });
-		markTabActivated(24, now - 1_000);
-		expect(tabAudioStates.has(24)).toBe(true);
-
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
-		expect(tabAudioStates.has(24)).toBe(false);
-	});
-
-	test('keeps an expired-telemetry media tab visible through its durable reported fact without probing', async () => {
-		const now = 1_000_000;
-		const { sendMessage } = installChrome([tab(30)], new Map([[30, 'empty']]));
-		recordMediaState(30, 'document-30', { hasMediaElement: true, userInteracted: true, reportRevision: 1 });
-		captureStates.set(30, true);
-		const state = tabAudioStates.get(30);
-		if (!state) throw new Error('expected tab state');
-		state.lastActivatedTime = now - TAB_VISIBLE_THRESHOLD_MS - 1;
-
-		// 内容上报固化的 found 事实是权威媒体租约：过期遥测只清理 recent-activity
-		// 状态行，媒体清单仍复用事实（不重探测），覆盖度保持 complete。
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [30], coverage: complete(1) });
-		expect(tabAudioStates.has(30)).toBe(false);
-		expect(sendMessage.mock.calls).toHaveLength(0);
-
-		// 媒体移除上报（no-media 事实）是唯一剪枝信号：同一 documentId 的
-		// 上报立即替换事实，清单随之清空。
-		recordMediaState(30, 'document-30', { hasMediaElement: false, userInteracted: true, reportRevision: 2 });
-		expect(await resolveVisibleTabs(now)).toEqual({ tabs: [], coverage: complete(1) });
-	});
-
-	test('isolates probe failures and never turns an unreachable document into a card', async () => {
-		installChrome([
-			tab(40),
-			tab(41),
-			tab(42),
-		], new Map([
-			[40, 'throw'],
-			[41, 'invalid'],
-			[42, 'media'],
-		]));
-
-		expect(await resolveVisibleTabs()).toMatchObject({ tabs: [42], coverage: { status: 'degraded', examined: 1, denied: 1, unknown: 1 } });
-	});
-
-	test('rejects a delayed positive media response after the tab navigates to a different document', async () => {
-		const { sendMessage, getFrame } = installChrome(
-			[tab(60)],
-			new Map([[60, 'media']]),
-			(_tabId, readIndex) => readIndex === 0 ? 'document-old' : 'document-new',
-		);
-
-		expect(await resolveVisibleTabs()).toMatchObject({ tabs: [], coverage: { status: 'degraded', stale: 1 } });
-		expect(sendMessage.mock.calls).toHaveLength(1);
-		expect(sendMessage.mock.calls[0]?.[0].target).toEqual({ tabId: 60, allFrames: true });
-		expect(getFrame.mock.calls).toHaveLength(2);
-	});
-
-	test('fails closed before messaging when the top-frame document identity is unavailable', async () => {
-		const { sendMessage } = installChrome(
-			[tab(61)],
-			new Map([[61, 'media']]),
-			() => null,
-		);
-
-		expect(await resolveVisibleTabs()).toMatchObject({ tabs: [], coverage: { status: 'degraded', stale: 1 } });
-		expect(sendMessage.mock.calls).toHaveLength(0);
-	});
-
-	test('bounds Popup-triggered media probes to eight concurrent documents', async () => {
-		let inFlight = 0;
-		let maxInFlight = 0;
-		const tabs = Array.from({ length: 25 }, (_, index) => tab(100 + index));
-		installChrome(tabs, async () => {
-			inFlight += 1;
-			maxInFlight = Math.max(maxInFlight, inFlight);
-			await new Promise((resolve) => setTimeout(resolve, 1));
-			inFlight -= 1;
-			return 'media';
-		});
-
-		const result = await resolveVisibleTabs();
-		expect(result.tabs).toEqual(tabs.map((item) => item.id));
-		expect(maxInFlight).toBeLessThanOrEqual(8);
-		expect(maxInFlight).toBeGreaterThan(1);
-	});
-
-	test('ignores a never-audible false Chrome update', () => {
-		markTabAudible(50, false, 10);
-		expect(tabAudioStates.has(50)).toBe(false);
-	});
 });
-
-type ProbeResult = 'media' | 'empty' | 'invalid' | 'throw';
-type ProbeResolver = Map<number, ProbeResult> | ((tabId: number) => ProbeResult | Promise<ProbeResult>);
-type DocumentResolver = (tabId: number, readIndex: number) => string | null | Promise<string | null>;
 
 function tab(
 	id: number,
@@ -301,35 +196,30 @@ function tab(
 	};
 }
 
-function installChrome(
-	tabs: chrome.tabs.Tab[],
-	resolver: ProbeResolver,
-	documentResolver: DocumentResolver = (tabId) => `document-${tabId}`,
-) {
-	const query = mock(async () => tabs);
-	const documentReads = new Map<number, number>();
-	const getAllFrames = mock(async ({ tabId }: { tabId: number }) => {
-		const readIndex = documentReads.get(tabId) ?? 0;
-		documentReads.set(tabId, readIndex + 1);
-		const documentId = await documentResolver(tabId, readIndex);
-		return documentId ? [{ frameId: 0, documentId }] : [];
-	});
-	const sendMessage = mock(async ({ target }: { target: { tabId: number } }) => {
-		const tabId = target.tabId;
-		const outcome = resolver instanceof Map
-			? resolver.get(tabId) ?? 'empty'
-			: await resolver(tabId);
-		if (outcome === 'throw') throw new Error('receiver unavailable');
-		if (outcome === 'invalid') return [{ frameId: 0, documentId: `document-${tabId}` }];
-		return [{ frameId: 0, documentId: `document-${tabId}`, result: outcome === 'media' }];
-	});
+// `scripting` is intentionally absent from the fake: the inventory must not be
+// able to inject anything, so a regression that reintroduces a probe fails here
+// with a missing-API error instead of silently waking tabs.
+function installChrome(tabs: chrome.tabs.Tab[]) {
+	let queryCount = 0;
+	const injected: Array<{ tabId: number }> = [];
+	const query = mock(async () => { queryCount += 1; return tabs; });
+	const storage = new Map<string, unknown>();
 	Object.defineProperty(globalThis, 'chrome', {
 		configurable: true,
 		value: {
 			tabs: { query },
-			webNavigation: { getAllFrames },
-			scripting: { executeScript: sendMessage },
+			storage: {
+				local: {
+					async get(key: string) { return storage.has(key) ? { [key]: storage.get(key) } : {}; },
+					async set(items: Record<string, unknown>) { for (const [key, value] of Object.entries(items)) storage.set(key, value); },
+				},
+			},
+			// Present so a stray injection attempt is observable rather than fatal.
+			scripting: { executeScript: mock(async ({ target }: { target: { tabId: number } }) => {
+				injected.push({ tabId: target.tabId });
+				return [];
+			}) },
 		},
 	});
-	return { sendMessage, getFrame: getAllFrames };
+	return { queries: () => queryCount, injected: () => injected };
 }

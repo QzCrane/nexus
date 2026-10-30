@@ -10,6 +10,7 @@ const chromeIntegrationTests = new Set([
 	'accessibility-chrome.spec.ts',
 	'diagnostics-chrome.spec.ts',
 	'performance.spec.ts',
+	'popup-frame-geometry-chrome.spec.ts',
 	'popup-inventory-latency.spec.ts',
 	'runtime-long-session-performance.spec.ts',
 	'runtime-stress-performance.spec.ts',

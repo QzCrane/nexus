@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
 import { SPECTRA_PAGE_MEDIA_EVENT, SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE, SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE } from '../../src/shared/page-media-bridge';
 import { acquireSmokeRuntime, browser, collectPageErrors, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, openExtensionClient, patchExtensionSettings, readBadgeText, readContentBootstrapStatus, readContentStatus, submitEffectiveVolume, submitPopupControlIntent, waitForContentBootstrapStatus, waitForContentStatus } from './harness';
-import { prepareSmokeSession, startSmokeSession, teardownSmokeSession } from './harness';
+import { installAudioContextProbe, prepareSmokeSession, releaseSmokeRuntimes, startSmokeSession, teardownSmokeSession } from './harness';
 
 describe('SPECTRA built extension smoke: page-media', () => {
 	beforeAll(async () => {
@@ -167,42 +167,62 @@ describe('SPECTRA built extension smoke: page-media', () => {
 	}, 35_000);
 
 	test('tracks SPA media additions and removals without activating Capture', async () => {
-		await acquireSmokeRuntime();
-		await fixturePage.evaluate(() => {
-			document.querySelector('#v')?.remove();
-			history.pushState({}, '', '/spa/empty');
-		});
-		expect((await waitForContentStatus((status) => !status.hasAudio)).hasAudio).toBe(false);
+		// This case deletes the fixture's media element for good, so it runs on its
+		// own tab: the shared fixture document is what every later case reads, and
+		// a document whose media was removed cannot answer them.
+		const spaPage = await browser.newPage();
+		const spaErrors: string[] = [];
+		collectPageErrors(spaPage, spaErrors);
+		const spaUrl = `${fixtureUrl}?spa-media=1`;
+		try {
+			await installAudioContextProbe(spaPage);
+			await spaPage.goto(spaUrl, { waitUntil: 'domcontentloaded' });
+			await acquireSmokeRuntime(spaPage.url());
+			await spaPage.evaluate(() => {
+				document.querySelector('#v')?.remove();
+				history.pushState({}, '', '/spa/empty');
+			});
+			expect((await waitForContentStatus((status) => !status.hasAudio, 5_000, () => spaPage.url())).hasAudio).toBe(false);
 
-		await fixturePage.evaluate(() => {
-			const container = document.createElement('section');
-			container.id = 'spa-media';
-			const video = document.createElement('video');
-			video.id = 'v';
-			video.controls = true;
-			video.setAttribute('aria-label', 'SPA smoke test video');
-			container.append(video);
-			document.body.append(container);
-			history.pushState({}, '', '/spa/media');
-		});
-		expect((await waitForContentStatus((status) => status.hasAudio)).hasAudio).toBe(true);
-		expect(await fixturePage.evaluate(() => {
-			return (window as Window & { __spectraAudioContextCount?: number })
-				.__spectraAudioContextCount;
-		})).toBe(0);
+			await spaPage.evaluate(() => {
+				const container = document.createElement('section');
+				container.id = 'spa-media';
+				const video = document.createElement('video');
+				video.id = 'v';
+				video.controls = true;
+				video.setAttribute('aria-label', 'SPA smoke test video');
+				container.append(video);
+				document.body.append(container);
+				history.pushState({}, '', '/spa/media');
+			});
+			expect((await waitForContentStatus((status) => status.hasAudio, 5_000, () => spaPage.url())).hasAudio).toBe(true);
+			expect(await spaPage.evaluate(() => {
+				return (window as Window & { __spectraAudioContextCount?: number })
+					.__spectraAudioContextCount;
+			})).toBe(0);
 
-		const initialGeneration = (await readContentStatus()).generation ?? 0;
-		await fixturePage.evaluate(() => history.pushState({}, '', '/spa/media?route=2'));
-		const queryGeneration = (await waitForContentStatus(
-			(status) => (status.generation ?? 0) > initialGeneration,
-		)).generation ?? 0;
-		await fixturePage.evaluate(() => { location.hash = 'details'; });
-		const hashGeneration = (await waitForContentStatus(
-			(status) => (status.generation ?? 0) > queryGeneration,
-		)).generation ?? 0;
-		expect(hashGeneration).toBeGreaterThan(queryGeneration);
-		expect(await fixturePage.evaluate(() => location.search)).toBe('?route=2');
-		expect(await fixturePage.evaluate(() => location.hash)).toBe('#details');
+			const initialGeneration = (await readContentStatus(spaPage.url())).generation ?? 0;
+			await spaPage.evaluate(() => history.pushState({}, '', '/spa/media?route=2'));
+			const queryGeneration = (await waitForContentStatus(
+				(status) => (status.generation ?? 0) > initialGeneration,
+				5_000,
+				() => spaPage.url(),
+			)).generation ?? 0;
+			await spaPage.evaluate(() => { location.hash = 'details'; });
+			const hashGeneration = (await waitForContentStatus(
+				(status) => (status.generation ?? 0) > queryGeneration,
+				5_000,
+				() => spaPage.url(),
+			)).generation ?? 0;
+			expect(hashGeneration).toBeGreaterThan(queryGeneration);
+			expect(await spaPage.evaluate(() => location.search)).toBe('?route=2');
+			expect(await spaPage.evaluate(() => location.hash)).toBe('#details');
+			expect(spaErrors).toEqual([]);
+		} finally {
+			// Release before closing: a lease on a closed tab would be unresolvable.
+			await releaseSmokeRuntimes();
+			await spaPage.close();
+		}
 	});
 
 	test('discovers one exact page-media controller for semantic volume, mute, and speed', async () => {

@@ -251,7 +251,7 @@ async function discardFencedAudioSnapshot(
 ): Promise<void> {
 	if (snapshots.get(tabId) === snapshot) snapshots.delete(tabId);
 	if (pendingWrites.get(tabId) === snapshot) pendingWrites.delete(tabId);
-	await chrome.storage.session.remove(key(tabId)).catch(() => undefined);
+	await chrome.storage.local.remove(key(tabId)).catch(() => undefined);
 }
 
 function scheduleWrite(tabId: number, snapshot: AudioSessionSnapshot, delay = STORAGE_WRITE_DEBOUNCE_MS): void {
@@ -272,10 +272,10 @@ async function flushAudioSessionInternal(tabId: number): Promise<void> {
 	}
 	const expectedEpoch = documentFenceFor(tabId).epoch;
 	try {
-		await chrome.storage.session.set({ [key(tabId)]: pending });
+		await chrome.storage.local.set({ [key(tabId)]: pending });
 		const fence = documentFenceFor(tabId);
 		if (fence.epoch !== expectedEpoch) {
-			await chrome.storage.session.remove(key(tabId)).catch(() => undefined);
+			await chrome.storage.local.remove(key(tabId)).catch(() => undefined);
 			if (pendingWrites.get(tabId) === pending) pendingWrites.delete(tabId);
 			retryCounts.delete(tabId);
 			return;
@@ -576,7 +576,7 @@ export async function updateAudioSession(
 		pendingWrites.delete(identity.tabId);
 		retryCounts.delete(identity.tabId);
 		assertAudioSessionFence(identity, expectedEpoch);
-		await chrome.storage.session.set({ [key(identity.tabId)]: snapshot });
+		await chrome.storage.local.set({ [key(identity.tabId)]: snapshot });
 		try {
 			assertAudioSessionFence(identity, expectedEpoch);
 		} catch (error) {
@@ -614,7 +614,7 @@ async function readAudioSession(tabId: number): Promise<AudioSessionSnapshot | n
 		return cached;
 	}
 	const readEpoch = documentFences.get(tabId)?.epoch;
-	const result = await chrome.storage.session.get(key(tabId));
+	const result = await chrome.storage.local.get(key(tabId));
 	const stored = result[key(tabId)] as unknown;
 	if (isAudioSessionSnapshot(stored)) {
 		const normalized = { ...stored, actualConfig: normalizeConfig(stored.actualConfig) };
@@ -628,9 +628,9 @@ async function readAudioSession(tabId: number): Promise<AudioSessionSnapshot | n
 	const normalized = normalizeLegacyAudioSession(stored);
 	if (!normalized) return null;
 	if (!isCurrentAudioSnapshot(tabId, normalized, readEpoch)) return null;
-	await chrome.storage.session.set({ [key(tabId)]: normalized });
+	await chrome.storage.local.set({ [key(tabId)]: normalized });
 	if (!isCurrentAudioSnapshot(tabId, normalized, readEpoch)) {
-		await chrome.storage.session.remove(key(tabId)).catch(() => undefined);
+		await chrome.storage.local.remove(key(tabId)).catch(() => undefined);
 		return null;
 	}
 	snapshots.set(tabId, normalized);
@@ -649,7 +649,7 @@ export async function removeAudioSession(
 		clearWriteTimer(tabId);
 		pendingWrites.delete(tabId);
 		retryCounts.delete(tabId);
-		await chrome.storage.session.remove(key(tabId));
+		await chrome.storage.local.remove(key(tabId));
 	});
 }
 
@@ -672,7 +672,7 @@ export async function forgetAudioSession(
 		clearWriteTimer(tabId);
 		pendingWrites.delete(tabId);
 		retryCounts.delete(tabId);
-		await chrome.storage.session.remove(key(tabId));
+		await chrome.storage.local.remove(key(tabId));
 		documentFences.delete(tabId);
 	});
 }

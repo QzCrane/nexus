@@ -75,7 +75,7 @@ describe('Popup single effective-volume control', () => {
 		)).toBe(true);
 	});
 
-	test('renderCard synchronizes action badge with volume and mute state', () => {
+	test('renderCard leaves the action badge to the Background projection', () => {
 		const calls: Array<{ type: string; payload: unknown }> = [];
 		(globalThis as unknown as { chrome: unknown }).chrome = {
 			action: {
@@ -118,7 +118,9 @@ describe('Popup single effective-volume control', () => {
 		};
 		render();
 
-		expect(calls.some((c) => c.type === 'text' && (c.payload as { text: string; tabId: number }).text === '150' && (c.payload as { tabId: number }).tabId === 42)).toBe(true);
-		expect(calls.some((c) => c.type === 'bg' && (c.payload as { tabId: number }).tabId === 42)).toBe(true);
+		// The card owns its own pixels; the Action badge has exactly one writer.
+		// A Popup-side write carried the card's *own* mute flag, which is how a
+		// stale render could repaint M over a freshly acknowledged unmute.
+		expect(calls).toEqual([]);
 	});
 });

@@ -315,7 +315,13 @@ body {
 /* Main UI: fill fixed-width parent container */
 #view-main {
   width: 100%;
-  padding: 12px;
+  /* The blank under the last card is the Popup's own bottom padding and nothing
+     else, so an open with background cards ends exactly like an open without
+     them. The asymmetric bottom is deliberate: it is the same 24px the cards'
+     own margins used to add up to, now owned in one place. */
+  /* Horizontal padding is the gap between the card and the popup edge; kept
+     equal to the card's own inner padding so both bands match. */
+  padding: 12px 10px 24px;
   box-sizing: border-box;
   background: var(--bg);
   opacity: 1;
@@ -323,6 +329,12 @@ body {
   transition: opacity 0.2s;
   position: relative;
   z-index: 1;
+}
+
+/* ... so the last card's own margin must not add to it. `:where()` keeps both
+   stacks at the same specificity, so neither container wins by being an id. */
+:where(#main-stage, .bg-stack) > .glass-card:last-child {
+  margin-bottom: 0;
 }
 
 #view-main:not(.active) {
@@ -511,7 +523,8 @@ body {
   background: var(--w);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
-  padding: 16px;
+  /* Inner white band matches the outer band (view-main padding) at 10px. */
+  padding: 10px;
   margin-bottom: 12px;
   position: relative;
   border: 1px solid var(--card-border);
@@ -537,8 +550,8 @@ body {
   background: var(--w);
   /* must be opaque to cover the mask below */
 
-  /* negative margin to offset glass-card 16px padding */
-  margin: -16px -16px 12px -16px;
+  /* negative margin to offset glass-card 10px padding */
+  margin: -10px -10px 12px -10px;
   padding: 12px 16px;
 
   /* visual separator */
@@ -802,7 +815,10 @@ input:checked + .slider-round:before {
   background: var(--g0);
   border-radius: 12px;
   padding: 4px;
-  margin-bottom: 12px;
+  /* No bleed: the card's 10px padding is now the white band on the sides and
+     the bottom. Do not add a negative margin larger than ~8px or the card's
+     14px corner radius clips this box's bottom corners. */
+  margin-bottom: 0;
   border: 1px solid var(--g1);
 }
 
@@ -950,6 +966,10 @@ input:checked + .slider-round:before {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  /* Scoped border-box only here: with content-box, width:100% + 12px padding
+     overflowed the card by 24px and the card's overflow:hidden clipped the
+     4th media button. Outermost containers keep their original box model. */
+  box-sizing: border-box;
   padding: 8px 12px;
   background: var(--w);
   border-radius: 10px;
@@ -964,7 +984,7 @@ input:checked + .slider-round:before {
 }
 
 .btn-speed {
-  width: 28px;
+  width: 26px;
   height: 28px;
   border: 1px solid var(--g1);
   background: var(--g0);
@@ -990,7 +1010,7 @@ input:checked + .slider-round:before {
 }
 
 .speed-input {
-  width: 48px;
+  width: 44px;
   height: 28px;
   border: 1px solid var(--g1);
   background: var(--w);
@@ -1043,6 +1063,15 @@ input:checked + .slider-round:before {
 
 .btn-media:active {
   transform: scale(0.95);
+}
+
+/* Light theme keeps the original subtle --g1 edge. Against the dark card the
+   same value nearly disappears, so only the dark theme lifts it to a mid-tone
+   between --g1 and --g2 (~2.7:1) where the outline still reads. */
+[data-theme="dark"] .btn-speed,
+[data-theme="dark"] .speed-input,
+[data-theme="dark"] .btn-media {
+  border-color: color-mix(in srgb, var(--g1) 40%, var(--g2));
 }
 
 /* Pause button active state (playing) */

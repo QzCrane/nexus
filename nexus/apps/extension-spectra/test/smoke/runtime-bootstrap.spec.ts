@@ -4,6 +4,29 @@ import { acquireSmokeRuntime, ensureOffscreenHostForSyntheticHarness, evaluateSe
 import type { SmokeRpcResult } from './harness';
 import { prepareSmokeSession, startSmokeSession, teardownSmokeSession } from './harness';
 
+// A media fact is the tab's own statement about its current document. This writes
+// the one a page holding playable media writes: the fixture is a player shell with
+// no source, so its own bootstrap correctly reports no media, and the revision
+// jumps past that report's counter so the claim stands for the document's life.
+async function reportFixtureMediaFound(tabId: number): Promise<void> {
+	const results = await evaluateServiceWorker(async (targetTabId) => chrome.scripting.executeScript({
+		target: { tabId: targetTabId },
+		func: async (revision: number) => chrome.runtime.sendMessage({
+			protocolVersion: 2,
+			requestId: crypto.randomUUID(),
+			type: 'spectra.tab.media.report',
+			payload: {
+				hasMediaElement: true,
+				userInteracted: false,
+				reportRevision: revision,
+			},
+		}),
+		args: [10_000],
+	}), tabId);
+	const response = results?.[0]?.result as SmokeRpcResult<{ reported: boolean }> | undefined;
+	if (!response?.ok) throw new Error(response?.error?.message ?? 'Media report was not accepted');
+}
+
 describe('SPECTRA built extension smoke: runtime-bootstrap', () => {
 	beforeAll(async () => {
 		const options = await prepareSmokeSession();
@@ -76,6 +99,13 @@ describe('SPECTRA built extension smoke: runtime-bootstrap', () => {
 		await waitForContentBootstrapStatus(fixtureUrl);
 		await fixturePage.bringToFront();
 		const tabId = await getTabId(fixturePage.url());
+		// The smoke fixture is a player shell with no source, so its own document
+		// correctly reports "no media" - the inventory lists a tab only when it
+		// holds something playable, not when it holds a <video> slot. This test is
+		// about that claim surviving a worker stop, so it states the claim the tab
+		// would have made while holding real media and then follows it through
+		// storage, a forced stop and a fresh read.
+		await reportFixtureMediaFound(tabId);
 		const client = await openExtensionClient('options.html');
 		try {
 			const first = await client.evaluate(() => chrome.runtime.sendMessage({

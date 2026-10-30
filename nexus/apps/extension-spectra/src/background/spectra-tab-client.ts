@@ -21,6 +21,31 @@ function requestCapability(): string {
 		: `request:${Date.now().toString(36)}-${crypto.getRandomValues(new Uint32Array(2)).join('-')}`;
 }
 
+// A view read must not change the page it describes. Every passive field a
+// control snapshot needs is answerable by the manifest-injected bootstrap, so a
+// reader that only wants to render current state must never be able to acquire
+// the document runtime: acquiring it injects the heavy runtime into a tab the
+// user has not opened, which is exactly the write a background card must not
+// cause. The allow-list keeps that boundary enforced instead of conventional.
+const PASSIVE_READ_TYPES: ReadonlySet<SpectraRequestType> = new Set([
+	'spectra.control.actual.read',
+]);
+
+// post: one page read through the lean bootstrap, never through a runtime lease.
+// A document that would need the runtime answers `content_runtime_not_loaded`;
+// the caller reports what it already knows instead of waking the tab.
+export async function readSpectraTabPassively<T extends SpectraRequestType>(
+	tabId: number,
+	type: T,
+	payload: SpectraRequestPayload<T>,
+	context: Omit<BackgroundRequestContext, 'tabId'> = {},
+): Promise<SpectraResponse<T>> {
+	if (!PASSIVE_READ_TYPES.has(type)) {
+		throw new Error(`${type} is not a passive document read`);
+	}
+	return sendBackgroundTabRequestOnce(tabId, type, payload, context);
+}
+
 // Background is the Content runtime lifecycle owner. It must acquire that
 // runtime locally instead of sending an ensure RPC to its own MV3 worker, which
 // Chrome does not loop back to the sending context.

@@ -9,6 +9,7 @@ import { isSpectraUiResponse } from '@nexus/contracts/ui-runtime';
 import { RUNTIME_OBSERVATION_PORT } from '../../shared/runtime-observation';
 import {
 	acknowledgedProcessorLifecycle,
+	evictCachedCardSnapshot,
 	hasKnownBackgroundRetentionInputs,
 	readCardSnapshot,
 	resolveInitialProcessorLifecycle,
@@ -326,8 +327,13 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     tabId, documentId, state, render,
     hasPendingVolume: update.hasPendingVolume,
 		pendingConfigFields: update.pendingConfigFields,
+		cachedSnapshotForecast: snapshot.fromCache === true,
     onDocumentReplaced: () => {
       disposeCard();
+      // The cached snapshot belongs to the retired document. Drop it before the
+      // re-init so the replacement reads the new document's durable facts instead
+      // of re-painting the old card from the in-realm memory cache.
+      evictCachedCardSnapshot(tabId);
       void chrome.tabs.get(tabId).then(async (currentTab) => {
         if (popupClosing) return;
         await initCard({ ...params, tab: currentTab });

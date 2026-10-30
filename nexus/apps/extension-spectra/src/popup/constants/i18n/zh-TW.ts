@@ -10,7 +10,6 @@ export const ZH_TW: I18NDict = {
 	vizSub: '顯示視覺化音訊列',
 	vizDesc: '顯示音訊視覺化；關閉可減少音訊處理。',
 	langLabel: '語言 (Language)',
-	mediaInventoryPartial: "部分媒體分頁仍在驗證中，完成後會自動顯示。",
 	noAudio: '無音訊訊號',
 	bgTitle: '背景播放',
 	paused: '增強已暫停',

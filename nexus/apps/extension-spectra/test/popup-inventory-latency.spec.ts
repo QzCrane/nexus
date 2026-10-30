@@ -1,5 +1,6 @@
 // goal: measure real Popup -> media-card first-paint latency under cold and warm service-worker states
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
+import { pausedMediaPage, TONE_PATH, toneResponse } from './helpers/media-fixture';
 import { expect } from 'bun:test';
 import {
 	afterAllChrome,
@@ -75,7 +76,6 @@ async function measurePopupOpen(expectedCards: number, label: string, stopFirst:
 			spectraReady: document.documentElement.dataset.spectraReady ?? null,
 			bgCards: document.querySelectorAll('#bg-stack .glass-card').length,
 			mainCards: document.querySelectorAll('#main-stage .glass-card').length,
-			inventoryStatusText: document.getElementById('media-inventory-status')?.textContent ?? '',
 		}));
 		console.log(`[latency] ${label}: attach=${(attached - started).toFixed(1)}ms inventory=${(inventory - started).toFixed(1)}ms cards=${(cards - started).toFixed(1)}ms states=${JSON.stringify(states)}`);
 		return cards - started;
@@ -97,11 +97,12 @@ beforeAllChrome(async () => {
 		hostname: '127.0.0.1',
 		fetch(request) {
 			const url = new URL(request.url);
+			if (url.pathname === TONE_PATH) return toneResponse();
 			const slug = url.pathname.slice('/media/'.length);
 			if (url.pathname.startsWith('/media/') && ['alpha', 'beta', 'gamma'].includes(slug)) {
-				return new Response(`<!doctype html><html><head><title>Paused Media ${slug}</title></head><body><video controls></video></body></html>`, {
-					headers: { 'content-type': 'text/html; charset=utf-8' },
-				});
+				// A real source, not a player shell: fixture pages must model what the
+				// inventory is allowed to call a media tab.
+				return pausedMediaPage(`Paused Media ${slug}`);
 			}
 			return new Response('Not found', { status: 404 });
 		},

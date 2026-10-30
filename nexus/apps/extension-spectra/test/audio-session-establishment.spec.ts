@@ -32,7 +32,7 @@ function installChrome(storage: FakeSessionStorage): void {
 	Object.defineProperty(globalThis, 'chrome', {
 		configurable: true,
 		value: {
-			storage: { session: storage },
+			storage: { local: storage },
 			runtime: {
 				id: 'spectra-test',
 				sendMessage: async () => undefined,

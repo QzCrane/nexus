@@ -91,7 +91,7 @@ import {
 	type TabControlSessionIdentity,
 	type TabControlSessionScope,
 } from '@nexus/kernel';
-import { sendSpectraTabRequest } from './spectra-tab-client';
+import { readSpectraTabPassively, sendSpectraTabRequest } from './spectra-tab-client';
 import { settingsRepository } from './settings-repository';
 import { storage } from './state';
 import {
@@ -280,7 +280,7 @@ async function currentIdentity(tabId: number): Promise<TabControlSessionIdentity
 
 async function readPersistedSnapshot(tabId: number): Promise<ControlSnapshot | null> {
 	const key = storageKey(tabId);
-	const stored = await chrome.storage.session.get(key)
+	const stored = await chrome.storage.local.get(key)
 		.catch(() => ({})) as Record<string, unknown>;
 	const value = stored[key];
 	return isControlSnapshot(value) ? value : null;
@@ -298,7 +298,7 @@ async function readPersistedSnapshot(tabId: number): Promise<ControlSnapshot | n
  */
 async function readPersistedGeneration(tabId: number): Promise<number> {
 	const key = generationKey(tabId);
-	const stored = await chrome.storage.session.get(key) as Record<string, unknown>;
+	const stored = await chrome.storage.local.get(key) as Record<string, unknown>;
 	const value = stored[key];
 	if (value === undefined) return 0;
 	if (!Number.isSafeInteger(value) || Number(value) < 0) {
@@ -308,7 +308,7 @@ async function readPersistedGeneration(tabId: number): Promise<number> {
 }
 
 async function persistGeneration(tabId: number, generation: number): Promise<void> {
-	await chrome.storage.session.set({ [generationKey(tabId)]: generation })
+	await chrome.storage.local.set({ [generationKey(tabId)]: generation })
 		.catch((error) => swLog.warn('persistGeneration failed', error));
 }
 
@@ -392,6 +392,11 @@ async function getSnapshot(tabId: number): Promise<ControlSnapshot | null> {
 	return rememberSnapshot(known);
 }
 
+// post: the control state a card may paint, read one-way. This is a view, not a
+// handshake: it asks the document's own lean bootstrap what it can observe and
+// never acquires the Content runtime, so rendering a card for a tab the user is
+// not looking at cannot wake that tab. A document that cannot answer passively
+// leaves the fields it cannot prove unknown rather than being loaded to find out.
 export async function getControlViewSnapshot(tabId: number): Promise<ControlSnapshot | null> {
 	const expectedEpoch = navigationEpoch(tabId);
 	const existing = await getSnapshot(tabId);
@@ -404,7 +409,7 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 	const videoFields = ['pip', 'fullscreen'] as const satisfies readonly ControlDirectField[];
 	const mediaFields = [...PAGE_OBSERVABLE_FIELDS]
 		.filter((field): field is ControlDirectField => !videoFields.includes(field as typeof videoFields[number]));
-	const read = (fields: readonly ControlDirectField[]) => sendSpectraTabRequest(
+	const read = (fields: readonly ControlDirectField[]) => readSpectraTabPassively(
 		tabId,
 		PROTO_ACTUAL_READ,
 		{ fields, target: null },
@@ -433,16 +438,27 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 		activeVideo: null,
 		fields: {},
 	};
-	const fields = {
+	// A view read reports what the page currently shows, and it may not erase an
+	// applied extension-owned ACK. For a field the extension is controlling right
+	// now, the DOM value is the input the processor reads - not the effective
+	// output the card must show - so replacing that ACK with a raw observation
+	// would repaint a routed tab as untouched. Fields the extension does not own
+	// are exactly the ones a passive read is allowed to refresh.
+	const observedViewFields = (
+		response: Awaited<ReturnType<typeof read>>,
+	): ControlFieldStates => {
+		if (!response?.ok) return {};
+		const observed = nativeObservationFields(response.data, base.revision);
+		for (const field of Object.keys(observed) as ControlField[]) {
+			const owned = base.fields[field];
+			if (owned?.controlled === true && owned.phase === 'applied') delete observed[field];
+		}
+		return observed;
+	};
+	const fields: ControlFieldStates = {
 		...base.fields,
-		...(mediaResponse?.ok ? nativeObservationFields(
-			mediaResponse.data,
-			base.revision,
-		) : {}),
-		...(videoResponse?.ok ? nativeObservationFields(
-			videoResponse.data,
-			base.revision,
-		) : {}),
+		...observedViewFields(mediaResponse),
+		...observedViewFields(videoResponse),
 	};
 	const activeMedia = mediaResponse?.ok
 		? mediaResponse.data.target
@@ -597,10 +613,10 @@ async function rollbackSnapshotPersistence(
 ): Promise<void> {
 	try {
 		if (previous) {
-			await chrome.storage.session.set({ [storageKey(tabId)]: previous });
+			await chrome.storage.local.set({ [storageKey(tabId)]: previous });
 		} else {
 			stalePersistedSnapshots.add(tabId);
-			await chrome.storage.session.remove([storageKey(tabId)]);
+			await chrome.storage.local.remove([storageKey(tabId)]);
 		}
 	} catch (rollbackError) {
 		stalePersistedSnapshots.add(tabId);
@@ -616,7 +632,7 @@ async function publishSnapshot(
 	const previous = snapshots.get(snapshot.tabId);
 	snapshots.set(snapshot.tabId, snapshot);
 	try {
-		await chrome.storage.session.set({ [storageKey(snapshot.tabId)]: snapshot });
+		await chrome.storage.local.set({ [storageKey(snapshot.tabId)]: snapshot });
 	} catch (error) {
 		if (previous) snapshots.set(snapshot.tabId, previous);
 		else snapshots.delete(snapshot.tabId);
@@ -2100,10 +2116,23 @@ function submitSerialized(
 			? await captureAdmissionForInvocation(request.tabId, invocation, snapshot, intentId)
 			: undefined;
 		try {
-			const acknowledgement = await executeIntent({
+			const baseRequest = {
 				...unadmittedRequest,
 				...(captureAdmission ? { captureAdmission } : {}),
-			}, snapshot, intentId);
+			};
+			// A page observation is an idempotent fact about the current page
+			// state: it carries no ordering semantics and never re-writes the
+			// DOM, unlike a user intent. When a sibling commit advanced the
+			// snapshot revision between this transaction's read and its commit,
+			// the observation was silently dropped and the card kept painting a
+			// stale value until another event happened to publish the truth.
+			// Re-running once against a fresh snapshot recovers it without
+			// weakening the revision guarantee that protects user intents.
+			const acknowledgement = request.source === 'page'
+				? await executeIntent(baseRequest, snapshot, intentId).catch(
+					() => executeIntent(baseRequest, undefined, intentId),
+				)
+				: await executeIntent(baseRequest, snapshot, intentId);
 			if (!isControlApplyAck(acknowledgement)) {
 				throw new Error('Control executor returned a strategy outside the capability policy');
 			}
@@ -2258,7 +2287,7 @@ async function removeTab(tabId: number): Promise<void> {
 	try {
 		await serialized(tabId, async () => {
 			snapshots.delete(tabId);
-			await chrome.storage.session.remove([
+			await chrome.storage.local.remove([
 				storageKey(tabId),
 				generationKey(tabId),
 			]).catch(() => undefined);
@@ -2322,7 +2351,7 @@ function queueNavigationInvalidation(
 		snapshots.delete(tabId);
 		await Promise.all([
 			persistGeneration(tabId, generation),
-			chrome.storage.session.remove([
+			chrome.storage.local.remove([
 				storageKey(tabId),
 			]),
 		]);

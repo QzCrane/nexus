@@ -14,7 +14,7 @@ import { submitControlIntent } from './intent-recovery';
 import { mergeAudioConfig, mergeControlFields } from './types';
 import { showPopupToast } from '../toast';
 import { isReportedControlFailure } from './control-port';
-import { actualVolumeColor, writeCardBadge } from './render';
+import { actualVolumeColor } from './render';
 import type { VolumeView } from './volume-view';
 
 export interface EventsParams {
@@ -135,12 +135,9 @@ export function bindCardEvents(params: EventsParams): void {
       const liveColor = actualVolumeColor(false, value, state.actualMode, state.phase);
       volumeView.paintPointer(value, liveColor);
       ui.slider.style.setProperty('--slider-accent', liveColor);
-      writeCardBadge(tabId, {
-        enabled: state.config.enabled,
-        muted: false,
-        volume: value,
-        color: liveColor,
-      });
+      // The Action badge is not painted here. It has exactly one owner - the
+      // Background's acknowledged projection - because a second writer with the
+      // Popup's own idea of "muted" is what could repaint M over a fresh unmute.
     }
   };
 

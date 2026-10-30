@@ -139,15 +139,7 @@ describeChrome('SPECTRA local diagnostic export privacy', () => {
 				'offscreenHostPresent',
 				'offscreenAudioProcessorCount',
 				'offscreenRemoteSessionCount',
-				'mediaDiscoveryPendingCount',
-				'mediaDiscoveryOldestPendingMs',
-				'mediaDiscoveryScanCount',
-				'mediaDiscoveryQueryFailureCount',
-				'mediaDiscoveryProbeTimeoutCount',
-				'mediaDiscoveryDeniedCount',
-				'mediaDiscoveryStaleCount',
-				'mediaDiscoveryUnknownCount',
-				'mediaDiscoveryLastCoverageComplete',
+				'mediaFactCount',
 			]) {
 				expect(Object.hasOwn(owners, key)).toBe(true);
 				const value = owners[key];

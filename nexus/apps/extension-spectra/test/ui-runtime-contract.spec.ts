@@ -201,14 +201,7 @@ function createUiSuccessData(): Record<SpectraUiRequestType, unknown> {
 			generation,
 			frames: { '42': [0, 128, 255] },
 		},
-		'spectra.tab.visible.list': {
-			tabs: [7, tabId],
-			coverage: { status: 'complete', total: 2, examined: 2, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0 },
-		},
-		'spectra.tab.visible.settle': {
-			tabs: [7, tabId],
-			coverage: { status: 'complete', total: 2, examined: 2, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0 },
-		},
+		'spectra.tab.visible.list': { tabs: [7, tabId] },
 	};
 }
 
@@ -270,7 +263,7 @@ function createUiEvents(): Record<SpectraUiEventType, SpectraEventEnvelope> {
 
 describe('restricted extension UI protocol facade', () => {
 	test('owns one unique closed request and event allowlist', () => {
-		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(19);
+		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(18);
 		expect(new Set(SPECTRA_UI_REQUEST_TYPES).size).toBe(SPECTRA_UI_REQUEST_TYPES.length);
 		expect(SPECTRA_UI_EVENT_TYPES).toHaveLength(7);
 		expect(new Set(SPECTRA_UI_EVENT_TYPES).size).toBe(SPECTRA_UI_EVENT_TYPES.length);
@@ -319,10 +312,13 @@ describe('restricted extension UI protocol facade', () => {
 		}
 	});
 
-	test('accepts a legacy v2 tab inventory only as a response without coverage evidence', () => {
+	test('rejects a coverage-bearing tab inventory: the list is complete by construction', () => {
 		const response = rpcSuccess({ tabs: [7, tabId] });
 		expect(isSpectraResponse('spectra.tab.visible.list', response)).toBe(true);
 		expect(isSpectraUiResponse('spectra.tab.visible.list', response)).toBe(true);
+		const coverage = { status: 'complete', total: 2, examined: 2, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0 };
+		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, tabId], coverage }))).toBe(false);
+		expect(isSpectraUiResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, tabId], coverage }))).toBe(false);
 	});
 
 	test('accepts page-native volume acknowledgements in the focused Popup guard', () => {

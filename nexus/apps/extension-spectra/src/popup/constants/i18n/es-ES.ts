@@ -10,7 +10,6 @@ export const ES_ES: I18NDict = {
 	vizSub: 'Mostrar barras de audio dinámicas',
 	vizDesc: 'Muestra la visualización de audio. Desactívala para reducir el procesamiento de audio.',
 	langLabel: 'Idioma',
-	mediaInventoryPartial: "Algunas pestañas aún se están verificando y aparecerán automáticamente.",
 	noAudio: 'Sin señal de audio',
 	bgTitle: 'Fondo',
 	paused: 'Mejora de audio pausada',

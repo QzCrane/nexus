@@ -1,4 +1,5 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
+import { TONE_PATH, toneResponse } from './helpers/media-fixture';
 import { expect } from 'bun:test';
 import { chromeIntegrationEnabled, testChrome } from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
@@ -136,9 +137,10 @@ testChrome('records scaled inventory, full Popup rendering, and first-hotkey phy
 			hostname: '127.0.0.1',
 			fetch(request) {
 				const url = new URL(request.url);
+				if (url.pathname === TONE_PATH) return toneResponse();
 				if (url.pathname !== '/media') return new Response('not found', { status: 404 });
 				return new Response(
-					`<!doctype html><html><head><title>Runtime Stress ${url.searchParams.get('id') ?? ''}</title></head><body><video controls muted></video></body></html>`,
+					`<!doctype html><html><head><title>Runtime Stress ${url.searchParams.get('id') ?? ''}</title></head><body><video controls muted preload="auto" src="${TONE_PATH}"></video></body></html>`,
 					{ headers: { 'content-type': 'text/html; charset=utf-8' } },
 				);
 			},

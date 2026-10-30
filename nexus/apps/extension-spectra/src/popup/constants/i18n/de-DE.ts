@@ -10,7 +10,6 @@ export const DE_DE: I18NDict = {
 	vizSub: 'Dynamische Audiobars anzeigen',
 	vizDesc: 'Zeigt die Audiovisualisierung. Ausschalten reduziert die Audioverarbeitung.',
 	langLabel: 'Sprache',
-	mediaInventoryPartial: "Einige Medien-Tabs werden noch geprüft und erscheinen automatisch.",
 	noAudio: 'Kein Audiosignal',
 	bgTitle: 'Hintergrund',
 	paused: 'Audioverbesserung pausiert',

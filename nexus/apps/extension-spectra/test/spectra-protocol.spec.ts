@@ -1220,18 +1220,12 @@ describe('SPECTRA mapped v2 envelopes', () => {
 			'spectra.screenshot.target.verify',
 			rpcSuccess({ valid: false }),
 		)).toBe(false);
-		const coverage = { status: 'complete', total: 2, examined: 2, pending: 0, failed: 0, denied: 0, stale: 0, unknown: 0 };
-		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 42], coverage }))).toBe(true);
+		// The media-tab list is a single complete answer: no coverage taxonomy to
+		// report, no duplicate ids, and nothing left to converge later.
 		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 42] }))).toBe(true);
-		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 7], coverage }))).toBe(false);
-		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({
-			tabs: [7],
-			coverage: { ...coverage, status: 'degraded', examined: 1, pending: 1, failed: 1 },
-		}))).toBe(true);
-		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({
-			tabs: [],
-			coverage: { ...coverage, status: 'complete', examined: 1, pending: 1, failed: 1 },
-		}))).toBe(false);
+		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [7, 7] }))).toBe(false);
+		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [0] }))).toBe(false);
+		expect(isSpectraResponse('spectra.tab.visible.list', rpcSuccess({ tabs: [], coverage: {} }))).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			requestId: 'legacy-media-report',
@@ -1240,15 +1234,9 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		})).toBe(true);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			requestId: 'subframe-media-report',
+			requestId: 'unknown-media-report-field',
 			type: 'spectra.tab.media.report',
 			payload: { hasMediaElement: false, userInteracted: false, hasSubframes: true },
-		})).toBe(true);
-		expect(isSpectraRequestEnvelope({
-			protocolVersion: SPECTRA_PROTOCOL_VERSION,
-			requestId: 'invalid-media-report-hassubframes',
-			type: 'spectra.tab.media.report',
-			payload: { hasMediaElement: false, userInteracted: false, hasSubframes: 'yes' },
 		})).toBe(false);
 		expect(isSpectraRequestEnvelope({
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,

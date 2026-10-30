@@ -84,7 +84,7 @@ describe('capture restart reconciliation barrier', () => {
 					sendMessage: async () => undefined,
 				},
 				storage: {
-					session: {
+					local: {
 						get: async () => ({}),
 						set: async () => undefined,
 						remove: async () => undefined,
@@ -784,7 +784,7 @@ function createChromeHarness(options: {
 			) => options.getStreamId?.(callback, _options),
 		},
 		storage: {
-			session: {
+			local: {
 				get: async () => ({}),
 				set: async () => undefined,
 				remove: async () => undefined,

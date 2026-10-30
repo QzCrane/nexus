@@ -98,21 +98,28 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				'committed page-native Popup transaction',
 			);
 
-			await updatePageMediaControllerHarness({
-				volumeBase: 70,
-				mediaMuted: false,
-				speed: 1.25,
-			});
-			await popup.waitForFunction(() => {
-				const volume = document.querySelector<HTMLInputElement>('.vol-slider');
-				const speed = document.querySelector<HTMLInputElement>('.speed-input');
-				const mute = document.querySelector<HTMLElement>('.btn-mute');
-				return volume?.value === '70'
-					&& speed?.value === '1.25'
-					&& mute?.getAttribute('aria-pressed') === 'false';
-			}, { timeout: 8_000 });
-			const pageObservationSnapshot = await readSnapshot();
-			expect(pageObservationSnapshot).toMatchObject({
+		await updatePageMediaControllerHarness({
+			volumeBase: 70,
+			mediaMuted: false,
+			speed: 1.25,
+		});
+		await popup.waitForFunction(() => {
+			const volume = document.querySelector<HTMLInputElement>('.vol-slider');
+			const speed = document.querySelector<HTMLInputElement>('.speed-input');
+			const mute = document.querySelector<HTMLElement>('.btn-mute');
+			return volume?.value === '70'
+				&& speed?.value === '1.25'
+				&& mute?.getAttribute('aria-pressed') === 'false';
+		}, { timeout: 8_000 });
+		const pageObservationSnapshot = await eventually(
+			readSnapshot,
+			(snapshot) => snapshot.ok
+				&& snapshot.data?.fields.volumeBase?.actual === 70
+				&& snapshot.data.fields.speed?.actual === 1.25
+				&& snapshot.data.fields.mediaMuted?.actual === false,
+			'committed the page-native media change to the control snapshot',
+		);
+		expect(pageObservationSnapshot).toMatchObject({
 				ok: true,
 				data: {
 					fields: {
@@ -143,11 +150,18 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				(state) => state.mediaMuted && !state.domMuted,
 				'controller-only mute hotkey ACK',
 			);
-			await popup.waitForFunction(() => (
-				document.querySelector('.btn-mute')?.getAttribute('aria-pressed') === 'true'
-			), { timeout: 8_000 });
-			const finalSnapshot = await readSnapshot();
-			expect(finalSnapshot).toMatchObject({
+		await popup.waitForFunction(() => (
+			document.querySelector('.btn-mute')?.getAttribute('aria-pressed') === 'true'
+		), { timeout: 8_000 });
+		const finalSnapshot = await eventually(
+			readSnapshot,
+			(snapshot) => snapshot.ok
+				&& snapshot.data?.fields.volumeBase?.actual === 70
+				&& snapshot.data.fields.speed?.actual === 1.25
+				&& snapshot.data.fields.mediaMuted?.actual === true,
+			'committed the controller-only mute through the hotkey to the control snapshot',
+		);
+		expect(finalSnapshot).toMatchObject({
 				ok: true,
 				data: {
 					fields: {
@@ -191,7 +205,15 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 					&& state.speed === 1.75,
 				'pre-refresh acknowledged media state',
 			);
-			expect(await readBadgeText(tabId)).toBe('63');
+			// The badge is a coalesced projection of the acknowledged session, so it
+			// lands after the page value does. Read it the same way the post-refresh
+			// assertion below does instead of racing the badge write.
+			await eventually(
+				() => readBadgeText(tabId),
+				(text) => text === '63',
+				'pre-refresh sticky badge projection',
+				5_000,
+			);
 
 			await restartServiceWorker();
 			const durableProjection = await evaluateServiceWorker(async (targetTabId) => {

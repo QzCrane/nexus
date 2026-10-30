@@ -325,7 +325,7 @@ function installChrome(stored: Map<string, AudioSessionSnapshot>): {
 				sendMessage: async () => undefined,
 			},
 			storage: {
-				session: {
+				local: {
 					async get(key: string) { return { [key]: stored.get(key) }; },
 					async set() { /* read-only test */ },
 					async remove() { /* read-only test */ },

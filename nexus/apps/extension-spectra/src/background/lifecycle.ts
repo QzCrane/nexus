@@ -28,6 +28,16 @@ import {
 	invalidateVisualizerDocument,
 } from './handlers/audio';
 
+// The Popup caches its last-known-good CardSnapshot under this key in
+// chrome.storage.local. It is a projection of the control snapshot and audio
+// session, so it must retire with them when a document changes - otherwise a
+// reopened Popup would paint a card for a tab that has since navigated away.
+const CARD_CACHE_PREFIX = 'spectra.popup.card_cache.';
+
+function evictCardSnapshotCache(tabId: number): Promise<void> {
+	return chrome.storage.local.remove(`${CARD_CACHE_PREFIX}${tabId}`).catch(() => undefined);
+}
+
 async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<void> {
 	const visualizerCleanup = tabClosed
 		? handleVisualizerTabRemoved(tabId)
@@ -59,6 +69,7 @@ async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<
 		(tabClosed
 			? forgetAudioSession(tabId, { alreadyFenced: true })
 			: removeAudioSession(tabId, { alreadyFenced: true })).catch(() => undefined),
+		evictCardSnapshotCache(tabId),
 		...(tabClosed ? [clearBadgeUsage(tabId)] : []),
 	]);
 }
@@ -111,9 +122,6 @@ export function setupLifecycleListeners(): void {
 			retireTabMediaDocument(details.tabId);
 			// The old document's media fact must never leak to the new document.
 			mediaFacts.forgetMediaFact(details.tabId);
-			// A new document deserves a fresh probe chance: clear any transient
-			// failure cooldown that belonged to the old document.
-			mediaFacts.forgetCooldown(details.tabId);
 			advanceTabDocumentGeneration(details.tabId);
 			void beginDocumentNavigation(details.tabId).catch((error: unknown) => {
 				/* @__PURE__ */ swLog.debug(`[Lifecycle] Navigation invalidation settled at browser boundary: ${String(error)}`);
@@ -171,7 +179,6 @@ export function setupLifecycleListeners(): void {
 		}
 		forgetTabDocumentGeneration(tabId);
 		mediaFacts.forgetMediaFact(tabId);
-		mediaFacts.forgetCooldown(tabId);
 		void clearTabDocumentState(tabId, true);
 	});
 

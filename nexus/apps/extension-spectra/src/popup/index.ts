@@ -1,4 +1,4 @@
-// goal: main entry point for the SPECTRA popup; orchestrates UI initialization and tab-specific card rendering
+// goal: main entry point for the SPECTRA popup; orchestrate UI initialization and tab-specific card rendering
 
 import { $, isRestrictedUrl } from './utils';
 import { initNavigation } from './views/navigation';
@@ -11,6 +11,12 @@ import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { clearPopupStartupError, showPopupStartupError } from './startup-error';
 import { runBoundedCardBootstrap } from './bounded-card-bootstrap';
 import { releasePopupFrame, reservePopupFrame, trackPopupFrame } from './frame-height';
+import { getSettingsSnapshot } from '../shared/settings-client';
+import { loadPopupLocaleCatalog } from '../shared/i18n/popup-catalog';
+import { EN_US } from './constants/i18n/en';
+import { DEFAULT_GLOBAL_SETTINGS, type GlobalSettings } from '@nexus/kernel';
+import type { I18NDict } from './types';
+import { readVisibleMediaTabIdsFromStorage } from './media-inventory-from-storage';
 
 type PopupVisualizerModule = typeof import('./visualizer/loop');
 
@@ -19,331 +25,305 @@ const popupAttemptDisposers = new Set<() => void>();
 let popupRetired = false;
 
 function tabIdMap(tabs: readonly chrome.tabs.Tab[]): Map<number, chrome.tabs.Tab> {
-  return new Map(tabs.flatMap((tab) => tab.id === undefined ? [] : [[tab.id, tab] as const]));
+	return new Map(tabs.flatMap((tab) => tab.id === undefined ? [] : [[tab.id, tab] as const]));
 }
 
 async function loadPopupVisualizer(): Promise<PopupVisualizerModule> {
-  const pending = visualizerLoad ?? import('./visualizer/loop');
-  visualizerLoad = pending;
-  try {
-    return await pending;
-  } catch (error) {
-    if (visualizerLoad === pending) visualizerLoad = null;
-    throw error;
-  }
+	const pending = visualizerLoad ?? import('./visualizer/loop');
+	visualizerLoad = pending;
+	try {
+		return await pending;
+	} catch (error) {
+		if (visualizerLoad === pending) visualizerLoad = null;
+		throw error;
+	}
 }
 
 function registerPopupAttemptDisposer(dispose: () => void): () => void {
-  if (popupRetired) { dispose(); return () => undefined; }
-  popupAttemptDisposers.add(dispose);
-  return () => popupAttemptDisposers.delete(dispose);
+	if (popupRetired) { dispose(); return () => undefined; }
+	popupAttemptDisposers.add(dispose);
+	return () => popupAttemptDisposers.delete(dispose);
 }
 
 function disposePopupAttempt(): void {
-  delete document.documentElement.dataset.spectraReady;
-  for (const dispose of popupAttemptDisposers) {
-    try {
-      dispose();
-    } catch (error) {
-      console.warn('[SPECTRA Popup] Startup cleanup failed:', error);
-    }
-  }
-  popupAttemptDisposers.clear();
+	delete document.documentElement.dataset.spectraReady;
+	for (const dispose of popupAttemptDisposers) {
+		try {
+			dispose();
+		} catch (error) {
+			console.warn('[SPECTRA Popup] Startup cleanup failed:', error);
+		}
+	}
+	popupAttemptDisposers.clear();
 }
 
-// retry: disposePopupAttempt() releases every owner the failed run registered,
-// so a retry re-enters the same bootstrap in place instead of reloading the
-// document and losing the Popup window's transient user context.
 async function startPopup(): Promise<void> {
-  try {
-    await main();
-  } catch (error) {
-    console.error('[SPECTRA Popup] Startup failed:', error);
-    disposePopupAttempt();
-    // A failed bootstrap owns no card geometry: drop the reserved frame so the
-    // error surface is measured as itself instead of sitting below a card row.
-    releasePopupFrame();
-    document.documentElement.dataset.spectraReady = 'failed';
-    try {
-      showPopupStartupError(error, startPopup);
-    } catch (surfaceError: unknown) {
-      console.error('[SPECTRA Popup] Unable to present startup failure:', surfaceError);
-    }
-  }
+	try {
+		await main();
+	} catch (error) {
+		console.error('[SPECTRA Popup] Startup failed:', error);
+		disposePopupAttempt();
+		releasePopupFrame();
+		document.documentElement.dataset.spectraReady = 'failed';
+		try {
+			showPopupStartupError(error, startPopup);
+		} catch (surfaceError: unknown) {
+			console.error('[SPECTRA Popup] Unable to present startup failure:', surfaceError);
+		}
+	}
 }
 
-// Intrinsic Action-popup sizing must not be determined by its transient initial
-// viewport; a tab-hosted extension page, unlike that popup, may reflow narrowly.
 document.documentElement.dataset.spectraSurface = chrome.extension.getViews({ type: 'popup' })
-  .some((view) => view === window) ? 'action-popup' : 'extension-page';
+	.some((view) => view === window) ? 'action-popup' : 'extension-page';
 
-// The Action Popup is a fresh document on every open, so nothing that decides
-// its layout exists at first paint. frame-height.ts replays the last settled
-// height before paint and animates every later correction, so the window gains
-// the card list in one motion instead of resizing once per arriving stage.
-// Runs while the module body executes, before the document is first painted.
+// The frame reservation and every live request start while this module body is
+// executing. None of them waits for settings, the side panel, or DOMContentLoaded,
+// so the Popup's first paint is never gated on the slowest read.
 reservePopupFrame();
+const activeTabRequest = chrome.tabs.query({ active: true, currentWindow: true })
+	.then((tabs) => tabs[0] ?? null)
+	.catch(() => null);
+const allTabsRequest = chrome.tabs.query({}).catch(() => [] as chrome.tabs.Tab[]);
+const inventoryRequest = sendSpectraRequest('spectra.tab.visible.list', {});
 
-// eff: bootstraps the popup UI by identifying active tabs, loading settings, and rendering control cards
+// Warm the settings snapshot and the locale assets: card rendering must not
+// be serialized behind those two reads. A failed warm-up only sends
+// initSettings down its own path, so card rendering is unaffected.
+void getSettingsSnapshot()
+	.then((snapshot) => loadPopupLocaleCatalog(snapshot.globalSettings.lang))
+	.catch(() => undefined);
+
+// Fast inventory: project the visible media tabs straight from the durable
+// facts plus Chrome's audible flag, without a round trip to the background.
+// null means the read failed and the RPC above remains the fallback.
+const storageInventoryRequest = allTabsRequest
+	.then((tabs) => readVisibleMediaTabIdsFromStorage(tabs))
+	.catch(() => null);
+
 async function main(): Promise<void> {
-  disposePopupAttempt();
-  clearPopupStartupError();
-  // Installed before any card exists: the frame then follows every commit from
-  // the very first measurement instead of re-anchoring itself later.
-  trackPopupFrame();
-  await installAccessibilityPolicy();
-  if (popupRetired) return;
-  enableSmoothScroll();
-  registerPopupAttemptDisposer(disableSmoothScroll);
+	disposePopupAttempt();
+	clearPopupStartupError();
+	trackPopupFrame();
+	void installAccessibilityPolicy().catch((error: unknown) => {
+		console.debug('[SPECTRA Popup] Accessibility policy was not installed:', error);
+	});
+	enableSmoothScroll();
+	registerPopupAttemptDisposer(disableSmoothScroll);
+	try {
+		initNavigation();
+	} catch (error) {
+		console.error('[SPECTRA Popup] initNavigation failed:', error);
+	}
 
-  let activeTab: chrome.tabs.Tab | null = null;
-  try {
-    const tabs = await chrome.tabs.query({ active: true, currentWindow: true });
-    activeTab = tabs[0] || null;
-  } catch {
-    // note: failure to query tabs usually indicates the popup was opened in a non-browser context (e.g. devtools)
-    activeTab = null;
-  }
+	// Settings initialisation runs in parallel with tabs/inventory: card
+	// rendering is no longer serialized behind the settings RPC or the locale
+	// asset download. Until they are ready the built-in English dictionary and
+	// the default global settings stand in; once they land, the projection
+	// chain in initSettings overwrites them in place.
+	let settings: SettingsState | null = null;
+	const settingsPromise = initSettings().then((resolved) => {
+		settings = resolved;
+		if (popupRetired) return resolved;
+		registerPopupAttemptDisposer(resolved.dispose);
+		registerPopupAttemptDisposer(installPopupOptionalPermissionAdmission());
+		void import('./side-panel').then(({ initSidePanel }) => {
+			if (!popupRetired) registerPopupAttemptDisposer(initSidePanel());
+		}).catch((error: unknown) => {
+			console.error('[SPECTRA Popup] initSidePanel failed:', error);
+		});
+		return resolved;
+	});
+	const getGlobalSettings = (): GlobalSettings => settings?.gSettings ?? DEFAULT_GLOBAL_SETTINGS;
+	const getDictionary = (): I18NDict => settings?.dict ?? EN_US;
 
-  try {
-    initNavigation();
-  } catch (error) {
-    console.error('[SPECTRA Popup] initNavigation failed:', error);
-  }
+	const mainStage = $<HTMLElement>('main-stage');
+	const bgStack = $<HTMLElement>('bg-stack');
+	const bgHeader = $<HTMLElement>('bg-header');
+	const bgBadge = $<HTMLElement>('bg-badge');
+	const template = $<HTMLTemplateElement>('tmpl-card');
+	const emptyState = $<HTMLElement>('empty-state');
+	const viewContainer = document.querySelector<HTMLElement>('.view-container');
+	if (!mainStage || !bgStack || !template || !emptyState || !viewContainer) {
+		throw new Error('Required Popup DOM elements are missing');
+	}
 
-  const settings: SettingsState = await initSettings();
-  registerPopupAttemptDisposer(settings.dispose);
-  if (popupRetired) return;
-  registerPopupAttemptDisposer(installPopupOptionalPermissionAdmission());
+	let renderedActiveTabId: number | null = null;
+	let connectedTabId: number | null = null;
+	let activePort: chrome.runtime.Port | null = null;
+	const renderedBackgroundTabIds = new Set<number>();
+	const cardDisposers = new Map<number, () => void>();
+	const pendingCards = new Set<Promise<boolean>>();
+	registerPopupAttemptDisposer(() => activePort?.disconnect());
 
-  // eff: lazy load side panel only when needed
-  try {
-    const { initSidePanel } = await import('./side-panel');
-    registerPopupAttemptDisposer(initSidePanel());
-  } catch (error) {
-    console.error('[SPECTRA Popup] initSidePanel failed:', error);
-  }
+	const reconcileCardInventory = (): void => {
+		if (popupRetired) return;
+		const backgroundCount = bgStack.children.length;
+		if (bgBadge) bgBadge.textContent = String(backgroundCount);
+		bgHeader?.classList.toggle('hidden', backgroundCount === 0);
+		// The empty state is a result, never a starting point: the card inventory
+		// decides it. Painting it before the first card arrives is what made every
+		// open look like the cards were being rebuilt from scratch.
+		const hasCards = mainStage.children.length > 0 || backgroundCount > 0;
+		emptyState.classList.toggle('hidden', hasCards);
+		emptyState.hidden = hasCards;
+	};
 
-  if (activeTab?.id) {
-    try {
-      const { bindRemoteUI, updateRemoteI18n } = await import('../remote');
-      const disposeRemoteUI = bindRemoteUI(activeTab.id, settings.dict);
-      registerPopupAttemptDisposer(disposeRemoteUI);
-      registerPopupAttemptDisposer(settings.onDictionaryChange(updateRemoteI18n));
-    } catch (error) {
-      console.error('[SPECTRA Popup] bindRemoteUI failed:', error);
-    }
-  }
+	const registerCardCleanup = (tabId: number) => (dispose: () => void): (() => void) => {
+		cardDisposers.set(tabId, dispose);
+		const unregister = registerPopupAttemptDisposer(() => {
+			if (cardDisposers.get(tabId) === dispose) cardDisposers.delete(tabId);
+			dispose();
+		});
+		return () => {
+			if (cardDisposers.get(tabId) === dispose) cardDisposers.delete(tabId);
+			unregister();
+		};
+	};
 
-  // SettingsState is a live projection owned by views/settings. Cards read it
-  // at render time so external revisions cannot strand Popup on an old theme,
-  // language, or visualizer setting.
-  const getGlobalSettings = () => settings.gSettings;
+	const startCard = (tab: chrome.tabs.Tab, background: boolean): Promise<boolean> => {
+		const tabId = tab.id;
+		if (tabId === undefined) return Promise.resolve(false);
+		if (background) renderedBackgroundTabIds.add(tabId);
+		else renderedActiveTabId = tabId;
+		const operation = initCard({
+			container: background ? bgStack : mainStage,
+			template,
+			tab,
+			dict: getDictionary(),
+			getGlobalSettings,
+			getDictionary,
+			onCardSetChanged: reconcileCardInventory,
+			loadVisualizer: loadPopupVisualizer,
+			registerCleanup: registerCardCleanup(tabId),
+			isBackground: background,
+			allowCached: true,
+		}).then((initialized) => {
+			if (!initialized) {
+				renderedBackgroundTabIds.delete(tabId);
+				if (renderedActiveTabId === tabId) renderedActiveTabId = null;
+			}
+			reconcileCardInventory();
+			return initialized;
+		}).catch((error: unknown) => {
+			renderedBackgroundTabIds.delete(tabId);
+			if (renderedActiveTabId === tabId) renderedActiveTabId = null;
+			console.debug(`[SPECTRA Popup] Card ${tabId} was not initialized:`, error);
+			reconcileCardInventory();
+			return false;
+		}).finally(() => { pendingCards.delete(operation); });
+		pendingCards.add(operation);
+		return operation;
+	};
 
-  const mainStage = $<HTMLElement>('main-stage');
-  const bgStack = $<HTMLElement>('bg-stack');
-  const bgHeader = $<HTMLElement>('bg-header');
-  const bgBadge = $<HTMLElement>('bg-badge');
-  const template = $<HTMLTemplateElement>('tmpl-card');
-  const emptyState = $<HTMLElement>('empty-state');
+	const disposeRenderedCard = (tabId: number): void => {
+		renderedBackgroundTabIds.delete(tabId);
+		if (renderedActiveTabId === tabId) renderedActiveTabId = null;
+		const dispose = cardDisposers.get(tabId);
+		if (dispose) dispose();
+		else document.querySelector(`.glass-card[data-tab-id="${tabId}"]`)?.remove();
+		reconcileCardInventory();
+	};
 
-  if (!mainStage || !bgStack || !template || !emptyState) {
-    throw new Error('Required Popup DOM elements are missing');
-  }
+	const connectActiveTab = (tabId: number): void => {
+		if (connectedTabId === tabId) return;
+		activePort?.disconnect();
+		connectedTabId = tabId;
+		try {
+			activePort = chrome.tabs.connect(tabId, { name: 'popup-connection' });
+			activePort.onDisconnect.addListener(() => {
+				void chrome.runtime.lastError;
+				if (connectedTabId === tabId) connectedTabId = null;
+				activePort = null;
+			});
+		} catch (error) {
+			activePort = null;
+			console.debug('[SPECTRA Popup] Active-tab connection unavailable:', error);
+		}
+	};
 
-  const reconcileCardInventory = (): void => {
-    if (popupRetired) return;
-    const backgroundCount = bgStack.children.length;
-    if (bgBadge) bgBadge.textContent = String(backgroundCount);
-    bgHeader?.classList.toggle('hidden', backgroundCount === 0);
-    // The empty state is a result, never a starting point: the card inventory
-    // decides it. Painting it before the first card arrives is what made every
-    // open look like the cards were being rebuilt from scratch.
-    const hasCards = mainStage.children.length > 0 || backgroundCount > 0;
-    emptyState.classList.toggle('hidden', hasCards);
-    emptyState.hidden = hasCards;
-  };
+	const [liveActiveTab, allTabs, storageInventory] = await Promise.all([
+		activeTabRequest,
+		allTabsRequest,
+		storageInventoryRequest,
+	]);
+	if (popupRetired) return;
+	const activeTab = liveActiveTab;
+	const activeTabId = activeTab?.id;
+	const allTabsById = tabIdMap(allTabs);
 
-  // rule: main-stage is reserved for the current active tab only
-  const activeTabId = activeTab?.id;
-  // The inventory request starts before the active-tab card init so a slow or
-  // unresponsive active tab cannot delay the media-tab list render.
-  const inventoryRequest = sendSpectraRequest('spectra.tab.visible.list', {});
-  // The active-tab card boots in parallel with the inventory read; only the
-  // final reconcile awaits it, so a busy active tab never blocks the list.
-  let activeCardReady: Promise<boolean> | null = null;
-  if (activeTab && typeof activeTabId === 'number' && !isRestrictedUrl(activeTab.url)) {
-    try {
-      // eff: establish a persistent port to the active tab's content script to keep the session alive
-      const port = chrome.tabs.connect(activeTabId, { name: 'popup-connection' });
-      registerPopupAttemptDisposer(() => port.disconnect());
-      port.onDisconnect.addListener(() => {
-        void chrome.runtime.lastError;
-      });
-    } catch (error) {
-      // note: fail silently if the content script is not yet injected or compatible
-      console.debug('[SPECTRA Popup] Active-tab connection unavailable:', error);
-    }
+	if (activeTab && activeTabId !== undefined && !isRestrictedUrl(activeTab.url)) {
+		connectActiveTab(activeTabId);
+		void startCard(activeTab, false);
+	}
 
-    activeCardReady = initCard({
-      container: mainStage,
-      template,
-      tab: activeTab,
-      dict: settings.dict,
-      getGlobalSettings,
-      getDictionary: () => settings.dict,
-      onCardSetChanged: reconcileCardInventory,
-      loadVisualizer: loadPopupVisualizer,
-      registerCleanup: registerPopupAttemptDisposer,
-    }).then((mainCardSuccess) => {
-      if (mainCardSuccess) {
-        emptyState.classList.add('hidden');
-      }
-      return mainCardSuccess;
-    }).catch((error: unknown) => {
-      // note: the active tab may be unresponsive or retired; the list still renders
-      console.debug('[SPECTRA Popup] Active-tab card unavailable:', error);
-      return false;
-    });
-  }
+	// Applies one authoritative tab-id list to the background card stack: every
+	// rendered card not in the list is retired, and every listed tab without a
+	// card gets one. The same routine serves the fast first paint and the later
+	// RPC reconciliation, so the two can never diverge on their card set.
+	const applyInventory = async (tabIds: readonly number[]): Promise<void> => {
+		document.documentElement.dataset.mediaInventory = 'complete';
+		const liveIds = new Set(tabIds);
+		for (const renderedId of [...renderedBackgroundTabIds]) {
+			if (!liveIds.has(renderedId) || renderedId === activeTabId) disposeRenderedCard(renderedId);
+		}
+		const backgroundTabs = tabIds
+			.filter((tabId) => tabId !== activeTabId && !renderedBackgroundTabIds.has(tabId))
+			.map((tabId) => allTabsById.get(tabId))
+			.filter((tab): tab is chrome.tabs.Tab => tab !== undefined && !isRestrictedUrl(tab.url));
+		await runBoundedCardBootstrap(backgroundTabs, CARD_SNAPSHOT_CONCURRENCY,
+			async (tab) => startCard(tab, true));
+	};
 
-  let hasBgAudio = false;
-  const renderedBackgroundTabIds = new Set<number>();
+	// First paint answers from the durable facts, not from a service-worker round
+	// trip. The RPC is still awaited once for correctness, but it no longer gates
+	// the cards the user sees.
+	if (storageInventory !== null) {
+		await applyInventory(storageInventory);
+	} else {
+		const rpcResult = await inventoryRequest;
+		if (rpcResult.ok) {
+			await applyInventory(rpcResult.data.tabs);
+		} else {
+			document.documentElement.dataset.mediaInventory = 'unavailable';
+			console.warn('[SPECTRA Popup] Visible tab list unavailable:', rpcResult.error.message);
+		}
+	}
 
-  // Pending tabs are a transient "checking" state: the settle read converges
-  // them in place. Only genuine probe failures (denied/stale/unknown) warrant
-  // the partial-inventory warning, and those retry automatically via cooldowns.
-  const applyInventoryEvidence = (coverage: {
-    status: 'complete' | 'degraded';
-    pending: number;
-    denied: number;
-    stale: number;
-    unknown: number;
-  } | undefined): void => {
-    const genuineFailures = coverage
-      ? coverage.denied + coverage.stale + coverage.unknown
-      : 0;
-    const evidence: 'complete' | 'partial' | 'checking' | 'unknown' = coverage === undefined
-      ? 'unknown'
-      : coverage.status === 'complete' ? 'complete'
-      : genuineFailures > 0 ? 'partial'
-      : 'checking';
-    document.documentElement.dataset.mediaInventory = evidence;
-    const inventoryStatus = document.getElementById('media-inventory-status');
-    if (!inventoryStatus) return;
-    inventoryStatus.hidden = evidence !== 'partial';
-    inventoryStatus.textContent = evidence === 'partial' ? settings.dict.mediaInventoryPartial : '';
-  };
+	// Reconcile any drift between the durable-fact forecast and the background's
+	// live answer. Identical lists skip the work entirely; this only fires when a
+	// tab navigated or reported media in the instant the Popup was opening.
+	void inventoryRequest.then(async (result) => {
+		if (popupRetired || !result.ok || storageInventory === null) return;
+		const same = storageInventory.length === result.data.tabs.length
+			&& storageInventory.every((id, index) => id === result.data.tabs[index]);
+		if (same) return;
+		await applyInventory(result.data.tabs);
+	}).catch(() => undefined);
 
-  const renderBackgroundTabs = async (
-    visibleTabIds: readonly number[],
-    tabMap: Map<number, chrome.tabs.Tab>,
-    options?: { allowCached?: boolean },
-  ): Promise<void> => {
-    const liveIds = new Set(visibleTabIds);
-    // Retire cards whose media tab left the visible inventory during this open.
-    for (const renderedId of [...renderedBackgroundTabIds]) {
-      if (liveIds.has(renderedId)) continue;
-      renderedBackgroundTabIds.delete(renderedId);
-      bgStack.querySelector<HTMLElement>(`[data-tab-id="${renderedId}"]`)?.remove();
-    }
-    const backgroundTabs = visibleTabIds
-      .filter((tabId) => tabId !== activeTabId && !renderedBackgroundTabIds.has(tabId))
-      .map((tabId) => tabMap.get(tabId))
-      .filter((tab): tab is chrome.tabs.Tab => tab !== undefined && !isRestrictedUrl(tab.url));
-    if (backgroundTabs.length === 0) {
-      reconcileCardInventory();
-      return;
-    }
-    // Bound card bootstrap work so a large visible-tab list cannot serialize
-    // dozens of status probes or create an unbounded burst of DOM/visualizer
-    // work. Every item settles before badge/empty-state reconciliation.
-    const summary = await runBoundedCardBootstrap(backgroundTabs, CARD_SNAPSHOT_CONCURRENCY, async (tab) => {
-      const initialized = await initCard({
-        container: bgStack,
-        template,
-        tab,
-        dict: settings.dict,
-        getGlobalSettings,
-        getDictionary: () => settings.dict,
-        onCardSetChanged: reconcileCardInventory,
-        loadVisualizer: loadPopupVisualizer,
-        registerCleanup: registerPopupAttemptDisposer,
-        isBackground: true,
-        allowCached: options?.allowCached,
-      });
-      if (initialized && typeof tab.id === 'number') renderedBackgroundTabIds.add(tab.id);
-      return initialized;
-    });
-    hasBgAudio = summary.succeeded > 0;
-    if (hasBgAudio) bgHeader?.classList.remove('hidden');
-    if (summary.failures.length > 0) {
-      console.warn(`[SPECTRA Popup] ${summary.failures.length} background card(s) failed to initialize.`);
-    }
-    reconcileCardInventory();
-  };
+	await Promise.all([...pendingCards]);
+	reconcileCardInventory();
+	document.documentElement.dataset.spectraReady = 'true';
 
-  // Chrome's `audible` flag is the authority for "this tab is emitting media
-  // right now". Rendering from it before the inventory round-trip cannot invent
-  // a tab that is not playing, and the inventory replaces it with the settled
-  // set a moment later. No remembered tab list is consulted: a cached list is a
-  // second opinion about a question Chrome already answers.
-  const preloadAudibleTabs = (async () => {
-    try {
-      const allTabs = await chrome.tabs.query({});
-      const tabMap = tabIdMap(allTabs);
-      const audibleIds = allTabs
-        .filter((tab) => typeof tab.id === 'number' && tab.id !== activeTabId && tab.audible)
-        .map((tab) => tab.id as number);
-      if (audibleIds.length > 0 && !popupRetired) {
-        await renderBackgroundTabs(audibleIds, tabMap, { allowCached: true });
-      }
-    } catch (error) {
-      console.debug('[SPECTRA Popup] Audible tab preload skipped:', error);
-    }
-  })();
-
-  try {
-    // goal: render discovered media tabs while retaining the configured display-retention policy
-    await preloadAudibleTabs;
-    const result = await inventoryRequest;
-    if (!result.ok) throw new Error(result.error.message);
-    applyInventoryEvidence(result.data.coverage);
-    const allTabs = await chrome.tabs.query({});
-    await renderBackgroundTabs(result.data.tabs, tabIdMap(allTabs), { allowCached: true });
-
-    // Convergence pass: the background sweep solidifies facts for tabs that had
-    // no prior report or probe. Re-read once it settles and grow the list in
-    // place so newly discovered media tabs appear without reopening the popup.
-    void (async () => {
-      if (popupRetired) return;
-      try {
-        const settled = await sendSpectraRequest('spectra.tab.visible.settle', {});
-        if (popupRetired || !settled.ok) return;
-        applyInventoryEvidence(settled.data.coverage);
-        const settledTabs = await chrome.tabs.query({});
-        await renderBackgroundTabs(settled.data.tabs, tabIdMap(settledTabs), { allowCached: true });
-      } catch (error) {
-        console.debug('[SPECTRA Popup] Inventory convergence update failed:', error);
-      }
-      reconcileCardInventory();
-    })();
-  } catch (error) {
-    document.documentElement.dataset.mediaInventory = 'unavailable';
-    const inventoryStatus = document.getElementById('media-inventory-status');
-    if (inventoryStatus) { inventoryStatus.hidden = false; inventoryStatus.textContent = settings.dict.mediaInventoryPartial; }
-    console.warn('[SPECTRA Popup] Visible tab list unavailable.', error);
-  }
-
-  // The active-tab card was booting in parallel; settle it before the final
-  // inventory reconcile so badge/empty-state counts reflect both stages.
-  if (activeCardReady) await activeCardReady;
-
-  reconcileCardInventory();
-
-  const { updateCardsI18n } = await import('./views/i18n-apply');
-  updateCardsI18n(settings.dict, settings.gSettings.visualizerEnabled);
-  document.documentElement.dataset.spectraReady = 'true';
+	// Settings finishing only corrects what is already on screen: the cards
+	// have rendered with the built-in English dictionary and the default global
+	// settings, and this adds the authoritative dictionary, the Remote UI and
+	// the localized strings.
+	const resolvedSettings = await settingsPromise;
+	if (popupRetired) return;
+	settings = resolvedSettings;
+	if (!popupRetired) {
+		const { updateCardsI18n } = await import('./views/i18n-apply');
+		updateCardsI18n(resolvedSettings.dict, resolvedSettings.gSettings.visualizerEnabled);
+	}
+	if (activeTab && activeTabId !== undefined && !isRestrictedUrl(activeTab.url)) {
+		void import('../remote').then(({ bindRemoteUI, updateRemoteI18n }) => {
+			if (popupRetired || activeTabId !== activeTab?.id) return;
+			registerPopupAttemptDisposer(bindRemoteUI(activeTabId as number, resolvedSettings.dict));
+			registerPopupAttemptDisposer(resolvedSettings.onDictionaryChange(updateRemoteI18n));
+		}).catch((error: unknown) => {
+			console.error('[SPECTRA Popup] bindRemoteUI failed:', error);
+		});
+	}
 }
 
 window.addEventListener('pagehide', () => { popupRetired = true; disposePopupAttempt(); }, { once: true });

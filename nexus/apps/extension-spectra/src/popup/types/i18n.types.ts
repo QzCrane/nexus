@@ -9,7 +9,6 @@ export interface I18NDict {
 	vizDesc: string;
 	langLabel: string;
 	noAudio: string;
-	mediaInventoryPartial: string;
 	bgTitle: string;
 	paused: string;
 	clickToResume: string;

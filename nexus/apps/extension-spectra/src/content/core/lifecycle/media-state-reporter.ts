@@ -2,9 +2,9 @@
 
 import { isExtensionContextValid, safeSend } from '../context-guard';
 import type { PolicyExecutorState } from '../../types';
-import { hasMediaElements } from '../../audio/media-detection';
 import { debounce, createCleanupManager, createEventListener } from '../../utils/timing';
 import { sendSpectraRequest } from '../../../shared/spectra-client';
+import { hasPlayableMedia } from '../../../shared/media-presence';
 import { getActiveMediaRegistry } from '../media-registry';
 import { updatePausedAt } from '../../utils/pause-tracker';
 import { logger } from '../../../shared/logger';
@@ -25,12 +25,12 @@ function updatePauseState(): void {
 export function reportMediaState(state?: PolicyExecutorState): void {
 	if (!isExtensionContextValid()) return;
 
-	const hasMedia = hasMediaElements();
+	// The registry tracks attached elements; the inventory asks a stricter
+	// question - is there a source the user could control? Both producers of the
+	// report answer it with the same shared predicate, so the background never
+	// sees a document flip between two definitions of "has media".
+	const hasMedia = hasPlayableMedia(document);
 	const interacted = state?.userHasInteracted ?? false;
-	// Same inconclusiveness rule as the bootstrap reporter: when this top-level
-	// document has no media but hosts subframes, the media may live in a frame
-	// this world cannot read, so the background must not solidify a no-media fact.
-	const hasSubframes = document.querySelector('iframe,frame') !== null;
 
 	// The bootstrap and the runtime share one isolated-world revision counter, so
 	// the background's per-document monotonic gate accepts both producers across
@@ -44,7 +44,6 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 
 	safeSend(() => sendSpectraRequest('spectra.tab.media.report', {
 		hasMediaElement: hasMedia,
-		hasSubframes,
 		userInteracted: interacted,
 		reportRevision: nextRevision,
 	})).catch((error: unknown) => {

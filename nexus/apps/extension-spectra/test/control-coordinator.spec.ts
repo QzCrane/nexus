@@ -21,6 +21,7 @@ import {
 	controlCoordinatorTestApi,
 	getControlViewSnapshot,
 } from '../src/background/control-coordinator';
+import { readSpectraTabPassively } from '../src/background/spectra-tab-client';
 import type { ExtensionInvocationContext } from '../src/background/extension-invocation';
 import { resetBadgeUsageForTests } from '../src/background/badge-usage';
 import { badgeState } from '../src/background/state';
@@ -413,20 +414,106 @@ describe('authoritative control coordinator', () => {
 	test('fails closed when the durable generation counter cannot be read', async () => {
 		const harness = installHarness();
 		const chromeMock = globalThis.chrome as unknown as {
-			storage: { session: { get: (keys: string | string[]) => Promise<Record<string, unknown>> } };
+			storage: { local: { get: (keys: string | string[]) => Promise<Record<string, unknown>> } };
 		};
-		const readable = chromeMock.storage.session.get;
-		chromeMock.storage.session.get = async () => {
-			throw new Error('storage session unavailable');
+		const readable = chromeMock.storage.local.get;
+		chromeMock.storage.local.get = async () => {
+			throw new Error('storage local unavailable');
 		};
 		try {
 			// SP-71: a read failure used to answer 0, which hands the next
 			// transaction a lower generation than a content runtime may still hold.
 			// An unavailable ordering authority must surface, not be guessed at.
-			await expect(getControlViewSnapshot(harness.activeTabId)).rejects.toThrow('storage session unavailable');
+			await expect(getControlViewSnapshot(harness.activeTabId)).rejects.toThrow('storage local unavailable');
 		} finally {
-			chromeMock.storage.session.get = readable;
+			chromeMock.storage.local.get = readable;
 		}
+	});
+
+	test('reads a card view from the page bootstrap without acquiring the Content runtime', async () => {
+		const harness = installHarness();
+		const values: Record<string, unknown> = {
+			volumeBase: 137.5,
+			mediaMuted: true,
+			playing: false,
+			speed: 1,
+			preservePitch: true,
+			currentTime: 0,
+			loop: false,
+			pip: false,
+			fullscreen: false,
+		};
+		harness.contentResponder = ({ type, payload }) => {
+			expect(type).toBe('spectra.control.actual.read');
+			const observed = (payload as ControlReadRequest).fields
+				.filter((field) => field in values);
+			return {
+				ok: true,
+				data: {
+					target: null,
+					patch: Object.fromEntries(observed.map((field) => [field, values[field]])),
+					observedStrategies: Object.fromEntries(
+						observed.map((field) => [field, 'dom-native']),
+					),
+				},
+			};
+		};
+		const snapshot = await getControlViewSnapshot(harness.activeTabId);
+		expect(snapshot?.fields.volumeBase?.actual).toBe(137.5);
+		expect(snapshot?.fields.mediaMuted?.actual).toBe(true);
+		// A view is a read. It may ask the document what it already observes, and
+		// nothing else: a runtime status probe, ensure or release here would mean
+		// painting a background card had loaded that tab's heavy runtime.
+		expect(harness.contentMessages.map(({ type }) => type))
+			.toEqual(['spectra.control.actual.read', 'spectra.control.actual.read']);
+	});
+
+	test('refuses to route a runtime-requiring request through the passive read', async () => {
+		const harness = installHarness();
+		await expect(readSpectraTabPassively(
+			7,
+			'spectra.control.operation.execute',
+			{} as never,
+		)).rejects.toThrow('is not a passive document read');
+		expect(harness.contentMessages).toEqual([]);
+	});
+
+	test('keeps an applied extension-owned ACK when the page answers a view read', async () => {
+		const harness = installHarness();
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				// The document reports the element volume it holds. Under the effective
+				// volume path that value is the processor's input, not the volume the
+				// user asked for, so it must not replace the ACK the card paints.
+				return actualReadAck(payload as ControlReadRequest, null, {
+					volumeBase: 100,
+					mediaMuted: false,
+				});
+			}
+			const intent = payload as ControlIntent;
+			return { ok: true, data: appliedPatchAck(intent, () => 'dom-native') };
+		};
+		await controlCoordinatorTestApi.submitInvoked(
+			{
+				tabId: 7,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: null,
+				patch: { volumeBase: 80 },
+			},
+			invocation(harness, 'popup'),
+		);
+
+		const view = await getControlViewSnapshot(harness.activeTabId);
+
+		expect(view?.fields.volumeBase).toMatchObject({
+			actual: 80,
+			strategy: 'dom-native',
+			phase: 'applied',
+			controlled: true,
+		});
+		// A field the extension does not own is exactly what a view read refreshes.
+		expect(view?.fields.mediaMuted?.actual).toBe(false);
 	});
 
 	test('rejects background-tab analyser acquisition without issuing Content demand', async () => {
@@ -731,15 +818,15 @@ describe('authoritative control coordinator', () => {
 
 	test('rolls back a snapshot that becomes fenced during persistence', async () => {
 		const harness = installHarness();
-		const session = chrome.storage.session as unknown as {
+		const local = chrome.storage.local as unknown as {
 			set(values: Record<string, unknown>): Promise<void>;
 		};
-		const originalSet = session.set;
+		const originalSet = local.set;
 		let releaseWrite!: () => void;
 		let writeStarted!: () => void;
 		const writeGate = new Promise<void>((resolve) => { releaseWrite = resolve; });
 		const writeStartedSignal = new Promise<void>((resolve) => { writeStarted = resolve; });
-		session.set = async (values) => {
+		local.set = async (values) => {
 			if (Object.keys(values).some((key) => key.startsWith('spectra.control.tab.'))) {
 				writeStarted();
 				await writeGate;
@@ -758,7 +845,7 @@ describe('authoritative control coordinator', () => {
 			expect(await controlCoordinatorTestApi.getSnapshot(7)).toBeNull();
 			expect(harness.storage.has('spectra.control.tab.7')).toBe(false);
 		} finally {
-			session.set = originalSet;
+			local.set = originalSet;
 		}
 	});
 

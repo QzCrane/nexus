@@ -40,7 +40,9 @@ Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge
 | `src/background/settings-value-normalization.ts` | Global/Hotkey/Site/Preset/Audio 的纯 canonical value 与旧数据修复 |
 | `src/background/settings-repository.ts` | revision/CAS、容量、迁移元数据与 durable storage 事务 |
 | `src/background/runtime-loader.ts` | 文档级重级 Runtime Lease 与 READY 握手 |
-| `src/background/media-tab-discovery.ts` | 文档代际化、有界且公平轮转的媒体发现与被动 coverage 诊断 |
+| `src/background/media-inventory.ts` | 一次读取的媒体标签页投影：Chrome 的 `audible` 与该文档自身的可播放媒体事实；不注入、不探测、无 pending 状态 |
+| `src/background/media-facts.ts` | 单一文档作用域的持久媒体判定，随导航/标签移除退役，不设 TTL |
+| `src/shared/media-presence.ts` | “可控制媒体”的唯一可执行定义（readyState/currentTime/played），bootstrap 与重级 runtime 共用 |
 | `src/background/main-runtime-manager.ts` | 幂等注入 Fullscreen V1 与 Page-Media V2 bridges |
 | `src/content/core/media-registry.ts` | `mediaId`、`sourceRevision`、缓存可见性与 Sticky Active Target 追踪 |
 | `src/content/logic/native-media-async.ts` | 唯一物理 DOM 标准媒体异步写/事件+getter ACK、source cancellation 与 frame cadence cache |

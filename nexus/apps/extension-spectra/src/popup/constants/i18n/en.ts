@@ -10,7 +10,6 @@ export const EN_US: I18NDict = {
   vizSub: 'Show dynamic audio bars',
   vizDesc: 'Show audio visualization. Turn it off to reduce audio processing.',
   langLabel: 'Language',
-  mediaInventoryPartial: "Some media tabs are still being verified and will appear automatically.",
   noAudio: 'No Audio Signal',
   bgTitle: 'Background',
   paused: 'Audio Enhancement Paused',

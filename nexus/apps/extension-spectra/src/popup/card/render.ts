@@ -90,12 +90,6 @@ export function createRenderFn(params: RenderParams): () => void {
 
     const displayedVolume = volumePresentation.effectiveVolume;
 
-    writeCardBadge(params.tabId, {
-      enabled: config.enabled,
-      muted,
-      volume: displayedVolume,
-      color: fillColor,
-    });
     const iconKey = muted
       ? 'muted'
       : displayedVolume <= 0 ? 'zero' : displayedVolume > 100 ? 'boost' : 'normal';
@@ -146,25 +140,6 @@ function renderVolumeIcon(
   }
 
   muteBtn.replaceChildren(iconSpan);
-}
-
-// The Action badge is one projection with one rule. Both the frame-coalesced
-// render and the synchronous pointer path call this, so a drag cannot paint a
-// different badge than the renderer would, and no second copy of the rule can
-// drift from the first.
-export function writeCardBadge(
-  tabId: number | undefined,
-  state: { enabled: boolean; muted: boolean; volume: number; color: string },
-): void {
-  if (tabId === undefined || typeof chrome === 'undefined' || !chrome.action?.setBadgeText) return;
-  const isMuted = state.muted || state.volume <= 0;
-  // A disabled card still reports its number: the switch, not the volume, is the
-  // reason nothing is applied. Only an enabled card says "muted".
-  const text = state.enabled && isMuted ? 'M' : state.volume.toString();
-  const badgeBg = !state.enabled ? COLORS.DISABLED : isMuted ? COLORS.MUTED : state.color;
-  void chrome.action.setBadgeText({ tabId, text });
-  void chrome.action.setBadgeBackgroundColor({ tabId, color: badgeBg });
-  void chrome.action.setBadgeTextColor({ tabId, color: COLORS.WHITE });
 }
 
 export function resolveVolumePresentation(

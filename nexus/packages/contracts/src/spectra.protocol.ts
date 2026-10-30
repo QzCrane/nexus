@@ -603,17 +603,10 @@ export interface SpectraRequestMap {
 		response: { markers: TimeMarkerResult[] };
 	};
 	'spectra.tab.media.report': {
-		payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number; hasSubframes?: boolean };
+		payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number };
 		response: { reported: true };
 	};
 	'spectra.tab.visible.list': {
-		payload: Record<string, never>;
-		response: VisibleTabsResult;
-	};
-	// Waits for the current background inventory sweep to settle (bounded by the
-	// scan budget) before projecting the known media tabs. Consumed by the popup
-	// after an instant list read so an open popup converges without a reopen.
-	'spectra.tab.visible.settle': {
 		payload: Record<string, never>;
 		response: VisibleTabsResult;
 	};
@@ -787,10 +780,7 @@ const OPENED_RESULT_KEYS = new Set(['opened']);
 const INJECTED_RESULT_KEYS = new Set(['injected']);
 const REPORTED_RESULT_KEYS = new Set(['reported']);
 const HANDLED_RESULT_KEYS = new Set(['handled']);
-const TABS_RESULT_KEYS = new Set(['tabs', 'coverage']);
-const MEDIA_COVERAGE_KEYS = new Set([
-	'status', 'total', 'examined', 'pending', 'failed', 'denied', 'stale', 'unknown',
-]);
+const TABS_RESULT_KEYS = new Set(['tabs']);
 const PLAYING_RESULT_KEYS = new Set(['playing']);
 const ACTIVE_RESULT_KEYS = new Set(['active']);
 const MEDIA_STATE_RESULT_KEYS = new Set(['playing', 'speed', 'pipActive', 'preservePitch']);
@@ -1096,7 +1086,6 @@ const REQUEST_PAYLOAD_GUARDS = {
 	'spectra.video.marker.list': isEmptyPayload,
 	'spectra.tab.media.report': isTabMediaReportPayload,
 	'spectra.tab.visible.list': isEmptyPayload,
-	'spectra.tab.visible.settle': isEmptyPayload,
 	'spectra.tab.pinned.toggle': isEmptyPayload,
 	'spectra.tab.muted.toggle': isEmptyPayload,
 	'spectra.ui.open': isUiOpenPayload,
@@ -1130,19 +1119,11 @@ function isMediaSpeedResult(
 		&& typeof value.preservePitch === 'boolean';
 }
 
-// Shared response shape for instant list reads and settling convergence reads.
+// The media-tab list. It is a complete answer by construction: every tab that
+// holds media has said so - through its own document report or through Chromes
+// audible flag - so there is no partial state to report or converge later.
 export interface VisibleTabsResult {
 	tabs: number[];
-	coverage?: {
-		status: 'complete' | 'degraded';
-		total: number;
-		examined: number;
-		pending: number;
-		failed: number;
-		denied: number;
-		stale: number;
-		unknown: number;
-	};
 }
 
 function isVisibleTabsResult(
@@ -1152,30 +1133,8 @@ function isVisibleTabsResult(
 		|| !hasOnlyKeys(value, TABS_RESULT_KEYS)
 		|| !Array.isArray(value.tabs)
 		|| value.tabs.length > 10_000) return false;
-	const tabs = value.tabs;
-	const hasCoverage = Object.hasOwn(value, 'coverage');
-	if (hasCoverage && (!isRecord(value.coverage)
-		|| !hasOnlyKeys(value.coverage, MEDIA_COVERAGE_KEYS)
-		|| value.coverage.status !== 'complete' && value.coverage.status !== 'degraded')) return false;
-	if (!hasCoverage) return tabs.every((tabId, index) => (
-		isPositiveInteger(tabId) && tabs.indexOf(tabId) === index
-	));
-	if (!isRecord(value.coverage)) return false;
-	for (const key of ['total', 'examined', 'pending', 'failed', 'denied', 'stale', 'unknown'] as const) {
-		const count = value.coverage[key];
-		if (!Number.isSafeInteger(count) || Number(count) < 0 || Number(count) > 10_000) return false;
-	}
-	const total = Number(value.coverage.total);
-	const examined = Number(value.coverage.examined);
-	const pending = Number(value.coverage.pending);
-	const failed = Number(value.coverage.failed);
-	const denied = Number(value.coverage.denied);
-	const stale = Number(value.coverage.stale);
-	const unknown = Number(value.coverage.unknown);
-	if (examined + failed !== total || pending + denied + stale + unknown !== failed
-		|| (value.coverage.status === 'complete') !== (failed === 0)) return false;
 	const unique = new Set<number>();
-	for (const tabId of tabs) {
+	for (const tabId of value.tabs) {
 		if (!isPositiveInteger(tabId) || unique.has(tabId)) return false;
 		unique.add(tabId);
 	}
@@ -1504,7 +1463,6 @@ const RESPONSE_DATA_GUARDS = {
 		&& hasOnlyKeys(value, REPORTED_RESULT_KEYS)
 		&& value.reported === true,
 	'spectra.tab.visible.list': isVisibleTabsResult,
-	'spectra.tab.visible.settle': isVisibleTabsResult,
 	'spectra.tab.pinned.toggle': (
 		value: unknown,
 	): value is SpectraResponseData<'spectra.tab.pinned.toggle'> => isRecord(value)

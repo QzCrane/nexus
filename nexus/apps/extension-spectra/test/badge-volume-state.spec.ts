@@ -237,6 +237,72 @@ describe('actual volume badge state', () => {
 		await updateBadgeFromControlProjection(identity(), { speed: 1.75 }, false, false);
 		expect(texts.at(-1) ?? '').toBe('');
 	});
+
+	test('paints the newest decision when a session report is already in flight', async () => {
+		const values: Record<string, unknown> = {};
+		const texts: string[] = [];
+		let tabsCalls = 0;
+		let releaseTabs: (() => void) | undefined;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: {
+					get: async () => {
+						tabsCalls += 1;
+						// Park exactly one paint: the session report below decides, then
+						// waits here while the user's unmute ACK overtakes it. Without the
+						// park the two paths never interleave and the race is invisible.
+						if (tabsCalls === 2) {
+							await new Promise<void>((release) => { releaseTabs = release; });
+						}
+						return { id: TAB_ID };
+					},
+				},
+				storage: { session: {
+					get: async (key: string) => key in values ? { [key]: values[key] } : {},
+					set: async (items: Record<string, unknown>) => { Object.assign(values, items); },
+					remove: async (key: string) => { delete values[key]; },
+				} },
+				action: {
+					setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+					setBadgeBackgroundColor: async () => undefined,
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		// The tab is muted by the user, so the badge reads M.
+		await updateBadgeFromControlProjection(identity(), projection({
+			volumeBase: 0,
+			boost: 1,
+			mediaMuted: true,
+		}), false, true);
+		expect(texts.at(-1)).toBe('M');
+
+		// A session report that still says "muted" is already on the wire when the
+		// user unmutes. In the old ordering it painted its captured M *after* the
+		// ACK and the badge stayed M for the rest of the tab's life - the reported
+		// symptom. The decision is now recorded synchronously and the paint reads
+		// the newest decision, so the stale report can only repaint the ACK.
+		const inFlight = updateBadgeFromSession(session('active'), true);
+		for (let tick = 0; tick < 50 && !releaseTabs; tick += 1) {
+			await new Promise((next) => setTimeout(next, 0));
+		}
+		expect(releaseTabs).toBeDefined();
+
+		await updateBadgeFromControlProjection(identity(), projection({
+			volumeBase: 63,
+			boost: 1,
+			mediaMuted: false,
+		}), false, false);
+		expect(texts.at(-1)).toBe('63');
+
+		releaseTabs?.();
+		await inFlight;
+		expect(texts.at(-1)).toBe('63');
+		expect(texts.filter((text) => text === 'M')).toHaveLength(1);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 63, muted: false });
+	});
 });
 
 function projection(overrides: ControlSessionPatch = {}): ControlSessionPatch {

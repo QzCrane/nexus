@@ -1,5 +1,6 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
 import { expect } from 'bun:test';
+import { pausedMediaPage, TONE_PATH, toneResponse } from './helpers/media-fixture';
 import {
 	afterAllChrome,
 	beforeAllChrome,
@@ -35,11 +36,18 @@ let frameServer: ReturnType<typeof Bun.serve>;
 let profileDir = '';
 const mediaPages: Page[] = [];
 let foregroundPage: Page;
+// `frame` fixtures put their media in a cross-origin iframe and keep the top
+// document empty. They are the boundary case: a background tab whose media lives
+// only in a frame we cannot address from the Popup is not listed, because the card
+// could not control it (on-demand injection targets the top frame only) and the
+// tab never reported media of its own. When such media plays it becomes audible,
+// and Chrome's own flag puts the tab in the list without any probe.
 const mediaFixtures = [
 	{ slug: 'alpha', title: 'Paused Media Alpha', frame: false },
 	{ slug: 'beta', title: 'Paused Media Beta', frame: false },
 	{ slug: 'gamma', title: 'Paused Muted Cross-Origin Media Gamma', frame: true },
 ] as const;
+const listedTitles = mediaFixtures.filter(({ frame }) => !frame).map(({ title }) => title).sort();
 let mediaUrls: string[] = [];
 let foregroundUrl = '';
 
@@ -120,10 +128,7 @@ async function ensureServiceWorker(): Promise<boolean> {
 
 interface InventoryReader {
 	page: Page;
-	read(): Promise<{
-		tabs: number[];
-		coverage: { status: 'complete' | 'degraded'; denied: number; stale: number; unknown: number };
-	}>;
+	read(): Promise<{ tabs: number[] }>;
 	close(): Promise<void>;
 }
 
@@ -213,10 +218,9 @@ beforeAllChrome(async () => {
 		hostname: '127.0.0.1',
 		fetch(request) {
 			const url = new URL(request.url);
+			if (url.pathname === TONE_PATH) return toneResponse();
 			if (url.pathname !== '/cross-origin-media') return new Response('Not found', { status: 404 });
-			return new Response('<!doctype html><html><body><video id="media" muted controls></video></body></html>', {
-				headers: { 'content-type': 'text/html; charset=utf-8' },
-			});
+			return pausedMediaPage('Cross-Origin Paused Media', { muted: true });
 		},
 	});
 	server = Bun.serve({
@@ -224,10 +228,9 @@ beforeAllChrome(async () => {
 		hostname: '127.0.0.1',
 		fetch(request) {
 			const url = new URL(request.url);
+			if (url.pathname === TONE_PATH) return toneResponse();
 			if (url.pathname === '/navigation/media') {
-				return new Response('<!doctype html><html><head><title>Navigation Old Media</title></head><body><video controls></video></body></html>', {
-					headers: { 'content-type': 'text/html; charset=utf-8' },
-				});
+				return pausedMediaPage('Navigation Old Media');
 			}
 			if (url.pathname === '/navigation/empty') {
 				return new Response('<!doctype html><html><head><title>Navigation New Empty</title></head><body>empty</body></html>', {
@@ -238,12 +241,13 @@ beforeAllChrome(async () => {
 				const slug = url.pathname.slice('/media/'.length);
 				const fixture = mediaFixtures.find((entry) => entry.slug === slug);
 				if (!fixture) return new Response('Not found', { status: 404 });
-				const media = fixture.frame
-					? `<iframe title="cross-origin-media" src="http://127.0.0.1:${frameServer.port}/cross-origin-media"></iframe>`
-					: '<video id="media" controls></video>';
-				return new Response(`<!doctype html><html><head><title>${fixture.title}</title></head><body>${media}</body></html>`, {
-					headers: { 'content-type': 'text/html; charset=utf-8' },
-				});
+				if (!fixture.frame) return pausedMediaPage(fixture.title);
+				return new Response(
+					`<!doctype html><html><head><title>${fixture.title}</title></head><body>`
+					+ `<iframe title="cross-origin-media" src="http://127.0.0.1:${frameServer.port}/cross-origin-media"></iframe>`
+					+ '</body></html>',
+					{ headers: { 'content-type': 'text/html; charset=utf-8' } },
+				);
 			}
 			if (url.pathname === '/foreground') {
 				return new Response(`<!doctype html><html><head><title>Foreground Without Media</title></head><body>foreground</body></html>`, {
@@ -300,9 +304,9 @@ beforeAllChrome(async () => {
 	await foregroundPage.goto(foregroundUrl, { waitUntil: 'domcontentloaded' });
 	await foregroundPage.bringToFront();
 
-	// Retire the puppeteer default about:blank page: a non-probeable tab is
-	// counted as denied coverage by contract, which would degrade an otherwise
-	// complete inventory scan. Every remaining tab here is probeable.
+	// Retire the puppeteer default about:blank page. It cannot host media and is
+	// outside the inventory's scope either way; closing it keeps the fixture set
+	// equal to the tabs this file reasons about.
 	for (const page of await browser.pages()) {
 		if (page.url() === 'about:blank' || page.url() === '') {
 			await page.close().catch(() => undefined);
@@ -341,7 +345,7 @@ describeChrome('SPECTRA real Popup media-tab inventory', () => {
 
 		const popup = await openRealActionPopup();
 		try {
-			const expectedTitles = mediaFixtures.map(({ title }) => title).sort();
+			const expectedTitles = listedTitles;
 			await popup.waitForFunction((titles) => {
 				const actual = [...document.querySelectorAll<HTMLElement>('#bg-stack .glass-card .meta-title')]
 					.map((element) => element.textContent ?? '')
@@ -359,18 +363,16 @@ describeChrome('SPECTRA real Popup media-tab inventory', () => {
 				badge: document.getElementById('bg-badge')?.textContent ?? '',
 				headerHidden: document.getElementById('bg-header')?.classList.contains('hidden') ?? true,
 				inventoryEvidence: document.documentElement.dataset.mediaInventory,
-				inventoryStatusHidden: document.getElementById('media-inventory-status')?.hidden ?? false,
 				pageScrollHeight: document.documentElement.scrollHeight,
 				pageClientHeight: document.documentElement.clientHeight,
 			}));
 			expect(background.cards.map(({ title }) => title).sort()).toEqual(expectedTitles);
 			expect(background.cards.every(({ domain }) => domain === '127.0.0.1')).toBe(true);
-			expect(background.badge).toBe('3');
+			expect(background.badge).toBe(String(expectedTitles.length));
 			expect(background.headerHidden).toBe(false);
 			expect(background.inventoryEvidence).toBe('complete');
-			expect(background.inventoryStatusHidden).toBe(true);
-			expect(background.cards.every(({ controlCoverage }) => controlCoverage === 'unknown')).toBe(true);
-			expect(background.cards.every(({ controlsInert }) => controlsInert)).toBe(true);
+			expect(background.cards.every(({ controlCoverage }) => controlCoverage === 'known')).toBe(true);
+			expect(background.cards.every(({ controlsInert }) => controlsInert)).toBe(false);
 			// If the physical Action Popup height cannot fit all cards, the document
 			// must grow/scroll rather than clipping or silently dropping cards.
 			expect(background.pageScrollHeight).toBeGreaterThanOrEqual(background.pageClientHeight);
@@ -385,7 +387,15 @@ describeChrome('SPECTRA real Popup media-tab inventory', () => {
 				if (!response?.ok) throw new Error(response?.error?.message ?? 'Unable to read Popup visible tabs');
 				return response.data.tabs as number[];
 			});
-			for (const tabId of tabIds) expect(popupVisibleTabs).toContain(tabId);
+			for (const [index, tabId] of tabIds.entries()) {
+				if (mediaFixtures[index]?.frame) {
+					// The boundary case: this page never reported media of its own and is
+					// not audible, so it is not a card and was never touched to find out.
+					expect(popupVisibleTabs).not.toContain(tabId);
+					continue;
+				}
+				expect(popupVisibleTabs).toContain(tabId);
+			}
 
 			const after = await Promise.all(mediaUrls.map(readBootstrapStatus));
 			for (const status of after) expect(status).toMatchObject({ ready: false, runtimeRevision: null });
@@ -430,7 +440,7 @@ describeChrome('SPECTRA real Popup media-tab inventory', () => {
 				expect(newDocumentId).not.toBe(oldDocumentId);
 				await eventually(
 					() => reader.read(),
-					(inventory) => inventory.coverage.status === 'complete' && !inventory.tabs.includes(tabId),
+					(inventory) => !inventory.tabs.includes(tabId),
 					'old document media report retirement',
 				);
 			} finally {
@@ -441,7 +451,7 @@ describeChrome('SPECTRA real Popup media-tab inventory', () => {
 		}
 	}, 30_000);
 
-	testChrome('excludes a restricted audible tab from the controllable inventory without degrading coverage', async () => {
+	testChrome('excludes a restricted audible tab from the controllable inventory', async () => {
 		const restricted = await browser.newPage();
 		try {
 			await restricted.goto('data:text/html,<title>Restricted Audible Fixture</title><body>restricted</body>');
@@ -465,21 +475,16 @@ describeChrome('SPECTRA real Popup media-tab inventory', () => {
 			try {
 				const inventory = await reader.read();
 				expect(inventory.tabs).not.toContain(restrictedTab.id);
-				// A restricted/opaque-origin tab (data: URL) is not probeable, so the
-				// discovery contract excludes it from the controllable inventory and
-				// from coverage entirely (media-tab-discovery.ts: it must never degrade
-				// an honest inventory). The remaining controllable tabs therefore stay
-				// complete, and the restricted tab is never surfaced as a card.
-				expect(inventory.coverage.status).toBe('complete');
-				expect(inventory.coverage.denied).toBe(0);
+				// A data: URL has no controllable document: the inventory is scoped to
+				// http(s)/file tabs, so an audible opaque-origin tab is out of scope
+				// rather than "unknown", and the list stays a complete answer.
 
 				const state = await reader.page.evaluate(() => ({
 					inventory: document.documentElement.dataset.mediaInventory,
-					statusHidden: document.getElementById('media-inventory-status')?.hidden ?? true,
 					restrictedCard: [...document.querySelectorAll<HTMLElement>('.meta-title')]
 						.some((element) => element.textContent === 'Restricted Audible Fixture'),
 				}));
-				expect(state).toEqual({ inventory: 'complete', statusHidden: true, restrictedCard: false });
+				expect(state).toEqual({ inventory: 'complete', restrictedCard: false });
 			} finally {
 				await reader.close();
 			}

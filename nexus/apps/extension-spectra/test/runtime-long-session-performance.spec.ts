@@ -1,4 +1,5 @@
 import { launchPuppeteerBrowser } from '../../../scripts/browser-driver';
+import { TONE_PATH, toneResponse } from './helpers/media-fixture';
 import { expect } from 'bun:test';
 import { chromeIntegrationEnabled, testChrome } from './helpers/chrome-integration';
 import { existsSync } from 'node:fs';
@@ -92,9 +93,11 @@ testChrome('records long-session hotkey, heap, CPU, context and long-task eviden
 			port: 0,
 			hostname: '127.0.0.1',
 			fetch(request) {
-				if (new URL(request.url).pathname !== '/media') return new Response('not found', { status: 404 });
+				const path = new URL(request.url).pathname;
+				if (path === TONE_PATH) return toneResponse();
+				if (path !== '/media') return new Response('not found', { status: 404 });
 				return new Response(
-					'<!doctype html><html><head><title>SPECTRA Long Session</title></head><body><video id="media" controls muted></video></body></html>',
+					`<!doctype html><html><head><title>SPECTRA Long Session</title></head><body><video id="media" controls muted preload="auto" src="${TONE_PATH}"></video></body></html>`,
 					{ headers: { 'content-type': 'text/html; charset=utf-8' } },
 				);
 			},

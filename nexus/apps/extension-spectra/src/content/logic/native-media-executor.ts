@@ -451,6 +451,12 @@ export class NativeMediaExecutor {
 		target: MediaTarget;
 		element: HTMLMediaElement;
 	}>();
+	private readonly pageObservations = new Map<string, {
+		target: MediaTarget;
+		patch: ControlPatch;
+		observedStrategies: ControlObservationStrategies;
+	}>();
+	private pageObservationFlushQueued = false;
 	private effects: VideoEffectsControllerPort | null;
 	private readonly ownsEffects: boolean;
 	private readonly registry: MediaRegistry;
@@ -1074,7 +1080,7 @@ export class NativeMediaExecutor {
 			intentId: intent.intentId,
 			expected: effectiveDesired,
 			tolerance,
-			timeoutId: setTimeout(() => this.clearPending(target.mediaId, field, intent.intentId), 1_000),
+			timeoutId: setTimeout(() => this.expirePendingWrite(target.mediaId, field, intent.intentId), 1_000),
 		});
 		try {
 			if (field === 'volumeBase' || field === 'mediaMuted' || field === 'speed') {
@@ -1557,14 +1563,81 @@ export class NativeMediaExecutor {
 		fields.set(field, pending);
 	}
 
+	// The pending-write guard owns every native event for a field until its
+	// stable boundary settles (SP-70). A mismatch during that window is taken as
+	// ambiguous and suppressed in handleMediaEvent, on the contract that "a real
+	// page revision is always republished within one second" (see the suppression
+	// comment). This expiry callback is that republish: once the guard elapses we
+	// re-read the live DOM value and, if the page genuinely diverged from the
+	// recorded baseline, submit it as a page-native observation so the background
+	// snapshot converges. Without this the divergence was silently lost forever.
+	// The 1s guard's expiry. By the time the guard elapses the DOM has settled, so
+	// the write-completion `finally` and this timeout are equivalent: both delete
+	// the pending entry and then reconcile. Delegating keeps a single reconcile
+	// path and guarantees the suppressed page revision is republished no matter
+	// which of the two fires first (the faster one cancels the other's timer).
+	private expirePendingWrite(mediaId: string, field: ControlField, intentId: string): void {
+		this.clearPending(mediaId, field, intentId);
+	}
+
+	// Deletes a settled pending write and republishes any page divergence that was
+	// suppressed while the guard owned the field's events. This is the write-
+	// completion `finally` path as well as the timeout path; by the time either
+	// runs the executor's own write has resolved, so re-reading is safe. Without
+	// this, a page-native change that arrived during the guard window was silently
+	// lost forever (see handleMediaEvent's suppression branch).
 	private clearPending(mediaId: string, field: ControlField, intentId: string): void {
 		const fields = this.pending.get(mediaId);
 		const pending = fields?.get(field);
-		if (pending?.intentId === intentId) {
-			clearTimeout(pending.timeoutId);
-			fields?.delete(field);
-		}
+		if (pending?.intentId !== intentId) return;
+		clearTimeout(pending.timeoutId);
+		fields?.delete(field);
 		if (fields?.size === 0) this.pending.delete(mediaId);
+		this.reconcileExpiredPending(mediaId, field);
+	}
+
+	private reconcileExpiredPending(mediaId: string, field: ControlField): void {
+		if (this.disposed || this.tabId === null) return;
+		const entry = this.registry.list().find(({ target }) => target.mediaId === mediaId)
+			?? (this.registry.resolve(null)?.target.mediaId === mediaId ? this.registry.resolve(null) : null);
+		if (!entry) return;
+		const { target } = entry;
+		let candidates: Record<string, unknown>;
+		let candidateStrategies: Record<string, unknown>;
+		try {
+			const result = this.read({ target, fields: [field] as ControlReadRequest['fields'] });
+			candidates = result.patch as Record<string, unknown>;
+			candidateStrategies = result.observedStrategies as Record<string, unknown>;
+		} catch {
+			// The element may have detached during teardown; nothing safe to observe.
+			return;
+		}
+		const actual = (candidates as Record<string, unknown>)[field];
+		if (actual === undefined) return;
+		const observed = this.observed.get(mediaId) ?? {};
+		const tolerance = field === 'currentTime' ? 0.05 : (field === 'volumeBase' || field === 'speed' ? 0.01 : 0);
+		// No divergence: the executor's own write settled (or the page already
+		// matches the recorded baseline). Record the truth and move on.
+		if (nativeValuesMatch(observed[field], actual, tolerance)) {
+			this.observe(mediaId, field, actual as ControlValues[ControlField]);
+			return;
+		}
+		// Genuine page divergence that was suppressed during the guard window.
+		// Promote it to a page-native observation so the background converges.
+		const strategy = (candidateStrategies as Record<string, unknown>)[field] as ControlObservationStrategies[keyof ControlObservationStrategies] | undefined;
+		if (!strategy) {
+			// Cannot attribute a safe observation strategy; keep the baseline honest
+			// but do not report an unverifiable value upstream.
+			this.observe(mediaId, field, actual as ControlValues[ControlField]);
+			return;
+		}
+		const patch: ControlPatch = {};
+		(patch as Record<string, unknown>)[field] = actual;
+		const observedStrategies: ControlObservationStrategies = {};
+		(observedStrategies as Record<string, unknown>)[field] = strategy;
+		this.observe(mediaId, field, actual as ControlValues[ControlField]);
+		this.audioRuntimeDelegate?.synchronizeNative(patch);
+		this.queuePageObservation(target, patch, observedStrategies);
 	}
 
 	private handleMediaEvent(
@@ -1632,7 +1705,7 @@ export class NativeMediaExecutor {
 		let observedFields: ControlReadRequest['fields'];
 		if (event === 'volumechange') {
 			observedFields = ['volumeBase', 'mediaMuted'];
-		} else if (event === 'ratechange') {
+		} else 		if (event === 'ratechange') {
 			// preservesPitch has no native event; observe it in the rate transaction.
 			observedFields = ['speed', 'preservePitch'];
 		} else if (event === 'play' || event === 'pause') {
@@ -1713,14 +1786,62 @@ export class NativeMediaExecutor {
 				// a document-wide desired template replayed onto later media elements.
 			}
 		}
-		void sendSpectraRequest('spectra.control.intent.submit', {
-			tabId: this.tabId,
-			source: 'page',
-			requestedCoverage: 'active-target',
-			target,
-			patch,
-			observedStrategies,
-		}).catch(() => undefined);
+		this.queuePageObservation(target, patch, observedStrategies);
+	}
+
+	/**
+	 * Publish a page-native observation.
+	 *
+	 * A single page gesture changes several fields and dispatches one native
+	 * event per field (`volumechange` then `ratechange`), so publishing each
+	 * event's divergence as its own intent made the second commit race the
+	 * first: both transactions read the same snapshot revision, and the loser
+	 * was rejected as stale and dropped on the floor, leaving the card painting
+	 * the previous value indefinitely. Coalescing a page transaction's fields
+	 * into one commit makes the observation atomic and removes that race.
+	 */
+	private queuePageObservation(
+		target: import('@nexus/contracts').MediaTarget,
+		patch: ControlPatch,
+		observedStrategies: ControlObservationStrategies,
+	): void {
+		const key = this.targetKey(target);
+		const queued = this.pageObservations.get(key);
+		if (queued) {
+			Object.assign(queued.patch, patch);
+			Object.assign(queued.observedStrategies, observedStrategies);
+		} else {
+			this.pageObservations.set(key, {
+				target,
+				patch: { ...patch },
+				observedStrategies: { ...observedStrategies },
+			});
+		}
+		if (this.pageObservationFlushQueued) return;
+		this.pageObservationFlushQueued = true;
+		queueMicrotask(() => {
+			this.pageObservationFlushQueued = false;
+			this.flushPageObservations();
+		});
+	}
+
+	private flushPageObservations(): void {
+		if (this.disposed || this.tabId === null) {
+			this.pageObservations.clear();
+			return;
+		}
+		const entries = [...this.pageObservations.values()];
+		this.pageObservations.clear();
+		for (const { target, patch, observedStrategies } of entries) {
+			void sendSpectraRequest('spectra.control.intent.submit', {
+				tabId: this.tabId,
+				source: 'page',
+				requestedCoverage: 'active-target',
+				target,
+				patch,
+				observedStrategies,
+			}).catch(() => undefined);
+		}
 	}
 
 	private rememberDesired(field: ControlField, value: ControlValues[ControlField]): void {

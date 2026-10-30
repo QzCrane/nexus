@@ -307,10 +307,10 @@ export class MediaRegistry {
 					record.sourceTransitionOpen = false;
 					record.eligibilityEvidence = preloadCorsEvidence(element);
 				}
-				// A script-written media property also produces a trusted browser
-				// event. It is observation, not evidence of user target selection;
-				// inactive previews must not steal the volume/speed control owner.
-				this.emit(record.target, type, element);
+			// A script-written media property also produces a trusted browser
+			// event. It is observation, not evidence of user target selection;
+			// inactive previews must not steal the volume/speed control owner.
+			this.emit(record.target, type, element);
 			};
 			element.addEventListener(type, listener);
 			listeners.push([type, listener]);

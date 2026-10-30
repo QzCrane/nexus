@@ -26,6 +26,8 @@ export interface MessagingParams {
 	pendingConfigFields?: () => ReadonlySet<keyof AudioConfig>;
 	state: CardInternalState;
 	render: () => void;
+	/** The painted snapshot came from the Popup cache and still needs one confirmation. */
+	cachedSnapshotForecast?: boolean;
 }
 
 // post: applies one authoritative ControlSnapshot to the card projection.  The
@@ -225,76 +227,95 @@ export function setupCardMessaging(params: MessagingParams): () => void {
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
   const controlPending = () => state.controlSnapshotKnown !== true;
   const lifecyclePending = () => state.lifecycleSnapshotKnown !== true;
-  if (controlPending() || lifecyclePending()) {
-    // A card that has not answered for its own controls cannot show them, and a
-    // card that has not answered for its route cannot colour them. Both reads
-    // are retried while their owner may still be booting, but both must
-    // terminate: a rejected or unanswered read settles the card into an explicit
-    // state instead of a promise that never resolves while the tab is listed.
-    let attempts = 0;
-    const settled = (): boolean => !controlPending() && !lifecyclePending();
-    const expireOrRetry = (): void => {
-      if (disposed || settled()) return;
-      if (attempts >= CONTROL_SYNC_ATTEMPTS) {
-        // Only the control projection owns the status line: an unknown route with
-        // known controls is a colour, not a message about synchronization.
-        if (controlPending()) {
-          state.controlSyncExpired = true;
-          render();
-        }
-        return;
+  // A snapshot restored from the Popup's own cache is a forecast of right now,
+  // not an observation of it: another Popup document may have painted it up to a
+  // minute ago, and nothing has re-read the tab since. The card still paints it
+  // immediately, then confirms it once, silently. Silent means the confirmation
+  // never touches the sync line or the coverage flag - a forecast that turns out
+  // right changes nothing on screen, and one that is wrong is corrected instead
+  // of standing until the next reopen.
+  const confirmForecast = params.cachedSnapshotForecast === true;
+  // A card that has not answered for its own controls cannot show them, and a
+  // card that has not answered for its route cannot colour them. Both reads are
+  // retried while their owner may still be booting, but both must terminate: a
+  // rejected or unanswered read settles the card into an explicit state instead
+  // of a promise that never resolves while the tab is listed.
+  let attempts = 0;
+  const settled = (): boolean => !controlPending() && !lifecyclePending();
+  const expireOrRetry = (): void => {
+    if (disposed || settled()) return;
+    if (attempts >= CONTROL_SYNC_ATTEMPTS) {
+      // Only the control projection owns the status line: an unknown route with
+      // known controls is a colour, not a message about synchronization.
+      if (controlPending()) {
+        state.controlSyncExpired = true;
+        render();
       }
-      recoveryTimer = setTimeout(pollSnapshot, CONTROL_SYNC_RETRY_MS);
-    };
-    const pollControlSnapshot = async (): Promise<boolean> => {
-      try {
-        const response = await sendSpectraRequest('spectra.control.snapshot.get', { tabId });
-        if (disposed || state.controlSnapshotKnown) return true;
-        if (!response.ok) return false;
-        if (response.data) return applyControlSnapshot(state, response.data, render);
-        // A known-empty snapshot is an answer: this tab has no control state.
-        state.controlSnapshotKnown = true;
-        state.controlSyncExpired = false;
+      return;
+    }
+    recoveryTimer = setTimeout(pollSnapshot, CONTROL_SYNC_RETRY_MS);
+  };
+  const pollControlSnapshot = async (silent = false): Promise<boolean> => {
+    try {
+      const response = await sendSpectraRequest('spectra.control.snapshot.get', { tabId });
+      if (disposed || (!silent && state.controlSnapshotKnown)) return true;
+      if (!response.ok) return false;
+      // A confirmation applies only what the broadcaster admits; an older
+      // revision is refused by the clock check, never painted as news.
+      if (response.data) return applyControlSnapshot(state, response.data, render);
+      if (silent) return true;
+      // A known-empty snapshot is an answer: this tab has no control state.
+      state.controlSnapshotKnown = true;
+      state.controlSyncExpired = false;
+      render();
+      return true;
+    } catch (error) {
+      console.debug('[SPECTRA Card] Snapshot recovery skipped:', error);
+      return false;
+    }
+  };
+  const pollAudioSession = async (silent = false): Promise<boolean> => {
+    try {
+      const response = await sendSpectraRequest('spectra.audio.session.get', { tabId });
+      if (disposed || (!silent && state.lifecycleSnapshotKnown)) return true;
+      if (!response.ok) return false;
+      if (!response.data) {
+        if (silent) return true;
+        // No session for this tab is an answer too: nothing is routed here.
+        state.lifecycleSnapshotKnown = true;
         render();
         return true;
-      } catch (error) {
-        console.debug('[SPECTRA Card] Snapshot recovery skipped:', error);
-        return false;
       }
-    };
-    const pollAudioSession = async (): Promise<boolean> => {
-      try {
-        const response = await sendSpectraRequest('spectra.audio.session.get', { tabId });
-        if (disposed || state.lifecycleSnapshotKnown) return true;
-        if (!response.ok) return false;
-        if (!response.data) {
-          // No session for this tab is an answer too: nothing is routed here.
-          state.lifecycleSnapshotKnown = true;
-          render();
-          return true;
-        }
-        // An accepted session settles the route; one that names another document
-        // (or one older than an acknowledgment the card already has) is not an
-        // answer, so the bounded probe keeps asking.
-        return applyAudioSessionSnapshot(tabId, state, response.data, render, documentId);
-      } catch (error) {
-        console.debug('[SPECTRA Card] Session recovery skipped:', error);
-        return false;
-      }
-    };
-    const pollSnapshot = (): void => {
+      // An accepted session settles the route; one that names another document
+      // (or one older than an acknowledgment the card already has) is not an
+      // answer, so the bounded probe keeps asking.
+      return applyAudioSessionSnapshot(tabId, state, response.data, render, documentId);
+    } catch (error) {
+      console.debug('[SPECTRA Card] Session recovery skipped:', error);
+      return false;
+    }
+  };
+  const pollSnapshot = (): void => {
+    if (disposed || settled()) return;
+    attempts += 1;
+    const reads: Array<Promise<boolean>> = [];
+    if (controlPending()) reads.push(pollControlSnapshot());
+    if (lifecyclePending()) reads.push(pollAudioSession());
+    void Promise.all(reads).then((accepted) => {
       if (disposed || settled()) return;
-      attempts += 1;
-      const reads: Array<Promise<boolean>> = [];
-      if (controlPending()) reads.push(pollControlSnapshot());
-      if (lifecyclePending()) reads.push(pollAudioSession());
-      void Promise.all(reads).then((accepted) => {
-        if (disposed || settled()) return;
-        if (accepted.every((value) => value)) return;
-        expireOrRetry();
-      });
-    };
+      if (accepted.every((value) => value)) return;
+      expireOrRetry();
+    });
+  };
+  if (controlPending() || lifecyclePending()) {
     pollSnapshot();
+  } else if (confirmForecast) {
+    // Only the control projection is re-read: it is the field-level authority
+    // the cached forecast can be wrong about. The processor lifecycle is not a
+    // second opinion about it - a session read may legitimately be older than
+    // the ACK the card already painted, and re-asking would let a stale session
+    // recolour a settled card.
+    void pollControlSnapshot(true);
   }
 
   const unsubscribe = subscribePopupTabUiEvents(tabId, onMessage);

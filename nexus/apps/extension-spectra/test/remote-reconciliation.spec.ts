@@ -279,6 +279,11 @@ describe('remote service-worker reconciliation', () => {
 						set: async () => undefined,
 						remove: async () => undefined,
 					},
+					local: {
+						get: async () => ({}),
+						set: async () => undefined,
+						remove: async () => undefined,
+					},
 				},
 			},
 		});

@@ -10,7 +10,6 @@ export const JA_JP: I18NDict = {
 	vizSub: 'ダイナミックオーディオバーを表示',
 	vizDesc: 'オーディオを視覚化します。オフにするとオーディオ処理を減らせます。',
 	langLabel: '言語',
-	mediaInventoryPartial: "一部のメディアタブはまだ確認中で、完了すると自動的に表示されます。",
 	noAudio: 'オーディオ信号なし',
 	bgTitle: 'バックグラウンド',
 	paused: 'オーディオ拡張一時停止中',

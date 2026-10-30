@@ -1,8 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import {
-	createMediaFacts,
-	NO_MEDIA_FACT_TTL_MS,
-} from '../src/background/media-facts';
+import { createMediaFacts } from '../src/background/media-facts';
 
 class FakeLocalStorage {
 	readonly values: Record<string, unknown> = {};
@@ -116,7 +113,7 @@ describe('media facts session persistence', () => {
 			3: { documentId: 'document-c', outcome: 'bogus', at: now, source: 'probe' },
 			4: 'not-an-object',
 			'-5': { documentId: 'document-d', outcome: 'found', at: now, source: 'probe' },
-			6: { documentId: 'document-e', outcome: 'no-media', at: now - NO_MEDIA_FACT_TTL_MS - 1, source: 'report' },
+			6: { documentId: 'document-e', outcome: 'no-media', at: now - 86_400_000, source: 'report' },
 		};
 		installChrome(storage);
 		try {
@@ -177,20 +174,16 @@ describe('media facts session persistence', () => {
 		}
 	});
 
-	test('found facts stay current; no-media facts expire after the TTL', () => {
+	test('keeps a verdict until the document that reported it changes or leaves', () => {
 		const facts = createMediaFacts();
-		expect(facts.isFactCurrent(
-			{ documentId: 'a', outcome: 'found', at: now - 60_000, source: 'probe' },
-			now,
-		)).toBe(true);
-		expect(facts.isFactCurrent(
-			{ documentId: 'b', outcome: 'no-media', at: now - 5_000, source: 'report' },
-			now,
-		)).toBe(true);
-		expect(facts.isFactCurrent(
-			{ documentId: 'c', outcome: 'no-media', at: now - NO_MEDIA_FACT_TTL_MS - 1, source: 'probe' },
-			now,
-		)).toBe(false);
+		facts.rememberMediaFact(3, 'document-3', 'found', 'report', now);
+		expect(facts.readMediaFact(3)).toEqual({
+			documentId: 'document-3', outcome: 'found', at: now, source: 'report',
+		});
+		// A verdict is not a lease: nothing expires it on a clock. The lifecycle
+		// retires it on navigation and a newer report replaces it.
+		facts.forgetMediaFact(3);
+		expect(facts.readMediaFact(3)).toBeNull();
 	});
 
 	test('ignores facts with a null document id', async () => {

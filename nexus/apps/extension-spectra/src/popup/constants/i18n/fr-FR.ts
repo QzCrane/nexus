@@ -10,7 +10,6 @@ export const FR_FR: I18NDict = {
 	vizSub: 'Afficher les barres audio dynamiques',
 	vizDesc: 'Affiche la visualisation audio. Désactivez-la pour réduire le traitement audio.',
 	langLabel: 'Langue',
-	mediaInventoryPartial: "Certains onglets multimédias sont encore en cours de vérification et apparaîtront automatiquement.",
 	noAudio: 'Pas de signal audio',
 	bgTitle: 'Arrière-plan',
 	paused: 'Amélioration audio en pause',

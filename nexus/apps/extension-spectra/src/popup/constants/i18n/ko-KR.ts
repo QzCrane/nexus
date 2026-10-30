@@ -10,7 +10,6 @@ export const KO_KR: I18NDict = {
 	vizSub: '동적 오디오 바 표시',
 	vizDesc: '오디오 시각화를 표시합니다. 끄면 오디오 처리를 줄일 수 있습니다.',
 	langLabel: '언어',
-	mediaInventoryPartial: "일부 미디어 탭이 아직 확인 중이며 완료되면 자동으로 표시됩니다.",
 	noAudio: '오디오 신호 없음',
 	bgTitle: '백그라운드',
 	paused: '오디오 향상 일시 중지됨',

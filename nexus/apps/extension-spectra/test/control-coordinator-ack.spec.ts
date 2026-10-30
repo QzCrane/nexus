@@ -52,6 +52,10 @@ describe('control coordinator acknowledgement identity', () => {
 						Object.assign(values, items);
 					},
 					remove: async (key: string) => { delete values[key]; },
+				}, local: {
+					get: async () => ({}),
+					set: async () => undefined,
+					remove: async () => undefined,
 				} },
 			},
 		});

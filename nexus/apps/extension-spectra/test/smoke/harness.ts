@@ -839,13 +839,16 @@ export async function releaseSmokeRuntimes(): Promise<void> {
 export async function waitForContentStatus(
 	predicate: (status: ContentStatus) => boolean,
 	timeoutMs = 5_000,
+	// A tab that drives itself with pushState changes URL under a single wait, so
+	// the target may be resolved per attempt instead of once up front.
+	target: string | (() => string) = () => fixturePage.url(),
 ): Promise<ContentStatus> {
 	const deadline = Date.now() + timeoutMs;
 	let lastStatus: ContentStatus | undefined;
 	let lastReadError: unknown;
 	while (Date.now() < deadline) {
 		try {
-			lastStatus = await readContentStatus();
+			lastStatus = await readContentStatus(typeof target === 'string' ? target : target());
 			if (predicate(lastStatus)) return lastStatus;
 		} catch (error) {
 			// Content initialization and service-worker startup are eventually consistent.
@@ -2514,7 +2517,16 @@ export async function startSmokeSession(launched: Browser): Promise<void> {
 
 	fixturePage = await browser.newPage();
 	collectPageErrors(fixturePage, fixtureErrors);
-	await fixturePage.evaluateOnNewDocument(() => {
+	await installAudioContextProbe(fixturePage);
+	await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+	await waitForContentBootstrapStatus(fixtureUrl);
+}
+
+// Counts AudioContext constructions in a page. A page-native read must never pay
+// for one, so this probe is the only way to prove the WebAudio path stayed cold.
+// It has to be installed before navigation and on every page a case drives.
+export async function installAudioContextProbe(page: Page): Promise<void> {
+	await page.evaluateOnNewDocument(() => {
 		const scope = window as Window & { __spectraAudioContextCount?: number };
 		scope.__spectraAudioContextCount = 0;
 		const Original = window.AudioContext;
@@ -2526,8 +2538,6 @@ export async function startSmokeSession(launched: Browser): Promise<void> {
 			},
 		});
 	});
-	await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
-	await waitForContentBootstrapStatus(fixtureUrl);
 }
 
 export async function teardownSmokeSession(): Promise<void> {

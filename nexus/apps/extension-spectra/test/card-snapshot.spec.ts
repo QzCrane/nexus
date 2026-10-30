@@ -114,7 +114,7 @@ describe('field-level card snapshot coverage', () => {
 		const mockStorage: Record<string, unknown> = {};
 		(globalThis as unknown as { chrome: unknown }).chrome = {
 			storage: {
-				session: {
+				local: {
 					get: async (key: string) => ({ [key]: mockStorage[key] }),
 					set: async (obj: Record<string, unknown>) => { Object.assign(mockStorage, obj); },
 				},

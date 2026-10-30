@@ -2,6 +2,9 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!-- Render-blocking on purpose: reserves the popup height before the first
+         paint, so the window never opens at one height and jumps to another. -->
+    <script src="frame-reserve.js"></script>
     <link rel="stylesheet" href="popup.css" />
     <link id="spectra-accessibility-policy" rel="stylesheet" href="accessibility.css" />
   </head>
@@ -557,7 +560,6 @@
           </div>
 
           <div id="main-stage"></div>
-          <p id="media-inventory-status" role="status" hidden></p>
 
           <div id="empty-state" class="empty-container" hidden>
             <div class="empty-blob"></div>

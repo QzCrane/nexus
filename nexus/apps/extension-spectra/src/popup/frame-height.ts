@@ -19,15 +19,17 @@ import { logger } from '../shared/logger';
 // inventory is published, so the window can never dip before it grows.
 
 const FRAME_HEIGHT_KEY = 'spectra.popup.frameHeight';
-// Chrome grants an Action Popup at most 600px of height. Past that the window
-// stops growing, so the document has to scroll instead of clipping the cards
-// that are still below the fold.
+// Chrome grants an Action Popup at most 600px of height, and no layout can
+// change that. Above it the Popup scrolls as one document rather than giving
+// the background list its own scroll area: a single scroll surface keeps the
+// blank under the last card at the end of the same gesture that reveals that
+// card, whereas a nested list would need a second gesture inside a boundary of
+// its own and would clip its cards there instead of at the window.
 const FRAME_MAX_HEIGHT_PX = 600;
-const FRAME_PERSIST_DELAY_MS = 250;
 
 let measuredHeight: number | null = null;
+let measuredOverflowY: string | null = null;
 let predictedHeight: number | null = null;
-let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
 function clampFrameHeight(value: number): number {
   return Math.max(0, Math.min(Math.round(value), FRAME_MAX_HEIGHT_PX));
@@ -58,11 +60,10 @@ function writePredictedFrameHeight(height: number): void {
 }
 
 function schedulePersist(height: number): void {
-  if (persistTimer !== null) clearTimeout(persistTimer);
-  persistTimer = setTimeout(() => {
-    persistTimer = null;
-    writePredictedFrameHeight(height);
-  }, FRAME_PERSIST_DELAY_MS);
+  // This is one small synchronous write. Debouncing it used to lose the height
+  // whenever the user reopened quickly, because a Popup closes long before the
+  // old 250ms timer fired.
+  writePredictedFrameHeight(height);
 }
 
 // eff: sizes the document to the last settled height before the first paint
@@ -70,6 +71,13 @@ export function reservePopupFrame(): void {
   predictedHeight = readPredictedFrameHeight();
   if (predictedHeight === null) return;
   const html = document.documentElement;
+  // The render-blocking head script (`frame-reserve.js`) has already written
+  // this same height, and it did so before the first paint - which is the only
+  // reason the window can open at the right size instead of jumping to it.
+  // Rewriting it here would be a no-op at best and, if the hint changed since,
+  // would reintroduce exactly the jump the reservation exists to remove.
+  const reserved = Number(html.dataset.spectraFrameReserved ?? '');
+  if (Number.isFinite(reserved) && reserved > 0) return;
   html.style.height = `${predictedHeight}px`;
   // While the prediction stands in for unrendered content, the document must
   // not report a taller or shorter height than the window is already using.
@@ -80,13 +88,13 @@ export function reservePopupFrame(): void {
 export function releasePopupFrame(): void {
   predictedHeight = null;
   measuredHeight = null;
-  if (persistTimer !== null) {
-    clearTimeout(persistTimer);
-    persistTimer = null;
-  }
+  measuredOverflowY = null;
   const html = document.documentElement;
   html.style.height = '';
   html.style.overflowY = '';
+  // The head script's reservation is spent; leaving the marker behind would
+  // make a later reservation believe the height is already in place.
+  delete html.dataset.spectraFrameReserved;
 }
 
 // The inventory publishes `data-spectra-ready` once every card that will be
@@ -95,6 +103,24 @@ export function releasePopupFrame(): void {
 // through an intermediate, half-populated measurement.
 function inventoryPublished(): boolean {
   return document.documentElement.dataset.spectraReady !== undefined;
+}
+
+/**
+ * The whole sizing rule: the frame is the content height, held up by the
+ * prediction until the inventory has published, and never past Chrome's ceiling.
+ *
+ * The prediction exists only to cover the gap before the inventory answers. Once
+ * it has answered, a prediction that is still in force is simply a stale height
+ * from a previous open: keeping it would leave blank space below the last card
+ * whenever this open is shorter than the one before it.
+ */
+export function resolveFrameTarget(
+  content: number,
+  published: boolean,
+  predicted: number | null,
+): number {
+  const floor = published ? 0 : (predicted ?? 0);
+  return clampFrameHeight(Math.max(content, floor));
 }
 
 // eff: retargets the frame whenever the rendered content changes height
@@ -106,17 +132,44 @@ export function trackPopupFrame(): void {
   const apply = (): void => {
     const content = container.getBoundingClientRect().height;
     if (!Number.isFinite(content) || content <= 0) return;
-    const floor = inventoryPublished() ? 0 : (predictedHeight ?? 0);
-    const target = clampFrameHeight(Math.max(content, floor));
-    if (target === measuredHeight) return;
-    measuredHeight = target;
-    html.style.height = `${target}px`;
+    const published = inventoryPublished();
+    const target = resolveFrameTarget(content, published, predictedHeight);
     // Above the ceiling the window cannot follow, so the document takes over
-    // scrolling rather than hiding the cards below it.
-    html.style.overflowY = content > FRAME_MAX_HEIGHT_PX ? 'auto' : 'hidden';
-    schedulePersist(target);
+    // scrolling rather than hiding the cards below it. This is the whole
+    // overflow policy: one scroll surface for the entire Popup, so the blank
+    // under the last card is the same 24px in every state - sometimes on
+    // screen, sometimes one scroll away, never silently clipped.
+    const overflowY = content > FRAME_MAX_HEIGHT_PX ? 'auto' : 'hidden';
+    // The target is clamped at Chrome's ceiling, so every document taller than
+    // the ceiling keeps returning the same target while its content keeps
+    // growing. Overflow is decided by the content, never by the target, so it
+    // is compared on its own: a tall document that was first measured short
+    // used to keep `hidden` and silently clip the cards below the fold.
+    if (target === measuredHeight && overflowY === measuredOverflowY) return;
+    measuredHeight = target;
+    measuredOverflowY = overflowY;
+    html.style.height = `${target}px`;
+    html.style.overflowY = overflowY;
+    // Only a frame the content can settle on is worth remembering. Persisting
+    // an intermediate height - the prediction still holding the frame up, or a
+    // card stack that has not finished rendering - taught the next open to
+    // reserve a height this content never lands on, so every open had to jump
+    // from it to the real one. The reservation is a promise about the settled
+    // layout, so only the settled layout may write it.
+    if (published) schedulePersist(target);
   };
 
   new ResizeObserver(apply).observe(container);
+  // Publishing the inventory is what lifts the floor, and it writes an attribute
+  // rather than changing the container's size, so the ResizeObserver above cannot
+  // see it. Whatever corrected the frame anyway used to be an unrelated later
+  // tick - a scrollbar appearing, a card re-laying out - which is why a short
+  // Popup that followed a tall one sometimes opened with a few hundred pixels of
+  // blank below its only card. Retargeting on the publish makes that correction
+  // unconditional instead of lucky.
+  new MutationObserver(apply).observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ['data-spectra-ready'],
+  });
   apply();
 }

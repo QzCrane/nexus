@@ -667,7 +667,7 @@ function installChrome(storage: FakeSessionStorage, broadcasts: unknown[]): void
 	Object.defineProperty(globalThis, 'chrome', {
 		configurable: true,
 		value: {
-			storage: { session: storage },
+			storage: { local: storage },
 			runtime: {
 				sendMessage: async (message: unknown) => {
 					broadcasts.push(structuredClone(message));

@@ -22,6 +22,7 @@ import {
 	runWithValidExtensionContext,
 } from './extension-context';
 import { readPageMediaField } from '../logic/page-media-bridge';
+import { hasPlayableMedia } from '../../shared/media-presence';
 import {
 	nextScalarGestureId,
 	publishDefaultScalarGesture,
@@ -286,9 +287,10 @@ if (!getContentBootstrapState()) {
 	// document-wide topology observation. The initial DOMContentLoaded snapshot
 	// covers media in the parsed HTML, pageshow re-reads a bfcache restore, and
 	// the media lifecycle listeners below only fire when a real media element
-	// emits play/pause/metadata events — the signals every controllable media tab
-	// produces. The background's convergence sweep is the fallback for media that
-	// never emits an event and is not present in the initial document.
+	// emits play/pause/metadata events. Those are the only two moments a
+	// document can become or stop being a media tab, which is why this report -
+	// not a background sweep - is the inventory's sole source of truth about a
+	// tab the user is not looking at.
 	const MEDIA_PRESENCE_EVENTS = [
 		'play', 'pause', 'playing', 'loadedmetadata', 'durationchange', 'emptied',
 	] as const;
@@ -299,20 +301,17 @@ if (!getContentBootstrapState()) {
 
 	const reportMediaPresence = (force = false): void => {
 		if (disposed || state.ready) return;
-		const current = document.querySelector('video,audio') !== null;
-		// A no-media verdict is only conclusive for this top-level document. When
-		// the page hosts subframes (same- or cross-origin), the media may live in
-		// one of them, which this isolated-world bootstrap cannot read. Flag that
-		// inconclusiveness so the background leaves the tab probeable instead of
-		// solidifying a durable no-media fact that would hide nested media forever.
-		const hasSubframes = document.querySelector('iframe,frame') !== null;
+		// Presence is a statement about playback, not markup: see
+		// shared/media-presence.ts. A player shell that never loaded a source is
+		// not a media tab, and reporting it as one puts a card in the Popup for a
+		// page that has nothing to control.
+		const current = hasPlayableMedia(document);
 		if (!force && current === lastReportedMediaPresence) return;
 		lastReportedMediaPresence = current;
 		const nextRevision = (state.mediaReportRevision ?? 0) + 1;
 		state.mediaReportRevision = nextRevision;
 		void sendBootstrapRequest('spectra.tab.media.report', {
 			hasMediaElement: current,
-			hasSubframes,
 			userInteracted: false,
 			reportRevision: nextRevision,
 		}, state.dispose).catch(() => undefined);
@@ -577,7 +576,7 @@ function sendBootstrapRequest(
 			repeated: boolean;
 		}
 		| { supported: boolean }
-		| { hasMediaElement: boolean; hasSubframes?: boolean; userInteracted: boolean; reportRevision: number }
+		| { hasMediaElement: boolean; userInteracted: boolean; reportRevision: number }
 		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {
