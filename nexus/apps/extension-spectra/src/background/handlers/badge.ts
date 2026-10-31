@@ -65,20 +65,24 @@ function recordBadgeDecision(
 }
 
 // eff: paints the decision that is current when the Action API is reached
+interface StagedVolumeEntry {
+	volume: number;
+	timestamp: number;
+}
+const stagedVolumes = new Map<number, StagedVolumeEntry>();
+
+export function resetStagedVolumesForTests(): void {
+	stagedVolumes.clear();
+}
+
 async function paintBadge(tabId: number): Promise<void> {
 	if (!await isTabExists(tabId)) {
 		badgeState.delete(tabId);
 		return;
 	}
-	// Read after the await, never before it: a decision recorded while this paint
-	// was queued is newer than the one that scheduled it, so the visible glyph
-	// must follow the newest fact instead of the one that arrived first.
 	const decision = badgeState.get(tabId);
 	const action = chrome.action;
 	if (!decision) {
-		// Badge rendering is a best-effort projection of acknowledged audio state.
-		// A missing/unavailable Action API must never turn a successful processor
-		// transition into a failed Capture operation.
 		await action?.setBadgeText?.({ tabId, text: '' })?.catch(() => undefined);
 		return;
 	}
@@ -90,8 +94,7 @@ async function paintBadge(tabId: number): Promise<void> {
 			action.setBadgeTextColor({ tabId, color: BADGE_COLORS.WHITE }),
 		]);
 	} catch {
-		// Only the decision this paint rendered may be invalidated: a newer one
-		// recorded meanwhile is still owed a paint of its own.
+		// Chrome Action rejects when the tab no longer exists or window is retiring
 		if (badgeState.get(tabId) === decision) badgeState.delete(tabId);
 	}
 }
@@ -135,8 +138,17 @@ export async function updateBadgeFromControlProjection(
 		}, 'control', snapshot);
 		return paintBadge(snapshot.tabId);
 	}
+
+	const projectedVolume = compileEffectiveVolume(projection.volumeBase, projection.boost);
+	const staged = stagedVolumes.get(snapshot.tabId);
+	// If the user has staged a volume within the last 600ms, prioritize the live gesture
+	// over the asynchronous projection settling from an earlier batch.
+	const volume = (staged && (Date.now() - staged.timestamp < 600))
+		? staged.volume
+		: projectedVolume;
+
 	recordBadgeDecision(snapshot.tabId, {
-		volume: compileEffectiveVolume(projection.volumeBase, projection.boost),
+		volume,
 		muted: projection.mediaMuted === true,
 		enabled: projection.audioEnabled ?? true,
 		isCapture: isCaptureActive,
@@ -199,6 +211,7 @@ export function updateBadgeStagedVolume(
 	identity?: Pick<ControlSnapshot, 'documentId' | 'origin' | 'generation'> | null,
 ): void {
 	if (!Number.isFinite(effectiveVolume) || effectiveVolume < 0) return;
+	stagedVolumes.set(tabId, { volume: effectiveVolume, timestamp: Date.now() });
 	const current = badgeState.get(tabId);
 	recordBadgeDecision(tabId, {
 		volume: effectiveVolume,

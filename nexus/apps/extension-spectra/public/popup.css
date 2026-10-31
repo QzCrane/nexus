@@ -534,10 +534,6 @@ body {
   margin-bottom: 12px;
   position: relative;
   border: 1px solid var(--card-border);
-  transition:
-    opacity 0.2s,
-    transform 0.2s;
-  /* subtle micro-animation */
   overflow: hidden;
   /* prevent header rounded corners overflow */
 }
