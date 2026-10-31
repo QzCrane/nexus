@@ -227,9 +227,6 @@ export function createUpdateFn(
 			pendingFields.set(rawField as keyof AudioConfig, inputRevision);
 		}
 		if (volumeChanged) {
-			// Only the tone is held, and only while the route may actually change.
-			// The contract owns the boundary and the mute case so this call site
-			// cannot drift from the documented rule again.
 			if (shouldHoldVolumeTone({
 				previousEffectiveVolume: previousVolume,
 				nextEffectiveVolume: nextVolume,

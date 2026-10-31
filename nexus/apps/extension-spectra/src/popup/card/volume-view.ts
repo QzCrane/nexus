@@ -73,6 +73,7 @@ export function createVolumeView(ui: Pick<CardUIElements, 'slider' | 'fill' | 'v
 		lastColor = color;
 		ui.fill.style.backgroundColor = color;
 		ui.val.style.color = color;
+		ui.slider?.style?.setProperty?.('--slider-accent', color);
 	};
 	const writeThumb = (value: number): void => {
 		const next = String(value);

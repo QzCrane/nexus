@@ -80,7 +80,7 @@ export function createRenderFn(params: RenderParams): () => void {
     const inVolumeGesture = state.draggingField === 'volume'
       || state.pendingVolumePresentation !== undefined;
     const liveTone = inVolumeGesture
-      ? gestureVolumeColor(muted, volumePresentation.effectiveVolume, state.actualMode, state.phase)
+      ? gestureVolumeColor(muted, volumePresentation.effectiveVolume, state.actualMode, state.phase, config)
       : volumePresentation.color;
 
     volumeView.commit({
@@ -89,7 +89,7 @@ export function createRenderFn(params: RenderParams): () => void {
       muted,
       thumb: state.draggingField === 'volume' ? null : newSliderValue,
     });
-    ui.slider.style.setProperty('--slider-accent', liveTone);
+    ui.slider?.style?.setProperty?.('--slider-accent', liveTone);
 
     const displayedVolume = volumePresentation.effectiveVolume;
 
@@ -149,20 +149,9 @@ export function resolveVolumePresentation(
   state: CardInternalState,
 ): { effectiveVolume: number; color: string } {
   const presentation = state.pendingVolumePresentation;
-  // The number is *always* live. Holding it on the pre-change presentation froze
-  // the bar and the readout at the gesture's starting value for as long as the
-  // route transaction stayed open, which on a 0..800 slider means any drag that
-  // crosses 100 stopped tracking the thumb for the rest of the gesture. That is
-  // the "bar does not follow the thumb" symptom, and no amount of render-side
-  // optimization can hide it.
   const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
   return {
     effectiveVolume,
-    // Only the *tone* waits. A route transaction (native <-> boost, or a capture
-    // hand-off) cannot be predicted, so the acknowledged route from before the
-    // transaction still owns the color until its ACK lands. That keeps a new
-    // number from appearing in the previous route's color while leaving the
-    // number itself free to track the gesture.
     color: actualVolumeColor(
       presentation?.muted ?? state.config.muted,
       effectiveVolume,
@@ -187,14 +176,37 @@ export function actualVolumeColor(
  * Immediate predictive tone feedback during pointer or wheel gestures.
  * Crossing 100 provides immediate boost/native tone responsiveness so that
  * the user never perceives a lag or delayed recoloring while dragging.
+ *
+ * Strict invariant: only genuine capture requirements switch to violet tone.
  */
 export function gestureVolumeColor(
   muted: boolean,
   volume: number,
   actualMode: SpectraAudioMode | null,
   phase: AudioSessionPhase,
+  config?: Pick<import('@nexus/contracts').AudioConfig, 'enabled' | 'eqValues' | 'compressor' | 'bass' | 'mono' | 'pan' | 'delay'>,
 ): string {
   if (muted || volume <= 0) return COLORS.MUTED;
-  if (volume > 100) return COLORS.CAPTURE;
-  return actualVolumeColor(muted, volume, actualMode, phase);
+  if (config && !config.enabled) return popupPrimaryColor();
+
+  if (actualMode === 'capture' && phase === 'active') {
+    const hasExtraEffects = config ? (
+      config.eqValues?.some((v) => v !== 0)
+      || config.compressor
+      || config.bass
+      || config.mono
+      || config.pan !== 0
+      || config.delay !== 0
+    ) : false;
+    if (volume > 100 || hasExtraEffects) {
+      return COLORS.CAPTURE;
+    }
+    return popupPrimaryColor();
+  }
+
+  if (volume > 100) {
+    return COLORS.CAPTURE;
+  }
+
+  return popupPrimaryColor();
 }
