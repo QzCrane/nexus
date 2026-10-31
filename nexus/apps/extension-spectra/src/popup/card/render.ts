@@ -80,7 +80,7 @@ export function createRenderFn(params: RenderParams): () => void {
     const inVolumeGesture = state.draggingField === 'volume'
       || state.pendingVolumePresentation !== undefined;
     const liveTone = inVolumeGesture
-      ? gestureVolumeColor(muted, volumePresentation.effectiveVolume, state.actualMode, state.phase, config)
+      ? gestureVolumeColor(muted, volumePresentation.effectiveVolume, state.actualMode, state.phase, config, state.controlSnapshot)
       : volumePresentation.color;
 
     volumeView.commit({
@@ -174,10 +174,11 @@ export function actualVolumeColor(
 
 /**
  * Immediate predictive tone feedback during pointer or wheel gestures.
- * Crossing 100 provides immediate boost/native tone responsiveness so that
- * the user never perceives a lag or delayed recoloring while dragging.
+ * Crossing 100 provides immediate boost/native tone responsiveness when capture is active or required.
  *
- * Strict invariant: only genuine capture requirements switch to violet tone.
+ * Strict invariant: "只有真正需要变紫的劫持才变紫！不劫持的网站绝对不能变紫".
+ * On page-native sites or unhijacked sites, volume amplification does not use Tab Capture,
+ * and tone strictly remains native blue.
  */
 export function gestureVolumeColor(
   muted: boolean,
@@ -185,10 +186,13 @@ export function gestureVolumeColor(
   actualMode: SpectraAudioMode | null,
   phase: AudioSessionPhase,
   config?: Pick<import('@nexus/contracts').AudioConfig, 'enabled' | 'eqValues' | 'compressor' | 'bass' | 'mono' | 'pan' | 'delay'>,
+  controlSnapshot?: import('@nexus/contracts').ControlSnapshot | null,
 ): string {
   if (muted || volume <= 0) return COLORS.MUTED;
   if (config && !config.enabled) return popupPrimaryColor();
 
+  // If already in an active Capture pipeline:
+  // violet when boosting above 100 or when DSP effects require the processor; otherwise native primary.
   if (actualMode === 'capture' && phase === 'active') {
     const hasExtraEffects = config ? (
       config.eqValues?.some((v) => v !== 0)
@@ -204,9 +208,22 @@ export function gestureVolumeColor(
     return popupPrimaryColor();
   }
 
-  if (volume > 100) {
+  // Not currently in an active capture session:
+  // Strict rule: only genuine capture requirements switch to violet tone.
+  // If the target page natively supports volume amplification without capture (page-native),
+  // volume > 100 never escalates to capture and must strictly remain native blue.
+  const isPageNative = controlSnapshot?.fields.volumeBase?.strategy === 'page-native';
+  if (isPageNative) {
+    return popupPrimaryColor();
+  }
+
+  // If the strategy is explicitly dom-native (standard HTMLMediaElement capped at 1.0),
+  // volume > 100 cannot be handled natively and will require Tab Capture hijacking.
+  if (controlSnapshot?.fields.volumeBase?.strategy === 'dom-native' && volume > 100) {
     return COLORS.CAPTURE;
   }
 
+  // For any non-hijacked website / bypass / unconfirmed capture:
+  // Volume threshold alone NEVER implies capture! Strictly maintain native primary blue.
   return popupPrimaryColor();
 }

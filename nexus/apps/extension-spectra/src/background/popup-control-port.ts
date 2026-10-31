@@ -8,6 +8,7 @@ import {
 	type PopupControlPortResponse,
 	type PopupControlReady,
 } from '../shared/popup-control-port';
+import { updateBadgeStagedVolume } from './handlers/badge';
 
 const COALESCE_MS = 50;
 let receivedInputs = 0;
@@ -222,6 +223,13 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 		lastAcceptedRevision = raw.inputRevision;
 		if (raw.effectiveVolume !== undefined) {
 			volume = { revision: raw.inputRevision, value: raw.effectiveVolume };
+			if (identity) {
+				updateBadgeStagedVolume(identity.tabId, raw.effectiveVolume, {
+					documentId: identity.documentId,
+					origin: '',
+					generation: 0,
+				});
+			}
 		}
 		for (const group of raw.groups) {
 			for (const [rawField, value] of Object.entries(group.patch)) {

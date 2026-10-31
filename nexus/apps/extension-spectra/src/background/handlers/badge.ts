@@ -84,9 +84,11 @@ async function paintBadge(tabId: number): Promise<void> {
 	}
 	const { text, color } = presentBadge(decision);
 	try {
-		await action.setBadgeText({ tabId, text });
-		await action.setBadgeBackgroundColor({ tabId, color });
-		await action.setBadgeTextColor({ tabId, color: BADGE_COLORS.WHITE });
+		await Promise.all([
+			action.setBadgeText({ tabId, text }),
+			action.setBadgeBackgroundColor({ tabId, color }),
+			action.setBadgeTextColor({ tabId, color: BADGE_COLORS.WHITE }),
+		]);
 	} catch {
 		// Only the decision this paint rendered may be invalidated: a newer one
 		// recorded meanwhile is still owed a paint of its own.
@@ -185,3 +187,31 @@ export async function updateBadgeFromSession(
 	}, 'control', snapshot);
 	return paintBadge(snapshot.tabId);
 }
+
+/**
+ * Instant synchronous volume feedback for live gestures before full pipeline settlement.
+ * Keeps the toolbar Action badge text completely in sync with the Popup volume slider,
+ * without waiting for asynchronous storage round-trips or coalesce timeouts.
+ */
+export function updateBadgeStagedVolume(
+	tabId: number,
+	effectiveVolume: number,
+	identity?: Pick<ControlSnapshot, 'documentId' | 'origin' | 'generation'> | null,
+): void {
+	if (!Number.isFinite(effectiveVolume) || effectiveVolume < 0) return;
+	const current = badgeState.get(tabId);
+	recordBadgeDecision(tabId, {
+		volume: effectiveVolume,
+		muted: current?.muted ?? false,
+		enabled: current?.enabled ?? true,
+		isCapture: current?.isCapture ?? false,
+		userInteracted: true,
+	}, current?.authority ?? 'control', {
+		documentId: identity?.documentId ?? current?.documentId ?? '',
+		origin: identity?.origin ?? current?.origin ?? '',
+		generation: identity?.generation ?? current?.generation ?? 0,
+	});
+	void markBadgeUsed(tabId);
+	void paintBadge(tabId);
+}
+

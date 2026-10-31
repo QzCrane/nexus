@@ -132,7 +132,7 @@ export function bindCardEvents(params: EventsParams): void {
     // the renderer owns the MUTE label, so painting a number over it would
     // visibly blink once per frame.
     if (!state.config.muted) {
-      const liveColor = gestureVolumeColor(false, value, state.actualMode, state.phase, state.config);
+      const liveColor = gestureVolumeColor(false, value, state.actualMode, state.phase, state.config, state.controlSnapshot);
       volumeView.paintPointer(value, liveColor);
       ui.slider?.style?.setProperty?.('--slider-accent', liveColor);
       // The Action badge is not painted here. It has exactly one owner - the
@@ -175,7 +175,7 @@ export function bindCardEvents(params: EventsParams): void {
     volumeView.setThumb(nextVolume);
 
     if (!state.config.muted) {
-      const liveColor = gestureVolumeColor(false, nextVolume, state.actualMode, state.phase, state.config);
+      const liveColor = gestureVolumeColor(false, nextVolume, state.actualMode, state.phase, state.config, state.controlSnapshot);
       volumeView.paintPointer(nextVolume, liveColor);
       ui.slider?.style?.setProperty?.('--slider-accent', liveColor);
     }

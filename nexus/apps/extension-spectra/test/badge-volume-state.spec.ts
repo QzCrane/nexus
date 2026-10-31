@@ -8,6 +8,7 @@ import {
 	updateBadgeFromControlProjection,
 	updateBadgeFromSession,
 	markBadgeUsedForTab,
+	updateBadgeStagedVolume,
 } from '../src/background/handlers/badge';
 import { BADGE_COLORS, badgeState } from '../src/background/state';
 import { resetBadgeUsageForTests } from '../src/background/badge-usage';
@@ -302,6 +303,42 @@ describe('actual volume badge state', () => {
 		expect(texts.at(-1)).toBe('63');
 		expect(texts.filter((text) => text === 'M')).toHaveLength(1);
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 63, muted: false });
+	});
+
+	test('updateBadgeStagedVolume updates badge text synchronously on 100 <-> 110 volume gestures', async () => {
+		const texts: string[] = [];
+		const colors: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				action: {
+					setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+					setBadgeBackgroundColor: async ({ color }: { color: string }) => { colors.push(color); },
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		// First touch in popup: sliding from 100 to 110 on a cold tab
+		updateBadgeStagedVolume(TAB_ID, 110, { documentId: 'doc-1', origin: 'https://video.example', generation: 1 });
+		// Synchronous memory decision recorded immediately
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 110, userInteracted: true, isCapture: false });
+
+		// Allow paint promise microtasks to settle
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(texts.at(-1)).toBe('110');
+		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
+
+		// Sliding back to 100
+		updateBadgeStagedVolume(TAB_ID, 100);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 100, userInteracted: true, isCapture: false });
+
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(texts.at(-1)).toBe('100');
+		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 	});
 });
 

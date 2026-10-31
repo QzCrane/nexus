@@ -40,12 +40,35 @@ describe('Popup single effective-volume control', () => {
 	});
 
 	test('gestureVolumeColor provides immediate synchronous tone feedback for live gestures', () => {
-		expect(gestureVolumeColor(false, 350, 'bypass', 'idle')).toBe(COLORS.CAPTURE);
-		expect(gestureVolumeColor(false, 101, 'bypass', 'idle')).toBe(COLORS.CAPTURE);
-		expect(gestureVolumeColor(false, 100, 'bypass', 'idle')).toBe(COLORS.NATIVE);
-		expect(gestureVolumeColor(false, 50, 'bypass', 'idle')).toBe(COLORS.NATIVE);
-		expect(gestureVolumeColor(true, 350, 'bypass', 'idle')).toBe(COLORS.MUTED);
-		expect(gestureVolumeColor(false, 0, 'bypass', 'idle')).toBe(COLORS.MUTED);
+		// Active capture pipeline: violet when boosting > 100, native primary when <= 100
+		expect(gestureVolumeColor(false, 350, 'capture', 'active')).toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 101, 'capture', 'active')).toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 100, 'capture', 'active')).toBe(COLORS.NATIVE);
+		expect(gestureVolumeColor(false, 50, 'capture', 'active')).toBe(COLORS.NATIVE);
+
+		// Page-native sites (never hijack): volume > 100 strictly remains native blue
+		const pageNativeSnapshot = {
+			tabId: 1, documentId: 'doc1', origin: 'https://video.example', generation: 1, revision: 1,
+			activeMedia: null, activeVideo: null,
+			fields: { volumeBase: { phase: 'applied' as const, strategy: 'page-native' as const, actual: 110, revision: 1, controlled: true, lastError: null } },
+		};
+		expect(gestureVolumeColor(false, 110, 'bypass', 'idle', undefined, pageNativeSnapshot)).toBe(COLORS.NATIVE);
+		expect(gestureVolumeColor(false, 350, 'bypass', 'idle', undefined, pageNativeSnapshot)).toBe(COLORS.NATIVE);
+
+		// Dom-native sites: volume > 100 cannot be done natively, escalates to capture
+		const domNativeSnapshot = {
+			tabId: 1, documentId: 'doc1', origin: 'https://dom.example', generation: 1, revision: 1,
+			activeMedia: null, activeVideo: null,
+			fields: { volumeBase: { phase: 'applied' as const, strategy: 'dom-native' as const, actual: 100, revision: 1, controlled: true, lastError: null } },
+		};
+		expect(gestureVolumeColor(false, 101, 'bypass', 'idle', undefined, domNativeSnapshot)).toBe(COLORS.CAPTURE);
+
+		// Unhijacked / bypass sites without explicit dom-native capture escalation: remain native blue
+		expect(gestureVolumeColor(false, 110, 'bypass', 'idle')).toBe(COLORS.NATIVE);
+
+		// Silence / muted
+		expect(gestureVolumeColor(true, 350, 'capture', 'active')).toBe(COLORS.MUTED);
+		expect(gestureVolumeColor(false, 0, 'capture', 'active')).toBe(COLORS.MUTED);
 	});
 
 	test('uses one volume-state truth table and fails closed on stale document identity', () => {
