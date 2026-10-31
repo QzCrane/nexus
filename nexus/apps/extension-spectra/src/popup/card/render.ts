@@ -176,7 +176,7 @@ export function actualVolumeColor(
  * Immediate predictive tone feedback during pointer or wheel gestures.
  * Crossing 100 provides immediate boost/native tone responsiveness when capture is active or required.
  *
- * Strict invariant: "只有真正需要变紫的劫持才变紫！不劫持的网站绝对不能变紫".
+ * Strict invariant: only genuine capture requirements switch to violet tone.
  * On page-native sites or unhijacked sites, volume amplification does not use Tab Capture,
  * and tone strictly remains native blue.
  */
