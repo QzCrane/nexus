@@ -67,6 +67,43 @@ Popup 枚举使用 `tabId + document generation` 隔离在途探测，并在一�
 
 ## §14 Media controls
 
+### Physical readback and autoplay admission
+
+倍速 actual 始终来自精确媒体的 `playbackRate`；页面控制器 getter 是写入证人，
+不能单独签发成功。page speed 写入在有界稳定窗内同时验证 controller 与 DOM；
+允许异步追上，永久不一致则按能力失败处理。冷态 bootstrap、完整 runtime 和释放
+后的观察都以 `dom-native` 归因实际倍速，写入归因仍保留实际 page/DOM writer。
+
+页面不能承接自由值时，分别保留尝试前的 controller 与 physical baseline；先经
+原 page writer 证明其自身基线已恢复，再由既有 DOM writer 恢复物理基线，才应用
+新的 DOM speed。不得要求页面支持此前由 DOM 承接的自由值。已持有的 page speed
+也可按此证明交接；保留
+原始 baseline 与旧 ownership 的精确身份。终止性的激活、安全和生命周期错误
+不得以 DOM 绕过。每源只记住最近一次拒绝的数值，避免对同值自动反复升级；不同
+数值仍可探测页面能力，源退休时清除。音量/静音不因该 speed 交接扩大降级权限。
+
+取消静音必须在公共原生写入入口、page/DOM 分支之前检查文档激活。尚未真实交互
+的文档不得把媒体从 muted 改为 unmuted；返回 `user-activation-required`，保留真实
+静音与播放状态，不调用 `play()` 补偿。mute、已取消静音的幂等读回、以及其它音量
+或倍速恢复独立处理。自动重放跳过仍被该边界拒绝的 unmute；后续显式操作重新
+检查激活，退出和回滚同样经过唯一入口。
+
+### Actual speed label
+
+声明站点的工具栏倍速文字由 isolated bootstrap 的
+`createSiteSpeedLabelProjection` 唯一投影，事实源是同一声明播放器根内唯一媒体的
+`playbackRate`。首次 DOM ready、暖注入、pageshow 主动读回；媒体生命周期和
+`ratechange` 同步真实数值。仅观察已发现的播放器根，覆盖标签晚挂载和 React
+重渲染；不观察整个文档，不写媒体/控制器，不依赖重级 runtime、菜单展开或档位
+存在。`1x` 也必须显示数值；`1.3x` 等未列出的速率直接显示，不夹取最近选项。
+
+注册表 `projection.labelSelector` 只指定专属文本节点，`rootSelector` 限定绑定。
+多个根独立同步，同根多个媒体时拒绝猜测。保留 React 文本节点与其它控件；
+bootstrap dispose 断开观察并仅恢复仍由本写者持有的文本。菜单选中项仍是独立的
+页面控制器证人，扩展写出的标签不得用来签发 controller ACK。
+
+修复证据与验证进度见 [toolbar 同步记录](../../../../docs/research/2026-11-01-spectra-speed-toolbar-sync.md)。
+
 | Field | Preferred implementation | Escalation |
 | --- | --- | --- |
 | speed | 精确元素控制器 getter/setter -> DOM `playbackRate` | 拒绝/限幅则还原 baseline 后降级 DOM |

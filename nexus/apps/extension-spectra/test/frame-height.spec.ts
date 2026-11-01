@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { injectFrameHeightKey } from '../scripts/frame-reserve-key';
-import { resolveFrameTarget } from '../src/popup/frame-height';
+import { releasePopupFrame, resolveFrameTarget, trackPopupFrame } from '../src/popup/frame-height';
 import {
 	ACTION_POPUP_PATH,
 	FRAME_HEIGHT_KEY,
@@ -19,6 +19,69 @@ import {
 // must not inherit a taller one's. These are the rule's three states, none of
 // which needs a browser to pin.
 describe('popup frame target', () => {
+	test('defers observer writes and retires queued geometry work on release or retrack', () => {
+		const keys = ['window', 'document', 'ResizeObserver', 'MutationObserver', 'requestAnimationFrame', 'cancelAnimationFrame'] as const;
+		const originals = new Map(keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+		let contentHeight = 352;
+		const html = { dataset: { spectraReady: 'true' }, style: { height: '', overflowY: '' }, classList: { add() {}, remove() {} } };
+		const container = { getBoundingClientRect: () => ({ height: contentHeight }) };
+		const callbacks = new Map<number, FrameRequestCallback>();
+		let nextFrame = 0;
+		const resizeCallbacks: Array<() => void> = [];
+		const mutations: Array<() => void> = [];
+		const globals = {
+			window: { location: { search: '?cards=3' }, localStorage: { setItem() {} } },
+			document: { documentElement: html, querySelector: () => container },
+			ResizeObserver: class { constructor(callback: () => void) { resizeCallbacks.push(callback); } observe() {} disconnect() {} },
+			MutationObserver: class { constructor(callback: () => void) { mutations.push(callback); } observe() {} disconnect() {} },
+			requestAnimationFrame: (callback: FrameRequestCallback) => { callbacks.set(++nextFrame, callback); return nextFrame; },
+			cancelAnimationFrame: (handle: number) => { callbacks.delete(handle); },
+		};
+		const drain = () => {
+			for (const [handle, callback] of [...callbacks]) {
+				callbacks.delete(handle);
+				callback(0);
+			}
+		};
+		try {
+			for (const key of keys) Object.defineProperty(globalThis, key, { configurable: true, value: globals[key] });
+			releasePopupFrame();
+			trackPopupFrame();
+			expect(html.style.height).toBe('352px');
+			drain();
+			contentHeight = 720;
+			resizeCallbacks[0]?.();
+			mutations[0]?.();
+			resizeCallbacks[0]?.();
+			expect(html.style.height).toBe('352px');
+			expect(callbacks.size).toBe(1);
+			drain();
+			expect(html.style.height).toBe('600px');
+			expect(html.style.overflowY).toBe('auto');
+			contentHeight = 410;
+			resizeCallbacks[0]?.();
+			const retired = [...callbacks.values()];
+			releasePopupFrame();
+			expect(callbacks.size).toBe(0);
+			for (const callback of retired) callback(0);
+			expect(html.style.height).toBe('');
+			trackPopupFrame();
+			expect(html.style.height).toBe('410px');
+			drain();
+			contentHeight = 720;
+			resizeCallbacks[0]?.();
+			expect(callbacks.size).toBe(0);
+			expect(html.style.height).toBe('410px');
+		} finally {
+			releasePopupFrame();
+			for (const key of keys) {
+				const original = originals.get(key);
+				if (original) Object.defineProperty(globalThis, key, original);
+				else Reflect.deleteProperty(globalThis, key);
+			}
+		}
+	});
+
 	test('follows the content once the inventory has published', () => {
 		expect(resolveFrameTarget(352, true, null)).toBe(352);
 	});

@@ -111,6 +111,25 @@ describe('Popup Background-owned control transport projection', () => {
 		expect(update.hasPendingVolume()).toBe(false);
 	});
 
+	test('retires a settled input when a newer page volume snapshot arrived before its ACK', () => {
+		const harness = installHarness();
+		const state = createState();
+		state.controlSnapshot = controlSnapshot(0, 1, 1);
+		state.controlGeneration = 1;
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 40 });
+		applyControlSnapshot(state, {
+			...controlSnapshot(2, 1, 1),
+			fields: { volumeBase: controlField(80, 2, 'dom-native', 'active-target') },
+		}, () => undefined, update.hasPendingVolume(), update.pendingConfigFields());
+		expect(state.stableConfig.volume).toBe(80);
+		expect(state.config.volume).toBe(40);
+		harness.emit(settlement(1, { volume: 40, ackGeneration: 1, ackRevision: 1 }));
+		expect(update.hasPendingVolume()).toBe(false);
+		expect(state.config.volume).toBe(80);
+		expect(state.controlRevision).toBe(2);
+	});
+
 	test('keeps pending DSP optimistic when an accepted Background snapshot carries an older value', () => {
 		const harness = installHarness();
 		const state = createState();
@@ -146,8 +165,10 @@ describe('Popup Background-owned control transport projection', () => {
 		update({ speed: 1.5 });
 		harness.emit(settlement(1, { fieldAcks: [speedAck(4, 0.75)] }));
 		expect(state.stableConfig.speed).toBe(1.25);
-		expect(state.config.speed).toBe(1.5);
+		expect(state.config.speed).toBe(1.25);
+		expect(update.pendingConfigFields().size).toBe(0);
 
+		update({ speed: 1.5 });
 		harness.emit(settlement(2, { fieldAcks: [speedAck(6, 1.5)] }));
 		expect(state.stableConfig.speed).toBe(1.5);
 		expect(state.config.speed).toBe(1.5);

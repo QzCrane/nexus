@@ -103,6 +103,7 @@ describe('site adapter registry invariants', () => {
 		for (const entry of SITE_ADAPTER_REGISTRY) {
 			const projection = entry.projection;
 			if (!projection) continue;
+			if (projection.labelSelector) expect(projection.rootSelector).toBeTruthy();
 			expect(projection.tolerance).toBeGreaterThan(0);
 			expect(projection.patterns.length).toBeGreaterThan(0);
 			expect(projection.scopeSelectors.length).toBeLessThanOrEqual(
@@ -195,7 +196,7 @@ describe('site adapter bounds', () => {
 			id: 'douyin-speed',
 			host: 'www.douyin.com',
 			field: 'speed',
-			revision: 2,
+			revision: 3,
 			status: 'verified',
 			hasProjection: true,
 		});

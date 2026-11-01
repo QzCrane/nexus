@@ -138,6 +138,16 @@ A separate monotonic per-tab record owns Action-badge stickiness, surviving work
 Content maintains media through an event-driven registry. Registration does one viewport-geometry seed. Deduplicated on same-document navigation. Every element independently receives native configuration upon registration/play/selection; the registry never binds an audio graph.
 Passive bootstrap may do a bounded top-level getter. It observes `volumechange`/`ratechange` and submits complete actual pairs to Background without media identity. While the initial HELLO verdict is pending, it retains the latest observation without dispatching it. A lean verdict drains that observation; a heavy-runtime verdict discards it because the runtime owns observation. Restoration acquires the heavy runtime before writing media, so restored native events cannot be replayed by the lean bootstrap.
 
+The bootstrap also owns the declared site's actual-speed toolbar projection for
+its entire lifetime, including while the heavy runtime is resident. The
+[media-control owner](../control/06-media-and-video.md#actual-speed-label) defines
+the exact media/root binding and the independent menu witness. Initial DOM
+ready/warm injection/pageshow reads do not wait for a rate event. Native media
+signals discover player roots; only those roots receive a label-specific
+MutationObserver for late/replaced UI. There is no document-wide topology watch,
+polling, MAIN observer, or additional media writer. Bootstrap disposal releases
+these observers and conditionally restores its text.
+
 ## Action Popup first frame
 
 Chrome sizes an Action Popup from its document, and every open is a new realm.
@@ -208,6 +218,12 @@ interpolation would trade one wrong number for another. A first open of a new
 shape grows once, records its own height, and never grows again.
 
 ### Frame settlement
+
+`frame-height.ts` retains synchronous first sizing, but ResizeObserver and
+MutationObserver invalidations coalesce into one requestAnimationFrame before
+writing ancestor root geometry. Writing the observed root during descendant
+observer delivery creates undelivered shallower notifications. Release/retrack
+cancels the queued frame and fences callbacks by tracking revision.
 
 `popup/frame-height.ts` owns the document frame once the module starts. Until
 `data-spectra-ready` is published — the inventory has committed every card this

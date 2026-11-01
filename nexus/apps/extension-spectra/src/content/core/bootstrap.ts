@@ -21,7 +21,7 @@ import {
 	isExtensionContextValid,
 	runWithValidExtensionContext,
 } from './extension-context';
-import { readPageMediaField } from '../logic/page-media-bridge';
+import { createSiteSpeedLabelProjection, readPageMediaField } from '../logic/page-media-bridge';
 import { hasPlayableMedia } from '../../shared/media-presence';
 import {
 	nextScalarGestureId,
@@ -64,6 +64,7 @@ if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous
 
 if (!getContentBootstrapState()) {
 	let disposed = false;
+	const speedLabels = createSiteSpeedLabelProjection();
 	let observationsReady = false;
 	let observationInFlight = false;
 	const activeDefaultScalarKeys = new Map<string, {
@@ -204,14 +205,13 @@ if (!getContentBootstrapState()) {
 			};
 		}
 		if (!('preservesPitch' in element)) return null;
-		const pageSpeed = readPageActual(element, 'speed');
 		return {
 			patch: {
-				speed: typeof pageSpeed === 'number' ? pageSpeed : element.playbackRate,
+				speed: element.playbackRate,
 				preservePitch: element.preservesPitch,
 			},
 			observedStrategies: {
-				speed: pageSpeed === null ? 'dom-native' : 'page-native',
+				speed: 'dom-native',
 				preservePitch: 'dom-native',
 			},
 		};
@@ -249,9 +249,8 @@ if (!getContentBootstrapState()) {
 					break;
 				}
 				case 'speed': {
-					const pageValue = readPageActual(element, field);
-					actual = pageValue ?? element.playbackRate;
-					observedStrategies.speed = pageValue === null ? 'dom-native' : 'page-native';
+					actual = element.playbackRate;
+					observedStrategies.speed = 'dom-native';
 					break;
 				}
 				case 'preservePitch':
@@ -296,6 +295,7 @@ if (!getContentBootstrapState()) {
 	] as const;
 	const onMediaPresenceSignal = (event: Event): void => {
 		if (!(event.target instanceof HTMLMediaElement)) return;
+		speedLabels.syncMedia(event.target);
 		reportMediaPresence();
 	};
 
@@ -319,11 +319,13 @@ if (!getContentBootstrapState()) {
 
 	const onMediaDomReady = (): void => {
 		if (disposed) return;
+		speedLabels.scan();
 		reportMediaPresence();
 	};
 
 	const onMediaPageShow = (): void => {
 		if (disposed) return;
+		speedLabels.scan();
 		// bfcache restore re-runs pageshow without re-injecting the bootstrap:
 		// force a fresh presence read so a restored document cannot keep a stale
 		// durable fact in the background inventory.
@@ -339,6 +341,7 @@ if (!getContentBootstrapState()) {
 		dispose() {
 			if (disposed) return;
 			disposed = true;
+			speedLabels.dispose();
 			releaseDefaultScalarKeys();
 			pendingObservation = null;
 			document.removeEventListener('DOMContentLoaded', onMediaDomReady);
@@ -389,11 +392,13 @@ if (!getContentBootstrapState()) {
 	};
 
 	const onNativeMediaChange = (event: Event): void => {
-		if (disposed || state.disposeRuntime) return;
+		if (disposed) return;
 		const element = event.composedPath().find(
 			(candidate): candidate is HTMLMediaElement => candidate instanceof HTMLMediaElement,
 		);
 		if (!element?.isConnected) return;
+		if (event.type === 'ratechange') speedLabels.syncMedia(element);
+		if (state.disposeRuntime) return;
 		// Native media events double as presence evidence for media that never
 		// plays or loads metadata (volume-only elements).
 		reportMediaPresence();

@@ -1209,7 +1209,8 @@ export async function openActionPopupTarget(timeoutMs = 10_000): Promise<Target>
 	const knownTargets = new Set(browser.targets());
 	const popupUrl = `chrome-extension://${extensionId}/popup.html`;
 	const targetPromise = browser.waitForTarget(
-		(target) => !knownTargets.has(target) && target.url() === popupUrl,
+		(target) => !knownTargets.has(target)
+			&& (target.url() === popupUrl || target.url().startsWith(`${popupUrl}?`)),
 		{ timeout: timeoutMs },
 	);
 	try {

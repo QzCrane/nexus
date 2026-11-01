@@ -98,16 +98,21 @@ function isPageSideWriter(writer: RestorableMediaWriter): boolean {
 }
 
 /**
- * Ownership may only move up. A DOM writer is promoted once the page proves a
+ * Ownership normally moves up. A DOM writer is promoted once the page proves a
  * controller, and a generic controller is promoted to a declared one when a
  * site adapter's projection becomes readable. Anything else is a contradiction
- * this executor refuses to commit silently.
+ * this executor refuses to commit silently. Speed alone may return to DOM after
+ * a capability failure and proven two-channel baseline restoration, retaining
+ * the exact prior ownership identity and original physical baseline.
  */
 const WRITER_RANK: Readonly<Record<RestorableMediaWriter, number>> = {
 	'dom-native': 0,
 	'page-native': 1,
 	'declared-official': 2,
 };
+// Page attempt, page rollback, prior DOM rollback, and final DOM attempt each
+// have a bounded 750ms settle plus two bounded rendering boundaries.
+const SPEED_PENDING_BUDGET_MS = 4_000;
 
 /**
  * The wire contract only knows `page-native` and `dom-native`
@@ -136,12 +141,15 @@ interface OwnedMediaField {
 	baseline: ControlValues[RestorableMediaField];
 	lastApplied: ControlValues[RestorableMediaField];
 	writer: RestorableMediaWriter;
+	/** This source's page writer proved unable to carry a physical speed. */
+	rejectedPageSpeed?: number;
 }
 
 interface RestorableMediaWriteState {
 	actual: ControlValues[RestorableMediaField];
 	writer: RestorableMediaWriter;
 	upgradeFrom?: OwnedMediaField;
+	controllerBaseline?: number;
 }
 
 interface NativeMediaOwnershipStore {
@@ -285,6 +293,8 @@ function readRestorableMediaField(
 	field: RestorableMediaField,
 	writer: RestorableMediaWriter,
 ): ControlValues[RestorableMediaField] {
+	// Page speed state is a write witness, never physical playback authority.
+	if (field === 'speed') return element.playbackRate;
 	if (isPageSideWriter(writer) && isPageMediaField(field)) {
 		const actual = readPageMediaField(element, field);
 		if (actual === null) throw new Error(`Page-media ${field} reader is no longer available`);
@@ -296,16 +306,14 @@ function readRestorableMediaField(
 function readRestorableMediaFieldWithWriter(
 	element: HTMLMediaElement,
 	field: RestorableMediaField,
-): { actual: ControlValues[RestorableMediaField]; writer: RestorableMediaWriter } {
+): RestorableMediaWriteState {
 	const owned = nativeMediaOwnership.byElement.get(element)?.get(field);
-	// A DOM-owned high speed may intentionally exceed the page controller's UI
-	// range, so its later reads must stay on playbackRate until an actual DOM
-	// ratechange releases ownership. Volume/mute retain semantic page-gesture
-	// discovery because their controller values can intentionally differ from
-	// the media element projection.
+	// Every speed observation stays physical, including page-owned writes and
+	// rates absent from a page menu. Volume/mute retain semantic page-gesture
+	// discovery for legitimately non-linear page controllers.
 	if (owned && (
 		!isPageMediaField(field)
-		|| (owned.writer === 'dom-native' && field === 'speed')
+		|| field === 'speed'
 	)) {
 		return {
 			actual: readRestorableMediaField(element, field, owned.writer),
@@ -317,7 +325,8 @@ function readRestorableMediaFieldWithWriter(
 			const evidence = readPageMediaEvidence(element, field);
 			if (evidence !== null) {
 				return {
-					actual: evidence.actual,
+					actual: field === 'speed' ? element.playbackRate : evidence.actual,
+					...(field === 'speed' ? { controllerBaseline: evidence.actual as number } : {}),
 					// The bridge names its own source, so a generic hit is never
 					// mislabelled as declared knowledge.
 					writer: evidence.adapterId ? 'declared-official' : 'page-native',
@@ -335,15 +344,20 @@ function readRestorableMediaFieldWithWriter(
 function readRestorableMediaFieldForWrite(
 	element: HTMLMediaElement,
 	field: RestorableMediaField,
+	requested: ControlValues[ControlField],
 ): RestorableMediaWriteState {
 	const owned = nativeMediaOwnership.byElement.get(element)?.get(field);
 	if (owned) {
+		if (field === 'speed' && owned.writer === 'dom-native' && owned.rejectedPageSpeed === requested) {
+			return { actual: element.playbackRate, writer: owned.writer };
+		}
 		if (owned.writer === 'dom-native' && isPageMediaField(field)) {
 			try {
 				const evidence = readPageMediaEvidence(element, field);
 				if (evidence !== null) {
 					return {
-						actual: evidence.actual,
+						actual: field === 'speed' ? element.playbackRate : evidence.actual,
+						...(field === 'speed' ? { controllerBaseline: evidence.actual as number } : {}),
 						writer: evidence.adapterId ? 'declared-official' : 'page-native',
 						upgradeFrom: owned,
 					};
@@ -358,9 +372,12 @@ function readRestorableMediaFieldForWrite(
 				};
 			}
 		}
+		const controllerBaseline = field === 'speed' && isPageSideWriter(owned.writer)
+			? readPageMediaField(element, 'speed') : null;
 		return {
 			actual: readRestorableMediaField(element, field, owned.writer),
 			writer: owned.writer,
+			...(controllerBaseline !== null ? { controllerBaseline } : {}),
 		};
 	}
 	return readRestorableMediaFieldWithWriter(element, field);
@@ -372,6 +389,7 @@ function writeRestorableMediaField(
 	value: ControlValues[RestorableMediaField],
 	writer: RestorableMediaWriter,
 ): ControlValues[RestorableMediaField] {
+	if (field === 'mediaMuted') assertUnmuteAdmitted(element, value as boolean);
 	if (isPageSideWriter(writer) && isPageMediaField(field)) {
 		const actual = writePageMediaField(element, field, value);
 		if (actual === null) throw new PageMediaCapabilityUnavailableError(field);
@@ -396,8 +414,21 @@ export function writeNativeVolumeBase(element: HTMLMediaElement, volumeBase: num
 }
 
 export function writeNativeMediaMuted(element: HTMLMediaElement, muted: boolean): boolean {
+	assertUnmuteAdmitted(element, muted);
+	if (element.muted === muted) return element.muted;
 	element.muted = muted;
 	return element.muted;
+}
+
+function requiresUnmuteActivation(element: HTMLMediaElement, muted: boolean): boolean {
+	return !muted && element.muted
+		&& globalThis.navigator?.userActivation?.hasBeenActive === false;
+}
+
+function assertUnmuteAdmitted(element: HTMLMediaElement, muted: boolean): void {
+	if (requiresUnmuteActivation(element, muted)) {
+		throw new DOMException('Interact with the document before unmuting its media', 'NotAllowedError');
+	}
 }
 
 export function writeNativePlaybackRate(element: HTMLMediaElement, speed: number): number {
@@ -449,28 +480,23 @@ async function writeRestorableMediaFieldWithStableAck(
 		writeRestorableMediaField(element, field, desired, writer);
 	};
 		if (pageSide && field === 'speed') {
-			// A declared controller (e.g. Douyin's xgplayer plugin) is the source
-			// of truth for the rate: its write commits `config.playBackRatio` and
-			// re-renders the panel, and xgplayer applies that to the media element
-			// *asynchronously*. Settling on `element.playbackRate` would time out
-			// whenever the media lags a frame behind the controller — rejecting a
-			// write that the page already accepted, which is exactly the
-			// "adjusting speed is not free" regression. Settle and verify on the
-			// controller's own committed value instead; the audit registry keeps
-			// watching `element.playbackRate` as a witness and reports divergence
-			// without rolling the write back.
-			await writeSpeedWithSettleAck(
+			// Allow asynchronous page application, but never acknowledge controller
+			// state that the media never plays. Both witnesses must stay coherent.
+			const coherent = await writeSpeedWithSettleAck(
 				write,
-				read,
-				desired,
-				tolerance,
+				() => {
+					const controller = readPageMediaField(element, 'speed');
+					if (controller === null) throw new PageMediaCapabilityUnavailableError('speed');
+					return nativeValuesMatch(desired, controller, tolerance)
+						&& nativeValuesMatch(desired, element.playbackRate, tolerance);
+				},
+				true,
+				0,
 				750,
 				options,
 			);
-			actual = await stablePageReadback(read, options);
-			if (!nativeValuesMatch(desired, read(), tolerance)) {
-				throw new Error('speed readback mismatch between the requested value and the page controller');
-			}
+			if (!coherent) throw new Error('Page speed readback diverged at the final render boundary');
+			actual = element.playbackRate;
 		} else if (pageSide) {
 			write();
 			actual = await stablePageReadback(read, options);
@@ -509,12 +535,24 @@ async function pageCandidateRestoredBaseline(
 	error: unknown,
 	tolerance: number,
 	options: NativeMediaOperationOptions = {},
+	controllerBaseline?: number,
 ): Promise<boolean> {
 	// An explicitly unavailable request never called a page setter. Every other
 	// page failure may fall through only after the same candidate proves that its
 	// baseline is stable again.
 	if (error instanceof PageMediaCapabilityUnavailableError) return true;
 	try {
+		if (field === 'speed') {
+			const pageBaseline = controllerBaseline ?? baseline;
+			const coherent = (): boolean => nativeValuesMatch(readPageMediaField(element, 'speed'), pageBaseline, tolerance)
+				&& nativeValuesMatch(element.playbackRate, pageBaseline, tolerance);
+			if (coherent()) {
+				if (!await stablePageReadback(coherent, options)) return false;
+			} else {
+				await writeRestorableMediaFieldWithStableAck(element, field, pageBaseline, 'page-native', tolerance, options);
+			}
+			return true;
+		}
 		const current = readRestorableMediaField(element, field, 'page-native');
 		if (!nativeValuesMatch(current, baseline, tolerance)) {
 			writeRestorableMediaField(element, field, baseline, 'page-native');
@@ -1060,7 +1098,7 @@ export class NativeMediaExecutor {
 					case 'speed': {
 						const observed = readRestorableMediaFieldWithWriter(element, field);
 						actual = observed.actual;
-						observedStrategies[field] = observationStrategy(observed.writer);
+						observedStrategies[field] = field === 'speed' ? 'dom-native' : observationStrategy(observed.writer);
 						break;
 					}
 					case 'preservePitch':
@@ -1160,12 +1198,15 @@ export class NativeMediaExecutor {
 			? clampNativeSeek(element, value as number)
 			: value;
 		let baseline: ControlValues[RestorableMediaField] | undefined;
+		let controllerBaseline: number | undefined;
 		let mediaWriter: RestorableMediaWriter = 'dom-native';
 		let writerUpgrade: OwnedMediaField | undefined;
+		let speedFallbackFrom: OwnedMediaField | null | undefined;
 		if (isRestorableMediaField(field)) {
 			try {
-				const baselineState = readRestorableMediaFieldForWrite(element, field);
+				const baselineState = readRestorableMediaFieldForWrite(element, field, effectiveDesired);
 				baseline = baselineState.actual;
+				controllerBaseline = baselineState.controllerBaseline;
 				mediaWriter = baselineState.writer;
 				writerUpgrade = baselineState.upgradeFrom;
 			} catch (error) {
@@ -1186,7 +1227,7 @@ export class NativeMediaExecutor {
 			intentId: intent.intentId,
 			expected: effectiveDesired,
 			tolerance,
-			timeoutId: setTimeout(() => this.expirePendingWrite(target.mediaId, field, intent.intentId), 1_000),
+			timeoutId: setTimeout(() => this.expirePendingWrite(target.mediaId, field, intent.intentId), field === 'speed' ? SPEED_PENDING_BUDGET_MS : 1_000),
 		});
 		try {
 			if (field === 'volumeBase' || field === 'mediaMuted' || field === 'speed') {
@@ -1252,7 +1293,10 @@ export class NativeMediaExecutor {
 						startedAt,
 						signal,
 						isCurrent,
-						onDrift: (actual) => this.observe(target.mediaId, field, actual),
+						// A detached proof is observation evidence, not a private cache
+						// update: use the same coherent volume/mute publication path as
+						// the native event, including active-target and ownership checks.
+						onDrift: () => this.handleMediaEvent(target, 'volumechange', element),
 					});
 				} else {
 					let actual: ControlValues[typeof field];
@@ -1268,6 +1312,10 @@ export class NativeMediaExecutor {
 					assertCurrent();
 				} catch (pageError) {
 					assertCurrent();
+					const failure = this.nativeFailure(field, pageError);
+					const capabilityGap = failure.code === 'readback-mismatch'
+						|| failure.code === 'write-unsupported'
+						|| pageError instanceof PageMediaCapabilityUnavailableError;
 					// The DOM writer physically clamps volumeBase to the standard
 					// 0-100 scale, so an above-100 probe can never be honored there.
 					// Skipping the DOM attempt keeps the coordinator's rejected probe
@@ -1277,7 +1325,9 @@ export class NativeMediaExecutor {
 						&& (effectiveDesired as number) > CONTROL_VALUE_LIMITS.volumeBase.max;
 					const mayFallThrough = !domCannotScale
 						&& isPageSideWriter(mediaWriter)
-						&& !pageWriterAlreadyOwned
+						&& capabilityGap
+						&& (!pageWriterAlreadyOwned || (field === 'speed'
+							&& !(pageError instanceof PageMediaCapabilityUnavailableError)))
 						&& await pageCandidateRestoredBaseline(
 							element,
 							field,
@@ -1285,9 +1335,13 @@ export class NativeMediaExecutor {
 							pageError,
 							tolerance,
 							{ signal, isCurrent },
+							controllerBaseline,
 						);
 					assertCurrent();
 					if (!mayFallThrough) throw pageError;
+					if (field === 'speed') {
+						speedFallbackFrom = nativeMediaOwnership.byElement.get(element)?.get(field) ?? null;
+					}
 					if (writerUpgrade) {
 						await writeRestorableMediaFieldWithStableAck(
 							element,
@@ -1300,6 +1354,13 @@ export class NativeMediaExecutor {
 						assertCurrent();
 						baseline = writerUpgrade.lastApplied;
 						writerUpgrade = undefined;
+					} else if (field === 'speed') {
+						// The prior physical rate can itself be outside the page range.
+						// Restore that separate witness through DOM before applying the
+						// next value; never require the page to support an old free rate.
+						if (!nativeValuesMatch(element.playbackRate, baseline, tolerance)) {
+							await writeRestorableMediaFieldWithStableAck(element, field, baseline, 'dom-native', tolerance, { signal, isCurrent });
+						}
 					} else {
 						baseline = readDomRestorableMediaField(element, field);
 					}
@@ -1481,6 +1542,7 @@ export class NativeMediaExecutor {
 					state.actual,
 					mediaWriter,
 					writerUpgrade,
+					speedFallbackFrom,
 				);
 			}
 		} catch (error) {
@@ -1498,6 +1560,7 @@ export class NativeMediaExecutor {
 					effectiveDesired,
 					mediaWriter,
 					signal,
+						controllerBaseline,
 				)
 					.catch(() => undefined);
 			}
@@ -1524,17 +1587,23 @@ export class NativeMediaExecutor {
 		actual: ControlValues[ControlField],
 		writer: RestorableMediaWriter,
 		upgradeFrom?: OwnedMediaField,
+		speedFallbackFrom?: OwnedMediaField | null,
 	): void {
 		const fields = nativeMediaOwnership.byElement.get(element)
 			?? new Map<RestorableMediaField, OwnedMediaField>();
 		const previous = fields.get(field);
+		const validSpeedFallback = field === 'speed' && writer === 'dom-native'
+			&& speedFallbackFrom !== undefined && (previous ?? null) === speedFallbackFrom;
+		if (speedFallbackFrom !== undefined && !validSpeedFallback) {
+			throw new Error('Speed ownership changed before the proven DOM handoff');
+		}
 		if (upgradeFrom && previous !== upgradeFrom) {
 			throw new Error(`Restorable ${field} ownership changed during writer upgrade`);
 		}
 		if (previous && previous.writer !== writer) {
 			const validUpgrade = previous === upgradeFrom
 				&& WRITER_RANK[writer] > WRITER_RANK[previous.writer];
-			if (!validUpgrade) {
+			if (!validUpgrade && !validSpeedFallback) {
 				throw new Error(`Restorable ${field} writer changed while ownership was active`);
 			}
 		}
@@ -1542,6 +1611,9 @@ export class NativeMediaExecutor {
 			baseline: previous?.baseline ?? baseline,
 			lastApplied: actual as ControlValues[RestorableMediaField],
 			writer,
+			...(validSpeedFallback ? { rejectedPageSpeed: actual as number }
+				: writer === 'dom-native' && previous?.rejectedPageSpeed !== undefined
+					? { rejectedPageSpeed: previous.rejectedPageSpeed } : {}),
 		});
 		nativeMediaOwnership.byElement.set(element, fields);
 	}
@@ -1553,11 +1625,21 @@ export class NativeMediaExecutor {
 		attempted: ControlValues[ControlField],
 		writer: RestorableMediaWriter,
 		signal?: AbortSignal,
+		controllerBaseline?: number,
 	): Promise<void> {
 		assertNativeOperationCurrent({ signal });
 		const tolerance = field === 'volumeBase' || field === 'speed' ? 0.01 : 0;
-		const current = readRestorableMediaField(element, field, writer);
+		const current = field === 'speed' && isPageSideWriter(writer)
+			? readPageMediaField(element, field)
+			: readRestorableMediaField(element, field, writer);
 		if (!nativeValuesMatch(current, attempted, tolerance)) return;
+		if (field === 'speed' && isPageSideWriter(writer)) {
+			await writeRestorableMediaFieldWithStableAck(element, field, controllerBaseline ?? baseline, writer, tolerance, { signal });
+			if (!nativeValuesMatch(element.playbackRate, baseline, tolerance)) {
+				await writeRestorableMediaFieldWithStableAck(element, field, baseline, 'dom-native', tolerance, { signal });
+			}
+			return;
+		}
 		writeRestorableMediaField(element, field, baseline, writer);
 		await (isPageSideWriter(writer) ? stablePageReadback : stableReadback)(
 			() => readRestorableMediaField(element, field, writer),
@@ -1802,7 +1884,7 @@ export class NativeMediaExecutor {
 			// DOM detach and SPA source reuse; the element object alone is not an
 			// ownership identity.
 			this.abortSourceOperations(target);
-			if (this.disposed || this.tabId === null) return;
+			if (this.disposed) return;
 			const key = this.targetKey(target);
 			const pending = this.pending.get(target.mediaId);
 			if (pending) {
@@ -1834,7 +1916,7 @@ export class NativeMediaExecutor {
 			}
 			return;
 		}
-		if (this.disposed || this.tabId === null) return;
+		if (this.disposed) return;
 		if (event === 'selected') {
 			this.primeObserved(target);
 			this.replayDesired(target, element, true);
@@ -1977,15 +2059,17 @@ export class NativeMediaExecutor {
 	}
 
 	private flushPageObservations(): void {
-		if (this.disposed || this.tabId === null) {
+		if (this.disposed) {
 			this.pageObservations.clear();
 			return;
 		}
 		const entries = [...this.pageObservations.values()];
 		this.pageObservations.clear();
 		for (const { target, patch, observedStrategies } of entries) {
+			// Observation starts with this document's registry, before any control
+			// request binds this.tabId. Background derives the tab from Chrome's
+			// sender and validates this exact target/document, as for lean bootstrap.
 			void sendSpectraRequest('spectra.control.intent.submit', {
-				tabId: this.tabId,
 				source: 'page',
 				requestedCoverage: 'active-target',
 				target,
@@ -2076,6 +2160,7 @@ export class NativeMediaExecutor {
 					readDomRestorableMediaField(element, field),
 					0.01,
 				);
+			if (field === 'speed' && desired === owned.rejectedPageSpeed && !mediaDrift) continue;
 			if (!domOwned && !mediaDrift) continue;
 			// The lower-level page write exists to let a later declared controller
 			// take over a value that was written to the DOM. A media drift needs
@@ -2092,6 +2177,8 @@ export class NativeMediaExecutor {
 			}
 			if (automaticFields.length === 0) return;
 		}
+		if (patch.mediaMuted === false && requiresUnmuteActivation(selected.element, false)) delete patch.mediaMuted;
+		if (Object.keys(patch).length === 0) return;
 		this.replayPending.add(key);
 		void sendSpectraRequest('spectra.control.intent.submit', {
 			tabId: this.tabId,

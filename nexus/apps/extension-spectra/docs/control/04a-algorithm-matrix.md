@@ -21,9 +21,9 @@ Exhaustive matrix for fields and operations in `control.contracts.ts`. Adding fe
 | Audio enabled | document | coordinator state expansion | Expands to per-field intents; never page-wide processing mode. |
 | Internal native `volumeBase 0–800` | target/all media | exact page controller, then `HTMLMediaElement.volume` (`0–100` portable subrange) | Requires paired getter/setter and stable getter ACK. A page-confirmed value above 100 remains page-native with Boost at unity; standard DOM rejects it and permits the coordinator's portable fallback. |
 | Internal processor `boost 1–8x` | explicit full audio | proven MediaElement WebAudio, then admitted full-tab Capture | Graph-signature/readback ACK. Used for effective volume above 100 only when the exact page controller cannot acknowledge the value; no independent UI and target-only requests fail. |
-| Media mute | target/all media | exact page controller, then `HTMLMediaElement.muted` | Requires paired getter/setter and stable getter ACK; otherwise DOM `volumechange` + getter. Preserves numeric volume. |
+| Media mute | target/all media | exact page controller, then `HTMLMediaElement.muted` | Unmute requires document activation before either writer. Paired getter/setter and stable getter ACK; otherwise DOM `volumechange` + getter. Preserves numeric volume. |
 | Tab mute | tab | `chrome.tabs.update({muted})` | `tabs.onUpdated`/`tabs.get` readback; never aliases media mute. |
-| Playback speed | active target | exact page controller, then `playbackRate` | Controller must prove baseline restoration before DOM fallback. DOM uses `ratechange` + stable getter. |
+| Playback speed | active target | exact page controller, then `playbackRate` | Actual is physical `playbackRate`. Page ACK requires controller and physical convergence; both must prove baseline restoration before DOM fallback, including an owned speed handoff. |
 | Preserve pitch | active target | standard `preservesPitch` only | Property/getter readback; unsupported if absent. |
 | Playing | active target | awaited standard `play()`/`pause()` only | `playing`/`pause` event; autoplay rejection returned. |
 | Current time | active target | seekable standard media timeline only | Clamp to `TimeRanges`; acknowledge `seeked` and getter. |
@@ -94,7 +94,7 @@ One row per capability in `CONTROL_ALGORITHM_ADJUDICATIONS`. 17 native-only, 6 h
 | `effective-volume` | hybrid-extension-native | MediaElement WebAudio after an above-100 page-native probe fails; Capture only if exact page coverage is unavailable | compound ACK returns exact page-native or portable base/Boost actuals; identical values skip IPC |
 | `mediaMuted` | native-only: exact-element page, then DOM | none | page getter readback or DOM `volumechange`; numeric volume unchanged |
 | `tabMuted` | native-only via Chrome tab | none | `tabs.get`/tab event readback |
-| `speed` | native-only: exact-element page, then DOM | none | page getter readback or DOM `ratechange` |
+| `speed` | native-only: exact-element page, then DOM | none | page getter plus physical `playbackRate` convergence; DOM stable readback; all observations use physical actual |
 | `preservePitch` | native-only via DOM `preservesPitch` | none | property readback; unsupported if absent |
 | `playing` | native-only via awaited `play`/`pause` | none | `playing`/`pause` event + getter |
 | `currentTime` | native-only via seekable timeline | none | `seeked` + getter |

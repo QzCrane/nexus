@@ -165,7 +165,7 @@ beforeAllChrome(async () => {
 			const url = new URL(request.url);
 			if (url.pathname === TONE_PATH) return toneResponse();
 			const slug = url.pathname.slice('/media/'.length);
-			if (url.pathname.startsWith('/media/') && ['alpha', 'beta'].includes(slug)) {
+			if (url.pathname.startsWith('/media/') && ['alpha', 'beta', 'gamma'].includes(slug)) {
 				return pausedMediaPage(`Paused Media ${slug}`);
 			}
 			return new Response('Not found', { status: 404 });
@@ -326,3 +326,47 @@ testChrome('opens each shape at the height that shape settled on, so switching c
 	expect(Math.abs((short.reservedHeight ?? 0) - short.documentHeight)).toBeLessThanOrEqual(1);
 	expect(Math.abs(short.documentHeight - one.documentHeight)).toBeLessThanOrEqual(1);
 }, 90_000);
+
+testChrome('opens three cards and changes views without ResizeObserver delivery errors', async () => {
+	const extraPages: Page[] = [];
+	const errors: string[] = [];
+	const popupDocument = await browser.newPage();
+	// Install before navigation so startup errors cannot fall between target
+	// creation and attaching the Action Popup's Page listener.
+	popupDocument.on('pageerror', (error) => { errors.push(String(error)); });
+	try {
+		for (const slug of ['beta', 'gamma']) {
+			const page = await browser.newPage();
+			extraPages.push(page);
+			await page.goto(`http://127.0.0.1:${server.port}/media/${slug}`, { waitUntil: 'domcontentloaded' });
+		}
+		await mediaPages[0]?.bringToFront();
+		await popupDocument.goto(`chrome-extension://${extensionId}/popup.html?cards=3`, { waitUntil: 'load' });
+		await popupDocument.bringToFront();
+		await popupDocument.waitForFunction(() => document.querySelectorAll('.glass-card').length === 3, { timeout: 8_000 }).catch(async (error) => {
+			throw new Error(`Three-card fixture did not render: ${JSON.stringify(await popupDocument.evaluate(() => ({
+				cards: [...document.querySelectorAll('.glass-card')].map((card) => ({ id: (card as HTMLElement).dataset.tabId, title: card.querySelector('.tab-title')?.textContent })),
+				ready: document.documentElement.dataset.spectraReady,
+				text: document.body.textContent?.slice(0, 1500),
+			})))}`, { cause: error });
+		});
+		await settledGeometry(popupDocument);
+		for (let round = 0; round < 2; round += 1) {
+			await popupDocument.click('#btn-settings');
+			await popupDocument.waitForFunction(() => document.querySelector('#view-settings')?.classList.contains('active'));
+			await popupDocument.click('#btn-back');
+			await popupDocument.waitForFunction(() => document.querySelector('#view-main')?.classList.contains('active'));
+			await settledGeometry(popupDocument);
+		}
+		expect(errors).toEqual([]);
+		await popupDocument.close();
+		await mediaPages[0]?.bringToFront();
+		const three = await openPopup(3);
+		expect(three).toMatchObject({ cards: 3, bgCards: 2, bottomWhitespace: BOTTOM_WHITESPACE_PX });
+		expect(three.documentHeight).toBe(FRAME_MAX_HEIGHT_PX);
+		expect(three.contentWidth).toBe(390);
+	} finally {
+		if (!popupDocument.isClosed()) await popupDocument.close();
+		for (const page of extraPages) await page.close();
+	}
+}, 45_000);

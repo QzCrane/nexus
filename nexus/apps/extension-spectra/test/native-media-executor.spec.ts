@@ -5,6 +5,7 @@ import type { MediaRegistry, MediaRegistryEvent } from '../src/content/core/medi
 import {
 	NativeMediaExecutor,
 	writeNativePlaybackRate,
+	writeNativeMediaMuted,
 } from '../src/content/logic/native-media-executor';
 import { seekNativeMedia } from '../src/content/logic/native-media-async';
 import {
@@ -43,6 +44,7 @@ class FakeMediaElement extends EventTarget {
 	emitVolumeChange = true;
 	volumeWriteHook: ((value: number) => void) | null = null;
 	private nativeMuted = false;
+	mutedWriteHook: ((value: boolean) => void) | null = null;
 	private nativePlaybackRate = 1;
 	defaultPlaybackRate = 1;
 	get volume(): number { return this.nativeVolume; }
@@ -60,6 +62,7 @@ class FakeMediaElement extends EventTarget {
 	get muted(): boolean { return this.nativeMuted; }
 	set muted(value: boolean) {
 		this.nativeMuted = value;
+		this.mutedWriteHook?.(value);
 		queueMicrotask(() => this.dispatchEvent(new Event('volumechange')));
 	}
 	get playbackRate(): number { return this.nativePlaybackRate; }
@@ -141,6 +144,7 @@ interface PageMediaState {
 	maximumSpeed?: number;
 	delayedMaximumSpeed?: number;
 	speedWriteCount?: number;
+	acceptedButClampedSpeed?: number;
 }
 
 function installPageMediaBridgeStub(
@@ -196,7 +200,8 @@ function installPageMediaBridgeStub(
 				media.muted = request.value;
 			} else if (request.field === 'speed' && typeof request.value === 'number') {
 				state.speed = request.value;
-				media.playbackRate = request.value;
+				media.playbackRate = request.value === 1.3 && state.acceptedButClampedSpeed !== undefined
+					? state.acceptedButClampedSpeed : request.value;
 				const delayedMaximumSpeed = state.delayedMaximumSpeed;
 				if (delayedMaximumSpeed !== undefined
 					&& request.value > delayedMaximumSpeed) {
@@ -223,6 +228,7 @@ const originalVideo = Object.getOwnPropertyDescriptor(globalThis, 'HTMLVideoElem
 const originalDocument = Object.getOwnPropertyDescriptor(globalThis, 'document');
 const originalRequestAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'requestAnimationFrame');
 const originalCancelAnimationFrame = Object.getOwnPropertyDescriptor(globalThis, 'cancelAnimationFrame');
+const originalNavigator = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
 
 afterEach(() => {
 	restore('chrome', originalChrome);
@@ -231,6 +237,7 @@ afterEach(() => {
 	restore('document', originalDocument);
 	restore('requestAnimationFrame', originalRequestAnimationFrame);
 	restore('cancelAnimationFrame', originalCancelAnimationFrame);
+	restore('navigator', originalNavigator);
 });
 
 describe('native media single-writer correlation', () => {
@@ -1026,7 +1033,7 @@ describe('native media single-writer correlation', () => {
 		}
 	});
 
-	test('reads page-semantic volume, mute, and speed instead of a non-linear media element projection', () => {
+	test('reads page-semantic volume and mute while physical speed remains authoritative', () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -1051,7 +1058,7 @@ describe('native media single-writer correlation', () => {
 				target: registry.target,
 				fields: ['volumeBase', 'mediaMuted', 'speed'],
 			});
-			expect(result.patch).toMatchObject({ volumeBase: 100, mediaMuted: false, speed: 1.25 });
+			expect(result.patch).toMatchObject({ volumeBase: 100, mediaMuted: false, speed: 1 });
 		} finally {
 			executor.dispose();
 		}
@@ -1084,7 +1091,7 @@ describe('native media single-writer correlation', () => {
 		}
 	});
 
-	test('reports page-semantic volume changes back to the coordinator', async () => {
+	test('reports page-semantic volume changes before any native request binds a tab', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -1120,7 +1127,6 @@ describe('native media single-writer correlation', () => {
 		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
 		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
 		try {
-			executor.bindRequestContext(7, registry.target.documentId);
 			state.volumeBase = 50;
 			media.forceVolume(0.30655);
 			registry.emit('volumechange');
@@ -1131,6 +1137,7 @@ describe('native media single-writer correlation', () => {
 				volumeBase: 'page-native',
 				mediaMuted: 'page-native',
 			});
+			expect(observation?.payload).not.toHaveProperty('tabId');
 		} finally {
 			executor.dispose();
 		}
@@ -1215,12 +1222,7 @@ describe('native media single-writer correlation', () => {
 		}
 	}, 2_000);
 
-	test('settles a declared speed write on the controller when the media element lags', async () => {
-		// Douyin's xgplayer plugin commits the rate to its controller
-		// (config.playBackRatio) and re-renders synchronously, but applies that
-		// rate to the media element asynchronously. The executor must settle on the
-		// controller's committed value, not the lagging media element, or it
-		// rejects a write the page already accepted — "adjusting speed is not free".
+	test('waits for a lagging media element before confirming a page speed write', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -1239,8 +1241,7 @@ describe('native media single-writer correlation', () => {
 		});
 		const media = new BridgedMediaElement();
 		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1 };
-		// Bridge stub where a speed write updates only the controller state, not the
-		// media element's playbackRate (which lags, exactly as xgplayer does).
+		// The controller commits first; physical playback catches up later.
 		media.addEventListener(SPECTRA_PAGE_MEDIA_EVENT, () => {
 			const request = JSON.parse(
 				media.getAttribute(SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE) ?? '{}',
@@ -1250,6 +1251,8 @@ describe('native media single-writer correlation', () => {
 				&& request.field === 'speed'
 				&& typeof request.value === 'number') {
 				state.speed = request.value;
+				const physicalRate = request.value;
+				setTimeout(() => { media.playbackRate = physicalRate; }, 150);
 			}
 			const result: SpectraPageMediaResult = {
 				requestId: request.requestId,
@@ -1275,20 +1278,161 @@ describe('native media single-writer correlation', () => {
 				actualContext: {},
 				patch: { speed: 1.5 },
 			});
-			// The write is accepted because the controller committed the rate,
-			// even though the media element has not caught up.
 			expect(result.fields.speed).toMatchObject({
 				phase: 'applied',
 				strategy: 'page-native',
 				actual: 1.5,
 			});
 			expect(state.speed).toBe(1.5);
-			// The executor did not fall back to writing the media element itself.
-			expect(media.playbackRate).toBe(1);
+			expect(media.playbackRate).toBe(1.5);
 		} finally {
 			executor.dispose();
 		}
 	}, 2_000);
+
+	test.each([false, true])('falls back for a free speed the controller claims but never plays (page already owned: %s)', async (alreadyOwned) => {
+		installFakeMediaGlobals();
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1, acceptedButClampedSpeed: 1.25, speedWriteCount: 0 };
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		const intent = (speed: number): ControlIntent => ({
+			intentId: `physical-speed:${speed}`, tabId: 7, documentId: registry.documentId,
+			generation: 1, baseRevision: 1, source: 'popup', requestedCoverage: 'active-target',
+			target: registry.target, actualContext: {}, patch: { speed },
+		});
+		try {
+			if (alreadyOwned) expect((await executor.execute(intent(1.5))).fields.speed?.strategy).toBe('page-native');
+			const result = await executor.execute(intent(1.3));
+			expect(result.fields.speed).toMatchObject({ phase: 'applied', strategy: 'dom-native', actual: 1.3 });
+			expect(media.playbackRate).toBe(1.3);
+			expect(executor.read({ target: registry.target, fields: ['speed'] })).toMatchObject({
+				patch: { speed: 1.3 }, observedStrategies: { speed: 'dom-native' },
+			});
+			const pageWrites = state.speedWriteCount;
+			await executor.execute(intent(1.3));
+			expect(state.speedWriteCount).toBe(pageWrites);
+			const replayed: Array<{ payload?: { patch?: { speed?: number } } }> = [];
+			Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+				id: 'spectra-test', sendMessage: async (message: { payload?: { patch?: { speed?: number } } }) => { replayed.push(message); },
+			} } });
+			registry.emit('loadedmetadata');
+			await Promise.resolve();
+			expect(replayed).toEqual([]);
+			media.playbackRate = 1.25;
+			registry.emit('loadedmetadata');
+			await Promise.resolve();
+			expect(replayed.some((message) => message.payload?.patch?.speed === 1.3)).toBe(true);
+			media.playbackRate = 1.3;
+			const released = await executor.releasePageSettings({
+				operationId: 'physical-speed:release', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 3, source: 'popup', target: registry.target,
+				operation: 'restore-page-settings', payload: {},
+			});
+			expect(released.fields.speed?.actual).toBe(1);
+			expect(media.playbackRate).toBe(1);
+		} finally { executor.dispose(); }
+	}, 4_000);
+
+	test('observes physical speed when the page getter disagrees before a write', () => {
+		installFakeMediaGlobals();
+		const media = new BridgedMediaElement();
+		media.playbackRate = 1.3;
+		installPageMediaBridgeStub(media, { volumeBase: 100, mediaMuted: false, speed: 1.5 });
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			expect(executor.read({ target: registry.target, fields: ['speed'] })).toMatchObject({
+				patch: { speed: 1.3 }, observedStrategies: { speed: 'dom-native' },
+			});
+		} finally { executor.dispose(); }
+	});
+
+	test('accepts consecutive different free speeds beyond the page range and preserves the original release baseline', async () => {
+		installFakeMediaGlobals();
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1, maximumSpeed: 2 };
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			for (const speed of [4, 5, 1.75]) {
+				const result = await executor.execute({
+					intentId: `speed:consecutive:${speed}`, tabId: 7, documentId: registry.documentId, generation: 1,
+					baseRevision: 1, source: 'popup', requestedCoverage: 'active-target',
+					target: registry.target, actualContext: {}, patch: { speed },
+				});
+				expect(result.fields.speed).toMatchObject({ phase: 'applied', actual: speed, strategy: speed > 2 ? 'dom-native' : 'page-native' });
+				expect(media.playbackRate).toBe(speed);
+			}
+			const released = await executor.releasePageSettings({
+				operationId: 'speed:consecutive:release', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 3, source: 'popup', target: registry.target,
+				operation: 'restore-page-settings', payload: {},
+			});
+			expect(released.fields.speed?.actual).toBe(1);
+			expect(media.playbackRate).toBe(1);
+		} finally { executor.dispose(); }
+	}, 5_000);
+
+	test('rejects a controller-only rollback at the last render boundary before accepting speed', async () => {
+		installFakeMediaGlobals();
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1 };
+		installPageMediaBridgeStub(media, state);
+		let frames = 0;
+		Object.defineProperty(globalThis, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => setTimeout(() => {
+			frames += 1;
+			if (frames === 2) state.speed = 1;
+			callback(performance.now());
+		}, 0) });
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			const result = await executor.execute({
+				intentId: 'speed:render-bounce', tabId: 7, documentId: registry.documentId, generation: 1,
+				baseRevision: 1, source: 'popup', requestedCoverage: 'active-target',
+				target: registry.target, actualContext: {}, patch: { speed: 1.3 },
+			});
+			expect(result.fields.speed).toMatchObject({ phase: 'applied', strategy: 'dom-native', actual: 1.3 });
+			expect(state.speed).toBe(1);
+			expect(media.playbackRate).toBe(1.3);
+		} finally { executor.dispose(); }
+	});
+
+	test.each([false, true])('blocks unactivated unmute before any writer while restoring speed (page: %s)', async (pageSide) => {
+		installFakeMediaGlobals();
+		const activation = { hasBeenActive: false };
+		Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userActivation: activation } });
+		const media = new BridgedMediaElement();
+		media.muted = true;
+		media.paused = false;
+		let unmuteWrites = 0;
+		media.mutedWriteHook = (value) => { if (!value) { unmuteWrites += 1; if (!activation.hasBeenActive) media.paused = true; } };
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: true, speed: 1, supported: pageSide };
+		installPageMediaBridgeStub(media, state);
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		const intent: ControlIntent = {
+			intentId: 'autoplay:restore', tabId: 7, documentId: registry.documentId, generation: 1,
+			baseRevision: 1, source: 'restore', requestedCoverage: 'active-target',
+			target: registry.target, actualContext: {}, patch: { mediaMuted: false, speed: 1.3 },
+		};
+		try {
+			const result = await executor.execute(intent);
+			expect(result.fields.mediaMuted).toMatchObject({ phase: 'error', lastError: { code: 'user-activation-required', retryable: false } });
+			expect(result.fields.speed).toMatchObject({ phase: 'applied', actual: 1.3 });
+			expect(unmuteWrites).toBe(0);
+			expect(media.muted).toBe(true);
+			expect(media.paused).toBe(false);
+			expect(() => writeNativeMediaMuted(media as unknown as HTMLMediaElement, false)).toThrow();
+			activation.hasBeenActive = true;
+			const explicit = await executor.execute({ ...intent, intentId: 'autoplay:explicit', source: 'popup', patch: { mediaMuted: false } });
+			expect(explicit.fields.mediaMuted).toMatchObject({ phase: 'applied', actual: false });
+			expect(media.paused).toBe(false);
+		} finally { executor.dispose(); }
+	}, 4_000);
 
 	test('upgrades a DOM-owned restore when a page controller appears later in the same document', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
@@ -1449,6 +1593,7 @@ describe('native media single-writer correlation', () => {
 				strategy: 'dom-native',
 				actual: 2.5,
 			});
+			// Restore each channel's own baseline: page 1x, existing DOM 1.5x.
 			expect(state.speedWriteCount).toBe(1);
 			expect(state.speed).toBe(1);
 			expect(media.playbackRate).toBe(2.5);
@@ -1775,6 +1920,14 @@ describe('native media single-writer correlation', () => {
 		// staging two drags; the production threshold stays at two.
 		configureNativeWritePolicy({ defaultMode: 'optimistic', driftLimit: 1 });
 		installFakeMediaGlobals();
+		const observations: Array<{ type?: string; payload?: { patch?: Record<string, unknown> } }> = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: { runtime: { sendMessage: async (message: typeof observations[number]) => {
+				observations.push(message);
+				return undefined;
+			} } },
+		});
 		const registry = new FakeRegistry();
 		registry.element.volumeWriteHook = (value) => {
 			if (Math.abs(value - 0.4) > 0.001) return;
@@ -1806,6 +1959,8 @@ describe('native media single-writer correlation', () => {
 			expect(isControlApplyAck(result)).toBe(true);
 			await settleConfirmationWindow();
 			expect(snapshotNativeWriteTelemetry().byState.drifted).toBe(1);
+			expect(observations.find((message) => message.type === 'spectra.control.intent.submit')?.payload?.patch)
+				.toEqual({ volumeBase: 100, mediaMuted: false });
 			expect(resolveNativeWriteMode(resolveNativeWriteSiteKey())).toBe('verified');
 		} finally {
 			executor.dispose();

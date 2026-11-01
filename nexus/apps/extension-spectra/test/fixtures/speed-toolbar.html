@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<title>Actual speed toolbar fixture</title>
+		<style>
+			.xgplayer { width: 640px; height: 360px; position: relative; }
+			video { width: 100%; height: 100%; }
+			.xgplayer-playback-setting { position: absolute; right: 16px; bottom: 16px; }
+		</style>
+	</head>
+	<body>
+		<div class="xgplayer" id="player">
+			<video id="v"><track kind="captions" /></video>
+			<div class="xgplayer-playback-setting">
+				<div class="xgplayer-setting-playbackRatio">倍速</div>
+				<div class="xgplayer-playratio-item select">1.0x</div>
+				<div class="xgplayer-playratio-item">1.5x</div>
+			</div>
+		</div>
+		<button id="activate" type="button">Activate document</button>
+		<script>
+			const parameters = new URLSearchParams(location.search);
+			const rate = Number(parameters.get('rate') || 1);
+			const video = document.querySelector('video');
+			window.rateEvents = 0;
+			video.addEventListener('ratechange', () => { window.rateEvents += 1; });
+			if (rate !== 1) video.playbackRate = rate;
+			if (rate !== 1) document.querySelector('.select').classList.remove('select');
+			if (parameters.has('late')) document.querySelector('.xgplayer-playback-setting').remove();
+			if (parameters.has('controller')) {
+				const plugin = {
+					config: { playBackRatio: 1 },
+					player: null,
+					onPlayRatioChange(value) {
+						this.config.playBackRatio = value;
+						video.playbackRate = value === 1.3 || value === 1.4 ? 1.25 : value;
+						for (const item of document.querySelectorAll('.xgplayer-playratio-item')) {
+							item.classList.toggle('select', parseFloat(item.textContent) === value);
+						}
+					},
+				};
+				window.player = { video, plugins: { playbacksettingplugin: plugin } };
+				plugin.player = window.player;
+			}
+			if (parameters.has('autoplay')) {
+				video.muted = true;
+				video.autoplay = true;
+				video.loop = true;
+				video.src = '/tone.wav';
+			}
+			requestAnimationFrame(() => {
+				window.firstFrameLabel = document.querySelector('.xgplayer-setting-playbackRatio')?.textContent;
+			});
+		</script>
+	</body>
+</html>

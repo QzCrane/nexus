@@ -342,8 +342,18 @@ describe('SPECTRA built extension smoke: page-media', () => {
 		try {
 			await cappedPage.goto(cappedUrl, { waitUntil: 'domcontentloaded' });
 			await waitForContentBootstrapStatus(cappedUrl);
-			await cappedPage.bringToFront();
+			// Finish any retained same-origin restore before sampling the baseline
+			// this transaction must preserve, rather than guessing the fixture's 1x.
 			const tabId = await getTabId(cappedUrl);
+			const initialized = await extensionClient.evaluate(async (id) => chrome.runtime.sendMessage({
+				protocolVersion: 2, requestId: crypto.randomUUID(), tabId: id,
+				type: 'spectra.control.snapshot.get', payload: { tabId: id },
+			}), tabId);
+			expect(initialized.ok).toBe(true);
+			const controllerBaseline = await cappedPage.evaluate(() => (
+				(window as Window & { __spectraPageMediaState?: { speed: number } }).__spectraPageMediaState?.speed
+			));
+			await cappedPage.bringToFront();
 			const acknowledgement = await submitPopupControlIntent(
 				tabId,
 				{ patch: { speed: 4 } },
@@ -371,7 +381,7 @@ describe('SPECTRA built extension smoke: page-media', () => {
 						domSpeed: video?.playbackRate ?? null,
 					};
 				}),
-				(state) => state.pageSpeed === 1 && state.domSpeed === 4,
+				(state) => state.pageSpeed === controllerBaseline && state.domSpeed === 4,
 				'high-speed DOM fallback beyond the page controller range',
 			);
 			const snapshot = await extensionClient.evaluate(async (targetTabId) => (
@@ -500,7 +510,7 @@ describe('SPECTRA built extension smoke: page-media', () => {
 					fields: {
 						speed: {
 							phase: 'applied',
-							strategy: 'page-native',
+							strategy: 'dom-native',
 							actual: 2,
 						},
 					},

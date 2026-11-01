@@ -9,6 +9,113 @@ import {
 	type SpectraPageMediaRequest,
 	type SpectraPageMediaResult,
 } from '../../shared/page-media-bridge';
+import { resolveDeclaredSiteAdapter } from '../../shared/site-adapter-registry';
+
+/** Bootstrap owns the lifetime, even while the full runtime is resident.
+ * This is presentation only: never writes a rate or supplies controller ACKs.
+ */
+export function createSiteSpeedLabelProjection(): {
+	syncMedia(element: HTMLMediaElement): void;
+	scan(): void;
+	dispose(): void;
+} {
+	const spec = resolveDeclaredSiteAdapter('speed')?.projection;
+	const rootSelector = spec?.rootSelector;
+	const labelSelector = spec?.labelSelector;
+	const observers = new Map<Element, MutationObserver>();
+	const originals = new WeakMap<Text, { original: string; written: string }>();
+	let disposed = false;
+	const restoreRoot = (root: Element): void => {
+		if (!labelSelector) return;
+		for (const label of root.querySelectorAll(labelSelector)) {
+			const node = label.firstChild;
+			if (!(node instanceof Text)) continue;
+			const original = originals.get(node);
+			if (original && node.data === original.written) node.data = original.original;
+		}
+	};
+
+	const prune = (): void => {
+		for (const [root, observer] of observers) {
+			if (root.isConnected) continue;
+			observer.disconnect();
+			observers.delete(root);
+		}
+	};
+	const syncRoot = (root: Element): void => {
+		if (disposed || !rootSelector || !labelSelector) return;
+		prune();
+		if (!root.isConnected) return;
+		const media = Array.from(root.querySelectorAll('video, audio'))
+			.filter((element): element is HTMLMediaElement => (
+				element instanceof HTMLMediaElement && element.closest(rootSelector) === root
+			));
+		// Ambiguous containers cannot borrow another player's rate.
+		if (media.length !== 1) {
+			restoreRoot(root);
+			return;
+		}
+		const rate = media[0]?.playbackRate;
+		if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) return;
+		const text = `${rate}x`;
+		for (const label of root.querySelectorAll(labelSelector)) {
+			if (label.closest(rootSelector) !== root) continue;
+			// Preserve React's text-node identity and every other child/control.
+			// A changed site shape must not turn this into a destructive rewrite.
+			const node = label.firstChild;
+			if (!(node instanceof Text) || label.childNodes.length !== 1 || node.data === text) continue;
+			const previous = originals.get(node);
+			originals.set(node, {
+				original: previous && node.data === previous.written ? previous.original : node.data,
+				written: text,
+			});
+			node.data = text;
+		}
+	};
+	const syncMedia = (element: HTMLMediaElement): void => {
+		if (disposed || !rootSelector || !labelSelector) return;
+		prune();
+		const root = element.closest(rootSelector);
+		if (!root?.isConnected) return;
+		if (!observers.has(root)) {
+			const observer = new MutationObserver((mutations) => {
+				// Observe only known player roots, never the entire document. Most
+				// mutations (timestamps/comments) cannot invalidate the speed label.
+				const relevant = mutations.some((mutation) => {
+					const target = mutation.target instanceof Element
+						? mutation.target : mutation.target.parentElement;
+					if (target?.matches(labelSelector)) return true;
+					return [...mutation.addedNodes, ...mutation.removedNodes].some((node) => node instanceof Element
+						&& (node.matches(`${labelSelector}, video, audio`)
+							|| node.querySelector(`${labelSelector}, video, audio`) !== null));
+				});
+				prune();
+				if (relevant) syncRoot(root);
+			});
+			observer.observe(root, { childList: true, characterData: true, subtree: true });
+			observers.set(root, observer);
+		}
+		syncRoot(root);
+	};
+	return {
+		syncMedia,
+		scan() {
+			if (disposed || !labelSelector) return;
+			for (const element of document.querySelectorAll('video, audio')) {
+				if (element instanceof HTMLMediaElement) syncMedia(element);
+			}
+		},
+		dispose() {
+			if (disposed) return;
+			disposed = true;
+			for (const [root, observer] of observers) {
+				observer.disconnect();
+				restoreRoot(root);
+			}
+			observers.clear();
+		},
+	};
+}
 
 function isActualValue<K extends SpectraPageMediaField>(
 	field: K,

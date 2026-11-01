@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+	<head>
+		<meta charset="utf-8" />
+		<title>Live volume synchronization fixture</title>
+		<style>
+			.douyin-player { width: 640px; height: 360px; }
+			video { width: 100%; height: 100%; }
+		</style>
+	</head>
+	<body>
+		<div class="douyin-player LivePlayer_LivingPlayer">
+			<video id="v" muted autoplay loop src="/tone.wav"><track kind="captions" /></video>
+			<input id="site-volume" type="range" min="0" max="100" value="100" aria-label="Site volume" />
+			<button id="site-mute" type="button">Unmute</button>
+			<output id="site-number">100</output>
+		</div>
+		<script>
+			const video = document.querySelector('video');
+			const slider = document.querySelector('#site-volume');
+			const number = document.querySelector('#site-number');
+			// The live player's current proxy exposes 0..1 accessors, not the
+			// semantic getVolume/setVolume pair used by amplified page controllers.
+			const proxy = {
+				video,
+				media: video,
+				root: video.parentElement,
+				get volume() { return video.volume; },
+				set volume(value) { video.volume = value; },
+				get muted() { return video.muted; },
+				set muted(value) { video.muted = value; },
+			};
+			video.parentElement._player = { proxy };
+			slider.addEventListener('input', () => { proxy.volume = Number(slider.value) / 100; });
+			document.querySelector('#site-mute').addEventListener('click', () => { proxy.muted = !proxy.muted; });
+			video.addEventListener('volumechange', () => {
+				slider.value = String(Math.round(proxy.volume * 100));
+				number.value = slider.value;
+			});
+		</script>
+	</body>
+</html>

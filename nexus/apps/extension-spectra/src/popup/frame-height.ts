@@ -36,6 +36,15 @@ let predictedHeight: number | null = null;
 // never disconnected - which is how a failed bootstrap ended up with the
 // reservation painted back over the error surface.
 const frameObservers = createFrameObserverHolder();
+let applyHandle = 0;
+let trackingRevision = 0;
+
+function stopFrameTracking(): void {
+	trackingRevision += 1;
+	frameObservers.release();
+	if (applyHandle !== 0) cancelAnimationFrame(applyHandle);
+	applyHandle = 0;
+}
 
 function clampFrameHeight(value: number): number {
 	return Math.max(0, Math.min(Math.round(value), FRAME_MAX_HEIGHT_PX));
@@ -182,7 +191,7 @@ export function reservePopupFrame(): void {
 
 // eff: drops the reservation so a failed bootstrap shows its own surface
 export function releasePopupFrame(): void {
-	frameObservers.release();
+	stopFrameTracking();
 	predictedHeight = null;
 	measuredHeight = null;
 	measuredOverflowY = null;
@@ -237,8 +246,9 @@ export function trackPopupFrame(): void {
 	const container = document.querySelector<HTMLElement>('.view-container');
 	// Tracking is idempotent: a second call replaces the first pair instead of
 	// stacking on it.
-	frameObservers.release();
+	stopFrameTracking();
 	if (!container) return;
+	const revision = trackingRevision;
 	const html = document.documentElement;
 
 	const apply = (): void => {
@@ -286,7 +296,19 @@ export function trackPopupFrame(): void {
 		if (published) schedulePersist();
 	};
 
-	const resizeObserver = new ResizeObserver(apply);
+	// Observer delivery cannot resize a shallower observed ancestor in the same
+	// round. Coalesce invalidations and write root geometry at the next rendering
+	// boundary; first sizing below remains synchronous. Retirement fences queued
+	// callbacks even if a notification was already delivered before disconnect.
+	const scheduleApply = (): void => {
+		if (revision !== trackingRevision || applyHandle !== 0) return;
+		applyHandle = requestAnimationFrame(() => {
+			if (revision !== trackingRevision) return;
+			applyHandle = 0;
+			apply();
+		});
+	};
+	const resizeObserver = new ResizeObserver(scheduleApply);
 	resizeObserver.observe(container);
 	// Publishing the inventory is what lifts the floor, and it writes an attribute
 	// rather than changing the container's size, so the ResizeObserver above cannot
@@ -295,7 +317,7 @@ export function trackPopupFrame(): void {
 	// Popup that followed a tall one sometimes opened with a few hundred pixels of
 	// blank below its only card. Retargeting on the publish makes that correction
 	// unconditional instead of lucky.
-	const mutationObserver = new MutationObserver(apply);
+	const mutationObserver = new MutationObserver(scheduleApply);
 	mutationObserver.observe(document.documentElement, {
 		attributes: true,
 		attributeFilter: ['data-spectra-ready'],

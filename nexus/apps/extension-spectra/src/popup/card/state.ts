@@ -133,10 +133,12 @@ export function createUpdateFn(
 			acceptedAcknowledgement = true;
 			if (acknowledgement === response.volumeAck) acceptedVolume = true;
 		}
-		if (acceptedAcknowledgement || response.error) {
-			for (const [field, revision] of pendingFields) {
-				if (revision <= response.throughRevision) pendingFields.delete(field);
-			}
+		// The channel's throughRevision settles the local input even when its ACK
+		// is older than a page snapshot already accepted above. Keep that newer
+		// truth, but retire the optimistic mask or all later page changes remain
+		// hidden forever. Newer local input revisions keep their own mask.
+		for (const [field, revision] of pendingFields) {
+			if (revision <= response.throughRevision) pendingFields.delete(field);
 		}
 		if (response.volumeAck && acceptedVolume) {
 			state.stableConfig = mergeAudioConfig(state.stableConfig, {

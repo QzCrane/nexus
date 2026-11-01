@@ -114,6 +114,11 @@ export interface SiteAdapterDiscovery {
  */
 export interface SiteSpeedProjectionSpec {
 	readonly kind: 'text';
+	/** Dedicated toolbar text, projected from this player's actual media rate.
+	 * Separate from the selected menu item: never use our own label as evidence
+	 * that a page controller accepted a write. Requires an exact player root.
+	 */
+	readonly labelSelector?: string;
 	/**
 	 * The player container the badge belongs to, as a selector resolved from the
 	 * media element upward. A page with preloaded players has several badges in
@@ -225,9 +230,9 @@ export const GENERIC_PAGE_MEDIA_VOCABULARY = Object.freeze({
  *   `video.playbackRate = 1.5` the panel still marks `1.0x`; after
  *   `plugin.onPlayRatioChange(1.5)` it marks `1.5x`.
  *
- * So the declared write is the plugin method, the declared read is the field
- * the panel renders from, and the projection is the selected list item — never
- * the icon, which says just "倍速" until the site itself has changed the rate.
+ * The declared write/read use that plugin and its panel state. The selected
+ * list item remains an independent witness. The toolbar is a separate actual
+ * media-rate projection, including when the menu has no matching option.
  *
  * Speed is also gated behind login on the live site: an anonymous tab renders
  * `登录后即可切换倍速` in place of the list. That makes the projection
@@ -237,7 +242,7 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 	id: 'douyin-speed',
 	hosts: Object.freeze(['douyin.com', 'iesdouyin.com']),
 	field: 'speed',
-	revision: 2,
+	revision: 3,
 	status: 'verified',
 	discovery: Object.freeze({
 		setterNames: Object.freeze([
@@ -285,6 +290,7 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 	projection: Object.freeze({
 		kind: 'text',
 		rootSelector: '.xgplayer',
+		labelSelector: '.xgplayer-setting-playbackRatio',
 		scopeSelectors: Object.freeze(['.xgplayer-playback-setting']),
 		// Class renames leave the panel unlocatable by the exact selector. Fall back
 		// to substring class matching so the panel still surfaces.

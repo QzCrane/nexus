@@ -34,6 +34,7 @@ interface ControlFieldState<T> {
 - **Continuous Popup transport**: 离散 intent/operation 保持上述 v2 RPC 合同。连续 volume/DSP 只使用一条私有 typed Popup→Background 通道；Background 按目标/字段保留 latest slot，以 50 ms 窗口合并后调用同一 `ControlCoordinator`。Popup 断连只退役返回通道，不取消已被 Background 接收的最新意图，也不建立第二个状态 owner。
 - **Disconnected flush**: 通道关闭时拒绝所有尚未结算的等待；关闭后对未结算 revision 的 `flush` 同样立即拒绝，不得创建无人结算的 waiter。已结算 revision 保持完成语义。保存、全局预设与重置必须能从该失败退出，不能永久停留在等待状态。
 - **Channel readiness**: 私有连续通道必须收到匹配 session 的 `ready` 确认；5 秒内未收到则明确报告后台未就绪并断开。旧后台仅接受 Port 连接不代表支持控制。通道失效时清除未确认字段、恢复最后实际值并显示错误，不得无限保留乐观数字。
+- **Settlement ordering**: 通道确认的 `throughRevision` 必须结束对应本地输入的 pending，即使其 ACK 比已接受的页面 snapshot 更旧。旧 ACK 不能覆盖较新的实际值；也不能让已结算输入永久遮挡后续页面音量。更晚的本地输入继续保留各自 revision 的乐观投影。
 - **Failure presentation**: 通道通知、待完成 flush 和后续 stage 共享同一个失败对象；卡片负责一次回滚、提示与权威状态刷新，按钮消费者不得重复呈现该失败。主动销毁先移除监听与就绪计时器，再断开 Port，不投影断线错误。
 - **Card transient-unknown recovery**: Popup 卡片启动时的快照读取可能超时/被拒（例如后台 restore 决策慢于 5s 读取超时）。`controlSnapshotKnown` 是瞬时闩锁：任何被接受的 `controlSnapshot`（事件广播、失败恢复读取）或已提交 ACK 都立即把它置为已知，卡片从未知态实时恢复。未知态不拦截用户意图（照常路由到协调器，由 stale-revision recovery 或结构化错误收敛），不把控制区置为 inert，音量标签不显示 `—`；后台卡片启动时同样读取 control snapshot，避免永久未知。
 - **Processor Handoff (three-owner)**: 无双重增益/DSP，无虚假 active ACK。MediaElement WebAudio/Capture 候选必须先得到 running/readback ACK；旧 owner 先中性化，候选验证成功后才释放，失败则恢复最后一个已确认 owner。
@@ -72,9 +73,16 @@ desired -> 物理写入(同步) -> written
 - `phase` 保持原义（`applied` 表示读回判定）；表达写入阶段必须 `ControlWriteState`，**不得复用 `applied`**。
 - 证明在事务作答之后运行；更新的写入取消上一个写入的证明，避免乱序覆盖。
 - `drifted` 回写 observed actual，并按站点计入 ledger；窗口内累计达阈值即降级为历史 verified 路径（先证明后作答）。`unconfirmed` 不计 drift。策略归属 `native-write-policy.ts`，证明的挂起与取消归属 `native-write-confirmation.ts`。
+- 稳定证明发现 drift 时，必须通过同一原生事件处理入口发布当前相干 volume/mute 对，经过目标、pending 与 ownership 检查；不能只更新内部 observed 缓存，否则下一次事件会被误认为重复而丢失。
 - 写入仍串行；被降级的是**等待**，不是**顺序**。
 - 适用边界：仅标准 DOM writer 的原生字段。page controller 的能力发现与回退、Capture/WebAudio 增益、处理器生命周期、跨 100 路由边界**仍完全事务化**。
 - 数值显示永不冻结：`resolveVolumePresentation` 的数值恒取 `state.config` 的实时值。路由事务只管辖**色调**（`actualMode` / `phase`）与 `muted`，避免新数值配上一条未确认路由的色调。冻结数值曾使 0–800 滑块在跨过 100 后整个手势停在起始值。
+
+页面观察从当前文档的 MediaRegistry 就绪时开始，不依赖此前执行过控制请求或
+绑定过 tabId。与冷态 bootstrap 一样，Content 不自报 page observation 的 tabId；
+Background 从 Chrome sender 确认 tab、顶层 frame 与精确 target document。完整
+runtime 接替 bootstrap 后仍须持续发布页面变化。回归证据见
+[直播音量与 Popup 修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
 
 ### §11.2 Tone ownership
 
