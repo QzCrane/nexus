@@ -147,3 +147,53 @@ documentation gate; run `docs:check` explicitly for this checkpoint. The durable
 repair belongs to the hook owner: one shared gate definition consumed by both
 normal and fallback execution, with a failure-path parity regression. Keep that
 separate from media behavior and do not disable hooks to push this checkpoint.
+
+## Push checkpoint and remaining gate work
+
+The user authorized all local changes, including the UI, for the Nexus origin
+branch `docs/spectra-douyin-speed-sync`. Media fixes are committed as `11d06740`;
+the UI and its lifetime are committed as `292c539f`. The attempted normal push
+passed lint, platform, toolchain, dependency revalidation, documentation, public
+metadata projections and hook smoke. It stopped at the same nine architecture
+errors and seven warnings, before any remote branch was created. Do not bypass
+the pre-push hook or report these local commits as pushed.
+
+The gate failures need distinct owner repairs:
+
+- The MAIN bridge bounds moved to the declared registry. Update source-evidence
+  routing to that owner and preserve enforced discovery ceilings. Its hostname
+  access selects declared data, while the transport and controller engine remain
+  synchronous; prohibit embedded site branches and observers without rejecting
+  the canonical registry admission itself.
+- Writer scanning currently treats a comment as a playback-rate assignment and
+  the extension Popup thumb transform as a page-video style mutation. Repair
+  source/receiver classification through the existing Compiler API; regression
+  vectors must still reject real unauthorized media writes.
+- Two port binders already reject invalid senders through the canonical
+  `popup-document-sender.ts` guards before listener installation. The sender
+  checker recognizes only same-file comparisons. Preserve symbol identity and
+  fail-closed ordering when teaching the checker canonical delegation; do not
+  duplicate runtime checks or grow the delegate baseline.
+- Translate public-facing source comments while preserving required Chinese UI
+  strings. Do not exempt the files from comment policy.
+- Public parity reports three genuinely missing files: the sender guard,
+  scrollbar and site registry. Do not grow `knownMissing` or point the checker
+  at a different temporary repository to conceal the gap.
+
+The parity target `D:/Project/Nexus/spectra-public` is a separate Git repository.
+Read-only inspection found eight existing modified files, relative to its root:
+`apps/extension-spectra/src/background/background-rpc.ts`,
+`apps/extension-spectra/src/content/core/bootstrap.ts`,
+`apps/extension-spectra/src/content/logic/native-media-executor.ts`,
+`apps/extension-spectra/src/shared/transport.ts`, `bun.lock`,
+`packages/contracts/src/control.contracts.ts`,
+`packages/contracts/src/spectra.content-runtime.ts`, and
+`packages/contracts/src/spectra.ui-control-runtime.ts`. Preserve all eight.
+Updating that repository requires the user's scope decision; no generation,
+cleanup, overwrite, commit or push in it has occurred. The existing sync
+generator owns candidate creation, and a plan candidate alone cannot prove that
+this dirty checkout has converged.
+
+The newly reported live free-speed label bounce is a separate follow-up after
+the requested checkpoint/push order. No new speed-timing code is included in
+these commits, and the pending issue must not be presented as fixed.
