@@ -1,3 +1,11 @@
+---
+type: how-to
+status: stable
+audience: developer
+owner: spectra-douyin-speed-probe-runbook
+last_reviewed: 2026-11-01
+---
+
 # 抖音倍速实机探测 — 运行手册（EPR-028 执行件）
 
 - **日期**：2026-11-01

@@ -1,3 +1,11 @@
+---
+type: explanation
+status: stable
+audience: developer
+owner: spectra-douyin-speed-root-cause
+last_reviewed: 2026-11-01
+---
+
 # 抖音倍速 UI 单向不同步 — 根因排查报告
 
 - **日期**：2026-11-01

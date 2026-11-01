@@ -1,3 +1,11 @@
+---
+type: explanation
+status: draft
+audience: developer
+owner: spectra-douyin-speed-official-adapter
+last_reviewed: 2026-11-01
+---
+
 # 抖音倍速 one-shot 官方适配器 — 系统化架构方案
 
 - **日期**：2026-11-01

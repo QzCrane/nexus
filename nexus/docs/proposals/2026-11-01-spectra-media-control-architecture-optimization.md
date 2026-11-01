@@ -1,3 +1,11 @@
+---
+type: explanation
+status: draft
+audience: developer
+owner: spectra-media-control-architecture-optimization
+last_reviewed: 2026-11-01
+---
+
 # SPECTRA 媒体控制系统 · 全架构优化设计
 
 - **日期**：2026-11-01
