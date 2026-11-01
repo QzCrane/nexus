@@ -100,7 +100,7 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 控制写实存在两个世界，由 page-media V2 桥跨世界同步。**这是抖音倍速 bug 的架构舞台**（见 §11）。
 
-1. **ISOLATED 世界**（`native-media-executor.ts`）：唯一 writer，按 `page-native → dom-native` 顺序决定写入层。
+1. **ISOLATED 世界**（`native-media-executor.ts`）：唯一 writer，按 `declared-official → page-native → dom-native` 顺序决定写入层。前两档都经同一个桥调用，差别只在证据与归因（§5.2）。
 2. **MAIN 世界**（`injector/page-media-bridge.ts`）：负责"精确元素 + 能力发现"——遍历合成祖先、扫描自有属性，寻找与媒体元素显式关联的 controller，要求其具备成对 getter/setter 且 readback 稳定。
 3. **跨世界协议**（`shared/page-media-bridge.ts` + `logic/page-media-bridge.ts`）：经 DOM 属性 + 合成事件同步。ISOLATED 端 `readPageMediaField`/`writePageMediaField` 同步派发请求并读取结果；`supported===false` 或返回 `null` 视为无页面能力。桥**忠实**——仅在 `!result?.supported` 或结果 JSON 损坏时返回 `null`，不吞噬错误。
 
@@ -115,6 +115,18 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 | 遍历边界 | ≤12 层合成祖先、每 host 前 96 个自有属性、≤8 层原型 | `:33-35, :197` |
 
 > **结论（根因）**：抖音（React SPA）的 speed 控制器在上述维度上全部超出白名单 → `findCapability` 返回 `null` → 写入降级 `dom-native`。详见 §11 与根因报告。
+
+### 5.2 声明式站点适配器（覆盖层，不是替代层）
+
+通用启发式之上有一层**经评审的数据**：
+
+- **数据**：`shared/site-adapter-registry.ts` 的 `SITE_ADAPTER_REGISTRY`，每条声明 hosts / field / revision / status / discovery（setter·getter·accessor 名、关联键、边界、是否走 React fiber）/ projection。纯数据模块，无 DOM、无副作用。
+- **消费**：仍是那一个 allowlisted 桥。条目只重排与放宽探测，**不新增注入文件**（SCTRL-004）。候选排序把 declared 置于关联等级之前——条目存在的理由就是通用排序在这里选错了对象。
+- **归因**：桥在结果里回传 `adapterId`，执行器据此把 ownership 记为 `declared-official`。wire 仍报 `page-native`（`CONTROL_STRATEGIES` 是承载位序的封闭枚举，不得扩）。
+- **证人**：`projection` 是 UI 投影读取器。没有 projection 的条目只能回答 `probe`，永远不能承载写入——没有 UI 证人的写入正是这套机制要终结的形态。
+- **门禁**：`status: 'candidate'` 未经 EPR-028 实机闸门，`verified` 只能由运行手册授予。
+
+> 条目存在的安全边界不在"条目是否存在"，而在"投影是否可读"：找不到控制器 → 退回通用；找到但投影不可读 → 不写；两者都满足 → 走站点自己的 setter。所以带条目发布不会让任何站点变差。
 
 ---
 
@@ -157,7 +169,7 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 | Capability | Native 裁决 | 有序策略 | MAIN 准入 | ACK 证据 |
 |---|---|---|---|---|
-| `speed` | native-only | `page-native → dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter` |
+| `speed` | native-only | `declared-official → page-native → dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter`（声明式路由再加 UI 投影证人） |
 | `volumeBase` | native-only | `page-native → dom-native` | `exact-element-page-bridge` | 同上 |
 | `mediaMuted` | native-only | `page-native → dom-native` | `exact-element-page-bridge` | 同上 |
 | `preservePitch` | native-only | `dom-native` | forbidden | `dom-stable-getter` |
@@ -247,7 +259,7 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 - **根因（子因 A，已确证）**：通用 page-native discovery 的白名单（4 名 / 7 键 / 12-96-8）无法定位抖音 speed controller，写入降级 `dom-native`，而抖音倍速标签由 React state 驱动、不读 `element.playbackRate` → 正向不同步；反向（抖音 UI 改倍速）因抖音自身路径恰好也写 DOM 而正常。
 - **诊断失明**：本文 §6.3 所述"全 DOM 读回"缺陷在抖音上表现为——ledger 永远 `confirmed`、永不 `drifted`，系统结构性无法感知该 bug。
-- **修复方向**：声明式、allowlisted、per-site 的 one-shot official adapter（新增 `declared-official` writer 层，位于 `page-native` 之前），由现有 allowlisted 桥消费（满足 SCTRL-004），并以**官方 UI 投影 getter/readback** 为 ACK 前提，同时修复 ledger 的 UI 投影 drift 可观测性。
+- **修复（已实现）**：`shared/site-adapter-registry.ts` 的 `douyin-speed` 条目（`candidate`）+ 桥内声明式发现 + `declared-official` 内部路由。ACK 以**控制器 getter** 为据（桥内同步校验并回滚），**UI 投影作为证人**由事务后的 `auditProjection` 裁决并写入 ledger——初版设想的「投影即 ACK 前提」在实现中因 React 异步渲染而修正（见适配器方案 §12.1）。
 - 详细证据、端到端因果链、实机验证清单见 `research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`；架构方案、契约、注册表、安全不变式、EPR-028 验证计划见 `proposals/2026-11-01-spectra-douyin-speed-official-adapter.md`。
 
 ---

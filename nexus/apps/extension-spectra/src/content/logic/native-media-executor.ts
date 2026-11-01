@@ -15,6 +15,7 @@ import {
 	type ControlOperationIntent,
 	type ControlFrameStepResult,
 	type ControlObservationStrategies,
+	type ControlObservationStrategy,
 	type ControlPatch,
 	type ControlReadRequest,
 	type ControlReadResult,
@@ -66,6 +67,7 @@ import {
 } from './native-write-telemetry';
 import {
 	probePageMediaCapability,
+	readPageMediaEvidence,
 	readPageMediaField,
 	writePageMediaField,
 } from './page-media-bridge';
@@ -73,6 +75,7 @@ import {
 	SPECTRA_PAGE_MEDIA_FIELDS,
 	type SpectraPageMediaField,
 } from '../../shared/page-media-bridge';
+import { resolveDeclaredSiteAdapter } from '../../shared/site-adapter-registry';
 
 interface PendingWrite {
 	intentId: string;
@@ -81,7 +84,45 @@ interface PendingWrite {
 	timeoutId: ReturnType<typeof setTimeout>;
 }
 
-type RestorableMediaWriter = 'page-native' | 'dom-native';
+type RestorableMediaWriter = 'declared-official' | 'page-native' | 'dom-native';
+
+/**
+ * Two writers answer through the page bridge; only `dom-native` touches the
+ * element directly. `declared-official` is the same bridge call as
+ * `page-native`, kept distinct so ownership, evidence and telemetry can name
+ * *why* the bridge found a controller instead of inferring it.
+ */
+function isPageSideWriter(writer: RestorableMediaWriter): boolean {
+	return writer === 'declared-official' || writer === 'page-native';
+}
+
+/**
+ * Ownership may only move up. A DOM writer is promoted once the page proves a
+ * controller, and a generic controller is promoted to a declared one when a
+ * site adapter's projection becomes readable. Anything else is a contradiction
+ * this executor refuses to commit silently.
+ */
+const WRITER_RANK: Readonly<Record<RestorableMediaWriter, number>> = {
+	'dom-native': 0,
+	'page-native': 1,
+	'declared-official': 2,
+};
+
+/**
+ * The wire contract only knows `page-native` and `dom-native`
+ * (`CONTROL_STRATEGIES`). `declared-official` is an internal routing fact and
+ * must never widen that enum — it carries bit order and rule tuples in
+ * `CONTROL_STRATEGY_RULES`. Anything that reports upward maps back here.
+ */
+function wireStrategy(writer: RestorableMediaWriter): ControlStrategy {
+	return writer === 'declared-official' ? 'page-native' : writer;
+}
+
+/** Observation narrows further: it excludes the observe/unsupported strategies. */
+function observationStrategy(writer: RestorableMediaWriter): ControlObservationStrategy {
+	return writer === 'dom-native' ? 'dom-native' : 'page-native';
+}
+
 
 class PageMediaCapabilityUnavailableError extends Error {
 	constructor(field: SpectraPageMediaField) {
@@ -243,7 +284,7 @@ function readRestorableMediaField(
 	field: RestorableMediaField,
 	writer: RestorableMediaWriter,
 ): ControlValues[RestorableMediaField] {
-	if (writer === 'page-native' && isPageMediaField(field)) {
+	if (isPageSideWriter(writer) && isPageMediaField(field)) {
 		const actual = readPageMediaField(element, field);
 		if (actual === null) throw new Error(`Page-media ${field} reader is no longer available`);
 		return actual;
@@ -272,8 +313,15 @@ function readRestorableMediaFieldWithWriter(
 	}
 	if (isPageMediaField(field)) {
 		try {
-			const actual = readPageMediaField(element, field);
-			if (actual !== null) return { actual, writer: 'page-native' };
+			const evidence = readPageMediaEvidence(element, field);
+			if (evidence !== null) {
+				return {
+					actual: evidence.actual,
+					// The bridge names its own source, so a generic hit is never
+					// mislabelled as declared knowledge.
+					writer: evidence.adapterId ? 'declared-official' : 'page-native',
+				};
+			}
 		} catch {
 			// A broken or transient page controller does not suppress the standard
 			// media fallback. No page write has occurred during this read probe.
@@ -291,11 +339,11 @@ function readRestorableMediaFieldForWrite(
 	if (owned) {
 		if (owned.writer === 'dom-native' && isPageMediaField(field)) {
 			try {
-				const actual = readPageMediaField(element, field);
-				if (actual !== null) {
+				const evidence = readPageMediaEvidence(element, field);
+				if (evidence !== null) {
 					return {
-						actual,
-						writer: 'page-native',
+						actual: evidence.actual,
+						writer: evidence.adapterId ? 'declared-official' : 'page-native',
 						upgradeFrom: owned,
 					};
 				}
@@ -323,7 +371,7 @@ function writeRestorableMediaField(
 	value: ControlValues[RestorableMediaField],
 	writer: RestorableMediaWriter,
 ): ControlValues[RestorableMediaField] {
-	if (writer === 'page-native' && isPageMediaField(field)) {
+	if (isPageSideWriter(writer) && isPageMediaField(field)) {
 		const actual = writePageMediaField(element, field, value);
 		if (actual === null) throw new PageMediaCapabilityUnavailableError(field);
 		return actual;
@@ -384,13 +432,14 @@ async function writeRestorableMediaFieldWithStableAck(
 	options: NativeMediaOperationOptions = {},
 ): Promise<ControlValues[SpectraPageMediaField]> {
 	assertNativeOperationCurrent(options);
+	const pageSide = isPageSideWriter(writer);
 	const read = (): ControlValues[SpectraPageMediaField] => (
-		writer === 'page-native'
+		pageSide
 			? readRestorableMediaField(element, field, writer)
 			: readDomRestorableMediaField(element, field)
 	) as ControlValues[SpectraPageMediaField];
 	let actual: ControlValues[SpectraPageMediaField];
-	if (writer === 'page-native') {
+	if (pageSide) {
 		writeRestorableMediaField(element, field, desired, writer);
 		actual = await stablePageReadback(read, options);
 	} else {
@@ -856,7 +905,7 @@ export class NativeMediaExecutor {
 						continue;
 					}
 					writeRestorableMediaField(element, field, owned.baseline, owned.writer);
-					const actual = await (owned.writer === 'page-native' ? stablePageReadback : stableReadback)(
+					const actual = await (isPageSideWriter(owned.writer) ? stablePageReadback : stableReadback)(
 						() => readRestorableMediaField(element, field, owned.writer),
 						{
 							signal: this.lifecycleController.signal,
@@ -875,7 +924,7 @@ export class NativeMediaExecutor {
 							actual: actual as ControlValues[ControlField],
 							revision: intent.baseRevision + 1,
 							phase: 'applied',
-							strategy: owned.writer,
+							strategy: wireStrategy(owned.writer),
 							coverage: 'active-target',
 							controlled: false,
 							intentId: intent.operationId,
@@ -954,7 +1003,7 @@ export class NativeMediaExecutor {
 					case 'speed': {
 						const observed = readRestorableMediaFieldWithWriter(element, field);
 						actual = observed.actual;
-						observedStrategies[field] = observed.writer;
+						observedStrategies[field] = observationStrategy(observed.writer);
 						break;
 					}
 					case 'preservePitch':
@@ -1103,8 +1152,8 @@ export class NativeMediaExecutor {
 					);
 					return;
 				}
-				const pageWriterAlreadyOwned = nativeMediaOwnership.byElement.get(element)?.get(field)?.writer
-					=== 'page-native';
+				const ownedWriter = nativeMediaOwnership.byElement.get(element)?.get(field)?.writer;
+				const pageWriterAlreadyOwned = ownedWriter !== undefined && isPageSideWriter(ownedWriter);
 				// Split-ack eligibility. Only the standard-DOM writer qualifies: a
 				// page-controller write still has to prove its capability and may
 				// fall through to the DOM writer, and that verdict is precisely
@@ -1164,7 +1213,7 @@ export class NativeMediaExecutor {
 					const domCannotScale = field === 'volumeBase'
 						&& (effectiveDesired as number) > CONTROL_VALUE_LIMITS.volumeBase.max;
 					const mayFallThrough = !domCannotScale
-						&& mediaWriter === 'page-native'
+						&& isPageSideWriter(mediaWriter)
 						&& !pageWriterAlreadyOwned
 						&& await pageCandidateRestoredBaseline(
 							element,
@@ -1202,8 +1251,18 @@ export class NativeMediaExecutor {
 					) as ControlValues[typeof field];
 					assertCurrent();
 					}
-					this.putState(fields, field, effectiveDesired, actual, intent, mediaWriter, 'confirmed');
+					this.putState(fields, field, effectiveDesired, actual, intent, wireStrategy(mediaWriter), 'confirmed');
 					this.observe(target.mediaId, field, actual);
+					if (mediaWriter === 'declared-official' && isPageMediaField(field)) {
+						this.auditDeclaredProjection(
+							`${target.mediaId}:${field}:ui`,
+							element,
+							field,
+							effectiveDesired as ControlValues[typeof field],
+							siteKey,
+							signal,
+						);
+					}
 				}
 			} else switch (field) {
 				case 'preservePitch': {
@@ -1411,8 +1470,7 @@ export class NativeMediaExecutor {
 		}
 		if (previous && previous.writer !== writer) {
 			const validUpgrade = previous === upgradeFrom
-				&& previous.writer === 'dom-native'
-				&& writer === 'page-native';
+				&& WRITER_RANK[writer] > WRITER_RANK[previous.writer];
 			if (!validUpgrade) {
 				throw new Error(`Restorable ${field} writer changed while ownership was active`);
 			}
@@ -1438,7 +1496,7 @@ export class NativeMediaExecutor {
 		const current = readRestorableMediaField(element, field, writer);
 		if (!nativeValuesMatch(current, attempted, tolerance)) return;
 		writeRestorableMediaField(element, field, baseline, writer);
-		await (writer === 'page-native' ? stablePageReadback : stableReadback)(
+		await (isPageSideWriter(writer) ? stablePageReadback : stableReadback)(
 			() => readRestorableMediaField(element, field, writer),
 			{ signal },
 		);
@@ -1521,6 +1579,36 @@ export class NativeMediaExecutor {
 			intentId: intent.intentId,
 			lastError: { code, message, retryable },
 		};
+	}
+
+	/**
+	 * Hand a declared write's UI witness to the detached confirmation registry.
+	 * Detached on purpose: the control path must not wait for a render it cannot
+	 * observe, and a stale badge is evidence to record, not a reason to fail a
+	 * write whose playback rate is already correct.
+	 */
+	private auditDeclaredProjection(
+		key: string,
+		element: HTMLMediaElement,
+		field: SpectraPageMediaField,
+		desired: ControlValues[ControlField],
+		siteKey: string,
+		signal?: AbortSignal,
+	): void {
+		const adapter = resolveDeclaredSiteAdapter(field);
+		const spec = adapter?.projection;
+		if (!spec) return;
+		this.writeConfirmations.auditProjection(key, {
+			element,
+			field,
+			desired: desired as ControlValues[RestorableMediaField],
+			tolerance: spec.tolerance,
+			siteKey,
+			readProjection: () => (
+				readPageMediaEvidence(element, field)?.projection ?? null
+			) as ControlValues[RestorableMediaField] | null,
+			signal,
+		});
 	}
 
 	private nativeFailure(
@@ -1859,7 +1947,7 @@ export class NativeMediaExecutor {
 				const current = readRestorableMediaField(element, field, owned.writer);
 				if (!nativeValuesMatch(current, owned.lastApplied, tolerance)) continue;
 				writeRestorableMediaField(element, field, owned.baseline, owned.writer);
-				await (owned.writer === 'page-native' ? stablePageReadback : stableReadback)(
+				await (isPageSideWriter(owned.writer) ? stablePageReadback : stableReadback)(
 					() => readRestorableMediaField(element, field, owned.writer),
 					{ signal: this.lifecycleController.signal },
 				);

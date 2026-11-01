@@ -21,7 +21,7 @@ last_reviewed: 2026-08-28
 | Popup 单主卡仍保留设置页/多卡高度 | EPR-017 | 主视图 intrinsic height；仅 Settings 模式拥有 CSS `min-height`，导航不得写第二份 inline 高度 |
 | 劫持网站全屏失败 | EPR-007、EPR-015 | 标准 fullscreen + trusted activation + baseline handoff |
 | 网站 PiP 后无法恢复原视频 | EPR-013、EPR-015 | `activeVideo`、PiP owner、native enter/leave/getter 同一事务 |
-| 抖音倍速 UI 不同步 | EPR-007、EPR-002、EPR-028 | 只允许已声明的 one-shot official adapter,成功须有官方 getter/readback |
+| 抖音倍速 UI 不同步 | EPR-007、EPR-002、EPR-028 | 只允许已声明的 one-shot official adapter,成功须有官方 getter/readback。**已落地**：`shared/site-adapter-registry.ts` 的 `douyin-speed` 条目（`candidate`）+ 桥内声明式发现 + `declared-official` 内部路由 + 投影级 drift；`verified` 仍待真实标签页闸门 |
 | `_favicon` unknown、图标获取失败 | EPR-017、EPR-021 | 使用支持的 favicon URL/service,未知权限在构建/契约阶段拦截 |
 | current document has no controllable origin | EPR-010、EPR-020 | 作为 terminal structured error,不能假装成功或无限重试 |
 | READY handshake timeout | EPR-004、EPR-005、EPR-019 | 失效 cache、status probe、按 identity 重新注入;不产生 unhandled rejection |

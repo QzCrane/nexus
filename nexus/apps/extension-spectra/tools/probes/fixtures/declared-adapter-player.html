@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>SPECTRA fixture: declared-adapter player</title>
+<style>
+	:root { color-scheme: dark; }
+	body { margin: 0; min-height: 100vh; background: #0b0b0f; color: #e8e8ef; font: 14px/1.5 system-ui, sans-serif; }
+	#player { position: relative; width: 720px; height: 405px; margin: 24px; background: #000; }
+	#mid { width: 100%; height: 100%; }
+	video { width: 100%; height: 100%; display: block; background: #000; }
+	#badge { position: absolute; right: 16px; bottom: 14px; padding: 2px 8px; border-radius: 4px; background: rgb(0 0 0 / 55%); font-weight: 600; }
+</style>
+</head>
+<body>
+<!--
+	Models the shape the generic bridge cannot reach, plus a decoy the generic
+	bridge *would* reach. A declared row must win over the decoy; otherwise the
+	badge stays stale and this fixture fails the run.
+-->
+<div id="player">
+	<div id="mid">
+		<video id="v" playsinline preload="metadata"><track kind="captions" /></video>
+	</div>
+	<div id="badge" data-e2e="speed"><span>1.0x</span></div>
+</div>
+<script>
+	(() => {
+		const mode = new URLSearchParams(location.search).get("mode") || "declared";
+		const video = document.getElementById("v");
+		const mid = document.getElementById("mid");
+		const player = document.getElementById("player");
+		const badge = document.getElementById("badge");
+
+		// The badge is a render of player state. It is never read back from
+		// video.playbackRate — the whole point of the fixture.
+		let stateSpeed = 1;
+		const badgeFollows = mode !== "stale";
+		function renderBadge(value) {
+			badge.textContent = `${Number(value).toFixed(1)}x`;
+		}
+
+		// `bare` models a page with no discoverable controller at all: the control
+		// case proving the declared row is what changed the answer.
+		if (mode === "bare") {
+			window.__fixture = {
+				mode,
+				speed: () => stateSpeed,
+				badge: () => badge.textContent,
+				rate: () => video.playbackRate,
+				decoyWrites: () => 0,
+			};
+			return;
+		}
+
+		let decoyWrites = 0;
+
+		// Decoy: generic names + a generic association key, one level closer to
+		// the media element than the real controller. Generic discovery picks
+		// this one; a declared row must outrank it.
+		mid.video = {
+			video,
+			speed: stateSpeed,
+			getPlaybackRate() { return this.speed; },
+			setPlaybackRate(value) {
+				decoyWrites += 1;
+				this.speed = value;
+				video.playbackRate = value;
+			},
+		};
+
+		// The real controller: a ref-style association key and a setter name the
+		// generic list does not probe. This is the one the site's own UI calls.
+		player.player = {
+			videoEl: video,
+			speed: stateSpeed,
+			getSpeed() { return this.speed; },
+			setSpeed(value) {
+				if (typeof value !== "number" || !Number.isFinite(value)) {
+					throw new TypeError("speed must be a number");
+				}
+				this.speed = value;
+				video.playbackRate = value;
+				stateSpeed = value;
+				if (badgeFollows) renderBadge(value);
+			},
+		};
+
+		window.__fixture = {
+			mode,
+			speed: () => stateSpeed,
+			badge: () => badge.textContent,
+			rate: () => video.playbackRate,
+			decoyWrites: () => decoyWrites,
+		};
+	})();
+</script>
+</body>
+</html>

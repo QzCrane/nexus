@@ -1,7 +1,7 @@
 # SPECTRA 媒体控制系统 · 全架构优化设计
 
 - **日期**：2026-11-01
-- **状态**：设计提案（未实现）。全部优化项均未改动代码。
+- **状态**：**P0 四项已落地**（O1 投影真值源、O4 声明式站点画像、O5 路由三档不扩 wire、O10 divergence 测试矩阵），随 `douyin-speed` 条目一并提交；P1/P2 仍为提案。各条目的「落地」小节记录实际形态与偏离。
 - **范围**：媒体控制主链路（发现 → 路由 → 写入 → 证据 → 观察 → ledger → 快照/投影）+ 支撑它的契约、测试、性能、治理四个跨切面。音频捕获、弹窗 UI、远端控制的专项优化列为"跨域适用性"（§10），不在本次逐项展开。
 - **上游**：
   - `architecture/2026-11-01-spectra-media-control-system-architecture.md`（系统现状总览）
@@ -136,6 +136,9 @@ Intent
 
 ### O1 · 投影真值源（P0）
 
+> **已落地**。`shared/site-adapter-registry.ts` 的 `projection`（文本扫描 + 容差）→ 桥内 `projectionFor()` → 结果字段 `projection` → `NativeWriteConfirmationRegistry.auditProjection()` → ledger `drifted`。偏离：投影是**证人而非闸门**，理由见适配器方案 §12.1。
+
+
 **问题**：D2。所有读回只看 DOM，UI 分叉不可见。
 
 **设计**：
@@ -187,6 +190,9 @@ Intent
 
 ### O4 · 声明式站点能力画像（P0）
 
+> **已落地**。`SiteAdapterEntry` + `SITE_ADAPTER_REGISTRY` + `resolveSiteAdapter(host, field)`，由既有 allowlisted 桥消费，无新增 MAIN 注入。补强：通用词表上提为 `GENERIC_PAGE_MEDIA_VOCABULARY`，使「条目不得重复通用名」成为可测断言。
+
+
 **问题**：D1 + D7。
 
 **设计**：`shared/site-adapter-registry.ts`（纯数据，桥与执行器共享引用）：
@@ -219,6 +225,9 @@ interface SiteCapabilityProfile {
 ---
 
 ### O5 · 路由三元组，但不扩 wire 枚举（P0）
+
+> **已落地**。`RestorableMediaWriter` 增加 `declared-official`；`wireStrategy()` / `observationStrategy()` 把它折回 `page-native`，`CONTROL_STRATEGIES` 未动。
+
 
 **问题**：D3。
 
@@ -300,6 +309,9 @@ interface SiteCapabilityProfile {
 ---
 
 ### O10 · 测试矩阵扩展（P0）
+
+> **已落地**。`test/site-adapter-registry.spec.ts`（9 项）+ `test/page-media-declared-adapter.spec.ts`（4 项 divergence 矩阵）+ `tools/probes/verify-declared-adapter.ts`（真实构建产物 20 项）。端到端验证在首轮就抓出了「声明名重复通用名导致优先级退化」的真实缺陷。
+
 
 **问题**：D10。
 

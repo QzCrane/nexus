@@ -6,7 +6,7 @@
 // for in the first place.
 
 import type { ControlValues, ControlWriteState } from '@nexus/contracts';
-import { confirmStableNativeEvent } from './native-media-async';
+import { confirmStableNativeEvent, nativeValuesMatch } from './native-media-async';
 import { recordNativeWriteOutcome } from './native-write-policy';
 import { settleNativeWrite } from './native-write-telemetry';
 
@@ -16,6 +16,14 @@ import { settleNativeWrite } from './native-write-telemetry';
  * and a second declaration would silently drift.
  */
 export type RestorableMediaField = 'volumeBase' | 'mediaMuted' | 'speed' | 'preservePitch' | 'loop';
+
+/**
+ * The audit has to outlast a React render, not a network round trip. 300ms is
+ * roughly three frames plus the commit phase of a batched update; the interval
+ * keeps the cross-world read off the animation frame path.
+ */
+const PROJECTION_AUDIT_BUDGET_MS = 300;
+const PROJECTION_AUDIT_INTERVAL_MS = 40;
 
 export interface WriteConfirmationRequest {
 	readonly element: HTMLMediaElement;
@@ -44,6 +52,21 @@ function readActual(
 		case 'loop': return element.loop as ControlValues[RestorableMediaField];
 		default: return (element.volume * 100) as ControlValues[RestorableMediaField];
 	}
+}
+
+export interface ProjectionAuditRequest {
+	readonly element: HTMLMediaElement;
+	readonly field: RestorableMediaField;
+	readonly desired: ControlValues[RestorableMediaField];
+	/** The badge's own rounding budget, not the media element's tolerance. */
+	readonly tolerance: number;
+	readonly siteKey: string;
+	/**
+	 * Reads what the player's UI shows. Returning `null` means "unreadable",
+	 * which is never evidence of agreement.
+	 */
+	readonly readProjection: () => ControlValues[RestorableMediaField] | null;
+	readonly signal?: AbortSignal;
 }
 
 export class NativeWriteConfirmationRegistry {
@@ -101,6 +124,62 @@ export class NativeWriteConfirmationRegistry {
 					settleNativeWrite(sampleId, 'unconfirmed', performance.now() - startedAt);
 					recordNativeWriteOutcome(siteKey, 'unconfirmed');
 				}
+			} finally {
+				signal?.removeEventListener('abort', onLifecycleAbort);
+				if (this.controllers.get(key) === controller) this.controllers.delete(key);
+			}
+		})();
+	}
+
+	/**
+	 * Prove the page's own UI followed a declared write.
+	 *
+	 * A `declared-official` write only answers once the controller's getter
+	 * agrees, which says nothing about the badge the viewer reads. This audit
+	 * closes that gap: it runs detached from the control path, tolerates the
+	 * player's asynchronous render by polling a bounded window, and records the
+	 * verdict in the per-site ledger. A badge that never follows therefore turns
+	 * into `drifted` — visible in telemetry and in `snapshotNativeWritePolicy()`
+	 * — instead of the invisible divergence documented in
+	 * `docs/research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`.
+	 *
+	 * It never throws and never reverts: the playback rate is already correct, so
+	 * the honest action is to record the disagreement, not to undo the viewer's
+	 * request.
+	 */
+	auditProjection(key: string, request: ProjectionAuditRequest): void {
+		const { desired, tolerance, siteKey, readProjection, signal } = request;
+		this.controllers.get(key)?.abort();
+		const controller = new AbortController();
+		this.controllers.set(key, controller);
+		const onLifecycleAbort = (): void => controller.abort();
+		signal?.addEventListener('abort', onLifecycleAbort, { once: true });
+		void (async (): Promise<void> => {
+			try {
+				const deadline = performance.now() + PROJECTION_AUDIT_BUDGET_MS;
+				let seen: ControlValues[RestorableMediaField] | null = null;
+				let agreed = false;
+				while (performance.now() < deadline) {
+					if (controller.signal.aborted) return;
+					seen = readProjection();
+					if (seen !== null && nativeValuesMatch(desired, seen, tolerance)) {
+						agreed = true;
+						break;
+					}
+					await new Promise<void>((resolve) => { setTimeout(resolve, PROJECTION_AUDIT_INTERVAL_MS); });
+				}
+				if (controller.signal.aborted) return;
+				// An unreadable badge says nothing; only a readable, disagreeing one
+				// is evidence that the UI did not follow.
+				if (seen === null) {
+					recordNativeWriteOutcome(siteKey, 'unconfirmed');
+					return;
+				}
+				recordNativeWriteOutcome(siteKey, agreed ? 'confirmed' : 'drifted');
+			} catch {
+				// A projection reader that throws is a broken witness, not a bounced
+				// write. `unconfirmed` records exactly that and cannot demote a site.
+				if (!controller.signal.aborted) recordNativeWriteOutcome(siteKey, 'unconfirmed');
 			} finally {
 				signal?.removeEventListener('abort', onLifecycleAbort);
 				if (this.controllers.get(key) === controller) this.controllers.delete(key);

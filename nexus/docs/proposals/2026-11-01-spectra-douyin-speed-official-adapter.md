@@ -1,7 +1,8 @@
 # 抖音倍速 one-shot 官方适配器 — 系统化架构方案
 
 - **日期**：2026-11-01
-- **状态**：设计（未实现）。架构与契约尚未落地；§8 的探测脚本、夹具与自证已可用（见运行手册）。
+- **状态**：**Stage 1 + Stage 2 已实现**（本文档描述的注册表、桥内接入、`declared-official` 路由与投影级 drift 已落地并全绿）。抖音条目仍为 `candidate`：机制可用，但徽标选择器未经真实标签页确认，`verified` 需按 §8 闸门补证。
+- **实现偏离**：§12 记录两处与初版设计不同的决定（投影是**证人**而非闸门；投影实现为文本扫描而非 React 内部读取）及其理由。
 - **关联报告**：`research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`
 - **关联原则**：EPR-007（Native-First 策略）、EPR-002（Desired/Actual/ACK/Snapshot/UI 分层）、EPR-028（Public Copy Truthfulness，结论须以已验证能力为界）、`05-problem-to-principle-map.md:24`（抖音倍速 → 只允许已声明的 one-shot official adapter）。
 - **关联不变式**：SCTRL-004（无通用 MAIN monkey-patch，仅 allowlisted 文档注入）、SCTRL-027（one-shot ACK）、SCTRL-046（newer write cancels proof）。
@@ -92,74 +93,100 @@ speed writer 选取（抖音 host 命中 allowlist 时）：
 ## 3. 适配器契约与声明式注册表
 
 ### 3.1 注册表形态（allowlisted 数据，非自动发现）
-新增一个**经评审的静态表**（类比 `media-route` 注册表），每个条目声明：
+
+落地于 `src/shared/site-adapter-registry.ts`——**纯数据模块，无 DOM、无副作用**，由 MAIN 桥与 ISOLATED 执行器各自打包引用。因此它不新增注入文件、不改协议、不改 wire 枚举。
 
 ```ts
+type SiteAdapterStatus = 'candidate' | 'verified' | 'disabled';
+
 interface SiteAdapterEntry {
-  host: string;                       // 精确主机名，如 "www.douyin.com"
-  field: 'speed';                     // 当前仅 speed；框架可扩展
-  // —— 写入目标：抖音 UI 真正调用的 setter ——
-  setterNames: string[];              // 候选顺序，如 ["setSpeed","updateSpeed","setPlayRate","setPlaybackRateByUser"]
-  getterNames: string[];              // 候选顺序，如 ["getSpeed","getPlaybackRate"]
-  accessorProp?: string;              // 或 playbackRate 访问器属性名
-  // —— 关联：控制器如何持有媒体元素 ——
-  associationKeys: string[];          // 扩展白名单，如 ["videoEl","videoRef","player","instance","ref"]
-  allowReactFiber: boolean;           // 是否遍历 React fiber 找持有 element 的组件实例
-  // —— UI 投影真值源（修复诊断失明的关键）——
-  uiProjection: {
-    kind: 'react-state' | 'dom-label';
-    // react-state: 经 fiber/组件实例读取 speed 的 UI 真值
-    // dom-label: 读取倍速标签 DOM 文本并解析为数值
-    selector?: string;                // dom-label 用：标签选择器
-    parse?: (text: string) => number; // dom-label 用：文本→数值
+  id: string;                          // 'douyin-speed'
+  hosts: string[];                     // 'douyin.com' 覆盖全部子域；'.' 边界强制
+  field: SpectraPageMediaField;        // 当前仅 speed
+  revision: number;                    // 声明形态变更即自增，进入证据
+  status: SiteAdapterStatus;           // candidate 未过闸门 / verified 已过 / disabled 撤回
+  discovery: {
+    setterNames: string[];             // 只列通用探测**不认识**的名字
+    getterNames: string[];
+    accessorNames: string[];
+    associationKeys: string[];
+    maxAncestorDepth: number;          // 可放宽，受硬上限夹紧
+    maxAttachedProperties: number;
+    maxPrototypeDepth: number;
+    followReactFiber: boolean;         // 是否走 __reactFiber$* / __reactProps$* 找实例
   };
-  // —— 安装约束 ——
-  maxAncestorDepth?: number;           // 可放宽默认 12
-  maxAttachedProperties?: number;      // 可放宽默认 96
+  projection: {                        // null ⇒ 只能回答 probe，永远不能写
+    kind: 'text';
+    scopeSelectors: string[];          // 先按选择器定位，再回落到元素祖先
+    patterns: string[];                // 每个正则恰好一个捕获组
+    tolerance: number;                 // 徽标进位容差（"1.0x" vs 1.04）
+  } | null;
 }
 ```
 
-注册表**默认空**，抖音条目需经 EPR-028 实机验证（§8）后才准入。未命中 host 时，行为与现状完全一致。
+两条硬规则由注册表测试强制：
+
+1. **声明名必须是通用词表的补充，不能是重复。** 重复的 `setPlaybackRate` 不产生优先级，条目会输给更近的通用控制器，而评审时看不出来。为此通用词表搬到 `GENERIC_PAGE_MEDIA_VOCABULARY` 并加了重叠断言——这条规则是端到端测试里的"诱饵"用例逼出来的（§8.4）。
+2. **没有 `projection` 的条目只能回答 `probe`，永远不能承载写入。** 没有 UI 证人的写入，正是本方案要终结的形态。
+
+抖音条目随代码发布，`status: 'candidate'`：初次命中即生效，但每次写入都以徽标为证人，模型不符即被判 drift。这让机制在实机验证之前就是"活的"，同时不谎称已验证。
 
 ### 3.2 运行期集成点
-在 `injector/page-media-bridge.ts` 的 `capabilityFor` / `collectControllerCandidates` / `controllerAssociation` 中：若 `location.hostname` 命中某条目，则用条目的 `setterNames`/`getterNames`/`associationKeys`/放宽后的边界**替代**通用硬编码（4 名 / 7 键 / 12-96-8）。`findCapability` 仍返回统一的 `PageMediaCapability { read, write }` 接口，对 ISOLATED 世界透明。
 
-### 3.3 官方 getter/readback 的硬约束
-EPR-028 与原则图要求"成功须有官方 getter/readback"。adapter 的 `read` **必须**返回 §3.1 的 `uiProjection` 真值（UI 投影），而非 `element.playbackRate`。写入流程（§4）以"UI 投影回读 == desired"作为 ACK 前提。这同时修复了 §6 的诊断失明。
+`injector/page-media-bridge.ts` 在模块加载时按 `location.hostname` 为每个字段解析一次条目（`ADAPTERS`），随后：
 
----
+- `capabilityFor` 先走条目声明的 setter/getter/accessor 名，再回落到通用名；
+- `controllerAssociation` 先走条目声明的关联键，再回落通用键；
+- `collectControllerCandidates` 用条目夹紧后的边界遍历，并按 `followReactFiber` 额外走 React 挂载记录；
+- 候选排序把 **declared 优先**置于关联等级之前——条目存在的理由就是通用排序在这里选错了对象；
+- `findCapability` 返回 `{ capability, adapterId }`，`adapterId` 仅在**声明知识命中**时非 null。
+
+`adapterId` 是归因的关键：它让执行器能区分"桥用站点知识找到了"与"桥用通用启发式找到了"，而不用猜。
+
+### 3.3 官方 getter/readback 的硬约束（已修正为证人语义）
+
+初版要求"UI 投影回读 == desired 作为 ACK 前提"。实现后按 §12.1 改为：
+
+- ACK 前提仍是**控制器 getter**（官方 readback），由桥在写入后同步比对，不符即回滚；
+- **UI 投影是证人**：桥在同一次事务里返回它，但不用它否决写入；
+- 投影的最终裁决放在事务之后（`NativeWriteConfirmationRegistry.auditProjection`），结果写入 per-site ledger。
+
+理由是 React 的批量渲染：setter 返回后徽标可能晚一两帧，同步否决会打回站点本来就要兑现的写入；而速率已经正确，回滚反而违背用户意图。真相仍然被记录——只是记在 ledger 里而不是错误里。
 
 ## 4. 写入与回滚流程
 
 ### 4.1 writer 识别
-`readRestorableMediaFieldForWrite` 在命中 allowlist 时，优先把 writer 置为 `declared-official`（在 `page-native` 之前）。优先级：
+
+`readRestorableMediaFieldWithWriter` / `readRestorableMediaFieldForWrite` 以**桥自报的 `adapterId`** 决定 writer，而不是以 host 是否命中条目决定——否则一个"命中条目但通用路径命中"的读取会被误标为声明式。优先级：
 
 ```
-declared-official（仅命中 allowlist 的 host+field）
-  → page-native（通用发现）
+declared-official（桥回传 adapterId）
+  → page-native（桥找到通用控制器）
   → dom-native（element.playbackRate）
 ```
 
-如 §2.4 所述，`declared-official` 只存在于内部 `RestorableMediaWriter` 联合类型，**不进入 wire 的 `ControlStrategy`**。ACK 对外仍报 `strategy: 'page-native'`，`coverage` 仍为 `full`——因为行为确实由页面自己的 setter 完成，语义没有漂移。
+如 §2.4 所述，`declared-official` 只存在于内部 `RestorableMediaWriter` 联合类型，**不进入 wire 的 `ControlStrategy`**。`wireStrategy()` 把三档折回两档，ACK 对外仍报 `strategy: 'page-native'`；`observationStrategy()` 同理处理更窄的观察枚举。
 
-这三档路由的差别只在**证据策略**：
+三档路由的差别在**证据策略**：
 
-| 路由 | 写入通道 | ACK 读回 | 失败语义 |
+| 路由 | 写入通道 | ACK 读回 | 事后证据 |
 |---|---|---|---|
-| `declared-official` | 条目声明的 setter（经桥） | UI 投影 | 投影不符 → 回滚 + `unconfirmed` |
-| `page-native` | 发现的成对 getter/setter | 控制器 getter | 现值不符 → 桥内回滚 + 错误 |
-| `dom-native` | `element.playbackRate` | `element.playbackRate` | 现值不符 → `drifted` |
+| `declared-official` | 条目声明的 setter（经桥） | 控制器 getter（桥内同步校验 + 回滚） | 徽标投影 → ledger |
+| `page-native` | 发现的成对 getter/setter | 控制器 getter | 无（无投影声明） |
+| `dom-native` | `element.playbackRate` | 事件 + DOM 稳定读回 | 既有 split-ack 确认 |
 
 ### 4.2 事务内写入（适配器路径）
-复用 `writeRestorableMediaField`（`:320-338`）：writer 为 `declared-official` 时调用 `writePageMediaField`（经桥）走 adapter 的 `setter`；随后 `writeRestorableMediaFieldWithStableAck`（`:378-413`）对 `declared-official` 走 `stablePageReadback`，其 `read` 闭包读取 **UI 投影真值**（`uiProjection` 解析结果）。
 
-伪流程：
 ```
 writeRestorableMediaField(element, 'speed', desired, 'declared-official')
-  → bridge.writePageMediaField → adapter.setter(desired)   // 抖音 UI setter
-  → stablePageReadback(() => adapter.uiProjectionRead())    // 读 UI 投影真值
-  → if |uiProjection - desired| > tolerance: throw（触发回滚）
+  → writePageMediaField → 桥 → 条目的 setter(desired)
+  → 桥内 capability.read() 比对 desired；不符 → 回滚 + error
+  → stablePageReadback(() => 桥读控制器 getter)   // 64ms 静默窗 + 两帧
+  → 事务以 strategy: 'page-native' 应答
+  → auditDeclaredProjection(...)                   // 事务之后，detached
 ```
+
+投影审计由 `NativeWriteConfirmationRegistry.auditProjection` 承担：300ms 预算、40ms 间隔轮询，命中即 `confirmed`，读得到但不符即 `drifted`，读不到即 `unconfirmed`。它从不抛错、从不回滚——因为速率已经对了。
 
 ### 4.3 回滚与降级
 - adapter `set` 抛错或 UI 投影回读失配 → executor 回滚到 `dom-native` 基线（复用现有 `pageCandidateRestoredBaseline` 思路，`:415-441`），并将本次 outcome 记为 `unconfirmed`（非 `confirmed`/`drifted`）。
@@ -168,31 +195,22 @@ writeRestorableMediaField(element, 'speed', desired, 'declared-official')
 ### 4.4 与现有 pending 守卫的兼容
 正向写后 `ratechange` 仍会被 pending 守卫抑制一次观察；但 adapter 路径的 ACK 已基于 UI 投影，故守卫仅影响"二次 DOM 观察"，不影响 UI 同步正确性。守卫窗口结束后 `reconcileExpiredPending` 复读 DOM——Stage 2 建议**额外复读 UI 投影**，使后续观察也能覆盖 UI 真值（见 §5.2）。
 
-### 4.5 分阶段落地：最小可行路径只动"注册表 + 桥"
+### 4.5 落地形态：两阶段一次性完成，变更面比预估更窄
 
-把"修 UI 同步"和"修诊断失明"拆开看，会发现前者比预想小得多——因为**现有桥已经强制回读**：`onPageMediaRequest` 写完会 `capability.read()` 并比对 desired，不符就回滚并返回 error。只要 adapter 的 `read` 返回 UI 投影，"写没写进去"当场就能判定。
+初版设想分三阶段。实现后 Stage 1 与 Stage 2 一次落地，因为真正的耦合点只有一个：**谁来决定 `writer`**。一旦改为"由桥自报 `adapterId`"，注册表、路由与证据三层就自然串起来了。
 
-**Stage 1（最小可行，仅桥 + 注册表）**
+实际改动面：
 
-- 新增 `shared/site-adapter-registry.ts`（纯数据 + 解析函数），由 MAIN 桥与 ISOLATED 执行器各自打包引用——**不新增注入文件、不改协议、不改 wire 枚举**；
-- `capabilityFor` 在 host 命中条目时，直接按条目的 `setterNames` / `associationKeys` / `uiProjection` 构造能力，跳过通用启发式；
-- 执行器完全不动：writer 仍是 `page-native`，ACK 仍走 `stablePageReadback`，只是读回值变成了投影。
+| 层 | 文件 | 内容 |
+|---|---|---|
+| 数据 | `src/shared/site-adapter-registry.ts`（新增） | 类型、抖音条目、主机匹配、边界夹紧、通用词表 |
+| 协议 | `src/shared/page-media-bridge.ts` | 结果增加可选 `adapterId` / `projection` |
+| MAIN | `src/content/injector/page-media-bridge.ts` | 声明名/键优先、React fiber、投影读取、`adapterId` 归因 |
+| ISOLATED 派发 | `src/content/logic/page-media-bridge.ts` | 共享 `dispatch`，新增 `readPageMediaEvidence` / `probePageMediaDetail` |
+| 执行器 | `src/content/logic/native-media-executor.ts` | 第三档 writer、`wireStrategy`、按 `adapterId` 归因、投影审计入口 |
+| 证据 | `src/content/logic/native-write-confirmation.ts` | `auditProjection` + 投影级 drift |
 
-结果：UI 不同步被消除；若投影解析失败或不符，现有桥回滚并抛错，不会静默成功。代价是失败表现为"这次写入失败"，而不是"漂移被记录"。
-
-**Stage 2（诊断增强，改执行器与确认）**
-
-- `RestorableMediaWriter` 增加 `declared-official`，仅用于选择证据策略与软禁用；
-- `native-write-confirmation.readActual` 接受投影读取器；`handleMediaEvent` 的发散判定比较投影值；
-- ledger 的 `drifted` 首次反映"UI 未同步"，触发 `resolveNativeWriteMode` 降级。
-
-**Stage 3（稳定性校准）**
-
-- 按抖音实测结果校准 `driftLimit` / 软禁用窗口；
-- 条目版本化与失效复检（见 §9）。
-
-这个顺序的意义：Stage 1 的变更面是"一个数据文件 + 桥内三个函数"，可以在不改任何契约的前提下先止血；Stage 2 才动证据模型。若 Stage 1 实测发现投影不可稳定解析，则立即停止，不进入 Stage 2——避免为一个不成立的假设扩大改动。
-
+**没有**新增 MAIN 注入文件、没有新增 wire 枚举值、没有改动 `ControlStrategy` 规则表——这三条是 §6 不变式的硬约束。
 
 ---
 
@@ -201,10 +219,14 @@ writeRestorableMediaField(element, 'speed', desired, 'declared-official')
 ### 5.1 失明的根因
 `native-write-confirmation.ts:readActual` 与 `handleMediaEvent` 的所有读回都基于 `element.playbackRate`。对"UI 由 React state 驱动"的站点，DOM 属性与 UI 投影分叉，而系统只测 DOM，于是永远 `confirmed`。
 
-### 5.2 提案：UI 投影真值源 + 投影级 drift
-1. **写入确认**（§4.2）已改为读 UI 投影——这是第一道修复：adapter 写入后若 UI 仍不同步，确认即判 `drifted`。
-2. **观察守卫扩展**：在 `handleMediaEvent` 的 speed 发散判定（`:1752`）中，对命中 adapter 的 host，额外比较"UI 投影真值"与插件 recorded 值；若 UI 投影与插件期望不一致，判为 `drifted` 并上报。
-3. **ledger 语义不变**：`recordNativeWriteOutcome` 仍按 `confirmed/drifted/unconfirmed` 记录；但现在 drift 能真实反映"UI 不同步"，从而触发 `resolveNativeWriteMode` 的降级（`:59-68`）——系统首次具备自愈信号。
+### 5.2 落地：投影作为独立证人通道
+
+1. **桥内**：`projectionFor()` 在写入/读取的同一事务里返回徽标数值。HB 徽标读取范围先按 `scopeSelectors`，再回落到媒体元素的合成祖先链（≤24 层），文本节点预算 4096。找不到就是 `null`——**绝不当成一致**。
+2. **执行器**：仅当本轮 writer 为 `declared-official` 时，事务结束后把 `auditDeclaredProjection` 交给确认注册表。
+3. **确认注册表**：`auditProjection` 轮询投影至 300ms 上限，随后 `recordNativeWriteOutcome(siteKey, 'confirmed' | 'drifted' | 'unconfirmed')`。读取器抛错记 `unconfirmed`，不降级站点——坏证人不是坏写入。
+4. **ledger 语义不变**：`driftLimit` 仍是 2；两个真正的 drift 就足以把站点降到 `verified`，触发全窗口 ACK。系统首次对"UI 不同步"具备可观测与自愈信号。
+
+这一层不依赖抖音：任何声明了 `projection` 的站点都自动获得同一条证人通道。
 
 ### 5.3 收益
 - 抖音真不同步时，ledger 记 `drifted` → 站点降 `verified`/软禁用 adapter → 回退通用路径并告警。
@@ -276,6 +298,23 @@ PASS  state-driven setter moves both
 
 这证明脚本能在一个"已知形状"的页面上正确区分"只改速率"与"同时改 UI"。它**不**证明抖音就是这个形状——那只能由 §8.1 的实机运行回答。这条边界本身就是 EPR-028 的要求。
 
+### 8.4 声明式适配器的端到端自证
+
+`bun tools/probes/verify-declared-adapter.ts` → `20/20 checks passed`。它在伪抖音域名（`https://www.douyin.com/video/1`，请求拦截返回夹具）下加载**真实构建产物** `dist/content-page-media-bridge.js`，因此测的是发布代码，不是复制品。
+
+夹具刻意放了一个**诱饵**：一个用通用名（`setPlaybackRate`）与通用键（`video`）持有媒体元素的控制器，且比真控制器更靠近 video。通用发现的排序会选它。最关键的三条：
+
+```
+PASS  the decoy setter is never used  (decoyWrites=0)
+PASS  the badge follows  (badge=1.5x)
+PASS  stale badge is reported as-is, not as agreement  (projection=1)
+```
+
+第一条 + 第二条合起来是"声明式知识压过更近的通用错误候选"的直接证据；第三条是"陈旧徽标不会被谎报为一致"的证据。另有两条控制组：无控制器页面仍 `supported:false`；无条目的主机上通用发现照常工作但**没有**投影通道与 `adapterId`。
+
+第一次跑这个验证时 13/17 通过——失败的三条暴露了真实缺陷：注册表把通用名重复列进声明名，导致诱饵也被判为 declared，排序退化回距离。修复后 20/20。这条经验被固化成注册表测试（§3.1 规则 1）。
+
+
 
 ---
 
@@ -289,27 +328,85 @@ PASS  state-driven setter moves both
 
 ---
 
-## 10. 实施步骤拆解（设计粒度，不含实现）
+## 10. 实施状态对照
 
-**Stage 1（最小可行）**
+**Stage 1（注册表 + 桥）— 已完成**
 
-1. 新增 `shared/site-adapter-registry.ts`：`SiteAdapterEntry` 类型 + 空注册表 + `resolveSiteAdapter(host, field)`；由桥与执行器共享引用。
-2. 桥内 `capabilityFor` / `controllerAssociation` / `collectControllerCandidates` 支持条目提供的方法名/关联键/放宽边界；命中条目时优先于通用启发式；`findCapability` 仍返回统一 `PageMediaCapability`。
+| # | 项 | 状态 | 落点 |
+|---|---|---|---|
+| 1 | `SiteAdapterEntry` + 解析器 + 边界夹紧 | ✅ | `src/shared/site-adapter-registry.ts` |
+| 2 | 桥内声明名/键/边界/React fiber + `adapterId` | ✅ | `injector/page-media-bridge.ts` |
+| 3 | 通用词表上提为共享常量（使重叠可测） | ✅ | `GENERIC_PAGE_MEDIA_VOCABULARY` |
 
-**Stage 2（诊断增强）**
+**Stage 2（诊断增强）— 已完成**
 
-3. executor 的 `RestorableMediaWriter` 增加 `declared-official`（仅内部路由，**不改 `ControlStrategy`**）；`writeRestorableMediaFieldWithStableAck` 对该路由走 UI 投影读回；把三处 `writer === 'page-native' ? stablePageReadback : stableReadback` 收敛为 `stableReadbackFor(writer)`。
-4. 引入 `uiProjection` 读取器（react-state / dom-label 两路），作为 adapter `read` 与确认/观察的真相源。
-5. `native-write-confirmation.ts` 与 `handleMediaEvent` 接入 UI 投影 drift 判定（§5.2）。
-6. `native-write-policy.ts` 增加 adapter 软禁用/降级阈值（按站点实测校准）。
+| # | 项 | 状态 | 落点 |
+|---|---|---|---|
+| 4 | `declared-official` 内部路由 + `wireStrategy` 折返 | ✅ | `native-media-executor.ts` |
+| 5 | 投影读取器（text 扫描，作用域 + 祖先回落） | ✅ | `injector/page-media-bridge.ts` |
+| 6 | `auditProjection` → 投影级 drift → ledger 降级 | ✅ | `native-write-confirmation.ts` |
+| 7 | 投影审计不参与 ACK、不回滚（§12.1） | ✅ | 同上 |
 
-**取证与护栏（贯穿）**
+**取证与护栏 — 已完成**
 
-7. 探测脚本已完成并自证（§8.3）；在真实标签页按运行手册执行 §8.2 闸门，通过后把抖音条目经评审写入注册表。
-8. 补充单测：模拟"UI 投影与 DOM 分叉"的页面，验证 confirmed/drifted 判定与降级；契约测试保证注册表 schema 与桥解析同步（参考 `test/control-contracts.spec.ts` 的 allowlist 同步约束）。
-9. 文档更新：`04a-algorithm-matrix.md` 的 `speed` 行注明"声明式路由仍归 `page-native`，仅内部路由与证据策略不同"；`05-problem-to-principle-map.md:24` 标记已落地；本方案移交 `update-context` 流程同步到权威文档。
+| # | 项 | 状态 | 落点 |
+|---|---|---|---|
+| 8 | 注册表 schema / 主机边界 / 词表重叠测试（9 项） | ✅ | `test/site-adapter-registry.spec.ts` |
+| 9 | divergence 矩阵：徽标跟随/滞后/连续滞后降级/无条目不审计（4 项） | ✅ | `test/page-media-declared-adapter.spec.ts` |
+| 10 | 真实构建产物端到端：诱饵压过、徽标跟随、陈旧不谎报（20 项） | ✅ | `tools/probes/verify-declared-adapter.ts` |
 
-> 实施顺序约束：第 3 步必须连同第 8 步的 divergence 单测一起提交，否则"投影读回"只会在抖音上被验证，缺少回归护栏。
+**未完成（EPR-028 边界，不做即不应声称）**
+
+| # | 项 | 缺口 |
+|---|---|---|
+| 11 | 真实抖音标签页跑通 §8.2 六步闸门 | 未执行；徽标选择器与 `setSpeed` 命名仍是静态推断 |
+| 12 | 条目升为 `verified`、写入证据到 `docs/research/evidence/` | 依赖 11 |
+| 13 | `native-write-policy` 的 adapter 软禁用阈值按实测校准 | 依赖 11 |
+
+> 顺序约束（保留）：第 4 步必须连同第 9 步的 divergence 测试一起提交，否则"投影证据"只会在抖音上被验证，缺少回归护栏。本次一并提交，124 个测试文件全绿。
+
+---
+
+## 12. 实现偏离与理由
+
+### 12.1 投影是证人，不是闸门
+
+初版（§3.3、§4.5）要求"UI 投影回读 == desired 才 ACK"。实现时改掉了，原因有三：
+
+1. **React 的渲染是异步的。** `setSpeed` 返回时组件 state 可能还没提交，同步读徽标必然读旧值。以它为闸门会把站点本来就要兑现的写入判失败。
+2. **失败语义会更糟。** 一旦判失败，执行器会回滚基线——用户点 1.5 倍，速率变回 1.0，只因为徽标晚了一帧。这比"速率对了但标签旧"更伤。
+3. **真相不必靠错误来记。** 投影的裁决放进独立审计写 ledger，既不打断用户动作，也不丢失观测：连续两次真 drift 仍会把站点降级。
+
+于是分工是：**桥负责"写进去没有"（同步、可回滚），审计负责"UI 跟上没有"（异步、只记录）**。两条通道各自诚实。
+
+### 12.2 投影实现为文本扫描，不是 React 内部读取
+
+初版设想了 `kind: 'react-state'`：经 fiber 读组件 state。实现时放弃：
+
+- React 内部结构随版本变化，`memoizedState` 的链表形态与 hooks 顺序都不是契约；一条 2026 年写的读取器在 2027 年可能读到别的字段而且**不报错**。
+- 徽标文本是被用户实际看到的那个东西。读它不需要相信任何内部结构，而且探测脚本本来就要定位它——两侧用同一个证据源，验证才有意义。
+
+`followReactFiber` 仍然保留，但只用于**发现控制器实例**（`stateNode`），不用于读数。发现错了顶多找不到，不会读错。
+
+### 12.3 抖音条目随代码发布，但标 `candidate`
+
+初版建议"注册表默认空，验证后准入"。实现选择"默认带条目、标 candidate"，因为安全边界不在条目是否存在，而在**投影证人是否可读**：
+
+- 找不到控制器 → 桥回 `supported:false` → 退回通用发现 → 与今天完全一致；
+- 找到控制器但投影不可读 → 条目无法承载写入（§3.1 规则 2）→ 同样退回；
+- 找到且投影可读 → 写入走站点自己的 setter，这就是修复本身。
+
+也就是说，条目存在不会让抖音变差，只会在条件满足时变好。而 `verified` 仍然——且只能——由 §8.2 的实机闸门授予。
+
+### 12.4 证据索引
+
+| 证据 | 命令 | 结果 |
+|---|---|---|
+| 单位与集成测试 | `bun run test:unit` | 124 / 124 文件通过 |
+| 严格 lint | `bun ../../scripts/run-strict-biome.ts tools/probes src test` | 409 文件，0 诊断，0 silent handler |
+| 类型 | `bun tsc --noEmit` | 通过 |
+| 声明式适配器端到端 | `bun tools/probes/verify-declared-adapter.ts` | 20 / 20 |
+| 探测脚本自证 | `bun tools/probes/verify-probe.ts` | 19 / 19 |
 
 ---
 

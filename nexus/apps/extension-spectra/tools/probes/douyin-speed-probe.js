@@ -173,6 +173,7 @@
 		const installed = Boolean(window.__SPECTRA_PAGE_MEDIA_BRIDGE_V2__);
 		let supported = false;
 		let actual = null;
+		let adapterId = null;
 		let error = null;
 		try {
 			element.setAttribute(
@@ -189,6 +190,10 @@
 				if (parsed.requestId !== requestId) error = "stale result: another transact answered first";
 				supported = parsed.supported === true;
 				actual = parsed.actual ?? null;
+				// Present once a declared site adapter answered. A non-null value
+				// means the shipped bridge already has site knowledge for this host,
+				// so the T1 attribution below is a cross-check, not the last word.
+				adapterId = parsed.adapterId ?? null;
 			}
 		} catch (caught) {
 			error = caught instanceof Error ? caught.message : String(caught);
@@ -196,7 +201,7 @@
 			element.removeAttribute(BRIDGE_REQUEST);
 			element.removeAttribute(BRIDGE_RESULT);
 		}
-		return { installed, field, supported, actual, error };
+		return { installed, field, supported, actual, adapterId, error };
 	}
 
 	// ---------------------------------------------------------------- T1 discovery replay
@@ -667,7 +672,10 @@
 			"font-weight:bold;font-size:13px",
 			report.probe.host,
 		);
-		line("T0 bridge(speed)", `supported=${report.bridge.speed.supported} installed=${report.bridge.speed.installed}`);
+		line(
+			"T0 bridge(speed)",
+			`supported=${report.bridge.speed.supported} installed=${report.bridge.speed.installed} adapter=${report.bridge.speed.adapterId ?? "none"}`,
+		);
 		line(
 			"T1 discovery",
 			`candidates=${report.discovery.candidateCount} nearMiss=${report.discovery.nearMisses.length}`,

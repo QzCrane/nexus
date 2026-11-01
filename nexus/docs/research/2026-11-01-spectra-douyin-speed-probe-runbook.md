@@ -1,7 +1,8 @@
 # 抖音倍速实机探测 — 运行手册（EPR-028 执行件）
 
 - **日期**：2026-11-01
-- **状态**：可执行。脚本与夹具已通过自证（19/19），**尚未在真实抖音标签页运行**。
+- **状态**：可执行。探测脚本自证 19/19，声明式适配器端到端自证 20/20；**尚未在真实抖音标签页运行**。
+- **新增（本轮）**：条目已在代码中随 `candidate` 发布，桥的 `probe` 结果会回传 `adapterId`。因此 T0 不再只是「桥能不能看见」，而是「桥用的是声明知识还是通用启发式」——这直接决定 §4 映射该改什么。
 - **上游**：`proposals/2026-11-01-spectra-douyin-speed-official-adapter.md` §8
 - **前提报告**：`research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`
 - **产物**：
@@ -10,6 +11,8 @@
   - `apps/extension-spectra/tools/probes/verify-probe.ts`（自证脚本）
 
 > 本手册只做**取证**，不做修复。探测结果回填注册表条目后，才进入实现阶段。
+
+
 
 ---
 
@@ -25,17 +28,22 @@
 
 ## 1. 探测脚本的四个层级
 
-| 层 | 做什么 | 是否改页面 | 输出 |
-|---|---|---|---|
+| 层  | 做什么                                                                           | 是否改页面       | 输出                      |
+| -- | ----------------------------------------------------------------------------- | ----------- | ----------------------- |
 | T0 | 用**真实构建产物** `dist/content-page-media-bridge.js` 的协议发一次 `probe`，问它能否看到 `speed` | 否（只加/删一个属性） | `supported: true/false` |
-| T1 | 重放桥的发现启发式并**同时**按扩展假设扫描，逐条解释"为什么被拒" | 否（只读对象） | 近失候选 + 拒绝原因计数 |
-| T2 | 定位倍速标签，读取其文本、位置、React fiber 链 | 否 | 标签候选 + 组件链 |
-| T3 | **显式调用**候选 setter，观察"真实速率"与"标签"是否一起变，随后还原 | 是（可关闭） | 哪个 setter 驱动 UI |
+| T1 | 重放桥的发现启发式并**同时**按扩展假设扫描，逐条解释"为什么被拒"                                           | 否（只读对象）     | 近失候选 + 拒绝原因计数           |
+| T2 | 定位倍速标签，读取其文本、位置、React fiber 链                                                 | 否           | 标签候选 + 组件链              |
+| T3 | **显式调用**候选 setter，观察"真实速率"与"标签"是否一起变，随后还原                                     | 是（可关闭）      | 哪个 setter 驱动 UI         |
 
 T1 的四类拒绝原因，正好对应根因报告里的四个白名单维度：
 
+|   |   |   |
+| - | - | - |
+
 - `setter-name`：有 speed setter，但名字不在 `setPlaybackRate | setPlaybackRateByUser | changePlaybackRate`
-- `getter-name`：没有 `getPlaybackRate`，也没有 `playbackRate` 访问器对
+- `getter-name`：没有 `getPlaybackRate`，也没有 `playbackRate` 访问器对  
+  |  |  |  |  |  |  |  |  
+  | --- | --- | --- | --- | --- | --- | --- |
 - `association-key`：控制器持有媒体元素用的键不在 `video | media | mediaElement | element | root | el | container`
 - `property-index` / `ancestor-depth`：形状完全正确，只是挂在第 96 个属性之后 / 第 12 层祖先之外
 
@@ -92,12 +100,12 @@ await __SPECTRA_DOUYIN_PROBE__.tryWrite({ desired: 1.5 })
 
 判读：
 
-| `changedRate` | `changedLabel` | 含义 |
-|---|---|---|
-| true | false | 该 setter 只改媒体元素，不改 UI —— 正是当前 bug 的形态 |
-| true | true | **该 setter 就是 UI 驱动路径**，`uiDrivingSetter` 会指向它 |
-| false | true | setter 只改 UI 状态、没改媒体元素 —— 需要"setter + DOM"双写 |
-| false | false | 该 setter 与倍速无关或参数不兼容 |
+| `changedRate` | `changedLabel` | 含义                                             |
+| ------------- | -------------- | ---------------------------------------------- |
+| true          | false          | 该 setter 只改媒体元素，不改 UI —— 正是当前 bug 的形态          |
+| true          | true           | **该 setter 就是 UI 驱动路径**，`uiDrivingSetter` 会指向它 |
+| false         | true           | setter 只改 UI 状态、没改媒体元素 —— 需要"setter + DOM"双写   |
+| false         | false          | 该 setter 与倍速无关或参数不兼容                           |
 
 如果 T3 结束后标签仍停在 `1.5x`，手动点一次站内倍速菜单恢复即可（脚本已尽力还原，但页面可能有额外副作用）。
 
@@ -127,17 +135,17 @@ nexus/docs/research/evidence/2026-11-01-douyin-speed-probe.json
 
 按 `SiteAdapterEntry`（方案 §3.1）逐字段填：
 
-| 探测证据 | 注册表字段 | 取值规则 |
-|---|---|---|
-| `write.uiDrivingSetter` = `Object.setSpeed` | `setterNames` | 取方法名 `setSpeed`；同族候选按命中顺序补齐 |
-| `speedSurface` 中 `getPlaybackRate` | `getterNames` | 有则填；无则留空 |
-| `speedSurface` 中 `playbackRate` accessor | `accessorProp` | 仅当 getter/setter 成对存在 |
-| `nearMisses[].associationKey` = `videoEl` | `associationKeys` | 填实测键；保留 `video` 等旧键作回退 |
-| `nearMisses[].propertyIndex` = 110 | `maxAttachedProperties` | 向上取整到 128，留余量 |
-| `nearMisses[].ancestorDepth` = 14 | `maxAncestorDepth` | 向上取整到 16，留余量 |
-| `projection.labels[].path` + `text` | `uiProjection{kind:'dom-label'}` | `selector` 用稳定属性优先（`data-*` > class 链）；`parse` 用 `/(\d+(?:\.\d+)?)/` |
-| `projection.react.chain[].speedProps` | `uiProjection{kind:'react-state'}` | 仅当 `dom-label` 不可用时启用；记录字段名与组件名 |
-| `attempts[0].changedLabel`（DOM 对照） | 决策依据 | `false` → 必须走 declared adapter；`true` → 停止，重新诊断 |
+| 探测证据                                        | 注册表字段                              | 取值规则                                                                 |
+| ------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
+| `write.uiDrivingSetter` = `Object.setSpeed` | `setterNames`                      | 取方法名 `setSpeed`；同族候选按命中顺序补齐                                          |
+| `speedSurface` 中 `getPlaybackRate`          | `getterNames`                      | 有则填；无则留空                                                             |
+| `speedSurface` 中 `playbackRate` accessor    | `accessorProp`                     | 仅当 getter/setter 成对存在                                                |
+| `nearMisses[].associationKey` = `videoEl`   | `associationKeys`                  | 填实测键；保留 `video` 等旧键作回退                                               |
+| `nearMisses[].propertyIndex` = 110          | `maxAttachedProperties`            | 向上取整到 128，留余量                                                        |
+| `nearMisses[].ancestorDepth` = 14           | `maxAncestorDepth`                 | 向上取整到 16，留余量                                                         |
+| `projection.labels[].path` + `text`         | `uiProjection{kind:'dom-label'}`   | `selector` 用稳定属性优先（`data-*` > class 链）；`parse` 用 `/(\d+(?:\.\d+)?)/` |
+| `projection.react.chain[].speedProps`       | `uiProjection{kind:'react-state'}` | 仅当 `dom-label` 不可用时启用；记录字段名与组件名                                      |
+| `attempts[0].changedLabel`（DOM 对照）          | 决策依据                               | `false` → 必须走 declared adapter；`true` → 停止，重新诊断                      |
 
 **准入判定**（必须全部满足）：
 
@@ -153,16 +161,45 @@ nexus/docs/research/evidence/2026-11-01-douyin-speed-probe.json
 
 ## 5. 常见异常与处置
 
-| 现象 | 可能原因 | 处置 |
-|---|---|---|
-| `No <video>/<audio> found` | 播放器在 iframe / 尚未挂载 / 用了 canvas 播放 | 切换执行上下文；确认视频已开始播放；若确为 canvas，记录并终止（无媒体元素可控制） |
-| `T0 installed=false` | 扩展未启用或未注入该站点 | 检查 `chrome://extensions`，刷新页面后重试 |
-| `T0 error: no result attribute` | 桥版本不匹配（协议 v2 变更） | 记录扩展版本；对照 `shared/page-media-bridge.ts` 的协议常量 |
-| `nearMiss=0` 但有标签 | 控制器经闭包/fiber 持有，属性不可枚举 | 归入 `unreachable-controller`；条目的 `setterNames` 无法确定，需改用 UI 交互式适配（另立方案） |
-| T3 后倍速未还原 | setter 有异步副作用 | 手动点站内倍速菜单；在证据中标注 `allRestored:false` |
-| Console 拒绝求值（CSP） | 极少数站点策略 | 改用 DevTools → Sources → Snippets 运行；或通过扩展 MAIN world 注入执行 |
+| 现象                              | 可能原因                              | 处置                                                                    |
+| ------------------------------- | --------------------------------- | --------------------------------------------------------------------- |
+| `No <video>/<audio> found`      | 播放器在 iframe / 尚未挂载 / 用了 canvas 播放 | 切换执行上下文；确认视频已开始播放；若确为 canvas，记录并终止（无媒体元素可控制）                          |
+| `T0 installed=false`            | 扩展未启用或未注入该站点                      | 检查 `chrome://extensions`，刷新页面后重试                                      |
+| `T0 error: no result attribute` | 桥版本不匹配（协议 v2 变更）                  | 记录扩展版本；对照 `shared/page-media-bridge.ts` 的协议常量                         |
+| `nearMiss=0` 但有标签               | 控制器经闭包/fiber 持有，属性不可枚举            | 归入 `unreachable-controller`；条目的 `setterNames` 无法确定，需改用 UI 交互式适配（另立方案） |
+| T3 后倍速未还原                       | setter 有异步副作用                     | 手动点站内倍速菜单；在证据中标注 `allRestored:false`                                  |
+| Console 拒绝求值（CSP）               | 极少数站点策略                           | 改用 DevTools → Sources → Snippets 运行；或通过扩展 MAIN world 注入执行             |
 
 ---
+
+## 5.5 适配器落地后的新增读数
+
+条目随代码发布（`status: 'candidate'`）后，T0 的输出多一个字段：
+
+```
+T0 bridge(speed)  supported=true installed=true adapter=douyin-speed
+```
+
+三种读法：
+
+| `adapter` | `supported` | 含义 | 下一步 |
+|---|---|---|---|
+| `douyin-speed` | `true` | 声明知识命中：控制器按条目的名字/键被找到 | 跑 T3，确认写入能带动徽标；能带动即可提 `verified` |
+| `none` | `true` | 通用启发式命中，声明知识未命中 | 条目名字/键不对，回 §4 按 T1 的拒绝原因修正条目 |
+| `none`/`douyin-speed` | `false` | 都没找到 | 条目未能覆盖该页形态；先看 T1 归因（哪一类拒绝最多） |
+
+注意 `adapter=douyin-speed` 只说明**发现**走了声明路径，不说明徽标是同一个元素。徽标是否被正确解析，要看 T2 与 T3：
+
+- T2 的 `projection.labels[].text` 应当与页面实际显示一致；
+- T3 的 `changedLabel` 应当为 `true`。
+
+两者任一不成立，则 `projection.scopeSelectors` / `patterns` 需要按 T2 的实测结果改写，而不是把条目提为 `verified`。
+
+### 5.6 与适配器端到端验证的区别
+
+`bun tools/probes/verify-declared-adapter.ts`（20/20）验证的是**机制**：在一个人造页面上，声明式条目能压过更近的通用错误候选、能带动徽标、陈旧徽标不会被谎报为一致。它使用真实构建产物，因此能证明发布代码的行为，但**不能**证明抖音的播放器就是这个形状。
+
+那条边界只能由本手册在真实标签页上解除。
 
 ## 6. 自证：为什么可以先信这个脚本
 

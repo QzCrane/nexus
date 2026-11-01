@@ -192,8 +192,9 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | Effective vol / media mute | exact page controller may acknowledge `0–800`; standard DOM covers `0–100` | proven MediaElement WebAudio Boost is the first fallback; Capture only covers incomplete/unsafe page media; native mute remains native | simultaneous native writers, processor before page rejection, mute via numeric vol |
 | EQ/Bass/Comp/Mono/Pan/Delay| N/A | proven MediaElement WebAudio, then admitted Capture | partial page binding, mutation-based CORS guessing, generic MAIN DSP |
 | Tab mute and pin | Chrome API | none | DOM emulation |
-| Vol/mute/speed page-native | paired page getter/setter | none | resident page-UI sync, prototype patch |
+| Vol/mute/speed page-native | paired page getter/setter; a declared site adapter may name the setter/getter the generic probe does not know | none | resident page-UI sync, prototype patch |
 | Pitch preservation | DOM `preservesPitch` | none | echoing pitch, treating as pitch shift |
+| Declared site adapter (`declared-official`) | the declared getter must answer; the UI projection must be readable for a row to author a write | allowlisted `SiteAdapterEntry` data consumed by the existing page-media bridge | a second MAIN injection, a new `ControlStrategy` value, a write with no readable UI witness |
 | Play/seek/loop | awaited standard media operation | A/B markers use seek executor | autoplay bypass |
 | PiP and fullscreen | standard API | bounded page-click prompt | CSS theater mode |
 | Rotate/mirror/fill/filters | N/A | CSS `rotate`/`scale`/`object-fit` | inline-style replacement, MAIN style |
