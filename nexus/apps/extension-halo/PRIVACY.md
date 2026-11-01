@@ -3,12 +3,12 @@ type: reference
 status: stable
 audience: user
 owner: halo-privacy
-last_reviewed: 2026-09-11
+last_reviewed: 2026-11-01
 ---
 
 # Privacy Policy for HALO
 
-**Last updated: September 11, 2026**
+**Last updated: November 1, 2026**
 
 ## Overview
 
@@ -27,6 +27,8 @@ Timer and Pomodoro keep local deadlines, revisions and pending completion identi
 HALO uses IndexedDB for user-created page archives, downloaded resource blobs, and module state. Dark-mode support can use Cache Storage for page styles and resources fetched from the page's own URLs. Bundled or user-installed page scripts may keep their own settings in the matched site's local storage. These records remain until the user deletes them through the relevant feature, clears extension/site data, uninstalls HALO, or the browser evicts cache data.
 
 User-requested exports and downloads are written to locations selected or managed by the browser. HALO does not upload those files to the developer.
+
+One such export is the diagnostic file started from Settings. It is assembled only when the user presses the export button, and it contains the extension version, the Chromium major version, the names of granted permissions, how many origin patterns are granted plus whether a broad grant is present, counts per extension context type, three aggregate counts about active services and background mechanisms, and at most 64 recent internal event codes. It contains no page addresses or titles, tab, window or document identifiers, storage contents, browsing history, or account data.
 
 ## User-invoked network capabilities
 

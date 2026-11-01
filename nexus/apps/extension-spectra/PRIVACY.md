@@ -3,12 +3,12 @@ type: reference
 status: stable
 audience: user
 owner: spectra-privacy
-last_reviewed: 2026-08-29
+last_reviewed: 2026-11-01
 ---
 
 # Privacy Policy for SPECTRA
 
-**Last updated: August 29, 2026**
+**Last updated: November 1, 2026**
 
 ## Overview
 
@@ -23,6 +23,25 @@ Volume, equalizer, playback, appearance, hotkey, and per-site preferences are st
 Audio and video content is processed locally. SPECTRA does not record or upload media content.
 
 Chrome grants SPECTRA temporary `activeTab` access only after the user invokes the extension action or a registered browser command. SPECTRA uses that temporary authority with `tabCapture` only to start local audio processing for the same active page, including volume above 100%, audio effects, or an enabled foreground spectrum. The grant is not persisted, and captured audio is not recorded or transmitted.
+
+## Local diagnostic export
+
+SPECTRA can write a diagnostic file, but only when the user presses the export
+button in Options. Nothing is collected before that press: there is no telemetry
+timer, no background collection loop, no remote endpoint, and no developer server
+on the receiving side. The file is saved through Chrome's ordinary download path
+and stays on the device unless the user chooses to share it.
+
+The file contains the extension version, the Chromium major version, the names of
+granted permissions, how many origin patterns are granted plus whether a broad
+grant such as `<all_urls>` is present, counts per extension context type, aggregate
+counters about SPECTRA's own in-memory state (such as how many tabs are audible or
+how many runtime loads are in flight), and at most 64 recent internal event codes.
+
+The file does not contain page addresses or titles, tab, window, document or
+request identifiers, storage contents, media content, browsing history, or account
+data. Because it is a file the user owns, what happens to it after the download is
+outside the extension's control.
 
 ## Optional mobile remote
 
