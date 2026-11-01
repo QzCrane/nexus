@@ -8,7 +8,7 @@ last_reviewed: 2026-11-01
 
 # SPECTRA runtime protocols
 
-This document owns cross-context envelopes, request/response validation, the private continuous Popup port, the Action Popup bootstrap parameter, state flow, READY, leases, configured-site hotkey authority, and MV3 restart recovery. Per-capability writer selection belongs to [the control architecture](../control/README.md); remote authentication belongs to [remote security](../security/remote-control.md).
+This document owns cross-context envelopes, request/response validation, the private continuous Popup port, the private diagnostic port, the Action Popup bootstrap parameter, state flow, READY, leases, configured-site hotkey authority, and MV3 restart recovery. Per-capability writer selection belongs to [the control architecture](../control/README.md); remote authentication belongs to [remote security](../security/remote-control.md).
 
 ## State ownership
 
@@ -109,6 +109,31 @@ script reads it only to select a recorded height (`spectra.popup.frame.<N>`); it
 never renders or hides a card, and an absent or invalid value falls back to the
 last settled height and then to the legacy single hint. `shared/popup-bootstrap.ts`
 is the sole owner of the parameter name and every storage key it selects.
+
+## Private diagnostic port
+
+Diagnostics use a second private port, `nexus.local-diagnostics.v1`, in the
+opposite direction: an Options surface asks, the Background answers once.
+
+```text
+Options -> Background   (connect, no payload)
+Background -> Options
+  { ok: true, bundle }
+  { ok: false, code: 'diagnostic-collection-failed' }
+```
+
+| Constraint | Value |
+| --- | --- |
+| Sender | this extension's id, a `chrome-extension:` URL on that id, no credentials or port, exact origin when the browser supplies one |
+| Lifetime | one bundle per connection; the port is disconnected after the reply |
+| Budget | 5 s on both ends; an expired port is disconnected rather than left open |
+| Payload identity | never read; the browser's sender metadata is the whole authority |
+
+The bundle is a `schemaVersion: 1` record whose scalar-only shape, field list
+and redaction rules belong to [local diagnostics](../architecture/runtime.md#local-diagnostics).
+Nothing here may carry a page, tab, document or request identity, and a failed
+collection is reported as `diagnostic-collection-failed` rather than as a
+partial bundle.
 
 ## Site processing routes
 

@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: halo-architecture
-last_reviewed: 2026-09-12
+last_reviewed: 2026-11-01
 ---
 
 # HALO architecture
@@ -72,6 +72,24 @@ tools/<id>/
 - **UserScripts persistence projection**: all SidePanel consumers of `halo_userscripts` share the system-layer external store. Missing storage uses the historical default-on state; a read failure or malformed persisted row fails the entire snapshot closed. The authority preserves validated extensible metadata so a read/export/import cycle cannot silently convert a registry-managed script into a user-owned script.
 - **Initialization phases**: settings/theme hydration is mount-scoped and independent of module-manager readiness. Open-tool restoration waits for the hydrated bundled-module enablement set. Module readiness must not retrigger settings I/O.
 
+## System-layer plugins
+
+A `system` plugin is a surface over an authority that already exists for the whole extension. It renders that authority and may request a change; it does not become a second owner of it.
+
+| Plugin | Renders | Must not do |
+| --- | --- | --- |
+| `system/settings` | appearance/interface settings over the kernel settings authority, plus the local diagnostic export gesture | hold a second settings copy, or report an unconfirmed save as saved |
+| `system/permissions` | per-capability request UI over `chrome.permissions` | persist a copy of a browser permission decision |
+| `system/module-store` | enable/disable view over packaged modules and user scripts | install, download or replace code; present bundled bytes as a download size |
+| `system/extension-manager` | other installed extensions and their user-assigned groups | call `chrome.management` before `management` is granted, or show an empty list in place of denial |
+| `system/resource-monitor` | the declared-versus-observed impact inventory | present declared provenance as measured CPU or memory |
+| `system/userscripts` | the canonical `halo_userscripts` projection | be re-read by a second SidePanel store |
+
+- **Resource Monitor honesty**: rows come from the registry's declared background profiles (`BACKGROUND_PROFILES_MAP` / `BACKGROUND_PLUGIN_IDS`) plus the `ActiveServicesProvider` status projection. A row exists only because a live owner declares it, so an inactive mechanism is absent rather than listed as zero. Mechanism, frequency and impact level are declarations; the only observed claim on the panel is whether the owner is running now. No row may display a percentage, a byte figure or a CPU time that no owner measured.
+- **Extension Manager permission proof**: `chrome.permissions.contains({ permissions: ['management'] })` gates the panel before any read. Denial produces a request action, not an empty result, and the group filter stays inert until the grant exists. Group assignments persist through the kernel ledger and register a `storage-health` owner, so an unconfirmed group write surfaces as uncertainty instead of a silently lost assignment.
+- **Permissions panel**: browser state is the sole authority on every mount, because a persisted mirror can only go stale between a browser change and the next mount. A grant or revocation performed outside HALO is therefore reflected on the next read without reconciliation code.
+- **Settings diagnostics**: HALO assembles its bundle inside the SidePanel through `buildLocalDiagnosticBundle` with three owner facts (`activeServiceCount`, `backgroundMechanismCount`, `settingsSurfaceActive`) and a bounded event buffer, then downloads it. There is no background collection port in HALO, and the surface states that the export stays local. The shared shape, redaction and token rules belong to `@nexus/kernel` diagnostics, not to this panel.
+
 ## State, Background Work & User-script registration
 
 - **State**: Persistent background work uses SW events, alarms, and lifecycle tokens. `useToolState` coordinates storage sync through one ledger-backed, bounded latest-intent queue. Complex values and finite enums carry a domain `ToolStateCodec`; an invalid persisted value stays untouched and produces an explicit export/replace recovery surface instead of silently becoming a default. Quota admission uses the browser-reported storage-area limit and retains shared reserve rather than treating item counts as byte budgets.
@@ -92,6 +110,18 @@ tools/<id>/
 - **TTS**: speech state follows `SpeechSynthesisUtterance` lifecycle events; no periodic `speechSynthesis` polling. The tool panel owns its browser speech lifecycle and cancels any surviving utterance when the panel unmounts, so navigation cannot orphan speech without controls.
 - **TOTP**: the UI may update remaining seconds at 1Hz, but HMAC output is cached for each entry/counter epoch and recomputed only when the counter or code-defining parameters change. Epoch recomputation remains sequential so account count cannot create an unbounded WebCrypto burst.
 - **Panel async work**: `OwnedAsyncTask` owns one generation, deadline and disposer for panel-started work. A new run supersedes the prior generation; deadline, cancellation and unmount dispose its physical resource and prevent late results from mutating retired UI. `oneShotWorker` applies that contract to one-request static module workers and always terminates them after message, error, cancellation or deadline. Regex, PDF, Image Tools and RFC 9535 JSONPath use distinct packaged worker entries; Code Formatter and Table Extractor use the same result-admission lifecycle for their promise work without inventing another worker framework.
+
+## Persistence admission
+
+Every HALO write reaches `chrome.storage` through the `@nexus/kernel` storage layer. Domain code decides *what* a value means; this layer decides whether a write is admitted and what a caller is allowed to conclude from it.
+
+- **One lane per area**: writes serialize behind one queue per physical storage area, so `local`, `sync` and `session` cannot interleave with themselves. Each lane admits at most 64 pending writes or 16 MiB of pending bytes; a write that would exceed either bound is rejected immediately instead of being queued behind work the UI has already moved past.
+- **Snapshot at enqueue**: the payload is structurally cloned and sized before it joins the lane, so a later mutation of the caller's object cannot change a write that is already committed to the queue.
+- **Three write outcomes**: `committed`, `rejected`, `unknown`. A lane advances only on actual settlement, never on an observer timeout — a timeout therefore reports `unknown` while the physical write keeps running. `unknown` is a first-class answer: it means the value may or may not be there, and it is never rounded to success or silently retried as if nothing had happened. The boolean helpers (such as `safeStorageSet`) answer only liveness; a caller that must distinguish rejection from uncertainty has to observe the `StorageWrite` outcome.
+- **Unread is not absent**: a read that exceeds its deadline throws instead of resolving to defaults. No domain may treat a failed read as an empty record, which is why the codec-backed consumers fail closed rather than seeding defaults.
+- **Ledgered read-modify-write**: `conditionalLedgerWrite` writes the value and its `key#rev` companion in one physical `set`, then verifies the stored content because a transport may drop the revision key while keeping the value. Outcomes are `committed`, `external` (someone else won; repair is a bounded caller-supplied remerge), `rejected` and `unknown`. This is optimistic concurrency, not a cross-context transaction: a plain write that skips the revision key remains an unconditional overwrite, so shared keys must be written through the ledger.
+- **Quota admission**: `admitStorageGrowth` charges the browser-reported `QUOTA_BYTES` — not item counts — using key plus JSON byte length, and validates every policy fraction in `(0, 1)`. A shrinking mutation is admitted even when the stored value is already over budget, so an over-budget owner can still be repaired; a growing mutation is refused once it would cross the domain ceiling, the per-item ceiling, or the area ceiling that reserves headroom for unrelated settings and recovery writes.
+- **Storage health**: failures are reported per owning domain through a symbol-keyed problem map with the statuses `read-error`, `write-error`, `write-unknown` and `invalid-data`, each retaining an optional retry closure. One banner renders that state with a retry that re-runs the retained closures. The message may describe the situation but never the stored keys or contents, so the surface cannot leak a domain value while reporting that the domain failed.
 
 ## Permissions, Localization & Performance
 
@@ -139,6 +169,11 @@ Smooth Scroll is physically and semantically top-document-only: its static conte
 - No production lazy panel boundary may resolve back into the SidePanel startup bundle; physical code splitting is a build invariant.
 - No performance conclusion based only on total extension bytes: startup closure and eventual feature bytes are measured separately.
 - No silent growth across the audited production startup ceilings.
+- No system panel may hold a second copy of an authority another owner already owns; browser permission state, module enablement and settings each keep exactly one writer.
+- No panel may present declared provenance (mechanism, frequency, impact level) as measured CPU, memory or bytes, and no row exists for a mechanism whose live owner is absent.
+- No storage write may be reported as saved without a committed or verified outcome; `unknown` is surfaced as uncertainty with a retry, never rounded to success and never retried as if nothing had happened.
+- No domain may treat an unread key as an absent key: a read that misses its deadline throws instead of producing a default.
+- Shared storage keys are written through the ledger; an unconditional overwrite of a key another context can write is an architecture defect, not a shortcut.
 
 Roadmap sequencing lives in [`roadmap.md`](roadmap.md).
 

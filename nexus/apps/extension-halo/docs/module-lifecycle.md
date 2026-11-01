@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: halo-module-lifecycle
-last_reviewed: 2026-08-12
+last_reviewed: 2026-11-01
 ---
 
 # HALO packaged-module lifecycle
@@ -20,6 +20,10 @@ HALO modules are extension-packaged capabilities. Module Store controls whether 
 | optional, malformed explicit value | local tombstone boundary | fail closed |
 
 Each optional module owns one independent `chrome.storage.local` key. Reinstall removes the false tombstone. Fresh profiles require no seed writes.
+
+### Remote update advisory
+
+The Module Store also shows a version check backed by `kernel/managers/remote-registry.ts`. It is advisory only: the registry declares versions and optional changelog text, and nothing it contains can install, replace or execute code. A response is cached in the single local key `halo_remote_registry` with a one-hour TTL; a forced refresh bypasses that cache; a failed fetch resolves to `null` rather than to a fabricated list, so the Store shows no updates instead of claiming the packaged modules are current. In this repository the endpoint is still the placeholder base URL, and the client short-circuits to the packaged registry without any network request. The update badge must not be described as a distribution channel until a real versioned endpoint and its verification rules exist.
 
 ## ModuleManager
 

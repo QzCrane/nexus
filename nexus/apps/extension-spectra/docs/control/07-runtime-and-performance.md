@@ -64,6 +64,7 @@ Action Popup 的首帧不等待 service-worker 往返：卡片数由 Background 
 | `src/popup/settings-forecast.ts` | 上次已提交 `GlobalSettings` 的首帧预测；读取时校验，首次权威投影覆盖，从不合并 |
 | `src/popup/media-inventory-from-storage.ts` | 由 durable media facts 与 `audible` 投影首份卡片列表，避免 service-worker 往返；RPC 仅用于对账 |
 | `src/remote/operation-queue.ts` | Remote 每 key 有界串行队列；不拥有 session/auth/protocol 状态 |
+| `packages/nexus-kernel/src/diagnostics.ts` + `src/background/diagnostics.ts` + `src/options/diagnostics.ts` | 仅由 Options 手势触发的拉取式诊断：私有端口鉴权、标量事实、不可读 owner 报 `null`；不导出页面/标签/文档/请求身份，无诊断存储 owner |
 
 结构拆分不得制造第二个 effect owner。协调者仍是 commit/persist/publish 唯一入口；
 ACK 模块只做值验证。原生字段的相等判定由 `native-media-async.ts` 统一提供，

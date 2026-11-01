@@ -258,9 +258,9 @@ expiry does not pretend to cancel a browser request. An expired or unavailable
 probe proceeds through the same document-scoped injection/READY transaction.
 Late probe replies cannot restore source leases or publish READY. This boundary
 does not time out or bypass restore writes: explicit controls still wait for the
-document initialization decision. Local diagnostic export includes aggregate
-Popup input/batch counts, runtime loading/READY counts and outstanding Content
-RPC route counts/durations, without page, tab, document or request identities.
+document initialization decision. The aggregate counters exported by the
+[local diagnostic port](#local-diagnostics) describe this boundary but never
+influence it.
 Offscreen events keep Chrome message channel open until Background settles, preventing suspension mid-event.
 
 Built-in chords (`Alt+Arrow*/Alt+M`) are reserved, claimed at `document_start` before page handlers. Configured-site bindings yield to website claims. Keyup clears unconsumed repeat pulses but cannot revoke an admitted press. `chrome.commands` admits only non-coalescing actions.
@@ -376,6 +376,67 @@ sets and reject unknown or malformed envelopes before a handler sees them.
 
 Favicon/QR are UI/security boundaries, not media capabilities. Exact-element, PiP, fullscreen bridge semantics handled separately.
 
+## Local diagnostics
+
+Diagnostics exist to answer "which owner is stuck" without exporting anything
+that could identify a user. The contract is split so that no surface can widen
+it by accident.
+
+| Layer | Owner | Responsibility |
+| --- | --- | --- |
+| Shape and redaction | `@nexus/kernel/diagnostics.ts` | Bundle schema, token grammar, sender authentication, port lifetime |
+| Fact collection | `src/background/diagnostics.ts` | Reads existing Background owners and reports scalars |
+| User gesture | `src/options/diagnostics.ts` | One export button; collects, downloads, reports success or failure |
+
+Collection is **pull-only**. Nothing in the service worker intercepts the
+console, installs a telemetry timer, polls an owner, or owns a diagnostic
+storage key. The Options button opens the private port
+`nexus.local-diagnostics.v1`; Background answers with one bundle and retires
+the port. Both sides give the exchange five seconds, and a port that outlives
+that budget is disconnected rather than left open.
+
+A port is admitted only when `isLocalDiagnosticSender` proves the sender is
+this extension: `sender.id` must equal `chrome.runtime.id`, `sender.url` must
+parse as a `chrome-extension:` URL whose hostname is that same id with no
+credentials and no port, and `sender.origin`, when present, must be the exact
+`chrome-extension://<id>` origin. A caller-supplied identity in the payload is
+never consulted — the browser metadata is the authority, so a page cannot ask
+for diagnostics by claiming to be a surface.
+
+### What the bundle may contain
+
+`DiagnosticOwnerSummary` values are `boolean`, finite `number` or `null`, and
+keys must match `^[A-Za-z0-9_.:-]{1,64}$`. That single rule is what makes the
+export safe: a scalar has nowhere to hide a URL, a storage payload, a document
+id, a session token or a page title. A field with no honest reading is reported
+as `null`, never as an invented `0` — "the Offscreen host did not answer" and
+"the host answered with zero processors" must stay distinguishable.
+
+The bundle also carries the manifest version, the Chromium major version
+(parsed from the user agent, which is never included itself), the granted
+permission names, an origin *count* plus one `broadGrant` flag, per-context-type
+counts, and at most 64 recent events. Events are `{ sequence, timestamp, level,
+scope, code }` with token-only scope and code — a message is not a field. No
+page URL, tab id, window id, document id, request id or storage value is
+exported.
+
+### What Background reports
+
+| Group | Fields | Meaning |
+| --- | --- | --- |
+| Surface | `backgroundSurfaceActive` | The worker answered at all, so the rest of the bundle has an owner behind it |
+| Content routes | `contentRpc:<type>:pending`, `contentRpc:<type>:busyMs` | A route appears only while it has a request in flight; `busyMs` is the age of the oldest of them. The entry is deleted when the last reply settles, so an idle route is absent rather than zero |
+| Popup input | `popupControlReceivedInputs`, `popupControlPendingBatches`, `popupControlFailedBatches` | Coalescing health on the private Popup port |
+| Popup settlement | `popupControlSettleSamples`, `popupControlSettleP50Ms`, `popupControlSettleP95Ms`, `popupControlSettleMaxMs` | Bounded ring of input-to-paint latencies; percentiles are computed over the retained sample set, not over the session |
+| Runtime loading | `runtimeProbePendingCount`, `runtimeLoadingCount`, `runtimeReadyWaiterCount`, `runtimeReadyDocumentCount`, `runtimeDisposingCount` | The pre-injection probe pool and the READY transaction described above |
+| Inventory | `audibleTabCount`, `mediaFactCount`, `mediaTabStateCount`, `badgeStateCount`, `captureStateCount`, `activeCaptureCount` | Owner sizes. `captureStateCount` counts tabs with any recorded capture flag and `activeCaptureCount` only those whose flag is `true`, so the pair separates "the map was touched" from "a capture is running" |
+| Offscreen | `offscreenLeaseCount`, `offscreenHostStateUnknown`, `offscreenReadSucceeded`, `offscreenHostPresent`, `offscreenAudioProcessorCount`, `offscreenRemoteSessionCount` | Read through one `OFFSCREEN_HOST_HELLO`; the four host facts are `null` together when that read failed, so a dead host is never reported as an empty one |
+| Permission | `userScriptsPermissionGranted` | `null` when `chrome.permissions.contains` rejected, rather than a guessed `false` |
+
+Reading these facts observes existing owners. Collection never creates,
+restores or reconciles Offscreen authority; a diagnostic export is not an
+opportunity to repair state that the product would otherwise leave alone.
+
 ## Production performance budgets
 
 `scripts/check-production-artifacts.ts` is the executable owner. Its graph accepts only manifest/HTML/CSS references, static imports, deferred imports, declared runtime-loader edges, and the explicit vendor-module edge. An arbitrary string cannot make a file reachable.
@@ -441,6 +502,7 @@ Release and cross-platform lanes build the production SPECTRA candidate exactly 
 | Remote transport/session | `vendor/peerjs/peerjs.min.js` + `offscreen-remote/peerjs-loader.ts` + `remote-host.ts` | One extension-owned JSON/DataChannel-only transport source projected to the static page, one lazy extension output, one Offscreen session/Peer owner, 16 KiB wire cap; epoch/command receipt/recovery remain bounded |
 | UI event projection | `popup/ui-event-hub.ts` + surface/session stores | One Chrome runtime listener; subscriber isolation; identity/revision/session-token monotonicity |
 | Locale assets | surface catalogs + `shared/i18n/locale-sections.ts` | Popup/Options/Actions fetch only their surface; settled loads clear; two-locale LRU bound |
+| Local diagnostics | `@nexus/kernel/diagnostics.ts` + `background/diagnostics.ts` + `options/diagnostics.ts` | Pull-only collection behind an authenticated private port; scalar-only facts, `null` for an unreadable owner, no page/tab/document/request identity and no diagnostic storage owner |
 | Artifact evidence | `scripts/check-production-artifacts.ts` | Typed reachability, exact set-union closures, one physical file count, measured attribution when metafiles exist, absolute hard ceilings plus non-blocking 15% planning advisories |
 
 ## Actual browser launch evidence
