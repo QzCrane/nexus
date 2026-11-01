@@ -52,6 +52,11 @@ interface ControllerCandidate {
 const pageMediaFields = new Set<string>(SPECTRA_PAGE_MEDIA_FIELDS);
 const VOLUME_LIMIT = CONTROL_VALUE_LIMITS.nativeVolume;
 const SPEED_LIMIT = CONTROL_VALUE_LIMITS.speed;
+/**
+ * The rate a site calls "normal". A site may render this option as a word
+ * ("倍速") instead of a number; that word means 1x, not an unreadable panel.
+ */
+const NORMAL_RATE = 1;
 const GENERIC_ASSOCIATION_KEYS = GENERIC_PAGE_MEDIA_VOCABULARY.mediaReferenceKeys;
 const GENERIC_ROOT_KEYS = GENERIC_PAGE_MEDIA_VOCABULARY.rootReferenceKeys;
 /**
@@ -643,6 +648,28 @@ function scanProjectionText(
 	spec: SiteSpeedProjectionSpec,
 ): number | null {
 	const patterns = spec.patterns.map((source) => new RegExp(source));
+	const defaultLabels = (spec.defaultLabels ?? [])
+		.map((label) => label.trim().toLowerCase())
+		.filter((label) => label.length > 0 && label.length <= 24);
+	/**
+	 * Resolve one element's text to a rate: a numeric label (`1.5x`) when a
+	 * pattern matches, otherwise the site's own word for the normal rate
+	 * (`倍速` → 1). Keeping both readings in one place is what lets the default
+	 * rate stay readable — and therefore syncable — instead of being reported as
+	 * "no projection" and silently breaking UI sync from 1x.
+	 */
+	function rateFromText(raw: string): number | null {
+		const text = raw.trim();
+		for (const pattern of patterns) {
+			const captured = pattern.exec(text)?.[1];
+			if (!captured) continue;
+			const value = Number.parseFloat(captured);
+			if (!Number.isFinite(value) || value < SPEED_LIMIT.min || value > SPEED_LIMIT.max) continue;
+			return value;
+		}
+		if (defaultLabels.includes(text.toLowerCase())) return NORMAL_RATE;
+		return null;
+	}
 	/**
 	 * Fallback projection reader used when `selectedSelector` locates nothing.
 	 * Douyin renames the selected item's class between revisions (`select` →
@@ -659,23 +686,19 @@ function scanProjectionText(
 		for (let i = 0; i < all.length && budget > 0; i += 1) {
 			const el = all[i] as Element;
 			budget -= 1;
-			const text = (el.textContent ?? '').trim();
-			if (text.length === 0 || text.length > 24) continue;
-			if (!patterns.some((pattern) => pattern.test(text))) continue;
-			const cls = typeof el.className === 'string' ? el.className.toLowerCase() : '';
+		const text = (el.textContent ?? '').trim();
+		if (text.length === 0 || text.length > 24) continue;
+		// Accept a numeric rate label *or* the site's word for the normal rate.
+		const rate = rateFromText(text);
+		if (rate === null) continue;
+		const cls = typeof el.className === 'string' ? el.className.toLowerCase() : '';
 			const tokens = cls.length > 0 ? cls.split(/\s+/) : [];
 			const isMarked = tokens.some((token) => marker.test(token))
 				|| el.getAttribute('aria-selected') === 'true'
 				|| el.getAttribute('data-selected') === 'true'
 				|| (el as HTMLElement).dataset?.selected === 'true';
 			if (!isMarked) continue;
-			for (const pattern of patterns) {
-				const captured = pattern.exec(text)?.[1];
-				if (!captured) continue;
-				const value = Number.parseFloat(captured);
-				if (!Number.isFinite(value) || value < SPEED_LIMIT.min || value > SPEED_LIMIT.max) continue;
-				return value;
-			}
+			return rate;
 		}
 		return null;
 	}
@@ -694,13 +717,8 @@ function scanProjectionText(
 		if (selected) {
 			const text = selected.textContent?.trim() ?? '';
 			if (text.length > 0 && text.length <= 24) {
-				for (const pattern of patterns) {
-					const captured = pattern.exec(text)?.[1];
-					if (!captured) continue;
-					const value = Number.parseFloat(captured);
-					if (!Number.isFinite(value) || value < SPEED_LIMIT.min || value > SPEED_LIMIT.max) continue;
-					return value;
-				}
+				const rate = rateFromText(text);
+				if (rate !== null) return rate;
 			}
 		}
 		// The exact selected class can miss after a Douyin revision; try the

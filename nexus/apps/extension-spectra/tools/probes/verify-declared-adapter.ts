@@ -160,6 +160,76 @@ try {
 		`actual=${String(restore.actual)} badge=${afterRestore.badge}`,
 	);
 
+	// --- labelled 1x: Douyin renders the 1x option as the word "倍速" instead of
+	// "1.0x". The word is a synonym for 1x, not an unreadable panel: the
+	// projection must stay readable at the default rate so the UI can still be
+	// synced away from it.
+	const labeled = await openPage(browser, DOUYIN_ORIGIN, "labeled1x");
+	const labeledState = await probeState(labeled);
+	check("labelled 1x renders the word", labeledState.badge === "倍速", `badge=${labeledState.badge}`);
+	const labeledBaseline = await call(labeled, "read", "speed");
+	check(
+		"labelled 1x is read as 1x, not as unreadable",
+		labeledBaseline.projection === 1,
+		`projection=${String(labeledBaseline.projection)}`,
+	);
+	check(
+		"labelled 1x reads the controller value",
+		labeledBaseline.actual === 1,
+		`actual=${String(labeledBaseline.actual)}`,
+	);
+	const labeledWrite = await call(labeled, "write", "speed", 1.5);
+	const afterLabeled = await probeState(labeled);
+	check(
+		"labelled 1x write is accepted",
+		labeledWrite.supported === true && !labeledWrite.error,
+		JSON.stringify(labeledWrite.error ?? ""),
+	);
+	check(
+		"labelled 1x write reports the controller value",
+		labeledWrite.actual === 1.5,
+		`actual=${String(labeledWrite.actual)}`,
+	);
+	check(
+		"labelled 1x UI is synced after the write",
+		labeledWrite.projection === 1.5,
+		`projection=${String(labeledWrite.projection)}`,
+	);
+	check("labelled 1x badge follows the write", afterLabeled.badge === "1.5x", `badge=${afterLabeled.badge}`);
+	const labeledRestore = await call(labeled, "write", "speed", 1);
+	const afterLabeledRestore = await probeState(labeled);
+	check(
+		"labelled 1x restores to the word and still reads as 1x",
+		afterLabeledRestore.badge === "倍速" && labeledRestore.projection === 1,
+		`badge=${afterLabeledRestore.badge} projection=${String(labeledRestore.projection)}`,
+	);
+
+	// --- rate the site does not offer: the panel only lists fixed options, so an
+	// arbitrary rate applies to the media but leaves no item marked. The write
+	// must still land (that is the user's intent); the projection must stay
+	// honest about there being nothing to read rather than claim a rate the UI
+	// never rendered.
+	const unlisted = await openPage(browser, DOUYIN_ORIGIN, "declared");
+	const unlistedWrite = await call(unlisted, "write", "speed", 1.3);
+	const afterUnlisted = await probeState(unlisted);
+	check(
+		"an unlisted rate is still applied",
+		unlistedWrite.supported === true && !unlistedWrite.error,
+		JSON.stringify(unlistedWrite.error ?? ""),
+	);
+	check(
+		"an unlisted rate reports the controller value",
+		unlistedWrite.actual === 1.3,
+		`actual=${String(unlistedWrite.actual)}`,
+	);
+	check("an unlisted rate moves the media element", afterUnlisted.rate === 1.3, `rate=${afterUnlisted.rate}`);
+	check("an unlisted rate marks no panel item", afterUnlisted.badge === "", `badge=${afterUnlisted.badge}`);
+	check(
+		"the projection stays honest about an unlisted rate",
+		unlistedWrite.projection === null,
+		`projection=${String(unlistedWrite.projection)}`,
+	);
+
 	// --- renamed revision: every string the row declares is renamed on the page.
 	// This exercises all five fallback paths at once — the plugin key, the config
 	// field, the setter method, the selected class, and the panel class — so the

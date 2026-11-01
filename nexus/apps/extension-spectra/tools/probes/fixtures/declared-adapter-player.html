@@ -53,6 +53,11 @@
 		//   - selected class:   .select                -> .active
 		//   - panel class:      .xgplayer-playback-setting -> .xgplayer-playback-setting-v2
 		const renamed = mode === "renamed";
+		// `labeled1x` models the current Douyin rendering: the 1x option is
+		// labelled with the word "倍速" instead of "1.0x". That word is a synonym
+		// for 1x, not an unreadable panel — the projection must stay readable at
+		// the default rate so the UI can still be synced away from it.
+		const labeled1x = mode === "labeled1x";
 		const PLUGIN_KEY = renamed ? "playbackSettingPlugin" : "playbacksettingplugin";
 		const RATIO_FIELD = renamed ? "playbackRatio" : "playBackRatio";
 		const SETTER_NAME = renamed ? "onSpeedChange" : "onPlayRatioChange";
@@ -69,7 +74,7 @@
 			const el = document.createElement("div");
 			el.className = "xgplayer-playratio-item";
 			el.dataset.id = rate;
-			el.textContent = `${rate}x`;
+			el.textContent = labeled1x && rate === "1.0" ? "倍速" : `${rate}x`;
 			wrap.appendChild(el);
 			return el;
 		});

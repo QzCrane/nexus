@@ -133,6 +133,14 @@ export interface SiteSpeedProjectionSpec {
 	/** Regex sources, each with exactly one capture group holding the number. */
 	readonly patterns: readonly string[];
 	/**
+	 * Text the site renders for the *normal* (1x) rate **instead of** a number —
+	 * e.g. Douyin labels its 1x option "倍速". A marked item showing this text
+	 * means the current rate is 1, so the projection stays readable at the
+	 * default rate. Without it the numeric patterns miss, the projection reports
+	 * "unreadable", and the UI can no longer be synced from the default rate.
+	 */
+	readonly defaultLabels?: readonly string[];
+	/**
 	 * Tried (in order) only when `scopeSelectors` locate nothing. Each value is
 	 * matched against the document via `[class*='<value>']` substring matching, so
 	 * a class rename (`xgplayer-playratio-item` → `xg-player-speed-item`) still
@@ -292,6 +300,10 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 		// scope for a rate-label item carrying a selected/active/current marker.
 		selectedFallback: true,
 		patterns: Object.freeze(['^(\\d+(?:\\.\\d+)?)\\s*x$']),
+		// The 1x option is rendered as the word "倍速", not as "1.0x". That word
+		// *is* 1x — the default, not an unreadable panel. Reading it keeps the
+		// projection (and therefore UI sync) alive at the default rate.
+		defaultLabels: Object.freeze(['倍速']),
 		tolerance: 0.01,
 	}),
 });
