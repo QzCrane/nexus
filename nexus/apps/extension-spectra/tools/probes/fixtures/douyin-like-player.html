@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>SPECTRA probe fixture: state-driven player</title>
+<style>
+	:root { color-scheme: dark; }
+	body { margin: 0; min-height: 100vh; background: #0b0b0f; color: #e8e8ef; font: 14px/1.5 system-ui, sans-serif; }
+	#stage { padding: 24px; }
+	#player { position: relative; width: 800px; height: 450px; background: #000; overflow: hidden; }
+	#mid { width: 100%; height: 100%; }
+	video { width: 100%; height: 100%; display: block; background: #000; }
+	#speed-label { position: absolute; right: 18px; bottom: 16px; padding: 2px 8px; border-radius: 4px; background: rgb(0 0 0 / 55%); font-weight: 600; letter-spacing: 0.02em; }
+	#hud { margin-top: 16px; color: #9a9aa8; }
+	#hud code { color: #7fd6a6; }
+	.wrap { display: contents; }
+</style>
+</head>
+<body>
+<div id="stage">
+	<div id="a12" class="wrap"><div id="a11" class="wrap"><div id="a10" class="wrap"><div id="a9" class="wrap"><div id="a8" class="wrap"><div id="a7" class="wrap"><div id="a6" class="wrap"><div id="a5" class="wrap"><div id="a4" class="wrap"><div id="a3" class="wrap"><div id="a2" class="wrap"><div id="a1" class="wrap">
+		<div id="player">
+			<div id="mid">
+				<video id="v" playsinline preload="metadata"><track kind="captions" /></video>
+			</div>
+			<div id="speed-label"><span>1.0x</span></div>
+		</div>
+	</div></div></div></div></div></div></div></div></div></div></div></div>
+	<p id="hud">fixture mode: <code id="mode-label">douyin</code> — the label is rendered from player state, never from <code>video.playbackRate</code>.</p>
+</div>
+<script>
+	(() => {
+		"use strict";
+		const mode = new URLSearchParams(location.search).get("mode") === "legacy" ? "legacy" : "douyin";
+		document.getElementById("mode-label").textContent = mode;
+
+		const video = document.getElementById("v");
+		const label = document.getElementById("speed-label");
+		const player = document.getElementById("player");
+		const mid = document.getElementById("mid");
+		const padHost = document.getElementById("a1");
+		const deepHost = document.getElementById("a12");
+
+		// The only writer of the visible label. Douyin's real player behaves this
+		// way: the badge is a React render of player state, not a DOM readback.
+		let stateSpeed = 1;
+		function renderLabel(value) {
+			stateSpeed = value;
+			label.textContent = `${Number(value).toFixed(1)}x`;
+		}
+
+		// Gap 1: association key + setter name both outside the bridge whitelist.
+		class PlayerCore {
+			constructor(mediaElement) {
+				this.videoEl = mediaElement;
+				this.speed = stateSpeed;
+			}
+			getSpeed() { return this.speed; }
+			setSpeed(value) {
+				if (typeof value !== "number" || !Number.isFinite(value)) throw new TypeError("speed must be a number");
+				this.speed = value;
+				this.videoEl.playbackRate = value;
+				renderLabel(value);
+			}
+		}
+		player.player = new PlayerCore(video);
+
+		// Gap 2: legacy association key (`video`) but a setter name the bridge
+		// does not probe. This isolates method-name coverage.
+		mid.video = {
+			video,
+			speed: stateSpeed,
+			getPlaybackRate() { return this.speed; },
+			setSpeed(value) {
+				this.speed = value;
+				video.playbackRate = value;
+				renderLabel(value);
+			},
+		};
+
+		// Gap 3: legacy key + legacy method names, but attached after the first
+		// 96 own properties, which the bridge never enumerates.
+		for (let index = 0; index < 110; index += 1) padHost[`pad${index}`] = index;
+		padHost.ctl = {
+			video,
+			speed: stateSpeed,
+			getPlaybackRate() { return this.speed; },
+			setPlaybackRate(value) {
+				this.speed = value;
+				video.playbackRate = value;
+				renderLabel(value);
+			},
+		};
+
+		// Gap 4: perfectly shaped controller, but 14 composed ancestors away.
+		deepHost.deepCtl = {
+			video,
+			speed: stateSpeed,
+			getPlaybackRate() { return this.speed; },
+			setPlaybackRate(value) {
+				this.speed = value;
+				video.playbackRate = value;
+				renderLabel(value);
+			},
+		};
+
+		// React-shaped fiber metadata so the probe's projection tier has something
+		// to walk, exactly like a real SPA node.
+		video.__reactFiber$fixture = {
+			type: function VideoPlayer() {},
+			memoizedProps: { playbackRate: 1, muted: false, className: "player-video" },
+			memoizedState: { speed: 1 },
+			return: {
+				type: "PlayerRoot",
+				memoizedProps: { speed: 1, volume: 1 },
+				memoizedState: { speed: 1 },
+				return: null,
+			},
+		};
+
+		// Control page: a controller the shipped bridge already accepts, used to
+		// prove the bridge itself works and the failure is coverage, not breakage.
+		if (mode === "legacy") {
+			video.addEventListener("ratechange", () => renderLabel(video.playbackRate));
+			player.ok = {
+				video,
+				speed: stateSpeed,
+				getPlaybackRate() { return this.speed; },
+				setPlaybackRate(value) {
+					this.speed = value;
+					video.playbackRate = value;
+				},
+			};
+		}
+
+		window.__FIXTURE__ = {
+			mode,
+			video,
+			player,
+			readStateSpeed: () => stateSpeed,
+			readLabel: () => label.textContent,
+		};
+	})();
+</script>
+</body>
+</html>

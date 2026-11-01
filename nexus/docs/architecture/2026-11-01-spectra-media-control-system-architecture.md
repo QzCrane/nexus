@@ -286,6 +286,8 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 | `proposals/unified-design-2026-10-28.md` | §1, §2, §4, §10 | 统一设计总纲、分层、事务、冲突消解 |
 | `research/2026-11-01-spectra-douyin-speed-sync-root-cause.md` | §5.1, §6.3, §11 | 抖音倍速根因报告 |
 | `proposals/2026-11-01-spectra-douyin-speed-official-adapter.md` | §11 | 抖音倍速 one-shot 官方适配器方案 |
+| `proposals/2026-11-01-spectra-media-control-architecture-optimization.md` | §5, §6 | 全架构优化设计（12 项，分批路线） |
+| `research/2026-11-01-spectra-douyin-speed-probe-runbook.md` | 全文 | 抖音实机探测执行手册（EPR-028） |
 
 ---
 
@@ -295,4 +297,4 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 - Popup 静音路径一条 smoke 未通过（`controller-only mute ACK`）。
 - 6 项真实 Chrome 取证不在 CI。
 - Options 与 Popup 仍是两套 token（产品视觉决策，非绕过 token）。
-- 抖音 one-shot adapter 尚未实机验证（EPR-028 边界），注册表条目未准入。
+- 抖音 one-shot adapter 尚未实机验证（EPR-028 边界），注册表条目未准入；探测脚本、夹具与运行手册已就绪（自证 19/19），待真实标签页执行。
