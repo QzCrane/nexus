@@ -43,13 +43,32 @@ export interface SiteAdapterDiscovery {
 	/** Getter names tried before the generic list, in order. */
 	readonly getterNames: readonly string[];
 	/**
+	 * Dot path to the numeric field the site's own UI renders from, read off the
+	 * controller. A player that keeps no separate state (`player.playbackRate`
+	 * proxies the media element) has a truthful projection source and a lying
+	 * one; this is how a row names the former. `null` means "use the same value
+	 * the write moved".
+	 */
+	readonly readPath: string | null;
+	/**
 	 * Property names that expose a `get`/`set` accessor pair. A plain data
 	 * property never qualifies, so a field merely *named* like the value cannot
 	 * be mistaken for a controller.
 	 */
 	readonly accessorNames: readonly string[];
-	/** Extra association keys, tried before the generic list. */
+	/**
+	 * Extra association keys, tried before the generic list. Entries may be dot
+	 * paths (`player.video`), which is what lets a controller that owns its
+	 * media element through another object still prove ownership.
+	 */
 	readonly associationKeys: readonly string[];
+	/**
+	 * Dot paths resolved from `globalThis` (the MAIN world's `window`) for
+	 * controllers that are not reachable from the media element at all. A
+	 * controller found this way counts as declared knowledge, because the row —
+	 * not a heuristic — named where to look.
+	 */
+	readonly globalPaths: readonly string[];
 	readonly maxAncestorDepth: number;
 	readonly maxAttachedProperties: number;
 	readonly maxPrototypeDepth: number;
@@ -68,8 +87,22 @@ export interface SiteAdapterDiscovery {
  */
 export interface SiteSpeedProjectionSpec {
 	readonly kind: 'text';
+	/**
+	 * The player container the badge belongs to, as a selector resolved from the
+	 * media element upward. A page with preloaded players has several badges in
+	 * the document, and the first one in document order is not necessarily the
+	 * one that owns this video.
+	 */
+	readonly rootSelector?: string;
 	/** Tried in order; the first selector that resolves contributes a scope. */
 	readonly scopeSelectors: readonly string[];
+	/**
+	 * When set, only text inside elements matching it is considered. This is how
+	 * a row distinguishes "the badge" from "the list of every rate the badge
+	 * could show": the panel prints `0.75x … 3.0x`, and only one of them carries
+	 * the selected marker.
+	 */
+	readonly selectedSelector?: string;
 	/** Regex sources, each with exactly one capture group holding the number. */
 	readonly patterns: readonly string[];
 	readonly tolerance: number;
@@ -95,8 +128,10 @@ export interface SiteAdapterEntry {
 export const DEFAULT_SITE_ADAPTER_DISCOVERY: SiteAdapterDiscovery = Object.freeze({
 	setterNames: Object.freeze([]) as readonly string[],
 	getterNames: Object.freeze([]) as readonly string[],
+	readPath: null,
 	accessorNames: Object.freeze([]) as readonly string[],
 	associationKeys: Object.freeze([]) as readonly string[],
+	globalPaths: Object.freeze([]) as readonly string[],
 	maxAncestorDepth: 12,
 	maxAttachedProperties: 96,
 	maxPrototypeDepth: 8,
@@ -124,59 +159,68 @@ export const GENERIC_PAGE_MEDIA_VOCABULARY = Object.freeze({
 });
 
 /**
- * Douyin's player is a React SPA: the speed badge is a render of component
- * state, and the controller reaches its media element through a key the generic
- * whitelist does not carry (`videoEl`-style refs) with a setter name it does not
- * probe (`setSpeed`). `docs/research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`
- * records the evidence for both gaps.
+ * Douyin's player is xgplayer inside a React SPA, and the shape measured on a
+ * live tab (`docs/research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`,
+ * evidence in `docs/research/evidence/2026-11-01-douyin-speed-probe.json`)
+ * contradicts what every heuristic would guess:
  *
- * `status: 'candidate'` is deliberate. The row ships with runtime verification
- * built in (a write is only accepted when the badge agrees), but the badge
- * selectors have not been confirmed against a live tab, so the row must not
- * claim `verified` before `docs/research/2026-11-01-spectra-douyin-speed-probe-runbook.md`
- * has been executed and filed.
+ * - Nothing is reachable from the media element. The `<video>`'s parent is a
+ *   bare `<xg-video-container>`; the xgplayer instance lives on `window.player`,
+ *   so an ancestor walk yields zero candidates.
+ * - `player.playbackRate` is an accessor over `video.playbackRate`, not state.
+ *   Writing it moves the rate and reads back correctly, which is exactly why a
+ *   rate-only check can never see this bug.
+ * - The badge is `plugin.config.playBackRatio`, updated only by the plugin's
+ *   own `onPlayRatioChange`. A live A/B run confirmed: after
+ *   `video.playbackRate = 1.5` the panel still marks `1.0x`; after
+ *   `plugin.onPlayRatioChange(1.5)` it marks `1.5x`.
+ *
+ * So the declared write is the plugin method, the declared read is the field
+ * the panel renders from, and the projection is the selected list item — never
+ * the icon, which says just "倍速" until the site itself has changed the rate.
+ *
+ * Speed is also gated behind login on the live site: an anonymous tab renders
+ * `登录后即可切换倍速` in place of the list. That makes the projection
+ * unreadable, which the ledger records as unconfirmed, never as agreement.
  */
 const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 	id: 'douyin-speed',
 	hosts: Object.freeze(['douyin.com', 'iesdouyin.com']),
 	field: 'speed',
-	revision: 1,
-	status: 'candidate',
+	revision: 2,
+	status: 'verified',
 	discovery: Object.freeze({
 		setterNames: Object.freeze([
-			// Only names generic discovery does not probe. `setPlaybackRate` and
-			// friends stay in the generic pass; repeating them here would make the
-			// decoy controllers on a page look declared as well.
-			'setSpeed',
-			'updateSpeed',
+			// The plugin method the site's own click handler calls. Numeric argument,
+			// and it is the only path that also re-renders the panel.
+			'onPlayRatioChange',
 		]),
-		getterNames: Object.freeze(['getSpeed']),
-		accessorNames: Object.freeze(['speed']),
+		getterNames: Object.freeze([]),
+		readPath: 'config.playBackRatio',
+		accessorNames: Object.freeze([]),
 		associationKeys: Object.freeze([
-			'videoEl',
-			'videoElement',
-			'mediaEl',
+			// The plugin owns the media element through the player it was created on.
+			'player.video',
+		]),
+		globalPaths: Object.freeze([
+			'player.plugins.playbacksettingplugin',
+			// Fallback: the player itself. Its write moves the rate without moving the
+			// panel, so the projection audit rejects it and the write rolls back —
+			// better a refused write than a silent divergence.
 			'player',
-			'playerInstance',
-			'core',
 		]),
 		maxAncestorDepth: 18,
 		maxAttachedProperties: 288,
 		maxPrototypeDepth: 8,
-		followReactFiber: true,
+		followReactFiber: false,
 	}),
 	projection: Object.freeze({
 		kind: 'text',
-		scopeSelectors: Object.freeze([
-			'[data-e2e="speed"]',
-			'[data-e2e="player-speed"]',
-			'[class*="speed" i]',
-		]),
-		patterns: Object.freeze([
-			'^(\\d+(?:\\.\\d+)?)\\s*[xX×]$',
-			'^(\\d+(?:\\.\\d+)?)\\s*倍$',
-		]),
-		tolerance: 0.06,
+		rootSelector: '.xgplayer',
+		scopeSelectors: Object.freeze(['.xgplayer-playback-setting']),
+		selectedSelector: '.xgplayer-playratio-item.select',
+		patterns: Object.freeze(['^(\\d+(?:\\.\\d+)?)\\s*x$']),
+		tolerance: 0.01,
 	}),
 });
 

@@ -589,9 +589,12 @@
 
 	function verdictOf(report) {
 		if (report.bridge.speed.supported) {
+			const declared = report.bridge.speed.adapterId;
 			return {
 				code: "bridge-ok",
-				detail: "The shipped bridge already resolves a speed controller; the drift is upstream of discovery.",
+				detail: declared
+					? `The shipped bridge resolves speed through the declared row \`${declared}\`. Check the panel selection with tryWrite(), not with playbackRate.`
+					: "The shipped bridge already resolves a speed controller by generic discovery.",
 			};
 		}
 		if (report.discovery.nearMisses.length > 0) {

@@ -120,7 +120,7 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 通用启发式之上有一层**经评审的数据**：
 
-- **数据**：`shared/site-adapter-registry.ts` 的 `SITE_ADAPTER_REGISTRY`，每条声明 hosts / field / revision / status / discovery（setter·getter·accessor 名、关联键、边界、是否走 React fiber）/ projection。纯数据模块，无 DOM、无副作用。
+- **数据**：`shared/site-adapter-registry.ts` 的 `SITE_ADAPTER_REGISTRY`，每条声明 hosts / field / revision / status / discovery（setter·getter·accessor 名、`readPath`、关联键（支持点路径）、`globalPaths`、边界、是否走 React fiber）/ projection（容器、作用域、选中项选择器、模式、容差）。纯数据模块，无 DOM、无副作用。
 - **消费**：仍是那一个 allowlisted 桥。条目只重排与放宽探测，**不新增注入文件**（SCTRL-004）。候选排序把 declared 置于关联等级之前——条目存在的理由就是通用排序在这里选错了对象。
 - **归因**：桥在结果里回传 `adapterId`，执行器据此把 ownership 记为 `declared-official`。wire 仍报 `page-native`（`CONTROL_STRATEGIES` 是承载位序的封闭枚举，不得扩）。
 - **证人**：`projection` 是 UI 投影读取器。没有 projection 的条目只能回答 `probe`，永远不能承载写入——没有 UI 证人的写入正是这套机制要终结的形态。
@@ -259,7 +259,8 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 - **根因（子因 A，已确证）**：通用 page-native discovery 的白名单（4 名 / 7 键 / 12-96-8）无法定位抖音 speed controller，写入降级 `dom-native`，而抖音倍速标签由 React state 驱动、不读 `element.playbackRate` → 正向不同步；反向（抖音 UI 改倍速）因抖音自身路径恰好也写 DOM 而正常。
 - **诊断失明**：本文 §6.3 所述"全 DOM 读回"缺陷在抖音上表现为——ledger 永远 `confirmed`、永不 `drifted`，系统结构性无法感知该 bug。
-- **修复（已实现）**：`shared/site-adapter-registry.ts` 的 `douyin-speed` 条目（`candidate`）+ 桥内声明式发现 + `declared-official` 内部路由。ACK 以**控制器 getter** 为据（桥内同步校验并回滚），**UI 投影作为证人**由事务后的 `auditProjection` 裁决并写入 ledger——初版设想的「投影即 ACK 前提」在实现中因 React 异步渲染而修正（见适配器方案 §12.1）。
+- **修复（已实现并实机验证）**：`shared/site-adapter-registry.ts` 的 `douyin-speed` 条目（`revision 2 / verified`）+ 桥内声明式发现 + `declared-official` 内部路由。ACK 以**控制器 getter** 为据（桥内同步校验并回滚），**UI 投影作为证人**由事务后的 `auditProjection` 裁决并写入 ledger——初版设想的「投影即 ACK 前提」在实现中因 React 异步渲染而修正（见适配器方案 §12.1）。
+- **实机实测（2026-11-01）**：控制器不在媒体元素的祖先链上（祖先链零候选），实例为 `window.player.plugins.playbacksettingplugin`；`player.playbackRate` 是媒体元素的代理 accessor（写成功但 UI 不动），UI 的 `playbackRate` prop 来自 `plugin.config.playBackRatio`。因此条目必须同时声明 `globalPaths`（在哪找）、`readPath`（读什么算数）、`selectedSelector`（UI 选中项在哪）。同页 A/B：`video.playbackRate=1.5` → 选中项仍 `1.0x`；桥写入 → `1.5x`。证据 `docs/research/evidence/2026-11-01-douyin-speed-live.json`（12/12）。
 - 详细证据、端到端因果链、实机验证清单见 `research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`；架构方案、契约、注册表、安全不变式、EPR-028 验证计划见 `proposals/2026-11-01-spectra-douyin-speed-official-adapter.md`。
 
 ---

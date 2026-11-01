@@ -95,6 +95,27 @@ function composedParent(element: Element): Element | null {
 	return root instanceof ShadowRoot ? root.host : null;
 }
 
+/**
+ * Read a dot path defensively. Two shapes make this necessary: a controller
+ * that owns its media element through another object (`player.video`) and a
+ * controller whose rendered value lives under a nested config
+ * (`config.playBackRatio`). Hostile or half-initialised getters return
+ * `undefined` instead of throwing into discovery.
+ */
+function readValuePath(target: unknown, path: string): unknown {
+	if (path.length === 0) return undefined;
+	let current: unknown = target;
+	for (const segment of path.split('.')) {
+		if (!current || (typeof current !== 'object' && typeof current !== 'function')) return undefined;
+		try {
+			current = (current as Record<string, unknown>)[segment];
+		} catch {
+			return undefined;
+		}
+	}
+	return current;
+}
+
 function propertyDescriptor(
 	target: object,
 	key: PropertyKey,
@@ -231,7 +252,35 @@ function capabilityFor(
 
 	let readPlaybackRate: (() => number) | null = null;
 	let declaredRead = false;
+	/**
+	 * A declared read path beats every method name: it points at the field the
+	 * site's own render reads, which is the only value that can disagree with
+	 * the media element after a rate write.
+	 */
+	const readPath = adapter?.discovery.readPath ?? null;
+	if (readPath) {
+		/**
+		 * Probe the path once before trusting it. A controller that has not
+		 * populated its rendered value yet must stay discoverable through the
+		 * generic readers rather than be reported as "no controller" during a
+		 * transient state.
+		 */
+		const rendered = readValuePath(controller, readPath);
+		if (typeof rendered === 'number'
+			&& Number.isFinite(rendered)
+			&& rendered >= SPEED_LIMIT.min
+			&& rendered <= SPEED_LIMIT.max) {
+			readPlaybackRate = () => finiteNumber(
+				readValuePath(controller, readPath),
+				SPEED_LIMIT.min,
+				SPEED_LIMIT.max,
+				'Page playback rate',
+			);
+			declaredRead = true;
+		}
+	}
 	for (const name of adapter?.discovery.getterNames ?? []) {
+		if (readPlaybackRate) break;
 		const getter = boundMethod(controller, name);
 		if (!getter) continue;
 		readPlaybackRate = () => finiteNumber(
@@ -286,7 +335,7 @@ function controllerAssociation(
 	adapter: SiteAdapterEntry | null,
 ): { association: ControllerCandidate['association']; declared: boolean } | null {
 	for (const key of adapter?.discovery.associationKeys ?? []) {
-		if (dataProperty(controller, key) === element) {
+		if (readValuePath(controller, key) === element) {
 			return { association: 'media-reference', declared: true };
 		}
 	}
@@ -340,6 +389,7 @@ function collectControllerCandidates(
 		controller: object,
 		distance: number,
 		host: Element,
+		declared = false,
 	): void => {
 		if (candidates.has(controller)) return;
 		const association = controllerAssociation(controller, element, host, adapter);
@@ -348,9 +398,28 @@ function collectControllerCandidates(
 			controller,
 			distance,
 			association: association.association,
-			declared: association.declared,
+			declared: declared || association.declared,
 		});
 	};
+	/**
+	 * Global candidates go first, and always outrank the walk: a row that names
+	 * `window.player` has already proven the controller is not reachable from
+	 * the media element, so a nearer DOM object with a coincidental accessor
+	 * must not win. Distance keeps the row's own order for tie-breaking.
+	 */
+	const globals = adapter?.discovery.globalPaths ?? [];
+	for (let index = 0; index < globals.length; index += 1) {
+		const path = globals[index];
+		if (!path) continue;
+		const controller = readValuePath(globalThis, path);
+		if (!controller || (typeof controller !== 'object' && typeof controller !== 'function')) continue;
+		consider(
+			controller as object,
+			bounds.maxAncestorDepth + 1 + index,
+			element.ownerDocument.documentElement,
+			true,
+		);
+	}
 	let host = composedParent(element);
 	for (let distance = 1; host && distance <= bounds.maxAncestorDepth; distance += 1) {
 		candidates.set(host, { controller: host, distance, association: 'ancestor', declared: false });
@@ -431,6 +500,30 @@ function scanProjectionText(
 	spec: SiteSpeedProjectionSpec,
 ): number | null {
 	const patterns = spec.patterns.map((source) => new RegExp(source));
+	/**
+	 * A selected-item projection is read from the marked element only. The same
+	 * panel prints every rate it offers (`0.75x … 3.0x`); scanning the whole
+	 * scope would answer with the first option and call it the current one. No
+	 * marker means the panel is closed or gated — unreadable, never agreement.
+	 *
+	 * It is matched against the element's text, not against a text node: React
+	 * renders `{rate}x` as two nodes (`"1.5"` then `"x"`), so a node-by-node
+	 * walk sees two fragments that each fail an anchored pattern.
+	 */
+	if (spec.selectedSelector) {
+		const selected = root.querySelector(spec.selectedSelector);
+		if (!selected) return null;
+		const text = selected.textContent?.trim() ?? '';
+		if (text.length === 0 || text.length > 24) return null;
+		for (const pattern of patterns) {
+			const captured = pattern.exec(text)?.[1];
+			if (!captured) continue;
+			const value = Number.parseFloat(captured);
+			if (!Number.isFinite(value) || value < SPEED_LIMIT.min || value > SPEED_LIMIT.max) continue;
+			return value;
+		}
+		return null;
+	}
 	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
 	let budget = SITE_ADAPTER_LIMITS.maxProjectionTextNodes;
 	for (let node = walker.nextNode(); node && budget > 0; node = walker.nextNode()) {
@@ -455,16 +548,22 @@ function readSpeedProjection(
 ): number | null {
 	if (!spec) return null;
 	const roots: Element[] = [];
+	/**
+	 * Prefer the badge inside this media element's own player. Several players
+	 * can be mounted at once (a preloaded next video, a floating mini player);
+	 * a document-wide lookup would read whichever one came first in DOM order.
+	 */
+	const container = spec.rootSelector ? element.closest(spec.rootSelector) : null;
 	for (const selector of spec.scopeSelectors.slice(0, SITE_ADAPTER_LIMITS.maxProjectionScopes)) {
 		let scope: Element | null = null;
 		try {
-			scope = document.querySelector(selector);
+			scope = container?.querySelector(selector) ?? document.querySelector(selector);
 		} catch {
 			// An invalid selector in a declared row must not take the bridge down;
 			// the row is data and the runbook is what validates it.
 			continue;
 		}
-		if (scope) roots.push(scope);
+		if (scope && !roots.includes(scope)) roots.push(scope);
 	}
 	let host = composedParent(element);
 	for (

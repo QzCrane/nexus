@@ -2,6 +2,8 @@
 // invariants, and the clamping that makes traversal cost a property of the data
 
 import { describe, expect, test } from 'bun:test';
+import { existsSync, readdirSync } from 'node:fs';
+import { resolve } from 'node:path';
 import {
 	DEFAULT_SITE_ADAPTER_DISCOVERY,
 	GENERIC_PAGE_MEDIA_VOCABULARY,
@@ -65,7 +67,13 @@ describe('site adapter registry invariants', () => {
 			expect(entry.revision).toBeGreaterThanOrEqual(1);
 			expect(entry.hosts.length).toBeGreaterThan(0);
 			expect(entry.discovery.setterNames.length).toBeGreaterThan(0);
-			expect(entry.discovery.getterNames.length).toBeGreaterThan(0);
+			// A row needs at least one way to read the value back: a named getter,
+			// an accessor pair, or the exact field the site's UI renders from.
+			expect(
+				entry.discovery.getterNames.length
+				+ entry.discovery.accessorNames.length
+				+ (entry.discovery.readPath ? 1 : 0),
+			).toBeGreaterThan(0);
 			expect(entry.discovery.associationKeys.length).toBeGreaterThan(0);
 			for (const name of [
 				...entry.discovery.setterNames,
@@ -76,6 +84,17 @@ describe('site adapter registry invariants', () => {
 				// A blank or padded name would silently never match a real property.
 				expect(name).toBe(name.trim());
 				expect(name.length).toBeGreaterThan(0);
+			}
+			for (const path of [
+				...(entry.discovery.globalPaths ?? []),
+				...(entry.discovery.readPath ? [entry.discovery.readPath] : []),
+			]) {
+				// Dot paths are resolved segment by segment; a leading, trailing, or
+				// doubled separator would resolve to an empty key and never match.
+				expect(path).toBe(path.trim());
+				expect(path.startsWith('.')).toBe(false);
+				expect(path.endsWith('.')).toBe(false);
+				expect(path.includes('..')).toBe(false);
 			}
 		}
 	});
@@ -101,14 +120,21 @@ describe('site adapter registry invariants', () => {
 		}
 	});
 
-	test('the shipped rows are candidates until the runbook files evidence', () => {
-		// EPR-028: a row may not claim verification it has not earned. Flipping
-		// this to `verified` requires docs/research/evidence/ from a live tab.
+	test('a verified row must have filed live evidence', () => {
+		// EPR-028: a row may not claim verification it has not earned. The check is
+		// the artifact, not a promise: `verified` requires a probe capture under
+		// docs/research/evidence/ whose name carries the row id.
+		const evidenceDir = resolve(import.meta.dir, '../../../docs/research/evidence');
+		const filed = existsSync(evidenceDir)
+			? readdirSync(evidenceDir).filter((name) => name.endsWith('.json'))
+			: [];
 		for (const entry of SITE_ADAPTER_REGISTRY) {
 			expect(['candidate', 'verified']).toContain(entry.status);
 			expect(entry.status).not.toBe('disabled');
+			if (entry.status !== 'verified') continue;
+			expect({ row: entry.id, filed: filed.some((name) => name.includes(entry.id)) })
+				.toEqual({ row: entry.id, filed: true });
 		}
-		expect(douyin.status).toBe('candidate');
 	});
 
 	test('a row may not repeat a generic name and expect priority', () => {
@@ -169,8 +195,8 @@ describe('site adapter bounds', () => {
 			id: 'douyin-speed',
 			host: 'www.douyin.com',
 			field: 'speed',
-			revision: 1,
-			status: 'candidate',
+			revision: 2,
+			status: 'verified',
 			hasProjection: true,
 		});
 	});

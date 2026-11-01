@@ -3,8 +3,8 @@
 - **日期**：2026-11-01
 - **范围**：SPECTRA 浏览器扩展（`apps/extension-spectra`）的倍速控制链路
 - **现象**：插件修改视频倍速后，抖音（Douyin）播放器 UI 标签不同步；反向（抖音 UI 改倍速 → 插件同步）正常；其它网站倍速及插件其它功能同步均正常。
-- **方法**：静态代码审计（ISOLATED/MAIN 双世界、page-media V2 桥、native-first 策略、写入确认与 per-site ledger）。
-- **证据边界（EPR-028）**：本报告所有"命中哪条白名单缺口"的判定为**代码层面的必然结论**；但"抖音播放器具体用哪个方法名/关联键/挂载层级"未经真实抖音标签页实机验证，须以 `§13` 探测清单坐实后方可宣称已修复。
+- **方法**：静态代码审计（ISOLATED/MAIN 双世界、page-media V2 桥、native-first 策略、写入确认与 per-site ledger）+ 真实标签页实机复核（§13）。
+- **证据边界（EPR-028）**：静态审计部分曾把"具体命中哪条白名单缺口"标为推断。**2026-11-01 已在真实 douyin.com 视频页执行完毕（§13），其中两处推断被推翻，其余坐实**；结论现在以实机为准。
 
 ---
 
@@ -15,6 +15,8 @@
 **根因（子因 A，已确证为唯一成立）**：通用 page-native 发现（`injector/page-media-bridge.ts` 的 `findCapability`）是一组**白名单式启发式**——speed 仅探测 4 个 setter 名、7 个关联键，且遍历受 12 层祖先 / 每 host 前 96 自有属性 / 8 层原型约束。抖音（React SPA）的 speed 控制器在这些维度上超出白名单，导致 `findCapability('speed')` 返回 `null`，写入被强制降级到 `dom-native`（`element.playbackRate = next`）。抖音 speed 标签由 React 组件 state 驱动、不读 `element.playbackRate` 裸属性，因此真实速率已变、插件 ACK 判定 `applied`、UI 标签却陈旧。
 
 **子因 B（已发现 setter 但不刷新 UI）基本不成立**：若 `findCapability` 成功，其返回的 setter 即抖音 UI 自身改倍速所调用的方法，调用它本应刷新标签；否则抖音手动改倍速也会令标签坏掉，这与"反向同步正常"矛盾。
+
+> **实机修正（§13.3a）**：这条推断只在"找到的就是 UI 调用路径"时成立。抖音的 `player.playbackRate` 是一个能读写成功、却完全不驱动 UI 的代理 accessor——能力存在，UI 不动。所以"能发现"不等于"能驱动"，判定必须落到投影上。
 
 **关键附加发现（诊断失明）**：扩展的写入确认、事件观察、per-site ledger **全部只读 `element.playbackRate`**（DOM 属性），没有任何环节触达抖音 React state 或 UI 标签。因此系统**结构性无法感知**该 bug——抖音 speed 写入永远被 ledger 记为 `confirmed`，永不 `drifted`，永不触发降级/自愈。
 
@@ -126,7 +128,7 @@ confirmStableNativeEvent(element, 'ratechange', () => readActual(element, field)
 
 ---
 
-## 10. 端到端因果链
+## 10. 端到端因果链（静态推断版；已被 §13.4 的实机链取代，保留以对照差异）
 
 ```
 抖音 speed 控制器 命名/关联键/挂载层级 超出白名单
@@ -163,16 +165,85 @@ confirmStableNativeEvent(element, 'ratechange', () => readActual(element, field)
 
 ---
 
-## 13. 待实机验证清单（EPR-028，落地修复前必做）
+## 13. 实机复核（EPR-028，2026-11-01 已执行）
 
-在真实抖音标签页注入 `findCapability(element,'speed')` 并打印：
-1. 候选 controller 的方法名清单——是否出现 `setSpeed` / `updateSpeed` / `setPlayRate` / `changeSpeed`；
-2. 关联键——是否经 `videoEl` / `videoRef` / `player` / `instance` / `ref` / React fiber 等非白名单键持有媒体元素；
-3. speed 控制器挂载的祖先层级与属性序号——是否 >12 层或 >96 属性；
-4. 抖音 speed 标签的**真实数据来源**——读取 React 组件 state / props / fiber 内存，或 DOM 标签文本，确认其不依赖 `element.playbackRate`；
-5. 抖音 UI 实际调用的 setter 路径（改倍速时命中的方法），作为官方 adapter 的写入目标。
+> 本节取代原先的"待验证清单"。六项已在一台真实 `douyin.com` 视频页上执行完毕：**两处推断被推翻**，其余坐实。
 
-仅当以上探测确认后，方可声明 one-shot official adapter 并以其官方 getter/readback 成功为 ACK 前提。
+### 13.1 执行方式
+
+```bash
+# 只读取证：真实构建产物 + 真实扩展 + 真实站点
+bun tools/probes/run-douyin-live.ts
+# 端到端写入验证（12 项断言，含反向对照）
+bun tools/probes/verify-douyin-live.ts
+```
+
+两个脚本都启动带 `dist/` 扩展的 Chrome，打开当前推荐流中的真实视频页，再通过页面上的桥协议发请求——不是手工 Console 调用。
+
+### 13.2 六项清单的实机回答
+
+| # | 原问题 | 实机答案 |
+|---|---|---|
+| 1 | 候选 controller 的方法名有哪些 | **祖先链上零候选**（`candidateCount=0`）。真正的方法名是 `onPlayRatioChange`，挂在插件实例上，不在任何祖先元素 |
+| 2 | 关联键是什么 | 插件经 `plugin.player.video` 持有媒体元素；`player` 本身在 `window` 上，**没有** `videoEl` / `videoRef` / React fiber 可达路径 |
+| 3 | 挂载层级 / 属性序号 | 不适用：不是"太深"，是**不在 DOM 树里**。实例为 `window.player`，插件为 `window.player.plugins.playbacksettingplugin` |
+| 4 | UI 的真实数据来源 | `plugin.config.playBackRatio` → React 组件 `playbackRate` prop → `.xgplayer-playratio-item.select` 的选中态。**不读** `element.playbackRate`，**也不读** `player.playbackRate` |
+| 5 | UI 实际调用的写入路径 | `plugin.onPlayRatioChange(rate)`：内部 `player.playbackRate = rate` + `config.playBackRatio = rate` + `renderRoot()` |
+| 6 | 未登录时的形态 | 倍速面板被登录墙替代（`blockLoginText: 登录后即可切换倍速`），页面上**没有任何倍速徽标可投影** |
+
+### 13.3 被推翻的两处推断
+
+**(a) "子因 B 基本不成立"——错。**
+
+原文以为"只要 `findCapability` 成功，返回的 setter 就是 UI 调用路径"。实机证明：`player.playbackRate` 只是一个**代理 accessor**
+
+```js
+Object.getOwnPropertyDescriptor(proto, "playbackRate")  // { get, set }，内部读写 video.playbackRate
+```
+
+写它会同步改变媒体元素，读回也一致，但 UI 的 prop 来自插件自己的 `config.playBackRatio`，完全不受影响。**"找到某个 speed 能力"与"找到 UI 驱动路径"是两件事**，这正是声明的行必须同时给出 `readPath` 与投影的原因。
+
+**(b) "关联键可能是 `videoEl` / `player` 一类"——错。**
+
+实例不在祖先链上，键名再准也搜不到。正确形状是全局路径。
+
+### 13.4 实机因果链（取代 §10 的静态推断链）
+
+```
+抖音 speed 控制器不在 video 祖先链（window.player.plugins.playbacksettingplugin）
+  → 通用 discovery 零候选 → supported:false
+  → 降级 dom-native：element.playbackRate = next
+  → 媒体元素速率变、player.playbackRate 代理读到新值（所以"读 player"也看不出问题）
+  → 但 plugin.config.playBackRatio 仍是旧值
+  → UI prop = config.playBackRatio → 选中项停在 1.0x ✗
+  → 所有确认链路只读 element.playbackRate → 永远 confirmed
+反向：用户点面板 → onPlayratioClick → onPlayRatioChange
+  → 同时写 player.playbackRate 与 config.playBackRatio → UI 变化 → 插件读 DOM 感知 ✓
+```
+
+实机 A/B 对照（同一页面、同一时刻）：
+
+| 动作 | `video.playbackRate` | `player.playbackRate` | `config.playBackRatio` | 面板选中项 |
+|---|---|---|---|---|
+| baseline | 1 | 1 | 1 | `1.0x` |
+| `video.playbackRate = 1.5` | 1.5 | **1.5** | **1** | **`1.0x`** |
+| 桥写入 1.5 | 1.5 | 1.5 | **1.5** | **`1.5x`** |
+
+第一行到第二行就是用户报的现象；第三行是修复后的行为。
+
+### 13.5 两条工程约束（实机才发现）
+
+1. **写入快照会滞后**：`onPlayRatioChange` 通过 React 重渲染面板，同一个任务内读不到新的选中项。桥的 `write` 因此可能返回 `projection: 1`（旧值），必须由 `auditProjection` 的 300ms/40ms 轮询确认——现有实现正是如此，实机 read 在渲染后返回 1.5。
+2. **React 把 `{rate}x` 拆成两个文本节点**（`"1.5"` + `"x"`），逐文本节点匹配锚定正则会全部失败。投影读取因此改为对选中元素取 `textContent`。
+
+### 13.6 证据
+
+| 文件 | 内容 |
+|---|---|
+| `docs/research/evidence/2026-11-01-douyin-speed-probe.json` | T0–T2 只读探测：`supported=true`、`adapterId=douyin-speed`、祖先链零候选、投影空 |
+| `docs/research/evidence/2026-11-01-douyin-speed-live.json` | 端到端 12 项：DOM 写不动 UI、桥写入动 UI、投影渲染后可读、还原成功 |
+
+复现环境：Chrome 156（puppeteer 25.16），扩展 `1.4.2` development build，未登录浏览器会话。
 
 ---
 

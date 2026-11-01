@@ -160,21 +160,25 @@ try {
 		`actual=${String(restore.actual)} badge=${afterRestore.badge}`,
 	);
 
-	// --- stale host: the setter moves the rate but the badge never renders it.
-	// The bridge must still answer `supported` and report the disagreement, so
-	// the executor's audit can record drift instead of claiming UI sync.
+	// --- stale host: the setter moves the rate but the plugin's rendered state
+	// never follows. The declared read path is what makes this visible, and the
+	// bridge must refuse rather than leave a rate its own UI denies.
 	const stale = await openPage(browser, DOUYIN_ORIGIN, "stale");
 	const staleProbe = await call(stale, "probe", "speed");
 	check("stale player is still discovered", staleProbe.supported === true, JSON.stringify(staleProbe));
 	const staleWrite = await call(stale, "write", "speed", 1.75);
 	const staleState = await probeState(stale);
-	check("stale write keeps the controller value", staleWrite.actual === 1.75, `actual=${String(staleWrite.actual)}`);
 	check(
-		"stale badge is reported as-is, not as agreement",
-		staleWrite.projection === 1,
-		`projection=${String(staleWrite.projection)}`,
+		"a write the rendered state cannot confirm is refused",
+		staleWrite.actual === null && typeof staleWrite.error === "string",
+		JSON.stringify(staleWrite),
 	);
-	check("stale badge really is stale", staleState.badge === "1.0x", `badge=${staleState.badge}`);
+	check(
+		"the refused write is rolled back on the media element",
+		staleState.rate === 1,
+		`rate=${staleState.rate}`,
+	);
+	check("stale badge never claimed the new rate", staleState.badge === "1.0x", `badge=${staleState.badge}`);
 
 	// --- control host: no declared row, and the generic bridge cannot see the
 	// controller, so the answer must stay unsupported. This is what keeps the

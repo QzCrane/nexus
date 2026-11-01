@@ -1,0 +1,96 @@
+{
+  "capturedAt": "2026-11-01T07:36:39.368Z",
+  "url": "https://www.douyin.com/video/7702643486947855666",
+  "report": {
+    "probe": {
+      "version": "1.0.0",
+      "at": "2026-11-01T07:36:39.367Z",
+      "url": "https://www.douyin.com/video/7702643486947855666",
+      "host": "www.douyin.com",
+      "options": {
+        "maxAncestorDepth": 24,
+        "maxAttachedProperties": 256,
+        "propertyScanDepth": 8
+      }
+    },
+    "media": [
+      {
+        "index": 0,
+        "score": 1956946,
+        "tag": "video",
+        "width": 922,
+        "height": 531,
+        "paused": false,
+        "readyState": 4,
+        "duration": 2559.3,
+        "playbackRate": 1,
+        "hasSource": true,
+        "mediaElement": "video"
+      },
+      {
+        "index": 1,
+        "score": 0,
+        "tag": "video",
+        "width": 1440,
+        "height": 0,
+        "paused": true,
+        "readyState": 0,
+        "duration": null,
+        "playbackRate": 1,
+        "hasSource": false,
+        "mediaElement": "video"
+      }
+    ],
+    "bridge": {
+      "speed": {
+        "installed": true,
+        "field": "speed",
+        "supported": true,
+        "actual": null,
+        "adapterId": "douyin-speed",
+        "error": null
+      },
+      "volumeBase": {
+        "installed": true,
+        "field": "volumeBase",
+        "supported": false,
+        "actual": null,
+        "adapterId": null,
+        "error": null
+      },
+      "mediaMuted": {
+        "installed": true,
+        "field": "mediaMuted",
+        "supported": false,
+        "actual": null,
+        "adapterId": null,
+        "error": null
+      }
+    },
+    "discovery": {
+      "limits": {
+        "ancestorDepth": 12,
+        "attachedProperties": 96,
+        "prototypeDepth": 8,
+        "probe": {
+          "maxAncestorDepth": 24,
+          "maxAttachedProperties": 256,
+          "propertyScanDepth": 8
+        }
+      },
+      "candidateCount": 0,
+      "nearMisses": [],
+      "reasonCounts": {},
+      "candidates": []
+    },
+    "projection": {
+      "labels": [],
+      "react": null
+    },
+    "verdict": {
+      "code": "bridge-ok",
+      "detail": "The shipped bridge resolves speed through the declared row `douyin-speed`. Check the panel selection with tryWrite(), not with playbackRate."
+    }
+  },
+  "write": null
+}

@@ -388,7 +388,7 @@ PASS  stale badge is reported as-is, not as agreement  (projection=1)
 
 `followReactFiber` 仍然保留，但只用于**发现控制器实例**（`stateNode`），不用于读数。发现错了顶多找不到，不会读错。
 
-### 12.3 抖音条目随代码发布，但标 `candidate`
+### 12.3 抖音条目随代码发布，但标 `candidate`（现已转 `verified`）
 
 初版建议"注册表默认空，验证后准入"。实现选择"默认带条目、标 candidate"，因为安全边界不在条目是否存在，而在**投影证人是否可读**：
 
@@ -396,15 +396,33 @@ PASS  stale badge is reported as-is, not as agreement  (projection=1)
 - 找到控制器但投影不可读 → 条目无法承载写入（§3.1 规则 2）→ 同样退回；
 - 找到且投影可读 → 写入走站点自己的 setter，这就是修复本身。
 
-也就是说，条目存在不会让抖音变差，只会在条件满足时变好。而 `verified` 仍然——且只能——由 §8.2 的实机闸门授予。
+也就是说，条目存在不会让抖音变差，只会在条件满足时变好。而 `verified` 仍然——且只能——由 §8.2 的实机闸门授予。该闸门已于 2026-11-01 通过（见 12.4），条目现为 `revision: 2 / status: 'verified'`。
 
-### 12.4 证据索引
+### 12.4 实机复核推翻了三条设计假设（契约随之扩展）
+
+§8 的闸门在真实标签页跑完后，暴露了三件静态分析看不出来的事。每一条都要求注册表多一个字段，而不是把特例塞进桥里：
+
+| 实机事实 | 后果 | 新增字段 |
+|---|---|---|
+| 控制器不在 `video` 祖先链上（`candidateCount=0`），实例在 `window.player` | 关联键再多也搜不到 | `discovery.globalPaths: string[]`（全局点路径，命中即视为声明知识） |
+| `player.playbackRate` 是媒体元素的代理，写入成功却不动 UI | "能读回"不能当作"UI 认同" | `discovery.readPath: string \| null`（指向 UI 真正渲染的字段） |
+| 面板列出 `0.75x … 3.0x`，只有一项带 `select` | 取第一个匹配会读到 0.75 | `projection.selectedSelector` |
+| 页面同时存在预加载播放器 | 文档首个徽标未必属于这个 video | `projection.rootSelector`（从媒体元素向上定位容器） |
+| React 把 `{rate}x` 拆成 `"1.5"` + `"x"` 两个文本节点 | 逐节点锚定匹配全数失败 | 选中项改读元素 `textContent` |
+
+前三项是**契约扩展**，后两项是**缺陷修复**。它们共同说明一件事：声明式适配器的字段不是"给启发式调参"，而是"把站点事实写成数据"——字段不够时应当扩契约，而不是放宽白名单。
+
+拒绝写入的边界也因此更硬：`readPath` 与投影共同构成"这个站点到底认不认这次写"的判据。实机 `stale` 夹具（setter 动速率、不动 `playBackRatio`）现在会被桥**拒绝并回滚**，而不是留下一个 UI 否认的速率。
+
+### 12.5 更新后的证据索引
 
 | 证据 | 命令 | 结果 |
 |---|---|---|
 | 单位与集成测试 | `bun run test:unit` | 124 / 124 文件通过 |
-| 严格 lint | `bun ../../scripts/run-strict-biome.ts tools/probes src test` | 409 文件，0 诊断，0 silent handler |
+| 严格 lint | `bun ../../scripts/run-strict-biome.ts .` | 见提交记录，0 诊断 |
 | 类型 | `bun tsc --noEmit` | 通过 |
+| 真实抖音只读探测 | `bun tools/probes/run-douyin-live.ts` | `supported=true` / `adapter=douyin-speed` / 祖先链 0 候选 |
+| 真实抖音端到端 | `bun tools/probes/verify-douyin-live.ts` | **12 / 12** |
 | 声明式适配器端到端 | `bun tools/probes/verify-declared-adapter.ts` | 20 / 20 |
 | 探测脚本自证 | `bun tools/probes/verify-probe.ts` | 19 / 19 |
 

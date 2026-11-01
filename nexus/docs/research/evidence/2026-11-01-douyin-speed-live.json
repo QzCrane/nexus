@@ -1,0 +1,114 @@
+{
+  "capturedAt": "2026-11-01T07:35:12.383Z",
+  "url": "https://www.douyin.com/video/7697926023714737408",
+  "surface": "anonymous douyin.com video page; the speed list only renders behind login, so the run calls the site plugin's own updateConfig({loginBlock:false}) in memory to observe the logged-in branch, then restores it",
+  "probe": {
+    "requestId": "3927dca5-fa14-4fc9-a032-22b2d17f1872",
+    "field": "speed",
+    "supported": true,
+    "actual": null,
+    "adapterId": "douyin-speed"
+  },
+  "steps": {
+    "baseline": {
+      "videoRate": 1,
+      "playbackRate": 1,
+      "playBackRatio": 1,
+      "selected": "1.0x",
+      "hasList": true
+    },
+    "afterDom": {
+      "videoRate": 1.5,
+      "playbackRate": 1.5,
+      "playBackRatio": 1,
+      "selected": "1.0x",
+      "hasList": true
+    },
+    "written": {
+      "requestId": "bf5804fc-e662-4f23-a2ce-cf9ffa0a62ce",
+      "field": "speed",
+      "supported": true,
+      "actual": 1.5,
+      "adapterId": "douyin-speed",
+      "projection": 1
+    },
+    "afterBridge": {
+      "videoRate": 1.5,
+      "playbackRate": 1.5,
+      "playBackRatio": 1.5,
+      "selected": "1.5x",
+      "hasList": true
+    },
+    "afterRestore": {
+      "videoRate": 1,
+      "playbackRate": 1,
+      "playBackRatio": 1,
+      "selected": "1.0x",
+      "hasList": true
+    }
+  },
+  "checks": [
+    {
+      "name": "the shipped bridge answers the live page",
+      "ok": true,
+      "detail": "{\"requestId\":\"3927dca5-fa14-4fc9-a032-22b2d17f1872\",\"field\":\"speed\",\"supported\":true,\"actual\":null,\"adapterId\":\"douyin-speed\"}"
+    },
+    {
+      "name": "the answer is attributed to the declared row",
+      "ok": true,
+      "detail": "adapterId=douyin-speed"
+    },
+    {
+      "name": "the site's speed list can be surfaced for observation",
+      "ok": true,
+      "detail": "opened=true"
+    },
+    {
+      "name": "the baseline selection is the site's current rate",
+      "ok": true,
+      "detail": "{\"videoRate\":1,\"playbackRate\":1,\"playBackRatio\":1,\"selected\":\"1.0x\",\"hasList\":true}"
+    },
+    {
+      "name": "a DOM-only write moves the media element",
+      "ok": true,
+      "detail": "videoRate=1.5"
+    },
+    {
+      "name": "a DOM-only write leaves the panel behind",
+      "ok": true,
+      "detail": "{\"videoRate\":1.5,\"playbackRate\":1.5,\"playBackRatio\":1,\"selected\":\"1.0x\",\"hasList\":true}"
+    },
+    {
+      "name": "the bridge accepts the write",
+      "ok": true,
+      "detail": "{\"requestId\":\"bf5804fc-e662-4f23-a2ce-cf9ffa0a62ce\",\"field\":\"speed\",\"supported\":true,\"actual\":1.5,\"adapterId\":\"douyin-speed\",\"projection\":1}"
+    },
+    {
+      "name": "the bridge reports the rate it moved",
+      "ok": true,
+      "detail": "videoRate=1.5"
+    },
+    {
+      "name": "the panel selection follows the bridge",
+      "ok": true,
+      "detail": "{\"videoRate\":1.5,\"playbackRate\":1.5,\"playBackRatio\":1.5,\"selected\":\"1.5x\",\"hasList\":true}"
+    },
+    {
+      "name": "the rendered state agrees with the controller",
+      "ok": true,
+      "detail": "playBackRatio=1.5"
+    },
+    {
+      "name": "the projection becomes readable once React has rendered",
+      "ok": true,
+      "detail": "{\"requestId\":\"e83d77ae-f2d7-4cbb-80d5-2f8e1860ceb9\",\"field\":\"speed\",\"supported\":true,\"actual\":1.5,\"adapterId\":\"douyin-speed\",\"projection\":1.5}"
+    },
+    {
+      "name": "the bridge restores the baseline",
+      "ok": true,
+      "detail": "{\"videoRate\":1,\"playbackRate\":1,\"playBackRatio\":1,\"selected\":\"1.0x\",\"hasList\":true}"
+    }
+  ],
+  "passed": 12,
+  "total": 12
+}

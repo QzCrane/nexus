@@ -1,16 +1,18 @@
 # 抖音倍速实机探测 — 运行手册（EPR-028 执行件）
 
 - **日期**：2026-11-01
-- **状态**：可执行。探测脚本自证 19/19，声明式适配器端到端自证 20/20；**尚未在真实抖音标签页运行**。
-- **新增（本轮）**：条目已在代码中随 `candidate` 发布，桥的 `probe` 结果会回传 `adapterId`。因此 T0 不再只是「桥能不能看见」，而是「桥用的是声明知识还是通用启发式」——这直接决定 §4 映射该改什么。
+- **状态**：**已执行**（2026-11-01 15:40，Chrome 156 / 扩展 1.4.2 dev build / 未登录会话）。只读探测 `supported=true adapter=douyin-speed`；端到端 `12/12`。条目已提为 `verified`（revision 2）。
+- **结论**：抖音控制器不在 `video` 祖先链上，而是 `window.player.plugins.playbacksettingplugin`；UI 的 `playbackRate` prop 来自 `plugin.config.playBackRatio`，纯 DOM 写入不动它。完整对照见根因报告 `§13`。
 - **上游**：`proposals/2026-11-01-spectra-douyin-speed-official-adapter.md` §8
 - **前提报告**：`research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`
 - **产物**：
   - `apps/extension-spectra/tools/probes/douyin-speed-probe.js`（零依赖，粘贴即用）
+  - `apps/extension-spectra/tools/probes/run-douyin-live.ts`（只读取证，自动化）
+  - `apps/extension-spectra/tools/probes/verify-douyin-live.ts`（端到端 12 项断言）
   - `apps/extension-spectra/tools/probes/fixtures/douyin-like-player.html`（仿抖音夹具）
   - `apps/extension-spectra/tools/probes/verify-probe.ts`（自证脚本）
 
-> 本手册只做**取证**，不做修复。探测结果回填注册表条目后，才进入实现阶段。
+> 本手册的取证阶段已经结束。下面的手工步骤保留，用于换机型、换账号态或抖音改版后的复测。
 
 
 
@@ -129,23 +131,50 @@ nexus/docs/research/evidence/2026-11-01-douyin-speed-probe.json
 - 倍速标签的实际文案样式（`1.5x` / `1.5倍` / 仅图标）
 - 手动改倍速时，标签是否立即更新（确认"反向同步正常"这一前提）
 
+### 3.5 自动化执行（推荐）
+
+手工步骤存在两处不可控：扩展要先手动装、页面要手动点，且 T3 的"标签是否变化"依赖肉眼。两个脚本把全程自动化：
+
+```bash
+cd nexus/apps/extension-spectra
+bun build.ts --dev
+
+# 只读：T0–T2 全量报告，落 evidence/2026-11-01-douyin-speed-probe.json
+bun tools/probes/run-douyin-live.ts
+#   可选：--url=https://www.douyin.com/video/<id>   指定页面
+#   可选：--write=1.5                                追加 probe 自带的 T3
+
+# 端到端：真实桥写入 + 面板选中项对照，落 evidence/2026-11-01-douyin-speed-live.json
+bun tools/probes/verify-douyin-live.ts
+```
+
+`verify-douyin-live.ts` 的关键设计：抖音未登录时倍速面板是登录墙，页面上没有可观测的选中项。脚本因此调用**站点插件自己的** `updateConfig({ loginBlock: false })`，让 React 渲染出登录态分支，观察完再还原——只改内存，不写站点、不改 cookie。
+
+它输出的 12 项断言里，有两项是整条论证的两端：
+
+```
+PASS  a DOM-only write leaves the panel behind     (playBackRatio=1, selected=1.0x)
+PASS  the panel selection follows the bridge       (playBackRatio=1.5, selected=1.5x)
+```
+
 ---
 
 ## 4. 结果 → 注册表字段映射
 
 按 `SiteAdapterEntry`（方案 §3.1）逐字段填：
 
-| 探测证据                                        | 注册表字段                              | 取值规则                                                                 |
-| ------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------- |
-| `write.uiDrivingSetter` = `Object.setSpeed` | `setterNames`                      | 取方法名 `setSpeed`；同族候选按命中顺序补齐                                          |
-| `speedSurface` 中 `getPlaybackRate`          | `getterNames`                      | 有则填；无则留空                                                             |
-| `speedSurface` 中 `playbackRate` accessor    | `accessorProp`                     | 仅当 getter/setter 成对存在                                                |
-| `nearMisses[].associationKey` = `videoEl`   | `associationKeys`                  | 填实测键；保留 `video` 等旧键作回退                                               |
-| `nearMisses[].propertyIndex` = 110          | `maxAttachedProperties`            | 向上取整到 128，留余量                                                        |
-| `nearMisses[].ancestorDepth` = 14           | `maxAncestorDepth`                 | 向上取整到 16，留余量                                                         |
-| `projection.labels[].path` + `text`         | `uiProjection{kind:'dom-label'}`   | `selector` 用稳定属性优先（`data-*` > class 链）；`parse` 用 `/(\d+(?:\.\d+)?)/` |
-| `projection.react.chain[].speedProps`       | `uiProjection{kind:'react-state'}` | 仅当 `dom-label` 不可用时启用；记录字段名与组件名                                      |
-| `attempts[0].changedLabel`（DOM 对照）          | 决策依据                               | `false` → 必须走 declared adapter；`true` → 停止，重新诊断                      |
+| 探测证据 | 注册表字段 | 取值规则 | 实测（2026-11-01） |
+| --- | --- | --- | --- |
+| `write.uiDrivingSetter` | `setterNames` | 取方法名；同族候选按命中顺序补齐 | `onPlayRatioChange` |
+| `speedSurface` 中 `getPlaybackRate` | `getterNames` | 有则填，无则留空 | 空（无 getter 方法） |
+| `speedSurface` 中 accessor 对 | `accessorNames` | 仅当 getter/setter 成对存在 | 空（`player.playbackRate` 是代理，会撒谎） |
+| UI 渲染读的字段 | `readPath` | 点路径；指向站点 UI 的真实数据源 | `config.playBackRatio` |
+| `nearMisses[].associationKey` | `associationKeys` | 填实测键，支持点路径 | `player.video` |
+| 实例是否在 DOM 树内 | `globalPaths` | 不在则填全局点路径，按优先级排序 | `player.plugins.playbacksettingplugin`, `player` |
+| `nearMisses[].ancestorDepth` | `maxAncestorDepth` | 向上取整留余量 | 18（实测不适用，保留兼容旧版页面） |
+| `projection.labels[].path` + `text` | `uiProjection` 作用域 | 稳定属性优先 | `rootSelector: .xgplayer`、`scope: .xgplayer-playback-setting` |
+| 选中项标记 | `uiProjection.selectedSelector` | 有选中态时必填，否则读到列表第一项 | `.xgplayer-playratio-item.select` |
+| `attempts[0].changedLabel`（DOM 对照） | 决策依据 | `false` → 必须走 declared adapter | `false`（速率变、选中项不动） |
 
 **准入判定**（必须全部满足）：
 
@@ -156,6 +185,8 @@ nexus/docs/research/evidence/2026-11-01-douyin-speed-probe.json
 5. 证据 JSON 已落盘并附人工观察。
 
 任一条不满足 → 条目不写入注册表，改走方案 §9 的开放问题（可能是 iframe、闭包持有、或 UI 只能通过菜单交互改变）。
+
+> **实测偏离**：第 1 条在抖音上不成立——条目发布后 T0 返回 `supported=true`，因为声明知识已经接管。判定因此改为"**移除条目后** T0 为 `false`，且 T1 给出归因"。第 2 条的答案是"祖先链零候选"，属新增的第五类拒绝原因 `unreachable-controller`（不是太深，是不在树里）。
 
 ---
 
@@ -184,9 +215,11 @@ T0 bridge(speed)  supported=true installed=true adapter=douyin-speed
 
 | `adapter` | `supported` | 含义 | 下一步 |
 |---|---|---|---|
-| `douyin-speed` | `true` | 声明知识命中：控制器按条目的名字/键被找到 | 跑 T3，确认写入能带动徽标；能带动即可提 `verified` |
-| `none` | `true` | 通用启发式命中，声明知识未命中 | 条目名字/键不对，回 §4 按 T1 的拒绝原因修正条目 |
-| `none`/`douyin-speed` | `false` | 都没找到 | 条目未能覆盖该页形态；先看 T1 归因（哪一类拒绝最多） |
+| `douyin-speed` | `true` | 声明知识命中：控制器按条目的全局路径被找到 | 跑 `verify-douyin-live.ts`，确认写入能带动选中项 |
+| `none` | `true` | 通用启发式命中，声明知识未命中 | 条目路径不对，回 §4 按 T1 的拒绝原因修正条目 |
+| `none`/`douyin-speed` | `false` | 都没找到 | 条目未能覆盖该页形态；先看 T1 归因 |
+
+**实测读数（2026-11-01）**：`supported=true installed=true adapter=douyin-speed`，同一页面 `discovery.candidateCount=0`、`projection.labels=[]`。前者说明声明路径接管成功，后两者说明祖先链与未登录 UI 都无可读证据——三者组合即为"声明式适配器必要且唯一可行"的读数。
 
 注意 `adapter=douyin-speed` 只说明**发现**走了声明路径，不说明徽标是同一个元素。徽标是否被正确解析，要看 T2 与 T3：
 
