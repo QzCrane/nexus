@@ -357,15 +357,26 @@ export class SettingsRepository {
 				Object.entries(snapshot.audioSites),
 				([domain]) => domain,
 			);
-			// fallback: when no site-specific config matches, apply the user's
-			// chosen default global preset so new sites inherit that baseline
-			// instead of the silent DEFAULT_AUDIO_CONFIG. Site entries still win
-			// because they are the explicit per-domain authority.
-			let patch = match?.[1];
-			if (!patch && snapshot.defaultPresetId) {
-				const presetEntry = snapshot.audioPresets[snapshot.defaultPresetId];
+		// fallback: when no site-specific config matches, apply the user's
+		// chosen default global preset so new sites inherit that baseline
+		// instead of the silent DEFAULT_AUDIO_CONFIG. Site entries still win
+		// because they are the explicit per-domain authority.
+		let patch = match?.[1];
+		if (!patch && snapshot.defaultPresetId) {
+			const presetEntry = snapshot.audioPresets[snapshot.defaultPresetId];
+			if (presetEntry?.config) patch = presetEntry.config;
+		}
+		// If no explicit default preset is marked, still honor a global preset
+		// as the baseline for every site that has no per-site rule. A user who
+		// configured a global preset but never flagged one as "default" should
+		// still see it applied everywhere ("所有网站没有预设就用全局预设").
+		if (!patch) {
+			const fallbackName = choosePresetFallback(snapshot.audioPresets);
+			if (fallbackName) {
+				const presetEntry = snapshot.audioPresets[fallbackName];
 				if (presetEntry?.config) patch = presetEntry.config;
 			}
+		}
 			return {
 				...DEFAULT_AUDIO_CONFIG,
 				...patch,

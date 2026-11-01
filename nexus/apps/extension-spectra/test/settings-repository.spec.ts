@@ -991,6 +991,42 @@ describe('background settings repository', () => {
 		expect((await repository.resolveAudioConfig('127.0.0.1')).volume).toBe(200);
 		expect((await repository.resolveAudioConfig('x.127.0.0.1')).volume).toBe(100);
 	});
+
+	test('applies an unmarked global preset to sites without a per-site rule', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea({
+			globalPresets: {
+				'My Global': presetEntry('My Global', 1, { volume: 130 }),
+			},
+			defaultPresetId: null,
+			spectraSettingsMeta: validMeta(0),
+		}));
+
+		const resolved = await repository.resolveAudioConfig('example.com');
+		expect(resolved.volume).toBe(130);
+	});
+
+	test('an explicit per-site rule still wins over the implicit global preset', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea({
+			siteSettings: { 'example.com': { volume: 175 } },
+			globalPresets: {
+				'My Global': presetEntry('My Global', 1, { volume: 130 }),
+			},
+			defaultPresetId: null,
+			spectraSettingsMeta: validMeta(0),
+		}));
+
+		expect((await repository.resolveAudioConfig('example.com')).volume).toBe(175);
+		expect((await repository.resolveAudioConfig('other.com')).volume).toBe(130);
+	});
+
+	test('falls back to default config when no preset exists at all', async () => {
+		const repository = new SettingsRepository(new FakeStorageArea({
+			globalPresets: {},
+			defaultPresetId: null,
+			spectraSettingsMeta: validMeta(0),
+		}));
+		expect((await repository.resolveAudioConfig('example.com')).volume).toBe(100);
+	});
 });
 
 function presetEntry(name: string, createdAt: number, config: Record<string, unknown>): Record<string, unknown> {
