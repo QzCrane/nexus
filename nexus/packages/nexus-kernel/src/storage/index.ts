@@ -12,6 +12,9 @@ export {
 	removeTabControlSession,
 	flushTabControlSession,
 	hasTabControlSession,
+	mergeOriginControlSession,
+	getOriginControlSession,
+	removeOriginControlSession,
 } from './tab-session.js';
 export type { TabControlSessionIdentity, TabControlSessionScope } from './tab-session.js';
 export { safeStorageGet, safeStorageSet, safeStorageRemove, scheduleStorageSet, scheduleStorageOperation } from './safe-storage.js';

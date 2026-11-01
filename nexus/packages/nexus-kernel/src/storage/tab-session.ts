@@ -338,6 +338,7 @@ export async function mergeTabControlSession(
 	if (!isTabControlSessionIdentity(identity) || identity.tabId !== tabId) {
 		throw new Error('Invalid tab control session identity');
 	}
+	let originPortable: ControlSessionPatch | null = null;
 	await serialized(tabId, async () => {
 		const normalized = normalizeStoredSession(await readStoredValue(tabId));
 		const current = normalized && identitiesMatch(normalized.identity, identity)
@@ -362,6 +363,7 @@ export async function mergeTabControlSession(
 		if (!isPortableControlSessionPatch(portablePatch)) {
 			throw new Error('Invalid portable tab control session patch');
 		}
+		originPortable = scope === 'origin' ? clonePatch(portablePatch) : null;
 		await writeStoredSession(tabId, {
 			version: TAB_SESSION_VERSION,
 			identity,
@@ -370,6 +372,13 @@ export async function mergeTabControlSession(
 			updatedAt: Date.now(),
 		});
 	});
+	// An origin-portable adjustment is a same-origin, cross-tab desire. Union it
+	// into the origin session so a freshly opened tab on this origin inherits it
+	// even without its own per-tab session. Resource-scoped writes never leave
+	// the tab, so they are excluded here on purpose.
+	if (originPortable) {
+		await mergeOriginControlSession(identity.origin, originPortable).catch(() => undefined);
+	}
 }
 
 // Carries the complete projection across the same document or exact-resource
@@ -434,4 +443,83 @@ export async function hasTabControlSession(
 	identity?: TabSessionIdentity | TabControlSessionIdentity,
 ): Promise<boolean> {
 	return (await getTabControlSession(tabId, identity)) !== null;
+}
+
+const ORIGIN_SESSION_PREFIX = 'origin_session_';
+const ORIGIN_SESSION_VERSION = TAB_SESSION_VERSION;
+
+interface StoredOriginControlSession {
+	version: typeof ORIGIN_SESSION_VERSION;
+	origin: string;
+	portablePatch: ControlSessionPatch;
+	updatedAt: number;
+}
+
+function keyForOrigin(origin: string): string {
+	return `${ORIGIN_SESSION_PREFIX}${origin}`;
+}
+
+function isStoredOriginControlSession(value: unknown): value is StoredOriginControlSession {
+	if (!value || typeof value !== 'object') return false;
+	const record = value as Partial<StoredOriginControlSession>;
+	return record.version === ORIGIN_SESSION_VERSION
+		&& typeof record.origin === 'string'
+		&& record.origin.length > 0 && record.origin.length <= 253
+		&& isPortableControlSessionPatch(record.portablePatch)
+		&& typeof record.updatedAt === 'number'
+		&& Number.isFinite(record.updatedAt);
+}
+
+const originSerialized = createKeyedSerializedQueue<string>();
+
+// The origin session is the cross-tab, same-origin baseline. Every
+// origin-portable field a user adjusts in any tab on this origin is union-merged
+// here, so a brand-new tab on the same origin inherits those adjustments even
+// though it has no per-tab session of its own yet. Fields never touched by the
+// user stay absent and fall back to the per-site/global preset or default.
+export async function mergeOriginControlSession(
+	origin: string,
+	patch: ControlSessionPatch,
+): Promise<void> {
+	if (!isControlSessionPatch(patch)) throw new Error('Invalid origin control session patch');
+	await originSerialized(origin, async () => {
+		const key = keyForOrigin(origin);
+		const raw = (await chrome.storage.session.get(key))[key] as unknown;
+		const normalized = isStoredOriginControlSession(raw) ? raw.portablePatch : {};
+		const next: ControlSessionPatch = { ...clonePatch(normalized), ...clonePatch(patch) };
+		if (!isPortableControlSessionPatch(next)) {
+			throw new Error('Invalid merged origin control session patch');
+		}
+		if (Object.keys(next).length === 0) {
+			await chrome.storage.session.remove(key);
+			return;
+		}
+		await chrome.storage.session.set({
+			[key]: {
+				version: ORIGIN_SESSION_VERSION,
+				origin,
+				portablePatch: next,
+				updatedAt: Date.now(),
+			},
+		});
+	});
+}
+
+// Reads the cross-tab same-origin baseline. Returns null when no tab on this
+// origin has left an origin-portable adjustment (or the stored record is empty).
+export async function getOriginControlSession(
+	origin: string,
+): Promise<ControlSessionPatch | null> {
+	const key = keyForOrigin(origin);
+	const raw = (await chrome.storage.session.get(key))[key] as unknown;
+	if (!isStoredOriginControlSession(raw)) {
+		if (raw !== undefined) await chrome.storage.session.remove(key);
+		return null;
+	}
+	if (Object.keys(raw.portablePatch).length === 0) return null;
+	return clonePatch(raw.portablePatch);
+}
+
+export async function removeOriginControlSession(origin: string): Promise<void> {
+	await chrome.storage.session.remove(keyForOrigin(origin));
 }

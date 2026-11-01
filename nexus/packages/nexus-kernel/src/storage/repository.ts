@@ -15,6 +15,14 @@ export class StorageRepository {
     has: tabSessionModule.hasTabControlSession,
   };
 
+  // Cross-tab same-origin baseline: origin-portable adjustments union-merged
+  // across every tab on an origin so a fresh same-origin tab inherits them.
+  originSession = {
+	merge: tabSessionModule.mergeOriginControlSession,
+	get: tabSessionModule.getOriginControlSession,
+	remove: tabSessionModule.removeOriginControlSession,
+  };
+
   // eff: subscribes to 'local' storage area changes
   onChanged(callback: (changes: { [key: string]: chrome.storage.StorageChange }) => void): () => void {
     const listener = (

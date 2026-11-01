@@ -9,6 +9,10 @@ import type { TabControlSessionIdentity } from '@nexus/kernel';
 
 const values: Record<string, unknown> = {};
 const setCalls: Array<Record<string, unknown>> = [];
+// Origin-portable merges also write a separate origin-session key; these tests
+// assert tab-session persistence only, so count tab-session writes exclusively.
+const tabSetCalls = (): Array<Record<string, unknown>> =>
+	setCalls.filter((call) => Object.keys(call)[0]?.startsWith('tab_session_'));
 let setFailuresRemaining = 0;
 
 Object.assign(globalThis, {
@@ -126,7 +130,7 @@ describe('document-bound acknowledged control sessions', () => {
 		await mergeTabControlSession(7, { volumeBase: 100, boost: 1.5 }, firstDocument);
 		await mergeTabControlSession(7, { boost: 1.75, mediaMuted: true, speed: 1.5 }, firstDocument);
 
-		expect(setCalls).toHaveLength(2);
+		expect(tabSetCalls()).toHaveLength(2);
 		expect(await getTabControlSession(7, firstDocument)).toEqual({
 			volumeBase: 100,
 			boost: 1.75,
@@ -135,7 +139,7 @@ describe('document-bound acknowledged control sessions', () => {
 		});
 
 		await flushTabControlSession(7);
-		expect(setCalls).toHaveLength(2);
+		expect(tabSetCalls()).toHaveLength(2);
 		expect(values.tab_session_7).toMatchObject({
 			version: 3,
 			identity: firstDocument,
@@ -169,7 +173,7 @@ describe('document-bound acknowledged control sessions', () => {
 	test('retries bounded transient writes and propagates an undurable ACK', async () => {
 		setFailuresRemaining = 2;
 		await mergeTabControlSession(7, { speed: 1.25 }, firstDocument);
-		expect(setCalls).toHaveLength(3);
+		expect(tabSetCalls()).toHaveLength(3);
 		expect(values.tab_session_7).toMatchObject({ patch: { speed: 1.25 } });
 
 		await removeTabControlSession(7);
@@ -180,7 +184,7 @@ describe('document-bound acknowledged control sessions', () => {
 			{ speed: 1.5 },
 			firstDocument,
 		)).rejects.toThrow('session storage unavailable');
-		expect(setCalls).toHaveLength(3);
+		expect(tabSetCalls()).toHaveLength(3);
 		expect(values.tab_session_7).toBeUndefined();
 	});
 

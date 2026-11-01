@@ -856,10 +856,23 @@ async function resolveDocumentRestorePlan(
 	const identity = storage.tabSession.identity(tabId, documentId, resourceUrl);
 	const sessionPatch = await storage.tabSession.rebind(tabId, identity);
 	if (sessionPatch) return { patch: sessionPatch, source: 'session' };
+	const hostname = new URL(identity.resourceUrl).hostname;
+	// A fresh tab on an origin where the user made origin-portable adjustments
+	// in another tab inherits those adjustments as a same-origin baseline,
+	// layered on top of the per-site/global preset (fields the user never
+	// touched still fall back to the preset or default).
+	let originPatch: ControlSessionPatch | null = null;
+	try {
+		originPatch = await storage.originSession.get(identity.origin);
+	} catch {
+		originPatch = null;
+	}
+	if (originPatch && Object.keys(originPatch).length > 0) {
+		const preset = presetRestorePatch(await settingsRepository.resolveAudioConfig(hostname));
+		return { patch: { ...preset, ...originPatch }, source: 'session' };
+	}
 	return {
-		patch: presetRestorePatch(await settingsRepository.resolveAudioConfig(
-			new URL(identity.resourceUrl).hostname,
-		)),
+		patch: presetRestorePatch(await settingsRepository.resolveAudioConfig(hostname)),
 		source: 'preset',
 	};
 }
