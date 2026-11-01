@@ -74,6 +74,33 @@ export interface SiteAdapterDiscovery {
 	readonly maxPrototypeDepth: number;
 	/** Walk `__reactFiber$*` / `__reactProps$*` mounts for a controller. */
 	readonly followReactFiber: boolean;
+	/**
+	 * When every exact `globalPaths` entry resolves to nothing, how to locate the
+	 * controller. `'scan-player-plugins'`: walk `player.plugins` (the object
+	 * `window.player` resolves to, then `player` itself) and accept the first
+	 * member that exposes a rate-like config field or a rate-setter method.
+	 *
+	 * Douyin renames the playback-plugin key between revisions
+	 * (`playbacksettingplugin` → `playbackSettingPlugin` → …); matching by
+	 * structural role survives a key rename that would otherwise zero out
+	 * discovery and silently degrade the write to the rate-correct-but-UI-blind
+	 * proxy accessor.
+	 */
+	readonly globalPathFallback?: 'scan-player-plugins';
+	/**
+	 * Extra dot paths tried (in order) when `readPath` yields a non-numeric or
+	 * out-of-range value. Lets a row survive a UI-state field rename
+	 * (`playBackRatio` → `playbackRatio`) without dropping back to the proxy
+	 * read, which is rate-correct but blind to the UI the projection witnesses.
+	 */
+	readonly readPathFallbacks?: readonly string[];
+	/**
+	 * When `setterNames` find no callable, scan the controller for a method whose
+	 * name matches this case-insensitive pattern and is a function. Survives a
+	 * setter rename (`onPlayRatioChange` → `onSpeedChange`) without enumerating
+	 * every candidate name in the row.
+	 */
+	readonly setterNamePattern?: string;
 }
 
 /**
@@ -105,6 +132,21 @@ export interface SiteSpeedProjectionSpec {
 	readonly selectedSelector?: string;
 	/** Regex sources, each with exactly one capture group holding the number. */
 	readonly patterns: readonly string[];
+	/**
+	 * Tried (in order) only when `scopeSelectors` locate nothing. Each value is
+	 * matched against the document via `[class*='<value>']` substring matching, so
+	 * a class rename (`xgplayer-playratio-item` → `xg-player-speed-item`) still
+	 * surfaces the panel instead of leaving the scope empty.
+	 */
+	readonly scopeSelectorFallbacks?: readonly string[];
+	/**
+	 * When `selectedSelector` locates no element, scan the resolved scope for
+	 * items whose text matches `patterns`, and treat the one carrying a
+	 * selected/active/current/checked marker as the current value. Douyin renames
+	 * the selected class periodically (`select` → `active`); matching by marker
+	 * keeps the projection alive instead of returning an unreadable `null`.
+	 */
+	readonly selectedFallback?: boolean;
 	readonly tolerance: number;
 }
 
@@ -197,6 +239,20 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 		]),
 		getterNames: Object.freeze([]),
 		readPath: 'config.playBackRatio',
+		// Douyin renames the UI-state field across revisions; the one that survived
+		// verification was `config.playBackRatio`. If that is gone, try the
+		// camelCase sibling and the other rate-ish keys before giving up and
+		// falling back to the rate-correct-but-UI-blind proxy read.
+		readPathFallbacks: Object.freeze([
+			'config.playbackRatio',
+			'config.playBackRatio',
+			'config.rate',
+			'config.speed',
+			'config.ratio',
+		]),
+		// If `setterNames` finds nothing (renamed setter), accept a method whose
+		// name looks like a rate/ratio changer. Case-insensitive.
+		setterNamePattern: '^(on|set|change|update|apply)?(play)?(ratio|speed|rate)',
 		accessorNames: Object.freeze([]),
 		associationKeys: Object.freeze([
 			// The plugin owns the media element through the player it was created on.
@@ -209,6 +265,10 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 			// better a refused write than a silent divergence.
 			'player',
 		]),
+		// The playback plugin key is renamed between Douyin revisions; if the exact
+		// global path is missing, walk `player.plugins` for the member that carries
+		// a rate-like config field or a rate-setter method.
+		globalPathFallback: 'scan-player-plugins',
 		maxAncestorDepth: 18,
 		maxAttachedProperties: 288,
 		maxPrototypeDepth: 8,
@@ -218,7 +278,19 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 		kind: 'text',
 		rootSelector: '.xgplayer',
 		scopeSelectors: Object.freeze(['.xgplayer-playback-setting']),
+		// Class renames leave the panel unlocatable by the exact selector. Fall back
+		// to substring class matching so the panel still surfaces.
+		scopeSelectorFallbacks: Object.freeze([
+			'[class*="playback-setting"]',
+			'[class*="playratio"]',
+			'[class*="playback-rate"]',
+			'[class*="speed"]',
+		]),
 		selectedSelector: '.xgplayer-playratio-item.select',
+		// The selected item's class is renamed periodically (`select` → `active`).
+		// When the exact selected selector finds nothing, fall back to scanning the
+		// scope for a rate-label item carrying a selected/active/current marker.
+		selectedFallback: true,
 		patterns: Object.freeze(['^(\\d+(?:\\.\\d+)?)\\s*x$']),
 		tolerance: 0.01,
 	}),

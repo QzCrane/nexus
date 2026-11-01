@@ -156,6 +156,101 @@ function accessorCapability(
 	};
 }
 
+/**
+ * Scan a controller for a method whose name matches `pattern` (case-insensitive)
+ * and is a function. Used as a fallback when the declared `setterNames` find
+ * nothing — e.g. after Douyin renames `onPlayRatioChange` to `onSpeedChange`.
+ */
+function scanForSetter(
+	controller: object,
+	pattern: RegExp,
+): ((...args: unknown[]) => unknown) | null {
+	let names: string[];
+	try {
+		names = Object.getOwnPropertyNames(controller);
+	} catch {
+		return null;
+	}
+	for (const name of names) {
+		if (!pattern.test(name)) continue;
+		const value = dataProperty(controller, name);
+		if (typeof value === 'function') {
+			return (...args: unknown[]) => Reflect.apply(value, controller, args);
+		}
+	}
+	return null;
+}
+
+/**
+ * Locate a player plugin that drives the speed UI when the declared exact global
+ * path no longer resolves. Douyin renames the playback-plugin key between
+ * revisions (`playbacksettingplugin` → …); matching by structural role — a
+ * `config` with a rate-like numeric field, or a rate-setter method — survives
+ * the rename that would otherwise zero out discovery and silently degrade the
+ * write to the rate-correct-but-UI-blind proxy accessor.
+ */
+function scanPlayerPlugins(): object | null {
+	const RATE_FIELD = /(playback|playbackrate|playbackratio|ratio|rate|speed)/i;
+	const rateLikeConfig = (obj: unknown): boolean => {
+		if (!obj || typeof obj !== 'object') return false;
+		let names: string[];
+		try {
+			names = Object.getOwnPropertyNames(obj);
+		} catch {
+			return false;
+		}
+		for (const name of names) {
+			if (!RATE_FIELD.test(name)) continue;
+			const value = (obj as Record<string, unknown>)[name];
+			if (typeof value === 'number' && Number.isFinite(value)
+				&& value >= SPEED_LIMIT.min && value <= SPEED_LIMIT.max) return true;
+		}
+		return false;
+	};
+	const hasRateSetter = (obj: unknown): boolean => {
+		if (!obj || typeof obj !== 'object') return false;
+		let names: string[];
+		try {
+			names = Object.getOwnPropertyNames(obj);
+		} catch {
+			return false;
+		}
+		for (const name of names) {
+			if (!RATE_FIELD.test(name)) continue;
+			if (typeof (obj as Record<string, unknown>)[name] === 'function') return true;
+		}
+		return false;
+	};
+	const player = readValuePath(globalThis, 'player');
+	if (!player || typeof player !== 'object') return null;
+	const spaces: object[] = [];
+	const plugins = readValuePath(player, 'plugins');
+	if (plugins && typeof plugins === 'object') spaces.push(plugins as object);
+	spaces.push(player as object);
+	for (const space of spaces) {
+		let keys: string[];
+		try {
+			keys = Object.getOwnPropertyNames(space);
+		} catch {
+			continue;
+		}
+		for (const key of keys) {
+			let value: unknown;
+			try {
+				value = (space as Record<string, unknown>)[key];
+			} catch {
+				continue;
+			}
+			if (!value || typeof value !== 'object') continue;
+			const cfg = (value as Record<string, unknown>).config;
+			if ((cfg && typeof cfg === 'object' && rateLikeConfig(cfg)) || hasRateSetter(value)) {
+				return value as object;
+			}
+		}
+	}
+	return null;
+}
+
 function finiteNumber(value: unknown, minimum: number, maximum: number, label: string): number {
 	if (typeof value !== 'number' || !Number.isFinite(value) || value < minimum || value > maximum) {
 		throw new Error(`${label} getter returned an invalid value`);
@@ -279,6 +374,26 @@ function capabilityFor(
 			declaredRead = true;
 		}
 	}
+	if (!readPlaybackRate && adapter?.discovery.readPathFallbacks) {
+		// The UI-state field is renamed between revisions; try the camelCase
+		// sibling and other rate-ish keys before falling back to the proxy read.
+		for (const fb of adapter.discovery.readPathFallbacks) {
+			const rendered = readValuePath(controller, fb);
+			if (typeof rendered === 'number'
+				&& Number.isFinite(rendered)
+				&& rendered >= SPEED_LIMIT.min
+				&& rendered <= SPEED_LIMIT.max) {
+				readPlaybackRate = () => finiteNumber(
+					readValuePath(controller, fb),
+					SPEED_LIMIT.min,
+					SPEED_LIMIT.max,
+					'Page playback rate',
+				);
+				declaredRead = true;
+				break;
+			}
+		}
+	}
 	for (const name of adapter?.discovery.getterNames ?? []) {
 		if (readPlaybackRate) break;
 		const getter = boundMethod(controller, name);
@@ -307,6 +422,15 @@ function capabilityFor(
 		setPlaybackRate = setter;
 		declaredWrite = !GENERIC_SPEED_SETTERS.has(name);
 		break;
+	}
+	if (!setPlaybackRate && adapter?.discovery.setterNamePattern) {
+		// The declared setter was renamed; accept a method whose name looks like a
+		// rate/ratio changer rather than letting the write degrade to the proxy.
+		const setter = scanForSetter(controller, new RegExp(adapter.discovery.setterNamePattern, 'i'));
+		if (setter) {
+			setPlaybackRate = setter;
+			declaredWrite = true;
+		}
 	}
 	if (!setPlaybackRate) {
 		for (const name of GENERIC_SPEED_SETTERS) {
@@ -408,6 +532,12 @@ function collectControllerCandidates(
 	 * must not win. Distance keeps the row's own order for tie-breaking.
 	 */
 	const globals = adapter?.discovery.globalPaths ?? [];
+	// `primaryFound` tracks whether the row's *real* target (the first entry in
+	// `globalPaths`) resolved. The remaining entries are safety nets; a net
+	// resolving must NOT suppress the structural scan, or the broad `player`
+	// proxy would win the renamed-revision case and the write would degrade to
+	// rate-correct-but-UI-blind.
+	let primaryFound = false;
 	for (let index = 0; index < globals.length; index += 1) {
 		const path = globals[index];
 		if (!path) continue;
@@ -419,6 +549,19 @@ function collectControllerCandidates(
 			element.ownerDocument.documentElement,
 			true,
 		);
+		if (index === 0) primaryFound = true;
+	}
+	// The exact global path can disappear when Douyin renames the playback plugin.
+	// Walk `player.plugins` for the member that carries a rate-like config field
+	// or a rate-setter method, so discovery survives the rename instead of
+	// collapsing to zero candidates. The scan-found plugin is placed closer than
+	// the `player` safety net, so the row's own renderer always outranks the
+	// rate-correct-but-UI-blind proxy.
+	if (!primaryFound && adapter?.discovery.globalPathFallback === 'scan-player-plugins') {
+		const scanned = scanPlayerPlugins();
+		if (scanned) {
+			consider(scanned, bounds.maxAncestorDepth, element.ownerDocument.documentElement, true);
+		}
 	}
 	let host = composedParent(element);
 	for (let distance = 1; host && distance <= bounds.maxAncestorDepth; distance += 1) {
@@ -501,6 +644,42 @@ function scanProjectionText(
 ): number | null {
 	const patterns = spec.patterns.map((source) => new RegExp(source));
 	/**
+	 * Fallback projection reader used when `selectedSelector` locates nothing.
+	 * Douyin renames the selected item's class between revisions (`select` →
+	 * `active`); instead of trusting a class name, scan the scope for every
+	 * element whose text looks like a rate label and accept the one carrying a
+	 * selected/active/current/checked marker. Returns the parsed number, or
+	 * `null` if no marked item is found. Never falls through to the bare text-node
+	 * walker, which would match the first option in the panel and lie.
+	 */
+	function scanMarkedProjectionItem(): number | null {
+		const marker = /(select|active|current|on|choosed|checked|chosen)/i;
+		let budget = SITE_ADAPTER_LIMITS.maxProjectionTextNodes;
+		const all = root.querySelectorAll('*');
+		for (let i = 0; i < all.length && budget > 0; i += 1) {
+			const el = all[i] as Element;
+			budget -= 1;
+			const text = (el.textContent ?? '').trim();
+			if (text.length === 0 || text.length > 24) continue;
+			if (!patterns.some((pattern) => pattern.test(text))) continue;
+			const cls = typeof el.className === 'string' ? el.className.toLowerCase() : '';
+			const tokens = cls.length > 0 ? cls.split(/\s+/) : [];
+			const isMarked = tokens.some((token) => marker.test(token))
+				|| el.getAttribute('aria-selected') === 'true'
+				|| el.getAttribute('data-selected') === 'true'
+				|| (el as HTMLElement).dataset?.selected === 'true';
+			if (!isMarked) continue;
+			for (const pattern of patterns) {
+				const captured = pattern.exec(text)?.[1];
+				if (!captured) continue;
+				const value = Number.parseFloat(captured);
+				if (!Number.isFinite(value) || value < SPEED_LIMIT.min || value > SPEED_LIMIT.max) continue;
+				return value;
+			}
+		}
+		return null;
+	}
+	/**
 	 * A selected-item projection is read from the marked element only. The same
 	 * panel prints every rate it offers (`0.75x … 3.0x`); scanning the whole
 	 * scope would answer with the first option and call it the current one. No
@@ -512,16 +691,22 @@ function scanProjectionText(
 	 */
 	if (spec.selectedSelector) {
 		const selected = root.querySelector(spec.selectedSelector);
-		if (!selected) return null;
-		const text = selected.textContent?.trim() ?? '';
-		if (text.length === 0 || text.length > 24) return null;
-		for (const pattern of patterns) {
-			const captured = pattern.exec(text)?.[1];
-			if (!captured) continue;
-			const value = Number.parseFloat(captured);
-			if (!Number.isFinite(value) || value < SPEED_LIMIT.min || value > SPEED_LIMIT.max) continue;
-			return value;
+		if (selected) {
+			const text = selected.textContent?.trim() ?? '';
+			if (text.length > 0 && text.length <= 24) {
+				for (const pattern of patterns) {
+					const captured = pattern.exec(text)?.[1];
+					if (!captured) continue;
+					const value = Number.parseFloat(captured);
+					if (!Number.isFinite(value) || value < SPEED_LIMIT.min || value > SPEED_LIMIT.max) continue;
+					return value;
+				}
+			}
 		}
+		// The exact selected class can miss after a Douyin revision; try the
+		// marker-based fallback, but never the bare walker (which would report the
+		// first option as the current one).
+		if (spec.selectedFallback) return scanMarkedProjectionItem();
 		return null;
 	}
 	const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -564,6 +749,20 @@ function readSpeedProjection(
 			continue;
 		}
 		if (scope && !roots.includes(scope)) roots.push(scope);
+	}
+	if (roots.length === 0 && spec.scopeSelectorFallbacks) {
+		// The exact panel selector can miss after a class rename. Fall back to
+		// substring class matching so the panel still surfaces instead of leaving
+		// the scope empty and the projection unreadable.
+		for (const selector of spec.scopeSelectorFallbacks.slice(0, SITE_ADAPTER_LIMITS.maxProjectionScopes)) {
+			let scope: Element | null = null;
+			try {
+				scope = document.querySelector(selector);
+			} catch {
+				continue;
+			}
+			if (scope && !roots.includes(scope)) roots.push(scope);
+		}
 	}
 	let host = composedParent(element);
 	for (

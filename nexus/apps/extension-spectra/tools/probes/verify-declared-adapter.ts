@@ -160,6 +160,45 @@ try {
 		`actual=${String(restore.actual)} badge=${afterRestore.badge}`,
 	);
 
+	// --- renamed revision: every string the row declares is renamed on the page.
+	// This exercises all five fallback paths at once — the plugin key, the config
+	// field, the setter method, the selected class, and the panel class — so the
+	// steady-state adapter must still discover, read, and write through the row
+	// instead of degrading to the rate-correct-but-UI-blind proxy.
+	const renamed = await openPage(browser, DOUYIN_ORIGIN, "renamed");
+	const renamedProbe = await call(renamed, "probe", "speed");
+	check("renamed revision is still discovered", renamedProbe.supported === true, JSON.stringify(renamedProbe));
+	check(
+		"renamed revision still names the adapter",
+		renamedProbe.adapterId === "douyin-speed",
+		`adapterId=${String(renamedProbe.adapterId)}`,
+	);
+	const renamedRead = await call(renamed, "read", "speed");
+	check(
+		"renamed revision reads the badge via fallback field",
+		renamedRead.projection === 1,
+		`projection=${String(renamedRead.projection)}`,
+	);
+	const renamedWrite = await call(renamed, "write", "speed", 2);
+	const afterRenamed = await probeState(renamed);
+	check("renamed write is accepted", renamedWrite.supported === true && !renamedWrite.error, JSON.stringify(renamedWrite.error ?? ""));
+	check("renamed write reports the controller value", renamedWrite.actual === 2, `actual=${String(renamedWrite.actual)}`);
+	check("renamed write reports the badge", renamedWrite.projection === 2, `projection=${String(renamedWrite.projection)}`);
+	check("renamed media element follows", afterRenamed.rate === 2, `rate=${afterRenamed.rate}`);
+	check("renamed badge follows via fallback marker", afterRenamed.badge === "2.0x", `badge=${afterRenamed.badge}`);
+	check(
+		"renamed decoy setter is never used",
+		afterRenamed.decoyWrites === 0,
+		`decoyWrites=${afterRenamed.decoyWrites}`,
+	);
+	const renamedReset = await call(renamed, "write", "speed", 1);
+	const afterRenamedReset = await probeState(renamed);
+	check(
+		"renamed writer restores the baseline",
+		renamedReset.actual === 1 && afterRenamedReset.badge === "1.0x",
+		`actual=${String(renamedReset.actual)} badge=${afterRenamedReset.badge}`,
+	);
+
 	// --- stale host: the setter moves the rate but the plugin's rendered state
 	// never follows. The declared read path is what makes this visible, and the
 	// bridge must refuse rather than leave a rate its own UI denies.

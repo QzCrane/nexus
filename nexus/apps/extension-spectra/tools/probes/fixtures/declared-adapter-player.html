@@ -30,23 +30,39 @@
 	A decoy with generic names sits one level closer to the video than anything
 	reachable, so generic discovery picks it. The declared row has to win anyway.
 -->
-<div id="player">
-	<div id="mid">
-		<video id="v" playsinline preload="metadata"><track kind="captions" /></video>
-	</div>
-	<div class="xgplayer-playback-setting">
-		<div class="xgplayer-setting-playbackRatio">倍速</div>
-		<div class="xgplayer-setting-content">
-			<div class="xgplayer-playratio-wrap" id="rates"></div>
+	<div id="player">
+		<div id="mid">
+			<video id="v" playsinline preload="metadata"><track kind="captions" /></video>
+		</div>
+		<div id="panel">
+			<div class="xgplayer-setting-playbackRatio">倍速</div>
+			<div class="xgplayer-setting-content">
+				<div class="xgplayer-playratio-wrap" id="rates"></div>
+			</div>
 		</div>
 	</div>
-</div>
 <script>
 	(() => {
 		const mode = new URLSearchParams(location.search).get("mode") || "declared";
+		// `renamed` models a Douyin revision that renames every string the row
+		// declares, to exercise the fallback paths the bridge only takes when the
+		// exact match fails:
+		//   - plugin key:       playbacksettingplugin  -> playbackSettingPlugin
+		//   - config field:     playBackRatio          -> playbackRatio
+		//   - setter method:    onPlayRatioChange      -> onSpeedChange
+		//   - selected class:   .select                -> .active
+		//   - panel class:      .xgplayer-playback-setting -> .xgplayer-playback-setting-v2
+		const renamed = mode === "renamed";
+		const PLUGIN_KEY = renamed ? "playbackSettingPlugin" : "playbacksettingplugin";
+		const RATIO_FIELD = renamed ? "playbackRatio" : "playBackRatio";
+		const SETTER_NAME = renamed ? "onSpeedChange" : "onPlayRatioChange";
+		const SELECTED_CLASS = renamed ? "active" : "select";
+		const PANEL_CLASS = renamed ? "xgplayer-playback-setting-v2" : "xgplayer-playback-setting";
 		const video = document.getElementById("v");
 		const mid = document.getElementById("mid");
 		const wrap = document.getElementById("rates");
+		const panel = document.getElementById("panel");
+		panel.className = PANEL_CLASS;
 
 		const RATES = ["0.75", "1.0", "1.25", "1.5", "1.75", "2.0", "3.0"];
 		const items = RATES.map((rate) => {
@@ -60,31 +76,31 @@
 
 		// The badge is a render of plugin state. It is never read back from
 		// video.playbackRate — that is the whole point of the fixture.
-		const state = { playBackRatio: 1, loginBlock: false };
+		const state = { [RATIO_FIELD]: 1, loginBlock: false };
 
 		const plugin = {
 			config: state,
 			player: null,
-			root: document.querySelector(".xgplayer-playback-setting"),
-			onPlayRatioChange(value) {
-				const rate = Number(value);
-				if (!Number.isFinite(rate)) throw new TypeError("rate must be a number");
-				this.player.config.defaultPlaybackRate = rate;
-				this.player.playbackRate = rate;
-				// `stale` keeps the rate moving and the panel behind: the Douyin bug.
-				if (mode !== "stale") state.playBackRatio = rate;
-				this.renderRoot();
-			},
-			renderRoot() {
-				for (const el of items) {
-					el.classList.toggle("select", Number(el.dataset.id) === Number(state.playBackRatio));
-				}
-			},
+			root: panel,
+		};
+		plugin[SETTER_NAME] = function (value) {
+			const rate = Number(value);
+			if (!Number.isFinite(rate)) throw new TypeError("rate must be a number");
+			this.player.config.defaultPlaybackRate = rate;
+			this.player.playbackRate = rate;
+			// `stale` keeps the rate moving and the panel behind: the Douyin bug.
+			if (mode !== "stale") state[RATIO_FIELD] = rate;
+			this.renderRoot();
+		};
+		plugin.renderRoot = function () {
+			for (const el of items) {
+				el.classList.toggle(SELECTED_CLASS, Number(el.dataset.id) === Number(state[RATIO_FIELD]));
+			}
 		};
 
 		const player = {
 			config: { defaultPlaybackRate: 1, playbackRate: false },
-			plugins: { playbacksettingplugin: plugin },
+			plugins: { [PLUGIN_KEY]: plugin },
 			video,
 		};
 		Object.defineProperty(player, "playbackRate", {
@@ -114,8 +130,9 @@
 
 			window.__fixture = {
 				mode,
-				speed: () => state.playBackRatio,
-				badge: () => items.find((el) => el.classList.contains("select"))?.textContent ?? "",
+				renamed,
+				speed: () => state[RATIO_FIELD],
+				badge: () => items.find((el) => el.classList.contains(SELECTED_CLASS))?.textContent ?? "",
 				rate: () => video.playbackRate,
 				decoyWrites: () => decoyWrites,
 			};
@@ -124,8 +141,9 @@
 
 		window.__fixture = {
 			mode,
-			speed: () => state.playBackRatio,
-			badge: () => items.find((el) => el.classList.contains("select"))?.textContent ?? "",
+			renamed,
+			speed: () => state[RATIO_FIELD],
+			badge: () => items.find((el) => el.classList.contains(SELECTED_CLASS))?.textContent ?? "",
 			rate: () => video.playbackRate,
 			decoyWrites: () => 0,
 		};
