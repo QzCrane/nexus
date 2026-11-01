@@ -1,5 +1,7 @@
 <!DOCTYPE html>
-<html lang="en">
+<!-- `id` identifies the main view's scroll surface for the overlay scrollbar's
+     `aria-controls` (the settings view uses its own `#view-settings`). -->
+<html id="spectra-scroll-root" lang="en">
   <head>
     <meta charset="UTF-8" />
     <!-- Render-blocking on purpose: reserves the popup height before the first
@@ -752,6 +754,25 @@
           <div class="version-info">v1.0.0 • Dev</div>
         </div>
       </div>
+    </div>
+
+    <!-- Floating overlay scrollbar: mirrors the active scroll surface (the
+         document root, or #view-settings while it is open) without consuming
+         layout width, so card gutters stay equal on both sides of the popup.
+         It is a real scrollbar, not a decoration: draggable thumb, track that
+         pages, keyboard driven, and exposed to assistive tech. -->
+    <div
+      class="spectra-scrollbar"
+      role="scrollbar"
+      aria-label="Scroll"
+      aria-controls="spectra-scroll-root"
+      aria-orientation="vertical"
+      aria-valuemin="0"
+      aria-valuenow="0"
+      aria-valuemax="0"
+      tabindex="0"
+    >
+      <div class="spectra-scrollbar__thumb"></div>
     </div>
 
     <template id="tmpl-card">

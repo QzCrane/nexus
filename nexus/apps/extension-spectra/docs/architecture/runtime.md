@@ -223,7 +223,10 @@ shape grows once, records its own height, and never grows again.
 MutationObserver invalidations coalesce into one requestAnimationFrame before
 writing ancestor root geometry. Writing the observed root during descendant
 observer delivery creates undelivered shallower notifications. Release/retrack
-cancels the queued frame and fences callbacks by tracking revision.
+cancels the queued frame and fences callbacks by tracking revision. The overlay
+scrollbar owns only visual geometry and scrolling; its observers, listeners,
+drag capture and paging timers belong to the existing Popup attempt disposer,
+so bootstrap retry cannot stack them.
 
 `popup/frame-height.ts` owns the document frame once the module starts. Until
 `data-spectra-ready` is published — the inventory has committed every card this

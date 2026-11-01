@@ -11,6 +11,7 @@ import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { clearPopupStartupError, showPopupStartupError } from './startup-error';
 import { runBoundedCardBootstrap } from './bounded-card-bootstrap';
 import { flushPredictedFrameHeight, releasePopupFrame, reservePopupFrame, trackPopupFrame } from './frame-height';
+import { installOverlayScrollbar } from './overlay-scrollbar';
 import { getSettingsSnapshot } from '../shared/settings-client';
 import { loadPopupLocaleCatalog } from '../shared/i18n/popup-catalog';
 import { EN_US } from './constants/i18n/en';
@@ -118,6 +119,13 @@ async function main(): Promise<void> {
 	// mechanism exists to remove.
 	reservePopupFrame();
 	trackPopupFrame();
+	// Floating overlay scrollbar: mirrors `html` scroll without consuming layout
+	// width, so cards keep equal left/right gutters (the native bar is hidden).
+	try {
+		registerPopupAttemptDisposer(installOverlayScrollbar());
+	} catch (error) {
+		console.error('[SPECTRA Popup] overlay scrollbar failed:', error);
+	}
 	void installAccessibilityPolicy().catch((error: unknown) => {
 		console.debug('[SPECTRA Popup] Accessibility policy was not installed:', error);
 	});

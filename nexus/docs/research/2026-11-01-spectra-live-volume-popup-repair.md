@@ -119,16 +119,16 @@ Final evidence on the integrated source and development artifact:
   [earlier baseline](2026-11-01-spectra-speed-toolbar-sync.md): legacy bridge
   pattern expectations, writer classification, existing Chinese comments,
   public parity and sender-check recognition. This is not a full release-gate
-  certification; no public projection, commit or release was performed.
+  certification; no public projection or release was performed.
 
 Scope audit: preserve the pre-existing Popup CSS/HTML and scrollbar behavior;
 the only integration into those dirty implementation files is scrollbar
 lifecycle cleanup and its attempt disposer. Earlier speed repairs remain.
-For the requested Git checkpoint, the pre-existing Popup CSS/HTML, scrollbar
-module and Popup entry integration remain outside the commit. The lifecycle
-cleanup attached to that work remains local with it. The browser results above
-describe the integrated working tree, including that preserved local UI; they
-are not an independent validation of a checkout that excludes it.
+The first requested Git checkpoint (`11d06740`) excluded the pre-existing Popup
+CSS/HTML, scrollbar module and Popup entry integration. The user subsequently
+explicitly authorized committing and pushing the UI as well. A second checkpoint
+includes those four files and their lifecycle cleanup, matching the integrated
+working tree exercised by the browser results above.
 Temporary diagnostic console writes were removed. Retain the named local
 fixtures, regression specs, this record, the development dist and normal
 canonical build/type caches. Test browser profiles are disposed by their owners;
@@ -140,3 +140,10 @@ the real UI from prior validation. Sample a transaction's controller baseline
 only after the existing restore barrier, and keep local settlement clocks
 separate from actual-state revision clocks. These rules now have executable
 regressions rather than depending on chat history.
+
+Hook follow-up: the repository's Windows MSYS failure invokes its existing
+direct-Bun fallback. That pre-commit fallback runs Biome but omits the configured
+documentation gate; run `docs:check` explicitly for this checkpoint. The durable
+repair belongs to the hook owner: one shared gate definition consumed by both
+normal and fallback execution, with a failure-path parity regression. Keep that
+separate from media behavior and do not disable hooks to push this checkpoint.

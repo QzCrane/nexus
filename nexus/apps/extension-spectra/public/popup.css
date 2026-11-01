@@ -59,6 +59,15 @@ html {
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth; /* smooth scrolling */
+  /* No reserved gutter and no native scrollbar: the document scrollbar must not
+   * consume layout width, so the cards keep equal left/right gutters to the
+   * popup edge. Past Chrome's 600px ceiling the frame flips `overflow-y` from
+   * `hidden` to `auto`; that flip no longer reclaims width because the native
+   * bar is zero-width (see the root `::-webkit-scrollbar` override below) and a
+   * floating overlay scrollbar mirrors the scroll position without touching the
+   * content box. The overlay is installed by `installOverlayScrollbar` in
+   * `src/popup/overlay-scrollbar.ts`. */
+  scrollbar-width: none; /* Firefox: hide the native root scrollbar */
   /* The reserved height is applied before the first paint, so an open starts at
    * the size it will keep. The class below is added by the Popup at the moment
    * the inventory publishes, which is the only point an open can disagree with
@@ -126,6 +135,82 @@ body {
 }
 ::-webkit-scrollbar-thumb:hover {
   background-color: color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+/* The root scroll container keeps a zero-width native scrollbar so it never
+ * shifts the content box; the floating overlay scrollbar replaces it. Inner
+ * scroll areas (e.g. the side panel) keep the styled 6px bar above. */
+html {
+  -ms-overflow-style: none; /* legacy Edge/IE */
+}
+html::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}
+
+/* Floating overlay scrollbar: mirrors the active scroll surface (the document
+ * root for the main view, or #view-settings while it is open), consuming no
+ * layout width. Its thumb is styled to match the native settings scrollbar so
+ * the two pages read as one. It is persistent while scrollable (like the native
+ * bar) and widens/darkens on hover, focus and drag via `.is-dragging`. */
+.spectra-scrollbar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  /* Hit area: 10px, still inside the 12px gutter, so the bar never covers a
+   * card or the nav buttons (whose right edge sits ~20px from the popup edge).
+   * The visible thumb stays 6px and flush to the edge, matching the native bar. */
+  width: 10px;
+  z-index: 130;
+  pointer-events: auto;
+  background-color: transparent;
+  transition: background-color 120ms ease;
+}
+/* The track tints on hover/focus, like a native scrollbar well. */
+.spectra-scrollbar:hover,
+.spectra-scrollbar:focus-visible {
+  background-color: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.spectra-scrollbar.is-hidden {
+  display: none;
+}
+.spectra-scrollbar__thumb {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 6px;
+  border-radius: 3px;
+  background-color: color-mix(in srgb, var(--text) 12%, transparent);
+  cursor: pointer;
+  transition:
+    width 120ms ease,
+    border-radius 120ms ease,
+    background-color 120ms ease;
+  will-change: transform, height;
+}
+/* Widen and darken on hover, on keyboard focus and while dragging: the same
+ * reveal a native overlay scrollbar uses, and the drag state is kept even when
+ * the pointer leaves the bar mid-drag. */
+.spectra-scrollbar:hover .spectra-scrollbar__thumb,
+.spectra-scrollbar:focus-visible .spectra-scrollbar__thumb,
+.spectra-scrollbar.is-dragging .spectra-scrollbar__thumb {
+  width: 10px;
+  border-radius: 5px;
+  background-color: color-mix(in srgb, var(--text) 22%, transparent);
+}
+
+/* Dragging must not select the text underneath the pointer. */
+html.spectra-scrollbar-dragging {
+  user-select: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spectra-scrollbar,
+  .spectra-scrollbar__thumb {
+    transition: none;
+  }
 }
 
 :where(button, input, select, [role="button"]):focus-visible {
@@ -329,7 +414,7 @@ body {
      own margins used to add up to, now owned in one place. */
   /* Horizontal padding is the gap between the card and the popup edge; kept
      equal to the card's own inner padding so both bands match. */
-  padding: 12px 10px 24px;
+  padding: 12px 12px 24px; /* horizontal gutter aligned with #view-settings (12px) so both pages are equally narrow */
   box-sizing: border-box;
   background: var(--bg);
   opacity: 1;
@@ -357,12 +442,18 @@ body {
   left: 0;
   width: 100%;
   height: 100%; /* explicit height to ensure content is visible */
-  padding: 12px;
+  /* Match the main view's gutter (12px sides, 24px bottom) so the two pages read
+   * as one layout. The popup-level native scrollbar is hidden below so it never
+   * reclaims width - the floating overlay scrollbar (installed by
+   * `installOverlayScrollbar`) mirrors this surface instead, keeping the card
+   * gutters equal to the main view. */
+  padding: 12px 12px 24px;
   box-sizing: border-box;
   background: var(--bg);
 
   overflow-y: auto; /* scroll when content overflows */
   scroll-behavior: smooth; /* smooth scrolling */
+  scrollbar-width: none; /* Firefox: hide the native settings scrollbar */
 
   opacity: 0;
   pointer-events: none;
@@ -371,6 +462,15 @@ body {
     transform 0.3s cubic-bezier(0.4, 0, 0.2, 1),
     opacity 0.2s;
   z-index: 10;
+}
+
+/* Hide the native settings scrollbar so it cannot take layout width; the
+ * floating overlay scrollbar mirrors this surface. The generic 6px styled bar
+ * above still serves inner areas such as the side panel. */
+#view-settings::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 #view-settings.active {
