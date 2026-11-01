@@ -59,14 +59,16 @@ html {
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth; /* smooth scrolling */
-  /* Crucial: Disable height transition during startup and initial frame settlement.
-   * Correcting from reserved/predicted height to actual content height is instantaneous
-   * and atomic, completely eliminating visible window size flickering or bounce. */
+  /* The reserved height is applied before the first paint, so an open starts at
+   * the size it will keep. The class below is added by the Popup at the moment
+   * the inventory publishes, which is the only point an open can disagree with
+   * its own reservation - the one disagreement worth travelling instead of
+   * snapping. Until then nothing is allowed to animate the frame. */
   transition: none;
 }
 
-/* Once the initial frame has cleanly settled without visual jump, subsequent
- * runtime layout adjustments (e.g. side-panel toggle, settings view) animate smoothly. */
+/* From the publish onwards every frame change travels: the settling correction,
+ * then the runtime layout adjustments (side-panel toggle, settings view). */
 html.spectra-frame-stable {
   transition: height 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }

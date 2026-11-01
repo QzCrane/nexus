@@ -75,7 +75,17 @@ export {
 
 export {
 	crossesVolumeRoute,
+	resolveBoostRoute,
+	resolveNativeRoute,
+	resolveVolumeTone,
 	shouldHoldVolumeTone,
+} from './volume-presentation.contracts.js';
+
+export type {
+	VolumeBoostRoute,
+	VolumeNativeRoute,
+	VolumeTone,
+	VolumeToneInput,
 } from './volume-presentation.contracts.js';
 export type { VolumeRouteHoldInput } from './volume-presentation.contracts.js';
 

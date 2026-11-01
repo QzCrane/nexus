@@ -66,11 +66,32 @@ function writePredictedFrameHeight(height: number): void {
   }
 }
 
-function schedulePersist(height: number): void {
-  // This is one small synchronous write. Debouncing it used to lose the height
-  // whenever the user reopened quickly, because a Popup closes long before the
-  // old 250ms timer fired.
-  writePredictedFrameHeight(height);
+// The hint is a promise about the *settled* layout, and the moment the inventory
+// publishes is not that moment: the last card may still be committing, and the
+// first correction has not been applied yet. Writing then stored a height no
+// open ever landed on, so every open reserved it, measured, and jumped - the
+// flicker this whole mechanism exists to remove. Deferring one frame writes the
+// layout the Popup actually kept on screen.
+let persistHandle = 0;
+function schedulePersist(measure: () => number): void {
+  if (persistHandle !== 0) cancelAnimationFrame(persistHandle);
+  persistHandle = requestAnimationFrame(() => {
+    persistHandle = 0;
+    const settled = measure();
+    if (!Number.isFinite(settled) || settled <= 0) return;
+    writePredictedFrameHeight(clampFrameHeight(settled));
+  });
+}
+
+// The pagehide path: a Popup can be closed between the publish and that frame,
+// and losing the write would leave the next open with no hint at all.
+export function flushPredictedFrameHeight(): void {
+  if (persistHandle !== 0) {
+    cancelAnimationFrame(persistHandle);
+    persistHandle = 0;
+  }
+  if (!inventoryPublished() || measuredHeight === null) return;
+  writePredictedFrameHeight(measuredHeight);
 }
 
 // eff: sizes the document to the last settled height before the first paint
@@ -97,6 +118,10 @@ export function releasePopupFrame(): void {
 	predictedHeight = null;
 	measuredHeight = null;
 	measuredOverflowY = null;
+  if (persistHandle !== 0) {
+    cancelAnimationFrame(persistHandle);
+    persistHandle = 0;
+  }
   const html = document.documentElement;
   html.classList.remove('spectra-frame-stable');
   html.style.height = '';
@@ -107,29 +132,35 @@ export function releasePopupFrame(): void {
 }
 
 // The inventory publishes `data-spectra-ready` once every card that will be
-// rendered for this open has been committed. Until then the predicted height is
-// a floor: the window may grow into the real layout but must never shrink back
-// through an intermediate, half-populated measurement.
+// rendered for this open has been committed. Until then the frame is *held* at
+// the prediction: an open must never be a sequence of window sizes.
 function inventoryPublished(): boolean {
   return document.documentElement.dataset.spectraReady !== undefined;
 }
 
 /**
- * The whole sizing rule: the frame is the content height, held up by the
- * prediction until the inventory has published, and never past Chrome's ceiling.
+ * The whole sizing rule: the frame is the content height, held at the
+ * prediction until the inventory has published, and never past Chrome's
+ * ceiling.
  *
- * The prediction exists only to cover the gap before the inventory answers. Once
- * it has answered, a prediction that is still in force is simply a stale height
- * from a previous open: keeping it would leave blank space below the last card
- * whenever this open is shorter than the one before it.
+ * While the inventory is pending the window is *pinned*, not floored. A floor
+ * (`max(content, prediction)`) still lets every card that mounts push the
+ * window one step taller, and that sequence of resizes is exactly the flicker:
+ * the Popup opens, grows, grows again, then settles. Holding the prediction
+ * means the window size changes at most once per open - when the inventory
+ * publishes - and not at all when the prediction was right.
+ *
+ * Once the inventory has answered, a prediction that is still in force is a
+ * stale height from a previous open: keeping it would leave blank space below
+ * the last card whenever this open is shorter than the one before it.
  */
 export function resolveFrameTarget(
   content: number,
   published: boolean,
   predicted: number | null,
 ): number {
-  const floor = published ? 0 : (predicted ?? 0);
-  return clampFrameHeight(Math.max(content, floor));
+  if (published) return clampFrameHeight(content);
+  return clampFrameHeight(predicted ?? content);
 }
 
 // eff: retargets the frame whenever the rendered content changes height
@@ -167,6 +198,12 @@ export function trackPopupFrame(): void {
     }
     measuredHeight = target;
     measuredOverflowY = overflowY;
+    // The publish is the only moment an open can disagree with its own
+    // prediction, and it is the one moment a resize is not the user's doing.
+    // Enabling the travel *before* the write means the disagreement is eased
+    // instead of snapped: the window finishes settling rather than jumping.
+    // With a correct hint - the common case - there is nothing to animate.
+    if (published) html.classList.add('spectra-frame-stable');
     html.style.height = `${target}px`;
     html.style.overflowY = overflowY;
     // Only a frame the content can settle on is worth remembering. Persisting
@@ -176,14 +213,7 @@ export function trackPopupFrame(): void {
     // from it to the real one. The reservation is a promise about the settled
     // layout, so only the settled layout may write it.
     if (published) {
-      schedulePersist(target);
-      // Once the settled published frame is applied without transitions, enable
-      // transition for subsequent runtime layout mutations (side-panel, etc.) on next frame.
-      if (!html.classList.contains('spectra-frame-stable')) {
-        requestAnimationFrame(() => {
-          html.classList.add('spectra-frame-stable');
-        });
-      }
+      schedulePersist(() => container.getBoundingClientRect().height);
     }
   };
 

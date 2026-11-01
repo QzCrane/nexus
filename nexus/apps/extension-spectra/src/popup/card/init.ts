@@ -1,7 +1,6 @@
 // goal: main entry point for initializing a tab control card, aggregating status probing, DOM setup, and event binding
 
 import {
-	audioSessionMatchesControlDocument,
 	createSpectraRequest,
 	isActiveCaptureLifecycle,
 } from '@nexus/contracts';
@@ -13,6 +12,7 @@ import {
 	hasKnownBackgroundRetentionInputs,
 	readCardSnapshot,
 	resolveInitialProcessorLifecycle,
+	sessionBelongsToCard,
 } from './snapshot';
 import { isCurrentTopDocument } from '../../shared/top-document';
 import { registerCardRenderCallback } from '../views/settings';
@@ -96,9 +96,13 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const isRemoteActive = snapshot.isRemoteActive.state === 'known' ? snapshot.isRemoteActive.value : null;
   let acknowledgedSession = snapshot.sessionSnapshot.state === 'known' ? snapshot.sessionSnapshot.value : null;
 
-	// Both observations are fenced to this card's exact document. Prefer the
-	// latest settled lifecycle instead of painting an older cached session first.
-	if (!audioSessionMatchesControlDocument(acknowledgedSession, controlSnapshot)) acknowledgedSession = null;
+	// Every observation is fenced to this card's exact document. The control
+	// projection is the usual witness, but it is an *independent* read: when it
+	// is still in flight (or the durable record was retired by the worker) a
+	// session that names this card's own document is still this card's session.
+	// Discarding it there is what made a hijacked page reopen at native blue and
+	// stay blue until the user touched the slider again.
+	if (!sessionBelongsToCard(acknowledgedSession, controlSnapshot, documentId)) acknowledgedSession = null;
 	// The control snapshot's own processor ACK is a lifecycle statement, so the
 	// route colour never depends on a second read that may be slower than this
 	// one; the runtime and session can only make it fresher.
@@ -138,8 +142,15 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     actualMode: lifecycle?.actualMode ?? 'bypass',
     desiredMode: lifecycle?.desiredMode ?? 'bypass',
     phase: lifecycle?.phase ?? 'idle',
-    audioDocumentId: lifecycle ? controlSnapshot?.documentId ?? null : null,
-    audioOrigin: lifecycle ? controlSnapshot?.origin ?? null : null,
+    // The lifecycle may be the only observation that answered, so its own
+    // document identity is the fence - a missing control snapshot is a missing
+    // read, not a missing document.
+    audioDocumentId: lifecycle
+      ? (lifecycleFromSession ? acknowledgedSession?.documentId : controlSnapshot?.documentId) ?? null
+      : null,
+    audioOrigin: lifecycle
+      ? (lifecycleFromSession ? acknowledgedSession?.origin : controlSnapshot?.origin) ?? null
+      : null,
     audioGeneration: lifecycle?.generation ?? -1,
 	    audioConfigRevision: lifecycleFromSession ? acknowledgedSession?.configRevision ?? 0 : 0,
     controlGeneration: controlSnapshot?.generation ?? 0,

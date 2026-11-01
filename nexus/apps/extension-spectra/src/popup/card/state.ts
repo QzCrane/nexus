@@ -15,6 +15,7 @@ import { isReportedControlFailure, PopupControlChannelError, type PopupControlTr
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
 import { updateCachedControlSnapshot } from './snapshot';
 import { classifyControlSnapshot, isControlClockStale } from '../control-snapshot-order';
+import { gestureVolumeTone } from './render';
 
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;
@@ -212,10 +213,26 @@ export function createUpdateFn(
 		if (!volumeChanged && Object.keys(patch).length === 0) return;
 
 		const inputRevision = localRevision + 1;
+		// The Action badge and the slider must change colour in the same turn. The
+		// Background cannot derive this from `effectiveVolume` alone (a threshold
+		// is not a route), so the card publishes the exact tone it is about to
+		// paint, computed by the one shared predicate in `@nexus/contracts`.
+		const toneChanged = volumeChanged || changes.muted !== undefined;
+		const tone = toneChanged
+			? gestureVolumeTone({
+				muted: next.muted,
+				volume: nextVolume,
+				actualMode: state.actualMode,
+				phase: state.phase,
+				enabled: next.enabled,
+				controlSnapshot: state.controlSnapshot,
+			})
+			: null;
 		try {
 			transport.stage({
 				inputRevision,
 				...(volumeChanged ? { effectiveVolume: nextVolume } : {}),
+				...(tone === null ? {} : { tone }),
 				groups: splitByCoverage(patch),
 			});
 		} catch (error) {

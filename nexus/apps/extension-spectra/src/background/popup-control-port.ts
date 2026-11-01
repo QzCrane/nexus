@@ -9,6 +9,7 @@ import {
 	type PopupControlReady,
 } from '../shared/popup-control-port';
 import { updateBadgeStagedVolume } from './handlers/badge';
+import { badgeState } from './state';
 
 const COALESCE_MS = 50;
 let receivedInputs = 0;
@@ -221,14 +222,21 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 		if (raw.inputRevision <= lastAcceptedRevision) { rejectPort(); return; }
 		receivedInputs = Math.min(Number.MAX_SAFE_INTEGER, receivedInputs + 1);
 		lastAcceptedRevision = raw.inputRevision;
-		if (raw.effectiveVolume !== undefined) {
-			volume = { revision: raw.inputRevision, value: raw.effectiveVolume };
+		if (raw.effectiveVolume !== undefined || raw.tone !== undefined) {
+			if (raw.effectiveVolume !== undefined) {
+				volume = { revision: raw.inputRevision, value: raw.effectiveVolume };
+			}
 			if (identity) {
-				updateBadgeStagedVolume(identity.tabId, raw.effectiveVolume, {
-					documentId: identity.documentId,
-					origin: '',
-					generation: 0,
-				});
+				// The tone rides along with the number, or alone when only the mute
+				// state moved, so the badge repaints in the card's own turn.
+				const stagedVolume = volume?.value ?? badgeState.get(identity.tabId)?.volume;
+				if (stagedVolume !== undefined) {
+					updateBadgeStagedVolume(identity.tabId, stagedVolume, raw.tone, {
+						documentId: identity.documentId,
+						origin: '',
+						generation: 0,
+					});
+				}
 			}
 		}
 		for (const group of raw.groups) {

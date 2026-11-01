@@ -321,7 +321,7 @@ describe('actual volume badge state', () => {
 		});
 
 		// First touch in popup: sliding from 100 to 110 on a cold tab
-		updateBadgeStagedVolume(TAB_ID, 110, { documentId: 'doc-1', origin: 'https://video.example', generation: 1 });
+		updateBadgeStagedVolume(TAB_ID, 110, undefined, { documentId: 'doc-1', origin: 'https://video.example', generation: 1 });
 		// Synchronous memory decision recorded immediately
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 110, userInteracted: true, isCapture: false });
 
@@ -339,6 +339,84 @@ describe('actual volume badge state', () => {
 		await Promise.resolve();
 		expect(texts.at(-1)).toBe('100');
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
+	});
+
+	test('paints the tone the card staged, in the same turn, without waiting for a route ACK', async () => {
+		const colors: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				action: {
+					setBadgeText: async () => undefined,
+					setBadgeBackgroundColor: async ({ color }: { color: string }) => { colors.push(color); },
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		// 100 -> 110 on a page that cannot amplify natively. The card already
+		// paints violet; the badge must not wait for the Capture handshake.
+		updateBadgeStagedVolume(TAB_ID, 110, 'capture', { documentId: 'doc-1', origin: '', generation: 0 });
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(colors.at(-1)).toBe(BADGE_COLORS.CAPTURE);
+		// A predicted violet is a tone, not a Capture fact.
+		expect(badgeState.get(TAB_ID)?.isCapture).toBe(false);
+
+		// Back below the ceiling: the card is blue again, so the badge is too.
+		updateBadgeStagedVolume(TAB_ID, 100, 'native');
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
+
+		// A page that amplifies on its own never turns violet at any volume.
+		updateBadgeStagedVolume(TAB_ID, 350, 'native');
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
+	});
+
+	test('a gesture staged while a projection is in flight is not overwritten by it', async () => {
+		const colors: string[] = [];
+		let releaseSet: (() => void) | undefined;
+		let setCalls = 0;
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				storage: { session: {
+					get: async () => ({}),
+					set: async () => {
+						setCalls += 1;
+						// Park the projection inside the usage await it starts with,
+						// which is exactly where a live gesture lands in production.
+						if (setCalls === 1) await new Promise<void>((release) => { releaseSet = release; });
+					},
+					remove: async () => undefined,
+				} },
+				action: {
+					setBadgeText: async () => undefined,
+					setBadgeBackgroundColor: async ({ color }: { color: string }) => { colors.push(color); },
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		const inFlight = updateBadgeFromControlProjection(identity(), projection({
+			volumeBase: 100,
+			boost: 1,
+		}), false, true);
+		for (let tick = 0; tick < 50 && !releaseSet; tick += 1) {
+			await new Promise((next) => setTimeout(next, 0));
+		}
+		// The gesture is newer than the projection's facts, so its tone survives.
+		updateBadgeStagedVolume(TAB_ID, 120, 'capture', identity());
+		releaseSet?.();
+		await inFlight;
+
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 120, tone: 'capture' });
+		expect(colors.at(-1)).toBe(BADGE_COLORS.CAPTURE);
 	});
 });
 

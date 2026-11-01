@@ -1,6 +1,7 @@
 // goal: centralized in-memory state management for the Background Service Worker lifecycle
 
 import { StorageRepository } from '@nexus/kernel';
+import type { VolumeTone } from '@nexus/contracts';
 import { UI_COLORS } from '../shared/ui-colors';
 
 export interface BadgeInfo {
@@ -8,6 +9,8 @@ export interface BadgeInfo {
 	muted: boolean;
 	enabled: boolean;
 	isCapture: boolean;
+	/** The palette decision shared with the Popup slider. */
+	tone: VolumeTone;
 	userInteracted: boolean;
 	authority: 'control' | 'session';
 	text: string;

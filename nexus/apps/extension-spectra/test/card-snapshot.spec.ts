@@ -3,6 +3,7 @@ import {
 	acknowledgedProcessorLifecycle,
 	hasKnownBackgroundRetentionInputs,
 	readCachedCardSnapshot,
+	readCardSnapshot,
 	resolveInitialProcessorLifecycle,
 	sessionBelongsToCard,
 	writeCachedCardSnapshot,
@@ -134,5 +135,49 @@ describe('field-level card snapshot coverage', () => {
 		expect(cached).not.toBeNull();
 		expect(cached?.documentId).toBe('doc-123');
 		expect(cached?.fromCache).toBe(true);
+	});
+
+	test('a cached forecast never overrides the durable route the background owns', async () => {
+		// The reported regression: a hijacked page reopened with a native-blue bar
+		// because the card painted a cached `bypass` route while the durable
+		// session already said capture. The cache is a copy; the durable record is
+		// the owner, so the copy may never win.
+		const tabId = 4_242;
+		const documentId = 'doc-live';
+		const bypassSession = {
+			tabId, documentId, origin: 'https://live.test', generation: 1,
+			desiredMode: 'bypass', actualMode: 'bypass', phase: 'idle',
+			configRevision: 0, actualConfig: null, lastError: null,
+		};
+		const captureSession = { ...bypassSession, desiredMode: 'capture', actualMode: 'capture', phase: 'active' };
+		const store: Record<string, unknown> = {
+			[`spectra.popup.card_cache.${tabId}`]: {
+				snapshot: {
+					documentId,
+					status: { state: 'unknown', reason: 'timeout' },
+					controlSnapshot: { state: 'known', value: null },
+					sessionSnapshot: { state: 'known', value: bypassSession },
+					isRemoteActive: { state: 'unknown', reason: 'timeout' },
+				},
+			},
+			[`spectra_audio_session_${tabId}`]: captureSession,
+		};
+		(globalThis as unknown as { chrome: unknown }).chrome = {
+			storage: {
+				local: {
+					get: async (key: string | string[]) => {
+						const keys = Array.isArray(key) ? key : [key];
+						return Object.fromEntries(keys.filter((entry) => entry in store).map((entry) => [entry, store[entry]]));
+					},
+					set: async () => undefined,
+					remove: async () => undefined,
+				},
+			},
+		};
+
+		const snapshot = await readCardSnapshot(tabId);
+		expect(snapshot?.sessionSnapshot.state).toBe('known');
+		expect(snapshot?.sessionSnapshot.state === 'known' && snapshot.sessionSnapshot.value?.actualMode)
+			.toBe('capture');
 	});
 });

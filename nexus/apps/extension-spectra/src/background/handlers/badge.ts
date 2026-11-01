@@ -7,16 +7,17 @@ import {
 	audioSessionMatchesControlDocument,
 	compileEffectiveVolume,
 	isActiveCaptureLifecycle,
-	resolveAudioVolumeState,
+	resolveVolumeTone,
 	type AudioSessionSnapshot,
 	type ControlSessionPatch,
 	type ControlSnapshot,
+	type VolumeTone,
 } from '@nexus/contracts';
 import { hasBadgeUsage, markBadgeUsed } from '../badge-usage';
 
 type BadgeAuthority = 'control' | 'session';
 type BadgeIdentity = Pick<ControlSnapshot, 'documentId' | 'origin' | 'generation'>;
-type BadgeFacts = Pick<BadgeInfo, 'volume' | 'muted' | 'enabled' | 'isCapture' | 'userInteracted'>;
+type BadgeFacts = Pick<BadgeInfo, 'volume' | 'muted' | 'enabled' | 'isCapture' | 'tone' | 'userInteracted'>;
 
 // A decision and its paint are two different things. The decision is recorded
 // synchronously; the paint is queued behind whatever the Action API is doing.
@@ -25,18 +26,12 @@ type BadgeFacts = Pick<BadgeInfo, 'volume' | 'muted' | 'enabled' | 'isCapture' |
 // and the report then painted its own captured mute back over the fresh value.
 // A tab that is not muted keeps showing "M" for the rest of its life that way.
 function presentBadge(facts: BadgeFacts): { text: string; color: string } {
-	const volumeState = resolveAudioVolumeState({
-		volume: facts.volume,
-		muted: facts.muted,
-		actualMode: facts.isCapture ? 'capture' : 'bypass',
-		phase: facts.isCapture ? 'active' : 'idle',
-	});
 	if (!facts.enabled) return { text: String(facts.volume), color: BADGE_COLORS.DISABLED };
-	if (volumeState === 'silent') return { text: 'M', color: BADGE_COLORS.MUTED };
-	return {
-		text: String(facts.volume),
-		color: volumeState === 'capture' ? BADGE_COLORS.CAPTURE : BADGE_COLORS.NATIVE,
-	};
+	switch (facts.tone) {
+		case 'muted': return { text: 'M', color: BADGE_COLORS.MUTED };
+		case 'capture': return { text: String(facts.volume), color: BADGE_COLORS.CAPTURE };
+		default: return { text: String(facts.volume), color: BADGE_COLORS.NATIVE };
+	}
 }
 
 // post: this decision is visible to every concurrent reader before any await resumes
@@ -55,6 +50,7 @@ function recordBadgeDecision(
 		muted: facts.muted,
 		enabled: facts.enabled,
 		isCapture: facts.isCapture,
+		tone: facts.tone,
 		userInteracted: true,
 		authority,
 		text: presentBadge(facts).text,
@@ -67,12 +63,40 @@ function recordBadgeDecision(
 // eff: paints the decision that is current when the Action API is reached
 interface StagedVolumeEntry {
 	volume: number;
-	timestamp: number;
+	tone: VolumeTone;
+	/** Monotonic order of the staged inputs, so "newer than" needs no clock. */
+	stamp: number;
+	at: number;
 }
 const stagedVolumes = new Map<number, StagedVolumeEntry>();
+let stagedStamp = 0;
+// A gesture stage is authoritative until the projection that settles it lands.
+// The wall clock only bounds a stage whose acknowledgement never arrives.
+const STAGED_GRACE_MS = 600;
 
 export function resetStagedVolumesForTests(): void {
 	stagedVolumes.clear();
+	stagedStamp = 0;
+}
+
+/** The stage counter a caller observed before it started awaiting. */
+function observeStage(): number {
+	return stagedStamp;
+}
+
+function stagedOverrides(
+	tabId: number,
+	observedStamp: number,
+	projectedVolume: number,
+): StagedVolumeEntry | null {
+	const staged = stagedVolumes.get(tabId);
+	if (!staged) return null;
+	// A gesture that arrived while this projection was being resolved is newer
+	// than the facts it was built from, whatever the projection says.
+	if (staged.stamp > observedStamp) return staged;
+	const settling = staged.volume !== projectedVolume
+		&& Date.now() - staged.at < STAGED_GRACE_MS;
+	return settling ? staged : null;
 }
 
 async function paintBadge(tabId: number): Promise<void> {
@@ -122,6 +146,9 @@ export async function updateBadgeFromControlProjection(
 	isCaptureActive: boolean,
 	userInteracted: boolean,
 ): Promise<void> {
+	// Read the stage order before the first await: a gesture that lands while
+	// this projection is still resolving is newer than every fact below it.
+	const observedStage = observeStage();
 	const used = await resolveStickyUsage(snapshot.tabId, userInteracted);
 	const stickyInteraction = used || badgeState.get(snapshot.tabId)?.userInteracted === true;
 	if (typeof projection.volumeBase !== 'number' || typeof projection.boost !== 'number') {
@@ -134,24 +161,32 @@ export async function updateBadgeFromControlProjection(
 			muted: false,
 			enabled: true,
 			isCapture: false,
+			tone: 'muted',
 			userInteracted: false,
 		}, 'control', snapshot);
 		return paintBadge(snapshot.tabId);
 	}
 
 	const projectedVolume = compileEffectiveVolume(projection.volumeBase, projection.boost);
-	const staged = stagedVolumes.get(snapshot.tabId);
-	// If the user has staged a volume within the last 600ms, prioritize the live gesture
-	// over the asynchronous projection settling from an earlier batch.
-	const volume = (staged && (Date.now() - staged.timestamp < 600))
-		? staged.volume
-		: projectedVolume;
+	const staged = stagedOverrides(snapshot.tabId, observedStage, projectedVolume);
+	const muted = projection.mediaMuted === true;
+	const enabled = projection.audioEnabled ?? true;
+	const volume = staged?.volume ?? projectedVolume;
+	const tone = resolveVolumeTone({
+		volume,
+		muted,
+		enabled,
+		captureActive: isCaptureActive,
+	});
 
 	recordBadgeDecision(snapshot.tabId, {
 		volume,
-		muted: projection.mediaMuted === true,
-		enabled: projection.audioEnabled ?? true,
+		muted,
+		enabled,
 		isCapture: isCaptureActive,
+		// The gesture already published this tone; keeping it means the badge only
+		// changes when the *route* changes, never one acknowledgement later.
+		tone: staged?.tone ?? tone,
 		userInteracted: stickyInteraction,
 	}, 'control', snapshot);
 	return paintBadge(snapshot.tabId);
@@ -190,34 +225,70 @@ export async function updateBadgeFromSession(
 		if (stickyInteraction && !documentChanged) return;
 		return paintBadge(snapshot.tabId);
 	}
+	const captureActive = isActiveCaptureLifecycle(snapshot);
 	recordBadgeDecision(snapshot.tabId, {
 		volume: previous.volume,
 		muted: previous.muted,
 		enabled: previous.enabled,
-		isCapture: isActiveCaptureLifecycle(snapshot),
+		isCapture: captureActive,
+		tone: resolveVolumeTone({
+			volume: previous.volume,
+			muted: previous.muted,
+			enabled: previous.enabled,
+			captureActive,
+		}),
 		userInteracted: true,
 	}, 'control', snapshot);
 	return paintBadge(snapshot.tabId);
 }
 
 /**
- * Instant synchronous volume feedback for live gestures before full pipeline settlement.
- * Keeps the toolbar Action badge text completely in sync with the Popup volume slider,
- * without waiting for asynchronous storage round-trips or coalesce timeouts.
+ * Instant synchronous feedback for live gestures, before full pipeline
+ * settlement.
+ *
+ * The card publishes the tone it is painting in the same message, so the badge
+ * never has to infer a route from a number: at 100 and at 110, on a hijacked
+ * page and a page that amplifies natively, the badge and the slider are the same
+ * colour in the same frame.
  */
 export function updateBadgeStagedVolume(
 	tabId: number,
 	effectiveVolume: number,
+	tone?: VolumeTone,
 	identity?: Pick<ControlSnapshot, 'documentId' | 'origin' | 'generation'> | null,
 ): void {
 	if (!Number.isFinite(effectiveVolume) || effectiveVolume < 0) return;
-	stagedVolumes.set(tabId, { volume: effectiveVolume, timestamp: Date.now() });
 	const current = badgeState.get(tabId);
-	recordBadgeDecision(tabId, {
+	const stagedTone = tone ?? current?.tone ?? resolveVolumeTone({
 		volume: effectiveVolume,
 		muted: current?.muted ?? false,
 		enabled: current?.enabled ?? true,
+		captureActive: current?.isCapture ?? false,
+	});
+	stagedStamp += 1;
+	stagedVolumes.set(tabId, {
+		volume: effectiveVolume,
+		tone: stagedTone,
+		stamp: stagedStamp,
+		at: Date.now(),
+	});
+	// The mute fact has to agree with the tone the card just published, or the
+	// next session report would recompute `native` from a stale `muted: false`
+	// and paint the number back over the M the user is looking at. A zero volume
+	// is silence, not a mute, and a disabled processor states nothing at all, so
+	// those two keep whatever the projection last acknowledged.
+	const enabled = current?.enabled ?? true;
+	const muted = enabled
+		? stagedTone === 'muted' && effectiveVolume > 0
+		: current?.muted ?? false;
+	recordBadgeDecision(tabId, {
+		volume: effectiveVolume,
+		muted,
+		enabled,
+		// A predicted violet is a *tone*, not a Capture fact: only the ACK may
+		// claim the processor is running.
 		isCapture: current?.isCapture ?? false,
+		tone: stagedTone,
 		userInteracted: true,
 	}, current?.authority ?? 'control', {
 		documentId: identity?.documentId ?? current?.documentId ?? '',

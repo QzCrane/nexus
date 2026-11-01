@@ -299,13 +299,38 @@ export function updateCachedControlSnapshot(tabId: number, controlSnapshot: Cont
 	});
 }
 
+/**
+ * The cached forecast, with its route refreshed from the durable facts.
+ *
+ * The cache exists so the first paint never waits on a cross-context read. It
+ * cannot be fresher than the background's own durable record, though: it is a
+ * *copy* of an older observation. A cached `bypass` route painting over a live
+ * Capture session is exactly the reopen that showed a violet bar turning blue,
+ * so the cheap durable read runs here too and wins whenever it has a value.
+ */
+async function readCachedCardSnapshotWithDurableRoute(tabId: number): Promise<CardSnapshot | null> {
+	const cached = await readCachedCardSnapshot(tabId);
+	if (!cached) return null;
+	const durable = await readDurableCardFacts(tabId, cached.documentId);
+	if (!durable.control && !durable.session) return cached;
+	return {
+		...cached,
+		controlSnapshot: durable.control
+			? { state: 'known', value: durable.control }
+			: cached.controlSnapshot,
+		sessionSnapshot: durable.session
+			? { state: 'known', value: durable.session }
+			: cached.sessionSnapshot,
+	};
+}
+
 export async function readCardSnapshot(
 	tabId: number,
 	options?: { allowCached?: boolean },
 ): Promise<CardSnapshot | null> {
 	if (!Number.isSafeInteger(tabId) || tabId <= 0) throw new Error('card snapshot requires a valid tab');
 	if (options?.allowCached ?? true) {
-		const cached = await readCachedCardSnapshot(tabId);
+		const cached = await readCachedCardSnapshotWithDurableRoute(tabId);
 		// The background retires the cache key on navigation and tab removal, so a
 		// stored record is a record for the tab's current document. There is no
 		// document fence to re-verify: the card paints this forecast immediately

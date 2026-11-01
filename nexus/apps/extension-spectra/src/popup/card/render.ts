@@ -5,7 +5,14 @@ import type { CardInternalState } from './types';
 import { COLORS, popupPrimaryColor } from '../constants';
 import type { GlobalSettings } from '@nexus/kernel';
 import type { AudioSessionPhase, SpectraAudioMode } from '@nexus/contracts';
-import { resolveAudioVolume, resolveAudioVolumeState } from '@nexus/contracts';
+import {
+  isActiveCaptureLifecycle,
+  resolveAudioVolume,
+  resolveBoostRoute,
+  resolveNativeRoute,
+  resolveVolumeTone,
+  type VolumeTone,
+} from '@nexus/contracts';
 import { renderPlaybackButton } from './media-events';
 import type { VolumeView } from './volume-view';
 import type { I18NDict } from '../types';
@@ -150,15 +157,16 @@ export function resolveVolumePresentation(
 ): { effectiveVolume: number; color: string } {
   const presentation = state.pendingVolumePresentation;
   const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
-  return {
-    effectiveVolume,
-    color: actualVolumeColor(
-      presentation?.muted ?? state.config.muted,
-      effectiveVolume,
-      presentation?.actualMode ?? state.actualMode,
-      presentation?.phase ?? state.phase,
-    ),
-  };
+  const tone = resolveVolumeTone({
+    volume: effectiveVolume,
+    muted: presentation?.muted ?? state.config.muted,
+    enabled: state.config.enabled,
+    captureActive: isActiveCaptureLifecycle({
+      actualMode: presentation?.actualMode ?? state.actualMode,
+      phase: presentation?.phase ?? state.phase,
+    }),
+  });
+  return { effectiveVolume, color: toneColor(tone) };
 }
 
 export function actualVolumeColor(
@@ -167,63 +175,68 @@ export function actualVolumeColor(
   actualMode: SpectraAudioMode | null,
   phase: AudioSessionPhase,
 ): string {
-  if (muted || volume <= 0) return COLORS.MUTED;
-  const state = resolveAudioVolumeState({ muted, volume, actualMode, phase });
-  return state === 'capture' ? COLORS.CAPTURE : popupPrimaryColor();
+  return toneColor(resolveVolumeTone({
+    volume,
+    muted,
+    enabled: true,
+    captureActive: isActiveCaptureLifecycle({ actualMode, phase }),
+  }));
+}
+
+function toneColor(tone: VolumeTone): string {
+  if (tone === 'muted') return COLORS.MUTED;
+  return tone === 'capture' ? COLORS.CAPTURE : popupPrimaryColor();
 }
 
 /**
- * Immediate predictive tone feedback during pointer or wheel gestures.
- * Crossing 100 provides immediate boost/native tone responsiveness when capture is active or required.
+ * The live-gesture tone, and the only place a route change may run ahead of the
+ * acknowledgement that settles it.
  *
- * Strict invariant: only genuine capture requirements switch to violet tone.
- * On page-native sites or unhijacked sites, volume amplification does not use Tab Capture,
- * and tone strictly remains native blue.
+ * Rule: violet means "this document is being hijacked", not "the number passed
+ * 100". The decision itself lives in `resolveVolumeTone`, which the Action badge
+ * reads too - the two surfaces can no longer disagree about the same page, at
+ * the same volume, in the same frame.
  */
 export function gestureVolumeColor(
   muted: boolean,
   volume: number,
   actualMode: SpectraAudioMode | null,
   phase: AudioSessionPhase,
-  config?: Pick<import('@nexus/contracts').AudioConfig, 'enabled' | 'eqValues' | 'compressor' | 'bass' | 'mono' | 'pan' | 'delay'>,
+  config?: Pick<import('@nexus/contracts').AudioConfig, 'enabled'>,
   controlSnapshot?: import('@nexus/contracts').ControlSnapshot | null,
 ): string {
-  if (muted || volume <= 0) return COLORS.MUTED;
-  if (config && !config.enabled) return popupPrimaryColor();
+  return toneColor(gestureVolumeTone({
+    muted,
+    volume,
+    actualMode,
+    phase,
+    enabled: config?.enabled ?? true,
+    controlSnapshot,
+  }));
+}
 
-  // If already in an active Capture pipeline:
-  // violet when boosting above 100 or when DSP effects require the processor; otherwise native primary.
-  if (actualMode === 'capture' && phase === 'active') {
-    const hasExtraEffects = config ? (
-      config.eqValues?.some((v) => v !== 0)
-      || config.compressor
-      || config.bass
-      || config.mono
-      || config.pan !== 0
-      || config.delay !== 0
-    ) : false;
-    if (volume > 100 || hasExtraEffects) {
-      return COLORS.CAPTURE;
-    }
-    return popupPrimaryColor();
-  }
-
-  // Not currently in an active capture session:
-  // Strict rule: only genuine capture requirements switch to violet tone.
-  // If the target page natively supports volume amplification without capture (page-native),
-  // volume > 100 never escalates to capture and must strictly remain native blue.
-  const isPageNative = controlSnapshot?.fields.volumeBase?.strategy === 'page-native';
-  if (isPageNative) {
-    return popupPrimaryColor();
-  }
-
-  // If the strategy is explicitly dom-native (standard HTMLMediaElement capped at 1.0),
-  // volume > 100 cannot be handled natively and will require Tab Capture hijacking.
-  if (controlSnapshot?.fields.volumeBase?.strategy === 'dom-native' && volume > 100) {
-    return COLORS.CAPTURE;
-  }
-
-  // For any non-hijacked website / bypass / unconfirmed capture:
-  // Volume threshold alone NEVER implies capture! Strictly maintain native primary blue.
-  return popupPrimaryColor();
+/**
+ * The tone a staged gesture publishes to the Background, so the Action badge
+ * paints the same colour in the same turn instead of waiting for the route ACK.
+ */
+export function gestureVolumeTone(input: {
+  muted: boolean;
+  volume: number;
+  actualMode: SpectraAudioMode | null;
+  phase: AudioSessionPhase;
+  enabled: boolean;
+  controlSnapshot?: import('@nexus/contracts').ControlSnapshot | null;
+}): VolumeTone {
+  return resolveVolumeTone({
+    volume: input.volume,
+    muted: input.muted,
+    enabled: input.enabled,
+    captureActive: isActiveCaptureLifecycle({
+      actualMode: input.actualMode,
+      phase: input.phase,
+    }),
+    predict: true,
+    nativeRoute: resolveNativeRoute(input.controlSnapshot?.fields.volumeBase?.strategy),
+    boostRoute: resolveBoostRoute(input.controlSnapshot?.fields.boost?.strategy),
+  });
 }

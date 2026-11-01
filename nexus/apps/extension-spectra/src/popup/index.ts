@@ -10,7 +10,7 @@ import { disableSmoothScroll, enableSmoothScroll } from '../shared/smooth-scroll
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { clearPopupStartupError, showPopupStartupError } from './startup-error';
 import { runBoundedCardBootstrap } from './bounded-card-bootstrap';
-import { releasePopupFrame, reservePopupFrame, trackPopupFrame } from './frame-height';
+import { flushPredictedFrameHeight, releasePopupFrame, reservePopupFrame, trackPopupFrame } from './frame-height';
 import { getSettingsSnapshot } from '../shared/settings-client';
 import { loadPopupLocaleCatalog } from '../shared/i18n/popup-catalog';
 import { EN_US } from './constants/i18n/en';
@@ -331,5 +331,12 @@ async function main(): Promise<void> {
 	}
 }
 
-window.addEventListener('pagehide', () => { popupRetired = true; disposePopupAttempt(); }, { once: true });
+window.addEventListener('pagehide', () => {
+	// The settled height is written a frame after the publish, so a Popup closed
+	// in that gap would lose the hint entirely and open at the content height
+	// next time. Closing is the last chance to state what this open landed on.
+	flushPredictedFrameHeight();
+	popupRetired = true;
+	disposePopupAttempt();
+}, { once: true });
 document.addEventListener('DOMContentLoaded', () => { void startPopup(); });

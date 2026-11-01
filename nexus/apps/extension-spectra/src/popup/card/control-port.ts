@@ -1,5 +1,6 @@
 // goal: transfer continuous card controls to the Background-owned latest slot
 
+import type { VolumeTone } from '@nexus/contracts';
 import {
 	isPopupControlPortResponse,
 	isPopupControlReady,
@@ -22,6 +23,7 @@ export interface PopupControlTransport {
 	stage(input: {
 		inputRevision: number;
 		effectiveVolume?: number;
+		tone?: VolumeTone;
 		groups: PopupControlPatchGroup[];
 	}): void;
 	flush(throughRevision: number): Promise<PopupControlPortResponse | null>;

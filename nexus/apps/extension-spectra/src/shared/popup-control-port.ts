@@ -11,6 +11,7 @@ import {
 	type ControlOperationAck,
 	type ControlPatch,
 	type RpcError,
+	type VolumeTone,
 } from '@nexus/contracts';
 
 export const POPUP_CONTROL_PORT = 'spectra-popup-control';
@@ -36,6 +37,13 @@ export type PopupControlPortRequest =
 		sessionId: string;
 		inputRevision: number;
 		effectiveVolume?: number;
+		/**
+		 * The tone the card is painting right now. A volume threshold cannot be
+		 * turned into a route by the receiver, so the sender states it: the badge
+		 * and the slider then change colour in the same turn, and neither can
+		 * disagree about a page the other one is looking at.
+		 */
+		tone?: VolumeTone;
 		groups: PopupControlPatchGroup[];
 	}
 	| {
@@ -99,19 +107,25 @@ export function isPopupControlPortRequest(value: unknown): value is PopupControl
 			&& isRevision(value.throughRevision);
 	}
 	if (value.type !== 'stage') return false;
-	const allowed = value.effectiveVolume === undefined
-		? ['type', 'sessionId', 'inputRevision', 'groups']
-		: ['type', 'sessionId', 'inputRevision', 'effectiveVolume', 'groups'];
+	const allowed = ['type', 'sessionId', 'inputRevision'];
+	if (value.effectiveVolume !== undefined) allowed.push('effectiveVolume');
+	if (value.tone !== undefined) allowed.push('tone');
+	allowed.push('groups');
 	return hasExactKeys(value, allowed)
 		&& isRevision(value.inputRevision)
 		&& (value.effectiveVolume === undefined || isFiniteControlValue(value.effectiveVolume, 'volume'))
+		&& (value.tone === undefined || isVolumeTone(value.tone))
 		&& Array.isArray(value.groups)
 		&& value.groups.length <= POPUP_CONTROL_MAX_GROUPS
 		&& value.groups.every(isPatchGroup)
 		&& new Set(value.groups.map((group) => group.requestedCoverage)).size === value.groups.length
 		&& new Set(value.groups.flatMap((group) => Object.keys(group.patch))).size
 			=== value.groups.reduce((count, group) => count + Object.keys(group.patch).length, 0)
-		&& (value.effectiveVolume !== undefined || value.groups.length > 0);
+		&& (value.effectiveVolume !== undefined || value.tone !== undefined || value.groups.length > 0);
+}
+
+function isVolumeTone(value: unknown): value is VolumeTone {
+	return value === 'muted' || value === 'native' || value === 'capture';
 }
 
 export function isPopupControlPortResponse(value: unknown): value is PopupControlPortResponse {

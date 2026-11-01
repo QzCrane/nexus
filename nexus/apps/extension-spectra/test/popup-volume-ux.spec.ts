@@ -39,12 +39,16 @@ describe('Popup single effective-volume control', () => {
 		expect(actualVolumeColor(false, 0, 'capture', 'active')).toBe(COLORS.MUTED);
 	});
 
-	test('gestureVolumeColor provides immediate synchronous tone feedback for live gestures', () => {
-		// Active capture pipeline: violet when boosting > 100, native primary when <= 100
+	test('gestureVolumeColor uses the same tone as the settled frame', () => {
+		// An acknowledged active Capture owns the tone at every volume: the badge
+		// and the slider must not repaint at the 100 boundary, because the route
+		// did not change there. The gesture path used to disagree with the settled
+		// path below 100, which is exactly the desync this asserts away.
 		expect(gestureVolumeColor(false, 350, 'capture', 'active')).toBe(COLORS.CAPTURE);
 		expect(gestureVolumeColor(false, 101, 'capture', 'active')).toBe(COLORS.CAPTURE);
-		expect(gestureVolumeColor(false, 100, 'capture', 'active')).toBe(COLORS.NATIVE);
-		expect(gestureVolumeColor(false, 50, 'capture', 'active')).toBe(COLORS.NATIVE);
+		expect(gestureVolumeColor(false, 100, 'capture', 'active')).toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 50, 'capture', 'active')).toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 80, 'capture', 'active')).toBe(actualVolumeColor(false, 80, 'capture', 'active'));
 
 		// Page-native sites (never hijack): volume > 100 strictly remains native blue
 		const pageNativeSnapshot = {
