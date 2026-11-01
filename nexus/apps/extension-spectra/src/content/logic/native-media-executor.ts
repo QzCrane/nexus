@@ -449,19 +449,27 @@ async function writeRestorableMediaFieldWithStableAck(
 		writeRestorableMediaField(element, field, desired, writer);
 	};
 		if (pageSide && field === 'speed') {
+			// A declared controller (e.g. Douyin's xgplayer plugin) is the source
+			// of truth for the rate: its write commits `config.playBackRatio` and
+			// re-renders the panel, and xgplayer applies that to the media element
+			// *asynchronously*. Settling on `element.playbackRate` would time out
+			// whenever the media lags a frame behind the controller — rejecting a
+			// write that the page already accepted, which is exactly the
+			// "adjusting speed is not free" regression. Settle and verify on the
+			// controller's own committed value instead; the audit registry keeps
+			// watching `element.playbackRate` as a witness and reports divergence
+			// without rolling the write back.
 			await writeSpeedWithSettleAck(
 				write,
-				() => element.playbackRate,
+				read,
 				desired,
 				tolerance,
 				750,
 				options,
 			);
 			actual = await stablePageReadback(read, options);
-			// The controller mirror can survive a source swap that reset the media.
-			// Never commit the semantic value while the viewer hears another rate.
-			if (!nativeValuesMatch(desired, element.playbackRate, tolerance)) {
-				throw new Error('speed readback mismatch between the page controller and media');
+			if (!nativeValuesMatch(desired, read(), tolerance)) {
+				throw new Error('speed readback mismatch between the requested value and the page controller');
 			}
 		} else if (pageSide) {
 			write();

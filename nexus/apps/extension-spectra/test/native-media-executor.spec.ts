@@ -1215,6 +1215,81 @@ describe('native media single-writer correlation', () => {
 		}
 	}, 2_000);
 
+	test('settles a declared speed write on the controller when the media element lags', async () => {
+		// Douyin's xgplayer plugin commits the rate to its controller
+		// (config.playBackRatio) and re-renders synchronously, but applies that
+		// rate to the media element asynchronously. The executor must settle on the
+		// controller's committed value, not the lagging media element, or it
+		// rejects a write the page already accepted — "adjusting speed is not free".
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: class FakeVideoElement extends FakeMediaElement { },
+		});
+		Object.defineProperty(globalThis, 'document', {
+			configurable: true,
+			value: { pictureInPictureElement: null, fullscreenElement: null },
+		});
+		Object.defineProperty(globalThis, 'requestAnimationFrame', {
+			configurable: true,
+			value: (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0),
+		});
+		const media = new BridgedMediaElement();
+		const state: PageMediaState = { volumeBase: 100, mediaMuted: false, speed: 1 };
+		// Bridge stub where a speed write updates only the controller state, not the
+		// media element's playbackRate (which lags, exactly as xgplayer does).
+		media.addEventListener(SPECTRA_PAGE_MEDIA_EVENT, () => {
+			const request = JSON.parse(
+				media.getAttribute(SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE) ?? '{}',
+			) as Partial<SpectraPageMediaRequest>;
+			if (!request.requestId || !request.field || !request.operation) return;
+			if (request.operation === 'write'
+				&& request.field === 'speed'
+				&& typeof request.value === 'number') {
+				state.speed = request.value;
+			}
+			const result: SpectraPageMediaResult = {
+				requestId: request.requestId,
+				field: request.field,
+				supported: true,
+				actual: state[request.field],
+			};
+			media.setAttribute(SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE, JSON.stringify(result));
+		});
+		const registry = new FakeRegistry(media);
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const result = await executor.execute({
+				intentId: 'intent:page-media:lagging-media',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 1.5 },
+			});
+			// The write is accepted because the controller committed the rate,
+			// even though the media element has not caught up.
+			expect(result.fields.speed).toMatchObject({
+				phase: 'applied',
+				strategy: 'page-native',
+				actual: 1.5,
+			});
+			expect(state.speed).toBe(1.5);
+			// The executor did not fall back to writing the media element itself.
+			expect(media.playbackRate).toBe(1);
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
+
 	test('upgrades a DOM-owned restore when a page controller appears later in the same document', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
