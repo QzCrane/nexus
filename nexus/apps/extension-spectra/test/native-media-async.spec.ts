@@ -3,6 +3,7 @@ import {
 	consumeOwnedSeek,
 	nativeValuesMatch,
 	seekNativeMedia,
+	writeSpeedWithSettleAck,
 	writeWithStableEventAck,
 } from '../src/content/logic/native-media-async';
 
@@ -65,5 +66,56 @@ describe('bounded native-media async capability', () => {
 		);
 
 		await expect(operation).rejects.toThrow('did not acknowledge');
+	});
+});
+
+describe('speed settle acknowledgement', () => {
+	test('settles when the value is already in effect without a ratechange event', async () => {
+		let value = 1.5;
+		const actual = await writeSpeedWithSettleAck(
+			() => { value = 1.5; },
+			() => value,
+			1.5,
+			0.01,
+			300,
+		);
+		expect(actual).toBe(1.5);
+	});
+
+	test('settles a write whose value lands a few polls later', async () => {
+		let value = 1;
+		const actual = await writeSpeedWithSettleAck(
+			() => { setTimeout(() => { value = 2; }, 40); },
+			() => value,
+			2,
+			0.01,
+			400,
+		);
+		expect(actual).toBe(2);
+	});
+
+	test('rejects when the page never honors the requested rate', async () => {
+		const actual = await writeSpeedWithSettleAck(
+			() => undefined,
+			() => 1,
+			1.75,
+			0.01,
+			120,
+		).then(() => 'resolved').catch((error) => (error as Error).message);
+		expect(actual).toMatch(/did not settle/);
+	});
+
+	test('is cancelled by its operation signal rather than timing out', async () => {
+		const controller = new AbortController();
+		const operation = writeSpeedWithSettleAck(
+			() => undefined,
+			() => 1,
+			1.5,
+			0.01,
+			3000,
+			{ signal: controller.signal },
+		);
+		setTimeout(() => controller.abort(), 20);
+		await expect(operation).rejects.toMatchObject({ code: 'cancelled' });
 	});
 });

@@ -51,6 +51,7 @@ import {
 	seekNativeMedia,
 	stablePageReadback,
 	stableReadback,
+	writeSpeedWithSettleAck,
 	writeWithStableEventAck,
 	type NativeMediaOperationOptions,
 } from './native-media-async';
@@ -439,13 +440,45 @@ async function writeRestorableMediaFieldWithStableAck(
 			: readDomRestorableMediaField(element, field)
 	) as ControlValues[SpectraPageMediaField];
 	let actual: ControlValues[SpectraPageMediaField];
-	if (pageSide) {
+	const write = (): void => {
+		// Keep one writer authoritative. In particular, do not "help" a declared
+		// speed controller with a second DOM assignment: xgplayer observes that
+		// assignment as an external rate change and can reconcile its panel back
+		// to the controller's previous value. Repeating the controller write is
+		// what repairs both its rendered mirror and the media after a source swap.
 		writeRestorableMediaField(element, field, desired, writer);
-		actual = await stablePageReadback(read, options);
-	} else {
+	};
+		if (pageSide && field === 'speed') {
+			await writeSpeedWithSettleAck(
+				write,
+				() => element.playbackRate,
+				desired,
+				tolerance,
+				750,
+				options,
+			);
+			actual = await stablePageReadback(read, options);
+			// The controller mirror can survive a source swap that reset the media.
+			// Never commit the semantic value while the viewer hears another rate.
+			if (!nativeValuesMatch(desired, element.playbackRate, tolerance)) {
+				throw new Error('speed readback mismatch between the page controller and media');
+			}
+		} else if (pageSide) {
+			write();
+			actual = await stablePageReadback(read, options);
+		} else if (field === 'speed') {
+			actual = await writeSpeedWithSettleAck(
+				write,
+				read,
+				desired,
+				tolerance,
+				750,
+				options,
+			);
+		} else {
 		actual = await writeWithStableEventAck(
 			element,
-			field === 'speed' ? 'ratechange' : 'volumechange',
+			'volumechange',
 			() => { writeRestorableMediaField(element, field, desired, writer); },
 			read,
 			desired,
@@ -738,6 +771,22 @@ export class NativeMediaExecutor {
 			target: resolved?.target ?? null,
 			fields,
 		};
+		} catch (error) {
+			// A source change mid-write cancels the operation and discards the
+			// value the page reset away. Preserve the viewer's intent so the new
+			// source's replay restores it — but only for this exact cause, never
+			// for a genuine capability failure, which must not be silently retried.
+			if (isContentLifecycleError(error) && error.code === 'stale-media-source'
+				&& intent.source !== 'restore') {
+				for (const [field, value] of directEntries) {
+					if (isRestorableMediaField(field)) this.rememberDesired(field, value);
+				}
+			const live = this.registry.resolve(null);
+			if (live?.element) {
+				void this.replayDesired(live.target, live.element, true);
+			}
+			}
+			throw error;
 		} finally {
 			sourceScope?.close();
 		}
@@ -1162,8 +1211,14 @@ export class NativeMediaExecutor {
 				// because deferring them would trade ~33ms for a detached 750ms
 				// listener with no user-visible gain.
 				const siteKey = resolveNativeWriteSiteKey();
+				// Speed is excluded from the split acknowledgement on purpose. It is a
+				// discrete set rather than a drag, so waiting for the settle window
+				// costs nothing the viewer can feel, while answering early can leave a
+				// write that the page's own source swap erased in the same task — and
+				// the detached proof would then book that race as site drift.
 				const canSplitAck = mediaWriter === 'dom-native'
 					&& writerUpgrade === undefined
+					&& field !== 'speed'
 					&& resolveNativeWriteMode(siteKey) === 'optimistic';
 				if (canSplitAck) {
 					// The whole latency win is these three lines: the setter lands
@@ -1991,16 +2046,39 @@ export class NativeMediaExecutor {
 				const attemptKey = `${key}:${field}`;
 				const desired = this.desiredMedia[field];
 				if (desired === undefined
-					|| ownership?.get(field)?.writer !== 'dom-native'
 					|| this.pending.get(target.mediaId)?.has(field)
 					|| (this.automaticPageMaturationRevision.get(attemptKey) ?? -1) >= revision) {
 					continue;
 				}
+			const owned = ownership?.get(field);
+			// The auto-replay (replayDesired) only pre-empts a source swap that the
+			// extension itself caused. Never let it fight a page/user gesture: if we
+			// no longer own this field, or the page already moved it, the divergence
+			// is reality and must be republished rather than overwritten.
+			if (!owned) continue;
+			const domOwned = owned.writer === 'dom-native';
+			// A source swap resets the media's rate with no event and leaves a
+			// declared controller still rendering the requested value, so the
+			// ownership record cannot reveal that the media fell behind. Compare
+			// the media itself: a viewer who sees 1.5x and hears 1.0x has a bug
+			// whether or not the panel agrees with the request.
+			const mediaDrift = field === 'speed'
+				&& !nativeValuesMatch(
+					desired,
+					readDomRestorableMediaField(element, field),
+					0.01,
+				);
+			if (!domOwned && !mediaDrift) continue;
+			// The lower-level page write exists to let a later declared controller
+			// take over a value that was written to the DOM. A media drift needs
+			// whichever writer is authoritative now, which may be the DOM itself.
+			if (!mediaDrift) {
 				try {
 					if (readPageMediaField(element, field) === null) continue;
 				} catch {
 					continue;
 				}
+			}
 				(patch as Record<string, unknown>)[field] = desired;
 				automaticFields.push(field);
 			}

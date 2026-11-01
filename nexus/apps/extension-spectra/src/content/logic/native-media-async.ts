@@ -234,6 +234,59 @@ export async function writeWithStableEventAck<T>(
 	}
 }
 
+const SPEED_SETTLE_POLL_MS = 32;
+
+/**
+ * Settle a speed write on its value, not on `ratechange` alone.
+ *
+ * A source change can reset `playbackRate` synchronously without leaving an
+ * event that acknowledges the requested value. An event-gated ACK then reports
+ * a misleading timeout even when a same-source write is already stable. Poll
+ * the actual value through a short quiet window instead, then cross the normal
+ * render boundaries to catch a delayed page rollback.
+ *
+ * This helper deliberately never rewrites after a source change. The executor's
+ * `isCurrent` fence cancels the old-source operation; the registry's new-source
+ * replay is the only path allowed to restore the desired rate. That keeps one
+ * intent from writing two different resources and preserves page/user gestures.
+ */
+export async function writeSpeedWithSettleAck<T>(
+	write: () => unknown | Promise<unknown>,
+	read: () => T,
+	expected: unknown,
+	tolerance: number,
+	timeoutMs = 750,
+	options: NativeMediaOperationOptions = {},
+): Promise<T> {
+	assertNativeOperationCurrent(options);
+	const deadline = performance.now() + timeoutMs;
+	let quietSince = 0;
+	await write();
+	assertNativeOperationCurrent(options);
+	while (performance.now() < deadline) {
+		assertNativeOperationCurrent(options);
+		const actual = read();
+		if (nativeValuesMatch(expected, actual, tolerance)) {
+			// A page player can acknowledge and restore its own value in a timer.
+			// One short quiet window separates "settled" from "about to bounce".
+			if (quietSince === 0) quietSince = performance.now();
+			else if (performance.now() - quietSince >= NATIVE_EVENT_QUIET_MS) {
+				return stableReadback(read, options);
+			}
+		} else {
+			quietSince = 0;
+		}
+		await waitWithNativeTimeout(
+			Math.min(SPEED_SETTLE_POLL_MS, Math.max(0, deadline - performance.now())),
+			options,
+		);
+	}
+	assertNativeOperationCurrent(options);
+	const actual = read();
+	if (nativeValuesMatch(expected, actual, tolerance)) return stableReadback(read, options);
+	throw new Error('Native speed readback did not settle on the requested value');
+}
+
 /**
  * Observe an *already written* native field across the same stabilization
  * boundary a write would pay, without invoking a second setter.
