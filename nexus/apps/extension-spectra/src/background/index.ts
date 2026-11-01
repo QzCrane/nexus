@@ -28,6 +28,7 @@ import { initializeRuntimeRestartRecovery } from './runtime-restart-startup';
 import { initializeMainRuntimeManager } from './main-runtime-manager';
 import { initializeControlCoordinator, submitPopupControlBatch } from './control-coordinator';
 import { initializeBackgroundDiagnostics } from './diagnostics';
+import { initializeActionPopupFrames } from './popup-frame';
 
 // eff: initialize all functional modules and start message routing
 initializeOffscreenCoordinator();
@@ -67,6 +68,9 @@ chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) =>
 
 setupShortcutListeners();
 setupLifecycleListeners();
+// The Action Popup's size is decided before it opens, from the card count this
+// keeps in each active tab's popup URL; see `popup-frame.ts`.
+initializeActionPopupFrames();
 initializeRuntimeRestartRecovery();
 
 // eff: performs zero-refresh update on existing tabs when extension is updated

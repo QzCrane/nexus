@@ -1,7 +1,6 @@
 // goal: provides streamlined DOM selection helpers and unified cross-process messaging for the popup context
 
 import type { SettingsUIElements } from '../types';
-import { RESTRICTED_URL_PREFIXES } from '../constants';
 
 export function $<T extends HTMLElement>(id: string): T | null {
   return document.getElementById(id) as T | null;
@@ -78,7 +77,4 @@ export function getWebsiteIconUrl(
 }
 
 // rule: identifies browser-internal or restricted URLs (e.g. chrome://, edge://) where extensions are disabled
-export function isRestrictedUrl(url: string | undefined): boolean {
-  if (!url) return true;
-  return RESTRICTED_URL_PREFIXES.some(prefix => url.startsWith(prefix));
-}
+export { isRestrictedUrl } from '../../shared/restricted-url';

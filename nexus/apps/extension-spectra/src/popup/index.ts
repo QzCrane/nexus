@@ -17,12 +17,17 @@ import { EN_US } from './constants/i18n/en';
 import { DEFAULT_GLOBAL_SETTINGS, type GlobalSettings } from '@nexus/kernel';
 import type { I18NDict } from './types';
 import { readVisibleMediaTabIdsFromStorage } from './media-inventory-from-storage';
+import { readSettingsForecast } from './settings-forecast';
 
 type PopupVisualizerModule = typeof import('./visualizer/loop');
 
 let visualizerLoad: Promise<PopupVisualizerModule> | null = null;
 const popupAttemptDisposers = new Set<() => void>();
 let popupRetired = false;
+// Read synchronously, before anything asynchronous has had a chance to run: the
+// last committed settings are what let the first card be drawn in its final
+// shape, and what the locale asset can be prefetched for.
+const settingsForecast = readSettingsForecast();
 
 function tabIdMap(tabs: readonly chrome.tabs.Tab[]): Map<number, chrome.tabs.Tab> {
 	return new Map(tabs.flatMap((tab) => tab.id === undefined ? [] : [[tab.id, tab] as const]));
@@ -89,6 +94,10 @@ const inventoryRequest = sendSpectraRequest('spectra.tab.visible.list', {});
 // Warm the settings snapshot and the locale assets: card rendering must not
 // be serialized behind those two reads. A failed warm-up only sends
 // initSettings down its own path, so card rendering is unaffected.
+// The locale asset starts from the forecast language rather than from the
+// settings answer, because the dictionary it carries is what the first card's
+// labels are drawn with. A wrong guess only costs a second fetch.
+void loadPopupLocaleCatalog(settingsForecast?.lang ?? 'en-US').catch(() => undefined);
 void getSettingsSnapshot()
 	.then((snapshot) => loadPopupLocaleCatalog(snapshot.globalSettings.lang))
 	.catch(() => undefined);
@@ -138,7 +147,9 @@ async function main(): Promise<void> {
 		});
 		return resolved;
 	});
-	const getGlobalSettings = (): GlobalSettings => settings?.gSettings ?? DEFAULT_GLOBAL_SETTINGS;
+	const getGlobalSettings = (): GlobalSettings => (
+		settings?.gSettings ?? settingsForecast ?? DEFAULT_GLOBAL_SETTINGS
+	);
 	const getDictionary = (): I18NDict => settings?.dict ?? EN_US;
 
 	const mainStage = $<HTMLElement>('main-stage');
@@ -246,6 +257,19 @@ async function main(): Promise<void> {
 		}
 	};
 
+	// The active card is the one card that is certainly coming, and it needs
+	// nothing but the active tab: starting it here - instead of after the tab list
+	// and the inventory land - is the difference between the first card committing
+	// on the first or the second round trip. The frame is already reserved, so this
+	// only decides how long the reserved frame stays empty.
+	void activeTabRequest.then((tab) => {
+		if (popupRetired || !tab || tab.id === undefined || isRestrictedUrl(tab.url)) return;
+		connectActiveTab(tab.id);
+		void startCard(tab, false);
+	}).catch((error: unknown) => {
+		console.debug('[SPECTRA Popup] Active card was not started:', error);
+	});
+
 	const [liveActiveTab, allTabs, storageInventory] = await Promise.all([
 		activeTabRequest,
 		allTabsRequest,
@@ -255,11 +279,6 @@ async function main(): Promise<void> {
 	const activeTab = liveActiveTab;
 	const activeTabId = activeTab?.id;
 	const allTabsById = tabIdMap(allTabs);
-
-	if (activeTab && activeTabId !== undefined && !isRestrictedUrl(activeTab.url)) {
-		connectActiveTab(activeTabId);
-		void startCard(activeTab, false);
-	}
 
 	// Applies one authoritative tab-id list to the background card stack: every
 	// rendered card not in the list is retired, and every listed tab without a

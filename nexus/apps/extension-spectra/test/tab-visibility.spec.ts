@@ -15,9 +15,9 @@ import {
 	tabAudioStates,
 } from '../src/background/state';
 import { mediaFacts } from '../src/background/media-facts';
+import { readMediaTabInventory } from '../src/background/media-inventory-runtime';
 import {
 	classifyMediaReport,
-	readMediaTabInventory,
 	recordMediaState,
 } from '../src/background/handlers/tab-state';
 

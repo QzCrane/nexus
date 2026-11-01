@@ -1,10 +1,6 @@
 // goal: manages tab-specific audio activity and visibility states to prioritize the UI tab list
 
-import {
-	getOrCreateTabAudioState,
-	tabAudioStates,
-	TAB_VISIBLE_THRESHOLD_MS,
-} from '../state';
+import { getOrCreateTabAudioState } from '../state';
 import { injectContentScriptOnDemand } from '../upgrade-manager';
 import { swLog } from '../../shared/logger';
 import {
@@ -12,7 +8,8 @@ import {
 	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 } from '@nexus/contracts';
-import { createMediaTabInventory } from '../media-inventory';
+import { readMediaTabInventory } from '../media-inventory-runtime';
+import { syncActiveActionPopups } from '../popup-frame';
 import { mediaFacts } from '../media-facts';
 import { currentTopDocumentId } from '../../shared/top-document';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
@@ -55,44 +52,16 @@ export function recordMediaState(
 	// a card whose controls cannot reach the player.
 	mediaFacts.rememberMediaFact(tabId, documentId, payload.hasMediaElement ? 'found' : 'no-media', 'report');
 
+	// The media tabs are what the Popup draws cards for, and the Action Popup
+	// URL states how many of them it will draw before the Popup exists. A report
+	// can add or remove a card on a tab that is already active, so the count has
+	// to be re-announced here - tab activation alone would leave the next open
+	// reserving the previous shape's height.
+	syncActiveActionPopups();
+
 	/* @__PURE__ */ swLog.debug(`[SPECTRA] Tab ${tabId} reported media: ${payload.hasMediaElement}`);
 	return { reported: true };
 }
-
-function isRecent(timestamp: number, now: number): boolean {
-	return timestamp > 0 && now >= timestamp && now - timestamp < TAB_VISIBLE_THRESHOLD_MS;
-}
-
-// The inventory is a statement about what a tab is doing now, so it is seeded
-// from Chrome's own audible flag and from the content document's report - never
-// from how recently the tab happened to make noise. Recency only prunes the
-// audio bookkeeping that other surfaces read; it never puts a tab in the list,
-// because a tab that navigated to a blank page stays "recently audible" for
-// minutes while hosting nothing the user can control.
-function audibleTabs(allTabs: readonly chrome.tabs.Tab[], now: number): Set<number> {
-	const audible = new Set<number>();
-	const liveTabIds = new Set<number>();
-	for (const tab of allTabs) {
-		if (!Number.isSafeInteger(tab.id) || Number(tab.id) <= 0) continue;
-		const tabId = Number(tab.id);
-		liveTabIds.add(tabId);
-		if (tab.audible) audible.add(tabId);
-	}
-	for (const [tabId, state] of tabAudioStates) {
-		if (!liveTabIds.has(tabId)) { tabAudioStates.delete(tabId); continue; }
-		if (audible.has(tabId)) continue;
-		if (!isRecent(state.lastAudibleTime, now) && !isRecent(state.lastActivatedTime, now)) {
-			tabAudioStates.delete(tabId);
-		}
-	}
-	return audible;
-}
-
-export const readMediaTabInventory = createMediaTabInventory({
-	queryTabs: () => chrome.tabs.query({}),
-	audibleTabs,
-	readFact: mediaFacts.readMediaFact,
-});
 
 function registerTabStateV2Listener(): void {
 	chrome.runtime.onMessage.addListener((message: unknown, sender, sendResponse) => {

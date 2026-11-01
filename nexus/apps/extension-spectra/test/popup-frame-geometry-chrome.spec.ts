@@ -13,7 +13,10 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Browser, Page, Target } from 'puppeteer';
-import { FRAME_HEIGHT_KEY } from '../src/popup/constants/frame-height';
+import {
+	FRAME_HEIGHT_KEY,
+	frameHeightKeyForCards,
+} from '../src/shared/popup-bootstrap';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
 // Chrome grants an Action Popup at most 600px; past that the document scrolls.
@@ -105,11 +108,17 @@ async function settledGeometry(popup: Page): Promise<PopupGeometry> {
 
 async function openPopup(
 	expectedCards: number,
-): Promise<PopupGeometry & { overflow: PopupOverflow; reservedHeight: number | null }> {
+): Promise<PopupGeometry & {
+	overflow: PopupOverflow;
+	reservedHeight: number | null;
+	reservedSource: string | null;
+}> {
 	const knownTargets = new Set(browser.targets());
 	const targetPromise = browser.waitForTarget(
+		// The count travels in the URL, so the popup document is no longer at its
+		// bare path.
 		(target) => !knownTargets.has(target)
-			&& target.url() === `chrome-extension://${extensionId}/popup.html`,
+			&& target.url().startsWith(`chrome-extension://${extensionId}/popup.html`),
 		{ timeout: 10_000 },
 	);
 	await controlPage.evaluate(async () => chrome.action.openPopup());
@@ -122,16 +131,19 @@ async function openPopup(
 				+ document.querySelectorAll('#main-stage .glass-card').length
 		) >= count, { timeout: 15_000 }, expectedCards);
 		const geometry = await settledGeometry(popup);
-		// What the render-blocking head script reserved before the first paint.
-		// It is a rendering hint from the previous open, so it only equals this
-		// open's settled height when the content has the same shape.
-		const reservedRaw = await popup.evaluate(
-			() => document.documentElement.dataset.spectraFrameReserved ?? null,
-		).catch(() => null);
+		// What the render-blocking head script reserved before the first paint,
+		// and which recorded shape answered. The height is a promise about a card
+		// count, so the source key is part of the assertion: this open must have
+		// been sized by the shape it actually draws.
+		const reservation = await popup.evaluate(() => ({
+			height: document.documentElement.dataset.spectraFrameReserved ?? null,
+			source: document.documentElement.dataset.spectraFrameSource ?? null,
+		})).catch(() => ({ height: null, source: null }));
 		return {
 			...geometry,
 			overflow: await readOverflow(popup),
-			reservedHeight: reservedRaw === null ? null : Number(reservedRaw),
+			reservedHeight: reservation.height === null ? null : Number(reservation.height),
+			reservedSource: reservation.source,
 		};
 	} finally {
 		if (!popup.isClosed()) {
@@ -247,12 +259,14 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 	// Seed the worst case: the last settled frame was the tallest one Chrome
 	// allows, while this open's content is short. Nothing about this open can
 	// change the container's size after the inventory publishes, so only a
-	// retarget on the publish itself can bring the frame back down.
-	const seeded = await controlPage.evaluate((key) => {
-		localStorage.setItem(key, '600');
-		return localStorage.getItem(key);
-	}, FRAME_HEIGHT_KEY);
-	expect(seeded).toBe('600');
+	// retarget on the publish itself can bring the frame back down. Both the
+	// shape's own entry and the legacy single hint are poisoned, because either
+	// one would be enough to open this Popup at 600.
+	const seeded = await controlPage.evaluate((keys) => {
+		for (const key of keys) localStorage.setItem(key, '600');
+		return keys.map((key) => localStorage.getItem(key));
+	}, [frameHeightKeyForCards(1), FRAME_HEIGHT_KEY]);
+	expect(seeded).toEqual(['600', '600']);
 	const withoutBackground = await openPopup(1);
 
 	expect(withoutBackground).toMatchObject({ cards: 1, bgCards: 0, bottomWhitespace: BOTTOM_WHITESPACE_PX });
@@ -273,4 +287,42 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 	// Action Popup's own 390px in both states, so the cards do not reflow
 	// between an open with background cards and one without.
 	expect(withoutBackground.contentWidth).toBe(withBackground.contentWidth);
+}, 90_000);
+
+testChrome('opens each shape at the height that shape settled on, so switching card counts does not resize the window', async () => {
+	// The previous open left this one-card shape's real height recorded. From here
+	// on, this shape must open already at that height - no growth, no correction.
+	await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+	const one = await openPopup(1);
+	expect(one.cards).toBe(1);
+	expect(one.reservedSource).toBe(frameHeightKeyForCards(1));
+	expect(one.reservedHeight).not.toBeNull();
+	expect(Math.abs((one.reservedHeight ?? 0) - one.documentHeight)).toBeLessThanOrEqual(1);
+
+	// A second media tab changes the shape. Its first open may learn the height it
+	// keeps; what matters is that it is sized by its own count, not by whatever
+	// the previous open happened to be.
+	const beta = await browser.newPage();
+	await beta.goto(`http://127.0.0.1:${server.port}/media/beta`, { waitUntil: 'domcontentloaded' });
+	await new Promise((resolveWait) => setTimeout(resolveWait, 2_000));
+	await mediaPages[0]?.bringToFront();
+	// The announcement is two reads and a setPopup, none of which the focus event
+	// waits for; a human takes far longer to reach the toolbar than this.
+	await new Promise((resolveWait) => setTimeout(resolveWait, 600));
+	const two = await openPopup(2);
+	expect(two.cards).toBe(2);
+	expect(two.reservedSource).toBe(frameHeightKeyForCards(2));
+	expect(Math.abs((two.reservedHeight ?? 0) - two.documentHeight)).toBeLessThanOrEqual(1);
+
+	// Back to one card. A single hint would still hold the two-card height here -
+	// that is exactly the jump this pins away: the shape's own entry has to win
+	// over the most recent one.
+	await beta.close().catch(() => undefined);
+	await new Promise((resolveWait) => setTimeout(resolveWait, 1_500));
+	await mediaPages[0]?.bringToFront();
+	const short = await openPopup(1);
+	expect(short.cards).toBe(1);
+	expect(short.reservedSource).toBe(frameHeightKeyForCards(1));
+	expect(Math.abs((short.reservedHeight ?? 0) - short.documentHeight)).toBeLessThanOrEqual(1);
+	expect(Math.abs(short.documentHeight - one.documentHeight)).toBeLessThanOrEqual(1);
 }, 90_000);

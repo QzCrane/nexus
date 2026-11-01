@@ -4,9 +4,15 @@ import { resolve } from 'node:path';
 import { injectFrameHeightKey } from '../scripts/frame-reserve-key';
 import { resolveFrameTarget } from '../src/popup/frame-height';
 import {
+	ACTION_POPUP_PATH,
 	FRAME_HEIGHT_KEY,
+	FRAME_HEIGHT_KEY_LAST,
 	FRAME_HEIGHT_KEY_PLACEHOLDER,
-} from '../src/popup/constants/frame-height';
+	FRAME_PLAN_PARAM,
+	POPUP_BOOTSTRAP,
+	actionPopupPath,
+	frameHeightKeyForCards,
+} from '../src/shared/popup-bootstrap';
 
 // The frame is the one size the user cannot help but compare across opens: two
 // opens of the same content must land on the same height, and a shorter open
@@ -36,31 +42,64 @@ describe('popup frame target', () => {
 	});
 });
 
-describe('popup frame height key', () => {
-	test('the head script carries a placeholder, not a key of its own', () => {
-		const source = readFileSync(
-			resolve(import.meta.dir, '../public/frame-reserve.js'),
-			'utf8',
-		);
-		expect(source).toContain(FRAME_HEIGHT_KEY_PLACEHOLDER);
-		// With the placeholder taken out, no key may remain. A literal one would
-		// be a second definition of the same string, and nothing would keep the
-		// two in step once either changed.
-		expect(source.replaceAll(FRAME_HEIGHT_KEY_PLACEHOLDER, '')).not.toContain(FRAME_HEIGHT_KEY);
+// The height belongs to a shape, not to a session. One number meant every switch
+// between a one-card and a two-card Popup opened at the other one's height and
+// then had to resize the window in front of the user.
+describe('popup frame plan', () => {
+	test('keeps one entry per card count', () => {
+		expect(frameHeightKeyForCards(1)).not.toBe(frameHeightKeyForCards(2));
+		expect(frameHeightKeyForCards(0)).toBe(`${POPUP_BOOTSTRAP.prefix}.0`);
 	});
 
-	test('the build writes the key the Popup module persists under', () => {
-		const source = readFileSync(
-			resolve(import.meta.dir, '../public/frame-reserve.js'),
-			'utf8',
-		);
-		const built = injectFrameHeightKey(source);
-		expect(built).toContain(FRAME_HEIGHT_KEY);
+	test('announces the count the Popup will draw', () => {
+		expect(actionPopupPath(0)).toBe(`${ACTION_POPUP_PATH}?${FRAME_PLAN_PARAM}=0`);
+		expect(actionPopupPath(3)).toBe(`${ACTION_POPUP_PATH}?${FRAME_PLAN_PARAM}=3`);
+	});
+
+	test('opens the bare document when the count cannot be decided', () => {
+		// A wrong count is worse than no count: the head script then falls back to
+		// the last settled height instead of a shape that was never measured.
+		expect(actionPopupPath(null)).toBe(ACTION_POPUP_PATH);
+		expect(actionPopupPath(-1)).toBe(ACTION_POPUP_PATH);
+		expect(actionPopupPath(Number.NaN)).toBe(ACTION_POPUP_PATH);
+	});
+
+	test('the last-resort keys are distinct from every shape key', () => {
+		for (const cards of [0, 1, 2, 7]) {
+			expect(frameHeightKeyForCards(cards)).not.toBe(FRAME_HEIGHT_KEY_LAST);
+			expect(frameHeightKeyForCards(cards)).not.toBe(FRAME_HEIGHT_KEY);
+		}
+	});
+});
+
+describe('popup bootstrap injection', () => {
+	const headScript = readFileSync(
+		resolve(import.meta.dir, '../public/frame-reserve.js'),
+		'utf8',
+	);
+
+	test('the head script carries a placeholder, not keys of its own', () => {
+		expect(headScript).toContain(FRAME_HEIGHT_KEY_PLACEHOLDER);
+		// With the placeholder taken out, no key may remain. Literal ones would be a
+		// second definition of the same strings, and nothing would keep the two in
+		// step once either changed.
+		expect(headScript.replaceAll(FRAME_HEIGHT_KEY_PLACEHOLDER, ''))
+			.not.toContain(FRAME_HEIGHT_KEY);
+		expect(headScript.replaceAll(FRAME_HEIGHT_KEY_PLACEHOLDER, ''))
+			.not.toContain(POPUP_BOOTSTRAP.themeKey);
+	});
+
+	test('the build writes every key the Popup module persists under', () => {
+		const built = injectFrameHeightKey(headScript);
 		expect(built).not.toContain(FRAME_HEIGHT_KEY_PLACEHOLDER);
+		const injected = JSON.parse(
+			built.slice(built.indexOf("JSON.parse('") + "JSON.parse('".length, built.indexOf("')")),
+		) as typeof POPUP_BOOTSTRAP;
+		expect(injected).toEqual({ ...POPUP_BOOTSTRAP });
 	});
 
 	test('a head script without the placeholder fails the build', () => {
-		// The silent failure this prevents: a head script that reads its own key
+		// The silent failure this prevents: a head script that reads its own keys
 		// would reserve a height the Popup module never persists, and every open
 		// would jump again with nothing to point at the cause.
 		expect(() => injectFrameHeightKey('const key = "spectra.popup.frameHeight";')).toThrow();

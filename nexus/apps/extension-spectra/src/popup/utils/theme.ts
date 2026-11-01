@@ -1,6 +1,7 @@
 // goal: manages the application's appearance by handling explicit and system-preferred theme switching
 
 import type { ThemeMode } from '@nexus/contracts';
+import { THEME_MODE_KEY } from '../../shared/popup-bootstrap';
 
 const THEME_ATTRIBUTE = 'data-theme';
 const DARK_MODE_QUERY = '(prefers-color-scheme: dark)';
@@ -24,6 +25,20 @@ export function applyTheme(mode: ThemeMode): void {
 		systemMediaQuery.addEventListener('change', systemThemeListener);
 	} else {
 		document.documentElement.setAttribute(THEME_ATTRIBUTE, mode);
+	}
+	// The mode, not the resolved colour: `system` has to stay resolvable by the
+	// head script's own media query, or a Popup opened after an OS theme change
+	// would paint the colour that change replaced. This is the only authority the
+	// first paint has - settings arrive after it.
+	persistThemeMode(mode);
+}
+
+function persistThemeMode(mode: ThemeMode): void {
+	try {
+		window.localStorage.setItem(THEME_MODE_KEY, mode);
+	} catch (error) {
+		// A denied storage area costs the next open one theme repaint.
+		console.debug('[SPECTRA Popup] Theme mode not persisted:', error);
 	}
 }
 

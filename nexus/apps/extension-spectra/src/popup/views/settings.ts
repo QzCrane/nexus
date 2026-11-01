@@ -14,6 +14,7 @@ import {
 import { loadPopupLocaleCatalog } from '../../shared/i18n/popup-catalog';
 import { createSerializedToggleQueue } from '../../shared/serialized-toggle';
 import { showPopupToast } from '../toast';
+import { writeSettingsForecast } from '../settings-forecast';
 // The drawer modules ship in the static popup closure on purpose: a lazily
 // imported module let the card's save-as-global action reach an uninitialized
 // dictionary, and the load cost is marginal next to that failure class.
@@ -112,12 +113,20 @@ export async function initSettings(): Promise<SettingsState> {
   const projectSnapshot = (next: SettingsSnapshot): Promise<void> => {
     projectionChain = projectionChain.catch(() => undefined).then(async () => {
       if (disposed || next.revision <= state.revision) return;
+      // The theme is the one setting visible before any text exists, and it does
+      // not depend on the locale asset awaited below. Applying it first keeps a
+      // reopen from painting the previous theme for the length of that fetch.
+      initTheme(next.globalSettings.themeMode ?? 'system');
       // Load external locale data before committing the new revision. A failed
       // asset load therefore leaves the previous snapshot and controls intact.
       await loadPopupLocaleCatalog(next.globalSettings.lang);
       if (disposed) return;
       state.revision = next.revision;
       state.gSettings = next.globalSettings;
+      // Every accepted revision, not only the first: a card's shape follows these
+      // settings, so the next open has to start from the latest ones rather than
+      // from whatever was committed when a Popup happened to be open.
+      writeSettingsForecast(next.globalSettings);
       initUIState(ui, state.gSettings);
       initTheme(state.gSettings.themeMode ?? 'system');
 
