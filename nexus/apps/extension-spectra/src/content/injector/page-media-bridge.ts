@@ -20,7 +20,7 @@ import {
 import {
 	GENERIC_PAGE_MEDIA_VOCABULARY,
 	SITE_ADAPTER_LIMITS,
-	resolveSiteAdapter,
+	resolveDeclaredSiteAdapter,
 	siteAdapterBounds,
 	type SiteAdapterEntry,
 	type SiteSpeedProjectionSpec,
@@ -54,7 +54,7 @@ const VOLUME_LIMIT = CONTROL_VALUE_LIMITS.nativeVolume;
 const SPEED_LIMIT = CONTROL_VALUE_LIMITS.speed;
 /**
  * The rate a site calls "normal". A site may render this option as a word
- * ("倍速") instead of a number; that word means 1x, not an unreadable panel.
+ * instead of a number; that word means 1x, not an unreadable panel.
  */
 const NORMAL_RATE = 1;
 const GENERIC_ASSOCIATION_KEYS = GENERIC_PAGE_MEDIA_VOCABULARY.mediaReferenceKeys;
@@ -73,8 +73,7 @@ const REACT_MOUNT_KEY = /^__(?:reactFiber|reactInternalInstance|reactProps)\$/;
 const DEFAULT_BOUNDS = siteAdapterBounds(null);
 
 function adapterFor(field: SpectraPageMediaField): SiteAdapterEntry | null {
-	const hostname = location.hostname;
-	return typeof hostname === 'string' ? resolveSiteAdapter(hostname, field) : null;
+	return resolveDeclaredSiteAdapter(field);
 }
 
 const SPEED_ADAPTER = adapterFor('speed');
@@ -654,7 +653,7 @@ function scanProjectionText(
 	/**
 	 * Resolve one element's text to a rate: a numeric label (`1.5x`) when a
 	 * pattern matches, otherwise the site's own word for the normal rate
-	 * (`倍速` → 1). Keeping both readings in one place is what lets the default
+	 * (the localized speed label maps to 1). Keeping both readings together lets the default
 	 * rate stay readable — and therefore syncable — instead of being reported as
 	 * "no projection" and silently breaking UI sync from 1x.
 	 */

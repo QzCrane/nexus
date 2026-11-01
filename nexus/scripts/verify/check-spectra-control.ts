@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
+import ts from 'typescript-compiler-api';
 import {
 	DEFAULT_AUDIO_CONFIG,
 	resolveDesiredAudioMode,
@@ -30,7 +31,7 @@ import {
 	selectHotkeyRepeatPolicy,
 } from '../../packages/contracts/src/hotkeys.contracts.ts';
 import { SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS } from './spectra-control-algorithm-catalog.ts';
-import { missingSourceEvidence } from './source-evidence.ts';
+import { loadSpectraVerificationProgram, missingSourceEvidence } from './source-evidence.ts';
 import { error, ok, scanDir, section, warn } from './utils.ts';
 
 const APP_PATH = 'apps/extension-spectra';
@@ -263,8 +264,8 @@ function checkDefaultRuntime(root) {
 		'utf8',
 	);
 	for (const required of [
-		'const MAX_ANCESTOR_DEPTH = 12',
-		'const MAX_ATTACHED_PROPERTIES = 96',
+		'const DEFAULT_BOUNDS = siteAdapterBounds(null);',
+		'return adapter ? siteAdapterBounds(adapter.discovery) : DEFAULT_BOUNDS;',
 		'function controllerAssociation(',
 		"dataProperty(controller, key) === element",
 		'function findCapability(',
@@ -280,6 +281,15 @@ function checkDefaultRuntime(root) {
 		if (!pageMediaBridge.includes(required)) {
 			error(`SCTRL-004/SCTRL-005/SCTRL-017: exact-element page-media bridge boundary drifted (${required})`);
 		}
+	}
+	const registry = fs.readFileSync(path.join(app, 'src/shared/site-adapter-registry.ts'), 'utf8');
+	for (const fragment of [
+		'maxAncestorDepth: 12,',
+		'maxAttachedProperties: 96,',
+		'maxAncestorDepth: clamp(source.maxAncestorDepth, 12, SITE_ADAPTER_LIMITS.maxAncestorDepth)',
+		'maxAttachedProperties: clamp(source.maxAttachedProperties, 96, SITE_ADAPTER_LIMITS.maxAttachedProperties)',
+	]) {
+		if (!registry.includes(fragment)) error(`SCTRL-004/SCTRL-017: discovery bounds lost their registry owner (${fragment})`);
 	}
 	for (const forbidden of [
 		/\b(?:async|await|Promise|setTimeout|setInterval|requestAnimationFrame|requestIdleCallback|MutationObserver|ResizeObserver)\b/u,
@@ -1521,28 +1531,73 @@ function checkProductionLoadingTopology(root) {
 	}
 }
 
-function writerMatches(content) {
-	return {
-		volume: /\b(?:element|media|video|audio|v)\.volume\s*=(?!=)/u.test(content),
-		muted: /\b(?:element|media|video|audio|v)\.muted\s*=(?!=)/u.test(content),
-		playbackRate: /\.playbackRate\s*=(?!=)/u.test(content),
-		currentTime: /\b(?:element|media|video|audio|v)\.currentTime\s*=(?!=)/u.test(content),
-		preservesPitch: /\.preservesPitch\s*=(?!=)/u.test(content),
-		loop: /\b(?:element|media|video|audio|v)\.loop\s*=(?!=)/u.test(content),
-		inlineVideoStyle: /\.style\.(?:transform|filter|objectFit|position|zIndex)\s*=(?!=)/u.test(content),
-		focusRecovery: /(?:from\s+['"]\.\.\/utils\/focus-helper['"]|simulateMouseHover\s*\()/u.test(content),
+function accessName(node: ts.Node): string | null {
+	if (ts.isPropertyAccessExpression(node)) return node.name.text;
+	if (ts.isElementAccessExpression(node) && ts.isStringLiteralLike(node.argumentExpression)) return node.argumentExpression.text;
+	return null;
+}
+
+function accessReceiver(node: ts.Node): ts.Expression | null {
+	return ts.isPropertyAccessExpression(node) || ts.isElementAccessExpression(node) ? node.expression : null;
+}
+
+export function classifyMediaWriters(source: ts.SourceFile, checker: ts.TypeChecker) {
+	const matches = {
+		volume: false, muted: false, playbackRate: false, currentTime: false,
+		preservesPitch: false, loop: false, inlineVideoStyle: false, focusRecovery: false,
 	};
+	const possibleMedia = (receiver: ts.Expression): boolean => {
+		const actual = checker.getNonNullableType(checker.getTypeAtLocation(receiver));
+		if ((actual.flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0) return true;
+		const types = actual.isUnion() ? actual.types : [actual];
+		return ['HTMLMediaElement', 'HTMLVideoElement', 'HTMLAudioElement'].some((name) => {
+			const symbol = checker.resolveName(name, source, ts.SymbolFlags.Type, false);
+			if (!symbol) throw new Error(`SCTRL-003: DOM receiver type ${name} is unavailable`);
+			const media = checker.getDeclaredTypeOfSymbol(symbol);
+			return types.some((type) => checker.isTypeAssignableTo(type, media) || checker.isTypeAssignableTo(media, type));
+		});
+	};
+	const visit = (node: ts.Node): void => {
+		if (ts.isBinaryExpression(node)
+			&& node.operatorToken.kind >= ts.SyntaxKind.FirstAssignment
+			&& node.operatorToken.kind <= ts.SyntaxKind.LastAssignment) {
+			const name = accessName(node.left);
+			const receiver = accessReceiver(node.left);
+			if (name === 'playbackRate' || name === 'preservesPitch') matches[name] = true;
+			if (receiver && ts.isIdentifier(receiver) && ['element', 'media', 'video', 'audio', 'v'].includes(receiver.text)
+				&& (name === 'volume' || name === 'muted' || name === 'currentTime' || name === 'loop')) matches[name] = true;
+			if (receiver && accessName(receiver) === 'style' && name
+				&& ['transform', 'filter', 'objectFit', 'position', 'zIndex'].includes(name)) {
+				const element = accessReceiver(receiver);
+				if (element && possibleMedia(element)) matches.inlineVideoStyle = true;
+			}
+		}
+		if ((ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'simulateMouseHover')
+			|| (ts.isImportDeclaration(node) && ts.isStringLiteral(node.moduleSpecifier) && node.moduleSpecifier.text === '../utils/focus-helper')) {
+			matches.focusRecovery = true;
+		}
+		ts.forEachChild(node, visit);
+	};
+	visit(source);
+	return matches;
 }
 
 function checkWriterBoundaries(root) {
 	const source = path.join(root, SOURCE_PATH);
+	const program = loadSpectraVerificationProgram(root);
+	const checker = program.getTypeChecker();
 	const debt = new Map();
 	for (const key of Object.keys(LEGACY_WRITERS)) debt.set(key, new Set());
 
 	scanDir(source, (fullPath, entry) => {
 		if (!entry.name.endsWith('.ts') || entry.name.endsWith('.d.ts')) return;
 		const relative = normalize(root, fullPath);
-		const matches = writerMatches(fs.readFileSync(fullPath, 'utf8'));
+		const compiledSource = program.getSourceFile(fullPath);
+		if (!compiledSource) {
+			error(`SCTRL-003: shipped source is outside the canonical compiler inputs (${relative})`);
+			return;
+		}
+		const matches = classifyMediaWriters(compiledSource, checker);
 		for (const [kind, matched] of Object.entries(matches)) {
 			if (!matched) continue;
 			if (CANONICAL_WRITERS[kind].has(relative)) continue;

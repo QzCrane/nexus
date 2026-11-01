@@ -32,6 +32,27 @@ let server: ReturnType<typeof Bun.serve>;
 let profileDir = '';
 const mediaPages: Page[] = [];
 
+// The Popup reads durable media facts before its RPC completes. Establish both
+// that input and the Background's announced shape, rather than sleeping and
+// accidentally comparing a one-card first sample with a two-card second one.
+async function waitForInventory(cards: number): Promise<void> {
+	await controlPage.waitForFunction(async ({ count, origin }) => {
+		const tabs = (await chrome.tabs.query({})).filter((tab) => tab.url?.startsWith(`${origin}/media/`));
+		if (tabs.length !== count) return false;
+		const response = await chrome.runtime.sendMessage({
+			protocolVersion: 2, requestId: crypto.randomUUID(), type: 'spectra.tab.visible.list', payload: {},
+		});
+		const facts = (await chrome.storage.local.get('spectra.media-facts.v1'))['spectra.media-facts.v1'];
+		if (!response?.ok || response.data.tabs.length !== count
+			|| !tabs.every((tab) => tab.id !== undefined && response.data.tabs.includes(tab.id)
+				&& facts?.[String(tab.id)]?.outcome === 'found')) return false;
+		const active = tabs.find((tab) => tab.active);
+		if (active?.id === undefined) return false;
+		const popup = await chrome.action.getPopup({ tabId: active.id });
+		return new URL(popup, location.href).searchParams.get('cards') === String(count);
+	}, { polling: 100, timeout: 10_000 }, { count: cards, origin: `http://127.0.0.1:${server.port}` });
+}
+
 interface PopupGeometry {
 	cards: number;
 	bgCards: number;
@@ -97,7 +118,8 @@ async function settledGeometry(popup: Page): Promise<PopupGeometry> {
 	for (let attempt = 0; attempt < 30; attempt += 1) {
 		await new Promise((resolveWait) => setTimeout(resolveWait, 100));
 		const current = await readGeometry(popup);
-		if (current.documentHeight === previous.documentHeight
+		if (Math.abs(current.documentHeight - Math.min(current.contentHeight, FRAME_MAX_HEIGHT_PX)) <= 1
+			&& current.documentHeight === previous.documentHeight
 			&& current.windowHeight === previous.windowHeight
 			&& current.contentWidth === previous.contentWidth
 			&& current.bottomWhitespace === previous.bottomWhitespace) return current;
@@ -126,10 +148,10 @@ async function openPopup(
 	const popup = await target.asPage();
 	if (!popup) throw new Error('The Action Popup did not expose a page');
 	try {
-		await popup.waitForFunction((count) => (
+		await popup.waitForFunction((count) => document.documentElement.dataset.spectraReady === 'true' && (
 			document.querySelectorAll('#bg-stack .glass-card').length
 				+ document.querySelectorAll('#main-stage .glass-card').length
-		) >= count, { timeout: 15_000 }, expectedCards);
+		) === count, { timeout: 15_000 }, expectedCards);
 		const geometry = await settledGeometry(popup);
 		// What the render-blocking head script reserved before the first paint,
 		// and which recorded shape answered. The height is a promise about a card
@@ -199,8 +221,7 @@ beforeAllChrome(async () => {
 		await page.goto(`http://127.0.0.1:${server.port}/media/${slug}`, { waitUntil: 'domcontentloaded' });
 		mediaPages.push(page);
 	}
-	// Let each document's own media report reach Background before measuring.
-	await new Promise((resolveWait) => setTimeout(resolveWait, 2_000));
+	await waitForInventory(2);
 	for (const page of await browser.pages()) {
 		if (page.url() === 'about:blank' || page.url() === '') await page.close().catch(() => undefined);
 	}
@@ -218,7 +239,7 @@ testChrome('opens at the height it settles on, so the window never jumps', async
 	// window was shown at one height and then animated to another, on every
 	// open. The reservation now happens in a render-blocking head script, so
 	// the first frame the user sees is already the reserved one.
-	const first = await openPopup(1);
+	const first = await openPopup(2);
 	// The very first open has no hint to reserve, so it is the one open that is
 	// allowed to grow into place.
 	expect(first.reservedHeight).toBeNull();
@@ -226,7 +247,7 @@ testChrome('opens at the height it settles on, so the window never jumps', async
 	// Same content, second open: the hint is this content's settled height, so
 	// the reserved frame and the settled frame must be the same height. Any
 	// difference is a visible jump the user did not ask for.
-	const second = await openPopup(1);
+	const second = await openPopup(2);
 	expect(second.reservedHeight).not.toBeNull();
 	expect(Math.abs((second.reservedHeight ?? 0) - second.documentHeight)).toBeLessThanOrEqual(1);
 	expect(Math.abs(second.documentHeight - first.documentHeight)).toBeLessThanOrEqual(1);
@@ -254,8 +275,8 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 	// Closing the background tab changes the shape of the content: the frame has
 	// to shrink with it, instead of keeping the height the taller open reserved.
 	await mediaPages[1]?.close().catch(() => undefined);
-	await new Promise((resolveWait) => setTimeout(resolveWait, 1_500));
 	await mediaPages[0]?.bringToFront();
+	await waitForInventory(1);
 	// Seed the worst case: the last settled frame was the tallest one Chrome
 	// allows, while this open's content is short. Nothing about this open can
 	// change the container's size after the inventory publishes, so only a
@@ -292,7 +313,7 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 testChrome('opens each shape at the height that shape settled on, so switching card counts does not resize the window', async () => {
 	// The previous open left this one-card shape's real height recorded. From here
 	// on, this shape must open already at that height - no growth, no correction.
-	await new Promise((resolveWait) => setTimeout(resolveWait, 300));
+	await waitForInventory(1);
 	const one = await openPopup(1);
 	expect(one.cards).toBe(1);
 	expect(one.reservedSource).toBe(frameHeightKeyForCards(1));
@@ -304,11 +325,8 @@ testChrome('opens each shape at the height that shape settled on, so switching c
 	// the previous open happened to be.
 	const beta = await browser.newPage();
 	await beta.goto(`http://127.0.0.1:${server.port}/media/beta`, { waitUntil: 'domcontentloaded' });
-	await new Promise((resolveWait) => setTimeout(resolveWait, 2_000));
 	await mediaPages[0]?.bringToFront();
-	// The announcement is two reads and a setPopup, none of which the focus event
-	// waits for; a human takes far longer to reach the toolbar than this.
-	await new Promise((resolveWait) => setTimeout(resolveWait, 600));
+	await waitForInventory(2);
 	const two = await openPopup(2);
 	expect(two.cards).toBe(2);
 	expect(two.reservedSource).toBe(frameHeightKeyForCards(2));
@@ -318,8 +336,8 @@ testChrome('opens each shape at the height that shape settled on, so switching c
 	// that is exactly the jump this pins away: the shape's own entry has to win
 	// over the most recent one.
 	await beta.close().catch(() => undefined);
-	await new Promise((resolveWait) => setTimeout(resolveWait, 1_500));
 	await mediaPages[0]?.bringToFront();
+	await waitForInventory(1);
 	const short = await openPopup(1);
 	expect(short.cards).toBe(1);
 	expect(short.reservedSource).toBe(frameHeightKeyForCards(1));
@@ -341,6 +359,7 @@ testChrome('opens three cards and changes views without ResizeObserver delivery 
 			await page.goto(`http://127.0.0.1:${server.port}/media/${slug}`, { waitUntil: 'domcontentloaded' });
 		}
 		await mediaPages[0]?.bringToFront();
+		await waitForInventory(3);
 		await popupDocument.goto(`chrome-extension://${extensionId}/popup.html?cards=3`, { waitUntil: 'load' });
 		await popupDocument.bringToFront();
 		await popupDocument.waitForFunction(() => document.querySelectorAll('.glass-card').length === 3, { timeout: 8_000 }).catch(async (error) => {
@@ -361,6 +380,7 @@ testChrome('opens three cards and changes views without ResizeObserver delivery 
 		expect(errors).toEqual([]);
 		await popupDocument.close();
 		await mediaPages[0]?.bringToFront();
+		await waitForInventory(3);
 		const three = await openPopup(3);
 		expect(three).toMatchObject({ cards: 3, bgCards: 2, bottomWhitespace: BOTTOM_WHITESPACE_PX });
 		expect(three.documentHeight).toBe(FRAME_MAX_HEIGHT_PX);

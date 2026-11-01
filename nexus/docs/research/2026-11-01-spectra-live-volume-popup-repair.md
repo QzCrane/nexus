@@ -197,3 +197,71 @@ this dirty checkout has converged.
 The newly reported live free-speed label bounce is a separate follow-up after
 the requested checkpoint/push order. No new speed-timing code is included in
 these commits, and the pending issue must not be presented as fixed.
+
+### Local gate repair completed before the public scope decision
+
+Eight of the nine errors above are now closed in the Nexus working tree:
+
+- The verifier reads generic traversal bounds and their clamps from the
+  registry's actual owner. MAIN reuses `resolveDeclaredSiteAdapter` instead of
+  maintaining another hostname reader, preserving the domain-neutral transport
+  rule and the existing registry host-boundary tests.
+- Writer classification uses the already installed `typescript-compiler-api`
+  Program, SourceFile and TypeChecker from the application's real tsconfig.
+  Comments and strings cannot become assignments. A known scrollbar div is
+  distinct from a media receiver; broad element, union and unresolved receiver
+  types remain conservative. Dot, bracket and compound writes stay detectable.
+  No writer path is added to an allowlist.
+- Port admission resolves the canonical guard's declaration and imported path
+  constant through compiler symbols, checks rejection before this exact port's
+  listener, and rejects changed forwarders, early true returns, strict-check
+  decoys, reassigned ports and unguarded second binders. The canonical verify
+  commands execute both verifier regressions and the actual sender guard tests;
+  this syntax recognition is not a general control-flow proof. Prebuild now
+  calls that same command, avoiding a second entry that omits its tests.
+- Public-facing comments were translated while runtime Chinese labels and
+  matching data remain unchanged.
+
+Reuse decision: the repository already pins the Compiler API for source analysis
+and distinguishes it from the native typecheck CLI. Native text matching cannot
+establish alias identity or DOM receiver type; another parser, resolver or
+ts-morph layer would duplicate those semantics. No dependency or lockfile was
+changed, and no compiler snapshot is cached across verification invocations.
+
+The browser rerun exposed two test synchronization defects. A same-document
+restore snapshot may carry either its page-write ACK attribution or a subsequent
+physical DOM observation attribution; that test now requires confirmed ownership,
+desired=actual=2 and its existing independent controller/physical evidence,
+rather than conflating those clocks. Its separate capped 4x test retains the
+exact DOM fallback assertion. One initial patch matched that adjacent test by
+mistake; it was corrected using the enclosing acknowledgement/snapshot anchors.
+
+Popup geometry previously used fixed sleeps, accepted at least one card, and
+could call two unchanged reserved heights settled before inventory committed.
+It now establishes exact live inventory, persisted media facts and Chrome's
+announced card count, waits for `spectraReady`, and samples the frame only when
+its height matches the capped content height. The first repeated opens compare
+the same two-card shape. All original physical dimension assertions remain.
+Run browser suites sequentially: a concurrent run also observed a worker status
+read returning no response; that was not changed or counted as a passing run.
+The final isolated sequential run includes that restart case and passes.
+
+Final evidence for this gate-repair tree:
+
+- Canonical verify regression phase: 24 pass, 0 fail, 58 assertions; architecture
+  phase: exactly one error, `PUBLIC-PARITY-002`, and the same seven warnings.
+- Affected application unit suites: 40 pass, 0 fail, 143 assertions.
+- Built-extension media/bootstrap Chrome: 31 pass, 0 fail, 113 assertions.
+- Actual Popup geometry Chrome: 4 pass, 0 fail, 35 assertions.
+- Strict Biome: 13 affected files, zero diagnostics and silent handlers.
+- Canonical SPECTRA typecheck: all four package owners passed on the final
+  production TypeScript source; unchanged compiler inputs were reused after
+  verifier, test and documentation edits. Development build and dist integrity
+  passed with 12 entrypoints. No new speed-timing behavior is claimed.
+
+The public repository, its eight modified files, parity baseline and destination
+selection remain untouched. Until that scope decision and parity repair settle,
+the private push is blocked. Keep all local work committed; do not disable the
+hook to deliver it. Virtual compiler fixtures exist only in memory. Retain the
+regression test, this record, development dist and normal build caches; no new
+helper daemon, filesystem watcher or diagnostic source copy was created.

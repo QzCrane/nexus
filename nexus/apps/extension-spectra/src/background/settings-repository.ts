@@ -369,7 +369,7 @@ export class SettingsRepository {
 		// If no explicit default preset is marked, still honor a global preset
 		// as the baseline for every site that has no per-site rule. A user who
 		// configured a global preset but never flagged one as "default" should
-		// still see it applied everywhere ("所有网站没有预设就用全局预设").
+		// still see it applied to every site without its own preset.
 		if (!patch) {
 			const fallbackName = choosePresetFallback(snapshot.audioPresets);
 			if (fallbackName) {

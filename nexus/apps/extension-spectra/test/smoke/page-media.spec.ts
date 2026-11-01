@@ -510,7 +510,9 @@ describe('SPECTRA built extension smoke: page-media', () => {
 					fields: {
 						speed: {
 							phase: 'applied',
-							strategy: 'dom-native',
+							controlled: true,
+							desired: 2,
+							writeState: 'confirmed',
 							actual: 2,
 						},
 					},

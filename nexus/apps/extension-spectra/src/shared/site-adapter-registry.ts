@@ -139,7 +139,7 @@ export interface SiteSpeedProjectionSpec {
 	readonly patterns: readonly string[];
 	/**
 	 * Text the site renders for the *normal* (1x) rate **instead of** a number —
-	 * e.g. Douyin labels its 1x option "倍速". A marked item showing this text
+ * e.g. Douyin labels its 1x option with the local word for speed. Such an item
 	 * means the current rate is 1, so the projection stays readable at the
 	 * default rate. Without it the numeric patterns miss, the projection reports
 	 * "unreadable", and the UI can no longer be synced from the default rate.
@@ -235,7 +235,7 @@ export const GENERIC_PAGE_MEDIA_VOCABULARY = Object.freeze({
  * media-rate projection, including when the menu has no matching option.
  *
  * Speed is also gated behind login on the live site: an anonymous tab renders
- * `登录后即可切换倍速` in place of the list. That makes the projection
+ * a sign-in prompt in place of the list. That makes the projection
  * unreadable, which the ledger records as unconfirmed, never as agreement.
  */
 const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
@@ -306,7 +306,7 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 		// scope for a rate-label item carrying a selected/active/current marker.
 		selectedFallback: true,
 		patterns: Object.freeze(['^(\\d+(?:\\.\\d+)?)\\s*x$']),
-		// The 1x option is rendered as the word "倍速", not as "1.0x". That word
+		// The 1x option is rendered as a localized word, rather than "1.0x". It
 		// *is* 1x — the default, not an unreadable panel. Reading it keeps the
 		// projection (and therefore UI sync) alive at the default rate.
 		defaultLabels: Object.freeze(['倍速']),

@@ -27,7 +27,7 @@ const workspaceDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const commands = [
 	{ name: 'sync:skills', args: ['run', 'sync:skills'] },
 	{ name: 'docs:check', args: ['run', 'docs:check'] },
-	{ name: 'verify:q', args: ['scripts/verify-architecture.ts', '-q'] },
+	{ name: 'verify:q', args: ['run', 'verify:q'] },
 ];
 
 function runParallel(name, args) {

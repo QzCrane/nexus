@@ -30,8 +30,8 @@ const overflowOf = (scroller: HTMLElement): number =>
 	scroller.scrollHeight - scroller.clientHeight;
 
 export function installOverlayScrollbar(): () => void {
-	const bar = document.querySelector<HTMLElement>('.spectra-scrollbar');
-	const thumb = bar?.querySelector<HTMLElement>('.spectra-scrollbar__thumb');
+	const bar = document.querySelector<HTMLDivElement>('.spectra-scrollbar');
+	const thumb = bar?.querySelector<HTMLDivElement>('.spectra-scrollbar__thumb');
 	if (!bar || !thumb) return () => undefined;
 	const listeners = new AbortController();
 	const { signal } = listeners;

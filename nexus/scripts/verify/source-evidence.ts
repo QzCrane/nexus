@@ -1,3 +1,6 @@
+import path from 'node:path';
+import ts from 'typescript-compiler-api';
+
 export interface SourceEvidenceRequirement {
 	owner: string;
 	fragment: string;
@@ -10,4 +13,18 @@ export function missingSourceEvidence(
 	requirements: readonly SourceEvidenceRequirement[],
 ): SourceEvidenceRequirement[] {
 	return requirements.filter(({ owner, fragment }) => !sources[owner]?.includes(fragment));
+}
+
+// Resolve symbols and receiver types from the application's real compiler
+// inputs. Source-text fragments cannot establish cross-module guard ownership.
+export function loadSpectraVerificationProgram(root: string): ts.Program {
+	const directory = path.resolve(root, 'apps/extension-spectra');
+	const configPath = path.join(directory, 'tsconfig.json');
+	const config = ts.readConfigFile(configPath, ts.sys.readFile);
+	if (config.error) throw new Error(ts.flattenDiagnosticMessageText(config.error.messageText, '\n'));
+	const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, directory);
+	if (parsed.errors.length > 0) {
+		throw new Error(parsed.errors.map((diagnostic) => ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n')).join('\n'));
+	}
+	return ts.createProgram(parsed.fileNames, parsed.options);
 }

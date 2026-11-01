@@ -160,7 +160,7 @@ try {
 		`actual=${String(restore.actual)} badge=${afterRestore.badge}`,
 	);
 
-	// --- labelled 1x: Douyin renders the 1x option as the word "倍速" instead of
+	// --- labelled 1x: Douyin renders the 1x option as a localized word instead of
 	// "1.0x". The word is a synonym for 1x, not an unreadable panel: the
 	// projection must stay readable at the default rate so the UI can still be
 	// synced away from it.
