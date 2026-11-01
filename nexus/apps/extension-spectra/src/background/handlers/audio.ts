@@ -30,6 +30,7 @@ import { swLog } from '../../shared/logger';
 import { sendSpectraTabRequest } from '../spectra-tab-client';
 import { forEachBounded } from '../bounded-fanout';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
+import { isPopupDocumentSender } from '../popup-document-sender';
 import {
 	advanceVisualizerSubscriberLeases,
 	nextVisualizerSubscriberExpiry,
@@ -574,9 +575,7 @@ export function registerAudioHandlers(): void {
 	registerAudioV2Listener();
 	chrome.runtime.onConnect.addListener((port) => {
 		const prefix = 'spectra-visualizer:';
-		if (port.sender?.id !== chrome.runtime.id
-			|| port.sender.url !== chrome.runtime.getURL('popup.html')
-			|| !port.name.startsWith(prefix)) return;
+		if (!isPopupDocumentSender(port.sender) || !port.name.startsWith(prefix)) return;
 		const subscriberId = port.name.slice(prefix.length);
 		if (!/^popup-[a-z0-9-]{1,100}$/iu.test(subscriberId)) return;
 		port.onDisconnect.addListener(() => {

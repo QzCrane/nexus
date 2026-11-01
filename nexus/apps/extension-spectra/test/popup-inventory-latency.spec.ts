@@ -35,7 +35,10 @@ async function stopServiceWorker(): Promise<void> {
 	// extension runs, so the natural path is the deterministic one.
 	const knownTargets = new Set(browser.targets());
 	const targetPromise = browser.waitForTarget(
-		(target) => !knownTargets.has(target) && target.url() === `chrome-extension://${extensionId}/popup.html`,
+		(target) => !knownTargets.has(target)
+			// The card count travels in the Popup's URL (`?cards=N`), so the
+			// document is not at its bare path.
+			&& target.url().startsWith(`chrome-extension://${extensionId}/popup.html`),
 		{ timeout: 10_000 },
 	);
 	await controlPage.evaluate(async () => chrome.action.openPopup());
@@ -50,7 +53,10 @@ async function measurePopupOpen(expectedCards: number, label: string, stopFirst:
 	const started = performance.now();
 	const knownTargets = new Set(browser.targets());
 	const targetPromise = browser.waitForTarget(
-		(target) => !knownTargets.has(target) && target.url() === `chrome-extension://${extensionId}/popup.html`,
+		(target) => !knownTargets.has(target)
+			// The card count travels in the Popup's URL (`?cards=N`), so the
+			// document is not at its bare path.
+			&& target.url().startsWith(`chrome-extension://${extensionId}/popup.html`),
 		{ timeout: 10_000 },
 	);
 	await controlPage.evaluate(async () => chrome.action.openPopup());

@@ -9,6 +9,7 @@ import {
 	type PopupControlReady,
 } from '../shared/popup-control-port';
 import { updateBadgeStagedVolume } from './handlers/badge';
+import { isActionPopupSender } from './popup-document-sender';
 import { badgeState } from './state';
 
 const COALESCE_MS = 50;
@@ -82,9 +83,7 @@ interface StagedValue<T> {
 
 export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupControlRunner): void {
 	if (port.name !== POPUP_CONTROL_PORT) return;
-	if (port.sender?.id !== chrome.runtime.id
-		|| port.sender.url !== chrome.runtime.getURL('popup.html')
-		|| port.sender.tab !== undefined) {
+	if (!isActionPopupSender(port.sender)) {
 		port.disconnect();
 		return;
 	}

@@ -2,6 +2,7 @@
 import type { ContentRuntimeReadyResult } from '@nexus/contracts';
 import { RUNTIME_OBSERVATION_PORT } from '../shared/runtime-observation';
 import { isBackgroundRequestEnvelope } from './background-rpc';
+import { isPopupDocumentSender } from './popup-document-sender';
 import { rpcFailure, rpcSuccess } from '@nexus/contracts';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 
@@ -15,7 +16,7 @@ export function bindRuntimeObservationPort(
 	runtime: ObservationRuntime = { ensure: ensureContentRuntime, release: releaseContentRuntimeLease },
 ): void {
 	if (port.name !== RUNTIME_OBSERVATION_PORT) return;
-	if (port.sender?.id !== chrome.runtime.id || port.sender.url !== chrome.runtime.getURL('popup.html')) {
+	if (!isPopupDocumentSender(port.sender)) {
 		port.disconnect();
 		return;
 	}

@@ -79,6 +79,7 @@ import {
 	type ExtensionInvocationContext,
 } from './extension-invocation';
 import { createPopupVisualizerSource } from './popup-visualizer-source';
+import { isActionPopupSender } from './popup-document-sender';
 import { authorizeRuntimeControl } from './control-source-authorization';
 import {
 	mintCaptureAdmission,
@@ -2201,8 +2202,7 @@ export function submitExtensionInvokedControlOperation(
 }
 
 export function isExtensionPopupSender(sender: chrome.runtime.MessageSender): boolean {
-	return sender.tab === undefined
-		&& sender.url === chrome.runtime.getURL('popup.html');
+	return isActionPopupSender(sender);
 }
 
 function trustedContentHotkeyInvocation(

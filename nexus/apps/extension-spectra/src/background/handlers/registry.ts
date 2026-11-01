@@ -8,6 +8,7 @@ import {
 	scheduleMediaRouteProjection,
 } from '../settings-projection';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
+import { isPopupDocumentSender } from '../popup-document-sender';
 
 const PROTO_REGISTRY_GET = 'spectra.registry.get' as const;
 const PROTO_REGISTRY_ADD = 'spectra.registry.add' as const;
@@ -37,8 +38,7 @@ function isAttemptedRegistryMessage(message: unknown): boolean {
 }
 
 export function isTrustedMediaRouteRulesSender(sender: chrome.runtime.MessageSender): boolean {
-	return sender.id === chrome.runtime.id
-		&& sender.url === chrome.runtime.getURL('popup.html');
+	return isPopupDocumentSender(sender);
 }
 
 async function projectRouteMutation(domain?: string): Promise<void> {
