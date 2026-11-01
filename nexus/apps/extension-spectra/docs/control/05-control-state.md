@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-10-28
+last_reviewed: 2026-11-01
 ---
 
 # 05. Control state (Field states, volume/mute, audio processing)
@@ -75,6 +75,25 @@ desired -> 物理写入(同步) -> written
 - 写入仍串行；被降级的是**等待**，不是**顺序**。
 - 适用边界：仅标准 DOM writer 的原生字段。page controller 的能力发现与回退、Capture/WebAudio 增益、处理器生命周期、跨 100 路由边界**仍完全事务化**。
 - 数值显示永不冻结：`resolveVolumePresentation` 的数值恒取 `state.config` 的实时值。路由事务只管辖**色调**（`actualMode` / `phase`）与 `muted`，避免新数值配上一条未确认路由的色调。冻结数值曾使 0–800 滑块在跨过 100 后整个手势停在起始值。
+
+### §11.2 Tone ownership
+
+音量条与 Action 角标共用 `resolveVolumeTone`，但证据分为两层：
+
+| Layer | Owner | Predicts |
+| --- | --- | --- |
+| Acknowledged volume state (silent / native / capture) | `resolveAudioVolumeState` | never |
+| Presentation tone (muted / native / capture) | `resolveVolumeTone` | only for a live gesture |
+
+`resolveVolumeTone` 输入 `volume`、`muted`、`enabled`、`captureActive`（已确认 lifecycle），以及可选的 `predict`、`nativeRoute`、`boostRoute`：
+
+1. 静音或 0 → `muted`；
+2. 已确认 active Capture → `capture`，与数值无关：100 与 110 同色；
+3. 非手势帧，或数值不超过 `CONTROL_VALUE_LIMITS.volumeBase.max` → `native`；
+4. 手势预测时，已确认的 Boost 路由优先于页面级猜测：`capture` → `capture`，`media-webaudio` → `native`；
+5. 只有在没有已确认 Boost 路由、且页面级路由为 `dom-native` 时，越界才预测 `capture`；`page-native` 与未回答的路由一律 `native`。
+
+`shouldHoldVolumeTone` 仍决定已结算投影是否保留上一路由证据（跨 100，或同一 patch 同时改变 mute），但手势路径不等待它：卡片把正在绘制的 tone 随 `stage` 消息发布，Background 在同一 turn 用它重绘角标。预测的紫色只是 tone——`isCapture` 仍只来自 ACK，角标不会因此声称处理器已运行。
 
 ## §12 Audio processing
 

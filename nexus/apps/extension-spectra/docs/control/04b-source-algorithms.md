@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-08-28
+last_reviewed: 2026-11-01
 ---
 
 # 04b. Source Algorithms (§9 Audited source algorithms and dispositions)
@@ -77,10 +77,10 @@ Names and paths in the negative rows below are forbidden production owners. They
 | `src/content/core/lifecycle/media-observer.ts` (retired/forbidden) | Lifecycle observation | lifecycle-orchestration| none | forbidden | none |
 | `src/content/logic/media-control.ts` (retired/forbidden) | DOM audio writes | native-control | none | forbidden | none |
 | `src/content/video/ab-loop.ts`, `time-marker.ts`| `currentTime` write | native-control | none | forbidden | while-owned |
-| `src/content/video/video-transform.ts` | CSS composition | controlled-augmentation | extension-owned | forbidden | while-owned |
+| `src/content/video/video-effects-controller.ts` | CSS composition | controlled-augmentation | extension-owned | forbidden | while-owned |
 | `src/background/control-coordinator.ts` | Coordinator transaction | intent-routing | extension-owned | forbidden | none |
 | `src/content/input/hotkey-helpers.ts` | Hotkey -> typed intent | intent-routing | extension-owned | forbidden | none |
-| `src/content/logic/audio-runtime-control.ts` | Compile intents | controlled-augmentation | extension-owned | forbidden | while-owned |
+| `src/content/logic/audio-runtime-control-delegate.ts` | Compile intents | controlled-augmentation | extension-owned | forbidden | while-owned |
 | `packages/features/audio-engine/src/web-audio-controller.ts` | proven MediaElement graph | controlled-augmentation | extension-owned | forbidden | while-owned |
 | `src/offscreen/audio-host.ts` | full-tab Capture graph | controlled-augmentation | extension-owned | forbidden | while-owned |
 | `contracts/src/control.contracts.ts` | Policy contracts | pure-computation | extension-owned | forbidden | none |

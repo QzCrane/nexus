@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-08-28
+last_reviewed: 2026-11-01
 ---
 
 # 07. Runtime & Performance (Loading, ownership map, cross-world bridges)
@@ -25,6 +25,8 @@ Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge
 0 recurring timer/rAF/IPC
 ```
 
+Action Popup 的首帧不等待 service-worker 往返：卡片数由 Background 在 URL 中公告，主题、surface 与分形状高度由 render-blocking head script 在首帧前写入；`spectra.tab.visible.list` 与 settings 仍会到达，但只用于对账与文案纠正，不决定窗口尺寸。
+
 ## §17 Implementation ownership and migration map
 
 | Location | Target responsibility |
@@ -41,8 +43,13 @@ Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge
 | `src/background/settings-repository.ts` | revision/CAS、容量、迁移元数据与 durable storage 事务 |
 | `src/background/runtime-loader.ts` | 文档级重级 Runtime Lease 与 READY 握手 |
 | `src/background/media-inventory.ts` | 一次读取的媒体标签页投影：Chrome 的 `audible` 与该文档自身的可播放媒体事实；不注入、不探测、无 pending 状态 |
+| `src/background/media-inventory-runtime.ts` | 该投影的唯一实例；`spectra.tab.visible.list` 与 Popup 卡片数公告共用，避免第二份组合 |
 | `src/background/media-facts.ts` | 单一文档作用域的持久媒体判定，随导航/标签移除退役，不设 TTL |
 | `src/shared/media-presence.ts` | “可控制媒体”的唯一可执行定义（readyState/currentTime/played），bootstrap 与重级 runtime 共用 |
+| `src/background/popup-frame.ts` | 在 tab 的 Popup URL 中公告卡片数；按 tab 单调代际只允许最新公告写入，无法判定时回到裸 `popup.html` |
+| `src/background/popup-control-port.ts` + `src/shared/popup-control-port.ts` | 连续 Popup 控制的唯一私有端口：严格 guard、每字段 latest slot、合并后调用同一 coordinator；不拥有第二个状态 owner |
+| `src/background/audio-session-store.ts` | 每文档音频会话快照的 durable owner：文档 fence、250ms 合并写、最多 5 次重试、有界拒绝账本 |
+| `src/shared/popup-bootstrap.ts` + `public/frame-reserve.js` | Popup 首帧契约：参数名、分形状高度键、主题键、surface 标记与 600px 上限的唯一来源；head script 由构建注入，不携带字面量 |
 | `src/background/main-runtime-manager.ts` | 幂等注入 Fullscreen V1 与 Page-Media V2 bridges |
 | `src/content/core/media-registry.ts` | `mediaId`、`sourceRevision`、缓存可见性与 Sticky Active Target 追踪 |
 | `src/content/logic/native-media-async.ts` | 唯一物理 DOM 标准媒体异步写/事件+getter ACK、source cancellation 与 frame cadence cache |
@@ -53,6 +60,9 @@ Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge
 | `src/popup/ui-event-hub.ts` | Popup 唯一 Chrome runtime listener、按 tab fan-out 与 subscriber failure isolation |
 | `src/popup/control-snapshot-order.ts` | generation-first identity admission 与 same-generation revision 单调性 |
 | `src/popup/bounded-card-bootstrap.ts` | cap-4 all-settled card worker；失败隔离后统一 badge/empty reconciliation |
+| `src/popup/frame-height.ts` | 唯一写入文档 frame 的模块：发布前钉住预测高度，发布后一次纠正，只持久化已结算高度并按公告卡片数分键 |
+| `src/popup/settings-forecast.ts` | 上次已提交 `GlobalSettings` 的首帧预测；读取时校验，首次权威投影覆盖，从不合并 |
+| `src/popup/media-inventory-from-storage.ts` | 由 durable media facts 与 `audible` 投影首份卡片列表，避免 service-worker 往返；RPC 仅用于对账 |
 | `src/remote/operation-queue.ts` | Remote 每 key 有界串行队列；不拥有 session/auth/protocol 状态 |
 
 结构拆分不得制造第二个 effect owner。协调者仍是 commit/persist/publish 唯一入口；

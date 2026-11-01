@@ -2,10 +2,10 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-10-28
+last_reviewed: 2026-11-01
 ---
 
-# 08. Invariants & Gates (SCTRL-001..048 and migration gate)
+# 08. Invariants & Gates (SCTRL-001..050 and migration gate)
 
 > 主题 owner 段: §20 Static invariants · §21 Migration and release gate
 > 完整目录: [README.md](README.md)
@@ -60,6 +60,8 @@ last_reviewed: 2026-10-28
 - `SCTRL-046`: a newer write cancels the proof of the write it supersedes, and a proven `drifted` result republishes the page's true value and feeds a per-site ledger that demotes that origin to the verified path Anchor: `NativeWriteConfirmationRegistry` Anchor: `recordNativeWriteOutcome`.
 - `SCTRL-047`: within one projection surface every projection element (fill, readout, native thumb) has exactly one writing module, and no projection surface imports another Anchor: `createVolumeView` Anchor: `check-architecture-layers`.
 - `SCTRL-048`: the presented volume number is always the live optimistic value; a route transaction holds the tone and mute only, never the number Anchor: `resolveVolumePresentation`.
+- `SCTRL-049`: the Popup volume bar and the Action badge consume one tone predicate, so violet always means an acknowledged active Capture or the single live-gesture case in which a `dom-native` document crosses its native ceiling; a threshold never implies Capture, a predicted tone is not a Capture fact, and no surface may derive a route from a number Anchor: `resolveVolumeTone`.
+- `SCTRL-050`: the Action Popup's first frame is decided before the document is visible: the Background states the card count in the tab's popup URL, the render-blocking head script applies the committed theme and the height that shape settled on, and the frame stays pinned at that prediction until the inventory publishes; only a settled published height may be recorded, under the announced count Anchor: `actionPopupPath` Anchor: `POPUP_BOOTSTRAP`.
 
 ## §21 Migration and release gate
 

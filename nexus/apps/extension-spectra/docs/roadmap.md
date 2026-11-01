@@ -3,7 +3,7 @@ type: reference
 status: draft
 audience: contributor
 owner: spectra-product-and-engineering
-last_reviewed: 2026-08-13
+last_reviewed: 2026-11-01
 ---
 
 # SPECTRA roadmap
@@ -14,7 +14,8 @@ This document owns sequencing and unresolved work. It does not own current contr
 
 ## P0: release truth and regression resistance
 
-- keep the 51 capability policies, 50 audited source algorithms, and 44 SCTRL invariants synchronized with contracts and tests;
+- keep the 51 capability policies, 50 audited source algorithms, and 50 SCTRL invariants synchronized with contracts, tests, and owner documentation;
+- keep the Action Popup first-frame contract (announced card count, per-shape height, pre-paint theme) covered by the real-Chrome geometry spec; a layout fact that is decided after the first paint is a regression, not a styling detail;
 - close remaining Chrome integration and production-package evidence gaps;
 - keep README, privacy policy, store listings, remote-site disclosure, and permission justifications aligned with the release package;
 - reject a release when a public claim is broader than browser activation, permission, origin, frame, source, or protected-content boundaries;

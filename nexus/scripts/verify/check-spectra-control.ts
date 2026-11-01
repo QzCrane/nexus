@@ -1179,6 +1179,8 @@ function checkPolicyOwner(root) {
 			'SCTRL-042',
 			'SCTRL-043',
 			'SCTRL-044',
+			'SCTRL-049',
+			'SCTRL-050',
 		]) {
 			const marker = `- \`${invariant}\``;
 			if (!architecture.includes(marker)) {

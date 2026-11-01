@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-26
+last_reviewed: 2026-11-01
 ---
 
 # 01. Foundations (Product semantics & Control flow)
@@ -55,10 +55,26 @@ The record separates current-resource actual fields from origin-portable extensi
 Full exact-resource replacement rebinds projection; same-origin different URL keeps portable fields; cross-origin retires all. Same-document SPA state remains valid.
 Initialization chooses retained projection, then site preset, then global preset.
 
-Color is actual state:
-- Gray = muted/zero
-- Blue = native control, or starting/stopping/error Capture
-- Purple = active Capture (`actualMode:'capture'`, `phase:'active'`) for the same tab/document/origin.
+Colour is a presentation of the route, not a second state source:
+
+- Gray = muted or zero.
+- Blue = the non-Capture path: native, page-native, or MediaElement WebAudio; also
+  a Capture that is starting, stopping or in error.
+- Purple = an acknowledged active Capture (`actualMode:'capture'`,
+  `phase:'active'`) for the same tab/document/origin. It owns the tone at every
+  volume, so a step from 100 to 110 changes nothing.
+
+One narrow exception may run ahead of the acknowledgement: while a volume gesture
+is live, on a document whose own scale cannot absorb a value above the native
+ceiling (`dom-native`), a value above 100 shows purple immediately. A settled
+frame never predicts, and `page-native`, an acknowledged `media-webaudio` Boost
+route, or an unanswered route never predict. Purple therefore never means "the
+number passed 100".
+
+`resolveVolumeTone` is the single predicate behind both the Popup slider and the
+Action badge. `resolveAudioVolumeState` remains the acknowledged
+silent/capture/native truth table used by OSD, hotkey feedback and the Remote
+projection; it never predicts.
 
 Concrete projection points:
 
@@ -75,7 +91,9 @@ Concrete projection points:
 | `popup/ui-event-hub.ts` | one Popup runtime listener; tab routing, subscriber isolation, and final-listener teardown |
 | `popup/control-snapshot-order.ts` | generation-before-identity and revision-monotonic UI admission |
 | `popup/card/messaging.ts` | sole card audio/config projection; apply control revisions independently from audio generations |
-| `audio.contracts.ts::resolveAudioVolumeState` | constant-time gray/blue/purple truth table |
+| `audio.contracts.ts::resolveAudioVolumeState` | acknowledged silent/capture/native truth table; consumes an ACK, never predicts |
+| `volume-presentation.contracts.ts::resolveVolumeTone` | the one presentation tone for Popup slider and Action badge, including the single live-gesture prediction case |
+| `audio.contracts.ts::isActiveCaptureLifecycle` | the acknowledged `capture + active` predicate both layers share |
 | `side-panel/video-controls.ts` | route every video/filter intent to `activeVideo` through one per-tab transport tail |
 | `settings-value-normalization.ts` / `settings-repository.ts` | pure canonical values followed by one revisioned durable storage transaction |
 | `remote/operation-queue.ts` | bounded keyed serialization without session or protocol authority |

@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-08-29
+last_reviewed: 2026-11-01
 ---
 
 # SPECTRA runtime architecture
@@ -115,6 +115,8 @@ Per-tab control session is stored in `chrome.storage.session` (`tabId+documentId
 
 Control snapshots, control generations, audio-session snapshots, and the Popup card cache are durable in `chrome.storage.local`, the same area as MediaFacts: a browser restart or extension reload must not blank the Popup's background list, so these are retired by document navigation and tab removal, never by a TTL. `chrome.storage.session` remains only for session-scoped state — the per-tab control session, badge-usage markers, and the hotkey target — which is meant to vanish on restart.
 
+The writers are separate because their failure modes differ. `control-coordinator.ts` publishes `spectra.control.tab.<tabId>` only after `chrome.storage.local.set` resolves, rolls the in-memory value back when the write fails, and keeps `spectra.control.generation.<tabId>` as the ordering authority that survives a worker. `audio-session-store.ts` owns `spectra_audio_session_<tabId>`: a 250 ms coalesced write that retries up to five times, a document fence (epoch plus current/retired document) that rejects late senders, and a bounded rejection ledger that records *why* a write was refused. Runtime-message and badge projections run on a separate per-tab queue, so a slow optional receiver can never delay the next physical or session ACK. The Popup card cache (`spectra.popup.card_cache.<tabId>`) is a forecast with no TTL: it is retired by a different document, never by elapsed time.
+
 Settings commit and settings projection are separate authorities. A mutation ACK means the exact revision is durable and readable by a replacement worker; it does not claim every open tab has already observed the projection. `settings-projection.ts` owns one revision-coalescing queue for extension, Content, hotkey, shortcut, and restore projections. It preserves global/hotkey lanes while selecting the newest snapshot, retries real delivery failures on `50/200/800 ms`, records the last projected revision only after those lanes settle, and wakes from a Chrome alarm after a deferred failure. A destroyed or non-resident Content receiver is terminal for that document because its successor pulls the durable snapshot during bootstrap. Tab work is bounded to eight concurrent deliveries, and hotkey reconciliation reuses the already-enumerated tab snapshot. Global OSD, visualizer, language, and theme projection is presentation-only and never re-enters audio policy.
 
 The `volume`, `volumeBase`, and `boost` fields form one canonical value object. Partial site/preset merges combine the validated patch with existing state before one canonicalization pass, so changing only base or boost cannot persist a contradictory effective volume.
@@ -129,12 +131,122 @@ Resource URL canonicalization:
 - Same-origin, diff URL: origin-portable patch only
 - Cross-origin: both retired
 
-A separate monotonic per-tab record owns Action-badge stickiness, surviving worker replacements. The session-scoped global hotkey target is owned by `hotkey-target-repository.ts`; it is independent from media identity and never selects or activates an audio processor.
+A separate monotonic per-tab record owns Action-badge stickiness, surviving worker replacements. The decision is recorded synchronously and painted by the newest decision, not by whichever asynchronous Action write happens to land first. Staged gesture inputs carry a monotonic stamp, so an input accepted while a projection is still resolving is newer than that projection regardless of the wall clock; the 600 ms bound only expires a stage whose acknowledgement never arrives. A staged tone changes the colour only — `isCapture` stays from the acknowledged lifecycle. The session-scoped global hotkey target is owned by `hotkey-target-repository.ts`; it is independent from media identity and never selects or activates an audio processor.
 
 ## Media discovery and identity
 
 Content maintains media through an event-driven registry. Registration does one viewport-geometry seed. Deduplicated on same-document navigation. Every element independently receives native configuration upon registration/play/selection; the registry never binds an audio graph.
 Passive bootstrap may do a bounded top-level getter. It observes `volumechange`/`ratechange` and submits complete actual pairs to Background without media identity. While the initial HELLO verdict is pending, it retains the latest observation without dispatching it. A lean verdict drains that observation; a heavy-runtime verdict discards it because the runtime owns observation. Restoration acquires the heavy runtime before writing media, so restored native events cannot be replayed by the lean bootstrap.
+
+## Action Popup first frame
+
+Chrome sizes an Action Popup from its document, and every open is a new realm.
+`popup.js` is a module, so it executes after parsing — which is also the earliest
+moment the browser may paint. A decision taken there (the theme, the height, the
+shape of a card) is therefore always one frame late, and that frame is what the
+user sees as a window that opens at one size and jumps to another, or a surface
+that repaints once settings resolve.
+
+Three facts are decided before the document exists:
+
+| Fact | Decided by | Read before the first paint from |
+| --- | --- | --- |
+| How many cards the Popup will draw | Background, `popup-frame.ts` | `popup.html?cards=N` |
+| The height that shape settled on | the previous open of the same shape | `spectra.popup.frame.<N>` |
+| The colour the surface paints in | the last committed theme mode | `spectra.popup.themeMode` |
+
+### Card-count announcement
+
+`chrome.action.setPopup({ tabId, popup })` lets a tab carry its own Popup URL, so
+the count travels in that URL instead of being discovered after the window is
+visible. `popupCardCount` mirrors the Popup's own inventory rule: one card for a
+controllable active tab, plus every other listed media tab.
+`media-inventory-runtime.ts` exposes the single inventory instance that both the
+`spectra.tab.visible.list` route and this count read, so the announcement and the
+rendered list cannot disagree about scope.
+
+`popup-frame.ts` re-announces whenever the answer can change: tab activation, a
+committing or navigating document, `audible` transitions, media reports
+(coalesced over 60 ms, because one report per tab would read the same inventory
+several times for one visible change), tab removal, window focus, and worker
+startup. A per-tab monotonic generation means a slow inventory read that began
+before a tab switch cannot overwrite the newer announcement. When the count
+cannot be decided, the bare `popup.html` is announced — the pre-announcement
+behaviour, which costs one prediction and no correctness.
+
+The count is a projection, never a promise: a background tab paused past the
+retention window is still listed by the inventory and then dropped by the card,
+and a document can retire between the count and the open. A wrong count costs one
+correction, and because the Popup records the height each **announced** count
+settled on, the next open of that same state is already right.
+
+### Bootstrap contract
+
+`shared/popup-bootstrap.ts` owns every string in this contract: the query
+parameter, the key prefix, the fallback keys, the theme key, the surface marker,
+and Chrome's 600 px ceiling. The build substitutes them into
+`public/frame-reserve.js` through `FRAME_HEIGHT_KEY_PLACEHOLDER`; the head script
+carries no literal of its own, so it cannot read a key the Popup module does not
+write.
+
+`frame-reserve.js` is a classic render-blocking script. Before the first paint it:
+
+1. paints `data-theme` from `spectra.popup.themeMode`, resolving `system` with the
+   same `prefers-color-scheme` query the module uses;
+2. marks `data-spectra-surface="action-popup"` when the document really is an
+   Action Popup, so the reflow rules for tab-hosted pages stay out of the initial
+   sizing pass;
+3. reserves the height recorded for this open's announced count, then the most
+   recent settled height, then the legacy single hint; clamps it to 600 px, sets
+   `overflow-y: hidden`, and records `data-spectra-frame-reserved` together with
+   `data-spectra-frame-source` (the key that answered) for the geometry specs.
+
+The lookup order is deliberate: the nearest count's height is not an estimate of
+this shape's height. Two cards are taller than one, but three are not necessarily
+taller than two (a paused card keeps its whole card, an empty one does not), so
+interpolation would trade one wrong number for another. A first open of a new
+shape grows once, records its own height, and never grows again.
+
+### Frame settlement
+
+`popup/frame-height.ts` owns the document frame once the module starts. Until
+`data-spectra-ready` is published — the inventory has committed every card this
+open will draw — the frame is **pinned** at the reserved height, not floored by
+it: a floor (`max(content, prediction)`) still lets every mounting card push the
+window one step taller, and that sequence of resizes is the flicker. One open
+therefore changes size at most once, when the inventory publishes, and not at all
+when the prediction was right.
+
+From the publish onwards the frame follows `.view-container`, enables the 160 ms
+height transition before its single correction, and records the settled height
+under the **announced** count rather than the count that ended up being drawn.
+The announcement is what selects a height next time, so the height has to be
+stored where the next announcement will look. The write happens one frame after
+the publish, with a `pagehide` flush: measuring at the publish moment stores a
+mid-layout height no open ever lands on, which is why every open used to reserve
+the wrong height, measure, and jump. A failed bootstrap releases the reservation
+(`releasePopupFrame`) so the error surface is not painted behind a stale frame.
+
+### Card shape and inventory forecast
+
+Two more late reads shaped the first frame:
+
+- `popup/settings-forecast.ts` caches the last committed `GlobalSettings` and
+  validates it on read. The visualizer band is part of every card's height, so a
+  user who turned the visualizer off used to watch each card shrink after the
+  settings snapshot landed — and the window followed. The forecast stands in
+  until the authoritative projection arrives and is then overwritten, never
+  merged.
+- `popup/media-inventory-from-storage.ts` projects the card list from the durable
+  media facts (`spectra.media-facts.v1`) and Chrome's `audible` flag, so the first
+  list does not wait for a service-worker round trip. The
+  `spectra.tab.visible.list` request still runs and remains the authority that
+  reconciles a tab which navigated or reported media while the Popup was opening.
+
+The active card starts as soon as `tabs.query({ active: true })` answers, instead
+of waiting for the full tab list and the inventory it does not use. Settings and
+locale assets load in parallel and correct labels later; nothing about the card's
+size depends on them.
 
 ## Runtime loading and shortcuts
 
@@ -241,8 +353,11 @@ bootstrap boundary.
 Discrete Popup controls continue to use that v2 request/response envelope. Continuous
 volume/DSP uses one private typed Popup port whose Background-owned latest slot invokes
 the same coordinator; it neither changes the public v2 wire nor creates another mutation
-owner. Port disconnect retires the Popup response channel after Background admission,
-not an already accepted latest intent.
+owner. A `stage` message carries the coalesced input revision, the effective volume, the
+exact tone the card is painting, and at most two coverage groups. The Background repaints
+the Action badge from that tone in the same turn, so the two surfaces cannot disagree about
+a route the card is already showing. Port disconnect retires the Popup response channel
+after Background admission, not an already accepted latest intent.
 
 That constant versions the extension-internal RPC only. The authenticated
 Remote transport has its own v3 protocol/version owner. Diagnostic errors must
@@ -316,9 +431,12 @@ Release and cross-platform lanes build the production SPECTRA candidate exactly 
 | PiP/fullscreen | fullscreen bridge/native executor | Actual native lifecycle preservation |
 | Visualizer | Popup scheduler + subscriber registry + `popup-visualizer-source.ts`/Content demand lease | Only visible foreground card owns safe page analyser demand; observes Capture only while non-neutral DSP requires it; unsafe neutral sources settle on bypass without Capture admission or acquisition retry; background cards are passive; bounded heartbeat/tombstone/release retry |
 | Media inventory truth | `media-inventory.ts` projection over `media-facts.ts` + lifecycle navigation pruning | A tab is listed only because Chrome's `audible` flag is true or its own current document reported playable media; the list is read in one pass and never injects into a tab to find out, so a tab that never loaded cannot claim anything and there is no pending state to report; facts name one document and are retired by the navigation event, never by a worker-local counter; no remembered or recently-audible tab list is consulted |
-| Popup card lifecycle | `popup/card/snapshot.ts` + `acknowledgedProcessorLifecycle` + `messaging.ts` bounded probe | The route colour comes from the control snapshot's own processor ACK; a newer session/runtime observation may only make it fresher, never make it exist; a snapshot restored from the Popup's own cache is a forecast that is confirmed once, silently, by the control projection; both the control projection and the processor lifecycle are retried on one bounded budget and settle into an explicit state instead of an endless "syncing" line |
+| Popup card lifecycle | `popup/card/snapshot.ts` + `sessionBelongsToCard` + `acknowledgedProcessorLifecycle` + `messaging.ts` bounded probe | The route colour comes from the control snapshot's own processor ACK; a newer session/runtime observation may only make it fresher, never make it exist; a durable session that names this card's own document is retained even when the control read is slow or missing; a snapshot restored from the Popup's cache is a forecast confirmed once, silently, by the control projection, and may not override the durable control/session record; both the control projection and the processor lifecycle are retried on one bounded budget and settle into an explicit state instead of an endless "syncing" line |
 | Card view reads | `control-coordinator.ts` `getControlViewSnapshot` + `spectra-tab-client.ts` `readSpectraTabPassively` | A view read is one-way: it asks the document's lean bootstrap what it already observes (`PASSIVE_FIELDS`) and never acquires the Content runtime, so painting a card for a tab the user is not looking at cannot wake that tab; a passive observation may not overwrite a field the extension is currently controlling, because for such a field the DOM value is the processor's input, not the effective output |
-| Popup vertical geometry | `popup.css` + `views/navigation.ts` + `popup/frame-height.ts` | Main view follows intrinsic card content; only `settings-view-active` owns the 600px settings viewport; navigation never writes inline height; `frame-height.ts` replays the last settled window height before the first paint and retargets every later correction through one CSS height transition, so the frame cannot snap; the prediction is only a floor until the inventory is published, and `#empty-state` is an inventory result, never an initial view; the blank under the last card has one owner (`#view-main`'s asymmetric bottom padding, with the last card's own margin zeroed), so it is the same 24px in every state; above Chrome's 600px ceiling the whole document scrolls — one scroll surface, never a nested list — so that 24px is on screen when the content fits and exactly one scroll away when it does not, never silently clipped |
+| Popup view geometry | `popup.css` + `views/navigation.ts` | The main view follows intrinsic card content and only `settings-view-active` owns the 600 px settings scroll viewport; navigation switches a mode class and never reads `offsetHeight`, writes inline height or calls `resizeTo`; `#empty-state` is an inventory result, never an initial view; the blank under the last card has one owner (`#view-main`'s asymmetric bottom padding, with the last card's own margin zeroed), so it is the same 24 px in every state; above Chrome's ceiling the whole document scrolls as one surface, never a nested list, so that 24 px is on screen when the content fits and exactly one scroll away when it does not |
+| Action Popup frame | `popup-frame.ts` + `shared/popup-bootstrap.ts` + `public/frame-reserve.js` + `popup/frame-height.ts` | The Background states the card count in the tab's Popup URL; the render-blocking head script opens the window at the height that exact shape settled on; the frame is pinned at that prediction until `data-spectra-ready`, corrected at most once, and only a settled published height is recorded — under the announced count, so the next open of that shape needs no correction |
+| Action Popup first frame | `public/frame-reserve.js` + `popup/utils/theme.ts` + `popup/settings-forecast.ts` | Theme, surface marker and card shape come from committed facts before the first paint; `system` is resolved by the same media query in the head script and the module; the settings forecast is validated on read, overwritten by the first authoritative projection and never merged |
+| Popup inventory forecast | `popup/media-inventory-from-storage.ts` + `media-facts.ts` | The first card list is projected from durable media facts plus Chrome's `audible` flag, so it needs no worker round trip; `spectra.tab.visible.list` still runs and reconciles any drift; the forecast is never a second authority |
 | Favicon/QR | Popup/remote renderers | Validated payload, no undeclared capability |
 | Remote transport/session | `vendor/peerjs/peerjs.min.js` + `offscreen-remote/peerjs-loader.ts` + `remote-host.ts` | One extension-owned JSON/DataChannel-only transport source projected to the static page, one lazy extension output, one Offscreen session/Peer owner, 16 KiB wire cap; epoch/command receipt/recovery remain bounded |
 | UI event projection | `popup/ui-event-hub.ts` + surface/session stores | One Chrome runtime listener; subscriber isolation; identity/revision/session-token monotonicity |

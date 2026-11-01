@@ -3,12 +3,12 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-runtime-protocol
-last_reviewed: 2026-08-29
+last_reviewed: 2026-11-01
 ---
 
 # SPECTRA runtime protocols
 
-This document owns cross-context envelopes, request/response validation, state flow, READY, leases, configured-site hotkey authority, and MV3 restart recovery. Per-capability writer selection belongs to [the control architecture](../control/README.md); remote authentication belongs to [remote security](../security/remote-control.md).
+This document owns cross-context envelopes, request/response validation, the private continuous Popup port, the Action Popup bootstrap parameter, state flow, READY, leases, configured-site hotkey authority, and MV3 restart recovery. Per-capability writer selection belongs to [the control architecture](../control/README.md); remote authentication belongs to [remote security](../security/remote-control.md).
 
 ## State ownership
 
@@ -50,6 +50,65 @@ Reads do not acquire WebAudio/Capture/MAIN/offscreen. Page-media reads may synch
 `ControlSubmitRequest` never carries Capture authority. Background adds `captureAdmission: 'extension-invocation'` to internal `ControlIntent` only after confirming a valid current-tab extension invocation. Value is consumed by policy, not saved in snapshot.
 
 Configured-site lean hotkeys do **not** self-assert control routing. They send the existing default-hotkey trigger with `disposition:'site-page'`; Background validates the content sender, binds foreground/target to that exact top-level `tabId+documentId`, then executes through the same shortcut/control coordinator used by other trusted hotkeys.
+
+## Private continuous Popup port
+
+Discrete Popup controls use the v2 envelope. Continuous volume and DSP use one
+private port (`spectra-popup-control`) whose Background-owned latest slot invokes
+the same `ControlCoordinator`. The port is a transport, not a second mutation
+owner, and it never changes the v2 wire.
+
+```text
+Popup -> Background
+  { type:'open', sessionId, tabId, documentId }
+  { type:'stage', sessionId, inputRevision,
+    effectiveVolume?, tone?,
+    groups:[{ requestedCoverage:'active-target'|'full', patch }] }
+  { type:'flush', sessionId, throughRevision }
+
+Background -> Popup
+  { type:'ready', sessionId }
+  { type:'settled', sessionId, throughRevision, volumeAck, fieldAcks, error }
+```
+
+| Constraint | Value |
+| --- | --- |
+| Groups per stage | at most 2, one per `requestedCoverage` |
+| Field ownership | a field may appear in one group only |
+| `sessionId` | 1–128 characters |
+| `documentId` | 1–256 characters |
+| `inputRevision` / `throughRevision` | positive safe integer |
+| `ready` timeout | 5 s |
+
+The port is admitted only from a sender with this extension's id, the exact
+`popup.html` URL, and no owning tab; any other sender is disconnected before a
+message is read. `open` binds one `sessionId` to one `tabId + documentId` for the
+life of the port, and every later message must repeat that session id.
+
+A stage must carry at least one of `effectiveVolume`, `tone`, or a nonempty
+group. `tone` is the exact `VolumeTone` the card is painting, not a threshold for
+the receiver to reinterpret: a volume number cannot be turned into a route. The
+Background applies that tone to the Action badge before awaiting any
+acknowledgement, so the badge and the slider change colour in the same turn. The
+badge's `isCapture` fact still comes only from the acknowledged lifecycle; a
+predicted violet is a tone, never a Capture claim.
+
+`ready` must match the opening session; without it within five seconds the Popup
+reports the Background as not ready and disconnects. Disconnect retires the
+response channel after Background admission, not an intent it already accepted.
+Closing rejects every unsettled waiter, and a `flush` after close is rejected
+instead of creating a waiter nobody settles.
+
+## Action Popup bootstrap parameter
+
+`popup.html?cards=N` is a Popup-URL parameter written by
+`chrome.action.setPopup`, not a runtime envelope: it crosses no context boundary
+as a message and carries no authority. `N` is a one-to-three digit non-negative
+count of cards the Background expects this open to draw. The render-blocking head
+script reads it only to select a recorded height (`spectra.popup.frame.<N>`); it
+never renders or hides a card, and an absent or invalid value falls back to the
+last settled height and then to the legacy single hint. `shared/popup-bootstrap.ts`
+is the sole owner of the parameter name and every storage key it selects.
 
 ## Site processing routes
 
