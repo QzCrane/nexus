@@ -56,6 +56,15 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 | capability gap | `capability-unavailable`, `write-unsupported`, `readback-mismatch`, `coverage-incomplete`, `source-binding-ineligible`, `strategy-runtime-failed` | 释放/绕过失败候选，尝试下一个可用策略 |
 | browser/security boundary | `user-activation-required`, `permission-denied`, `cors-or-drm-protected`, `protected-content`, `closed-shadow-inaccessible`, `stale-document`, `stale-media-source`, `policy-denied` | 终止。返回结构化错误并保持稳定路径（严禁用 MAIN/Capture 伪装） |
 
+### §7.4 Optional permission admission
+
+`public/manifest.json` 只把 `downloads` 与 `userScripts` 声明为 `optional_permissions`。两者在安装时都未授予，因此任何使用点都必须先证明已授予，不得把缺失当成默认开启。
+
+- `requestOptionalPermission` 是唯一请求入口，并且必须是点击/保存处理器里的**第一个异步 Chrome 调用**：不得先 `await hasOptionalPermission()` 再请求——那样用户手势已被读操作消耗，Chrome 会直接拒绝。已授予时 `request()` 幂等，所以预检本身是多余的。
+- 运行时消费者只读 `contains()`，从不请求。截图保存需要 `downloads`，缺失时抛出可操作的错误（指引在 Popup 截图按钮或 Options 热键保存处授予），不得返回“成功但没有文件”；运行时 RPC 也不得把 `permission-denied` 折算成成功空结果。
+- `userScripts` 的授予只由 Options 用户脚本界面的显式按钮发起；Chrome 138+ 还需要扩展详情页上的 “Allow User Scripts” 开关，所以授予成功后 UI 打开该页面，并在窗口重新获得焦点时重读真实徽标，而不是轮询。拒绝则显示明确失败，不留下“已启用”的假状态。
+- 权限续体只在同一意图仍然拥有该按钮时才恢复：文档销毁、DOM 退役或匹配被丢弃都会让续体失效。没有第二次点击就不得重放请求，也不得在拒绝后重放被拒绝的操作；未决匹配永不绕过准入。
+
 ## §19 User experience
 
 - 主面板展示音量/静音/倍速/播放与目标媒体。Boost 与 DSP 为高级控制。

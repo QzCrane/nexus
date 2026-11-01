@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-remote-security
-last_reviewed: 2026-08-28
+last_reviewed: 2026-11-01
 ---
 
 # SPECTRA authenticated remote protocol V3
@@ -13,6 +13,7 @@ This document is the sole owner of remote pairing, HMAC authentication, PeerJS/o
 ## Trust boundaries
 
 - Popup creates, inspects, or closes a session only for an explicit `tabId`; closing also requires the matching `sessionId`.
+- `spectra.remote.session.*` is admitted only from an exact extension-UI document. `remote-sender-gate.ts` requires this extension's id, no owning tab, a `chrome-extension:` URL, and a pathname in exactly `{ popup.html, options.html }`. An origin-prefix match is forbidden because it would admit every same-origin document added later for unrelated reasons, and a missing `sender.url` is a rejection rather than an admission.
 - Background binds a random internal capability to `{tabId, sessionId}` and accepts command/sync events only from `offscreen.html` with that capability.
 - The offscreen host owns the live Peer transport, pairing secrets, HMAC verification, connection exclusivity, command sequences, and reconnect expiry. Both controller and host consume the same workspace-owned PeerJS 1.5.5-derived data-only ESM source; it admits JSON DataConnection traffic only, enforces a 16 KiB UTF-8 limit before parsing or sending, and contains no media, binary/raw serializer, runtime package, CDN, or global-owner path.
 - The remote page receives the secret through a URL fragment, which is absent from the Cloudflare Pages HTTP request, and moves it into tab-scoped `sessionStorage` immediately.

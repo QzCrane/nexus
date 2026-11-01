@@ -54,6 +54,9 @@ Action Popup 的首帧不等待 service-worker 往返：卡片数由 Background 
 | `src/content/core/media-registry.ts` | `mediaId`、`sourceRevision`、缓存可见性与 Sticky Active Target 追踪 |
 | `src/content/logic/native-media-async.ts` | 唯一物理 DOM 标准媒体异步写/事件+getter ACK、source cancellation 与 frame cadence cache |
 | `src/content/logic/native-media-executor.ts` | Registry/target/native ownership/page fallback/rollback 编排，不复制 async writer |
+| `src/content/logic/native-write-policy.ts` | 每站点 `optimistic`/`verified` 策略与 drift 降级阈值：证明会回滚写入的站点被降级为“先证明后作答” |
+| `src/content/logic/native-write-confirmation.ts` | 稳定化证明的独立注册表：写由 executor 拥有，证明脱钩于控制路径，可取消且不阻塞作答 |
+| `src/content/logic/native-write-telemetry.ts` | 有界的本地 write-to-landed / landed-to-confirmed 延迟记录；不导出页面身份 |
 | `src/content/video/video-effects-controller.ts` | 媒体 Keyed CSS / Overlay 归属与属性恢复 |
 | `src/content/video/ab-loop.ts`, `time-marker.ts` | 媒体 Keyed A/B 循环与 Marker 算法及 disposer |
 | `src/background/handlers/screenshot.ts` | 令牌校验、可见标签页截屏、裁剪与下载确认编排 |
@@ -64,6 +67,8 @@ Action Popup 的首帧不等待 service-worker 往返：卡片数由 Background 
 | `src/popup/settings-forecast.ts` | 上次已提交 `GlobalSettings` 的首帧预测；读取时校验，首次权威投影覆盖，从不合并 |
 | `src/popup/media-inventory-from-storage.ts` | 由 durable media facts 与 `audible` 投影首份卡片列表，避免 service-worker 往返；RPC 仅用于对账 |
 | `src/remote/operation-queue.ts` | Remote 每 key 有界串行队列；不拥有 session/auth/protocol 状态 |
+| `src/background/remote-sender-gate.ts` | “哪个本文档可以读远程会话状态”的唯一判定：精确文档路径集合，禁止 origin 前缀，缺 `sender.url` 即拒绝 |
+| `src/shared/optional-permission-admission.ts` + `src/shared/optional-permission-click-gate.ts` | 可选权限的唯一手势入口与续体所有权；`request()` 必须是处理器首个异步调用，运行时消费者只读 `contains()` |
 | `packages/nexus-kernel/src/diagnostics.ts` + `src/background/diagnostics.ts` + `src/options/diagnostics.ts` | 仅由 Options 手势触发的拉取式诊断：私有端口鉴权、标量事实、不可读 owner 报 `null`；不导出页面/标签/文档/请求身份，无诊断存储 owner |
 
 结构拆分不得制造第二个 effect owner。协调者仍是 commit/persist/publish 唯一入口；
