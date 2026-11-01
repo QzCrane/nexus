@@ -92,7 +92,7 @@
 			if (mode !== "stale") state[RATIO_FIELD] = rate;
 			this.renderRoot();
 		};
-		plugin.renderRoot = function () {
+		plugin.renderRoot = () => {
 			for (const el of items) {
 				el.classList.toggle(SELECTED_CLASS, Number(el.dataset.id) === Number(state[RATIO_FIELD]));
 			}
