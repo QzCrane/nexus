@@ -1,10 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
+import { inspectWorkflowActions } from './check-workflow-actions';
 
 const workflow = readFileSync(
 	new URL('../../.github/workflows/dependency-update-evidence.yml', import.meta.url),
 	'utf8',
 );
+
+const retainStep = workflow
+	.split(/\r?\n/u)
+	.find((line) => /^\s*(?:-\s*)?uses:\s*actions\/upload-artifact@/u.test(line));
 
 describe('dependency update evidence workflow', () => {
 	test('is scoped to the product lock plus evidence-owner changes, not every package metadata edit', () => {
@@ -77,7 +82,11 @@ describe('dependency update evidence workflow', () => {
 		expect(workflow).toContain('bun nexus/scripts/browser-floor.ts github-env >> "$GITHUB_ENV"');
 		expect(workflow).toContain('printf \'%s  %s\\n\' "$CHROME_FLOOR_SHA256" "$archive" | sha256sum --check --strict');
 		expect(workflow).toContain('bun nexus/scripts/dependency-update-evidence.ts');
-		expect(workflow).toContain('actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1');
+		expect(retainStep).toBeDefined();
+		// The pin rules belong to check-workflow-actions.ts. Asserting that the
+		// retain step satisfies them keeps the immutability guarantee without
+		// freezing one release here, so a legitimate bump needs no spec edit.
+		expect(inspectWorkflowActions('dependency-update-evidence.yml', retainStep ?? '')).toEqual([]);
 		expect(workflow).toContain('if-no-files-found: error');
 	});
 });
