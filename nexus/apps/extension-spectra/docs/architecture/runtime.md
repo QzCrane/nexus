@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-02
 ---
 
 # SPECTRA runtime architecture
@@ -102,7 +102,11 @@ No generic MAIN runtime or domain tables. Two version-guarded bridges own cross-
 1. **Fullscreen V1**: Temporarily yields active audio pipeline around `requestFullscreen()`.
 2. **Page-media V2**: Synchronously reads/writes `volumeBase`, `mediaMuted`, `speed` for exact target.
 
-Page-media discovery walks composed-ancestors. Matches require paired getter/setter. Mismatch restores baseline. Admits one `dom-native` fallback before ownership. Bridge retains no controller, domain table, or polling loop.
+Page-media discovery walks composed-ancestors and declared bounded paths. Matches
+require paired getter/setter. The [media-control owner](../control/06-media-and-video.md#speed-decision-and-failure)
+defines speed value admission, physical ACK and proven baseline handoff, including
+an already-owned speed field. The bridge retains no controller or polling loop;
+declared data is owned by the registry, not by a second MAIN runtime.
 
 Content creates a lazy isolated-world `AudioContext` only when a visible analyser or explicit DSP demand has complete proven coverage for every current media element. The controller owns one page-lifetime source binding per element, never mutates CORS state, and disconnects on element/runtime disposal. Page volume/mute remain native fields. Capture remains the complete-tab fallback; leaving either processor first acknowledges a transparent configuration before releasing its physical owner.
 
@@ -135,7 +139,13 @@ A separate monotonic per-tab record owns Action-badge stickiness, surviving work
 
 ## Media discovery and identity
 
-Content maintains media through an event-driven registry. Registration does one viewport-geometry seed. Deduplicated on same-document navigation. Every element independently receives native configuration upon registration/play/selection; the registry never binds an audio graph.
+Content maintains media through an event-driven registry. Registration does one
+viewport-geometry seed. Same-document navigation does not duplicate the registry.
+Desired native settings replay only onto the current selected source, through
+registration/play/selection events and the same Background coordinator; the
+registry never binds an audio graph. The [media lifecycle owner](../control/06-media-and-video.md#closing-live-players-and-speed-inheritance)
+defines hidden/detached live-player handoff, source retirement, Popup closure
+and the distinction between route, document and media identity.
 Passive bootstrap may do a bounded top-level getter. It observes `volumechange`/`ratechange` and submits complete actual pairs to Background without media identity. While the initial HELLO verdict is pending, it retains the latest observation without dispatching it. A lean verdict drains that observation; a heavy-runtime verdict discards it because the runtime owns observation. Restoration acquires the heavy runtime before writing media, so restored native events cannot be replayed by the lean bootstrap.
 
 The bootstrap also owns the declared site's actual-speed toolbar projection for

@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-02
 ---
 
 # 05. Control state (Field states, volume/mute, audio processing)
@@ -20,7 +20,8 @@ interface ControlFieldState<T> {
   actual: T | null;
   restoreBaseline?: T;
   revision: number;
-  phase: 'idle' | 'applying' | 'applied' | 'error';
+  phase: 'idle' | 'applied' | 'error';
+  writeState?: 'written' | 'confirmed' | 'drifted' | 'unconfirmed';
   strategy: 'observe' | 'capture-observe' | 'page-native' | 'dom-native' | 'chrome-native' | 'extension-state' | 'extension-css' | 'extension-overlay' | 'media-webaudio' | 'capture' | 'unsupported';
   coverage: 'full' | 'active-target' | 'partial' | 'opaque';
   controlled: boolean;
@@ -28,6 +29,39 @@ interface ControlFieldState<T> {
   lastError: ControlError | null;
 }
 ```
+
+### Field transaction state
+
+`ControlFieldPhase` 的闭合集合由 contracts 拥有；没有 `applying` phase。
+下图的 `InFlight` 是正在执行的串行事务，不是已发布的快照状态。运行中的请求
+不能覆盖最后一次 actual；身份/epoch/revision 过期的 ACK 不能提交到新目标。
+
+```mermaid
+stateDiagram-v2
+  state "idle / 尚无本次控制事实" as Idle
+  state "在途事务 / 非快照 phase" as InFlight
+  state "applied / actual 已读回" as Applied
+  state "error / 结构化失败" as Failed
+  state "旧身份退休 / 不提交旧 ACK" as Retired
+  [*] --> Idle
+  Idle --> InFlight: 显式 intent
+  Applied --> InFlight: 新 intent
+  Failed --> InFlight: 新的显式尝试
+  InFlight --> Applied: 当前身份与实际读回一致
+  InFlight --> Failed: 能力或读回失败
+  InFlight --> Retired: document 或 source 退休
+  Idle --> Applied: 原生 getter 或页面观察
+  Applied --> Applied: 页面新 actual / controlled=false
+  Failed --> Applied: 后续有效观察或成功控制
+  Retired --> [*]
+```
+
+`applied` 不等于扩展仍持有字段：页面观察、目标切换读回和释放页面设置也可以
+产生 `applied + controlled=false`。失败字段可用 `actual:null` 表达没有本次成功
+证据，`restoreBaseline` 是补偿线索，不能当作失败后已确认的 current actual。
+`ControlSnapshot`、native field ownership、document desired 模板与 tab session
+是四个不同职责：快照投影实际值，ownership 保管精确源 baseline，desired 只驱动
+允许的后继目标重放，session 持久化已确认且可恢复的字段。后两者不是 actual。
 
 - **Echo Correlation Token**: `{ intentId, fieldRevision, expectedValue, tolerance }`（禁止时间窗口布尔标记）。
 - **Stale-base-revision recovery**: Background 拒绝 `baseRevision` 与权威快照 revision 不一致的 intent/operation，返回 `control_stale_revision`。Popup 的 `submitControlIntent`/`submitControlOperation` 携带当前卡片 revision 提交，收到该错误码时先拉取快照刷新投影，再以新 revision 重放一次；并发广播永远不会静默丢弃显式用户意图。
@@ -56,11 +90,34 @@ effective output ~= volumeBase / 100 * boost
 
 ### §11.1 写入与确认分离 (Split acknowledgement)
 
-对原生字段（`volumeBase` / `mediaMuted` / `speed`），**物理写入**与**稳定证明**是两个不同事实，分开作答：
+对原生字段，**物理写入**与**稳定证明**是两个不同事实。当前仅 optimistic 模式
+的标准 DOM `volumeBase` / `mediaMuted` 可以分开作答；`speed` 是离散设置，始终
+在同一事务内等待稳定证明，避免把源切换抹掉的值当作成功。
 
 ```text
 desired -> 物理写入(同步) -> written
                           -> 稳定证明(可取消后台任务) -> confirmed | drifted | unconfirmed
+```
+
+### Native write proof state
+
+```mermaid
+stateDiagram-v2
+  state "物理写入 + 当前读回" as Write
+  state "written / 事务已作答" as Written
+  state "confirmed / 稳定证明" as Confirmed
+  state "drifted / 页面恢复其它实际值" as Drifted
+  state "unconfirmed / 证明未完成" as Unconfirmed
+  state "事务内稳定 ACK" as Awaited
+  state "字段 error 或旧身份拒绝" as Rejected
+  [*] --> Write
+  Write --> Written: DOM 音量或静音且准入 split ACK
+  Written --> Confirmed: 静默窗和两个边界成立
+  Written --> Drifted: 观察到真实偏离
+  Written --> Unconfirmed: 超时或证明取消
+  Write --> Awaited: speed 或 page writer 或 verified 模式
+  Awaited --> Confirmed: 有界证明成立
+  Awaited --> Rejected: 读回不一致或生命周期过期
 ```
 
 - `written`：setter 已执行且元素当前反映请求值。事务据此作答。
@@ -75,7 +132,7 @@ desired -> 物理写入(同步) -> written
 - `drifted` 回写 observed actual，并按站点计入 ledger；窗口内累计达阈值即降级为历史 verified 路径（先证明后作答）。`unconfirmed` 不计 drift。策略归属 `native-write-policy.ts`，证明的挂起与取消归属 `native-write-confirmation.ts`。
 - 稳定证明发现 drift 时，必须通过同一原生事件处理入口发布当前相干 volume/mute 对，经过目标、pending 与 ownership 检查；不能只更新内部 observed 缓存，否则下一次事件会被误认为重复而丢失。
 - 写入仍串行；被降级的是**等待**，不是**顺序**。
-- 适用边界：仅标准 DOM writer 的原生字段。page controller 的能力发现与回退、Capture/WebAudio 增益、处理器生命周期、跨 100 路由边界**仍完全事务化**。
+- 适用边界：仅获准 split ACK 的标准 DOM 音量/静音字段。speed、page controller 的能力发现与回退、Capture/WebAudio 增益、处理器生命周期、跨 100 路由边界**仍完全事务化**。`confirmed` write state 不能冒充菜单、音频处理器或实际视频时间推进的证明；各自证据由相应 owner 负责。
 - 数值显示永不冻结：`resolveVolumePresentation` 的数值恒取 `state.config` 的实时值。路由事务只管辖**色调**（`actualMode` / `phase`）与 `muted`，避免新数值配上一条未确认路由的色调。冻结数值曾使 0–800 滑块在跨过 100 后整个手势停在起始值。
 
 页面观察从当前文档的 MediaRegistry 就绪时开始，不依赖此前执行过控制请求或

@@ -11,6 +11,7 @@ export type MediaRegistryEvent =
 	| 'loadstart'
 	| 'play'
 	| 'pause'
+	| 'ended'
 	| 'loadedmetadata'
 	| 'emptied'
 	| 'volumechange'
@@ -130,6 +131,7 @@ export class MediaRegistry {
 				this.selectRecord(record, false);
 				this.fullscreenMediaId = record.target.mediaId;
 			} else this.fullscreenMediaId = null;
+			if (!entering) this.reconcileRetiredSelection();
 			this.emit(record.target, 'fullscreenchange', record.element);
 		};
 		this.intersectionObserver = new IntersectionObserver((entries) => {
@@ -142,6 +144,7 @@ export class MediaRegistry {
 					? entry.intersectionRect.width * entry.intersectionRect.height
 					: 0;
 			}
+			this.reconcileRetiredSelection();
 		});
 		this.mediaAttributeObserver = new MutationObserver((mutations) => {
 			this.handleMediaAttributeMutations(mutations);
@@ -213,10 +216,12 @@ export class MediaRegistry {
 		this.removalFlushQueued = true;
 		queueMicrotask(() => {
 			this.removalFlushQueued = false;
+			const previous = this.best('media');
 			for (const media of this.pendingRemovals) {
 				if (!media.isConnected) this.unregister(media);
 			}
 			this.pendingRemovals.clear();
+			this.reconcileRetiredSelection(!!previous && !this.byElement.has(previous.element));
 		});
 	}
 
@@ -282,6 +287,7 @@ export class MediaRegistry {
 			'loadstart',
 			'play',
 			'pause',
+			'ended',
 			'loadedmetadata',
 			'emptied',
 			'volumechange',
@@ -300,6 +306,10 @@ export class MediaRegistry {
 					if (active && active !== record) active.visibleArea = initialVisibleArea(active.element);
 					const candidate = this.bestRecord(this.byElement.values());
 					if (candidate) this.selectRecord(candidate, true);
+				}
+				if (type === 'pause' || type === 'ended' || type === 'leavepictureinpicture') {
+					record.visibleArea = initialVisibleArea(element);
+					this.reconcileRetiredSelection();
 				}
 				if (type === 'loadstart' || type === 'emptied') this.refreshSource(element, true);
 				if (type === 'loadedmetadata') {
@@ -391,6 +401,33 @@ export class MediaRegistry {
 		if (key === this.selectedTargetKey) return;
 		this.selectedTargetKey = key;
 		if (notify) this.emit(record.target, 'selected', record.element);
+	}
+
+	private reconcileRetiredSelection(replacingRemovedTarget = false): void {
+		if (this.disposed) return;
+		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
+		// Initial visibility delivery is not a selection change. Publishing it
+		// during a cold restore would relabel acknowledged portable intent as a
+		// page observation before the restore has finished committing.
+		if (!active && !replacingRemovedTarget) return;
+		if (active) {
+			// Hiding a modal is not a source retirement. Reconcile the selection
+			// from lifecycle events, so an already-playing feed need not play again.
+			// Visible paused players and actual presentation owners stay controllable.
+			if (active.target.kind === 'audio') return;
+			const fullscreen = document.fullscreenElement;
+			if (document.pictureInPictureElement === active.element
+				|| fullscreen === active.element
+				|| fullscreen instanceof Element && fullscreen.contains(active.element)) return;
+			if (!active.element.ended && active.visibleArea > 0) return;
+		}
+		const candidates = [...this.byElement.values()].filter((record) => (
+			!record.element.ended && (record.target.kind === 'audio'
+				? !record.element.paused
+				: record.visibleArea > 0)
+		));
+		const candidate = this.bestRecord(candidates);
+		if (candidate && candidate !== active) this.selectRecord(candidate, true);
 	}
 
 	select(target: MediaTarget): boolean {

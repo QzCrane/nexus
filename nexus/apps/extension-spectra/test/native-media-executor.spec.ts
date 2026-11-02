@@ -539,7 +539,7 @@ describe('native media single-writer correlation', () => {
 		}
 	});
 
-	test('retains a targetless restore until the first media registration', async () => {
+	test.each(['restore', 'popup'] as const)('rejects a targetless %s without false actual and retains only a restore template', async (source) => {
 		const sent: unknown[] = [];
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
@@ -599,7 +599,7 @@ describe('native media single-writer correlation', () => {
 				documentId: target.documentId,
 				generation: 1,
 				baseRevision: 2,
-				source: 'restore',
+				source,
 				requestedCoverage: 'active-target',
 				target: null,
 				actualContext: {},
@@ -607,11 +607,14 @@ describe('native media single-writer correlation', () => {
 			});
 			expect(initial.fields.volumeBase?.phase).toBe('error');
 			expect(initial.fields.speed?.phase).toBe('error');
+			expect(initial.fields.speed?.actual).toBeNull();
+			expect(initial.fields.speed?.controlled).toBe(false);
 
 			available = true;
 			listener?.({ ...target }, 'registered', element as unknown as HTMLMediaElement);
 			await Promise.resolve();
-			expect(sent).toContainEqual(expect.objectContaining({
+			if (source === 'popup') expect(sent).not.toContainEqual(expect.objectContaining({ type: 'spectra.control.intent.submit' }));
+			else expect(sent).toContainEqual(expect.objectContaining({
 				type: 'spectra.control.intent.submit',
 				payload: expect.objectContaining({
 					source: 'restore',
@@ -1091,7 +1094,7 @@ describe('native media single-writer correlation', () => {
 		}
 	});
 
-	test('reports page-semantic volume changes before any native request binds a tab', async () => {
+	test.each(['stable', 'selection-change', 'source-change'] as const)('reports cold page-semantic volume only while its queued target remains selected (%s)', async (transition) => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -1130,8 +1133,16 @@ describe('native media single-writer correlation', () => {
 			state.volumeBase = 50;
 			media.forceVolume(0.30655);
 			registry.emit('volumechange');
+			if (transition === 'selection-change') registry.target.mediaId = 'media:next';
+			if (transition === 'source-change') registry.target.sourceRevision += 1;
+			if (transition !== 'stable') registry.emit('selected');
 			await Promise.resolve();
 			const observation = messages.find((message) => message.type === 'spectra.control.intent.submit');
+			if (transition !== 'stable') {
+				expect(observation).toBeUndefined();
+				expect(messages.some((message) => message.type === 'spectra.content.target.changed')).toBe(true);
+				return;
+			}
 			expect(observation?.payload?.patch).toMatchObject({ volumeBase: 50, mediaMuted: false });
 			expect(observation?.payload?.observedStrategies).toEqual({
 				volumeBase: 'page-native',

@@ -1147,11 +1147,9 @@ export class NativeMediaExecutor {
 		signal: AbortSignal = this.lifecycleController.signal,
 	): Promise<void> {
 		if (!resolved) {
-			if (intent.source !== 'restore' && isRestorableMediaField(field)) {
-				this.rememberDesired(field, value);
-				this.putState(fields, field, value, value, intent, 'dom-native');
-				return;
-			}
+			// An empty document or stale explicit target has no physical witness.
+			// Only restore keeps its separately staged template for later media;
+			// a failed explicit request must never become an applied value/replay.
 			this.putError(fields, field, value, intent, 'capability-unavailable', 'No active media target');
 			return;
 		}
@@ -1954,7 +1952,7 @@ export class NativeMediaExecutor {
 		} else 		if (event === 'ratechange') {
 			// preservesPitch has no native event; observe it in the rate transaction.
 			observedFields = ['speed', 'preservePitch'];
-		} else if (event === 'play' || event === 'pause') {
+		} else if (event === 'play' || event === 'pause' || event === 'ended') {
 			observedFields = ['playing'];
 		} else if (event === 'seeked') {
 			observedFields = ['currentTime'];
@@ -2079,6 +2077,9 @@ export class NativeMediaExecutor {
 		const entries = [...this.pageObservations.values()];
 		this.pageObservations.clear();
 		for (const { target, patch, observedStrategies } of entries) {
+			const selected = this.registry.resolve(null);
+			if (!selected || selected.target.frameId !== target.frameId
+				|| this.targetKey(selected.target) !== this.targetKey(target)) continue;
 			// Observation starts with this document's registry, before any control
 			// request binds this.tabId. Background derives the tab from Chrome's
 			// sender and validates this exact target/document, as for lean bootstrap.

@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-control-architecture
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-02
 ---
 
 # SPECTRA control architecture
@@ -33,6 +33,24 @@ Do not copy a topic's rules back into this file. Change the topic owner, executa
 - **50 static invariants**: `SCTRL-001..SCTRL-050`
 
 These totals mirror executable contracts and gates. A count changes only with contract rows, source catalog, tests, owner documentation, and verifier updates.
+
+## Diagram and business-flow index
+
+图随业务 owner 维护；本表只导航，不复制状态定义。合同、实现和测试是可执行
+约束，图中的在途操作不额外创造快照 phase。
+
+| 图 / 规则 | 唯一位置 |
+| --- | --- |
+| 从意图到实际快照的总控制流 | [01 §2](01-foundations.md#2-control-flow-and-state-ownership) |
+| 字段事务状态机 | [05 Field transaction state](05-control-state.md#field-transaction-state) |
+| written / confirmed / drifted / unconfirmed 证明状态机 | [05 Native write proof state](05-control-state.md#native-write-proof-state) |
+| SPA route / document / media source 生命线及 source 状态机 | [06 SPA identity and source lifecycle](06-media-and-video.md#spa-identity-and-source-lifecycle) |
+| 关闭直播、隐藏、移除、无目标、Popup 关闭与恢复决策表 | [06 Closing live players and speed inheritance](06-media-and-video.md#closing-live-players-and-speed-inheritance) |
+| 自由倍速准入、page/DOM writer、失败与补偿决策图 | [06 Speed decision and failure](06-media-and-video.md#speed-decision-and-failure) |
+| 直播传输不能调速的边界 | [06 Live transport limits](06-media-and-video.md#live-transport-limits) |
+| 倍速写入、actual 标签、ACK 和 Popup 时序图 | [06 Speed intent and projection sequence](06-media-and-video.md#speed-intent-and-projection-sequence) |
+| 每条媒体业务规则对应的回归规格 | [06 Executable coverage and limits](06-media-and-video.md#executable-coverage-and-limits) |
+| 跨上下文运行时图、导航 fencing 时序 | [Runtime ownership / Audio lifecycle](../architecture/runtime.md#runtime-ownership) |
 
 ## Neighbor owners
 

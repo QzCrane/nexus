@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
 import { SPECTRA_PAGE_MEDIA_EVENT, SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE, SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE } from '../../src/shared/page-media-bridge';
-import { acquireSmokeRuntime, browser, collectPageErrors, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, openExtensionClient, patchExtensionSettings, readBadgeText, readContentBootstrapStatus, readContentStatus, submitEffectiveVolume, submitPopupControlIntent, waitForContentBootstrapStatus, waitForContentStatus } from './harness';
+import { SMOKE_TONE_WAV, acquireSmokeRuntime, browser, collectPageErrors, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, openExtensionClient, patchExtensionSettings, readBadgeText, readContentBootstrapStatus, readContentStatus, submitEffectiveVolume, submitPopupControlIntent, waitForContentBootstrapStatus, waitForContentStatus } from './harness';
 import { installAudioContextProbe, prepareSmokeSession, releaseSmokeRuntimes, startSmokeSession, teardownSmokeSession } from './harness';
 
 describe('SPECTRA built extension smoke: page-media', () => {
@@ -607,6 +607,131 @@ describe('SPECTRA built extension smoke: page-media', () => {
 			);
 		} finally {
 			await spaPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test.each(['hidden', 'detached'] as const)('returns from a %s SPA live player and replays speed onto the already-playing feed', async (close) => {
+		const spaUrl = `${fixtureUrl}?spa-live-close=${close}`;
+		const page = await browser.newPage();
+		const client = await openExtensionClient();
+		try {
+			await page.goto(spaUrl, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(spaUrl);
+			await page.bringToFront();
+			const tabId = await getTabId(spaUrl);
+			await page.evaluate(async (toneBytes) => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (!feed) throw new Error('SPA feed is missing');
+				feed.muted = true;
+				feed.loop = true;
+				feed.style.width = '320px';
+				feed.style.height = '180px';
+				feed.src = URL.createObjectURL(new Blob([Uint8Array.from(toneBytes)], { type: 'audio/wav' }));
+				await feed.play();
+			}, [...SMOKE_TONE_WAV]);
+			const seeded = await submitPopupControlIntent(tabId, { patch: { speed: 1.3 } });
+			expect(seeded).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 1.3 } } } });
+			const feedTarget = seeded.ok ? seeded.data.target : null;
+			expect(feedTarget).not.toBeNull();
+			await page.evaluate(async () => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (!feed) throw new Error('SPA feed is missing');
+				const modal = document.createElement('video');
+				modal.id = 'live-modal';
+				modal.muted = true;
+				modal.loop = true;
+				modal.src = feed.currentSrc || feed.src;
+				modal.style.cssText = 'position:fixed;inset:0;width:640px;height:360px';
+				document.body.append(modal);
+				await modal.play();
+			});
+			await eventually(() => page.evaluate(() => document.querySelector<HTMLVideoElement>('#live-modal')?.playbackRate),
+				(rate) => rate === 1.3, 'new SPA live target receives retained speed');
+			const live = await submitPopupControlIntent(tabId, { patch: { speed: 2 } });
+			expect(live).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 2 } } } });
+			await page.evaluate((closeMode) => {
+				const modal = document.querySelector<HTMLVideoElement>('#live-modal');
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (!modal || !feed || feed.paused) throw new Error('Expected a live modal above an already-playing feed');
+				// The feed does not emit play again. Returning must come from the
+				// registry's close/visibility lifecycle, even without a URL change.
+				if (closeMode === 'detached') modal.remove();
+				else { modal.pause(); modal.style.display = 'none'; }
+			}, close);
+			const snapshot = await eventually(() => client.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+				protocolVersion: 2, requestId: crypto.randomUUID(), tabId: targetTabId,
+				type: 'spectra.control.snapshot.get', payload: { tabId: targetTabId },
+			}), tabId), (response) => response.ok
+				&& response.data?.activeMedia?.mediaId === feedTarget?.mediaId
+				&& response.data.fields.speed?.controlled === true
+				&& response.data.fields.speed.actual === 2,
+				'closed SPA live target returns speed ownership to the existing feed');
+			expect(snapshot.data.activeMedia).toMatchObject(feedTarget);
+			expect(await page.evaluate(() => document.querySelector<HTMLVideoElement>('#v')?.playbackRate)).toBe(2);
+			const changed = await submitPopupControlIntent(tabId, { patch: { speed: 1.4 } });
+			expect(changed).toMatchObject({ ok: true, data: { target: feedTarget, fields: { speed: { actual: 1.4, phase: 'applied' } } } });
+			expect(await page.evaluate(() => document.querySelector<HTMLVideoElement>('#v')?.playbackRate)).toBe(1.4);
+		} finally {
+			await client.close();
+			await page.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('does not acknowledge or replay a rejected speed on a realtime MediaStream', async () => {
+		const url = `${fixtureUrl}?unsupported-live-rate=1`;
+		const page = await browser.newPage();
+		const client = await openExtensionClient();
+		try {
+			await page.goto(url, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(url);
+			await page.bringToFront();
+			const tabId = await getTabId(url);
+			await page.evaluate(async () => {
+				const media = document.querySelector<HTMLVideoElement>('#v');
+				if (!media) throw new Error('Realtime fixture media is missing');
+				const canvas = document.createElement('canvas');
+				canvas.width = 320;
+				canvas.height = 180;
+				const context = canvas.getContext('2d');
+				if (!context) throw new Error('Realtime fixture needs a canvas context');
+				context.fillRect(0, 0, canvas.width, canvas.height);
+				media.muted = true;
+				media.srcObject = canvas.captureStream(1);
+				await media.play();
+			});
+			// The shared-origin session may retain earlier successful test values.
+			// Establish a real supported baseline; only the later 2x must fail.
+			const baseline = await submitPopupControlIntent(tabId, { patch: { speed: 1 } });
+			expect(baseline).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 1 } } } });
+			const rejected = await submitPopupControlIntent(tabId, { patch: { speed: 2 } });
+			expect(rejected).toMatchObject({ ok: true, data: { fields: { speed: {
+				phase: 'error', actual: null, controlled: false,
+				lastError: { code: 'readback-mismatch' },
+			} } } });
+			expect(await page.evaluate(() => document.querySelector<HTMLVideoElement>('#v')?.playbackRate)).toBe(1);
+			await page.evaluate(async (toneBytes) => {
+				const old = document.querySelector<HTMLVideoElement>('#v');
+				if (!(old?.srcObject instanceof MediaStream)) throw new Error('Realtime fixture stream is missing');
+				for (const track of old.srcObject.getTracks()) track.stop();
+				const next = document.createElement('video');
+				next.id = 'v';
+				next.muted = true;
+				next.src = URL.createObjectURL(new Blob([Uint8Array.from(toneBytes)], { type: 'audio/wav' }));
+				old.replaceWith(next);
+				await next.play();
+			}, [...SMOKE_TONE_WAV]);
+			await eventually(() => client.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+				protocolVersion: 2, requestId: crypto.randomUUID(), tabId: targetTabId,
+				type: 'spectra.control.snapshot.get', payload: { tabId: targetTabId },
+			}), tabId), (response) => response.ok
+				&& response.data?.activeMedia?.mediaId !== (rejected.ok ? rejected.data.target?.mediaId : null)
+				&& response.data.fields.speed?.actual === 1
+				&& response.data.fields.speed.desired === 1,
+				'replacement observes 1x without replaying the rejected 2x intent');
+			expect(await page.evaluate(() => document.querySelector<HTMLVideoElement>('#v')?.playbackRate)).toBe(1);
+		} finally {
+			await client.close();
+			await page.close().catch(() => undefined);
 		}
 	}, 35_000);
 

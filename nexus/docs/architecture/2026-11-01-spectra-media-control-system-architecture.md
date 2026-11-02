@@ -3,16 +3,17 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-system-architecture
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-02
 ---
 
-# SPECTRA 媒体控制系统 — 最全面系统架构
+# SPECTRA 媒体控制系统架构索引
 
-- **日期**：2026-11-01
+- **复核日期**：2026-11-02
 - **范围**：SPECTRA 浏览器扩展（`apps/extension-spectra`）的整套媒体（音频 + 视频）控制系统架构。
 - **目的**：把分散在 `architecture/`、`control/`、`principles/`、`proposals/`、`research/` 各处的权威文档，整合为一份自洽的系统级总览。本文是**整合与索引**，不创造第二套规范；任何与下方 owner 文档冲突处，以 owner 文档为准。
 - **权威边界**：行为权威依序为 可执行契约与测试 → `control/` 主题 owner → `architecture/runtime.md` → `reference/protocols.md`。本文属架构整合，非行为权威。
 - **关联文档**：抖音倍速专项分析见 `research/2026-11-01-spectra-douyin-speed-sync-root-cause.md` 与 `proposals/2026-11-01-spectra-douyin-speed-official-adapter.md`（本文 §11 引用）。
+- **状态机与业务图入口**：[control 图目录](../../apps/extension-spectra/docs/control/README.md#diagram-and-business-flow-index)。图与业务规则仅由对应 control owner 维护；本索引不重复其状态机。
 
 ---
 
@@ -98,23 +99,19 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 ## 5. 双世界模型与 Page-Media V2 桥
 
-控制写实存在两个世界，由 page-media V2 桥跨世界同步。**这是抖音倍速 bug 的架构舞台**（见 §11）。
+控制写入存在两个世界，由 page-media V2 桥跨世界同步。当前准入、物理读回、
+ownership 与失败交接由 [媒体 owner](../../apps/extension-spectra/docs/control/06-media-and-video.md#speed-decision-and-failure) 规定。
 
-1. **ISOLATED 世界**（`native-media-executor.ts`）：唯一 writer，按 `declared-official → page-native → dom-native` 顺序决定写入层。前两档都经同一个桥调用，差别只在证据与归因（§5.2）。
+1. **ISOLATED 世界**（`native-media-executor.ts`）：唯一物理写入调度 owner。先按精确 source 与请求值准入，再选择 page 或 DOM writer；不能把默认策略顺序误读为每个自由值都必须先试 page setter。
 2. **MAIN 世界**（`injector/page-media-bridge.ts`）：负责"精确元素 + 能力发现"——遍历合成祖先、扫描自有属性，寻找与媒体元素显式关联的 controller，要求其具备成对 getter/setter 且 readback 稳定。
 3. **跨世界协议**（`shared/page-media-bridge.ts` + `logic/page-media-bridge.ts`）：经 DOM 属性 + 合成事件同步。ISOLATED 端 `readPageMediaField`/`writePageMediaField` 同步派发请求并读取结果；`supported===false` 或返回 `null` 视为无页面能力。桥**忠实**——仅在 `!result?.supported` 或结果 JSON 损坏时返回 `null`，不吞噬错误。
 
-### 5.1 discovery 白名单（speed 专项脆弱点）
+### 5.1 有界 discovery
 
-`findCapability('speed')` 只认以下硬编码约定：
-
-| 维度 | 内容 | 位置 |
-|---|---|---|
-| setter 探测名（仅 4 个） | `getPlaybackRate`、`setPlaybackRate`、`setPlaybackRateByUser`、`changePlaybackRate`（或 `playbackRate` 访问器对） | `injector/page-media-bridge.ts:150-165` |
-| 关联键（仅 7 个） | `video`/`media`/`mediaElement`/`element`（media-reference）、`root`/`el`/`container`（root-reference） | `:177-189` |
-| 遍历边界 | ≤12 层合成祖先、每 host 前 96 个自有属性、≤8 层原型 | `:33-35, :197` |
-
-> **结论（根因）**：抖音（React SPA）的 speed 控制器在上述维度上全部超出白名单 → `findCapability` 返回 `null` → 写入降级 `dom-native`。详见 §11 与根因报告。
+通用候选与声明候选使用同一个 MAIN 桥，要求精确元素关联和成对 getter/setter。
+名称、路径、扫描预算与站点 revision 由 `shared/site-adapter-registry.ts` 拥有，
+不在本文复制动态白名单或旧行号。找到控制器只证明可发现；仍须证明其能承接
+本次请求值以及实际媒体的稳定倍速。
 
 ### 5.2 声明式站点适配器（覆盖层，不是替代层）
 
@@ -123,10 +120,11 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 - **数据**：`shared/site-adapter-registry.ts` 的 `SITE_ADAPTER_REGISTRY`，每条声明 hosts / field / revision / status / discovery（setter·getter·accessor 名、`readPath`、关联键（支持点路径）、`globalPaths`、边界、是否走 React fiber）/ projection（容器、作用域、选中项选择器、模式、容差）。纯数据模块，无 DOM、无副作用。
 - **消费**：仍是那一个 allowlisted 桥。条目只重排与放宽探测，**不新增注入文件**（SCTRL-004）。候选排序把 declared 置于关联等级之前——条目存在的理由就是通用排序在这里选错了对象。
 - **归因**：桥在结果里回传 `adapterId`，执行器据此把 ownership 记为 `declared-official`。wire 仍报 `page-native`（`CONTROL_STRATEGIES` 是承载位序的封闭枚举，不得扩）。
-- **证人**：`projection` 是 UI 投影读取器。没有 projection 的条目只能回答 `probe`，永远不能承载写入——没有 UI 证人的写入正是这套机制要终结的形态。
+- **证人**：独立菜单选中项参与 declared projection audit。工具栏标签由 bootstrap 从物理 playbackRate 投影，不能反过来给自己的写入签发 ACK。`optionSelector` 另行约束 page 请求值准入，不允许拿投影标签推断页面支持某个自由值。
 - **门禁**：`status: 'candidate'` 未经 EPR-028 实机闸门，`verified` 只能由运行手册授予。
 
-> 条目存在的安全边界不在"条目是否存在"，而在"投影是否可读"：找不到控制器 → 退回通用；找到但投影不可读 → 不写；两者都满足 → 走站点自己的 setter。所以带条目发布不会让任何站点变差。
+安全裁决是精确身份、能力与数值准入、物理读回及可证明的 ownership 交接。
+条目 status 与夹具通过不能签发新的在线站点实机结论。
 
 ---
 
@@ -134,13 +132,16 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 ### 6.1 写入层选取（`native-media-executor.ts`）
 
-- `readRestorableMediaFieldForWrite`（`:286-318`）→ 无既有 ownership 时调用 `readRestorableMediaFieldWithWriter`（`:254-284`）。
-- 无 ownership 且 `readPageMediaField(element,'speed')` 返回 `null` → `writer:'dom-native'`（`:273-283`）。
-- `writeRestorableMediaField`（`:320-338`）对 dom-native 走 `writeNativePlaybackRate`：`element.playbackRate = next`（`:354-364`）。
+入口为 `readRestorableMediaFieldForWrite`。speed 的数值准入可以在任何 page probe
+之前直接选择现有 DOM writer；已准入 page writer 仍须 controller 与物理速率
+双证。完整分支、失败值 memo、baseline 与原 ownership 交接见
+[speed 决策图](../../apps/extension-spectra/docs/control/06-media-and-video.md#speed-decision-and-failure)。
 
 ### 6.2 写入与确认分离（SCTRL-045..048，§11.1）
 
-对原生字段（`volumeBase`/`mediaMuted`/`speed`），**物理写入**与**稳定证明**是两个不同事实：
+**物理写入**与**稳定证明**是两个不同事实。当前可提前作答的 split ACK 仅用于
+获准的标准 DOM 音量/静音；speed 仍在事务内等待稳定证明。状态机唯一位置为
+[control/05](../../apps/extension-spectra/docs/control/05-control-state.md#native-write-proof-state)。
 
 | `writeState` | 含义 | 事务可否作答 |
 |---|---|---|
@@ -151,9 +152,12 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 约束：证明在事务作答之后以可取消后台任务运行；更新的写入取消上一个写入的证明（`SCTRL-046`）；`drifted` 累计达阈值即降级为"先证明后作答"。被降级的是**等待**，不是**顺序**。
 
-### 6.3 诊断可观测性缺口（关键架构缺陷）
+### 6.3 实际值与 UI 证据边界
 
-`native-write-confirmation.ts:readActual` 对 speed 为 `element.playbackRate`（`:40`）。**写入确认、事件观察（`handleMediaEvent`）、per-site ledger 全部只读 DOM 属性**。对"UI 由 React state 驱动"的站点（抖音），DOM 与 UI 投影分叉，而系统只测 DOM → 永远 `confirmed`、永不 `drifted`、永不自愈。本架构的总修复方向见 §11 与适配器方案。
+speed actual 来自精确媒体的 playbackRate；控制器 getter 不能替代物理证明。
+独立菜单 projection audit 与 bootstrap actual 标签承担不同职责，不能循环自证。
+速率属性稳定也不证明实时流持续按墙钟倍速推进；MediaStream 限制与在线流证据边界
+见 [Live transport limits](../../apps/extension-spectra/docs/control/06-media-and-video.md#live-transport-limits)。
 
 ---
 
@@ -253,15 +257,18 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 ---
 
-## 11. 抖音倍速：双世界失效的具象分析
+## 11. 抖音倍速、直播关闭与 SPA 的当前入口
 
-抖音倍速 UI 单向不同步是本文 §5–§6 架构在真实站点上的一次具体失效，登记于 `05-problem-to-principle-map.md:24`（EPR-007/EPR-002/EPR-028）。其根因与修复方向已完整记录在两份专项文档，此处只给结论索引：
+旧 controller-only ACK 和仅靠菜单驱动标签的总结已被后续物理读回、自由值准入
+与 bootstrap 标签投影取代，不再作为当前结论。直接使用以下 owner：
 
-- **根因（子因 A，已确证）**：通用 page-native discovery 的白名单（4 名 / 7 键 / 12-96-8）无法定位抖音 speed controller，写入降级 `dom-native`，而抖音倍速标签由 React state 驱动、不读 `element.playbackRate` → 正向不同步；反向（抖音 UI 改倍速）因抖音自身路径恰好也写 DOM 而正常。
-- **诊断失明**：本文 §6.3 所述"全 DOM 读回"缺陷在抖音上表现为——ledger 永远 `confirmed`、永不 `drifted`，系统结构性无法感知该 bug。
-- **修复（已实现并实机验证）**：`shared/site-adapter-registry.ts` 的 `douyin-speed` 条目（`revision 2 / verified`）+ 桥内声明式发现 + `declared-official` 内部路由。ACK 以**控制器 getter** 为据（桥内同步校验并回滚），**UI 投影作为证人**由事务后的 `auditProjection` 裁决并写入 ledger——初版设想的「投影即 ACK 前提」在实现中因 React 异步渲染而修正（见适配器方案 §12.1）。
-- **实机实测（2026-11-01）**：控制器不在媒体元素的祖先链上（祖先链零候选），实例为 `window.player.plugins.playbacksettingplugin`；`player.playbackRate` 是媒体元素的代理 accessor（写成功但 UI 不动），UI 的 `playbackRate` prop 来自 `plugin.config.playBackRatio`。因此条目必须同时声明 `globalPaths`（在哪找）、`readPath`（读什么算数）、`selectedSelector`（UI 选中项在哪）。同页 A/B：`video.playbackRate=1.5` → 选中项仍 `1.0x`；桥写入 → `1.5x`。证据 `docs/research/evidence/2026-11-01-douyin-speed-live.json`（12/12）。
-- 详细证据、端到端因果链、实机验证清单见 `research/2026-11-01-spectra-douyin-speed-sync-root-cause.md`；架构方案、契约、注册表、安全不变式、EPR-028 验证计划见 `proposals/2026-11-01-spectra-douyin-speed-official-adapter.md`。
+- [实际标签与写入时序](../../apps/extension-spectra/docs/control/06-media-and-video.md#actual-speed-label)。
+- [关闭直播、隐藏/移除、无目标和倍速继承](../../apps/extension-spectra/docs/control/06-media-and-video.md#closing-live-players-and-speed-inheritance)。
+- [同文档 URL 与媒体 source 独立生命线](../../apps/extension-spectra/docs/control/06-media-and-video.md#spa-identity-and-source-lifecycle)。
+- [本轮修复与验证记录](../research/2026-11-01-spectra-live-volume-popup-repair.md)。
+
+2026-11-01 的探测 JSON、根因报告与适配器提案保留为当时的证据和设计历史；
+不自动证明后续 revision 的在线直播、流类型或实际时间推进已验证。
 
 ---
 
@@ -304,10 +311,10 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 
 ---
 
-## 14. 末决项（来自 owner 文档，非本文新增）
+## 14. 完整性和证据边界
 
-- 音量路径的 Chrome workload 未注册（可观测性已打通，缺 `runtime-performance-policy.json` 采样窗口）。
-- Popup 静音路径一条 smoke 未通过（`controller-only mute ACK`）。
-- 6 项真实 Chrome 取证不在 CI。
-- Options 与 Popup 仍是两套 token（产品视觉决策，非绕过 token）。
-- 抖音 one-shot adapter 尚未实机验证（EPR-028 边界），注册表条目未准入；探测脚本、夹具与运行手册已就绪（自证 19/19），待真实标签页执行。
+本文是跨 owner 的索引，不是“全部业务已完成”的证明。媒体范围的规则、图和
+可执行规格由 [coverage 表](../../apps/extension-spectra/docs/control/06-media-and-video.md#executable-coverage-and-limits) 对应；
+架构、产品路线、实机与公开交付状态分别查各自 owner，避免把过时失败或旧提案
+的未完成项投影成当前实现状态。用户真实在线直播的持续速率和公开投影门禁
+仍须独立验证，不能从夹具、静态规则或本机 build 推导完成。

@@ -8,7 +8,83 @@ last_reviewed: 2026-11-02
 
 # Live volume and Popup observer repair
 
-## Active follow-up: free-speed bounce
+## Completed follow-up: media state and SPA close lifecycle
+
+2026-11-02 audit: the control owners contain field definitions but lack complete
+transition/decision diagrams. The system overview still repeats superseded
+controller-only ACK conclusions and contradictory adapter admission claims.
+Reconcile those projections against the executable owners rather than adding a
+second media specification.
+
+- [x] Add a navigable diagram index, field/write-state diagrams and exact speed
+  admission/failure/lifecycle rules to the existing control owners.
+- [x] Regress and fix returning from a hidden or detached live/modal player to
+  an already-playing feed without another `play` event. Keep reads pure and
+  protect visible paused media, actual PiP/fullscreen and audio selection.
+- [x] Verify the registry, native writer and built SPA close path; distinguish
+  fixture evidence from the user's real live transport and playback progress.
+- [x] Remove stale current-behavior claims from the system overview; record
+  remaining evidence gaps and the exact validation result.
+
+Reuse decision: keep the native IntersectionObserver, media lifecycle events,
+existing registry ranking and typed `selected` notification. Existing dependencies
+provide no owner for SPECTRA's exact source identity and selection policy;
+adding a routing/state library would duplicate that authority. No dependency,
+history monkey patch, command-time DOM scan or polling owner is needed.
+
+The control index now routes to five new Mermaid diagrams in the existing field
+and media owners, plus the corrected control-flow overview. Remove the obsolete
+`applying` field phase and the incorrect claim that speed uses split ACK. The
+media owner separates route/document/source, speed admission and failures,
+live transport limitations, every meaning of "close", and executable coverage.
+The system index no longer repeats controller-only ACK or contradictory online
+adapter-admission claims.
+
+The registry regressions failed on the old implementation for hidden, detached
+and ended players. Event-owned reconciliation now emits a replacement selection
+after a visibility/removal boundary; reads stay pure, visible paused/PiP/fullscreen
+and independent audio remain protected. Initial visibility delivery does not
+invent a selection change. That distinction was caught by the existing cold
+cross-resource Chrome regression: a spurious initial selection had downgraded a
+portable restore to a page observation. The final tree passes that original
+assertion. Fullscreen exit coordinates selection before its state event, and
+the observation flush fences a queued source against the current exact selection
+so an old hidden player cannot reclaim Background's target.
+
+An explicit request with no resolvable media previously echoed desired as
+applied actual and retained it for later replay. It now returns a field error
+with null actual and no new replay template. A targetless restore still retains
+its separate template and reports the current absence honestly. Existing
+successful desired values survive a later capability failure.
+
+Chrome's real Canvas MediaStream rejects non-1 playback rates, as the W3C stream
+contract requires; the negative test verifies error/null actual, physical 1x,
+and that the rejected 2x does not replace the established supported baseline on
+the next source. The reverse-close tests reuse the existing WAV blob fixture in
+video elements to prove a rate-capable source's target handoff and replay. An
+empty media shell cannot prove play, and a MediaStream cannot prove arbitrary
+speed support. These fixtures do not certify the user's online Douyin transport
+or sustained currentTime/wall-clock acceleration.
+
+Final validation: 82 focused tests / 378 assertions and 36 built-Chrome tests /
+140 assertions pass. Strict Biome passes all six affected TypeScript files;
+canonical SPECTRA typecheck passes four packages (extension ActionKey
+`d0eac90fc47a4a40`). Development runtime 3.6.4 builds and all 12 dist entrypoints
+pass integrity. Mermaid static lint accepts the six changed/new diagrams; no
+renderer acceptance is claimed. Strict docs pass 130 Markdown files and 21
+entrypoints with no mirrors. Canonical verify passes its 24 regression tests;
+its sole architecture error remains `PUBLIC-PARITY-002` (the same three missing
+public files), with seven warnings. This is a separate blocked push boundary,
+not a passing gate and not a reason to suspend this local repair. The public
+checkout's eight pre-existing modified files remain untouched.
+
+Process closeout: use lifecycle/proof-specific regressions and existing native
+fixtures instead of adding a second state/routing engine or treating a timeout
+as successful playback. The read-only review caught the old-event/new-selection
+ordering race. No new dependency, watcher, diagnostic script or persistent test
+profile is retained; only normal ignored dist and tool caches remain.
+
+## Completed follow-up: free-speed bounce
 
 The user reprioritized the live free-speed bounce ahead of the blocked push.
 Keep the separate public checkout and its dirty files untouched. The previous

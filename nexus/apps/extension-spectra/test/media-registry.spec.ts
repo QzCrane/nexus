@@ -106,6 +106,7 @@ class FakeDocument extends EventTarget {
 	readonly documentElement = new FakeElement();
 	media: FakeMediaElement[] = [];
 	fullscreenElement: FakeElement | FakeMediaElement | null = null;
+	pictureInPictureElement: FakeMediaElement | null = null;
 
 	querySelectorAll(): FakeMediaElement[] {
 		return [...this.media];
@@ -144,9 +145,22 @@ class FakeMutationObserver {
 }
 
 class FakeIntersectionObserver {
+	static latest: FakeIntersectionObserver | null = null;
 	readonly observe = mock(() => undefined);
 	readonly unobserve = mock(() => undefined);
 	readonly disconnect = mock(() => undefined);
+
+	constructor(readonly callback: IntersectionObserverCallback) {
+		FakeIntersectionObserver.latest = this;
+	}
+
+	emit(elements: FakeMediaElement[]): void {
+		this.callback(elements.map((target) => ({
+			target,
+			isIntersecting: target.rect.width > 0 && target.rect.height > 0,
+			intersectionRect: target.rect,
+		})) as unknown as IntersectionObserverEntry[], this as unknown as IntersectionObserver);
+	}
 }
 
 describe('event-driven media registry', () => {
@@ -263,6 +277,8 @@ describe('event-driven media registry', () => {
 			expect(modalTarget).toBeDefined();
 			expect(registry.resolve(null)?.target).toEqual(modalTarget);
 			expect(events.filter(({ event }) => event === 'selected')).toEqual([]);
+			FakeIntersectionObserver.latest?.emit([feed, modal, hiddenPreload]);
+			expect(events.filter(({ event }) => event === 'selected')).toEqual([]);
 
 			// A background preview can start after the visible modal is already
 			// playing. Its play and browser-generated property events are not a
@@ -281,6 +297,118 @@ describe('event-driven media registry', () => {
 			registry?.dispose();
 			restoreGlobalDescriptors(descriptors);
 			FakeMutationObserver.latest = null;
+		}
+	});
+
+	test.each(['hidden', 'detached', 'ended'] as const)('returns from a %s modal to an already-playing feed without another play event', async (close) => {
+		const descriptors = captureGlobalDescriptors([
+			'document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const feed = new FakeVideoElement(1);
+		const modal = new FakeVideoElement(1);
+		feed.paused = false;
+		modal.paused = false;
+		feed.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		modal.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(feed, modal);
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const selected: MediaTarget[] = [];
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: `document:modal-close-${close}`, frameId: 0 }),
+				(target, event) => { if (event === 'selected') selected.push(target); },
+			);
+			modal.dispatchEvent(new Event('play'));
+			expect(registry.resolve(null)?.element).toBe(modal);
+			selected.length = 0;
+			if (close === 'detached') {
+				modal.isConnected = false;
+				FakeMutationObserver.latest?.emit([], [modal]);
+				await Promise.resolve();
+			} else if (close === 'ended') {
+				modal.ended = true;
+				modal.dispatchEvent(new Event('ended'));
+			} else {
+				// A visible user-paused player remains controllable. Only the later
+				// visibility batch proves that this modal has left the active surface.
+				modal.paused = true;
+				modal.dispatchEvent(new Event('pause'));
+				expect(registry.resolve(null)?.element).toBe(modal);
+				expect(selected).toEqual([]);
+				modal.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+				FakeIntersectionObserver.latest?.emit([modal, feed]);
+			}
+			expect(registry.resolve(null)?.element).toBe(feed);
+			expect(selected).toHaveLength(1);
+			expect(selected[0]).toEqual(registry.resolve(null)?.target);
+			registry.peek(null);
+			registry.resolveVideo(null);
+			expect(selected).toHaveLength(1);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+			FakeIntersectionObserver.latest = null;
+		}
+	});
+
+	test.each(['pip', 'fullscreen', 'audio', 'no-replacement'] as const)('keeps a hidden %s owner until a real replacement is admissible', (owner) => {
+		const descriptors = captureGlobalDescriptors([
+			'document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const feed = new FakeVideoElement(1);
+		const selected = owner === 'audio' ? new FakeMediaElement(1) : new FakeVideoElement(1);
+		feed.paused = false;
+		selected.paused = false;
+		feed.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		selected.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(...(owner === 'no-replacement' ? [selected] : [feed, selected]));
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: `document:protected-${owner}`, frameId: 0 }));
+			const target = requireValue(registry.list().find(({ element }) => element === selected)?.target, 'Expected selected media');
+			expect(registry.select(target)).toBe(true);
+			if (owner === 'pip') document.pictureInPictureElement = selected;
+			if (owner === 'fullscreen') document.fullscreenElement = selected;
+			selected.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+			FakeIntersectionObserver.latest?.emit([selected]);
+			expect(registry.resolve(null)?.element).toBe(selected);
+			if (owner === 'pip' || owner === 'fullscreen') {
+				document.pictureInPictureElement = null;
+				document.fullscreenElement = null;
+				if (owner === 'pip') selected.dispatchEvent(new Event('leavepictureinpicture'));
+				else {
+					// The fullscreen listener remembers the actual entering owner.
+					document.fullscreenElement = selected;
+					document.dispatchEvent(new Event('fullscreenchange'));
+					document.fullscreenElement = null;
+					document.dispatchEvent(new Event('fullscreenchange'));
+				}
+				expect(registry.resolve(null)?.element).toBe(feed);
+			}
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+			FakeIntersectionObserver.latest = null;
 		}
 	});
 

@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-02
 ---
 
 # 01. Foundations (Product semantics & Control flow)
@@ -31,11 +31,10 @@ flowchart LR
   Hotkey["Trusted page hotkey intent"] --> Coordinator
   Native --> Observation["page observation, controlled=false"]
   Observation --> Coordinator
-  Coordinator --> DOM["DOM native writer"]
-  DOM --> Stable["event quiet window + two stable boundaries + getter"]
-  Stable -. "typed retryable mismatch only" .-> Site["one-shot allowlisted official API"]
+  Coordinator --> Admission["per-field capability and value admission"]
+  Admission --> Writer["one exact page or DOM writer"]
+  Writer --> Stable["physical readback and applicable stability proof"]
   Stable --> Snapshot["ControlSnapshot actual commit"]
-  Site --> Snapshot
   Snapshot --> Popup
   Snapshot --> Remote
   Snapshot --> Badge["badge and page feedback"]
@@ -43,6 +42,12 @@ flowchart LR
 
 `ControlSnapshot` is the only field-level actual authority. It owns acknowledged `volumeBase + boost` components, mute, speed, transport, DSP, and video fields. It carries separate `activeMedia` (audio) and `activeVideo` (visual) identities.
 `AudioSessionSnapshot` contributes processor lifecycle (`desiredMode/actualMode/phase/generation/error`). It never overwrites control fields.
+
+The [field/proof state machines](05-control-state.md#field-transaction-state)
+distinguish transaction state from detached write proof. The
+[speed decision owner](06-media-and-video.md#speed-decision-and-failure) defines
+value admission, page/DOM handoff and terminal errors; the overview does not
+imply a DOM-first or controller-only ACK policy.
 
 Page `volumechange`/`ratechange` observations commit once and never echo DOM writes. Page volume gestures reset non-neutral Boost to 1 to avoid misreporting.
 

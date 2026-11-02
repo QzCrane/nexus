@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-documentation
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-02
 ---
 
 # SPECTRA documentation
@@ -36,6 +36,7 @@ docs/
 ## Normative owners
 
 - [Control architecture](control/README.md): product semantics, per-capability strategy, state, media/video behavior, algorithms, implementation ownership, invariants, and release gates.
+- [State machines and business diagrams](control/README.md#diagram-and-business-flow-index): field/proof transitions, speed decisions, SPA media lifecycle, live-player closure and executable coverage, each linked to its existing topic owner.
 - [Runtime architecture](architecture/runtime.md): context topology, loading, storage, durable runtime snapshots, the Action Popup first frame (announced card count, pre-paint theme, per-shape height), leases, and runtime ownership.
 - [Media-source admission](architecture/media-source-admission.md): one-shot Capture admission, sole processor ownership, ACK and disposal proof.
 - [Runtime protocols](reference/protocols.md): cross-context envelopes, validation, state flow, READY, and leases.
