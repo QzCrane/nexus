@@ -3,6 +3,8 @@
 import type { I18NDict, CardUIElements } from '../types';
 import { getDomain, getWebsiteIconUrl } from '../utils/dom';
 import { getCardUIElements } from './ui-elements';
+import { setCardMaskVisible } from './render';
+import { showUnknownVolume } from './volume-view';
 
 function setButtonLabel(button: HTMLElement | null, value: unknown, fallback: string): void {
 	if (!button) return;
@@ -17,16 +19,25 @@ export function prepareCardDom(params: {
 	container: HTMLElement;
 	tab: chrome.tabs.Tab;
 	dict: I18NDict;
+	cardEl?: HTMLElement;
+	pending?: boolean;
 }): { cardEl: HTMLElement; ui: CardUIElements } {
 	const { template, container, tab, dict } = params;
 
-	const prepaint = container.querySelector<HTMLElement>(':scope > .glass-card[data-spectra-prepaint]');
+	const prepaint = params.cardEl
+		?? container.querySelector<HTMLElement>(`:scope > .glass-card[data-tab-id="${tab.id}"]`)
+		?? container.querySelector<HTMLElement>(':scope > .glass-card[data-spectra-prepaint]:not([data-tab-id])');
 	const cardFragment = prepaint ? null : template.content.cloneNode(true) as DocumentFragment;
 	const cardEl = prepaint ?? cardFragment?.querySelector<HTMLElement>('.glass-card');
 	if (!cardEl) throw new Error('Card element not found in template');
+	if (cardEl.classList.contains('media-unavailable')) {
+		cardEl.classList.remove('media-unavailable');
+		for (const control of cardEl.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input, button, select')) control.disabled = false;
+	}
 	delete cardEl.dataset.spectraPrepaint;
-	cardEl.removeAttribute('inert');
-	cardEl.removeAttribute('aria-busy');
+	cardEl.toggleAttribute('inert', params.pending === true);
+	if (params.pending) cardEl.setAttribute('aria-busy', 'true');
+	else cardEl.removeAttribute('aria-busy');
 
 	const ui = getCardUIElements(cardEl);
 	const domain = getDomain(tab.url || '');
@@ -64,7 +75,7 @@ export function prepareCardDom(params: {
 	};
 	ui.mask.setAttribute('role', 'button');
 	ui.mask.setAttribute('aria-label', `${dict.paused}. ${dict.clickToResume}`);
-	ui.mask.tabIndex = 0;
+	setCardMaskVisible(ui, false);
 	ui.slider.setAttribute('aria-label', `Volume for ${tab.title || domain}`);
 	ui.mute.setAttribute('aria-label', `${dict.btnMute}: ${tab.title || domain}`);
 	ui.mute.setAttribute('aria-pressed', 'false');
@@ -78,6 +89,16 @@ export function prepareCardDom(params: {
 		ui.btnHotkeyTarget.setAttribute('aria-pressed', 'false');
 	}
 	if (ui.btnGotoTab) ui.btnGotoTab.setAttribute('aria-label', dict.btnGotoTab);
+	if (params.pending) {
+		cardEl.dataset.mediaAvailability = 'pending';
+		showUnknownVolume(ui);
+		if (ui.speedInput) ui.speedInput.value = '';
+		if (ui.btnPause) {
+			ui.btnPause.textContent = '…';
+			ui.btnPause.setAttribute('aria-pressed', 'mixed');
+			ui.btnPause.setAttribute('aria-busy', 'true');
+		}
+	}
 
 	if (cardFragment) container.appendChild(cardFragment);
 

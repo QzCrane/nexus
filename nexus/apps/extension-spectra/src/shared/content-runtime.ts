@@ -14,6 +14,10 @@ export interface ContentBootstrapState {
 	 * reports (or vice versa).
 	 */
 	mediaReportRevision?: number;
+	/** Shared across the bootstrap and full-runtime bundles for pause recency. */
+	mediaPausedAt?: number | null;
+	/** Never reset when the full runtime is replaced inside the same document. */
+	mediaOwnerEpoch?: number;
 	disposeRuntime?: () => Promise<void>;
 	getOwnedSources?: () => ContentRuntimeSourceOwnership[];
 	getMediaIntent?: () => NonNullable<ContentRuntimeStatus['mediaIntentState']>;
@@ -58,6 +62,7 @@ export function requiresContentRuntime(type: SpectraRequestType): boolean {
 }
 
 export function getContentBootstrapState(): ContentBootstrapState | undefined {
+	if (typeof window === 'undefined') return undefined;
 	return (window as ContentBootstrapWindow).__SPECTRA_CONTENT_BOOTSTRAP__;
 }
 

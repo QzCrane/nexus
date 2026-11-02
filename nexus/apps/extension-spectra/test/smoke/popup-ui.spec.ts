@@ -5,6 +5,7 @@ import type { MediaRouteRulesSnapshot, MediaRouteDecision } from '@nexus/contrac
 import { requireValue } from '../helpers/require-value';
 import { EXTENSION_COMMAND_COUNT, FIXTURE_HTML, browser, closeActionPopup, collectPageErrors, evaluateServiceWorker, eventually, extensionId, fixtureErrors, fixturePage, fixtureUrl, getOffscreenContextCount, getTabId, inspectExtensionAccessibility, inspectExtensionLayout, installPageMediaControllerHarness, openActionPopupTarget, openExtensionClient, readBadgeText, readPageMediaControllerHarness, readSiteRouteRegistry, removePageMediaControllerHarness, restartServiceWorker, sendExtensionMessage, sendFromActionPopup, submitEffectiveVolume, submitPopupControlIntent, updatePageMediaControllerHarness, waitForContentBootstrapStatus } from './harness';
 import type { SmokeRpcResult } from './harness';
+import { CARD_SNAPSHOT_CONCURRENCY } from '../../src/popup/card/snapshot';
 import { SMOKE_TONE_WAV, patchExtensionSettings, prepareSmokeSession, startSmokeSession, teardownSmokeSession, withDiagnosticTimeout } from './harness';
 
 describe('SPECTRA built extension smoke: popup-ui', () => {
@@ -21,13 +22,80 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 		await teardownSmokeSession();
 	});
 
-	test('paints one localized primary card before the module or actual-state RPC can answer', async () => {
+	test.each([{ count: 0, expired: false }, { count: 3, expired: false }, { count: 11, expired: false }, { count: 1, expired: true }])('paints every announced dynamic card before the module or actual-state RPC can answer (%j)', async ({ count: backgroundCount, expired }) => {
+		const startedAt = performance.now();
+		const timeline: Array<{ stage: string; ms: number }> = [];
+		const mark = (stage: string) => {
+			const progress = { stage, ms: Math.round(performance.now() - startedAt) };
+			timeline.push(progress);
+			if (backgroundCount > CARD_SNAPSHOT_CONCURRENCY) console.info('[SPECTRA first-frame progress]', JSON.stringify(progress));
+		};
+		mark('prepare backgrounds');
+		const backgroundPages: Page[] = [];
+		const backgroundIds: number[] = [];
+		for (let index = 0; index < backgroundCount; index += 1) {
+			const page = await browser.newPage();
+			backgroundPages.push(page);
+			await page.goto(`${fixtureUrl}?first-frame-background=${index}`, { waitUntil: 'domcontentloaded' });
+			await page.bringToFront();
+			await page.evaluate(async ({ bytes, keepPlaying }) => {
+				const media = document.querySelector<HTMLMediaElement>('#v');
+				if (!media) throw new Error('Missing recent media fixture');
+				media.muted = true;
+				media.loop = keepPlaying;
+				media.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+				await media.play();
+				if (!keepPlaying) media.pause();
+			}, { bytes: [...SMOKE_TONE_WAV], keepPlaying: backgroundCount > CARD_SNAPSHOT_CONCURRENCY });
+			const id = await getTabId(page.url());
+			backgroundIds.push(id);
+			await eventually(() => evaluateServiceWorker(async (targetId) => {
+				const records = (await chrome.storage.session.get('spectra.media-facts.v1'))['spectra.media-facts.v1'];
+				return records?.[String(targetId)];
+			}, id), (fact) => fact?.outcome === 'found', 'document reported playable media');
+			await fixturePage.bringToFront();
+			await page.bringToFront();
+			await eventually(() => evaluateServiceWorker(async (targetId) => {
+				const records = (await chrome.storage.session.get('spectra.media-facts.v1'))['spectra.media-facts.v1'];
+				return records?.[String(targetId)];
+			}, id), (fact) => Number(fact?.usedAt) > 0, 'Chrome activation recorded recent media use');
+			mark(`background ${index + 1} ready`);
+		}
+		await fixturePage.bringToFront();
+		const discardedId = backgroundIds[0];
+		if (discardedId !== undefined) {
+			await evaluateServiceWorker(async (id) => chrome.tabs.discard(id), discardedId);
+		}
+		if (backgroundCount > CARD_SNAPSHOT_CONCURRENCY) {
+			// This case measures queueing beyond the hydration limit. Paused
+			// backgrounds may be genuinely frozen by Chrome before the Popup opens;
+			// keep these sources playing and prove the fixture has excess runnable
+			// documents. The smaller case separately covers paused retention.
+			const availability = await evaluateServiceWorker(async (ids) => Promise.all(ids.map(async (id) => {
+				const tab = await chrome.tabs.get(id);
+				return { id, frozen: tab.frozen, discarded: tab.discarded, status: tab.status };
+			})), backgroundIds);
+			expect(availability.filter((tab) => !tab.frozen && !tab.discarded && tab.status !== 'unloaded').length)
+				.toBeGreaterThan(CARD_SNAPSHOT_CONCURRENCY);
+			mark('more runnable documents than hydration permits');
+		}
 		const settingsClient = await openExtensionClient('options.html');
 		await fixturePage.bringToFront();
 		const tabId = await getTabId(fixturePage.url());
-		const settings = await patchExtensionSettings(settingsClient, { scope: 'global', changes: { lang: 'zh-CN' } });
+		const settings = await patchExtensionSettings(settingsClient, { scope: 'global', changes: { lang: 'zh-CN', ...(expired ? { pauseRetentionSeconds: 1 } : {}) } });
+		await eventually(() => evaluateServiceWorker(async (id) => chrome.action.getPopup({ tabId: id }), tabId),
+			(path) => Number(new URL(path, 'https://fixture.test').searchParams.get('cards')) === backgroundIds.length + 1,
+			'Action shape includes every recent background member');
 		expect(new URL(await evaluateServiceWorker(async (id) => chrome.action.getPopup({ tabId: id }), tabId),
 			'https://fixture.test').searchParams.get('lang')).toBe('zh-CN');
+		if (expired) {
+			const path = await evaluateServiceWorker(async (id) => chrome.action.getPopup({ tabId: id }), tabId);
+			const expiries = JSON.parse(new URL(path, 'https://fixture.test').searchParams.get('expires') ?? '[]') as number[];
+			expect(expiries.length).toBe(backgroundIds.length);
+			await new Promise((resolve) => setTimeout(resolve, Math.max(0, Math.max(...expiries) - Date.now()) + 25));
+		}
+		const expectedIds = expired ? [] : backgroundIds;
+		mark('shape announced');
 		const root = await browser.target().createCDPSession();
 		let popup: Page | null = null;
 		let opened: ReturnType<typeof openActionPopupTarget> | null = null;
@@ -47,19 +115,60 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 					attached = session;
 					await session.send('Page.enable');
 					await session.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+						const gatedTabs = ${JSON.stringify(backgroundCount > CARD_SNAPSHOT_CONCURRENCY ? backgroundIds : [])};
+						const recoveringTab = ${JSON.stringify(backgroundCount === 3 ? backgroundIds[2] : null)};
+						let missingDocument = true;
+						const getFrame = chrome.webNavigation.getFrame.bind(chrome.webNavigation);
+						let releaseFrames;
+						let framesReleased = false;
+						const frameGate = new Promise(resolve => { releaseFrames = resolve; });
+						window.__spectraBlockedFrames = [];
+						window.__spectraReleaseFrames = () => { framesReleased = true; releaseFrames(); };
+						chrome.webNavigation.getFrame = details => {
+							if (missingDocument && details.tabId === recoveringTab) { missingDocument = false; return Promise.resolve(null); }
+							if (!framesReleased && gatedTabs.includes(details.tabId)) {
+								window.__spectraBlockedFrames.push(details.tabId);
+								return frameGate.then(() => getFrame(details));
+							}
+							return getFrame(details);
+						};
 						const original = chrome.runtime.sendMessage.bind(chrome.runtime);
-						chrome.runtime.sendMessage = (message, ...args) => ['spectra.control.snapshot.get', 'spectra.settings.get', 'spectra.settings.ui.get'].includes(message?.type)
-							? new Promise(() => {}) : original(message, ...args);
+						window.__spectraObservedTabs = [];
+						window.__spectraInventoryReads = 0;
+						chrome.runtime.sendMessage = (message, ...args) => {
+							if (message?.type === 'spectra.tab.visible.list') window.__spectraInventoryReads++;
+							if (['spectra.control.snapshot.get', 'spectra.audio.runtime.get', 'spectra.audio.session.get', 'spectra.remote.session.get', 'spectra.settings.get', 'spectra.settings.ui.get'].includes(message?.type)) {
+								if (message?.payload?.tabId) window.__spectraObservedTabs.push(message.payload.tabId);
+								return new Promise(() => {});
+							}
+							return original(message, ...args);
+						};
+						const connect = chrome.runtime.connect.bind(chrome.runtime);
+						chrome.runtime.connect = (...args) => {
+							const port = connect(...args);
+							const post = port.postMessage.bind(port);
+							port.postMessage = message => {
+								if (message?.type === 'open' && message?.tabId) window.__spectraObservedTabs.push(message.tabId);
+								return post(message);
+							};
+							return port;
+						};
 						window.__spectraFirstFrames = [];
 						const sample = () => {
 							const card = document.querySelector('#main-stage > .glass-card');
 							if (card && !window.__spectraFirstCard) window.__spectraFirstCard = card;
+							const backgrounds = [...document.querySelectorAll('#bg-stack > .glass-card')];
+							if (!window.__spectraFirstBackgrounds && backgrounds.length) window.__spectraFirstBackgrounds = backgrounds;
 							window.__spectraFirstFrames.push({
 								label: card?.querySelector('.btn-effects')?.textContent,
 								cards: document.querySelectorAll('#main-stage > .glass-card').length,
 								playing: card?.querySelector('.btn-pause')?.getAttribute('aria-pressed'),
 								playLabel: card?.querySelector('.btn-pause')?.getAttribute('aria-label'),
-								height: card?.getBoundingClientRect().height, same: card === window.__spectraFirstCard
+								height: card?.getBoundingClientRect().height, same: card === window.__spectraFirstCard,
+								backgrounds: backgrounds.length,
+								sameBackgrounds: backgrounds.every((node, index) => node === window.__spectraFirstBackgrounds?.[index]),
+								backgroundLabels: backgrounds.map(node => node.querySelector('.btn-effects')?.textContent),
+								backgroundPlaying: backgrounds.map(node => node.querySelector('.btn-pause')?.getAttribute('aria-pressed'))
 							});
 							if (window.__spectraFirstFrames.length < 120) requestAnimationFrame(sample);
 						};
@@ -97,28 +206,172 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 			})`, returnByValue: true });
 			expect(initial.result.value).toEqual({ label: '效果', playing: 'mixed', unbound: true });
 			if (!releaseModule) throw new Error('Missing held Popup module');
+			const backgroundPrepaint = await session.send('Runtime.evaluate', { expression: `document.querySelectorAll('#bg-stack [data-spectra-prepaint]').length`, returnByValue: true });
+			expect(backgroundPrepaint.result.value).toBe(expectedIds.length);
 			await releaseModule();
+			mark('module released');
 			popup = await (await opened).asPage();
 			await popup.waitForSelector(`#main-stage .glass-card[data-tab-id="${tabId}"]`);
+			for (const id of expectedIds) await popup.waitForSelector(`#bg-stack .glass-card[data-tab-id="${id}"]`);
 			await popup.waitForFunction(() => ((window as Window & { __spectraFirstFrames?: unknown[] }).__spectraFirstFrames?.length ?? 0) >= 8);
 			const frames = await popup.evaluate(() => (window as Window & {
-				__spectraFirstFrames: Array<{ label: string; cards: number; playing: string; playLabel: string; height: number; same: boolean }>;
+				__spectraFirstFrames: Array<{ label: string; cards: number; playing: string; playLabel: string; height: number; same: boolean;
+					backgrounds: number; sameBackgrounds: boolean; backgroundLabels: string[]; backgroundPlaying: string[] }>;
 			}).__spectraFirstFrames);
 			expect(frames.every((frame) => frame.label === '效果' && frame.cards === 1 && frame.playing === 'mixed' && frame.same)).toBe(true);
+			expect(frames.every((frame) => frame.backgrounds === expectedIds.length && frame.sameBackgrounds
+				&& frame.backgroundLabels.every((label) => label === '效果') && frame.backgroundPlaying.every((value) => value === 'mixed'))).toBe(true);
 			expect(new Set(frames.map((frame) => frame.playLabel))).toEqual(new Set(['暂停/播放']));
 			expect(Math.max(...frames.map((frame) => frame.height)) - Math.min(...frames.map((frame) => frame.height))).toBeLessThanOrEqual(1);
 			expect(localeRequests).toEqual([]);
+			expect(await popup.evaluate(() => (window as Window & { __spectraInventoryReads: number }).__spectraInventoryReads)).toBe(0);
+			mark('all first-frame structure assertions passed');
+			if (discardedId !== undefined && !expired) {
+				if (backgroundCount > CARD_SNAPSHOT_CONCURRENCY) {
+					await popup.waitForFunction((concurrency) => new Set((window as Window & { __spectraBlockedFrames: number[] }).__spectraBlockedFrames).size === concurrency,
+						{ timeout: 2_000 }, CARD_SNAPSHOT_CONCURRENCY);
+					mark('initial frame gate saturated');
+				}
+				await popup.waitForSelector(`#bg-stack .glass-card[data-tab-id="${discardedId}"][data-media-availability="discarded"]`);
+				const observed = await popup.evaluate(() => (window as Window & { __spectraObservedTabs: number[] }).__spectraObservedTabs);
+				expect(observed).not.toContain(discardedId);
+				await popup.evaluate(() => {
+					const stack = document.querySelector('#bg-stack');
+					const title = stack?.querySelector<HTMLElement>('.meta-title');
+					if (!stack || !title) throw new Error('Missing stable card fixture');
+					title.tabIndex = 0; title.focus();
+					const scope = window as Window & { __spectraStableTitle: HTMLElement; __spectraCardMoves: number; __spectraMembershipRefreshes: number };
+					scope.__spectraStableTitle = title;
+					scope.__spectraCardMoves = 0;
+					scope.__spectraMembershipRefreshes = 0;
+					new MutationObserver((records) => { scope.__spectraCardMoves += records.length; }).observe(stack, { childList: true });
+					new MutationObserver(() => { scope.__spectraMembershipRefreshes += 1; }).observe(document.documentElement,
+						{ attributes: true, attributeFilter: ['data-media-inventory'] });
+				});
+				await evaluateServiceWorker(async (id) => {
+					const key = 'spectra.media-facts.v1';
+					const records = (await chrome.storage.session.get(key))[key];
+					if (!records?.[String(id)]) throw new Error('Missing media fact');
+					await chrome.storage.session.set({ [key]: { ...records, [String(id)]: { ...records[String(id)], usedAt: Date.now() } } });
+				}, discardedId);
+				await popup.waitForFunction(() => (window as Window & { __spectraMembershipRefreshes: number }).__spectraMembershipRefreshes > 0, { timeout: 2_000 });
+				const stable = await popup.evaluate(() => {
+					const scope = window as Window & { __spectraStableTitle: HTMLElement; __spectraCardMoves: number };
+					return { moves: scope.__spectraCardMoves, focused: document.activeElement === scope.__spectraStableTitle };
+				});
+				expect(stable).toEqual({ moves: 0, focused: true });
+				mark('same membership refresh passed');
+				if (backgroundCount === 3) {
+					const recoveringId = backgroundIds[2];
+					await popup.waitForSelector(`#bg-stack [data-tab-id="${recoveringId}"][data-media-availability="unavailable"]`);
+					await backgroundPages[2]?.evaluate(async () => {
+						const media = document.querySelector<HTMLMediaElement>('#v');
+						if (!media) throw new Error('Missing recovering media');
+						await media.play(); media.pause();
+					});
+					await popup.waitForSelector(`#bg-stack [data-tab-id="${recoveringId}"][data-media-availability="runnable"]`);
+					expect(await popup.evaluate((id) => {
+						const scope = window as Window & { __spectraCardMoves: number; __spectraFirstBackgrounds: Element[] };
+						return { moves: scope.__spectraCardMoves, same: document.querySelector(`#bg-stack [data-tab-id="${id}"]`) === scope.__spectraFirstBackgrounds[2] };
+					}, recoveringId)).toEqual({ moves: 0, same: true });
+				}
+				if (backgroundCount > CARD_SNAPSHOT_CONCURRENCY) {
+					await popup.evaluate(() => (window as Window & { __spectraReleaseFrames: () => void }).__spectraReleaseFrames());
+					mark('initial frame gate released');
+					await popup.waitForFunction(() => document.querySelectorAll('#bg-stack [data-media-availability="pending"]').length === 0, { timeout: 2_000 });
+					expect(await popup.evaluate(() => (window as Window & { __spectraCardMoves: number }).__spectraCardMoves)).toBe(0);
+					mark('queued hydration settled without moving nodes');
+				}
+			}
 			expect(attachFailures).toEqual([]);
+		} catch (error) {
+			const diagnosticPopup = popup;
+			const diagnostic = diagnosticPopup ? await withDiagnosticTimeout('dynamic-card gate diagnostics', () => diagnosticPopup.evaluate(() => ({
+				blockedIds: (window as Window & { __spectraBlockedFrames?: number[] }).__spectraBlockedFrames,
+				cards: [...document.querySelectorAll<HTMLElement>('#bg-stack > .glass-card')].map((card) => ({
+					id: card.dataset.tabId, availability: card.dataset.mediaAvailability, busy: card.getAttribute('aria-busy'), inert: card.hasAttribute('inert'),
+					phase: card.dataset.mediaAvailability === 'pending'
+						? ((window as Window & { __spectraBlockedFrames?: number[] }).__spectraBlockedFrames?.includes(Number(card.dataset.tabId)) ? 'gated' : 'queued') : 'settled',
+				})),
+			})), 750).catch((failure: unknown) => String(failure)) : { attachedUrls, attachFailures };
+			throw new Error(`${error instanceof Error ? error.message : String(error)}\nDynamic-card diagnostics: ${JSON.stringify({ timeline, diagnostic })}`, { cause: error });
 		} finally {
+			mark('cleanup begins');
 			if (releaseModule) await releaseModule().catch(() => undefined);
 			if (popup) await closeActionPopup(popup);
 			if (attached) await attached.send('Fetch.disable').catch(() => undefined);
 			await root.send('Target.setAutoAttach', { autoAttach: false, waitForDebuggerOnStart: false, flatten: true }).catch(() => undefined);
 			await root.detach();
-			await patchExtensionSettings(settingsClient, { scope: 'global', changes: { lang: settings.previous.globalSettings.lang } });
+			await patchExtensionSettings(settingsClient, { scope: 'global', changes: { lang: settings.previous.globalSettings.lang,
+				pauseRetentionSeconds: settings.previous.globalSettings.pauseRetentionSeconds } });
 			await settingsClient.close();
+			for (const page of backgroundPages) await page.close();
+			mark('cleanup completed');
 		}
 	}, 25_000);
+
+	test('keeps the metadata return entry usable through repeated discard and restore cycles', async () => {
+		const page = await browser.newPage();
+		const settingsClient = await openExtensionClient('options.html');
+		const settings = await patchExtensionSettings(settingsClient, { scope: 'global', changes: { pauseRetentionSeconds: 0 } });
+		let popup: Page | null = null;
+		try {
+			await page.evaluateOnNewDocument((bytes) => {
+				document.addEventListener('DOMContentLoaded', () => {
+					const media = document.querySelector<HTMLMediaElement>('#v');
+					if (!media) throw new Error('Missing reloadable lifecycle media');
+					media.loop = true; media.muted = true;
+					media.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+					void media.play().catch((error: unknown) => console.error('Lifecycle fixture playback failed:', error));
+				}, { once: true });
+			}, [...SMOKE_TONE_WAV]);
+			await page.goto(`${fixtureUrl}?metadata-lifecycle=1`, { waitUntil: 'domcontentloaded' });
+			// The Options client is foreground. Chrome can defer decoding this
+			// background document until its real activation, so establish that use
+			// before requiring a naturally loaded-media report.
+			await page.bringToFront();
+			await page.waitForFunction(() => (document.querySelector<HTMLMediaElement>('#v')?.readyState ?? 0) >= 1);
+			const tabId = await getTabId(page.url());
+			await eventually(() => page.evaluate(() => !document.querySelector<HTMLMediaElement>('#v')?.paused),
+				(playing) => playing === true, 'runnable lifecycle media is playing');
+			await eventually(() => evaluateServiceWorker(async (id) => (await chrome.storage.session.get('spectra.media-facts.v1'))['spectra.media-facts.v1']?.[String(id)], tabId),
+				(fact) => fact?.outcome === 'found', 'natural lifecycle media report');
+			await fixturePage.bringToFront(); await page.bringToFront();
+			popup = await openExtensionClient('popup.html');
+			const card = `.glass-card[data-tab-id="${tabId}"]`;
+			for (let cycle = 0; cycle < 2; cycle += 1) {
+				await popup.waitForSelector(`${card}[data-media-availability="runnable"]`);
+				await popup.evaluate((selector) => {
+					(window as Window & { __spectraLifecycleCard: Element | null }).__spectraLifecycleCard = document.querySelector(selector);
+				}, card);
+				await evaluateServiceWorker(async (id) => chrome.tabs.discard(id), tabId);
+				await popup.waitForSelector(`${card}[data-media-availability="discarded"] .sleep-mask`, { visible: true });
+				const unavailable = await popup.$eval(card, (node) => {
+					const mask = node.querySelector<HTMLElement>('.sleep-mask');
+					return { same: node === (window as Window & { __spectraLifecycleCard: Element | null }).__spectraLifecycleCard,
+						hidden: mask?.hidden, inert: mask?.hasAttribute('inert'), ariaHidden: mask?.getAttribute('aria-hidden'),
+						tabIndex: mask?.tabIndex, controlsInert: node.querySelector('.control-stack')?.hasAttribute('inert') };
+				});
+				expect(unavailable).toEqual({ same: true, hidden: false, inert: false, ariaHidden: 'false', tabIndex: 0, controlsInert: true });
+				await popup.click(`${card} .sleep-mask`);
+				await eventually(() => page.evaluate(() => !document.querySelector<HTMLMediaElement>('#v')?.paused),
+					(playing) => playing === true, 'explicit return restores media playback');
+				await eventually(() => evaluateServiceWorker(async (id) => (await chrome.storage.session.get('spectra.media-facts.v1'))['spectra.media-facts.v1']?.[String(id)], tabId),
+					(fact) => fact?.outcome === 'found', 'restored document naturally reports media');
+				await fixturePage.bringToFront(); await page.bringToFront();
+				await popup.bringToFront();
+				await popup.waitForSelector(`${card}[data-media-availability="runnable"]`);
+				const restored = await popup.$eval(`${card} .sleep-mask`, (mask) => ({ hidden: (mask as HTMLElement).hidden,
+					inert: mask.hasAttribute('inert'), ariaHidden: mask.getAttribute('aria-hidden'), tabIndex: (mask as HTMLElement).tabIndex }));
+				expect(restored).toEqual({ hidden: true, inert: true, ariaHidden: 'true', tabIndex: -1 });
+			}
+		} finally {
+			if (popup) await popup.close();
+			await page.close();
+			await patchExtensionSettings(settingsClient, { scope: 'global', changes: { pauseRetentionSeconds: settings.previous.globalSettings.pauseRetentionSeconds } });
+			await settingsClient.close();
+		}
+	}, 30_000);
 
 	test('opens with current playback and toggles an unbuffered source without blocking pause', async () => {
 		const page = await browser.newPage();
@@ -163,6 +416,24 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 					{ timeout: 2_000 }, selector);
 				expect(await page.evaluate(() => document.querySelector<HTMLMediaElement>('#v')?.paused)).toBe(true);
 			}
+		} catch (error) {
+			const observations = await withDiagnosticTimeout('playback failure observations', () => Promise.allSettled([
+				page.evaluate(() => {
+					const media = document.querySelector<HTMLMediaElement>('#v');
+					return media ? { paused: media.paused, readyState: media.readyState, networkState: media.networkState,
+						ended: media.ended, muted: media.muted, error: media.error?.message } : null;
+				}),
+				popup.evaluate((id) => {
+					const card = document.querySelector(`.glass-card[data-tab-id="${id}"]`);
+					const button = card?.querySelector<HTMLButtonElement>('.btn-pause');
+					return { playing: button?.getAttribute('aria-pressed'), busy: button?.getAttribute('aria-busy'), disabled: button?.disabled,
+						availability: (card as HTMLElement | null)?.dataset.mediaAvailability,
+						toast: document.querySelector('.preset-toast')?.textContent,
+						sync: card?.querySelector('.control-sync-status')?.textContent };
+				}, tabId),
+				evaluateServiceWorker(async (id) => (await chrome.storage.local.get(`spectra.control.tab.${id}`))[`spectra.control.tab.${id}`], tabId),
+			]), 1_000).catch((diagnosticError: unknown) => String(diagnosticError));
+			throw new Error(`${error instanceof Error ? error.message : String(error)}\nPlayback failure observations: ${JSON.stringify(observations)}`, { cause: error });
 		} finally {
 			await closeActionPopup(popup);
 			await page.close();
@@ -397,7 +668,20 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				(text) => text === '63',
 				'pre-refresh sticky badge projection',
 				5_000,
-			);
+			).catch(async (error: unknown) => {
+				const observations = await withDiagnosticTimeout('pre-refresh badge observations', () => Promise.allSettled([
+					fixturePage.evaluate(() => {
+						const media = document.querySelector<HTMLMediaElement>('#v');
+						return { muted: media?.muted, volume: media?.volume, speed: media?.playbackRate, paused: media?.paused };
+					}),
+					evaluateServiceWorker(async (id) => ({
+						badge: await chrome.action.getBadgeText({ tabId: id }),
+						snapshot: (await chrome.storage.local.get(`spectra.control.tab.${id}`))[`spectra.control.tab.${id}`],
+						session: (await chrome.storage.session.get(`tab_session_${id}`))[`tab_session_${id}`],
+					}), tabId),
+				]), 1_000).catch((diagnosticError: unknown) => String(diagnosticError));
+				throw new Error(`${error instanceof Error ? error.message : String(error)}\nPre-refresh badge observations: ${JSON.stringify(observations)}`, { cause: error });
+			});
 
 			// Control ACK and badge do not promise the later session projection is
 			// durable. Observe every required field before killing that writer.

@@ -1984,9 +1984,11 @@ function checkRetiredPaths(root) {
 	);
 	if (!protocol.includes("'spectra.content.target.changed'")
 		|| !coordinator.includes("message.type === 'spectra.content.target.changed'")
-		|| !coordinator.includes('handleTargetChanged(tabId, message.payload.target)')
-		|| !coordinator.includes('ownsActiveSource ? null : snapshot.activeMedia')
-		|| !coordinator.includes('ownsActiveVideo ? null : snapshot.activeVideo')
+		|| !coordinator.includes('handleTargetChanged(tabId, message.payload.target, message.payload.mediaObservation)')
+		|| !coordinator.includes('activeMedia: ownsActiveSource ? null : snapshot.activeMedia')
+		|| !coordinator.includes('activeVideo: ownsActiveVideo ? null : snapshot.activeVideo')
+		|| !coordinator.includes('retireMediaActualFields(snapshot.fields, ownsActiveSource, ownsActiveVideo')
+		|| !coordinator.includes('compareMediaObservations(stamp, current.mediaObservation)')
 		|| !protocolTest.includes("type: 'spectra.content.target.changed'")) {
 		error('SCTRL-005/SCTRL-014/SCTRL-025: active media/video selection and release must update the shared snapshot without polling');
 	}

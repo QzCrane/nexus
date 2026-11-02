@@ -35,14 +35,14 @@ async function refreshControlSnapshot(ctx: ControlIntentRecoveryContext): Promis
 
 export async function submitControlIntent(
 	ctx: ControlIntentRecoveryContext,
-	body: Pick<ControlSubmitRequest, 'requestedCoverage'> & Partial<Pick<ControlSubmitRequest, 'patch' | 'mutations'>>,
+	body: Pick<ControlSubmitRequest, 'requestedCoverage'> & Partial<Pick<ControlSubmitRequest, 'patch' | 'mutations' | 'target'>>,
 ): Promise<SpectraResponse<'spectra.control.intent.submit'>> {
 	const attempt = (): Promise<SpectraResponse<'spectra.control.intent.submit'>> => sendSpectraRequest(
 		'spectra.control.intent.submit',
 		{
 			...body,
 			source: 'popup',
-			target: ctx.state.controlSnapshot?.activeMedia ?? null,
+			target: Object.hasOwn(body, 'target') ? body.target ?? null : ctx.state.controlSnapshot?.activeMedia ?? null,
 			baseRevision: ctx.state.controlRevision,
 		},
 		{ tabId: ctx.tabId },

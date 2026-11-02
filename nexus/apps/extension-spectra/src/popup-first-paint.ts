@@ -1,9 +1,9 @@
-// goal: commit localized primary-card structure during parsing, before async state exists
+// goal: commit every announced card structure before async state exists
 
 import { I18N, getDict } from './popup/constants/i18n';
 import { installPrepaintPopupCatalogs } from './shared/i18n/popup-catalog';
 import { normalizeLanguage } from './shared/i18n/locale-sections';
-import { readPopupAppearance } from './shared/popup-bootstrap';
+import { readAnnouncedBackgroundCount, readPopupAppearance } from './shared/popup-bootstrap';
 import { readSettingsForecast } from './popup/settings-forecast';
 import { applyDictionaryToRoot } from './popup/views/i18n-apply';
 
@@ -16,8 +16,10 @@ document.documentElement.lang = language;
 applyDictionaryToRoot(document, dictionary);
 const template = document.querySelector<HTMLTemplateElement>('#tmpl-card');
 const stage = document.querySelector<HTMLElement>('#main-stage');
-if (template && stage && appearance?.hasMainCard === true) {
-	applyDictionaryToRoot(template.content, dictionary);
+const background = document.querySelector<HTMLElement>('#bg-stack');
+if (template) applyDictionaryToRoot(template.content, dictionary);
+function appendSlot(container: HTMLElement): void {
+	if (!template) return;
 	const fragment = template.content.cloneNode(true) as DocumentFragment;
 	const card = fragment.querySelector<HTMLElement>('.glass-card');
 	if (card) {
@@ -36,6 +38,15 @@ if (template && stage && appearance?.hasMainCard === true) {
 			playback.setAttribute('aria-busy', 'true');
 		}
 		if (!(appearance?.visualizerEnabled ?? forecast?.visualizerEnabled ?? true)) card.querySelector('.viz-island')?.classList.add('hidden');
-		stage.append(fragment);
+		container.append(fragment);
 	}
+}
+if (stage && appearance?.hasMainCard) appendSlot(stage);
+const backgroundCount = readAnnouncedBackgroundCount(location.search);
+if (background && appearance && backgroundCount !== null) {
+	for (let index = 0; index < backgroundCount; index += 1) appendSlot(background);
+	document.querySelector('#bg-header')?.classList.toggle('hidden', backgroundCount === 0);
+	const badge = document.querySelector('#bg-badge');
+	if (badge) badge.textContent = String(backgroundCount);
+	document.documentElement.dataset.spectraStructureReady = 'true';
 }

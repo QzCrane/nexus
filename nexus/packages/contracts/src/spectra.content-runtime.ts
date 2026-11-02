@@ -61,6 +61,7 @@ import type {
 	MediaTarget,
 } from './control.contracts.js';
 import { keySetOf } from './key-set.js';
+import { isMediaObservationStamp, isMediaRestoreToken } from './media-observation.contracts.js';
 import type {
 	RpcError,
 	SpectraEventEnvelope,
@@ -123,7 +124,7 @@ const PHASES = new Set(['idle', 'applied', 'error']);
 const WRITE_STATES = new Set(['written', 'confirmed']);
 const SOURCES = new Set(['page', 'popup', 'remote', 'hotkey', 'restore', 'system']);
 const CONTENT_OPERATIONS = new Set<ControlOperation>([
-	'restore-page-settings', 'frame-step', 'screenshot', 'marker-add', 'marker-remove',
+	'playback-toggle', 'restore-page-settings', 'frame-step', 'screenshot', 'marker-add', 'marker-remove',
 	'marker-jump', 'marker-jump-previous', 'marker-jump-next', 'ab-set-a', 'ab-set-b',
 	'ab-clear', 'ab-skip', 'show-info',
 ]);
@@ -160,21 +161,23 @@ const AB_LOOP_KEYS = new Set(['pointA', 'pointB', 'enabled']);
 // `keySetOf` binds each list to the same type the canonical guard uses, so a new
 // field breaks the build here at the same moment it breaks it there.
 const CONTROL_FIELD_STATE_KEYS = keySetOf<ControlFieldState<unknown>>()([
+	'mediaObservation',
 	'desired', 'actual', 'restoreBaseline', 'revision', 'phase', 'writeState', 'strategy',
 	'coverage', 'controlled', 'intentId', 'lastError',
 ]);
 const CONTROL_INTENT_KEYS = keySetOf<ControlIntent>()([
 	'intentId', 'tabId', 'documentId', 'generation', 'baseRevision', 'source',
 	'requestedCoverage', 'target', 'actualContext', 'patch', 'captureAdmission',
-	'processorHold',
+	'processorHold', 'mediaRestore',
 ]);
 const CONTROL_APPLY_ACK_KEYS = keySetOf<ControlApplyAck>()([
 	'intentId', 'tabId', 'documentId', 'generation', 'revision', 'target',
-	'fields', 'audioVolume',
+	'fields', 'audioVolume', 'mediaObservation',
 ]);
 const CONTROL_OPERATION_ACK_KEYS = keySetOf<ControlOperationAck<'restore-page-settings'>>()([
 	'operationId', 'tabId', 'documentId', 'generation', 'revision', 'target',
 	'operation', 'strategy', 'coverage', 'fields', 'audioVolume', 'result',
+	'mediaObservation',
 ]);
 const DELTA_KEYS = new Set(['delta']);
 const LABEL_KEYS = new Set(['label']);
@@ -257,7 +260,8 @@ function isControlFieldStates(value: unknown): boolean {
 	if (!isRecord(value) || !hasOnly(value, CONTROL_FIELDS)) return false;
 	return Object.entries(value).every(([field, item]) => {
 		if (!isRecord(item)
-			|| !hasOnly(item, CONTROL_FIELD_STATE_KEYS)) return false;
+			|| !hasOnly(item, CONTROL_FIELD_STATE_KEYS)
+			|| item.mediaObservation !== undefined && !isMediaObservationStamp(item.mediaObservation)) return false;
 		return (item.desired === null || isControlValue(field as ControlField, item.desired))
 			&& (item.actual === null || isControlValue(field as ControlField, item.actual))
 			&& (item.restoreBaseline === undefined || isControlValue(field as ControlField, item.restoreBaseline))
@@ -287,7 +291,8 @@ function isControlIntent(value: unknown): boolean {
 		&& isControlPatch(value.patch)
 		&& (value.captureAdmission === undefined
 			|| isCaptureAdmission(value.captureAdmission))
-		&& (value.processorHold === undefined || typeof value.processorHold === 'boolean');
+		&& (value.processorHold === undefined || typeof value.processorHold === 'boolean')
+		&& (value.mediaRestore === undefined || value.source === 'restore' && isMediaRestoreToken(value.mediaRestore));
 }
 
 function isControlReadRequest(value: unknown): boolean {
@@ -496,6 +501,7 @@ function isRpcError(value: unknown): value is RpcError {
 
 function isControlAck(value: unknown, operation = false): boolean {
 	if (!isRecord(value)
+		|| value.mediaObservation !== undefined && !isMediaObservationStamp(value.mediaObservation)
 		|| !isBoundedString(operation ? value.operationId : value.intentId, 128)
 		|| !isInteger(value.tabId, true)
 		|| !isBoundedString(value.documentId, 256)
@@ -521,7 +527,8 @@ function isControlAck(value: unknown, operation = false): boolean {
 
 function isControlReadResult(value: unknown): boolean {
 	if (!isRecord(value)
-		|| !hasOnly(value, new Set(['target', 'patch', 'observedStrategies']))
+		|| value.mediaObservation !== undefined && !isMediaObservationStamp(value.mediaObservation)
+		|| !hasOnly(value, new Set(['target', 'patch', 'observedStrategies', 'mediaObservation']))
 		|| (value.target !== null && value.target !== undefined && !isMediaTarget(value.target))
 		|| !isControlPatch(value.patch, true)
 		|| !isRecord(value.observedStrategies)

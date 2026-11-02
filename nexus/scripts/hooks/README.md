@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: contributor
 owner: ai-tool-hooks
-last_reviewed: 2026-07-29
+last_reviewed: 2026-11-02
 ---
 
 # AI-tool hooks
@@ -65,6 +65,18 @@ parallel. Skill-index validation uses `bun run sync:skills -- --check`; it
 fails on drift without rewriting `AGENTS.md`, so it cannot race with the other
 checks. The mutating `bun run sync:skills` remains a deliberate authoring or
 post-merge action.
+
+On Windows, a nested MSYS shell can fail before Lefthook launches its gates.
+The pre-commit fallback calls `git-pre-commit.ts`, reads the staged index through
+Git's NUL-delimited output, and reuses the existing repository-to-workspace path
+projection. Root files such as `remote-site/dist/protocol.js` retain `../` rather
+than becoming nonexistent workspace paths; spaces and newlines remain one process
+argument. The fallback runs the same strict Biome and documentation owners as
+Lefthook and propagates failures. It does not rewrite files or skip a failed gate.
+The strict Biome runner passes its already validated, scope-filtered file set to
+Biome itself, so an explicit generated path outside the workspace cannot be
+processed in addition to the expected set. Generated Remote protocol integrity
+continues to belong to the public-projection gate.
 
 Do not hard-code the assertion count or runtime in this README; both change as coverage grows. The current test output is the source for those values.
 

@@ -26,27 +26,52 @@ interface MediaTarget {
 
 - **目标选择**: 显式媒体选择保持粘性；新 `play` 事件按 `有效用户指针交互 -> 当前播放中 -> 可见面积 -> 最近播放 -> 注册顺序` 比较自动候选，不能因隐藏预览最后触发 `play` 就覆盖主播放器。已结束媒体、暂停或不可见视频的历史指针交互不阻止新播放器接管；纯音频不受可见面积限制。实际选择变化通过唯一 `selected` 通知同步 Background。
 - **观察与恢复边界**: `volumechange`、`ratechange`、`seeked` 即使由浏览器标记为 trusted，也可能来自网页脚本，不能据此切换控制目标。恢复已确认的音量/速度只作用于当前选中媒体；后台预加载元素的恢复 ACK 不得夺取当前目标。
-- `activeMedia` 与 `activeVideo` 独立关联，音频元素选择不清除视频目标。控制写入作用域限定为 top-level document only (`frameId: 0`)；Popup 的只读媒体发现会独立检查已授权 frame，但不会把子 frame 变成控制目标。
+- `activeMedia` 与 `activeVideo` 独立关联，音频元素选择不清除视频目标。控制写入作用域限定为 top-level document only (`frameId: 0`)；媒体列表读取自然报告与 Chrome 事实，不为打开 Popup 注入 frame census。
 
 ### §13.1 Document-level inventory
 
-Popup 枚举使用 `tabId + document generation` 隔离在途探测，并在一次轻量
-`chrome.scripting.executeScript({ allFrames: true })` 前后核对 Chrome
-`frameId + documentId` census。成功的 `found` 或所有当前 frame 均成功返回的
-`no-media` 才是确定事实；权限拒绝、导航错代、无效响应和超时分别投影为
-`denied/stale/unknown/pending`，同时返回 examined/failed coverage。
-非 `http/https/file` 的标签页（扩展内部页、`chrome://` 等）不可承载可控媒体，
-从可见集剔除且不计入 coverage 的 total/denied，其存在不得把完整 inventory 降级
-为 degraded。
+主卡只有当前可控标签页的一张；后台卡没有固定名额。用户主动访问页面后，
+bootstrap/runtime 自然登记当前 document 的媒体事实。唯一
+`shared/media-card-policy.ts::projectMediaCardMembership` 结合 Chrome tab 状态、
+`audible`、有序媒体报告和 `pauseRetentionSeconds` 决定后台成员及 `nextExpiryAt`。
+Background inventory、Popup 本地首份投影和公告数量复用这个策略，卡片层不再
+另裁 retention，也不维护旧媒体待看库或另一套折叠计数。
 
-同一 v2 envelope 的新增证据保持 additive：当前 producer 必须发送单调
-`reportRevision` 和完整 coverage。旧 content report 缺少 revision 时，Background
-只确认收到，不能创建或覆盖有序媒体事实；只含 `tabs` 的旧 inventory 响应在新 UI
-中映射为 `unknown`，不能签发 complete。轻量 DOM census 负责重新获得当前事实。
+runnable 且 audible 是即时证据；否则必须有当前 document 的 found 事实，且有
+有效使用记录，再根据 playing 或最近暂停/不可用时间判断资格。retention 为零
+表示不设这个时间上限。资格到期或事实失效隐藏卡片，不删除该标签页设置或把暂停
+伪装成 source 退休。`nextExpiryAt` 驱动一次到期重投影，无须轮询网页。
+未知或从未加载的页面没有媒体证据，直接不入列；不注入、不探测，也不生成
+“待查”空框或折叠数量。新 document/新媒体的真实报告可以改变成员，这与正常
+Popup 打开时已知成员应当同时首帧出现是两个边界。
 
-探测不加载重级 Content runtime。底层 Chrome Promise 未结束时仍占据物理许可；
-重复打开 Popup 只观察同一文档操作。候选起点跨扫描轮转；当所有许可都被永久
-占用时，系统明确返回 degraded，不能通过逻辑超时释放许可或伪造无媒体。
+`media-facts.ts` 在 `chrome.storage.session` 保存事实，跨 worker replacement
+水合，不承诺跨浏览器重启。schema v2 report 必须有单调 `reportRevision`；同一
+document 的高水位不被旧时间戳或旧 report 覆盖，使用记录只作单调合并。导航和
+关闭删除事实；水合前退休的 tombstone 阻止迟到存储行复活旧 tab。retention 仅
+决定展示资格，不删除事实。冻结、discarded 和 unloaded 是浏览器可运行性，
+已知且仍合资格者可保留 metadata-only 卡；不能因此唤醒或探测网页。
+
+<!-- mermaid:id=media-card-membership -->
+```mermaid
+flowchart TD
+  T[Chrome tabs and session media facts] --> C{Controllable active tab}
+  C -->|yes| M[One main card]
+  T --> B[Other eligible URL tabs]
+  B --> A{Runnable and audible}
+  A -->|yes| V[Visible background member]
+  A -->|no| F{Current found fact and use evidence}
+  F -->|no| O[Omit without probe or placeholder]
+  F -->|yes| P{Runnable and playing}
+  P -->|yes| V
+  P -->|no| R{Recent stop or unlimited retention}
+  R -->|yes| V
+  R -->|no| H[Hide card and retain facts and settings]
+  V --> S{Browser availability}
+  S -->|runnable| K[Bind controls on same node]
+  S -->|frozen or discarded or unloaded| D[Metadata only and return to tab]
+  R --> E[Publish nextExpiryAt for next decision]
+```
 
 ### §13.2 Edge Case & ACK Projection Table
 
@@ -108,8 +133,9 @@ pending、observed、replay/maturation 状态及失败数值 memo。复用同一
 
 ### Closing live players and speed inheritance
 
-document 内 successful desired 与精确 source ownership 分离。用户成功设为 1.3x 后，
-同文档新选中媒体可以经同一协调器以 `source:restore` 重放 1.3x；失败的新请求
+document 内 successful desired、媒体场景 speed 与精确 source ownership 分离。
+成功显式调速同时更新 document fallback 和当前场景 speed；返回已有场景优先使用
+该场景 speed，新场景才继承 document fallback。失败的新请求
 不会替换此前成功的 desired。页面自己调整的 actual 只属于该 source，不变成
 后继视频的 document-wide 模板。写入中 source 被替换的 `stale-media-source`
 是生命周期竞态，保留这次用户意图供新选中 source 重放，与能力失败区分。
@@ -124,7 +150,7 @@ document 内 successful desired 与精确 source ownership 分离。用户成功
 | 用户显式调速时没有可解析的媒体或目标已过期 | 字段返回 `capability-unavailable`、`actual:null`、`controlled:false`；失败新值不进入 desired，不以“已保存”伪装实际成功 |
 | restore 时尚无媒体 | 先保留恢复模板，当前请求仍报告无目标；以后注册并成为当前目标才通过协调器重新应用 |
 | 仅关闭扩展 Popup | 释放观察订阅，已收到的意图继续由 Background 处理；不会重置速度或释放页面设置。已控制字段的 runtime lease 独立存活 |
-| 明确 restore-page-settings | 只恢复仍由本写者持有且 actual 未被页面改动的 baseline；已被页面接管的字段不覆盖。清空 document desired 模板；`1x` 只是数值设置，不等于释放 |
+| 明确 restore-page-settings | 只恢复仍由本写者持有且 actual 未被页面改动的 baseline；已被页面接管的字段不覆盖。清空 document desired 与各场景 speed；`1x` 只是数值设置，不等于释放 |
 
 选择变化由 `MediaRegistry::reconcileRetiredSelection/selectRecord` 唯一通知，
 `peek/resolve` 保持纯读，不在每次调速时扫描 DOM。Executor 的 `replayDesired`
@@ -149,6 +175,36 @@ revision 的缓存证明失效，返回已被页面重置的原 video 也必须�
 选择访问未变时，重复 `play/loadedmetadata` 仍受 ownership 和有界成熟探测约束，
 不会持续覆盖页面新手势。旧访问的异步回复不得重建本次访问的已应用证明。
 
+场景由精确唯一媒体根和当前 route 绑定；无可证明的声明根时以元素、route 和
+物理 source 绑定，不能用站点名或播放器顺序猜身份。场景记录有界，物理 baseline
+仍属于精确 source ownership。自动恢复携带 `mediaRestore: { scene, visit,
+revision }`，执行前重新检查当前场景、选择访问和 desired revision。选择、source、
+route 或释放使旧恢复失效；同文档 route settled 通知唤醒最新恢复义务，不复活旧
+token，也不把 URL 变化当作新媒体。协议见 [restore tokens](../reference/protocols.md#ordered-media-observations-and-restore-tokens)。
+
+<!-- mermaid:id=media-scene-speed-return -->
+```mermaid
+sequenceDiagram
+  actor U as User
+  participant F as Feed scene
+  participant E as Content scene and restore owner
+  participant L as Live scene
+  participant B as Background coordinator
+  U->>F: Explicit speed 2
+  F->>E: Success retains feed speed 2 and fallback 2
+  E->>L: Select new scene and inherit fallback 2
+  U->>L: Explicit speed 1.5
+  L->>E: Success retains live speed 1.5 and fallback 1.5
+  F->>E: Feed selected again with new visit
+  E->>B: Restore feed 2 with scene, visit and revision
+  L->>E: Live selected before old restore settles
+  E->>E: Retire prior visit token
+  B-->>E: Old feed restore continuation
+  E->>E: Reject stale token without writing live
+  E->>B: Restore live 1.5 with current token
+  B->>L: Exact current source write and stable proof
+```
+
 runtime status probe 是纯读。只有仍持有 loading/initialization 身份的调用方才能
 恢复租约；导航或 tab 关闭退休旧身份。恢复网页设置的同文档释放决定也必须挡住
 此前已读到 `retained` 的迟到回复，直到新的成功显式控制重新建立模板。释放记录
@@ -166,13 +222,15 @@ runtime status probe 是纯读。只有仍持有 loading/initialization 身份�
 ### Playback button and buffered play
 
 `playing` 的实际布尔定义为 `!HTMLMediaElement.paused`。Popup 打开时必须通过
-当前 document 的 passive getter 异步确认；主卡结构和当前语言不等待这个读取，
+当前 document 的 passive getter 异步确认；所有可见 slot 结构和当前语言不等待这个读取，
 绑定前保持无身份且 inert，绑定后原位确认。持久控制 ACK 和 Popup cache 只能预测其它
 已确认字段，不能遮住新读取的暂停状态。当前读取失败或没有播放字段时，按钮
 显示未知（`aria-pressed=mixed`），由既有有界快照恢复继续确认，不能伪造播放/暂停。
 
-Popup 播放按钮提交当前媒体操作，不冻结缓存中的旧 modal target。协调器在本次
-串行事务内读目标实际 `playing` 再 toggle；新鲜 baseline 优先于历史快照。
+Popup 播放按钮明确呈现播放或暂停动作，提交当前媒体操作，不冻结缓存中的旧 modal target。
+Content 在本次执行中只 resolve 一次当前目标，读取其物理 `playing`，执行一次
+toggle 并在同一目标证明稳定值；新鲜 baseline 优先于历史快照。stale 失败不能
+把这个相对操作盲目重放到新播放器。
 ACK 和页面广播共用相同的 document/generation/revision 入场规则，按钮只渲染
 被接受的快照，旧 ACK 的 `result.playing` 不能旁路重绘。
 
@@ -317,10 +375,13 @@ sequenceDiagram
 | 业务边界 | 可执行规格 |
 | --- | --- |
 | 选择、可见性、移除、source epoch、pure read、PiP/fullscreen/audio 保护 | [media-registry.spec.ts](../../test/media-registry.spec.ts) |
+| 自然事实资格、动态成员、到期时间、休眠状态与 session report 高水位/水合退休 | [media-card-policy.spec.ts](../../test/media-card-policy.spec.ts) · [media-facts.spec.ts](../../test/media-facts.spec.ts) |
+| 物理样本 owner/epoch/selection/revision、字段合并与迟到 ACK | [media-observation.spec.ts](../../test/media-observation.spec.ts) |
 | 失败不传播、无目标 actual、延迟 restore、激活、baseline、稳定读回 | [native-media-executor.spec.ts](../../test/native-media-executor.spec.ts) |
 | 未列出值零试写、迟挂载选项、失败值 memo | [page-media-declared-adapter.spec.ts](../../test/page-media-declared-adapter.spec.ts) |
 | SPA 打开/关闭反向交接、原 video 重置后两次直播返回及 worker 重启、释放模板、真实 MediaStream 拒绝 | [page-media.spec.ts](../../test/smoke/page-media.spec.ts) |
 | Popup 首次/缓存播放读回、缓冲未完成时连续播放暂停 | [popup-ui.spec.ts](../../test/smoke/popup-ui.spec.ts) |
+| 全部已公告主/后台 slot 首帧、同节点绑定、未知 actual 与 live frame 几何 | [popup-frame-geometry-chrome.spec.ts](../../test/popup-frame-geometry-chrome.spec.ts) |
 | 模板租约、迟到 probe 对导航/释放的隔离、后台重启恢复 | [runtime-loader.spec.ts](../../test/runtime-loader.spec.ts) · [runtime-restart-startup.spec.ts](../../test/runtime-restart-startup.spec.ts) |
 | 首次 actual 标签、React 文本替换、多根/歧义根、真实 Action Popup 自由值 | [speed-toolbar.spec.ts](../../test/smoke/speed-toolbar.spec.ts) |
 | 跨 document 的 exact-resource / same-origin portable / cross-origin 退休 | [tab-session.spec.ts](../../test/tab-session.spec.ts) |
@@ -333,7 +394,7 @@ sequenceDiagram
 | --- | --- | --- |
 | speed | 精确元素控制器 getter/setter -> DOM `playbackRate` | 拒绝/限幅则还原 baseline 后降级 DOM |
 | preserve pitch | `preservesPitch` 属性读回 | 无属性时为 unsupported |
-| play/pause | `play()` / `pause` 事件 | 失败报错，严禁绕过自动播放限制 |
+| play/pause | 一次 `play()` / `pause()` 后稳定读取物理 `!paused` | 失败报错，严禁绕过自动播放限制或跨目标盲重放 |
 | seek | `TimeRanges` + `seeked` 读回 | 无时间轴时为 unsupported |
 | frame step | `requestVideoFrameCallback` / 原生 seek | 必须标记 `approximate:true` |
 | loop | `media.loop` | unsupported |

@@ -6,7 +6,7 @@
 //   3. Chrome's audible flag is a claim, and it needs no document evidence;
 //   4. a claim never outlives the document that made it or the tab that held it.
 
-import { afterEach, describe, expect, test, mock } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, test, mock } from 'bun:test';
 import {
 	captureStates,
 	cleanupTabState,
@@ -27,11 +27,14 @@ const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 // retired between cases. Isolation is explicit: a test may not inherit another
 // test's verdict just because it reused an id.
 const TOUCHED_TAB_IDS = [
-	1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 20, 21, 22, 23, 24, 25, 30, 46, 50, 60, 61,
+	1, 2, 3, 4, 5, 7, 9, 10, 11, 12, 20, 21, 22, 23, 24, 25, 30, 46, 50, 60, 61, 71, 72, 73, 74, 75,
 ];
 
-afterEach(() => {
+beforeEach(() => { installChrome([]); });
+
+afterEach(async () => {
 	for (const tabId of TOUCHED_TAB_IDS) mediaFacts.forgetMediaFact(tabId);
+	await mediaFacts.flushMediaFacts();
 	tabAudioStates.clear();
 	captureStates.clear();
 	if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
@@ -144,6 +147,26 @@ describe('media tab inventory', () => {
 });
 
 describe('media report ordering', () => {
+	test('keeps playback evidence optional and remembers interaction only within its document', () => {
+		recordMediaState(75, 'document-75', { hasMediaElement: true, userInteracted: true, reportRevision: 1, playing: false, pausedAt: 100 });
+		mediaFacts.touchMediaFact(75, 200);
+		recordMediaState(75, 'document-75', { hasMediaElement: true, userInteracted: false, reportRevision: 2, playing: true });
+		expect(mediaFacts.readMediaFact(75)).toMatchObject({ playing: true, pausedAt: null, userInteracted: true, usedAt: 200, reportRevision: 2 });
+		recordMediaState(75, 'document-next', { hasMediaElement: true, userInteracted: false, reportRevision: 1 });
+		expect(mediaFacts.readMediaFact(75)).toMatchObject({ documentId: 'document-next', userInteracted: false });
+		expect(mediaFacts.readMediaFact(75)?.playing).toBeUndefined();
+		expect(mediaFacts.readMediaFact(75)?.pausedAt).toBeUndefined();
+		expect(mediaFacts.readMediaFact(75)?.usedAt).toBeUndefined();
+	});
+	test('keeps document report ordering after activity bookkeeping has expired', async () => {
+		installChrome([tab(75)]);
+		recordMediaState(75, 'document-75', { hasMediaElement: true, userInteracted: false, reportRevision: 5 });
+		expect(await readMediaTabInventory()).toEqual({ tabs: [75] });
+		expect(tabAudioStates.has(75)).toBe(false);
+		recordMediaState(75, 'document-75', { hasMediaElement: false, userInteracted: false, reportRevision: 4 });
+		expect(mediaFacts.readMediaFact(75)).toMatchObject({ documentId: 'document-75', outcome: 'found', reportRevision: 5 });
+		expect(await readMediaTabInventory()).toEqual({ tabs: [75] });
+	});
 	test('keeps the newest report revision for one exact document', () => {
 		recordMediaState(71, 'document-71', { hasMediaElement: true, userInteracted: false, reportRevision: 2 });
 		recordMediaState(71, 'document-71', { hasMediaElement: false, userInteracted: false, reportRevision: 1 });
@@ -204,13 +227,21 @@ function installChrome(tabs: chrome.tabs.Tab[]) {
 	const injected: Array<{ tabId: number }> = [];
 	const query = mock(async () => { queryCount += 1; return tabs; });
 	const storage = new Map<string, unknown>();
+	const sessionStorage = new Map<string, unknown>();
 	Object.defineProperty(globalThis, 'chrome', {
 		configurable: true,
 		value: {
 			tabs: { query },
 			storage: {
+				session: {
+					async get(key: string) { return sessionStorage.has(key) ? { [key]: sessionStorage.get(key) } : {}; },
+					async set(items: Record<string, unknown>) { for (const [key, value] of Object.entries(items)) sessionStorage.set(key, value); },
+				},
 				local: {
-					async get(key: string) { return storage.has(key) ? { [key]: storage.get(key) } : {}; },
+					async get(input: string | string[] | null) {
+						const keys = typeof input === 'string' ? [input] : input ?? [...storage.keys()];
+						return Object.fromEntries(keys.filter((key) => storage.has(key)).map((key) => [key, storage.get(key)]));
+					},
 					async set(items: Record<string, unknown>) { for (const [key, value] of Object.entries(items)) storage.set(key, value); },
 				},
 			},

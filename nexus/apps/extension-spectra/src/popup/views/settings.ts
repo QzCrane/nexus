@@ -34,6 +34,8 @@ export interface SettingsState {
   revision: number;
   dispose: () => void;
   onDictionaryChange: (callback: (dict: I18NDict) => void) => () => void;
+  /** Fires once after locale loading and the canonical revision are applied. */
+  onAppliedRevision: (callback: (revision: number) => void) => () => void;
 }
 
 // cardRenderCallbacks: registry of UI update hooks triggered when global settings (like visualization toggle) change
@@ -59,6 +61,7 @@ export async function initSettings(): Promise<SettingsState> {
     revision: -1,
     dispose: () => undefined,
     onDictionaryChange: (_callback: (dict: I18NDict) => void) => () => undefined,
+    onAppliedRevision: (_callback: (revision: number) => void) => () => undefined,
   } satisfies SettingsState;
 
   let disposed = false;
@@ -66,6 +69,7 @@ export async function initSettings(): Promise<SettingsState> {
   let presetsInitialized = false;
   let disposeMediaRoutes: (() => void) | null = null;
   const dictionaryListeners = new Set<(dict: I18NDict) => void>();
+  const appliedRevisionListeners = new Set<(revision: number) => void>();
 
   const ensurePresetsUI = async (): Promise<void> => {
     if (disposed || presetsInitialized) return;
@@ -95,6 +99,7 @@ export async function initSettings(): Promise<SettingsState> {
     disposed = true;
     unsubscribeSettings();
     dictionaryListeners.clear();
+    appliedRevisionListeners.clear();
     if (presetsInitialized) disposePresetsUI();
 		disposeMediaRoutes?.();
 		disposeMediaRoutes = null;
@@ -107,6 +112,11 @@ export async function initSettings(): Promise<SettingsState> {
     return () => {
       dictionaryListeners.delete(callback);
     };
+  };
+  state.onAppliedRevision = (callback) => {
+    if (disposed) return () => undefined;
+    appliedRevisionListeners.add(callback);
+    return () => { appliedRevisionListeners.delete(callback); };
   };
 
   let projectionChain: Promise<void> = Promise.resolve();
@@ -137,6 +147,14 @@ export async function initSettings(): Promise<SettingsState> {
       updateCardsI18n(state.dict, state.gSettings.visualizerEnabled);
 		if (presetsInitialized) updatePresetsI18n(state.dict);
 		updateMediaRouteI18n(state.dict);
+		// Storage changes and raw snapshot delivery precede the awaited locale.
+		// Dependents must observe this applied revision, not either earlier signal.
+		for (const callback of appliedRevisionListeners) {
+			try { callback(state.revision); }
+			catch (error: unknown) {
+				showPopupToast(error instanceof Error ? error.message : String(error), 'error');
+			}
+		}
 		for (const callback of dictionaryListeners) {
 			try {
 				callback(state.dict);

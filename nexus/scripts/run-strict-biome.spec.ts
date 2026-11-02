@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'node:child_process';
 import {
 	mkdtempSync,
 	mkdirSync,
@@ -34,6 +35,17 @@ function report(summary = {}, diagnostics = []) {
 }
 
 describe('strict Biome report contract', () => {
+	test('passes only admitted files when a staged generated artifact is outside the workspace', () => {
+		const result = spawnSync(process.execPath, [
+			'scripts/run-strict-biome.ts',
+			'scripts/run-strict-biome.ts',
+			'../remote-site/dist/protocol.js',
+		], { cwd: resolve(import.meta.dir, '..'), encoding: 'utf8' });
+		expect(result.stderr).toBe('');
+		expect(result.status).toBe(0);
+		expect(result.stdout).toContain('Strict Biome: 1 files, 0 diagnostics, 0 silent handlers');
+	});
+
 	test('accepts file targets and rejects missing or injected CLI options', () => {
 		expect(() => validateTargets(['scripts', 'package.json'])).not.toThrow();
 		expect(() => validateTargets([])).toThrow('at least one target');

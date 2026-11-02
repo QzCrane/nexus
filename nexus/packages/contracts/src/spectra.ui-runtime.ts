@@ -1,4 +1,6 @@
 // goal: minimum runtime guards for Popup/Options without request-router or algorithm-catalog code
+export { compareMediaObservations, MEDIA_OBSERVATION_FIELDS } from './media-observation.contracts.js';
+export { MAX_PAUSE_RETENTION_SECONDS } from './settings-ui.contracts.js';
 
 import {
 	isAudioCaptureState,
@@ -150,11 +152,18 @@ function isRemoteSessionClosed(value: unknown): value is RemoteSessionClosedEven
 // and a producer that still emits coverage evidence is outside this contract.
 function isVisibleTabs(value: unknown): boolean {
 	return isRecord(value)
-		&& hasExact(value, ['tabs'])
+		&& Object.keys(value).every((key) => key === 'tabs' || key === 'inactiveTabs' || key === 'nextExpiryAt' || key === 'expiryByTab')
+		&& (value.nextExpiryAt === undefined || Number.isSafeInteger(value.nextExpiryAt) && Number(value.nextExpiryAt) >= 0)
 		&& Array.isArray(value.tabs)
 		&& value.tabs.length <= 10_000
 		&& value.tabs.every((tabId) => isInteger(tabId, true))
-		&& new Set(value.tabs).size === value.tabs.length;
+		&& new Set(value.tabs).size === value.tabs.length
+		&& (value.expiryByTab === undefined || isRecord(value.expiryByTab)
+			&& Object.entries(value.expiryByTab).every(([tabId, expiry]) => String(Number(tabId)) === tabId && Array.isArray(value.tabs) && value.tabs.includes(Number(tabId)) && Number.isSafeInteger(expiry) && Number(expiry) > 0))
+		&& (value.inactiveTabs === undefined || Array.isArray(value.inactiveTabs)
+			&& value.inactiveTabs.length <= 10_000
+			&& value.inactiveTabs.every((tabId) => isInteger(tabId, true))
+			&& new Set([...value.tabs, ...value.inactiveTabs]).size === value.tabs.length + value.inactiveTabs.length);
 }
 
 

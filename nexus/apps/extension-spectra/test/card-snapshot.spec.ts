@@ -35,7 +35,7 @@ describe('field-level card snapshot coverage', () => {
 			else Reflect.deleteProperty(globalThis, 'chrome');
 		}
 	});
-	test.each([false, true])('confirms current playback before first paint despite durable or Popup cached ACK (cache: %s)', async (cached) => {
+	test.each([false, true])('confirms current playback before controls are confirmed despite durable or Popup cached ACK (cache: %s)', async (cached) => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const tabId = cached ? 4_244 : 4_243;
 		const documentId = `doc-playback-${tabId}`;

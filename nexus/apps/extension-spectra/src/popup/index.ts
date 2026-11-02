@@ -10,13 +10,15 @@ import { disableSmoothScroll, enableSmoothScroll } from '../shared/smooth-scroll
 import { sendSpectraRequest } from '../shared/ui-spectra-client';
 import { clearPopupStartupError, showPopupStartupError } from './startup-error';
 import { runBoundedCardBootstrap } from './bounded-card-bootstrap';
-import { flushPredictedFrameHeight, releasePopupFrame, reservePopupFrame, trackPopupFrame } from './frame-height';
+import { releasePopupFrame, trackPopupFrame } from './frame-height';
 import { installOverlayScrollbar } from './overlay-scrollbar';
 import { getSettingsSnapshot } from '../shared/settings-client';
 import { getPopupDictionary, loadPopupLocaleCatalog } from '../shared/i18n/popup-catalog';
 import { DEFAULT_GLOBAL_SETTINGS, type GlobalSettings } from '@nexus/kernel';
 import type { I18NDict } from './types';
-import { readVisibleMediaTabIdsFromStorage } from './media-inventory-from-storage';
+import { readMediaMembershipFromStorage } from './media-inventory-from-storage';
+import { MEDIA_FACTS_KEY, isStoredMediaFact, mediaTabAvailability, type MediaCardMembership } from '../shared/media-card-policy';
+import { prepareCardDom } from './card/dom-init';
 import { readSettingsForecast } from './settings-forecast';
 import { readPopupAppearance } from '../shared/popup-bootstrap';
 import { applyLang } from './views/i18n-apply';
@@ -73,7 +75,7 @@ async function startPopup(): Promise<void> {
 	} catch (error) {
 		console.error('[SPECTRA Popup] Startup failed:', error);
 		disposePopupAttempt();
-		document.querySelector('#main-stage > [data-spectra-prepaint]')?.remove();
+		for (const slot of document.querySelectorAll('#main-stage > [data-spectra-prepaint], #bg-stack > [data-spectra-prepaint]')) slot.remove();
 		releasePopupFrame();
 		document.documentElement.dataset.spectraReady = 'failed';
 		try {
@@ -87,15 +89,12 @@ async function startPopup(): Promise<void> {
 document.documentElement.dataset.spectraSurface = chrome.extension.getViews({ type: 'popup' })
 	.some((view) => view === window) ? 'action-popup' : 'extension-page';
 
-// The frame reservation and every live request start while this module body is
-// executing. None of them waits for settings, the side panel, or DOMContentLoaded,
-// so the Popup's first paint is never gated on the slowest read.
-reservePopupFrame();
+// Tab metadata starts with the module. Prepaint already committed the complete
+// announced structure, so no historical frame reservation is needed.
 const activeTabRequest = chrome.tabs.query({ active: true, currentWindow: true })
 	.then((tabs) => tabs[0] ?? null)
 	.catch(() => null);
 const allTabsRequest = chrome.tabs.query({}).catch(() => [] as chrome.tabs.Tab[]);
-const inventoryRequest = sendSpectraRequest('spectra.tab.visible.list', {});
 
 // Warm the settings snapshot and the locale assets: card rendering must not
 // be serialized behind those two reads. A failed warm-up only sends
@@ -107,21 +106,9 @@ void getSettingsSnapshot()
 	.then((snapshot) => loadPopupLocaleCatalog(snapshot.globalSettings.lang))
 	.catch(() => undefined);
 
-// Fast inventory: project the visible media tabs straight from the durable
-// facts plus Chrome's audible flag, without a round trip to the background.
-// null means the read failed and the RPC above remains the fallback.
-const storageInventoryRequest = allTabsRequest
-	.then((tabs) => readVisibleMediaTabIdsFromStorage(tabs))
-	.catch(() => null);
-
 async function main(): Promise<void> {
 	disposePopupAttempt();
 	clearPopupStartupError();
-	// A retried bootstrap starts from the released frame again, so the
-	// reservation has to be re-applied here: without it the retry opens on an
-	// empty document and grows into the layout, which is the jump this whole
-	// mechanism exists to remove.
-	reservePopupFrame();
 	trackPopupFrame();
 	// Floating overlay scrollbar: mirrors `html` scroll without consuming layout
 	// width, so cards keep equal left/right gutters (the native bar is hidden).
@@ -160,7 +147,9 @@ async function main(): Promise<void> {
 	});
 	const getGlobalSettings = (): GlobalSettings => (
 		settings?.gSettings ?? (appearance ? { ...(settingsForecast ?? DEFAULT_GLOBAL_SETTINGS),
-			lang: appearance.language, visualizerEnabled: appearance.visualizerEnabled } : settingsForecast) ?? DEFAULT_GLOBAL_SETTINGS
+			lang: appearance.language, visualizerEnabled: appearance.visualizerEnabled,
+			pauseRetentionSeconds: appearance.pauseRetentionSeconds ?? settingsForecast?.pauseRetentionSeconds
+				?? DEFAULT_GLOBAL_SETTINGS.pauseRetentionSeconds } : settingsForecast) ?? DEFAULT_GLOBAL_SETTINGS
 	);
 	const getDictionary = (): I18NDict => settings?.dict ?? getPopupDictionary(initialLanguage);
 
@@ -180,11 +169,23 @@ async function main(): Promise<void> {
 	let activePort: chrome.runtime.Port | null = null;
 	const renderedBackgroundTabIds = new Set<number>();
 	const cardDisposers = new Map<number, () => void>();
+	const pendingStructureCleanups = new Map<number, () => void>();
 	const pendingCards = new Set<Promise<boolean>>();
+	const cardBindings = new Map<number, { token: object; cardEl: HTMLElement;
+		availability: ReturnType<typeof mediaTabAvailability>; documentId: string | null;
+		phase: 'queued' | 'hydrating' | 'bound' | 'unavailable' }>();
+	const confirmedDocuments = new Map<number, { documentId: string; consumed: boolean }>();
+	const requestedRebindings = new Set<number>();
+	let attemptLive = true;
+	registerPopupAttemptDisposer(() => {
+		attemptLive = false;
+		for (const binding of cardBindings.values()) binding.cardEl.remove();
+		cardBindings.clear(); confirmedDocuments.clear(); requestedRebindings.clear();
+	});
 	registerPopupAttemptDisposer(() => activePort?.disconnect());
 
 	const reconcileCardInventory = (): void => {
-		if (popupRetired) return;
+		if (popupRetired || !attemptLive) return;
 		const backgroundCount = bgStack.children.length;
 		if (bgBadge) bgBadge.textContent = String(backgroundCount);
 		bgHeader?.classList.toggle('hidden', backgroundCount === 0);
@@ -197,6 +198,10 @@ async function main(): Promise<void> {
 	};
 
 	const registerCardCleanup = (tabId: number) => (dispose: () => void): (() => void) => {
+		// initCard now owns the node, replacing the cleanup installed before the
+		// bounded worker could start. There must never be an ownerless queued slot.
+		pendingStructureCleanups.get(tabId)?.();
+		pendingStructureCleanups.delete(tabId);
 		cardDisposers.set(tabId, dispose);
 		const unregister = registerPopupAttemptDisposer(() => {
 			if (cardDisposers.get(tabId) === dispose) cardDisposers.delete(tabId);
@@ -208,11 +213,45 @@ async function main(): Promise<void> {
 		};
 	};
 
-	const startCard = (tab: chrome.tabs.Tab, background: boolean): Promise<boolean> => {
-		const tabId = tab.id;
-		if (tabId === undefined) return Promise.resolve(false);
+	let scheduleInventoryRefresh = (): void => undefined;
+	const requestRebinding = (tabId: number): void => {
+		const binding = cardBindings.get(tabId);
+		if (!binding || !attemptLive || popupRetired) return;
+		requestedRebindings.add(tabId);
+		binding.cardEl.setAttribute('inert', '');
+		scheduleInventoryRefresh();
+	};
+	const reconcileDocumentEvidence = (tabId: number): void => {
+		const binding = cardBindings.get(tabId);
+		const evidence = confirmedDocuments.get(tabId);
+		if (!binding || !evidence || evidence.consumed || binding.availability !== 'runnable'
+			|| binding.phase === 'queued' || binding.phase === 'hydrating') return;
+		evidence.consumed = true;
+		if (binding.documentId !== evidence.documentId) requestRebinding(tabId);
+	};
+	const allocateCard = (tab: chrome.tabs.Tab, background: boolean): { cardEl: HTMLElement; token: object } => {
+		const tabId = tab.id as number;
+		const token = {};
 		if (background) renderedBackgroundTabIds.add(tabId);
 		else renderedActiveTabId = tabId;
+		const { cardEl } = prepareCardDom({ container: background ? bgStack : mainStage,
+			template, tab, dict: getDictionary(), pending: true });
+		cardBindings.set(tabId, { token, cardEl, availability: mediaTabAvailability(tab), documentId: null, phase: 'queued' });
+		const unregister = registerPopupAttemptDisposer(() => {
+			pendingStructureCleanups.delete(tabId);
+			cardEl.remove();
+		});
+		pendingStructureCleanups.set(tabId, unregister);
+		return { cardEl, token };
+	};
+	const startCard = (tab: chrome.tabs.Tab, background: boolean,
+		allocated = allocateCard(tab, background)): Promise<boolean> => {
+		const tabId = tab.id;
+		if (tabId === undefined) return Promise.resolve(false);
+		const isCurrent = () => attemptLive && !popupRetired && cardBindings.get(tabId)?.token === allocated.token;
+		if (!isCurrent()) return Promise.resolve(false);
+		const binding = cardBindings.get(tabId);
+		if (binding) binding.phase = 'hydrating';
 		const operation = initCard({
 			container: background ? bgStack : mainStage,
 			template,
@@ -225,18 +264,24 @@ async function main(): Promise<void> {
 			registerCleanup: registerCardCleanup(tabId),
 			isBackground: background,
 			allowCached: true,
+			cardEl: allocated.cardEl,
+			isCurrent,
+			onDocumentReplaced: () => { if (isCurrent()) requestRebinding(tabId); },
+			onBindingStateChanged: (next) => {
+				if (!isCurrent() || !binding) return;
+				binding.phase = next.available ? 'bound' : 'unavailable';
+				binding.documentId = next.documentId;
+				reconcileDocumentEvidence(tabId);
+			},
 		}).then((initialized) => {
-			if (!initialized) {
-				if (!background) mainStage.querySelector('[data-spectra-prepaint]')?.remove();
-				renderedBackgroundTabIds.delete(tabId);
-				if (renderedActiveTabId === tabId) renderedActiveTabId = null;
+			if (!initialized && isCurrent()) {
+				disposeRenderedCard(tabId);
 			}
 			reconcileCardInventory();
 			return initialized;
 		}).catch((error: unknown) => {
-			if (!background) mainStage.querySelector('[data-spectra-prepaint]')?.remove();
-			renderedBackgroundTabIds.delete(tabId);
-			if (renderedActiveTabId === tabId) renderedActiveTabId = null;
+			if (!isCurrent()) return false;
+			disposeRenderedCard(tabId);
 			console.debug(`[SPECTRA Popup] Card ${tabId} was not initialized:`, error);
 			reconcileCardInventory();
 			return false;
@@ -245,12 +290,18 @@ async function main(): Promise<void> {
 		return operation;
 	};
 
-	const disposeRenderedCard = (tabId: number): void => {
+	const disposeRenderedCard = (tabId: number, preserveStructure = false): void => {
+		const card = cardBindings.get(tabId)?.cardEl;
+		pendingStructureCleanups.get(tabId)?.();
+		pendingStructureCleanups.delete(tabId);
+		cardBindings.delete(tabId);
+		requestedRebindings.delete(tabId);
+		if (!preserveStructure) confirmedDocuments.delete(tabId);
 		renderedBackgroundTabIds.delete(tabId);
 		if (renderedActiveTabId === tabId) renderedActiveTabId = null;
 		const dispose = cardDisposers.get(tabId);
 		if (dispose) dispose();
-		else document.querySelector(`.glass-card[data-tab-id="${tabId}"]`)?.remove();
+		if (!preserveStructure) (card ?? document.querySelector(`.glass-card[data-tab-id="${tabId}"]`))?.remove();
 		reconcileCardInventory();
 	};
 
@@ -274,83 +325,170 @@ async function main(): Promise<void> {
 	// The active card is the one card that is certainly coming, and it needs
 	// nothing but the active tab: starting it here - instead of after the tab list
 	// and the inventory land - is the difference between the first card committing
-	// on the first or the second round trip. The frame is already reserved, so this
+	// on the first or the second round trip. The structure is already present, so this
 	// binds the already visible canonical structure to its current document.
 	void activeTabRequest.then((tab) => {
-		if (popupRetired) return;
+		if (popupRetired || !attemptLive) return;
 		if (!tab || tab.id === undefined || isRestrictedUrl(tab.url)) {
 			mainStage.querySelector('[data-spectra-prepaint]')?.remove();
 			return;
 		}
-		connectActiveTab(tab.id);
+		if (mediaTabAvailability(tab) === 'runnable') connectActiveTab(tab.id);
 		void startCard(tab, false);
 	}).catch((error: unknown) => {
 		console.debug('[SPECTRA Popup] Active card was not started:', error);
 	});
 
-	const [liveActiveTab, allTabs, storageInventory] = await Promise.all([
+	const [liveActiveTab, allTabs] = await Promise.all([
 		activeTabRequest,
 		allTabsRequest,
-		storageInventoryRequest,
 	]);
-	if (popupRetired) return;
+	if (popupRetired || !attemptLive) return;
 	const activeTab = liveActiveTab;
 	const activeTabId = activeTab?.id;
-	const allTabsById = tabIdMap(allTabs);
+	let allTabsById = tabIdMap(allTabs);
 
-	// Applies one authoritative tab-id list to the background card stack: every
-	// rendered card not in the list is retired, and every listed tab without a
-	// card gets one. The same routine serves the fast first paint and the later
-	// RPC reconciliation, so the two can never diverge on their card set.
-	const applyInventory = async (tabIds: readonly number[]): Promise<void> => {
+	let expiryTimer: ReturnType<typeof setTimeout> | null = null;
+	const applyInventory = (membership: MediaCardMembership): void => {
+		if (!attemptLive || popupRetired) return;
 		document.documentElement.dataset.mediaInventory = 'complete';
-		const liveIds = new Set(tabIds);
+		const liveIds = new Set(membership.tabs);
 		for (const renderedId of [...renderedBackgroundTabIds]) {
 			if (!liveIds.has(renderedId) || renderedId === activeTabId) disposeRenderedCard(renderedId);
 		}
-		const backgroundTabs = tabIds
-			.filter((tabId) => tabId !== activeTabId && !renderedBackgroundTabIds.has(tabId))
+		// Availability changes retire all writable handles before reusing the
+		// same structure as metadata or rebinding a new runnable document.
+		for (const [tabId, binding] of [...cardBindings]) {
+			const tab = allTabsById.get(tabId);
+			if (!tab) { disposeRenderedCard(tabId); continue; }
+			if (binding.availability === mediaTabAvailability(tab) && !requestedRebindings.has(tabId)) continue;
+			disposeRenderedCard(tabId, true);
+			if (tabId === activeTabId) {
+				if (mediaTabAvailability(tab) === 'runnable') connectActiveTab(tabId);
+				else { activePort?.disconnect(); activePort = null; connectedTabId = null; }
+				void startCard(tab, false);
+			}
+		}
+		const currentActive = activeTabId === undefined ? undefined : allTabsById.get(activeTabId);
+		if (renderedActiveTabId === null && currentActive && !isRestrictedUrl(currentActive.url)) {
+			if (mediaTabAvailability(currentActive) === 'runnable') connectActiveTab(activeTabId as number);
+			void startCard(currentActive, false);
+		}
+		const backgroundTabs = membership.tabs
+			.filter((tabId) => tabId !== activeTabId)
 			.map((tabId) => allTabsById.get(tabId))
 			.filter((tab): tab is chrome.tabs.Tab => tab !== undefined && !isRestrictedUrl(tab.url));
-		await runBoundedCardBootstrap(backgroundTabs, CARD_SNAPSHOT_CONCURRENCY,
-			async (tab) => startCard(tab, true));
+		const jobs: Array<{ tab: chrome.tabs.Tab; allocated: ReturnType<typeof allocateCard> }> = [];
+		// Allocation is synchronous and ordered. Concurrency limits observations,
+		// never how many dynamic members can own a visible card.
+		let position = bgStack.firstElementChild;
+		for (const tab of backgroundTabs) {
+			if (!renderedBackgroundTabIds.has(tab.id as number)) jobs.push({ tab, allocated: allocateCard(tab, true) });
+			const card = bgStack.querySelector<HTMLElement>(`:scope > .glass-card[data-tab-id="${tab.id}"]`);
+			if (card) {
+				// Moving an already-ordered node can drop keyboard focus or pointer
+				// capture. Unchanged membership must perform no child-list writes.
+				if (card !== position) bgStack.insertBefore(card, position);
+				position = card.nextElementSibling;
+			}
+		}
+		for (const slot of bgStack.querySelectorAll(':scope > [data-spectra-prepaint]:not([data-tab-id])')) slot.remove();
+		void runBoundedCardBootstrap(jobs, CARD_SNAPSHOT_CONCURRENCY,
+			({ tab, allocated }) => startCard(tab, true, allocated));
+		if (expiryTimer !== null) clearTimeout(expiryTimer);
+		expiryTimer = membership.nextExpiryAt === undefined ? null
+			: setTimeout(() => { expiryTimer = null; scheduleInventoryRefresh(); }, Math.max(0, membership.nextExpiryAt - Date.now()));
+		reconcileCardInventory();
+		document.documentElement.dataset.spectraStructureReady = 'true';
+		document.documentElement.dataset.spectraReady = 'true';
 	};
 
-	// First paint answers from the durable facts, not from a service-worker round
-	// trip. The RPC is still awaited once for correctness, but it no longer gates
-	// the cards the user sees.
-	if (storageInventory !== null) {
-		await applyInventory(storageInventory);
-	} else {
-		const rpcResult = await inventoryRequest;
-		if (rpcResult.ok) {
-			await applyInventory(rpcResult.data.tabs);
-		} else {
-			document.documentElement.dataset.mediaInventory = 'unavailable';
-			console.warn('[SPECTRA Popup] Visible tab list unavailable:', rpcResult.error.message);
+	let refreshRunning = false;
+	let refreshRequested = false;
+	let refreshQueued = false;
+	let projectedRetention = getGlobalSettings().pauseRetentionSeconds;
+	const refreshInventory = async (initialTabs?: chrome.tabs.Tab[]): Promise<void> => {
+		if (refreshRunning) { refreshRequested = true; return; }
+		refreshRunning = true;
+		try {
+			do {
+				refreshRequested = false;
+				const tabs = initialTabs ?? await chrome.tabs.query({});
+				initialTabs = undefined;
+				projectedRetention = getGlobalSettings().pauseRetentionSeconds;
+				const stored = await readMediaMembershipFromStorage(tabs, projectedRetention);
+				if (!attemptLive || popupRetired) return;
+				if (getGlobalSettings().pauseRetentionSeconds !== projectedRetention) {
+					refreshRequested = true;
+					continue;
+				}
+				allTabsById = tabIdMap(tabs);
+				if (stored !== null) applyInventory(stored);
+				else {
+					// Only a failed session read needs a worker round trip.
+					const result = await sendSpectraRequest('spectra.tab.visible.list', {});
+					if (!attemptLive || popupRetired) return;
+					if (result.ok) applyInventory({ tabs: result.data.tabs, inactiveTabs: result.data.inactiveTabs ?? [], nextExpiryAt: result.data.nextExpiryAt });
+					else document.documentElement.dataset.mediaInventory = 'unavailable';
+				}
+			} while (refreshRequested && attemptLive && !popupRetired);
+		} finally { refreshRunning = false; }
+	};
+	scheduleInventoryRefresh = () => {
+		if (!attemptLive || popupRetired) return;
+		refreshRequested = true;
+		if (refreshRunning || refreshQueued) return;
+		refreshQueued = true;
+		queueMicrotask(() => {
+			refreshQueued = false;
+			if (attemptLive && !popupRetired) void refreshInventory().catch((error: unknown) => {
+				console.debug('[SPECTRA Popup] Inventory refresh failed:', error);
+			});
+		});
+	};
+	const onStorageChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
+		const change = area === 'session' ? changes[MEDIA_FACTS_KEY] : undefined;
+		if (!change) return;
+		const records = (value: unknown): Record<string, unknown> => value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
+		const previous = records(change.oldValue);
+		for (const [key, value] of Object.entries(records(change.newValue))) {
+			const tabId = Number(key);
+			if (!cardBindings.has(tabId) || !isStoredMediaFact(value) || value.outcome !== 'found' || value.schemaVersion !== 2) continue;
+			const old = previous[key];
+			const newDocument = !isStoredMediaFact(old) || old.documentId !== value.documentId;
+			const newReport = isStoredMediaFact(old) && Number(value.reportRevision) > Number(old.reportRevision ?? 0);
+			if ((!newDocument && !newReport) || confirmedDocuments.get(tabId)?.documentId === value.documentId) continue;
+			confirmedDocuments.set(tabId, { documentId: value.documentId, consumed: false });
+			reconcileDocumentEvidence(tabId);
 		}
-	}
-
-	// Reconcile any drift between the durable-fact forecast and the background's
-	// live answer. Identical lists skip the work entirely; this only fires when a
-	// tab navigated or reported media in the instant the Popup was opening.
-	void inventoryRequest.then(async (result) => {
-		if (popupRetired || !result.ok || storageInventory === null) return;
-		const same = storageInventory.length === result.data.tabs.length
-			&& storageInventory.every((id, index) => id === result.data.tabs[index]);
-		if (same) return;
-		await applyInventory(result.data.tabs);
-	}).catch(() => undefined);
-
-	await Promise.all([...pendingCards]);
-	reconcileCardInventory();
-	document.documentElement.dataset.spectraReady = 'true';
+		scheduleInventoryRefresh();
+	};
+	const onTabUpdated = (_id: number, change: Parameters<Parameters<typeof chrome.tabs.onUpdated.addListener>[0]>[1]) => {
+		if (change.audible !== undefined || change.discarded !== undefined || change.frozen !== undefined
+			|| change.status !== undefined || change.url !== undefined) scheduleInventoryRefresh();
+	};
+	chrome.storage.onChanged.addListener(onStorageChanged);
+	chrome.tabs.onUpdated.addListener(onTabUpdated);
+	chrome.tabs.onRemoved.addListener(scheduleInventoryRefresh);
+	registerPopupAttemptDisposer(() => {
+		chrome.storage.onChanged.removeListener(onStorageChanged);
+		chrome.tabs.onUpdated.removeListener(onTabUpdated);
+		chrome.tabs.onRemoved.removeListener(scheduleInventoryRefresh);
+		if (expiryTimer !== null) clearTimeout(expiryTimer);
+	});
+	await refreshInventory(allTabs);
 
 	// Settings hydrate controls and Remote UI in place. They do not establish
 	// the startup language or replace the prepaint card node.
 	const resolvedSettings = await settingsPromise;
 	if (popupRetired) return;
 	settings = resolvedSettings;
+	const onSettingsApplied = () => {
+		if (getGlobalSettings().pauseRetentionSeconds !== projectedRetention) scheduleInventoryRefresh();
+	};
+	registerPopupAttemptDisposer(resolvedSettings.onAppliedRevision(onSettingsApplied));
+	// Also closes revisions applied while the initial membership read awaited.
+	onSettingsApplied();
 	if (!popupRetired) {
 		const { updateCardsI18n } = await import('./views/i18n-apply');
 		updateCardsI18n(resolvedSettings.dict, resolvedSettings.gSettings.visualizerEnabled);
@@ -367,11 +505,8 @@ async function main(): Promise<void> {
 }
 
 window.addEventListener('pagehide', () => {
-	// The settled height is written a frame after the publish, so a Popup closed
-	// in that gap would lose the hint entirely and open at the content height
-	// next time. Closing is the last chance to state what this open landed on.
-	flushPredictedFrameHeight();
 	popupRetired = true;
 	disposePopupAttempt();
+	releasePopupFrame();
 }, { once: true });
 document.addEventListener('DOMContentLoaded', () => { void startPopup(); });

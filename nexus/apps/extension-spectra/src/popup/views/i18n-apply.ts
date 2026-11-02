@@ -92,11 +92,13 @@ export function updateCardsI18n(dict: I18NDict, vizEnabled: boolean): void {
 
 		const maskText = card.querySelector('.sleep-text') as HTMLElement | null;
 		if (maskText) {
+			const unavailable = card.dataset.mediaAvailability !== undefined
+				&& card.dataset.mediaAvailability !== 'runnable' && card.dataset.mediaAvailability !== 'pending';
 			const paused = document.createElement('div');
-			paused.textContent = dict.paused;
+			paused.textContent = unavailable ? dict.controlSyncUnavailable : dict.paused;
 			const resume = document.createElement('div');
 			resume.className = 'sleep-resume-hint';
-			resume.textContent = dict.clickToResume;
+			resume.textContent = unavailable ? dict.btnGotoTab : dict.clickToResume;
 			maskText.replaceChildren(paused, resume);
 		}
 

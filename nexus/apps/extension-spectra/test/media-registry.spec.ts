@@ -3,9 +3,12 @@ import { requireValue } from './helpers/require-value';
 import type { MediaTarget } from '@nexus/contracts';
 import {
 	MediaRegistry,
+	chooseInitialMedia,
 	setActiveMediaRegistry,
 } from '../src/content/core/media-registry';
 import { DocumentRuntimeContext } from '../src/content/core/content-runtime-context';
+import { NativeMediaExecutor } from '../src/content/logic/native-media-executor';
+import type { VideoEffectsController } from '../src/content/video/video-effects-controller';
 import { isAnyMediaPlaying } from '../src/content/audio/media-detection';
 import {
 	abLoopTestApi,
@@ -164,6 +167,166 @@ class FakeIntersectionObserver {
 }
 
 describe('event-driven media registry', () => {
+	test.each(['stable', 'replayed', 'selection-changed'] as const)('establishes the cold paused target before its first own play (%s)', async (mode) => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver', 'requestAnimationFrame', 'cancelAnimationFrame']);
+		const document = new FakeDocument(); const first = new FakeVideoElement(1); const second = new FakeVideoElement(1);
+		first.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		second.rect = { ...first.rect, right: 160, bottom: 90, width: 160, height: 90 };
+		document.documentElement.descendants.push(first, second);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		installGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0));
+		installGlobal('cancelAnimationFrame', (handle: ReturnType<typeof setTimeout>) => clearTimeout(handle));
+		const events: string[] = [];
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: `document:cold-play-${mode}`, frameId: 0 }),
+			(_target, event) => events.push(event));
+		const executor = new NativeMediaExecutor(registry, { dispose() {} } as VideoEffectsController);
+		let writes = 0;
+		Object.defineProperty(first, 'play', { value: () => {
+			writes += 1; first.paused = false;
+			queueMicrotask(() => {
+				first.dispatchEvent(new Event('play'));
+				if (mode === 'replayed') first.paused = true;
+			});
+			return new Promise<void>(() => undefined);
+		} });
+		try {
+			const target = requireValue(registry.resolve(null)?.target, 'Expected a cold paused target');
+			const initialVisit = registry.selectionRevision;
+			expect(initialVisit).toBeGreaterThan(0);
+			expect(events.filter((event) => event === 'selected')).toEqual([]);
+			const operation = executor.execute({ intentId: `cold-play:${mode}`, tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target', target,
+				actualContext: {}, patch: { playing: true } });
+			await Promise.resolve();
+			expect(registry.selectionRevision).toBe(initialVisit);
+			if (mode === 'selection-changed') {
+				const next = requireValue(registry.list().find(({ element }) => element === second)?.target, 'Expected second target');
+				registry.select(next);
+				await expect(operation).rejects.toMatchObject({ code: 'stale-media-source' });
+				expect(registry.resolve(null)?.target).toEqual(next);
+			} else {
+				const result = await operation;
+				expect(result.fields.playing).toMatchObject(mode === 'stable'
+					? { phase: 'applied', actual: true }
+					: { phase: 'error', lastError: { code: 'readback-mismatch' } });
+				expect(registry.selectionRevision).toBe(initialVisit);
+			}
+			expect(writes).toBe(1);
+		} finally { executor.dispose(); registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+	test('establishes the first late paused discovery batch and notifies its selected target once', () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const selected: MediaTarget[] = [];
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:late-paused', frameId: 0 }),
+			(target, event) => { if (event === 'selected') selected.push(target); });
+		try {
+			expect(registry.resolve(null)).toBeNull(); expect(registry.selectionRevision).toBe(0);
+			const small = new FakeVideoElement(1); const large = new FakeVideoElement(1);
+			small.rect = { left: 0, top: 0, right: 160, bottom: 90, width: 160, height: 90 };
+			large.rect = { ...small.rect, right: 640, bottom: 360, width: 640, height: 360 };
+			FakeMutationObserver.latest?.emit([small, large]);
+			expect(registry.resolve(null)?.element).toBe(large); expect(registry.selectionRevision).toBe(1);
+			expect(selected).toEqual([registry.resolve(null)?.target]);
+			large.paused = false; large.dispatchEvent(new Event('play'));
+			expect(registry.selectionRevision).toBe(1); expect(selected).toHaveLength(1);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+	test.each(['audio', 'pip', 'fullscreen'] as const)('establishes independent initial media and video scopes (%s)', (presentation) => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument(); const audio = new FakeMediaElement(1); const video = new FakeVideoElement(1);
+		audio.paused = false; video.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		if (presentation === 'pip') document.pictureInPictureElement = video;
+		if (presentation === 'fullscreen') document.fullscreenElement = video;
+		document.documentElement.descendants.push(audio, video);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: `document:initial-${presentation}`, frameId: 0 }));
+		try {
+			expect(registry.selectionRevision).toBe(1);
+			expect(registry.resolve(null)?.element).toBe(presentation === 'audio' ? audio : video);
+			expect(registry.resolveVideo(null)?.element).toBe(video);
+			if (presentation === 'audio') {
+				video.paused = false; video.dispatchEvent(new Event('play'));
+				expect(registry.resolve(null)?.element).toBe(video);
+				expect(registry.selectionRevision).toBe(2);
+			}
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
+	test('allocates observation owners from the document-start counter across registry replacements', () => {
+		const descriptors = captureGlobalDescriptors(['window', 'document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement', 'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		installGlobal('window', { __SPECTRA_CONTENT_BOOTSTRAP__: { mediaOwnerEpoch: 7 }, innerWidth: 1280, innerHeight: 720 });
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const context = new DocumentRuntimeContext({ documentId: 'document:owner-replacement', frameId: 0 });
+		const first = new MediaRegistry(context); const second = new MediaRegistry(context);
+		try {
+			expect(first.captureObservation().owner).toBe('document:owner-replacement:8');
+			expect(second.captureObservation().owner).toBe('document:owner-replacement:9');
+			expect(first.captureObservation().epoch).toBe(8); expect(second.captureObservation().epoch).toBe(9);
+		} finally { first.dispose(); second.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+	test.each(['handoff', 'explicit-pause', 'resumed-pause', 'explicit-selection', 'preview'] as const)('reconciles a later player after the historical feed pauses (%s)', (mode) => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement', 'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const feed = new FakeVideoElement(1);
+		const live = new FakeVideoElement(1);
+		feed.paused = false;
+		feed.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		live.rect = mode === 'preview' ? { ...feed.rect, width: 32, height: 18 } : { ...feed.rect, width: 640, height: 360 };
+		document.documentElement.descendants.push(feed, live);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: `document:handoff-${mode}`, frameId: 0 }));
+		try {
+			feed.dispatchEvent(new Event('play'));
+			for (const listener of feed.listeners.get('pointerdown') ?? []) {
+				if (typeof listener === 'function') listener.call(feed, { isTrusted: true } as Event);
+			}
+			const feedTarget = registry.resolve(null)?.target;
+			if (!feedTarget) throw new Error('Feed target is missing');
+			if (mode === 'explicit-pause') registry.pinPaused(feedTarget);
+			if (mode === 'resumed-pause') { registry.pinPaused(feedTarget); feed.dispatchEvent(new Event('play')); }
+			if (mode === 'explicit-selection') registry.select(feedTarget);
+			live.paused = false; live.dispatchEvent(new Event('play'));
+			expect(registry.resolve(null)?.element).toBe(feed);
+			feed.paused = true; feed.dispatchEvent(new Event('pause'));
+			expect(registry.resolve(null)?.element).toBe(mode === 'handoff' || mode === 'resumed-pause' ? live : feed);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
+	test('publishes a new visit when the same selected source returns from hidden presentation', () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement', 'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument(); const media = new FakeVideoElement(1);
+		media.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		document.documentElement.descendants.push(media);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:return-visit', frameId: 0 }));
+		try {
+			const target = registry.resolve(null)?.target; if (!target) throw new Error('Missing media');
+			registry.select(target); const before = registry.captureObservation();
+			const visible = media.rect; media.rect = { ...visible, width: 0, height: 0 };
+			FakeIntersectionObserver.latest?.emit([media]); media.rect = visible; FakeIntersectionObserver.latest?.emit([media]);
+			const after = registry.captureObservation();
+			expect(after.owner).toBe(before.owner); expect(after.selection).toBe(before.selection + 1);
+			expect(after.revision).toBeGreaterThan(before.revision); expect(registry.resolve(null)?.target).toEqual(target);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
 	test('projects only selected processing sources and recomputes URL and srcObject lifecycles', () => {
 		const descriptors = captureGlobalDescriptors([
 			'document',
@@ -276,6 +439,17 @@ describe('event-driven media registry', () => {
 			const modalTarget = registry.list().find(({ element }) => element === modal)?.target;
 			expect(modalTarget).toBeDefined();
 			expect(registry.resolve(null)?.target).toEqual(modalTarget);
+			expect(chooseInitialMedia([feed, modal, hiddenPreload] as unknown as HTMLMediaElement[])).toBe(modal);
+			document.pictureInPictureElement = feed;
+			expect(chooseInitialMedia([feed, modal] as unknown as HTMLMediaElement[])).toBe(feed);
+			// Stateless cold admission sees presentation; pure reads do not replace
+			// the already established visit without its actual lifecycle event.
+			expect(registry.resolve(null)?.element).toBe(modal);
+			document.pictureInPictureElement = null;
+			document.fullscreenElement = feed;
+			expect(chooseInitialMedia([feed, modal] as unknown as HTMLMediaElement[])).toBe(feed);
+			expect(registry.resolve(null)?.element).toBe(modal);
+			document.fullscreenElement = null;
 			expect(events.filter(({ event }) => event === 'selected')).toEqual([]);
 			FakeIntersectionObserver.latest?.emit([feed, modal, hiddenPreload]);
 			expect(events.filter(({ event }) => event === 'selected')).toEqual([]);
@@ -457,7 +631,7 @@ describe('event-driven media registry', () => {
 			expect(audioTarget).toBeDefined();
 			expect(videoTarget).toBeDefined();
 
-			// Explicit selection is the only selection write. Reads of either identity
+			// After discovery admission, explicit selection writes the chosen target. Reads of either identity
 			// cannot steal the other target or emit a selected event.
 			expect(registry.select(videoTarget)).toBe(true);
 			expect(registry.select(audioTarget)).toBe(true);

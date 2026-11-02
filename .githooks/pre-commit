@@ -14,7 +14,4 @@ fi
 # NtCreateDirectoryObject (0xC0000022). Fall back to executing the exact gates directly:
 echo "Executing pre-commit gates directly via Bun..." >&2
 cd "$repository/nexus"
-rel_files=$(git diff --name-only --cached --diff-filter=ACMR | sed -e 's|^nexus/||' | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|json)$' || true)
-if [ -n "$rel_files" ]; then
-  bun scripts/run-strict-biome.ts $rel_files
-fi
+bun scripts/hooks/git-pre-commit.ts

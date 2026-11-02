@@ -23,6 +23,11 @@ export interface VolumeProjection {
 	readonly thumb: number | null;
 }
 
+/** Parse/binding presentation has no physical value yet; this is the same writer. */
+export function showUnknownVolume(ui: Pick<CardUIElements, 'val'>): void {
+	ui.val.textContent = '—';
+}
+
 export interface VolumeView {
 	/** Full reconciliation of thumb, fill, readout and tone. */
 	commit(projection: VolumeProjection): void;

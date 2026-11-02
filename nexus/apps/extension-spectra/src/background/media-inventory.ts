@@ -34,6 +34,8 @@
 
 import type { SpectraResponseData } from '@nexus/contracts';
 import type { MediaFact } from './media-facts';
+import { projectMediaCardMembership } from '../shared/media-card-policy';
+import { DEFAULT_GLOBAL_SETTINGS } from '@nexus/contracts';
 
 export interface MediaInventoryDependencies {
 	queryTabs(): Promise<chrome.tabs.Tab[]>;
@@ -41,6 +43,7 @@ export interface MediaInventoryDependencies {
 	audibleTabs(tabs: readonly chrome.tabs.Tab[], now: number): Set<number>;
 	/** Durable verdict the tab's own current document reported. */
 	readFact(tabId: number): MediaFact | null;
+	readPauseRetention?(): Promise<number>;
 }
 
 // The inventory answers the `spectra.tab.visible.list` request with exactly the
@@ -59,34 +62,18 @@ export type ReadMediaTabInventory = (
 // a tab that has not committed cannot have reported playable media in the first
 // place. The claim is the proof; re-checking a load flag on top of it would only
 // re-introduce a state we would then have to explain to the user.
-function controllable(tab: chrome.tabs.Tab): tab is chrome.tabs.Tab & { id: number } {
-	if (!Number.isSafeInteger(tab.id) || Number(tab.id) <= 0 || !tab.url) return false;
-	if (tab.discarded === true) return false;
-	try {
-		return ['http:', 'https:', 'file:'].includes(new URL(tab.url).protocol);
-	} catch {
-		return false;
-	}
-}
-
 export function createMediaTabInventory(
 	dependencies: MediaInventoryDependencies,
 ): ReadMediaTabInventory {
 	return async (now = Date.now()) => {
-		const tabs = await dependencies.queryTabs();
-		const audible = dependencies.audibleTabs(tabs, now);
-		const visible: number[] = [];
-		for (const tab of tabs) {
-			if (!controllable(tab)) continue;
-			if (audible.has(tab.id)) {
-				visible.push(tab.id);
-				continue;
-			}
-			// No claim, no card. A tab that has never said anything about its media
-			// is not a tab we are still deciding about - it is a tab that is not a
-			// media tab until its own document says otherwise.
-			if (dependencies.readFact(tab.id)?.outcome === 'found') visible.push(tab.id);
-		}
-		return { tabs: visible.sort((left, right) => left - right) };
+		const [tabs, retention] = await Promise.all([
+			dependencies.queryTabs(),
+			dependencies.readPauseRetention?.() ?? Promise.resolve(DEFAULT_GLOBAL_SETTINGS.pauseRetentionSeconds),
+		]);
+		dependencies.audibleTabs(tabs, now);
+		const membership = projectMediaCardMembership(tabs, dependencies.readFact, retention, now);
+		return { tabs: membership.tabs,
+			...(membership.inactiveTabs.length > 0 ? { inactiveTabs: membership.inactiveTabs } : {}),
+			...(membership.nextExpiryAt === undefined ? {} : { nextExpiryAt: membership.nextExpiryAt, expiryByTab: membership.expiryByTab }) };
 	};
 }

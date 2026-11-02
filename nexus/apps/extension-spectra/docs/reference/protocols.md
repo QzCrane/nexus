@@ -3,7 +3,7 @@ type: reference
 status: stable
 audience: developer
 owner: spectra-runtime-protocol
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-02
 ---
 
 # SPECTRA runtime protocols
@@ -44,12 +44,67 @@ intent (observation/Popup/remote/hotkey)
 
 Candidate return is not an ACK. Only readback with current `tabId+documentId+origin+generation+revision` can commit. Failed fields roll back optimistic projection.
 Verified page observations bypass the writer stage, commit `controlled:false`, and never echo writes to Content.
-Heavy-runtime observation carries exact `MediaTarget`. Bootstrap may send `target:null` only for `volumeBase+mediaMuted` or `speed+preservePitch` groups, which Background accepts only after initialization barrier.
+Heavy-runtime observation carries exact `MediaTarget` and ordered `mediaObservation`. Bootstrap may send `target:null` only for `volumeBase+mediaMuted` or `speed+preservePitch` groups; the validated Chrome sender supplies tab/document authority. Bootstrap/full-runtime handoff must not discard an already captured physical sample merely because a long restore writer is pending. Unstamped cold reads cannot supersede an established newer ordered owner.
 Reads do not acquire WebAudio/Capture/MAIN/offscreen. Page-media reads may synchronously use exact-element page bridge before DOM fallback.
 
 `ControlSubmitRequest` never carries Capture authority. Background adds `captureAdmission: 'extension-invocation'` to internal `ControlIntent` only after confirming a valid current-tab extension invocation. Value is consumed by policy, not saved in snapshot.
 
 Configured-site lean hotkeys do **not** self-assert control routing. They send the existing default-hotkey trigger with `disposition:'site-page'`; Background validates the content sender, binds foreground/target to that exact top-level `tabId+documentId`, then executes through the same shortcut/control coordinator used by other trusted hotkeys.
+
+## Ordered media observations and restore tokens
+
+These additive contracts express different lifetimes; neither grants sender or
+writer authority. Closed guards validate their exact fields in `@nexus/contracts`.
+
+| Contract | Fields | Meaning |
+| --- | --- | --- |
+| `MediaObservationStamp` | `owner`, `epoch`, `selection`, `revision` | Runtime observation owner, owner epoch, selected-target visit and monotonically ordered sample |
+| `MediaRestoreToken` | `scene`, `visit`, `revision` | Captured Content scene, selection visit and desired revision for one automatic restore |
+
+`mediaObservation` accompanies actual reads, native ACKs, page observations,
+target changes and snapshots. Each field state's `mediaObservation` retains the admitted
+sample stamp. Epoch sorts replacement runtime owners; a different owner at the
+same epoch is a conflict. For the same owner, a lower selection or lower sample
+revision is stale. Tab/document/generation and exact media/source fences remain
+independent prerequisites. A delayed old ACK must not erase a newer physical
+sample of another field.
+
+Background publishes physical samples through its short snapshot lane while the
+writer actor waits for stable speed proof. Both converge on the same snapshot
+commit authority; this is not a second actual store. See the
+[two-lane sequence](../control/05-control-state.md#ordered-physical-observations).
+
+`mediaRestore` is attached only to automatic replay. Content revalidates all three
+fields against its current scene/visit/desired state before the physical write.
+A stale token fails closed, including after route/selection changes or explicit
+release. It cannot be used to replay a relative playback toggle on a new target.
+Scene identity and the return-visit example belong to
+[the replay owner](../control/06-media-and-video.md#document-replay-intent-lifetime).
+
+## Media inventory session projection
+
+`spectra.tab.visible.list` returns current projected `tabs`, optional
+`inactiveTabs`, optional `nextExpiryAt`, and optional `expiryByTab`. Expiry keys
+must name current `tabs` and values must be positive safe-integer timestamps.
+These are policy results over Chrome
+tab evidence and naturally reported media facts, not frame-census coverage or
+permission to probe tabs. The UI does not turn inactive/unknown entries into an
+old-media library, pending placeholders or folded counts. A background-card
+count has no fixed quota.
+
+Current document reports carry monotonically increasing `reportRevision`.
+`media-facts.ts` owns the schema-v2 high-water merge in
+`chrome.storage.session`, retirement tombstones during hydration and serialized
+storage publication. Worker replacement may hydrate these facts within the
+browser session; a browser restart is not a persistence guarantee. Navigation
+and tab removal retire facts, whereas retention expiry only changes membership.
+
+`shared/media-card-policy.ts` is the sole membership/expiry owner reused by the
+Background and Popup forecast. Browser availability (`runnable`, `frozen`,
+`discarded`, `unloaded`) is metadata, not a new media capability. Known eligible
+unavailable members may display metadata and a browser activation link, without
+snapshot probes, control Ports or renderer wakeup. Unknown unloaded tabs produce
+no member. See the [qualification decision](../control/06-media-and-video.md#131-document-level-inventory).
 
 ## Private continuous Popup port
 
@@ -104,18 +159,28 @@ instead of creating a waiter nobody settles.
 `popup.html?cards=N&main=0/1&lang=LANG&viz=0/1` contains Popup-URL parameters written by
 `chrome.action.setPopup`, not a runtime envelope: it crosses no context boundary
 as a message and carries no authority. `N` is a one-to-three digit non-negative
-count of cards the Background expects this open to draw. The render-blocking head
-script reads `cards` only to select a recorded height (`spectra.popup.frame.<N>`);
-an absent or invalid value falls back to the
-last settled height and then to the legacy single hint. `shared/popup-bootstrap.ts`
-is the sole owner of the parameter names and every storage key selected.
-`main`, `lang` and `viz` carry only the announced primary-card presence, committed
-language and visualizer shape. They contain no page URL/title/media identity or
+count of cards the Background expects this open to draw. The parsing prepaint
+entry uses it to establish every announced visible slot before rendering is
+unblocked. Normal window size follows their intrinsic CSS geometry, not a
+same-count, last-used or legacy height hint; missing count does not authorize a
+600 px guess. `shared/popup-bootstrap.ts` is the sole appearance-parameter owner.
+`main`, `lang`, `viz` and `retain` carry the announced primary-card presence,
+committed language, visualizer shape and pause-retention setting. Optional
+`expires` is a JSON array of anonymous background-slot deadlines; expired entries
+are subtracted synchronously before slots are created, including when the worker
+slept past the deadline. The primary card has no retention deadline. These inputs contain no page URL/title/media identity or
 actual control value and grant no request authority. Prepaint uses this appearance
-to project the sole card template before async reads; see the
+to project every announced visible slot from the sole card template before
+async reads. Main and background nodes are then bound in place; the parameter
+does not reserve unknown-media placeholders. See the
 [first-frame owner](../architecture/runtime.md#action-popup-first-frame).
 The privileged sender gate still validates the exact `popup.html` pathname and
 browser-owned Action Popup context; query parameters do not authenticate it.
+
+`data-spectra-structure-ready` records parsing-time structure completion only.
+Actual-state hydration cannot delay this boundary or grant controls on an
+unbound/unavailable card. The live frame's 600 px cap and single-scroll policy
+remain with the sole frame geometry owner.
 
 ## Private diagnostic port
 

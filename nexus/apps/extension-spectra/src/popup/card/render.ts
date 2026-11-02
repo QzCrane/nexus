@@ -27,6 +27,18 @@ export interface RenderParams {
   getDictionary: () => I18NDict;
 }
 
+/** One complete projection for both disabled enhancement and unavailable tabs. */
+export function setCardMaskVisible(ui: Pick<CardUIElements, 'mask' | 'card'>, visible: boolean): void {
+	ui.mask.classList.toggle('hidden', !visible);
+	ui.mask.hidden = !visible;
+	ui.mask.setAttribute('aria-hidden', String(!visible));
+	ui.mask.toggleAttribute('inert', !visible);
+	ui.mask.tabIndex = visible ? 0 : -1;
+	const controls = ui.card.querySelector<HTMLElement>('.control-stack');
+	controls?.toggleAttribute('inert', visible);
+	controls?.setAttribute('aria-hidden', String(visible));
+}
+
 // post: returns a sync-render function that updates HTML elements, CSS variables, and canvas overlays based on current state
 export function createRenderFn(params: RenderParams): () => void {
   const { ui, state, volumeView, getVizEnabled, getDictionary } = params;
@@ -63,14 +75,7 @@ export function createRenderFn(params: RenderParams): () => void {
 		}
 		ui.val.setAttribute('aria-busy', String(controlUnknown));
 
-    ui.mask.classList.toggle('hidden', !disabled);
-		ui.mask.hidden = !disabled;
-		ui.mask.setAttribute('aria-hidden', String(!disabled));
-		ui.mask.toggleAttribute('inert', !disabled);
-		ui.mask.tabIndex = disabled ? 0 : -1;
-		const controls = ui.card.querySelector<HTMLElement>('.control-stack');
-		controls?.toggleAttribute('inert', disabled);
-		controls?.setAttribute('aria-hidden', String(disabled));
+		setCardMaskVisible(ui, disabled);
     ui.enable.checked = config.enabled;
 
     // The thumb follows the gesture immediately. The result label, fill and
@@ -116,7 +121,10 @@ export function createRenderFn(params: RenderParams): () => void {
     }
 
 		const playing = state.controlSnapshot?.fields.playing?.actual;
-		if (ui.btnPause) renderPlaybackButton(ui.btnPause, typeof playing === 'boolean' ? playing : null);
+		if (ui.btnPause) {
+			renderPlaybackButton(ui.btnPause, typeof playing === 'boolean' ? playing : null);
+			if (state.playbackPending) ui.btnPause.setAttribute('aria-busy', 'true');
+		}
 		const pip = state.controlSnapshot?.fields.pip?.actual;
 		if (ui.btnPip && typeof pip === 'boolean') {
 			ui.btnPip.classList.toggle('active', pip);

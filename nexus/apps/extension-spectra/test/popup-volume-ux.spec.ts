@@ -8,11 +8,44 @@ import {
 	resolveAudioVolumeState,
 } from '@nexus/contracts';
 import { COLORS } from '../src/popup/constants';
-import { actualVolumeColor, createRenderFn, gestureVolumeColor } from '../src/popup/card/render';
+import { actualVolumeColor, createRenderFn, gestureVolumeColor, setCardMaskVisible } from '../src/popup/card/render';
 import { createVolumeView } from '../src/popup/card/volume-view';
 import { mergeAudioConfig } from '../src/popup/card/types';
+import { setupCardMessaging } from '../src/popup/card/messaging';
 
 describe('Popup single effective-volume control', () => {
+	test('projects the complete mask state through repeated runnable and unavailable node reuse', () => {
+		const attributes = new Map<string, string>();
+		const controlAttributes = new Map<string, string>();
+		const classes = new Set<string>();
+		const ui = {
+			mask: { hidden: false, tabIndex: 0,
+				classList: { toggle: (name: string, force: boolean) => { if (force) classes.add(name); else classes.delete(name); } },
+				setAttribute: (key: string, value: string) => attributes.set(key, value),
+				toggleAttribute: (key: string, force: boolean) => { if (force) attributes.set(key, ''); else attributes.delete(key); },
+			},
+			card: { querySelector: () => ({
+				setAttribute: (key: string, value: string) => controlAttributes.set(key, value),
+				toggleAttribute: (key: string, force: boolean) => { if (force) controlAttributes.set(key, ''); else controlAttributes.delete(key); },
+			}) },
+		};
+		for (const availability of ['runnable', 'frozen', 'runnable', 'discarded', 'runnable', 'frozen', 'discarded', 'runnable']) {
+			const visible = availability !== 'runnable';
+			setCardMaskVisible(ui as never, visible);
+			expect({ hidden: ui.mask.hidden, hiddenClass: classes.has('hidden'), ariaHidden: attributes.get('aria-hidden'),
+				inert: attributes.has('inert'), tabIndex: ui.mask.tabIndex,
+				controlsInert: controlAttributes.has('inert'), controlsHidden: controlAttributes.get('aria-hidden') })
+				.toEqual({ hidden: !visible, hiddenClass: !visible, ariaHidden: String(!visible), inert: !visible,
+					tabIndex: visible ? 0 : -1, controlsInert: visible, controlsHidden: String(visible) });
+		}
+	});
+	test('does not observe unavailable tabs or read their cached document state', () => {
+		const dispose = setupCardMessaging({ tabId: 55, documentId: 'retired-document', observe: false,
+			get state() { throw new Error('Unavailable tab state must remain unread'); },
+			render: () => { throw new Error('Unavailable tabs must not hydrate controls'); },
+		});
+		expect(() => dispose()).not.toThrow();
+	});
 	test('exposes exactly one 0-800 slider and no implementation-level Boost control', () => {
 		const html = readFileSync(resolve(import.meta.dir, '../public/popup.html'), 'utf8');
 		expect(html.match(/class="vol-slider"/gu)).toHaveLength(1);

@@ -531,7 +531,7 @@ Math.abs(Number.parseFloat(frame.fillWidth) - expectedFillPercent) < 0.000_001
 		}
 	}, 20_000);
 
-	test('paints the first visible Popup card from the newest settled processor lifecycle', async () => {
+	test('shows pending structure before painting only the newest confirmed processor lifecycle', async () => {
 		await installPageMediaControllerHarness();
 		await installSyntheticCaptureHarness();
 		await installTabCaptureStreamIdStub();
@@ -548,8 +548,15 @@ Math.abs(Number.parseFloat(frame.fillWidth) - expectedFillPercent) < 0.000_001
 			const popup = await browser.newPage();
 			popup.setDefaultTimeout(5_000);
 			await popup.evaluateOnNewDocument(({ targetTabId, injectedSession }) => {
+				type LifecycleFrame = {
+					coverage: 'known' | 'unknown';
+					color: string;
+					pending: boolean;
+					inert: boolean;
+					label: string;
+				};
 				type FirstPaintScope = Window & typeof globalThis & {
-					__spectraFirstPaintColors?: string[];
+					__spectraFirstPaintTrace?: LifecycleFrame[];
 					__spectraFirstPaintFrame?: number;
 				};
 				const scope = window as FirstPaintScope;
@@ -561,7 +568,7 @@ Math.abs(Number.parseFloat(frame.fillWidth) - expectedFillPercent) < 0.000_001
 					}
 					return Reflect.apply(originalSendMessage, chrome.runtime, [message, ...args]);
 				}) as typeof chrome.runtime.sendMessage;
-				scope.__spectraFirstPaintColors = [];
+				scope.__spectraFirstPaintTrace = [];
 				const scan = () => {
 					const card = document.querySelector<HTMLElement>(`.glass-card[data-tab-id="${targetTabId}"]`);
 					const slider = card?.querySelector<HTMLElement>('.vol-slider');
@@ -569,19 +576,26 @@ Math.abs(Number.parseFloat(frame.fillWidth) - expectedFillPercent) < 0.000_001
 					const value = card?.querySelector<HTMLElement>('.vol-number');
 					if (!card || !slider || !fill || !value
 						|| card.hidden || getComputedStyle(card).display === 'none') return;
-					const frame = [
+					const color = [
 						getComputedStyle(slider).getPropertyValue('--slider-accent').trim(),
 						getComputedStyle(fill).backgroundColor,
 						getComputedStyle(value).color,
 					].join('|');
-					const trace = scope.__spectraFirstPaintColors;
-					if (trace && trace.at(-1) !== frame) trace.push(frame);
+					const frame: LifecycleFrame = {
+						coverage: card.dataset.lifecycleCoverage === 'known' ? 'known' : 'unknown',
+						color,
+						pending: card.dataset.mediaAvailability === 'pending',
+						inert: card.hasAttribute('inert'),
+						label: value.textContent?.trim() ?? '',
+					};
+					const trace = scope.__spectraFirstPaintTrace;
+					if (trace && JSON.stringify(trace.at(-1)) !== JSON.stringify(frame)) trace.push(frame);
 				};
 				new MutationObserver(scan).observe(document, {
 					attributes: true,
 					childList: true,
 					subtree: true,
-					attributeFilter: ['class', 'hidden', 'style'],
+					attributeFilter: ['class', 'hidden', 'style', 'inert', 'data-media-availability', 'data-lifecycle-coverage'],
 				});
 				const sample = () => {
 					scan();
@@ -594,13 +608,26 @@ Math.abs(Number.parseFloat(frame.fillWidth) - expectedFillPercent) < 0.000_001
 				await popup.goto(`chrome-extension://${extensionId}/popup.html`, { waitUntil: 'domcontentloaded' });
 				await popup.waitForSelector(`.glass-card[data-tab-id="${tabId}"] .vol-slider`);
 				await new Promise((resolveWait) => setTimeout(resolveWait, 250));
-				const trace = await popup.evaluate(() => (
-					(window as Window & typeof globalThis & { __spectraFirstPaintColors?: string[] })
-						.__spectraFirstPaintColors ?? []
-				));
+				const trace = await eventually(() => popup.evaluate(() => (
+					(window as Window & typeof globalThis & { __spectraFirstPaintTrace?: Array<{
+						coverage: 'known' | 'unknown'; color: string; pending: boolean; inert: boolean; label: string;
+					}> }).__spectraFirstPaintTrace ?? []
+				)), (frames) => frames.some((frame) => frame.coverage === 'known'), 'first confirmed processor lifecycle');
 				const blue = '#2563eb|rgb(37, 99, 235)|rgb(37, 99, 235)';
 				const purple = '#7c3aed|rgb(124, 58, 237)|rgb(124, 58, 237)';
-				expect(trace).toEqual([expectedColor === 'purple' ? purple : blue]);
+				// The visible pending template has theme paint, no route claim. Keep
+				// its samples and prove the unknown boundary instead of hiding cards
+				// until RPC. From the first known lifecycle onward, even one wrong
+				// native/Capture tone remains a failure.
+				const pending = trace.filter((frame) => frame.pending);
+				expect(pending.length).toBeGreaterThan(0);
+				expect(pending.every((frame) => frame.coverage === 'unknown' && frame.inert && frame.label === '—')).toBe(true);
+				const firstKnown = trace.findIndex((frame) => frame.coverage === 'known');
+				expect(firstKnown).toBeGreaterThanOrEqual(0);
+				expect(trace.slice(firstKnown).every((frame) => frame.coverage === 'known')).toBe(true);
+				const confirmedColors = trace.slice(firstKnown).map((frame) => frame.color)
+					.filter((color, index, colors) => index === 0 || color !== colors[index - 1]);
+				expect(confirmedColors).toEqual([expectedColor === 'purple' ? purple : blue]);
 			} finally {
 				await popup.close().catch(() => undefined);
 			}

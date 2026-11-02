@@ -342,18 +342,24 @@ describe('SPECTRA built extension smoke: page-media', () => {
 		try {
 			await cappedPage.goto(cappedUrl, { waitUntil: 'domcontentloaded' });
 			await waitForContentBootstrapStatus(cappedUrl);
-			// Finish any retained same-origin restore before sampling the baseline
-			// this transaction must preserve, rather than guessing the fixture's 1x.
+			// Snapshot reads are passive and do not wait for retained restoration.
+			// Establish a controller-confirmed baseline through the writer actor
+			// before testing the exact baseline that a capped attempt must restore.
 			const tabId = await getTabId(cappedUrl);
 			const initialized = await extensionClient.evaluate(async (id) => chrome.runtime.sendMessage({
 				protocolVersion: 2, requestId: crypto.randomUUID(), tabId: id,
 				type: 'spectra.control.snapshot.get', payload: { tabId: id },
 			}), tabId);
 			expect(initialized.ok).toBe(true);
+			await cappedPage.bringToFront();
+			const seeded = await submitPopupControlIntent(tabId, { patch: { speed: 1.5 } });
+			expect(seeded).toMatchObject({ ok: true, data: { fields: { speed: {
+				phase: 'applied', strategy: 'page-native', actual: 1.5,
+			} } } });
 			const controllerBaseline = await cappedPage.evaluate(() => (
 				(window as Window & { __spectraPageMediaState?: { speed: number } }).__spectraPageMediaState?.speed
 			));
-			await cappedPage.bringToFront();
+			expect(controllerBaseline).toBe(1.5);
 			const acknowledgement = await submitPopupControlIntent(
 				tabId,
 				{ patch: { speed: 4 } },
@@ -629,8 +635,8 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				feed.src = URL.createObjectURL(new Blob([Uint8Array.from(toneBytes)], { type: 'audio/wav' }));
 				await feed.play();
 			}, [...SMOKE_TONE_WAV]);
-			const seeded = await submitPopupControlIntent(tabId, { patch: { speed: 1.3 } });
-			expect(seeded).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 1.3 } } } });
+			const seeded = await submitPopupControlIntent(tabId, { patch: { speed: 2 } });
+			expect(seeded).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 2 } } } });
 			const feedTarget = seeded.ok ? seeded.data.target : null;
 			expect(feedTarget).not.toBeNull();
 			await page.evaluate(async () => {
@@ -646,13 +652,14 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				await modal.play();
 			});
 			await eventually(() => page.evaluate(() => document.querySelector<HTMLVideoElement>('#live-modal')?.playbackRate),
-				(rate) => rate === 1.3, 'new SPA live target receives retained speed');
-			const live = await submitPopupControlIntent(tabId, { patch: { speed: 2 } });
-			expect(live).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 2 } } } });
+				(rate) => rate === 2, 'new SPA live target inherits the document speed');
+			const live = await submitPopupControlIntent(tabId, { patch: { speed: 1.5 } });
+			expect(live).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 1.5 } } } });
 			await page.evaluate((closeMode) => {
 				const modal = document.querySelector<HTMLVideoElement>('#live-modal');
 				const feed = document.querySelector<HTMLVideoElement>('#v');
 				if (!modal || !feed || feed.paused) throw new Error('Expected a live modal above an already-playing feed');
+				(window as Window & { __spectraRetainedLive?: HTMLVideoElement }).__spectraRetainedLive = modal;
 				// The feed does not emit play again. Returning must come from the
 				// registry's close/visibility lifecycle, even without a URL change.
 				if (closeMode === 'detached') modal.remove();
@@ -671,6 +678,22 @@ describe('SPECTRA built extension smoke: page-media', () => {
 			const changed = await submitPopupControlIntent(tabId, { patch: { speed: 1.4 } });
 			expect(changed).toMatchObject({ ok: true, data: { target: feedTarget, fields: { speed: { actual: 1.4, phase: 'applied' } } } });
 			expect(await page.evaluate(() => document.querySelector<HTMLVideoElement>('#v')?.playbackRate)).toBe(1.4);
+			await page.evaluate(async () => {
+				const modal = (window as Window & { __spectraRetainedLive?: HTMLVideoElement }).__spectraRetainedLive;
+				if (!modal) throw new Error('Retained live scene is missing');
+				modal.style.display = '';
+				if (!modal.isConnected) document.body.append(modal);
+				await modal.play();
+			});
+			await eventually(() => client.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
+				protocolVersion: 2, requestId: crypto.randomUUID(), tabId: targetTabId,
+				type: 'spectra.control.snapshot.get', payload: { tabId: targetTabId },
+			}), tabId), (response) => response.ok
+				&& response.data?.activeMedia?.mediaId !== feedTarget?.mediaId
+				&& response.data.fields.speed?.controlled === true
+				&& response.data.fields.speed.actual === 1.5,
+			'returning live scene retains 1.5x instead of the feed document fallback 1.4x');
+			expect(await page.evaluate(() => document.querySelector<HTMLVideoElement>('#live-modal')?.playbackRate)).toBe(1.5);
 		} finally {
 			await client.close();
 			await page.close().catch(() => undefined);
@@ -881,6 +904,17 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				domSpeed: 2,
 			});
 			expect(mounted.url).toContain('/spa-modal?modal_id=');
+			// Route settlement wakes the retained 2x obligation before any new
+			// explicit adjustment. Prove this automatic writer separately, so the
+			// subsequent 2.5x request still has an exact one-write assertion.
+			await eventually(() => spaPage.evaluate(() => {
+				const state = (window as Window & {
+					__spectraPageMediaState?: { speed: number; writes: number };
+				}).__spectraPageMediaState;
+				return { pageSpeed: state?.speed, writes: state?.writes,
+					domSpeed: document.querySelector<HTMLVideoElement>('#v')?.playbackRate };
+			}), (state) => state.pageSpeed === 2 && state.domSpeed === 2 && state.writes === 1,
+			'route-settled controller maturation restores 2x exactly once');
 
 			const adjusted = await submitPopupControlIntent(
 				tabId,
@@ -916,7 +950,7 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				}),
 				(state) => state.documentToken === documentToken
 					&& state.pageSpeed === 2.5
-					&& state.writes === 1
+					&& state.writes === 2
 					&& state.domSpeed === 2.5,
 				'same-document SPA page-controller writer upgrade',
 			);

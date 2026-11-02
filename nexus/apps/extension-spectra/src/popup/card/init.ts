@@ -9,13 +9,12 @@ import { RUNTIME_OBSERVATION_PORT } from '../../shared/runtime-observation';
 import {
 	acknowledgedProcessorLifecycle,
 	evictCachedCardSnapshot,
-	hasKnownBackgroundRetentionInputs,
-	readCardSnapshot,
 	readInitialCardSnapshot,
 	resolveInitialProcessorLifecycle,
 	sessionBelongsToCard,
 } from './snapshot';
 import { isCurrentTopDocument } from '../../shared/top-document';
+import { mediaTabAvailability } from '../../shared/media-card-policy';
 import { registerCardRenderCallback } from '../views/settings';
 import { VISUALIZER_STATE_CHANGED_EVENT } from '../visualizer/events';
 import {
@@ -27,7 +26,7 @@ import {
 } from './types';
 import { createGetCapturing, createUpdateFn } from './state';
 import { isReportedControlFailure, openPopupControlTransport } from './control-port';
-import { createRenderFn } from './render';
+import { createRenderFn, setCardMaskVisible } from './render';
 import { createVolumeView } from './volume-view';
 import { bindCardEvents } from './events';
 import { setupCardMessaging } from './messaging';
@@ -88,14 +87,67 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   const getDictionary = params.getDictionary ?? (() => initialDictionary);
   const tabId = tab.id;
 
-  const snapshot = params.isBackground
-    ? await readCardSnapshot(tabId, { allowCached: params.allowCached })
-    : await readInitialCardSnapshot(tabId);
-  if (!snapshot || popupClosing) return false;
+  // Membership and structure already exist before any per-card observation.
+  // Availability never grants control authority over a retired document.
+  const { ui, cardEl } = prepareCardDom({ template, container, tab, dict: getDictionary(),
+    cardEl: params.cardEl, pending: true });
+  const cleanupStack: Array<() => void> = [];
+  let disposed = false;
+  const current = () => !disposed && !popupClosing && (params.isCurrent?.() ?? true);
+  const disposeCard = (): void => {
+    if (disposed) return;
+    disposed = true;
+    for (let index = cleanupStack.length - 1; index >= 0; index -= 1) {
+      try { cleanupStack[index]?.(); }
+      catch (error) { console.warn('[SPECTRA Popup] Card cleanup failed:', error); }
+    }
+    cleanupStack.length = 0;
+  };
+  const unregisterAttemptCleanup = registerCleanup?.(disposeCard);
+  if (unregisterAttemptCleanup) cleanupStack.push(unregisterAttemptCleanup);
+  window.addEventListener('pagehide', disposeCard, { once: true });
+  cleanupStack.push(() => params.onCardSetChanged?.(),
+    () => window.removeEventListener('pagehide', disposeCard), () => { if (!params.cardEl) cardEl.remove(); });
+  const showUnavailable = (availability: string): boolean => {
+    if (!current()) { disposeCard(); return false; }
+    const dictionary = getDictionary();
+    cardEl.dataset.mediaAvailability = availability;
+    cardEl.classList.add('media-unavailable');
+    cardEl.removeAttribute('inert');
+    cardEl.removeAttribute('aria-busy');
+    setCardMaskVisible(ui, true);
+    ui.maskText.textContent = dictionary.controlSyncUnavailable;
+    const hint = document.createElement('div');
+    hint.className = 'sleep-resume-hint';
+    hint.textContent = dictionary.btnGotoTab;
+    ui.maskText.append(hint);
+    ui.mask.setAttribute('aria-label', dictionary.btnGotoTab);
+    for (const control of cardEl.querySelectorAll<HTMLInputElement | HTMLButtonElement | HTMLSelectElement>('input, button, select')) {
+      control.disabled = control !== ui.btnGotoTab;
+    }
+    const activate = () => {
+      void chrome.tabs.update(tabId, { active: true }).catch((error: unknown) => {
+        if (current()) showPopupToast(error instanceof Error ? error.message : dictionary.controlSyncUnavailable, 'error');
+      });
+    };
+    ui.mask.onclick = activate;
+    ui.mask.onkeydown = (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); activate(); }
+    };
+    if (ui.btnGotoTab) { ui.btnGotoTab.classList.remove('hidden'); ui.btnGotoTab.onclick = activate; }
+    cleanupStack.push(() => { ui.mask.onclick = null; ui.mask.onkeydown = null; if (ui.btnGotoTab) ui.btnGotoTab.onclick = null; });
+    params.onBindingStateChanged?.({ available: false, documentId: null });
+    params.onCardSetChanged?.();
+    return true;
+  };
+  const availability = mediaTabAvailability(tab);
+  if (availability !== 'runnable') return showUnavailable(availability);
+  const snapshot = await readInitialCardSnapshot(tabId).catch(() => null);
+  if (!current()) { disposeCard(); return false; }
+  if (!snapshot) return showUnavailable('unavailable');
   const { documentId } = snapshot;
   const status = snapshot.status.state === 'known' ? snapshot.status.value : null;
   const controlSnapshot = snapshot.controlSnapshot.state === 'known' ? snapshot.controlSnapshot.value : null;
-  const isRemoteActive = snapshot.isRemoteActive.state === 'known' ? snapshot.isRemoteActive.value : null;
   let acknowledgedSession = snapshot.sessionSnapshot.state === 'known' ? snapshot.sessionSnapshot.value : null;
 
 	// Every observation is fenced to this card's exact document. The control
@@ -115,19 +167,6 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 		actualMode: lifecycle?.actualMode,
 		phase: lifecycle?.phase ?? 'idle',
 	});
-
-  const hasActiveMedia = tab.audible || isCaptureActive || status?.isPlaying === true;
-
-  // rule: retention logic ensures a card stays visible for a grace period after audio stops, allowing the user to resume control
-  if (params.isBackground && hasKnownBackgroundRetentionInputs(snapshot) && !hasActiveMedia && !isRemoteActive) {
-    const pauseRetentionSeconds = getGlobalSettings().pauseRetentionSeconds ?? 60;
-    if (pauseRetentionSeconds > 0 && status?.pausedAt) {
-      const pausedSeconds = (Date.now() - status.pausedAt) / 1000;
-      if (pausedSeconds > pauseRetentionSeconds) {
-        return false;
-      }
-    }
-  }
 
 	// ControlSnapshot owns every field-level actual. Runtime/session status below
 	// contributes lifecycle only and may never overwrite or backfill these fields.
@@ -162,30 +201,16 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   };
 
   // A document can retire after any asynchronous read; check again at the DOM commit boundary.
-  if (!await isCurrentTopDocument(tabId, documentId) || popupClosing) return false;
-  const { ui, cardEl } = prepareCardDom({ template, container, tab, dict: getDictionary() });
-  const cleanupStack: Array<() => void> = [];
-  let disposed = false;
-  const disposeCard = (): void => {
-    if (disposed) return;
-    disposed = true;
-    for (let index = cleanupStack.length - 1; index >= 0; index -= 1) {
-      try {
-        cleanupStack[index]?.();
-      } catch (error) {
-        console.warn('[SPECTRA Popup] Card cleanup failed:', error);
-      }
-    }
-    cleanupStack.length = 0;
-  };
-  const unregisterAttemptCleanup = registerCleanup?.(disposeCard);
-  if (unregisterAttemptCleanup) cleanupStack.push(unregisterAttemptCleanup);
-  window.addEventListener('pagehide', disposeCard, { once: true });
-  cleanupStack.push(
-    () => params.onCardSetChanged?.(),
-    () => window.removeEventListener('pagehide', disposeCard),
-    () => cardEl.remove(),
-  );
+  const documentCurrent = await isCurrentTopDocument(tabId, documentId);
+  if (!current()) { disposeCard(); return false; }
+  if (!documentCurrent) {
+    const shown = showUnavailable('unavailable');
+    params.onDocumentReplaced?.();
+    return shown;
+  }
+  prepareCardDom({ template, container, tab, dict: getDictionary(), cardEl });
+  cardEl.dataset.mediaAvailability = 'runnable';
+  params.onBindingStateChanged?.({ available: true, documentId });
 
   try {
   if (params.isBackground && ui.btnGotoTab) {
@@ -347,6 +372,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
       // re-init so the replacement reads the new document's durable facts instead
       // of re-painting the old card from the in-realm memory cache.
       evictCachedCardSnapshot(tabId);
+      if (params.onDocumentReplaced) { params.onDocumentReplaced(); return; }
       void chrome.tabs.get(tabId).then(async (currentTab) => {
         if (popupClosing) return;
         await initCard({ ...params, tab: currentTab });

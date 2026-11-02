@@ -7,6 +7,7 @@ import {
 	CONTROL_VALUE_LIMITS,
 	createBoundedMap,
 	createSpectraEvent,
+	compareMediaObservations,
 	isActiveCaptureLifecycle,
 	isControlApplyAck,
 	isControlObservationStrategy,
@@ -41,6 +42,7 @@ import {
 	type ControlSubmitRequest,
 	type ControlValues,
 	type MediaTarget,
+	type MediaObservationStamp,
 	type RpcError,
 } from '@nexus/contracts';
 import {
@@ -56,6 +58,7 @@ import {
 	nativeObservationFields,
 	neutralBoostObservation,
 	PAGE_OBSERVABLE_FIELDS,
+	ORDERED_MEDIA_FIELDS,
 	projectControlSessionPatch,
 	projectControlTarget,
 	RESET_AUDIO_PROCESSOR_PATCH,
@@ -64,6 +67,9 @@ import {
 	RESTORABLE_PROCESSOR_FIELDS,
 	RESTORABLE_TARGET_FIELDS,
 	sameMediaTarget,
+	sameMediaObservationSelection,
+	mergeMediaObservedFields,
+	retireMediaActualFields,
 	snapshotActualPatch,
 	stageSnapshot,
 	operationIntent,
@@ -133,6 +139,10 @@ const STORAGE_PREFIX = 'spectra.control.tab.';
 const GENERATION_PREFIX = 'spectra.control.generation.';
 const snapshots = new Map<number, ControlSnapshot>();
 const serialized = createKeyedSerializedQueue<number>();
+// This lane contains snapshot admission/storage only, never a media writer or
+// its stabilization wait. Physical playback samples can pass a slow speed ACK.
+const snapshotPublications = createKeyedSerializedQueue<number>();
+const retiredMediaSources = createBoundedMap<string, number>({ cap: 2_048, ttlMs: 300_000 });
 // Deferred per-tab session projections. Each commit answers its requester
 // before the projection runs; chaining per tab preserves commit order while
 // keeping the projection off the serialized ACK path of later commits.
@@ -391,6 +401,8 @@ async function getSnapshot(tabId: number): Promise<ControlSnapshot | null> {
 	const currentFence = navigationFences.get(tabId);
 	if (currentFence?.pending || currentFence?.beforeNavigate
 		|| currentFence && known.generation < currentFence.generationFloor) return null;
+	const latest = snapshots.get(tabId);
+	if (latest && latest.documentId === identity.documentId && latest.origin === identity.origin) return rememberSnapshot(latest);
 	snapshots.set(tabId, known);
 	return rememberSnapshot(known);
 }
@@ -431,7 +443,8 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 	}
 	assertPassiveReadFence(tabId, expectedEpoch, generation);
 	if (!mediaResponse?.ok && !videoResponse?.ok && !existing) return null;
-	const base: ControlSnapshot = existing ?? {
+	const latest = snapshots.get(tabId);
+	const base: ControlSnapshot = latest?.documentId === identity.documentId ? latest : existing ?? {
 		tabId,
 		documentId: identity.documentId,
 		origin: identity.origin,
@@ -441,6 +454,12 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 		activeVideo: null,
 		fields: {},
 	};
+	if (mediaResponse?.ok && mediaResponse.data.mediaObservation || videoResponse?.ok && videoResponse.data.mediaObservation) {
+		let admitted = base;
+		if (mediaResponse?.ok) admitted = await admitPhysicalObservation(admitted, mediaResponse.data, 'media', expectedEpoch);
+		if (videoResponse?.ok) admitted = await admitPhysicalObservation(admitted, videoResponse.data, 'video', expectedEpoch);
+		return admitted;
+	}
 	// A view read reports what the page currently shows, and it may not erase an
 	// applied extension-owned ACK. For a field the extension is controlling right
 	// now, the DOM value is the input the processor reads - not the effective
@@ -630,7 +649,157 @@ async function rollbackSnapshotPersistence(
 	}
 }
 
+interface PhysicalPublication {
+	fields: ControlFieldStates;
+	mediaObservation?: MediaObservationStamp;
+	observation?: boolean;
+	acknowledgementTarget?: MediaTarget | null;
+}
+
+function mediaSourceKey(tabId: number, target: MediaTarget): string {
+	return `${tabId}:${target.documentId}:${target.frameId}:${target.mediaId}:${target.sourceRevision}`;
+}
+
+function isRetiredMediaSample(tabId: number, target: MediaTarget | null, stamp?: MediaObservationStamp): boolean {
+	if (!target) return false;
+	const epoch = retiredMediaSources.get(mediaSourceKey(tabId, target));
+	return epoch !== undefined && (!stamp || stamp.epoch <= epoch);
+}
+
+function mediaSampleCanReplace(current: ControlSnapshot, stamp?: MediaObservationStamp): boolean {
+	if (!current.mediaObservation) return true;
+	if (!stamp) return false;
+	const order = compareMediaObservations(stamp, current.mediaObservation);
+	return order !== null && order >= 0;
+}
+
+function volumeObservationCanNormalize(current: ControlSnapshot, stamp?: MediaObservationStamp): boolean {
+	const previous = current.fields.volumeBase?.mediaObservation;
+	// Replayed/older evidence of the volume field is not another page gesture.
+	// A newer playing sample alone does not make the volume evidence obsolete.
+	return !previous || !!stamp && compareMediaObservations(stamp, previous) === 1;
+}
+
+function assertMediaAcknowledgementCurrent(
+	current: ControlSnapshot,
+	target: MediaTarget | null,
+	stamp: MediaObservationStamp | undefined,
+	fields: ControlFieldStates,
+): void {
+	if (isRetiredMediaSample(current.tabId, target, stamp)) throw new Error('Control ACK belongs to a retired media source');
+	if (!current.mediaObservation) return;
+	if (!stamp) {
+		if (Object.entries(fields).some(([field, state]) => ORDERED_MEDIA_FIELDS.has(field as ControlField)
+			&& state && !(state.desired === null && !state.controlled && state.lastError === null))) {
+			throw new Error('An unstamped ACK cannot replace ordered media facts');
+		}
+		return;
+	}
+	const order = compareMediaObservations(stamp, current.mediaObservation);
+	if (order === null || order < 0 && (!sameMediaObservationSelection(stamp, current.mediaObservation)
+		|| !sameMediaTarget(target, current.activeMedia) && !sameMediaTarget(target, current.activeVideo))) {
+		throw new Error('Control ACK belongs to an older media selection');
+	}
+}
+
+async function admitPhysicalObservation(
+	base: ControlSnapshot,
+	result: ControlReadResult,
+	scope: 'media' | 'video' = 'media',
+	expectedEpoch = navigationEpoch(base.tabId),
+): Promise<ControlSnapshot> {
+	if (result.target && result.target.documentId !== base.documentId) throw new Error('Physical sample belongs to a stale document');
+	if (base.mediaObservation && !result.mediaObservation) return snapshots.get(base.tabId) ?? base;
+	if (isRetiredMediaSample(base.tabId, result.target, result.mediaObservation)) return snapshots.get(base.tabId) ?? base;
+	const fields = nativeObservationFields(result, base.revision);
+	const proposed: ControlSnapshot = {
+		...base,
+		activeMedia: scope === 'media' ? result.target : base.activeMedia,
+		activeVideo: scope === 'video' ? result.target?.kind === 'video' ? result.target : null
+			: result.target?.kind === 'video' ? result.target : base.activeVideo,
+		fields: { ...base.fields, ...fields },
+		...(result.mediaObservation ? { mediaObservation: result.mediaObservation } : {}),
+	};
+	return publishSnapshot(proposed, expectedEpoch, { fields, mediaObservation: result.mediaObservation, observation: true });
+}
+
+function mergeSnapshotPublication(
+	current: ControlSnapshot | undefined,
+	proposed: ControlSnapshot,
+	physical?: PhysicalPublication,
+): ControlSnapshot {
+	if (!current || current.documentId !== proposed.documentId || current.generation !== proposed.generation) return {
+		...proposed, fields: mergeMediaObservedFields({}, proposed.fields, physical?.mediaObservation ?? proposed.mediaObservation, physical?.observation === true),
+	};
+	const stamp = physical ? physical.mediaObservation : proposed.mediaObservation;
+	const retiredSample = isRetiredMediaSample(proposed.tabId, proposed.activeMedia, stamp);
+	const replacesSelection = mediaSampleCanReplace(current, stamp)
+		&& !retiredSample;
+	const sameSelection = !retiredSample && stamp && current.mediaObservation
+		&& sameMediaTarget(proposed.activeMedia, current.activeMedia) && sameMediaObservationSelection(stamp, current.mediaObservation);
+	let delta = physical?.fields ?? proposed.fields;
+	const sameUnstampedTarget = !stamp && sameMediaTarget(proposed.activeMedia, current.activeMedia)
+		&& (!physical || !Object.hasOwn(physical, 'acknowledgementTarget')
+			|| sameMediaTarget(physical.acknowledgementTarget ?? null, current.activeMedia)
+			|| sameMediaTarget(physical.acknowledgementTarget ?? null, current.activeVideo));
+	if (!replacesSelection && !sameSelection && !sameUnstampedTarget) {
+		const scoped = retireMediaActualFields(delta, true, true, proposed.revision);
+		delta = Object.fromEntries(Object.entries(delta).filter(([field]) => !Object.hasOwn(scoped, field))) as ControlFieldStates;
+	}
+	const activeMedia = replacesSelection ? proposed.activeMedia : current.activeMedia;
+	const activeVideo = replacesSelection ? proposed.activeVideo : current.activeVideo;
+	const ownerChanged = !!stamp && !!current.mediaObservation && stamp.epoch !== current.mediaObservation.epoch;
+	const retired = replacesSelection ? retireMediaActualFields(current.fields,
+		ownerChanged || !sameMediaTarget(current.activeMedia, activeMedia),
+		ownerChanged || !sameMediaTarget(current.activeVideo, activeVideo), proposed.revision) : {};
+	return {
+		...proposed,
+		activeMedia,
+		activeVideo,
+		fields: mergeMediaObservedFields({ ...current.fields, ...retired }, delta, stamp, physical?.observation === true),
+		...(replacesSelection && stamp ? { mediaObservation: stamp }
+			: current.mediaObservation ? { mediaObservation: current.mediaObservation } : {}),
+	};
+}
+
 async function publishSnapshot(
+	proposed: ControlSnapshot,
+	expectedEpoch = navigationEpoch(proposed.tabId),
+	physical?: PhysicalPublication,
+): Promise<ControlSnapshot> {
+	return snapshotPublications(proposed.tabId, async () => {
+		assertNavigationFence(proposed.tabId, expectedEpoch, proposed);
+		const current = snapshots.get(proposed.tabId);
+		if (current && physical && Object.hasOwn(physical, 'acknowledgementTarget')) {
+			assertMediaAcknowledgementCurrent(current, physical.acknowledgementTarget ?? null, physical.mediaObservation, physical.fields);
+		}
+		const aligned = physical?.observation && current && current.documentId === proposed.documentId
+			&& current.generation === proposed.generation && current.revision > proposed.revision
+			? { ...proposed, revision: current.revision } : proposed;
+		if (current && current.documentId === proposed.documentId && current.generation === proposed.generation
+			&& current.revision > aligned.revision) throw new Error('Snapshot publication lost its control revision');
+		const snapshot = mergeSnapshotPublication(current, aligned, physical);
+		const unchanged = current && current.documentId === snapshot.documentId && current.origin === snapshot.origin
+			&& current.generation === snapshot.generation && current.revision === snapshot.revision
+			&& sameMediaTarget(current.activeMedia, snapshot.activeMedia) && sameMediaTarget(current.activeVideo, snapshot.activeVideo)
+			&& Object.keys(snapshot.fields).every((key) => {
+				const field = key as ControlField;
+				const before = current.fields[field];
+				const after = snapshot.fields[field];
+				return before?.actual === after?.actual && before?.controlled === after?.controlled
+					&& before?.phase === after?.phase && before?.strategy === after?.strategy
+					&& before?.lastError === after?.lastError;
+			});
+		if (unchanged) {
+			snapshots.set(snapshot.tabId, rememberSnapshot(snapshot));
+			return snapshot;
+		}
+		await persistPublishedSnapshot(snapshot, expectedEpoch);
+		return snapshot;
+	});
+}
+
+async function persistPublishedSnapshot(
 	snapshot: ControlSnapshot,
 	expectedEpoch = navigationEpoch(snapshot.tabId),
 ): Promise<void> {
@@ -775,12 +944,15 @@ interface PreparedControlIntent {
 	activeMedia: ControlSnapshot['activeMedia'];
 	activeVideo: ControlSnapshot['activeVideo'];
 	fields: ControlFieldStates;
+	mediaObservation?: MediaObservationStamp;
 }
 
 interface CommitControlProjection {
+	acknowledgementTarget?: MediaTarget | null;
 	activeVideo?: ControlSnapshot['activeVideo'];
 	acknowledgedSessionPatch?: ControlSessionPatch;
 	sessionScope?: TabControlSessionScope | 'none';
+	mediaObservation?: MediaObservationStamp;
 }
 
 // post: distinguishes a rejected base revision (retryable after a snapshot
@@ -812,6 +984,8 @@ async function prepareIntent(
 		&& request.observationDocumentId !== snapshot.documentId) {
 		throw new Error('The bootstrap observation belongs to a stale document');
 	}
+	if (request.source === 'page') assertMediaAcknowledgementCurrent(snapshot, request.target, request.mediaObservation,
+		nativeObservationFields({ patch: request.patch ?? {}, observedStrategies: request.observedStrategies ?? {} }, snapshot.revision));
 
 	const resolvedRequest = await resolveSubmitRequest(snapshot, request);
 	const intent = createIntent(snapshot, resolvedRequest, intentId ?? crypto.randomUUID());
@@ -822,6 +996,7 @@ async function prepareIntent(
 	let fields: ControlFieldStates = { ...chromeResult.fields };
 	let ackTarget = intent.target;
 	let audioVolume: ControlApplyAck['audioVolume'];
+	let mediaObservation = request.mediaObservation;
 	let activeMedia = snapshot.activeMedia;
 	let activeVideo = snapshot.activeVideo;
 	if (pageObservation) {
@@ -831,7 +1006,8 @@ async function prepareIntent(
 			intent.target,
 		));
 	}
-	if (pageObservation && typeof intent.patch.volumeBase === 'number') {
+	if (pageObservation && typeof intent.patch.volumeBase === 'number'
+		&& volumeObservationCanNormalize(snapshot, request.mediaObservation)) {
 		const knownBoost = snapshot.fields.boost?.actual;
 		const session = typeof knownBoost === 'number'
 			? null
@@ -916,6 +1092,7 @@ async function prepareIntent(
 			throw new Error('Content runtime returned a stale control ACK');
 		}
 		ackTarget = response.data.target;
+		mediaObservation = response.data.mediaObservation;
 		audioVolume = response.data.audioVolume;
 		({ activeMedia, activeVideo } = projectControlTarget(
 			snapshot,
@@ -934,7 +1111,9 @@ async function prepareIntent(
 		|| baseline.revision !== intent.baseRevision) {
 		throw new Error('Control ACK arrived after the document or revision changed');
 	}
-	return { intent, baseline, ackTarget, activeMedia, activeVideo, fields, ...(audioVolume ? { audioVolume } : {}) };
+	assertMediaAcknowledgementCurrent(baseline, ackTarget, mediaObservation, fields);
+	fields = mergeMediaObservedFields({}, fields, mediaObservation, false);
+	return { intent, baseline, ackTarget, activeMedia, activeVideo, fields, mediaObservation, ...(audioVolume ? { audioVolume } : {}) };
 }
 
 async function commitControlFields(
@@ -958,14 +1137,15 @@ async function commitControlFields(
 		: activeMedia?.kind === 'video'
 			? activeMedia
 			: baseline.activeVideo;
-	const committed: ControlSnapshot = {
+	let committed: ControlSnapshot = {
 		...current,
 		revision,
 		activeMedia,
 		activeVideo,
 		fields: { ...current.fields, ...fields },
 	};
-	await publishSnapshot(committed, expectedEpoch);
+	committed = await publishSnapshot(committed, expectedEpoch, { fields, mediaObservation: projection.mediaObservation,
+		...(Object.hasOwn(projection, 'acknowledgementTarget') ? { acknowledgementTarget: projection.acknowledgementTarget } : {}) });
 	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
 	if (Object.entries(fields).some(([field, state]) => RUNTIME_RESIDENT_NATIVE_FIELDS.has(field as ControlField)
 		&& state?.phase === 'applied' && state.controlled)) {
@@ -1031,13 +1211,15 @@ async function executeIntent(
 ): Promise<ControlApplyAck> {
 	const current = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
 	const prepared = await prepareIntent(request, current, intentId);
-	const { intent, baseline, ackTarget, activeMedia, activeVideo, fields } = prepared;
+	const { intent, baseline, ackTarget, activeMedia, activeVideo, fields, mediaObservation } = prepared;
 	const committed = await commitControlFields(
 		baseline,
 		fields,
 		activeMedia,
 		{
 			activeVideo,
+			acknowledgementTarget: ackTarget,
+			mediaObservation,
 			sessionScope: controlSessionScopeForSource(intent.source),
 		},
 	);
@@ -1049,7 +1231,8 @@ async function executeIntent(
 		generation: intent.generation,
 		revision: committed.revision,
 		target: ackTarget,
-		fields,
+		fields: Object.fromEntries(Object.keys(fields).map((field) => [field, committed.fields[field as ControlField]])) as ControlFieldStates,
+		...(committed.mediaObservation ? { mediaObservation: committed.mediaObservation } : {}),
 		...(audioVolume ? { audioVolume } : {}),
 	};
 }
@@ -1210,6 +1393,7 @@ async function prepareContentOperation(
 		|| current.revision !== intent.baseRevision) {
 		throw new Error('Control operation ACK arrived after the document or revision changed');
 	}
+	assertMediaAcknowledgementCurrent(current, ack.target, ack.mediaObservation, ack.fields);
 	return { intent, baseline: current, acknowledgement: ack };
 }
 
@@ -1227,13 +1411,20 @@ async function commitContentOperation(
 		projection.activeMedia,
 		{
 			activeVideo: projection.activeVideo,
+			acknowledgementTarget: acknowledgement.target,
+			mediaObservation: acknowledgement.mediaObservation,
 			sessionScope: controlSessionScopeForSource(source),
 		},
 	);
 	if (committed.revision !== intent.baseRevision + 1) {
 		throw new Error('Control operation committed an unexpected revision');
 	}
-	return { ...acknowledgement, revision: committed.revision } as ControlOperationAck;
+	return { ...acknowledgement, revision: committed.revision,
+		fields: Object.fromEntries(Object.keys(acknowledgement.fields).map((field) => [field, committed.fields[field as ControlField]])) as ControlFieldStates,
+		...(acknowledgement.operation === 'playback-toggle' && typeof committed.fields.playing?.actual === 'boolean'
+			? { result: { playing: committed.fields.playing.actual } } : {}),
+		...(committed.mediaObservation ? { mediaObservation: committed.mediaObservation } : {}),
+	} as ControlOperationAck;
 }
 
 async function routeContentOperation(
@@ -1266,25 +1457,37 @@ function reconcileOperationSourceOwnership(ack: ControlOperationAck): void {
 	if (ack.operation === 'ab-clear') releaseSourceRuntimeLease(ack.tabId, target, 'ab');
 }
 
-async function handleSourceReleased(tabId: number, target: import('@nexus/contracts').MediaTarget): Promise<void> {
-	releaseSourceRuntimeLease(tabId, target, 'marker');
-	releaseSourceRuntimeLease(tabId, target, 'ab');
+async function handleSourceReleased(
+	tabId: number,
+	target: MediaTarget,
+	mediaObservation?: MediaObservationStamp,
+): Promise<void> {
 	const snapshot = await getSnapshot(tabId);
 	if (!snapshot || snapshot.documentId !== target.documentId) return;
 	const ownsActiveSource = snapshot.activeMedia?.mediaId === target.mediaId
 		&& snapshot.activeMedia.sourceRevision === target.sourceRevision;
 	const ownsActiveVideo = snapshot.activeVideo?.mediaId === target.mediaId
 		&& snapshot.activeVideo.sourceRevision === target.sourceRevision;
+	const canReplace = mediaSampleCanReplace(snapshot, mediaObservation);
+	if (snapshot.mediaObservation && (!mediaObservation
+		|| mediaObservation.epoch < snapshot.mediaObservation.epoch
+		|| mediaObservation.epoch === snapshot.mediaObservation.epoch && mediaObservation.owner !== snapshot.mediaObservation.owner)) return;
+	if (!canReplace && (ownsActiveSource || ownsActiveVideo)) return;
+	releaseSourceRuntimeLease(tabId, target, 'marker');
+	releaseSourceRuntimeLease(tabId, target, 'ab');
+	retiredMediaSources.set(mediaSourceKey(tabId, target), mediaObservation?.epoch ?? 0);
+	if (!canReplace) return;
 	const ab = snapshot.fields.abLoop;
 	if (!ownsActiveSource && !ownsActiveVideo
 		&& (!ab || ab.phase === 'idle' || !ab.controlled)) return;
 	const intentId = crypto.randomUUID();
-	const fields: ControlFieldStates = ab && (ownsActiveSource || snapshot.activeMedia === null)
+	const fields: ControlFieldStates = { ...retireMediaActualFields(snapshot.fields, ownsActiveSource, ownsActiveVideo, snapshot.revision),
+		...(ab && (ownsActiveSource || snapshot.activeMedia === null)
 		? {
 			abLoop: {
 				desired: null,
 				actual: { pointA: null, pointB: null, enabled: false },
-				revision: snapshot.revision + 1,
+				revision: snapshot.revision,
 				phase: 'idle',
 				strategy: CONTROL_STRATEGY_EXTENSION,
 				coverage: CONTROL_COVERAGE_TARGET,
@@ -1293,26 +1496,36 @@ async function handleSourceReleased(tabId: number, target: import('@nexus/contra
 				lastError: null,
 			},
 		}
-		: {};
-	await commitControlFields(
-		snapshot,
-		fields,
-		ownsActiveSource ? null : snapshot.activeMedia,
-		{
-			activeVideo: ownsActiveVideo ? null : snapshot.activeVideo,
-			sessionScope: 'resource',
-		},
-	);
+		: {}),
+	};
+	if (mediaObservation) {
+		for (const field of Object.values(fields)) if (field) field.mediaObservation = mediaObservation;
+	}
+	await publishSnapshot({ ...snapshot, fields: { ...snapshot.fields, ...fields },
+		activeMedia: ownsActiveSource ? null : snapshot.activeMedia,
+		activeVideo: ownsActiveVideo ? null : snapshot.activeVideo,
+	}, navigationEpoch(tabId), { fields, mediaObservation, observation: true });
 }
 
 async function handleTargetChanged(
 	tabId: number,
 	target: import('@nexus/contracts').MediaTarget,
+	mediaObservation?: MediaObservationStamp,
 ): Promise<void> {
-	const baseline = await getOrCreateSnapshot(tabId);
+	let baseline = await getOrCreateSnapshot(tabId);
 	if (target.frameId !== 0 || target.documentId !== baseline.documentId) {
 		throw new Error('Active media selection belongs to a stale or unsupported frame');
 	}
+	if (mediaObservation) {
+		if (!mediaSampleCanReplace(baseline, mediaObservation) || isRetiredMediaSample(tabId, target, mediaObservation)) return;
+		baseline = await admitPhysicalObservation(baseline, { target, patch: {}, observedStrategies: {}, mediaObservation });
+		const response = await readSpectraTabPassively(tabId, PROTO_ACTUAL_READ,
+			{ fields: [...PAGE_OBSERVABLE_FIELDS] as ControlDirectField[], target },
+			{ documentId: baseline.documentId, generation: baseline.generation });
+		if (response.ok && sameMediaTarget(response.data.target, target)) await admitPhysicalObservation(baseline, response.data);
+		return;
+	}
+	if (baseline.mediaObservation) return;
 	if (sameMediaTarget(baseline.activeMedia, target)
 		&& (target.kind !== 'video' || sameMediaTarget(baseline.activeVideo, target))) return;
 	const response = await sendSpectraTabRequest(
@@ -1563,12 +1776,13 @@ async function executeFieldOperation(
 			}
 		}
 		const observedFields: ControlFieldStates = readback?.ok
-			? nativeObservationFields(
+			? mergeMediaObservedFields({}, nativeObservationFields(
 				{ patch: nativeReadbackPatch, observedStrategies: readback.data.observedStrategies },
 				baseline.revision + 1,
-			)
+			), readback.data.mediaObservation, true)
 			: {};
 		let fields: ControlFieldStates = { ...observedFields };
+		let mediaObservation = readback?.ok ? readback.data.mediaObservation : undefined;
 		try {
 			let staged = baseline;
 			let physicalVolumeBase = current.volumeBase;
@@ -1585,6 +1799,8 @@ async function executeFieldOperation(
 					patch,
 				}, staged);
 				fields = { ...fields, ...prepared.fields };
+				if (prepared.mediaObservation && (!mediaObservation
+					|| compareMediaObservations(prepared.mediaObservation, mediaObservation) === 1)) mediaObservation = prepared.mediaObservation;
 				if (assertion === 'apply') {
 					assertAppliedPatch(
 						prepared.fields,
@@ -1703,12 +1919,13 @@ async function executeFieldOperation(
 			const actualBoost = typeof fields.boost?.actual === 'number'
 				? fields.boost.actual
 				: current.boost;
-			const effectiveVolume = compileEffectiveVolume(actualVolumeBase, actualBoost);
 			const committed = await commitControlFields(
 				baseline,
 				fields,
 				target,
 				{
+					mediaObservation,
+					acknowledgementTarget: target,
 					// Effective volume is one public value backed by two actual
 					// fields. Persist the complete read-back pair even when one
 					// component was already correct and needed no writer stage.
@@ -1719,11 +1936,14 @@ async function executeFieldOperation(
 					sessionScope: controlSessionScopeForSource(request.source),
 				},
 			);
+			const committedVolumeBase = typeof committed.fields.volumeBase?.actual === 'number' ? committed.fields.volumeBase.actual : actualVolumeBase;
+			const committedBoost = typeof committed.fields.boost?.actual === 'number' ? committed.fields.boost.actual : actualBoost;
+			const committedEffectiveVolume = compileEffectiveVolume(committedVolumeBase, committedBoost);
 			const audioVolume = currentMuted === null ? null : {
-				effectiveVolume,
+				effectiveVolume: committedEffectiveVolume,
 				volumeState: resolveAcknowledgedAudioVolumeState(
 					committed.fields,
-					effectiveVolume,
+					committedEffectiveVolume,
 					currentMuted,
 				),
 			};
@@ -1736,10 +1956,11 @@ async function executeFieldOperation(
 				target,
 				operation: request.operation,
 				strategy: CONTROL_STRATEGY_EXTENSION,
-				coverage: actualBoost === 1 ? CONTROL_COVERAGE_TARGET : 'full',
-				fields,
+				coverage: committedBoost === 1 ? CONTROL_COVERAGE_TARGET : 'full',
+				fields: Object.fromEntries(Object.keys(fields).map((field) => [field, committed.fields[field as ControlField]])) as ControlFieldStates,
+				...(committed.mediaObservation ? { mediaObservation: committed.mediaObservation } : {}),
 				...(audioVolume ? { audioVolume } : {}),
-				result: { effectiveVolume, volumeBase: actualVolumeBase, boost: actualBoost },
+				result: { effectiveVolume: committedEffectiveVolume, volumeBase: committedVolumeBase, boost: committedBoost },
 			};
 		} catch (error) {
 			const compensation = await compensateControlPatch(
@@ -1761,17 +1982,6 @@ async function executeFieldOperation(
 			throw error;
 		}
 	}
-		if (request.operation === 'playback-toggle') {
-			const fieldAck = await executeIntent({
-				...common,
-				requestedCoverage: CONTROL_COVERAGE_TARGET,
-				mutations: [{ field: 'playing', operation: 'toggle' }],
-			});
-			assertAppliedFields(fieldAck.fields, ['playing'], 'Playback toggle');
-			const playing = fieldAck.fields.playing?.actual;
-			if (typeof playing !== 'boolean') throw new Error('Playback toggle did not return actual state');
-			return createFieldOperationAck(operationId, request.operation, fieldAck, 'playing', { playing });
-		}
 		if (request.operation === 'seek-relative') {
 			const fieldAck = await executeIntent({
 				...common,
@@ -1939,8 +2149,7 @@ async function executeControlOperation(
 	if (request.target && request.target.documentId !== snapshot.documentId) {
 		throw new Error('The selected media target belongs to a stale document');
 	}
-	if (request.operation === 'playback-toggle'
-		|| request.operation === 'effective-volume'
+	if (request.operation === 'effective-volume'
 		|| request.operation === 'seek-relative'
 		|| request.operation === 'audio-reset'
 		|| request.operation === 'video-effects-toggle'
@@ -2020,13 +2229,15 @@ async function executeControlOperation(
 				baseline,
 				fields,
 				released.target,
-				{ sessionScope: controlSessionScopeForSource(request.source) },
+				{ sessionScope: controlSessionScopeForSource(request.source), acknowledgementTarget: released.target,
+					mediaObservation: processorPrepared.mediaObservation ?? released.mediaObservation },
 			);
 			releaseMediaIntentRuntimeLease(committed.tabId, committed.documentId);
 			return {
 				...released,
 				revision: committed.revision,
-				fields,
+				fields: Object.fromEntries(Object.keys(fields).map((field) => [field, committed.fields[field as ControlField]])) as ControlFieldStates,
+				...(committed.mediaObservation ? { mediaObservation: committed.mediaObservation } : {}),
 				result: {
 					releasedFields: [
 						...new Set([
@@ -2110,6 +2321,7 @@ function submitSerialized(
 	request: RoutedControlSubmitRequest,
 	invocation?: ExtensionInvocationContext,
 ): Promise<ControlApplyAck> {
+	if (request.source === 'page' && request.mediaObservation) return submitOrderedPageObservation(request);
 	const initialize = request.source === 'restore'
 		|| request.source === 'page' && request.target !== null
 		? Promise.resolve()
@@ -2153,6 +2365,43 @@ function submitSerialized(
 			revokeCaptureAdmission(captureAdmission);
 		}
 	}));
+}
+
+async function submitOrderedPageObservation(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
+	const baseline = await getOrCreateSnapshot(request.tabId);
+	if (request.target && request.target.documentId !== baseline.documentId
+		|| request.target === null && request.observationDocumentId !== baseline.documentId) {
+		throw new Error('Physical page observation belongs to a stale document');
+	}
+	const intent = createIntent(baseline, { ...request, patch: request.patch ?? {} }, crypto.randomUUID());
+	const fields = applyPageObservation(intent, request.observedStrategies);
+	const sameSelection = request.mediaObservation && baseline.mediaObservation
+		&& sameMediaObservationSelection(request.mediaObservation, baseline.mediaObservation)
+		&& sameMediaTarget(request.target, baseline.activeMedia);
+	// A newer sample of another field can advance the selection's maxclock
+	// while this partial sample is in flight. Field clocks decide those values;
+	// only another selection/owner or a retired source rejects the whole batch.
+	if (!mediaSampleCanReplace(baseline, request.mediaObservation) && !sameSelection
+		|| isRetiredMediaSample(request.tabId, request.target, request.mediaObservation)) {
+		return { intentId: intent.intentId, tabId: baseline.tabId, documentId: baseline.documentId,
+			generation: baseline.generation, revision: baseline.revision, target: baseline.activeMedia, fields: {},
+			...(baseline.mediaObservation ? { mediaObservation: baseline.mediaObservation } : {}) };
+	}
+	// Processor normalization remains an effectful control transaction. Pure
+	// native observations (especially playing) never wait behind that actor.
+	if (typeof request.patch?.volumeBase === 'number' && volumeObservationCanNormalize(baseline, request.mediaObservation)) {
+		const known = baseline.fields.boost?.actual;
+		const session = typeof known === 'number' ? null : await getAudioSession(baseline.tabId).catch(() => null);
+		const boost = typeof known === 'number' ? known : session?.documentId === baseline.documentId
+			&& session.generation === baseline.generation ? resolveAudioVolume(session.actualConfig).boost : 1;
+		if (boost !== 1) return serialized(request.tabId, () => executeIntent(request));
+	}
+	const current = await admitPhysicalObservation(baseline, { target: request.target, patch: request.patch ?? {},
+		observedStrategies: request.observedStrategies ?? {}, mediaObservation: request.mediaObservation });
+	return { intentId: intent.intentId, tabId: current.tabId, documentId: current.documentId,
+		generation: current.generation, revision: current.revision, target: current.activeMedia,
+		fields: Object.fromEntries(Object.keys(fields).map((field) => [field, current.fields[field as ControlField]])) as ControlFieldStates,
+		...(current.mediaObservation ? { mediaObservation: current.mediaObservation } : {}) };
 }
 
 function submitOperationSerialized(
@@ -2306,6 +2555,7 @@ async function removeTab(tabId: number): Promise<void> {
 		forgetCaptureAdmissionsForTab(tabId);
 		if (navigationEpoch(tabId) === expectedEpoch) navigationFences.delete(tabId);
 		stalePersistedSnapshots.delete(tabId);
+		for (const key of retiredMediaSources.keys()) if (key.startsWith(`${tabId}:`)) retiredMediaSources.delete(key);
 	}
 }
 
@@ -2370,21 +2620,32 @@ function queueNavigationInvalidation(
 	fence.pending = true;
 	fence.settled = false;
 	fence.settlement = operation;
-	void operation.then(
-		() => {
+	const settlement = operation.then(
+		async () => {
 			if (navigationFences.get(tabId) !== fence) return;
 			fence.pending = false;
 			fence.settled = true;
 			fence.settlement = undefined;
+			if (!preserveDocumentState) return;
+			const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
+			const current = snapshots.get(tabId);
+			if (!frame?.documentId || !current || current.documentId !== frame.documentId
+				|| navigationFences.get(tabId) !== fence || fence.pending) return;
+			const event = createSpectraEvent('spectra.navigation.changed', { url: frame.url }, {
+				tabId, documentId: current.documentId, generation: current.generation,
+			});
+			void chrome.tabs.sendMessage(tabId, event, { documentId: current.documentId }).catch(() => undefined);
 		},
-		() => {
+		(error: unknown) => {
 			if (navigationFences.get(tabId) !== fence) return;
 			fence.pending = false;
 			fence.settled = false;
 			fence.settlement = undefined;
+			throw error;
 		},
 	);
-	return operation;
+	fence.settlement = settlement;
+	return settlement;
 }
 
 function invalidateNavigation(
@@ -2440,7 +2701,7 @@ export function initializeControlCoordinator(): void {
 				sendResponse(rpcFailure('forbidden', 'Source lifecycle must match its sending document'));
 				return false;
 			}
-			void serialized(tabId, () => handleSourceReleased(tabId, message.payload.target)).then(
+			void handleSourceReleased(tabId, message.payload.target, message.payload.mediaObservation).then(
 				() => sendResponse(rpcSuccess({ accepted: true as const })),
 				(error) => sendResponse(rpcFailure(
 					'source_release_failed',
@@ -2457,7 +2718,7 @@ export function initializeControlCoordinator(): void {
 				sendResponse(rpcFailure('forbidden', 'Active media selection must match its sending document'));
 				return false;
 			}
-			void serialized(tabId, () => handleTargetChanged(tabId, message.payload.target)).then(
+			void handleTargetChanged(tabId, message.payload.target, message.payload.mediaObservation).then(
 				() => sendResponse(rpcSuccess({ accepted: true as const })),
 				(error) => sendResponse(rpcFailure(
 					'target_change_failed',
@@ -2469,8 +2730,7 @@ export function initializeControlCoordinator(): void {
 		}
 
 		if (message.type === PROTO_SNAPSHOT_GET) {
-			void awaitDocumentInitialization(message.payload.tabId)
-				.then(() => getControlViewSnapshot(message.payload.tabId)).then(
+			void getControlViewSnapshot(message.payload.tabId).then(
 				(snapshot) => sendResponse(rpcSuccess(snapshot)),
 				(error) => sendResponse(rpcFailure('snapshot_unavailable', String(error), true)),
 			);
@@ -2607,6 +2867,7 @@ export const controlCoordinatorTestApi = {
 	flushSessionProjections,
 	async reset(): Promise<void> {
 		await serialized.drain();
+		await snapshotPublications.drain();
 		// Drain the repository's trailing debounce while the test/background
 		// Chrome storage owner still exists. Otherwise a late timer can outlive
 		// the service-worker harness and write through a deleted global.
@@ -2616,6 +2877,7 @@ export const controlCoordinatorTestApi = {
 		// the same storage rows).
 		await flushSessionProjections();
 		snapshots.clear();
+		retiredMediaSources.clear();
 		navigationFences.clear();
 		stalePersistedSnapshots.clear();
 		initialized = false;

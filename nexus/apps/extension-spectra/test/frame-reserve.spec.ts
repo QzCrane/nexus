@@ -1,20 +1,9 @@
-// goal: pin the only two decisions that happen before the Popup can paint
-//
-// The theme and the frame have to be right in the *first* frame, so they cannot
-// be tested through the Popup module - that module runs after the paint. These
-// cases execute the shipped head script itself against a stub document, which is
-// the same code Chrome runs before it shows the window.
+// goal: pin theme/surface prepaint and reject every historical height hint
 import { describe, expect, test } from 'bun:test';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { injectFrameHeightKey } from '../scripts/frame-reserve-key';
-import {
-	FRAME_HEIGHT_KEY,
-	FRAME_HEIGHT_KEY_LAST,
-	FRAME_MAX_HEIGHT_PX,
-	THEME_MODE_KEY,
-	frameHeightKeyForCards,
-} from '../src/shared/popup-bootstrap';
+import { THEME_MODE_KEY } from '../src/shared/popup-bootstrap';
 
 const shippedHeadScript = injectFrameHeightKey(
 	readFileSync(resolve(import.meta.dir, '../public/frame-reserve.js'), 'utf8'),
@@ -24,6 +13,7 @@ interface HeadScriptRun {
 	attributes: Map<string, string>;
 	height: string;
 	overflowY: string;
+	reads: string[];
 }
 
 function runHeadScript(options: {
@@ -33,6 +23,7 @@ function runHeadScript(options: {
 	isActionPopup?: boolean;
 } = {}): HeadScriptRun {
 	const attributes = new Map<string, string>();
+	const reads: string[] = [];
 	const style = { height: '', overflowY: '' };
 	const html = {
 		style,
@@ -41,6 +32,7 @@ function runHeadScript(options: {
 	const window = {
 		localStorage: {
 			getItem(key: string): string | null {
+				reads.push(key);
 				return options.stored?.[key] ?? null;
 			},
 		},
@@ -59,7 +51,7 @@ function runHeadScript(options: {
 		chromeLike: unknown,
 	) => void;
 	invoke(window, { documentElement: html }, chrome);
-	return { attributes, height: style.height, overflowY: style.overflowY };
+	return { attributes, height: style.height, overflowY: style.overflowY, reads };
 }
 
 describe('popup theme before the first paint', () => {
@@ -86,61 +78,17 @@ describe('popup theme before the first paint', () => {
 });
 
 describe('popup frame before the first paint', () => {
-	test('sizes the window from the entry for the announced count', () => {
-		const run = runHeadScript({
-			search: '?cards=2',
-			stored: {
-				[frameHeightKeyForCards(2)]: '431',
-				[FRAME_HEIGHT_KEY_LAST]: '298',
-				[FRAME_HEIGHT_KEY]: '298',
-			},
-		});
-		expect(run.height).toBe('431px');
-		expect(run.overflowY).toBe('hidden');
-		expect(run.attributes.get('data-spectra-frame-reserved')).toBe('431');
-		// The shape's own entry answered - not the most recent open's height.
-		expect(run.attributes.get('data-spectra-frame-source')).toBe(frameHeightKeyForCards(2));
-	});
-
-	test('falls back to the last settled height when this shape was never measured', () => {
-		const run = runHeadScript({
-			search: '?cards=3',
-			stored: { [FRAME_HEIGHT_KEY_LAST]: '298' },
-		});
-		expect(run.height).toBe('298px');
-		expect(run.attributes.get('data-spectra-frame-source')).toBe(FRAME_HEIGHT_KEY_LAST);
-	});
-
-	test('falls back to the single hint an older build wrote', () => {
-		const run = runHeadScript({ stored: { [FRAME_HEIGHT_KEY]: '312' } });
-		expect(run.height).toBe('312px');
-		expect(run.attributes.get('data-spectra-frame-source')).toBe(FRAME_HEIGHT_KEY);
-	});
-
-	test('reserves nothing at all when no open ever recorded a height', () => {
-		// The one open that is allowed to grow: there is no fact to reserve from,
-		// and inventing one would open the window at a size nothing asked for.
-		const run = runHeadScript();
+	test.each(['?cards=1&main=1&lang=zh-CN&viz=0', '?cards=1&main=1&lang=zh-CN&viz=1', '?cards=3', '', '?cards=lots'])
+	('never reserves an old 600px frame for intrinsic content (%s)', (search) => {
+		const run = runHeadScript({ search, stored: {
+			'spectra.popup.frame.1': '600', 'spectra.popup.frame.3': '600',
+			'spectra.popup.frame.last': '600', 'spectra.popup.frameHeight': '600',
+		} });
 		expect(run.height).toBe('');
 		expect(run.overflowY).toBe('');
 		expect(run.attributes.has('data-spectra-frame-reserved')).toBe(false);
-	});
-
-	test('never reserves past the height Chrome grants a Popup', () => {
-		const run = runHeadScript({
-			search: '?cards=9',
-			stored: { [frameHeightKeyForCards(9)]: '1200' },
-		});
-		expect(run.height).toBe(`${FRAME_MAX_HEIGHT_PX}px`);
-	});
-
-	test('ignores a count that is not a count', () => {
-		const run = runHeadScript({
-			search: '?cards=lots',
-			stored: { [FRAME_HEIGHT_KEY_LAST]: '298', [FRAME_HEIGHT_KEY]: '298' },
-		});
-		expect(run.height).toBe('298px');
-		expect(run.attributes.get('data-spectra-frame-source')).toBe(FRAME_HEIGHT_KEY_LAST);
+		expect(run.attributes.has('data-spectra-frame-source')).toBe(false);
+		expect(run.reads).toEqual([THEME_MODE_KEY]);
 	});
 });
 

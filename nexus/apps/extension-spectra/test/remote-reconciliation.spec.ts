@@ -174,6 +174,13 @@ describe('remote service-worker reconciliation', () => {
 								},
 							};
 						}
+						if (message.type === 'spectra.control.operation.execute' || message.type === 'spectra.control.intent.execute') {
+							operationCalls += 1;
+							if (deferNextOperation) {
+								deferNextOperation = false;
+								await new Promise<void>((resolveOperation) => { releaseOperation = resolveOperation; });
+							}
+						}
 						if (message.type === 'spectra.control.operation.execute') {
 							const payload = message.payload as {
 								operationId: string;
@@ -213,13 +220,6 @@ describe('remote service-worker reconciliation', () => {
 							};
 						}
 						if (message.type === 'spectra.control.intent.execute') {
-							operationCalls += 1;
-							if (deferNextOperation) {
-								deferNextOperation = false;
-								await new Promise<void>((resolveOperation) => {
-									releaseOperation = resolveOperation;
-								});
-							}
 							const payload = message.payload as {
 								intentId: string;
 								tabId: number;
@@ -353,7 +353,8 @@ describe('remote service-worker reconciliation', () => {
 			expect(command.handled).toBe(true);
 			expect(await command.response).toEqual({ settled: true });
 			expect(
-				tabMessages.some((message) => message.type === 'spectra.control.intent.execute'),
+				tabMessages.some((message) => message.type === 'spectra.control.operation.execute'
+					&& (message.payload as { operation?: string }).operation === 'playback-toggle'),
 				`a failed state send must not consume the last delivered generation or drop the next legal command: ${JSON.stringify(tabMessages)}`,
 			).toBe(true);
 			expect(stateSendCalls).toBe(1);

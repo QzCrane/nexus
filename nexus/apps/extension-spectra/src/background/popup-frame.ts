@@ -1,21 +1,6 @@
-// goal: state how many cards the Popup will draw before the Popup exists
-//
-// The Action Popup's window is sized by its document, and its document cannot
-// know what to draw until two round trips have answered. Every attempt to size
-// the window from the rendered content therefore had to correct itself after the
-// user could already see it - the jump that survived every fix inside the Popup.
-//
-// The count, however, is known here first. `chrome.action.setPopup` lets a tab
-// carry its own popup URL, so the number of cards travels in that URL and the
-// render-blocking head script turns it into a height before the first paint.
-// Nothing about the decision happens while the window is visible.
-//
-// The count is a projection, not a promise: a background tab whose media has
-// been paused past the retention window is listed by the inventory and still
-// dropped by the card, and a document can retire between the count and the open.
-// A wrong count costs exactly one correction - and because the Popup records the
-// height each announced count settled on, the next open of that same state is
-// already right.
+// goal: announce all known card structures before the Popup exists
+// inv: anonymous deadlines retire expired slots even while the worker sleeps;
+//      intrinsic content owns height, and URL data grants no control authority
 
 import { actionPopupPath } from '../shared/popup-bootstrap';
 import { isRestrictedUrl } from '../shared/restricted-url';
@@ -87,7 +72,12 @@ async function announceForTab(tabId: number): Promise<void> {
 		const [inventory, settings] = await Promise.all([readMediaTabInventory(), settingsRepository.getSnapshot()]);
 		const cards = popupCardCount(tab, inventory.tabs);
 		popupPath = actionPopupPath(cards, { hasMainCard: !isRestrictedUrl(tab.url),
-			language: settings.globalSettings.lang, visualizerEnabled: settings.globalSettings.visualizerEnabled });
+			language: settings.globalSettings.lang, visualizerEnabled: settings.globalSettings.visualizerEnabled,
+			pauseRetentionSeconds: settings.globalSettings.pauseRetentionSeconds,
+			backgroundExpiries: inventory.tabs.filter((id) => id !== tabId).flatMap((id) => {
+				const expiry = inventory.expiryByTab?.[String(id)];
+				return expiry === undefined ? [] : [expiry];
+			}) });
 	} catch (error) {
 		swLog.debug(`[PopupFrame] Popup shape for tab ${tabId} stays unannounced`, error);
 	}
@@ -163,7 +153,10 @@ export function initializeActionPopupFrames(): void {
 		syncActionPopup(activeInfo.tabId);
 	});
 	chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
-		if (!tab.active) return;
+		if (!tab.active) {
+			if (changeInfo.audible !== undefined || changeInfo.frozen !== undefined || changeInfo.discarded !== undefined) syncActiveActionPopups();
+			return;
+		}
 		// `status` marks a committing document, `url` a navigation, `audible` the
 		// start and stop of playback. Each of them can add or remove a card.
 		if (changeInfo.status === undefined

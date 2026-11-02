@@ -12,6 +12,8 @@ Research documents are dated evidence and hypotheses. They help choose what to b
 
 ## Current evidence sets
 
+- [SPECTRA tab lifecycle and Popup closure 2026-11-02](2026-11-02-spectra-tab-lifecycle-popup-closure.md): dynamic card membership, immediate structure, physical observation order, retirement and scene-speed repair evidence.
+
 - [`../_archive/market-research.md`](../_archive/market-research.md): legacy long-form HALO competitor research collected in 2025. Preserve as source material, but revalidate every dynamic number, price, policy, product capability, issue count, and user-count claim before using it in a current decision.
 - [HALO research index](../../apps/extension-halo/docs/research/README.md): application-specific market and gap evidence.
 - [SPECTRA archived evidence](../../apps/extension-spectra/docs/_archive/2026-Q3/README.md): dated implementation, regression, and release snapshots.

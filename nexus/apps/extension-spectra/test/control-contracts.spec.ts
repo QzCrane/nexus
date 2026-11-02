@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	compileEffectiveVolume,
+	createSpectraRequest,
 	CONTROL_VALUE_LIMITS,
 	CONTROL_ALGORITHM_ADJUDICATIONS,
 	CONTROL_ALGORITHM_POLICIES,
@@ -34,6 +35,7 @@ import {
 	type ControlFieldState,
 } from '@nexus/contracts';
 import { createCaptureAdmission } from './helpers/capture-admission';
+import { createIntent, operationIntent } from '../src/background/control-coordinator-values';
 import {
 	CONTENT_ACTIVE_VIDEO_OPERATIONS,
 	CONTENT_DOM_NATIVE_FIELDS,
@@ -65,6 +67,39 @@ function field<T>(actual: T): ControlFieldState<T> {
 }
 
 describe('per-field SPECTRA control contracts', () => {
+	test.each([false, true])('admits the real explicit playing intent in both full and Content guards (%s)', (playing) => {
+		const snapshot = { tabId: 42, documentId: 'document-playback', origin: 'https://media.test', generation: 3,
+			revision: 7, activeMedia: null, activeVideo: null, fields: {} };
+		const intent = createIntent(snapshot, { tabId: 42, source: 'popup', requestedCoverage: 'active-target', target: null,
+			patch: { playing } }, 'explicit-playing');
+		const request = createSpectraRequest('spectra.control.intent.execute', intent,
+			{ tabId: 42, documentId: snapshot.documentId, generation: snapshot.generation });
+		expect(isSpectraRequestEnvelope(request)).toBe(true);
+		expect(isContentSpectraRequestEnvelope(request)).toBe(true);
+	});
+	test('admits the real routed local playback operation with strict full/Content parity', () => {
+		const snapshot = { tabId: 42, documentId: 'document-playback', origin: 'https://media.test', generation: 3,
+			revision: 7, activeMedia: null, activeVideo: null, fields: {} };
+		const intent = operationIntent(snapshot, { tabId: 42, source: 'popup', target: null,
+			operation: 'playback-toggle', payload: {} }, 'playback-operation');
+		const request = createSpectraRequest('spectra.control.operation.execute', intent,
+			{ tabId: 42, documentId: snapshot.documentId, generation: snapshot.generation });
+		expect(isSpectraRequestEnvelope(request)).toBe(true);
+		expect(isContentSpectraRequestEnvelope(request)).toBe(true);
+		for (const invalid of [
+			{ ...request, payload: { ...intent, source: 'page' } },
+			{ ...request, payload: { ...intent, source: 'system' } },
+			{ ...request, payload: { ...intent, payload: { playing: true } } },
+			{ ...request, payload: { ...intent, extra: true } },
+			{ ...request, payload: { ...intent, operationId: undefined } },
+			{ ...request, payload: { ...intent, baseRevision: undefined } },
+			{ ...request, generation: 4 },
+			{ ...request, documentId: 'another-document' },
+		]) {
+			expect(isSpectraRequestEnvelope(invalid)).toBe(false);
+			expect(isContentSpectraRequestEnvelope(invalid)).toBe(false);
+		}
+	});
 	test('splits one effective volume into native base and hidden Boost', () => {
 		expect(compileEffectiveVolume(50, 2)).toBe(100);
 		expect(compileEffectiveVolume(100, 8)).toBe(800);

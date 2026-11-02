@@ -25,6 +25,7 @@ interface ControlFieldState<T> {
   strategy: 'observe' | 'capture-observe' | 'page-native' | 'dom-native' | 'chrome-native' | 'extension-state' | 'extension-css' | 'extension-overlay' | 'media-webaudio' | 'capture' | 'unsupported';
   coverage: 'full' | 'active-target' | 'partial' | 'opaque';
   controlled: boolean;
+  mediaObservation?: MediaObservationStamp;
   intentId?: string;
   lastError: ControlError | null;
 }
@@ -67,14 +68,52 @@ stateDiagram-v2
 - **Playback actual**: 被动读回的 `playing` 始终优先于历史 controlled ACK；每次
   toggle 在当前事务内重新读原生 baseline。字段未知也要触发既有有界恢复。
   详见 [播放按钮与缓冲](06-media-and-video.md#playback-button-and-buffered-play)。
-- **Stale-base-revision recovery**: Background 拒绝 `baseRevision` 与权威快照 revision 不一致的 intent/operation，返回 `control_stale_revision`。Popup 的 `submitControlIntent`/`submitControlOperation` 携带当前卡片 revision 提交，收到该错误码时先拉取快照刷新投影，再以新 revision 重放一次；并发广播永远不会静默丢弃显式用户意图。
+- **Stale-base-revision recovery**: Background 拒绝 `baseRevision` 与权威快照 revision 不一致的 intent/operation，返回 `control_stale_revision`。Popup 先刷新权威投影；允许重试的赋值操作只按原意图有界重试。`playback-toggle` 不得把旧点击盲目重放给另一个目标；当前媒体的读取、toggle 和稳定证明见 [播放按钮](06-media-and-video.md#playback-button-and-buffered-play)。
 - **Continuous Popup transport**: 离散 intent/operation 保持上述 v2 RPC 合同。连续 volume/DSP 只使用一条私有 typed Popup→Background 通道；Background 按目标/字段保留 latest slot，以 50 ms 窗口合并后调用同一 `ControlCoordinator`。Popup 断连只退役返回通道，不取消已被 Background 接收的最新意图，也不建立第二个状态 owner。
 - **Disconnected flush**: 通道关闭时拒绝所有尚未结算的等待；关闭后对未结算 revision 的 `flush` 同样立即拒绝，不得创建无人结算的 waiter。已结算 revision 保持完成语义。保存、全局预设与重置必须能从该失败退出，不能永久停留在等待状态。
 - **Channel readiness**: 私有连续通道必须收到匹配 session 的 `ready` 确认；5 秒内未收到则明确报告后台未就绪并断开。旧后台仅接受 Port 连接不代表支持控制。通道失效时清除未确认字段、恢复最后实际值并显示错误，不得无限保留乐观数字。
 - **Settlement ordering**: 通道确认的 `throughRevision` 必须结束对应本地输入的 pending，即使其 ACK 比已接受的页面 snapshot 更旧。旧 ACK 不能覆盖较新的实际值；也不能让已结算输入永久遮挡后续页面音量。更晚的本地输入继续保留各自 revision 的乐观投影。
 - **Failure presentation**: 通道通知、待完成 flush 和后续 stage 共享同一个失败对象；卡片负责一次回滚、提示与权威状态刷新，按钮消费者不得重复呈现该失败。主动销毁先移除监听与就绪计时器，再断开 Port，不投影断线错误。
-- **Card transient-unknown recovery**: Popup 卡片启动时的快照读取可能超时/被拒（例如后台 restore 决策慢于 5s 读取超时）。`controlSnapshotKnown` 是瞬时闩锁：任何被接受的 `controlSnapshot`（事件广播、失败恢复读取）或已提交 ACK 都立即把它置为已知，卡片从未知态实时恢复。未知态不拦截用户意图（照常路由到协调器，由 stale-revision recovery 或结构化错误收敛），不把控制区置为 inert，音量标签不显示 `—`；后台卡片启动时同样读取 control snapshot，避免永久未知。
+- **Card transient-unknown recovery**: 结构、绑定与 actual 有不同完成点。无身份预绘制节点保持 inert，未知 actual 不伪造音量或播放状态。绑定后的 `controlSnapshotKnown` 是瞬时闩锁：被接受的广播、恢复读取或已提交 ACK 都可把它变为已知；失败须可见并使用现有有界恢复。冻结、丢弃或 unloaded 成员是 availability 分支，不是重试读取分支：只保留元数据，Chrome 恢复为 runnable 后才重新绑定控制。详见 [首帧 owner](../architecture/runtime.md#presentation-and-actual-confirmation)。
 - **Processor Handoff (three-owner)**: 无双重增益/DSP，无虚假 active ACK。MediaElement WebAudio/Capture 候选必须先得到 running/readback ACK；旧 owner 先中性化，候选验证成功后才释放，失败则恢复最后一个已确认 owner。
+
+### Ordered physical observations
+
+全局 snapshot revision 排序已发布投影，不替代媒体采样顺序。完整 Content runtime
+对当前选择发出 `mediaObservation: { owner, epoch, selection, revision }`；每个实际
+字段保留自己的 `mediaObservation` stamp。新 runtime 的 epoch、新选择访问和采样 revision 分别
+防止旧 owner、旧播放器与旧字段样本回流。同 epoch 不同 owner 是冲突，不以时间戳
+猜胜者；document、generation 和完整 `MediaTarget` fence 仍须同时成立。
+冷态 bootstrap 与完整 registry 共用 `chooseInitialMedia`，不能在第一次读取与
+runtime 接管时选中两个不同播放器。协议形状由 [protocols](../reference/protocols.md#ordered-media-observations-and-restore-tokens) 拥有。
+
+Background 的短 snapshot publication lane 校验、合并、持久化并广播物理样本；
+长时间 speed writer 仍由事务 actor 串行执行。页面新音量、暂停或速度样本不必等待
+无关 speed ACK。writer 结束时按目标与各字段 `mediaObservation` 合并，不能用旧 ACK
+覆盖期间已接受的较新 actual；控制意图的结算与物理事实的采纳也不能相互冒充。
+
+复合操作必须保留每个物理 stage 原有的字段 stamp，并透传最新 producer sample；
+Background 不能为收集到的字段重造观察序号，也不能在合成 `effective-volume` 时丢掉
+顶层证明。最终 ACK、音量结果和 OSD 读取已提交字段，不能把尚未进入 canonical
+snapshot 的 prepared 值冒充提交结果。连续增减音量在没有页面事件回声时也必须闭环。
+
+<!-- mermaid:id=physical-observation-lanes -->
+```mermaid
+sequenceDiagram
+  participant C as Content physical reader
+  participant W as Background writer actor
+  participant P as Snapshot publication lane
+  participant U as Popup reducer
+  W->>C: Begin exact speed write and stable proof
+  C->>P: New physical sample with target and field stamps
+  P->>P: Validate owner, epoch, selection and revision
+  P->>P: Merge current fields and persist snapshot
+  P->>U: Broadcast current actual without waiting for speed
+  C-->>W: Speed proof settles for captured target
+  W->>P: Publish writer result with captured observation stamp
+  P->>P: Keep newer field samples and reject retired target
+  P->>U: Publish admitted result and settle input
+```
 
 ## §11 Volume and mute
 

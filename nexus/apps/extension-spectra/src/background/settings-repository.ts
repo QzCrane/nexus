@@ -7,6 +7,7 @@ import {
 	isSlotHotkeyAction,
 	MAX_SETTINGS_SNAPSHOT_ENTRIES,
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
+	MAX_PAUSE_RETENTION_SECONDS,
 	createSiteRouteFingerprint,
 	createMediaRouteRuleFingerprint,
 	createMediaRouteScopeKey,
@@ -40,7 +41,6 @@ import {
 	type SiteHotkeyConfig,
 } from '@nexus/contracts';
 import {
-	MAX_PAUSE_RETENTION_SECONDS,
 	choosePresetFallback,
 	isPresetRecord,
 	isRecord,

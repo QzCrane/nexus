@@ -13,14 +13,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { Browser, Page, Target } from 'puppeteer';
-import {
-	FRAME_HEIGHT_KEY,
-	frameHeightKeyForCards,
-} from '../src/shared/popup-bootstrap';
+import { FRAME_MAX_HEIGHT_PX } from '../src/shared/popup-bootstrap';
 
 const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', 'dist'));
-// Chrome grants an Action Popup at most 600px; past that the document scrolls.
-const FRAME_MAX_HEIGHT_PX = 600;
 // `.glass-card` carries a 12px bottom margin and `#view-main` a 12px bottom
 // padding, so the blank under the last card is the same 24px in every state.
 const BOTTOM_WHITESPACE_PX = 24;
@@ -32,6 +27,17 @@ let server: ReturnType<typeof Bun.serve>;
 let profileDir = '';
 const mediaPages: Page[] = [];
 
+async function visitLoadedMedia(page: Page): Promise<void> {
+	await page.waitForFunction(() => (document.querySelector<HTMLVideoElement>('#media')?.readyState ?? 0) >= 1);
+	await page.bringToFront();
+	await controlPage.waitForFunction(async (url) => {
+		const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+		if (tab?.id === undefined || tab.url !== url) return false;
+		const facts = (await chrome.storage.session.get('spectra.media-facts.v1'))['spectra.media-facts.v1'];
+		return facts?.[String(tab.id)]?.outcome === 'found' && (facts[String(tab.id)].usedAt ?? 0) > 0;
+	}, { polling: 50, timeout: 10_000 }, page.url());
+}
+
 // The Popup reads durable media facts before its RPC completes. Establish both
 // that input and the Background's announced shape, rather than sleeping and
 // accidentally comparing a one-card first sample with a two-card second one.
@@ -42,7 +48,7 @@ async function waitForInventory(cards: number): Promise<void> {
 		const response = await chrome.runtime.sendMessage({
 			protocolVersion: 2, requestId: crypto.randomUUID(), type: 'spectra.tab.visible.list', payload: {},
 		});
-		const facts = (await chrome.storage.local.get('spectra.media-facts.v1'))['spectra.media-facts.v1'];
+		const facts = (await chrome.storage.session.get('spectra.media-facts.v1'))['spectra.media-facts.v1'];
 		if (!response?.ok || response.data.tabs.length !== count
 			|| !tabs.every((tab) => tab.id !== undefined && response.data.tabs.includes(tab.id)
 				&& facts?.[String(tab.id)]?.outcome === 'found')) return false;
@@ -73,6 +79,8 @@ interface PopupOverflow {
 	overflowY: string;
 	scrollable: number;
 	bottomWhitespaceAtEnd: number;
+	rootScrollSurface: boolean;
+	nestedScrollers: string[];
 }
 
 async function readGeometry(popup: Page): Promise<PopupGeometry> {
@@ -106,13 +114,19 @@ async function readOverflow(popup: Page): Promise<PopupOverflow> {
 		return {
 			overflowY: getComputedStyle(html).overflowY,
 			scrollable: Math.max(0, html.scrollHeight - html.clientHeight),
+			rootScrollSurface: document.scrollingElement === html,
+			nestedScrollers: [...document.querySelectorAll<HTMLElement>('body *')].filter((element) => {
+				const rect = element.getBoundingClientRect();
+				return rect.width > 0 && rect.height > 0 && /^(auto|scroll)$/u.test(getComputedStyle(element).overflowY)
+					&& element.scrollHeight > element.clientHeight + 1;
+			}).map((element) => element.id || element.className || element.tagName),
 			bottomWhitespaceAtEnd:
 				Math.round((html.clientHeight - lastCard.getBoundingClientRect().bottom) * 100) / 100,
 		};
 	});
 }
 
-// The frame animates to its target, so a single read can catch it mid-tween.
+// Live intrinsic geometry settles independently of asynchronous control reads.
 async function settledGeometry(popup: Page): Promise<PopupGeometry> {
 	let previous = await readGeometry(popup);
 	for (let attempt = 0; attempt < 30; attempt += 1) {
@@ -153,10 +167,8 @@ async function openPopup(
 				+ document.querySelectorAll('#main-stage .glass-card').length
 		) === count, { timeout: 15_000 }, expectedCards);
 		const geometry = await settledGeometry(popup);
-		// What the render-blocking head script reserved before the first paint,
-		// and which recorded shape answered. The height is a promise about a card
-		// count, so the source key is part of the assertion: this open must have
-		// been sized by the shape it actually draws.
+		// Historical reservations have retired. Every open, including a reopen,
+		// must derive its frame from all prepainted slots' intrinsic geometry.
 		const reservation = await popup.evaluate(() => ({
 			height: document.documentElement.dataset.spectraFrameReserved ?? null,
 			source: document.documentElement.dataset.spectraFrameSource ?? null,
@@ -177,6 +189,18 @@ async function openPopup(
 			if (!popup.isClosed()) await popup.close().catch(() => undefined);
 		}
 	}
+}
+
+async function setVisualizer(enabled: boolean): Promise<void> {
+	await controlPage.evaluate(async (visualizerEnabled) => {
+		const current = await chrome.runtime.sendMessage({ protocolVersion: 2, requestId: crypto.randomUUID(),
+			type: 'spectra.settings.ui.get', payload: {} });
+		if (!current?.ok) throw new Error('Unable to read visualizer geometry settings');
+		const response = await chrome.runtime.sendMessage({ protocolVersion: 2, requestId: crypto.randomUUID(),
+			type: 'spectra.settings.ui.patch', payload: { expectedRevision: current.data.revision,
+				patch: { scope: 'global', changes: { visualizerEnabled } } } });
+		if (!response?.ok) throw new Error('Unable to update visualizer geometry settings');
+	}, enabled);
 }
 
 beforeAllChrome(async () => {
@@ -216,9 +240,21 @@ beforeAllChrome(async () => {
 	extensionId = new URL(workerTarget.url()).host;
 	controlPage = await browser.newPage();
 	await controlPage.goto(`chrome-extension://${extensionId}/options.html`, { waitUntil: 'domcontentloaded' });
+	// Geometry is independent of pause expiry. Register real visits below and
+	// keep those paused media eligible throughout this isolated profile's suite.
+	await controlPage.evaluate(async () => {
+		const current = await chrome.runtime.sendMessage({ protocolVersion: 2, requestId: crypto.randomUUID(),
+			type: 'spectra.settings.ui.get', payload: {} });
+		if (!current?.ok) throw new Error('Unable to read geometry profile settings');
+		const updated = await chrome.runtime.sendMessage({ protocolVersion: 2, requestId: crypto.randomUUID(),
+			type: 'spectra.settings.ui.patch', payload: { expectedRevision: current.data.revision,
+				patch: { scope: 'global', changes: { pauseRetentionSeconds: 0 } } } });
+		if (!updated?.ok) throw new Error('Unable to retain visited geometry fixtures');
+	});
 	for (const slug of ['alpha', 'beta']) {
 		const page = await browser.newPage();
 		await page.goto(`http://127.0.0.1:${server.port}/media/${slug}`, { waitUntil: 'domcontentloaded' });
+		await visitLoadedMedia(page);
 		mediaPages.push(page);
 	}
 	await waitForInventory(2);
@@ -233,23 +269,15 @@ afterAllChrome(async () => {
 	server?.stop(true);
 });
 
-testChrome('opens at the height it settles on, so the window never jumps', async () => {
-	// A `type="module"` script is deferred, so reserving the frame from inside
-	// the popup module always landed after the browser could already paint: the
-	// window was shown at one height and then animated to another, on every
-	// open. The reservation now happens in a render-blocking head script, so
-	// the first frame the user sees is already the reserved one.
+testChrome('reopens at stable intrinsic height without any historical reservation', async () => {
 	const first = await openPopup(2);
-	// The very first open has no hint to reserve, so it is the one open that is
-	// allowed to grow into place.
 	expect(first.reservedHeight).toBeNull();
-
-	// Same content, second open: the hint is this content's settled height, so
-	// the reserved frame and the settled frame must be the same height. Any
-	// difference is a visible jump the user did not ask for.
+	expect(first.reservedSource).toBeNull();
+	expect(Math.abs(first.documentHeight - Math.min(first.contentHeight, FRAME_MAX_HEIGHT_PX))).toBeLessThanOrEqual(1);
 	const second = await openPopup(2);
-	expect(second.reservedHeight).not.toBeNull();
-	expect(Math.abs((second.reservedHeight ?? 0) - second.documentHeight)).toBeLessThanOrEqual(1);
+	expect(second.reservedHeight).toBeNull();
+	expect(second.reservedSource).toBeNull();
+	expect(Math.abs(second.documentHeight - Math.min(second.contentHeight, FRAME_MAX_HEIGHT_PX))).toBeLessThanOrEqual(1);
 	expect(Math.abs(second.documentHeight - first.documentHeight)).toBeLessThanOrEqual(1);
 }, 90_000);
 
@@ -268,6 +296,7 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 	// own boundary instead, with the card clipped there.
 	expect(withBackground.contentHeight).toBeGreaterThan(FRAME_MAX_HEIGHT_PX);
 	expect(withBackground.overflow).toMatchObject({ overflowY: 'auto' });
+	expect(withBackground.overflow).toMatchObject({ rootScrollSurface: true, nestedScrollers: [] });
 	expect(withBackground.overflow.scrollable).toBeGreaterThan(0);
 	expect(Math.abs(withBackground.overflow.bottomWhitespaceAtEnd - BOTTOM_WHITESPACE_PX))
 		.toBeLessThanOrEqual(1);
@@ -277,20 +306,18 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 	await mediaPages[1]?.close().catch(() => undefined);
 	await mediaPages[0]?.bringToFront();
 	await waitForInventory(1);
-	// Seed the worst case: the last settled frame was the tallest one Chrome
-	// allows, while this open's content is short. Nothing about this open can
-	// change the container's size after the inventory publishes, so only a
-	// retarget on the publish itself can bring the frame back down. Both the
-	// shape's own entry and the legacy single hint are poisoned, because either
-	// one would be enough to open this Popup at 600.
+	// Old installations may retain poisoned 600px height hints. These literal
+	// retired keys are negative inputs, never a new cache API or layout owner.
 	const seeded = await controlPage.evaluate((keys) => {
 		for (const key of keys) localStorage.setItem(key, '600');
 		return keys.map((key) => localStorage.getItem(key));
-	}, [frameHeightKeyForCards(1), FRAME_HEIGHT_KEY]);
-	expect(seeded).toEqual(['600', '600']);
+	}, ['spectra.popup.frame.1', 'spectra.popup.frameHeight', 'spectra.popup.frame.last']);
+	expect(seeded).toEqual(['600', '600', '600']);
 	const withoutBackground = await openPopup(1);
 
 	expect(withoutBackground).toMatchObject({ cards: 1, bgCards: 0, bottomWhitespace: BOTTOM_WHITESPACE_PX });
+	expect(withoutBackground.reservedHeight).toBeNull();
+	expect(withoutBackground.reservedSource).toBeNull();
 	// The regression this pins: a short open used to keep the taller frame, which
 	// left ~250px of blank under its only card.
 	expect(Math.abs(withoutBackground.documentHeight - withoutBackground.contentHeight))
@@ -302,6 +329,7 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 	// scroll, so the same 24px is on screen instead of one scroll away.
 	expect(withoutBackground.contentHeight).toBeLessThan(FRAME_MAX_HEIGHT_PX);
 	expect(withoutBackground.overflow).toMatchObject({ overflowY: 'hidden', scrollable: 0 });
+	expect(withoutBackground.overflow).toMatchObject({ rootScrollSurface: true, nestedScrollers: [] });
 	expect(Math.abs(withoutBackground.overflow.bottomWhitespaceAtEnd - BOTTOM_WHITESPACE_PX))
 		.toBeLessThanOrEqual(1);
 	// Scrolling as a whole document must not cost width: the frame keeps the
@@ -310,39 +338,56 @@ testChrome('keeps the same bottom whitespace with and without a background card,
 	expect(withoutBackground.contentWidth).toBe(withBackground.contentWidth);
 }, 90_000);
 
-testChrome('opens each shape at the height that shape settled on, so switching card counts does not resize the window', async () => {
-	// The previous open left this one-card shape's real height recorded. From here
-	// on, this shape must open already at that height - no growth, no correction.
+testChrome('switches one and two card shapes using their current content rather than stored heights', async () => {
 	await waitForInventory(1);
 	const one = await openPopup(1);
 	expect(one.cards).toBe(1);
-	expect(one.reservedSource).toBe(frameHeightKeyForCards(1));
-	expect(one.reservedHeight).not.toBeNull();
-	expect(Math.abs((one.reservedHeight ?? 0) - one.documentHeight)).toBeLessThanOrEqual(1);
+	expect(one.reservedSource).toBeNull();
+	expect(one.reservedHeight).toBeNull();
+	expect(Math.abs(one.contentHeight - one.documentHeight)).toBeLessThanOrEqual(1);
 
-	// A second media tab changes the shape. Its first open may learn the height it
-	// keeps; what matters is that it is sized by its own count, not by whatever
-	// the previous open happened to be.
+	// Adding a background card changes the intrinsic shape on this very open.
 	const beta = await browser.newPage();
 	await beta.goto(`http://127.0.0.1:${server.port}/media/beta`, { waitUntil: 'domcontentloaded' });
+	await visitLoadedMedia(beta);
 	await mediaPages[0]?.bringToFront();
 	await waitForInventory(2);
 	const two = await openPopup(2);
 	expect(two.cards).toBe(2);
-	expect(two.reservedSource).toBe(frameHeightKeyForCards(2));
-	expect(Math.abs((two.reservedHeight ?? 0) - two.documentHeight)).toBeLessThanOrEqual(1);
+	expect(two.reservedSource).toBeNull();
+	expect(two.reservedHeight).toBeNull();
+	expect(Math.abs(Math.min(two.contentHeight, FRAME_MAX_HEIGHT_PX) - two.documentHeight)).toBeLessThanOrEqual(1);
 
-	// Back to one card. A single hint would still hold the two-card height here -
-	// that is exactly the jump this pins away: the shape's own entry has to win
-	// over the most recent one.
+	// Returning to one card must immediately discard the taller shape.
 	await beta.close().catch(() => undefined);
 	await mediaPages[0]?.bringToFront();
 	await waitForInventory(1);
 	const short = await openPopup(1);
 	expect(short.cards).toBe(1);
-	expect(short.reservedSource).toBe(frameHeightKeyForCards(1));
-	expect(Math.abs((short.reservedHeight ?? 0) - short.documentHeight)).toBeLessThanOrEqual(1);
+	expect(short.reservedSource).toBeNull();
+	expect(short.reservedHeight).toBeNull();
+	expect(Math.abs(short.contentHeight - short.documentHeight)).toBeLessThanOrEqual(1);
 	expect(Math.abs(short.documentHeight - one.documentHeight)).toBeLessThanOrEqual(1);
+}, 90_000);
+
+testChrome('uses current visualizer visibility for intrinsic height on the first and repeated open', async () => {
+	await waitForInventory(1);
+	await setVisualizer(true);
+	const visible = await openPopup(1);
+	try {
+		await setVisualizer(false);
+		const hidden = await openPopup(1);
+		const repeated = await openPopup(1);
+		expect(hidden.contentHeight).toBeLessThan(visible.contentHeight);
+		for (const geometry of [visible, hidden, repeated]) {
+			expect(geometry.reservedSource).toBeNull();
+			expect(geometry.reservedHeight).toBeNull();
+			expect(Math.abs(geometry.documentHeight - Math.min(geometry.contentHeight, FRAME_MAX_HEIGHT_PX))).toBeLessThanOrEqual(1);
+			expect(geometry.bottomWhitespace).toBe(BOTTOM_WHITESPACE_PX);
+			expect(geometry.overflow).toMatchObject({ rootScrollSurface: true, nestedScrollers: [] });
+		}
+		expect(Math.abs(repeated.documentHeight - hidden.documentHeight)).toBeLessThanOrEqual(1);
+	} finally { await setVisualizer(true); }
 }, 90_000);
 
 testChrome('opens three cards and changes views without ResizeObserver delivery errors', async () => {
@@ -357,6 +402,7 @@ testChrome('opens three cards and changes views without ResizeObserver delivery 
 			const page = await browser.newPage();
 			extraPages.push(page);
 			await page.goto(`http://127.0.0.1:${server.port}/media/${slug}`, { waitUntil: 'domcontentloaded' });
+			await visitLoadedMedia(page);
 		}
 		await mediaPages[0]?.bringToFront();
 		await waitForInventory(3);

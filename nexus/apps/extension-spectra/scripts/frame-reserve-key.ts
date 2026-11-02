@@ -1,11 +1,8 @@
 // goal: keep the Popup's head script and the Popup module on one bootstrap contract
 //
-// The head script has to decide the theme and the frame before the browser's
-// first paint, and a plain script the browser loads directly cannot import the
-// Popup module. So it carries a placeholder token, and the build replaces that
-// token with the keys the Popup module writes under. Writing them in both files
-// would let them drift apart the first time either changed - the Popup would
-// then reserve a height it never persists, and every open would jump again.
+// The classic head script establishes theme/surface before paint and cannot
+// import a module. Build injection shares those keys with the module owner;
+// card structure and live geometry do not use historical height hints.
 
 import {
 	FRAME_HEIGHT_KEY_PLACEHOLDER,
@@ -16,14 +13,13 @@ import {
  * Substitutes the placeholder in the head script with the bootstrap contract.
  *
  * Throws when the placeholder is absent: a head script that carries literal
- * keys (or none at all) would silently read different storage entries than the
- * Popup module writes, and the reservation would degrade into a jump.
+ * keys (or none at all) would silently diverge from the shared bootstrap owner.
  */
 export function injectFrameHeightKey(source: string): string {
 	if (!source.includes(FRAME_HEIGHT_KEY_PLACEHOLDER)) {
 		throw new Error(
 			'public/frame-reserve.js does not carry the popup bootstrap placeholder, so the '
-			+ 'theme and frame hints it reads would drift from '
+			+ 'theme and surface it reads would drift from '
 			+ 'src/shared/popup-bootstrap.ts.',
 		);
 	}

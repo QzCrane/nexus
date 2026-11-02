@@ -148,6 +148,7 @@ export {
 } from './audio.contracts.js';
 
 // Per-field SPECTRA control contracts
+export { compareMediaObservations, MEDIA_OBSERVATION_FIELDS } from './media-observation.contracts.js';
 export type {
 	ControlStrategy,
 	ControlStrategyClass,
@@ -166,6 +167,8 @@ export type {
 	ControlIntentSource,
 	MediaKind,
 	MediaTarget,
+	MediaRestoreToken,
+	MediaObservationStamp,
 	VideoFilterState,
 	ABLoopState,
 	ControlValues,
@@ -262,6 +265,7 @@ export {
 
 
 // Settings contracts
+export { MAX_PAUSE_RETENTION_SECONDS } from './settings-ui.contracts.js';
 export type {
 	GlobalSettings,
 	AudioSitePolicy,

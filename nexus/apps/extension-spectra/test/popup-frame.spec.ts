@@ -1,12 +1,34 @@
 import { describe, expect, test } from 'bun:test';
 import { popupCardCount } from '../src/background/popup-frame';
-import { actionPopupPath, readPopupAppearance } from '../src/shared/popup-bootstrap';
+import { actionPopupPath, readAnnouncedBackgroundCount, readPopupAppearance } from '../src/shared/popup-bootstrap';
+import { MAX_PAUSE_RETENTION_SECONDS } from '@nexus/contracts/ui-runtime';
 
 // The count is the only layout fact that can exist before the Popup does. It has
 // to answer exactly the question the Popup will answer from its inventory, or the
 // window opens sized for cards that are not there. These are the four shapes the
 // rule has, none of which needs a browser to pin.
 describe('popup card count', () => {
+	test('expires anonymous slots before paint even if the worker did not wake', () => {
+		const path = actionPopupPath(5, { hasMainCard: true, language: 'zh-CN', visualizerEnabled: true, backgroundExpiries: [1_000, 2_000, 3_000] });
+		const search = new URL(path, 'https://fixture.test').search;
+		expect(readAnnouncedBackgroundCount(search, 999)).toBe(4);
+		expect(readAnnouncedBackgroundCount(search, 1_000)).toBe(3);
+		expect(readAnnouncedBackgroundCount(search, 2_500)).toBe(2);
+		expect(readAnnouncedBackgroundCount(search, 5_000)).toBe(1);
+		expect(search).not.toContain('tabId');
+	});
+	test.each(['[]', '[null]', '[0]', '[1.5]', '{}', 'broken', '[100,200]'])('validates the anonymous expiry plan (%s)', (plan) => {
+		const search = `?cards=2&main=1&lang=zh-CN&viz=0&expires=${encodeURIComponent(plan)}`;
+		expect(readAnnouncedBackgroundCount(search, 300)).toBe(plan === '[]' ? 1 : null);
+	});
+	test.each([0, MAX_PAUSE_RETENTION_SECONDS])('announces the committed retention policy before settings hydrate (%s)', (seconds) => {
+		const path = actionPopupPath(4, { hasMainCard: true, language: 'zh-CN', visualizerEnabled: true, pauseRetentionSeconds: seconds });
+		const query = new URL(path, 'https://fixture.test').search;
+		expect(readPopupAppearance(query)?.pauseRetentionSeconds).toBe(seconds);
+	});
+	test.each(['-1', '1.5', 'not-a-number', String(MAX_PAUSE_RETENTION_SECONDS + 1)])('rejects an invalid announced retention value (%s)', (value) => {
+		expect(readPopupAppearance(`?main=1&lang=zh-CN&viz=1&retain=${value}`)).toBeNull();
+	});
 	test('separates a restricted active page from background cards without leaking tab identity', () => {
 		const path = actionPopupPath(2, { hasMainCard: false, language: 'zh-CN', visualizerEnabled: false });
 		expect(path).toBe('popup.html?cards=2&main=0&lang=zh-CN&viz=0');

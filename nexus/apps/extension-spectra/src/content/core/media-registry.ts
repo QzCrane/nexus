@@ -3,6 +3,7 @@
 import type { MediaTarget } from '@nexus/contracts';
 import type { MediaSourceEligibilityEvidence } from '@nexus/audio-engine';
 import type { DocumentRuntimeContext } from './content-runtime-context';
+import { getContentBootstrapState } from '../../shared/content-runtime';
 
 export type MediaRegistryEvent =
 	| 'registered'
@@ -83,6 +84,35 @@ function initialVisibleArea(element: HTMLMediaElement): number {
 	return Math.max(0, right - left) * Math.max(0, bottom - top);
 }
 
+/** One stateless admission for cold bootstrap and a registry with no selection.
+ * Supplying retained geometry keeps registry reads free of layout sampling. */
+export function chooseInitialMedia(
+	elements: readonly HTMLMediaElement[],
+	kind: 'media' | 'video' = 'media',
+	visibleArea: (element: HTMLMediaElement) => number = initialVisibleArea,
+): HTMLMediaElement | null {
+	const candidates = elements.filter((element) => element.isConnected
+		&& (kind === 'media' || element instanceof HTMLVideoElement));
+	const pip = document.pictureInPictureElement;
+	const exactPip = candidates.find((element) => element === pip);
+	if (exactPip) return exactPip;
+	const fullscreen = document.fullscreenElement;
+	const presented = fullscreen ? candidates.filter((element) => fullscreen === element
+		|| fullscreen instanceof Element && fullscreen.contains(element)) : [];
+	const pool = presented.length > 0 ? presented : candidates;
+	let best: HTMLMediaElement | null = null;
+	let bestPlaying = -1;
+	let bestArea = -1;
+	for (const candidate of pool) {
+		const playing = !candidate.paused && !candidate.ended ? 1 : 0;
+		const area = visibleArea(candidate);
+		if (!best || playing > bestPlaying || playing === bestPlaying && area > bestArea) {
+			best = candidate; bestPlaying = playing; bestArea = area;
+		}
+	}
+	return best;
+}
+
 let activeMediaRegistry: MediaRegistry | null = null;
 
 export function setActiveMediaRegistry(registry: MediaRegistry | null): () => void {
@@ -109,6 +139,12 @@ export class MediaRegistry {
 	private activeVideoId: string | null = null;
 	private fullscreenMediaId: string | null = null;
 	private selectedTargetKey: string | null = null;
+	private pausedSelectionKey: string | null = null;
+	private explicitSelectionKey: string | null = null;
+	private selectionVisit = 0;
+	private observationRevision = 0;
+	private readonly observationOwner: string;
+	private readonly observationEpoch: number;
 	private readonly pendingRemovals = new Set<HTMLMediaElement>();
 	private removalFlushQueued = false;
 	private disposed = false;
@@ -118,6 +154,11 @@ export class MediaRegistry {
 	constructor(runtimeContext: DocumentRuntimeContext, onEvent?: MediaRegistryListener) {
 		this.runtimeContext = runtimeContext;
 		this.runtimeContext.assertOpen();
+		const bootstrap = typeof window === 'undefined' ? undefined : getContentBootstrapState();
+		const ownerEpoch = bootstrap ? (bootstrap.mediaOwnerEpoch ?? 0) + 1 : runtimeContext.runtimeEpoch;
+		if (bootstrap) bootstrap.mediaOwnerEpoch = ownerEpoch;
+		this.observationOwner = `${runtimeContext.identity.documentId}:${ownerEpoch}`;
+		this.observationEpoch = ownerEpoch;
 		if (onEvent) this.listeners.add(onEvent);
 		this.fullscreenListener = () => {
 			const fullscreenElement = document.fullscreenElement;
@@ -135,16 +176,23 @@ export class MediaRegistry {
 			this.emit(record.target, 'fullscreenchange', record.element);
 		};
 		this.intersectionObserver = new IntersectionObserver((entries) => {
+			let returning: MediaRecord | null = null;
 			for (const entry of entries) {
 				const media = entry.target;
 				if (!(media instanceof HTMLMediaElement)) continue;
 				const record = this.byElement.get(media);
 				if (!record) continue;
+				const wasVisible = record.visibleArea > 0;
 				record.visibleArea = entry.isIntersecting
 					? entry.intersectionRect.width * entry.intersectionRect.height
 					: 0;
+				if (!wasVisible && record.visibleArea > 0 && this.activeMediaId === record.target.mediaId) returning = record;
 			}
 			this.reconcileRetiredSelection();
+			if (returning && this.activeMediaId === returning.target.mediaId) {
+				this.selectedTargetKey = null;
+				this.selectRecord(returning, true);
+			}
 		});
 		this.mediaAttributeObserver = new MutationObserver((mutations) => {
 			this.handleMediaAttributeMutations(mutations);
@@ -153,6 +201,7 @@ export class MediaRegistry {
 		// Register the initial media set before installing the topology observer.
 		// Construction is synchronous, so there is no observable DOM gap.
 		this.discover(document.documentElement);
+		this.establishInitialSelection(false);
 
 		// The document-wide observer owns topology only. Attributes are observed
 		// through one shared observer attached directly to registered media nodes,
@@ -169,6 +218,7 @@ export class MediaRegistry {
 				for (const node of mutation.addedNodes) this.discover(node);
 				for (const node of mutation.removedNodes) this.queueRemovalTree(node);
 			}
+			this.establishInitialSelection(true);
 		});
 		this.mutationObserver.observe(document, {
 			childList: true,
@@ -179,6 +229,13 @@ export class MediaRegistry {
 
 	get documentId(): string {
 		return this.runtimeContext.identity.documentId;
+	}
+
+	get selectionRevision(): number { return this.selectionVisit; }
+
+	captureObservation(): { owner: string; epoch: number; selection: number; revision: number } {
+		return { owner: this.observationOwner, epoch: this.observationEpoch, selection: this.selectionVisit,
+			revision: ++this.observationRevision };
 	}
 
 	subscribe(listener: MediaRegistryListener): () => void {
@@ -298,6 +355,7 @@ export class MediaRegistry {
 		] as const) {
 			const listener = (): void => {
 				if (type === 'play') {
+					if (this.pausedSelectionKey === this.targetKey(record.target)) this.pausedSelectionKey = null;
 					record.lastPlay = performance.now();
 					// A pre-rendered modal can become visible and start before the
 					// asynchronous IntersectionObserver delivers its new geometry.
@@ -395,12 +453,33 @@ export class MediaRegistry {
 	}
 
 	private selectRecord(record: MediaRecord, notify: boolean): void {
+		if (this.activeMediaId !== record.target.mediaId) {
+			this.pausedSelectionKey = null;
+			this.explicitSelectionKey = null;
+		}
 		this.activeMediaId = record.target.mediaId;
 		if (record.target.kind === 'video') this.activeVideoId = record.target.mediaId;
 		const key = this.targetKey(record.target);
 		if (key === this.selectedTargetKey) return;
 		this.selectedTargetKey = key;
+		this.selectionVisit += 1;
 		if (notify) this.emit(record.target, 'selected', record.element);
+	}
+
+	private establishInitialSelection(notify: boolean): void {
+		// Commit the complete discovery batch before a command can capture its
+		// visit. The first own play is not a new selection of the same element.
+		// This is automatic admission, never an explicit or paused-target pin.
+		if (this.activeMediaId === null) {
+			const initial = this.best('media');
+			if (initial) this.selectRecord(initial, notify);
+		}
+		// Audio may own activeMedia while an independent video remains the video
+		// scope. Establishing that scope must not replace the media selection.
+		if (this.activeVideoId === null) {
+			const initialVideo = this.best('video');
+			if (initialVideo) this.activeVideoId = initialVideo.target.mediaId;
+		}
 	}
 
 	private reconcileRetiredSelection(replacingRemovedTarget = false): void {
@@ -419,7 +498,20 @@ export class MediaRegistry {
 			if (document.pictureInPictureElement === active.element
 				|| fullscreen === active.element
 				|| fullscreen instanceof Element && fullscreen.contains(active.element)) return;
-			if (!active.element.ended && active.visibleArea > 0) return;
+			if (!active.element.ended && active.visibleArea > 0) {
+				if (!active.element.paused || this.pausedSelectionKey === this.targetKey(active.target)
+					|| this.explicitSelectionKey === this.targetKey(active.target)) return;
+				// A later foreground player may start before this feed pauses. Its
+				// first play lost to historical pointer evidence; the later pause is
+				// the handoff boundary. An older/tiny preview cannot take this path.
+				const successor = this.bestRecord([...this.byElement.values()].filter((record) => (
+					record !== active && record.target.kind === 'video' && !record.element.paused
+					&& !record.element.ended && record.lastPlay > active.lastPlay
+					&& record.visibleArea >= active.visibleArea
+				)));
+				if (successor) this.selectRecord(successor, true);
+				return;
+			}
 		}
 		const candidates = [...this.byElement.values()].filter((record) => (
 			!record.element.ended && (record.target.kind === 'audio'
@@ -434,7 +526,13 @@ export class MediaRegistry {
 		const record = this.recordForTarget(target);
 		if (!record) return false;
 		this.selectRecord(record, true);
+		this.explicitSelectionKey = this.targetKey(record.target);
 		return true;
+	}
+
+	/** Explicit pause/selection ownership differs from a historical pointer. */
+	pinPaused(target: MediaTarget): void {
+		if (this.recordForTarget(target)) this.pausedSelectionKey = this.targetKey(target);
 	}
 
 	private recordForTarget(target: MediaTarget): MediaRecord | null {
@@ -479,7 +577,9 @@ export class MediaRegistry {
 		const activeId = kind === 'video' ? this.activeVideoId : this.activeMediaId;
 		const active = activeId ? this.byId.get(activeId) : undefined;
 		if (active && (kind === 'media' || active.target.kind === 'video')) return active;
-		return this.bestRecord(this.byElement.values(), kind);
+		const initial = chooseInitialMedia([...this.byElement.keys()], kind,
+			(element) => this.byElement.get(element)?.visibleArea ?? 0);
+		return initial ? this.byElement.get(initial) ?? null : null;
 	}
 
 	peek(

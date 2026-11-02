@@ -24,6 +24,7 @@ import {
 import { recoverDocumentRuntimeAfterWorkerRestart } from './runtime-restart-recovery';
 import { forEachBounded } from './bounded-fanout';
 import { sendBackgroundTabRequestOnce } from './background-rpc';
+import { mediaTabAvailability } from '../shared/media-card-policy';
 
 const RECOVERY_CAPABILITY = 'worker-restart-recovery';
 const RETRY_DELAYS_MS = [250, 1_000, 4_000] as const;
@@ -237,50 +238,73 @@ export async function recoverDocumentRuntimeOnWorkerStartup(
 	if (recoveryLeaseHeld) port.releaseRecoveryRuntime(target);
 }
 
-async function currentHttpTargets(): Promise<RuntimeRestartTarget[]> {
+async function currentHttpTargets(retryOnly?: ReadonlyMap<number, RuntimeRestartTarget>): Promise<RuntimeRestartTarget[]> {
 	const tabs = await chrome.tabs.query({});
 	const targets: RuntimeRestartTarget[] = [];
 	await forEachBounded(tabs, 8, async (tab) => {
-		if (!tab.id) return;
-		const frame = await chrome.webNavigation.getFrame({ tabId: tab.id, frameId: 0 }).catch(() => null);
+		if (!Number.isSafeInteger(tab.id) || Number(tab.id) <= 0 || !tab.url
+			|| !/^https?:/u.test(tab.url) || mediaTabAvailability(tab) !== 'runnable') return;
+		const tabId = Number(tab.id);
+		if (retryOnly && !retryOnly.has(tabId)) return;
+		const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 }).catch(() => null);
 		if (!frame?.documentId || !frame.url || !/^https?:/u.test(frame.url)) return;
-		targets.push({ tabId: tab.id, documentId: frame.documentId, url: frame.url });
+		if (retryOnly && retryOnly.get(tabId)?.documentId !== frame.documentId) return;
+		targets.push({ tabId, documentId: frame.documentId, url: frame.url });
 	});
 	return targets;
 }
 
-export function initializeRuntimeRestartRecovery(): void {
-	let attempt = 0;
-	let retryTimer: ReturnType<typeof setTimeout> | null = null;
+interface RuntimeRestartRecoveryDependencies {
+	readSettings(): Promise<HotkeySettings>;
+	discoverTargets(retryOnly?: ReadonlyMap<number, RuntimeRestartTarget>): Promise<RuntimeRestartTarget[]>;
+	recover(target: RuntimeRestartTarget, settings: HotkeySettings): Promise<void>;
+	schedule(callback: () => void, delay: number): void;
+}
 
-	const scheduleRetry = (reason: unknown, phase: 'document' | 'discovery'): void => {
+const restartRecoveryDependencies: RuntimeRestartRecoveryDependencies = {
+	readSettings: async () => (await settingsRepository.getSnapshot()).hotkeySettings,
+	discoverTargets: currentHttpTargets,
+	recover: recoverDocumentRuntimeOnWorkerStartup,
+	schedule: (callback, delay) => { setTimeout(callback, delay); },
+};
+
+export function initializeRuntimeRestartRecovery(dependencies: RuntimeRestartRecoveryDependencies = restartRecoveryDependencies): void {
+	let attempt = 0;
+	let retryScheduled = false;
+
+	const scheduleRetry = (reason: unknown, phase: 'document' | 'discovery', retryOnly?: ReadonlyMap<number, RuntimeRestartTarget>): void => {
 		const delay = retryDelayForAttempt(attempt);
-		if (delay === null || retryTimer) return;
+		if (delay === null || retryScheduled) return;
 		attempt += 1;
 		swLog.warn(`[Runtime] restart recovery ${phase} failure; retrying: ${String(reason)}`);
-		retryTimer = setTimeout(() => {
-			retryTimer = null;
-			void run();
+		retryScheduled = true;
+		dependencies.schedule(() => {
+			retryScheduled = false;
+			void run(retryOnly);
 		}, delay);
 	};
 
-	const run = async (): Promise<void> => {
+	const run = async (retryOnly?: ReadonlyMap<number, RuntimeRestartTarget>): Promise<void> => {
 		try {
-			const snapshot = await settingsRepository.getSnapshot();
-			const targets = await currentHttpTargets();
-			const failures: unknown[] = [];
+			const settings = await dependencies.readSettings();
+			const targets = await dependencies.discoverTargets(retryOnly);
+			const failures = new Map<number, RuntimeRestartTarget>();
 			await forEachBounded(targets, 4, async (target) => {
-				await recoverDocumentRuntimeOnWorkerStartup(target, snapshot.hotkeySettings)
-					.catch((error) => { failures.push(error); });
+				await dependencies.recover(target, settings).catch((error) => {
+					failures.set(target.tabId, target);
+					swLog.warn(`[Runtime] restart recovery failed: ${String(error)}`);
+				});
 			});
-			if (failures.length === 0) {
+			if (failures.size === 0) {
 				attempt = 0;
 				return;
 			}
-			for (const failure of failures) swLog.warn(`[Runtime] restart recovery failed: ${String(failure)}`);
-			scheduleRetry(`${failures.length} document recovery operation(s) failed`, 'document');
+			// A failed document does not invalidate healthy ownership proofs. The
+			// next discovery rechecks only these ids and still requires runnable
+			// tabs with the same document identity before another page RPC.
+			scheduleRetry(`${failures.size} document recovery operation(s) failed`, 'document', failures);
 		} catch (error) {
-			scheduleRetry(error, 'discovery');
+			scheduleRetry(error, 'discovery', retryOnly);
 		}
 	};
 
@@ -288,6 +312,8 @@ export function initializeRuntimeRestartRecovery(): void {
 }
 
 export const runtimeRestartStartupTestApi = {
+	currentHttpTargets,
+	initialize: initializeRuntimeRestartRecovery,
 	RECOVERY_CAPABILITY,
 	RETRY_DELAYS_MS,
 	hasOwnedSource,

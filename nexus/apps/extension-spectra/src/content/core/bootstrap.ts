@@ -23,6 +23,8 @@ import {
 } from './extension-context';
 import { createSiteSpeedLabelProjection, readPageMediaField } from '../logic/page-media-bridge';
 import { hasPlayableMedia } from '../../shared/media-presence';
+import { getPausedAt, updatePausedAt } from '../utils/pause-tracker';
+import { chooseInitialMedia } from './media-registry';
 import {
 	nextScalarGestureId,
 	publishDefaultScalarGesture,
@@ -78,6 +80,7 @@ if (!getContentBootstrapState()) {
 	};
 	let pendingObservation: BootstrapNativeObservation | null = null;
 	let lastReportedMediaPresence: boolean | null = null;
+	let lastReportedPlayback: boolean | null = null;
 	// Page-entry solidification: the bootstrap is the only owner present before
 	// the deferred runtime loads, so the first media volume event probes the
 	// page controller read-only and records a positive amplified-scale verdict.
@@ -225,11 +228,7 @@ if (!getContentBootstrapState()) {
 			.filter((element) => !videoOnly || element instanceof HTMLVideoElement)
 			.filter((element) => element.isConnected);
 		const fullscreen = document.fullscreenElement;
-		const element = media.find((candidate) => document.pictureInPictureElement === candidate)
-			?? media.find((candidate) => fullscreen === candidate
-				|| fullscreen instanceof Element && fullscreen.contains(candidate))
-			?? media.find((candidate) => !candidate.paused && !candidate.ended)
-			?? media[0];
+		const element = chooseInitialMedia(media, videoOnly ? 'video' : 'media');
 		if (!element) return null;
 		const patch: import('@nexus/contracts').ControlPatch = {};
 		const observedStrategies: import('@nexus/contracts').ControlObservationStrategies = {};
@@ -306,14 +305,19 @@ if (!getContentBootstrapState()) {
 		// not a media tab, and reporting it as one puts a card in the Popup for a
 		// page that has nothing to control.
 		const current = hasPlayableMedia(document);
-		if (!force && current === lastReportedMediaPresence) return;
+		const playing = [...document.querySelectorAll<HTMLMediaElement>('video,audio')].some((media) => !media.paused && !media.ended);
+		updatePausedAt(playing, current);
+		if (!force && current === lastReportedMediaPresence && playing === lastReportedPlayback) return;
 		lastReportedMediaPresence = current;
+		lastReportedPlayback = playing;
 		const nextRevision = (state.mediaReportRevision ?? 0) + 1;
 		state.mediaReportRevision = nextRevision;
 		void sendBootstrapRequest('spectra.tab.media.report', {
 			hasMediaElement: current,
 			userInteracted: false,
 			reportRevision: nextRevision,
+			playing,
+			pausedAt: getPausedAt(),
 		}, state.dispose).catch(() => undefined);
 	};
 
@@ -338,6 +342,9 @@ if (!getContentBootstrapState()) {
 		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 		runtimeRevision: null as string | null,
 		ready: false,
+		mediaReportRevision: previous?.mediaReportRevision ?? 0,
+		mediaPausedAt: previous?.mediaPausedAt ?? null,
+		mediaOwnerEpoch: previous?.mediaOwnerEpoch ?? 0,
 		dispose() {
 			if (disposed) return;
 			disposed = true;
@@ -582,7 +589,7 @@ function sendBootstrapRequest(
 			repeated: boolean;
 		}
 		| { supported: boolean }
-		| { hasMediaElement: boolean; userInteracted: boolean; reportRevision: number }
+		| { hasMediaElement: boolean; userInteracted: boolean; reportRevision: number; playing?: boolean; pausedAt?: number | null }
 		| import('@nexus/contracts').ControlSubmitRequest,
 	onInvalidated?: () => void,
 ): Promise<unknown | undefined> {

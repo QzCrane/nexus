@@ -13,6 +13,7 @@ import {
 	isFiniteControlValue,
 } from './control-value-limits.js';
 export { compileEffectiveVolume, splitEffectiveVolume } from './control-value-limits.js';
+import { isMediaObservationStamp, isMediaRestoreToken } from './media-observation.contracts.js';
 import {
 	isCaptureAdmission,
 	type CaptureAdmission,
@@ -767,6 +768,7 @@ export interface ControlError {
 }
 
 export interface ControlFieldState<T> {
+	mediaObservation?: MediaObservationStamp;
 	desired: T | null;
 	actual: T | null;
 	// Captured before a restorable writer attempt so a failed transaction can
@@ -863,6 +865,21 @@ export function resolveControlAudioVolume(
 	};
 }
 
+/** An automatic replay consumes one scene/visit revision; it cannot redefine intent. */
+export interface MediaRestoreToken {
+	revision: number;
+	scene: string;
+	visit: number;
+}
+
+/** Monotonic physical samples within the current document media owner. */
+export interface MediaObservationStamp {
+	owner: string;
+	epoch: number;
+	selection: number;
+	revision: number;
+}
+
 export interface ControlIntent {
 	intentId: string;
 	tabId: number;
@@ -874,6 +891,7 @@ export interface ControlIntent {
 	target: MediaTarget | null;
 	actualContext: ControlActualContext;
 	patch: ControlPatch;
+	mediaRestore?: MediaRestoreToken;
 	// Background mints this volatile admission only for one current-tab Popup or
 	// chrome.commands transaction. It is deliberately absent from
 	// ControlSubmitRequest so callers cannot claim browser invocation authority.
@@ -897,6 +915,8 @@ export interface ControlSubmitRequest {
 	// exact native getter/writer boundary that produced it; other sources must
 	// not claim observation provenance.
 	observedStrategies?: ControlObservationStrategies;
+	mediaRestore?: MediaRestoreToken;
+	mediaObservation?: MediaObservationStamp;
 }
 
 export interface ControlMarker {
@@ -1008,6 +1028,7 @@ export type ControlOperationAck<O extends ControlOperation = ControlOperation> =
 		generation: number;
 		revision: number;
 		target: MediaTarget | null;
+		mediaObservation?: MediaObservationStamp;
 		operation: K;
 		strategy: ControlStrategy;
 		coverage: ControlCoverage;
@@ -1034,6 +1055,7 @@ export interface ControlSnapshot {
 	activeMedia: MediaTarget | null;
 	activeVideo: MediaTarget | null;
 	fields: ControlFieldStates;
+	mediaObservation?: MediaObservationStamp;
 }
 
 export interface ControlApplyAck {
@@ -1045,6 +1067,7 @@ export interface ControlApplyAck {
 	target: MediaTarget | null;
 	fields: ControlFieldStates;
 	audioVolume?: ControlAudioVolumeProjection;
+	mediaObservation?: MediaObservationStamp;
 }
 
 export interface ControlReadRequest {
@@ -1059,6 +1082,7 @@ export interface ControlReadResult {
 	// the standard DOM getter. Keep that provenance with the value instead of
 	// reconstructing it in Background.
 	observedStrategies: ControlObservationStrategies;
+	mediaObservation?: MediaObservationStamp;
 }
 
 const strategySet: ReadonlySet<string> = new Set(CONTROL_STRATEGIES);
@@ -1092,6 +1116,7 @@ const intentKeys = keySetOf<ControlIntent>()([
 	'patch',
 	'captureAdmission',
 	'processorHold',
+	'mediaRestore',
 ]);
 const submitKeys = keySetOf<ControlSubmitRequest>()([
 	'tabId',
@@ -1102,6 +1127,8 @@ const submitKeys = keySetOf<ControlSubmitRequest>()([
 	'patch',
 	'mutations',
 	'observedStrategies',
+	'mediaRestore',
+	'mediaObservation',
 ]);
 const mutationKeys = keySetOf<ControlMutation>()(['field', 'operation', 'value']);
 const operationRequestKeys = keySetOf<ControlOperationRequest>()([
@@ -1114,6 +1141,7 @@ const operationIntentKeys = keySetOf<ControlOperationIntent>()([
 const operationAckKeys = keySetOf<ControlOperationAck<'restore-page-settings'>>()([
 	'operationId', 'tabId', 'documentId', 'generation', 'revision', 'target',
 	'operation', 'strategy', 'coverage', 'fields', 'audioVolume', 'result',
+	'mediaObservation',
 ]);
 const ackKeys = keySetOf<ControlApplyAck>()([
 	'intentId',
@@ -1124,9 +1152,10 @@ const ackKeys = keySetOf<ControlApplyAck>()([
 	'target',
 	'fields',
 	'audioVolume',
+	'mediaObservation',
 ]);
 const readRequestKeys = keySetOf<ControlReadRequest>()(['fields', 'target']);
-const readResultKeys = keySetOf<ControlReadResult>()(['target', 'patch', 'observedStrategies']);
+const readResultKeys = keySetOf<ControlReadResult>()(['target', 'patch', 'observedStrategies', 'mediaObservation']);
 const snapshotKeys = keySetOf<ControlSnapshot>()([
 	'tabId',
 	'documentId',
@@ -1136,6 +1165,7 @@ const snapshotKeys = keySetOf<ControlSnapshot>()([
 	'activeMedia',
 	'activeVideo',
 	'fields',
+	'mediaObservation',
 ]);
 const targetKeys = keySetOf<MediaTarget>()([
 	'frameId',
@@ -1145,6 +1175,7 @@ const targetKeys = keySetOf<MediaTarget>()([
 	'kind',
 ]);
 const fieldStateKeys = keySetOf<ControlFieldState<unknown>>()([
+	'mediaObservation',
 	'desired',
 	'actual',
 	'restoreBaseline',
@@ -1509,6 +1540,7 @@ function isControlActualContext(value: unknown): value is ControlActualContext {
 
 function isControlFieldState(field: ControlField, value: unknown): boolean {
 	if (!isRecord(value) || !hasOnlyKeys(value, fieldStateKeys)) return false;
+	if (value.mediaObservation !== undefined && !isMediaObservationStamp(value.mediaObservation)) return false;
 	const strategy = value.strategy as ControlStrategy;
 	const admittedStrategy = typeof value.strategy === 'string'
 		&& strategySet.has(value.strategy)
@@ -1561,6 +1593,7 @@ export function isControlIntent(value: unknown): value is ControlIntent {
 		&& (value.target === null || isMediaTarget(value.target))
 		&& isControlActualContext(value.actualContext)
 		&& isControlPatch(value.patch)
+		&& (value.mediaRestore === undefined || value.source === 'restore' && isMediaRestoreToken(value.mediaRestore))
 		&& (value.captureAdmission === undefined
 			|| isCaptureAdmission(value.captureAdmission));
 }
@@ -1580,6 +1613,8 @@ export function isControlSubmitRequest(value: unknown): value is ControlSubmitRe
 			&& isControlObservationProvenance(value.observedStrategies, value.patch, true)
 		: value.observedStrategies === undefined;
 	return observationShapeIsValid
+		&& (value.mediaRestore === undefined || value.source === 'restore' && isMediaRestoreToken(value.mediaRestore))
+		&& (value.mediaObservation === undefined || sourceIsPage && isMediaObservationStamp(value.mediaObservation))
 		&& (value.tabId === undefined || (Number.isInteger(value.tabId) && Number(value.tabId) > 0))
 		&& typeof value.source === 'string'
 		&& value.source !== 'system'
@@ -1633,6 +1668,7 @@ export function isControlOperationIntent(value: unknown): value is ControlOperat
 
 export function isControlOperationAck(value: unknown): value is ControlOperationAck {
 	return isRecord(value)
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation))
 		&& hasOnlyKeys(value, operationAckKeys)
 		&& isBoundedString(value.operationId, 128)
 		&& Number.isInteger(value.tabId)
@@ -1688,7 +1724,8 @@ export function isControlSnapshot(value: unknown): value is ControlSnapshot {
 		&& (value.activeMedia === null || isMediaTarget(value.activeMedia))
 		&& (value.activeVideo === null
 			|| isMediaTarget(value.activeVideo) && value.activeVideo.kind === 'video')
-		&& isControlFieldStates(value.fields);
+		&& isControlFieldStates(value.fields)
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation));
 }
 
 export function isControlApplyAck(value: unknown): value is ControlApplyAck {
@@ -1702,6 +1739,7 @@ export function isControlApplyAck(value: unknown): value is ControlApplyAck {
 		&& isSafeNonNegativeInteger(value.revision)
 		&& (value.target === null || isMediaTarget(value.target))
 		&& isControlFieldStates(value.fields)
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation))
 		&& (value.audioVolume === undefined
 			|| isAudioVolumeProjection(value.audioVolume));
 }
@@ -1757,6 +1795,7 @@ export function isControlReadResult(value: unknown): value is ControlReadResult 
 	const patch = value.patch;
 	const observedStrategies = value.observedStrategies;
 	if (!hasOnlyKeys(value, readResultKeys)
+		|| value.mediaObservation !== undefined && !isMediaObservationStamp(value.mediaObservation)
 		|| (value.target !== null && !isMediaTarget(value.target))
 		|| !isControlPatch(patch)
 		// A read result is an observation: every value it carries must name the

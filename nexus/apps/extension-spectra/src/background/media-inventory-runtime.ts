@@ -12,6 +12,7 @@
 import { createMediaTabInventory, type ReadMediaTabInventory } from './media-inventory';
 import { mediaFacts } from './media-facts';
 import { tabAudioStates, TAB_VISIBLE_THRESHOLD_MS } from './state';
+import { settingsRepository } from './settings-repository';
 
 function isRecent(timestamp: number, now: number): boolean {
 	return timestamp > 0 && now >= timestamp && now - timestamp < TAB_VISIBLE_THRESHOLD_MS;
@@ -35,6 +36,8 @@ function audibleTabs(allTabs: readonly chrome.tabs.Tab[], now: number): Set<numb
 	for (const [tabId, state] of tabAudioStates) {
 		if (!liveTabIds.has(tabId)) { tabAudioStates.delete(tabId); continue; }
 		if (audible.has(tabId)) continue;
+		// This row is activity telemetry only. MediaFact retains the durable
+		// document report high-water mark after this grace row is reclaimed.
 		if (!isRecent(state.lastAudibleTime, now) && !isRecent(state.lastActivatedTime, now)) {
 			tabAudioStates.delete(tabId);
 		}
@@ -42,8 +45,14 @@ function audibleTabs(allTabs: readonly chrome.tabs.Tab[], now: number): Set<numb
 	return audible;
 }
 
-export const readMediaTabInventory: ReadMediaTabInventory = createMediaTabInventory({
+const readInventory = createMediaTabInventory({
 	queryTabs: () => chrome.tabs.query({}),
 	audibleTabs,
 	readFact: mediaFacts.readMediaFact,
+	readPauseRetention: async () => (await settingsRepository.getSnapshot()).globalSettings.pauseRetentionSeconds,
 });
+
+export const readMediaTabInventory: ReadMediaTabInventory = async (now) => {
+	await mediaFacts.ready();
+	return readInventory(now);
+};

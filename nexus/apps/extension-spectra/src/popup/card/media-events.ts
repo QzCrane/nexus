@@ -4,18 +4,20 @@ import type { CardUIElements } from '../types';
 import type {
 	ControlFieldStates,
 	ControlMutation,
-	ControlOperationAck,
 	MediaTarget,
 } from '@nexus/contracts';
 import { clampControlValue } from '@nexus/contracts/ui-runtime';
 import { submitControlIntent, submitControlOperation } from './intent-recovery';
 import { syncSidePanelSpeed } from '../side-panel/controls';
 import { getHotkeyTarget, setHotkeyTarget } from '../../shared/hotkey-target-client';
-import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
+import type { CardInternalState } from './types';
 import type { ConfigErrorHandler, ConfigUpdateFn } from './state';
 import { showPopupToast } from '../toast';
 import { parseFiniteControlInput } from '../utils/control-input';
 import { getCurrentDict } from '../views/i18n-apply';
+import { applyControlSnapshot } from './messaging';
+import { sendSpectraRequest } from '../../shared/ui-spectra-client';
+import { createSerializedToggleQueue } from '../../shared/serialized-toggle';
 import {
 	SPECTRA_TRUSTED_PIP_EVENT,
 	SPECTRA_TRUSTED_PIP_REQUEST_ATTRIBUTE,
@@ -181,29 +183,33 @@ type AcknowledgedControl = {
 	revision: number;
 	target: MediaTarget | null;
 	fields: ControlFieldStates;
+	mediaObservation?: import('@nexus/contracts').MediaObservationStamp;
 };
 
-function projectAcknowledgedControl(state: CardInternalState, ack: AcknowledgedControl): void {
+function projectAcknowledgedControl(state: CardInternalState, ack: AcknowledgedControl, render: () => void): void {
 	const current = state.controlSnapshot;
 	if (current && (current.tabId !== ack.tabId || current.documentId !== ack.documentId
 		|| ack.generation < current.generation
 		|| ack.generation === current.generation && ack.revision < current.revision)) return;
 
-	state.controlRevision = Math.max(state.controlRevision, ack.revision);
-	state.controlGeneration = Math.max(state.controlGeneration, ack.generation);
-	state.stableConfig = mergeControlFields(state.stableConfig, ack.fields);
-	state.config = mergeAudioConfig(state.stableConfig, {
-		eqValues: [...state.stableConfig.eqValues],
-	});
-
-	if (current && current.tabId === ack.tabId && current.documentId === ack.documentId) {
-		state.controlSnapshot = {
+	if (current) {
+		applyControlSnapshot(state, {
 			...current,
 			generation: ack.generation,
 			revision: ack.revision,
+			activeMedia: ack.target ?? current.activeMedia,
 			activeVideo: ack.target?.kind === 'video' ? ack.target : current.activeVideo,
 			fields: { ...current.fields, ...ack.fields },
-		};
+			mediaObservation: ack.mediaObservation,
+		}, render);
+	} else {
+		// An ACK has no origin and cannot invent the first card identity. Read
+		// the coordinator's committed projection through the same admission path.
+		void sendSpectraRequest('spectra.control.snapshot.get', { tabId: ack.tabId }).then((response) => {
+			if (response.ok && response.data) applyControlSnapshot(state, response.data, render);
+		}).catch((error: unknown) => {
+			console.debug('[SPECTRA Popup] Acknowledged snapshot confirmation unavailable', error);
+		});
 	}
 }
 
@@ -235,7 +241,7 @@ async function submitMutation(tabId: number, state: CardInternalState, render: (
 			retryable: true,
 		});
 	}
-	projectAcknowledgedControl(state, response.data);
+	projectAcknowledgedControl(state, response.data, render);
 	return response.data;
 }
 
@@ -249,17 +255,33 @@ export function bindMediaControls(
 	onError?: ConfigErrorHandler,
 ): void {
 	if (ui.btnPause) {
-		ui.btnPause.onclick = () => {
-			void update.runControl(() => submitControlOperation(
-				{ tabId, state, render },
-				{ operation: 'playback-toggle', payload: {} },
-			)).then((response) => {
+		const playback = createSerializedToggleQueue<boolean | null>({
+			readCurrent: () => {
+				const actual = state.controlSnapshot?.fields.playing?.actual;
+				return typeof actual === 'boolean' ? actual : null;
+			},
+			nextValue: (actual) => actual === null ? null : !actual,
+			commit: (playing) => update.runControl(async () => {
+				const response = playing === null
+					? await submitControlOperation({ tabId, state, render }, { operation: 'playback-toggle', payload: {} })
+					: await submitControlIntent({ tabId, state, render }, { requestedCoverage: 'active-target', target: null, patch: { playing } });
 				if (!response.ok) throw new ControlUiError(response.error);
-				const acknowledgement = response.data as ControlOperationAck<'playback-toggle'>;
-				projectAcknowledgedControl(state, acknowledgement);
+				const acknowledgement = response.data;
+				if (acknowledgement.fields.playing?.phase !== 'applied') throw new ControlUiError(acknowledgement.fields.playing?.lastError ?? { code: 'control_not_applied', message: 'Playback was not acknowledged', retryable: true });
+				projectAcknowledgedControl(state, acknowledgement, render);
 				render();
-			}).catch((error: unknown) => reportControlFailure(error, state, onError));
-		};
+			}),
+			setBusy: (busy) => {
+				state.playbackPending = busy;
+				render();
+			},
+			onError: (error) => {
+				void reportControlFailure(error, state, onError).catch((failure: unknown) => {
+					console.error('[SPECTRA Popup] Playback error presentation failed:', failure);
+				});
+			},
+		});
+		ui.btnPause.onclick = () => { void playback.enqueue(); };
 	}
 
 	if (ui.btnPip) {

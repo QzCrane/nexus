@@ -88,6 +88,7 @@ class FakeMediaElement extends EventTarget {
 }
 
 class FakeRegistry {
+	selectionRevision = 0;
 	listener: RegistryListener | null = null;
 	readonly element: FakeMediaElement;
 	readonly target: MediaTarget = {
@@ -121,6 +122,7 @@ class FakeRegistry {
 	}
 
 	emit(event: MediaRegistryEvent): void {
+		if (event === 'selected') this.selectionRevision += 1;
 		this.listener?.(
 			{ ...this.target },
 			event,
@@ -241,6 +243,158 @@ afterEach(() => {
 });
 
 describe('native media single-writer correlation', () => {
+	test.each([false, true])('re-publishes settled route playback before effects even without a template (%s)', async (withTemplate) => {
+		installFakeMediaGlobals(); const registry = new FakeRegistry(); registry.element.paused = false;
+		let revision = 0;
+		Object.assign(registry, { captureObservation: () => ({ owner: 'route-owner', epoch: 1,
+			selection: registry.selectionRevision, revision: ++revision }) });
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			if (withTemplate) await executor.execute({ intentId: 'route:seed', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target', target: registry.target,
+				actualContext: {}, patch: { speed: 2 } });
+			if (withTemplate) { registry.emit('selected'); await new Promise((resolve) => setTimeout(resolve, 0)); }
+			// The first selected/play messages were lost at a history fence. The
+			// already-playing source has no second play event to repair the view.
+			messages.length = 0; executor.reconcileRoute('https://fixture.example/live');
+			expect(messages[0]?.type).toBe('spectra.content.target.changed');
+			expect(messages[1]).toMatchObject({ type: 'spectra.control.intent.submit', payload: { source: 'page',
+				target: registry.target, patch: { playing: true }, mediaObservation: { owner: 'route-owner', epoch: 1 } } });
+			if (withTemplate) expect(messages[2]).toMatchObject({ type: 'spectra.control.intent.submit', payload: { source: 'restore' } });
+			const stamp = messages[1]?.payload.mediaObservation as { revision: number };
+			executor.reconcileRoute('https://fixture.example/live');
+			const latestStamp = messages.at(-1)?.payload.mediaObservation as { revision: number } | undefined;
+			expect(latestStamp?.revision).toBeGreaterThan(stamp.revision);
+			expect(registry.element.paused).toBe(false);
+		} finally { executor.dispose(); }
+	});
+
+	test('rejects an old active-media ACK after another source becomes selected while the original stays registered', async () => {
+		installFakeMediaGlobals(); const registry = new FakeRegistry();
+		const original = registry.resolve(); const next = { element: new FakeMediaElement() as unknown as HTMLMediaElement,
+			target: { ...original.target, mediaId: 'media:new-current' } };
+		let selected = original;
+		registry.resolve = (requested?: MediaTarget | null) => requested?.mediaId === original.target.mediaId ? original : selected;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			const writing = executor.execute({ intentId: 'speed:old-visit', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target', target: original.target,
+				actualContext: {}, patch: { speed: 2 } });
+			expect(original.element.playbackRate).toBe(2);
+			selected = next; registry.selectionRevision += 1;
+			expect(executor.read({ target: null, fields: ['playing'] }).target).toEqual(next.target);
+			await expect(writing).rejects.toMatchObject({ code: 'stale-media-source' });
+			expect(registry.resolve(null)?.target).toEqual(next.target);
+			expect(next.element.playbackRate).toBe(1);
+		} finally { executor.dispose(); }
+	});
+
+	test('keeps active-video acknowledgement valid when an independent audio source acquires activeMedia', async () => {
+		installFakeMediaGlobals(); Object.defineProperty(globalThis, 'HTMLVideoElement', { configurable: true, value: FakeMediaElement });
+		const registry = new FakeRegistry(); registry.target.kind = 'video'; const video = registry.resolve();
+		const audio = { element: new FakeMediaElement() as unknown as HTMLMediaElement,
+			target: { ...video.target, mediaId: 'media:independent-audio', kind: 'audio' as const } };
+		let selected = video;
+		registry.resolve = (requested?: MediaTarget | null) => requested?.mediaId === video.target.mediaId ? video : selected;
+		Object.assign(registry, { resolveVideo: () => video });
+		const effects = { dispose() {}, apply: async () => { selected = audio; registry.selectionRevision += 1; return 90; } };
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects as unknown as VideoEffectsController);
+		try {
+			const result = await executor.execute({ intentId: 'video:independent-selection', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target', target: null,
+				actualContext: {}, patch: { rotation: 90 } });
+			expect(result.target).toEqual(video.target); expect(result.fields.rotation?.actual).toBe(90);
+			expect(registry.resolve(null)?.target).toEqual(audio.target);
+		} finally { executor.dispose(); }
+	});
+	test('recognizes scene return only through the same unique declared root and observed route', async () => {
+		installFakeMediaGlobals();
+		const oldWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+		const oldLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+		let url = new URL('https://www.douyin.com/video/a'); let ambiguous = false;
+		const media = new BridgedMediaElement(); const registry = new FakeRegistry(media);
+		const root = { querySelectorAll: (selector: string) => selector.includes('video')
+			? ambiguous ? [media, {}] : [media] : [] };
+		Object.defineProperty(media, 'closest', { configurable: true, value: () => root });
+		Object.defineProperty(globalThis, 'window', { configurable: true, value: { get location() { return url; } } });
+		Object.defineProperty(globalThis, 'location', { configurable: true, get: () => url });
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		const set = (speed: number): ControlIntent => ({ intentId: `root:${speed}`, tabId: 7, documentId: registry.documentId,
+			generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+			target: { ...registry.target }, actualContext: {}, patch: { speed } });
+		const change = async (route: string): Promise<Record<string, unknown>> => {
+			registry.emit('removed'); registry.target.sourceRevision += 1; url = new URL(route);
+			messages.length = 0; registry.emit('registered'); registry.emit('selected');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const restoreMessage = messages.find((message) => message.type === 'spectra.control.intent.submit');
+			if (!restoreMessage) throw new Error('Expected current scene restore');
+			return restoreMessage.payload.patch as Record<string, unknown>;
+		};
+		try {
+			await executor.execute(set(2)); await change('https://www.douyin.com/live/b'); await executor.execute(set(1.5));
+			expect((await change('https://www.douyin.com/video/a')).speed).toBe(2);
+			expect((await change('https://www.douyin.com/live/b')).speed).toBe(1.5);
+			ambiguous = true;
+			// A multi-media root cannot claim the old scene preference. Only the
+			// independent document fallback remains available for the exact target.
+			expect((await change('https://www.douyin.com/video/a')).speed).toBe(1.5);
+		} finally { executor.dispose(); restore('window', oldWindow); restore('location', oldLocation); }
+	});
+	test('keeps exact-scene speeds independent and rejects an older automatic restore before writing', async () => {
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry(); registry.target.mediaId = 'media:a';
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		const intent = (speed: number, source: ControlIntent['source'] = 'popup'): ControlIntent => ({
+			intentId: `scene:${source}:${speed}`, tabId: 7, documentId: registry.documentId, generation: 1, baseRevision: 0,
+			source, target: { ...registry.target }, requestedCoverage: 'active-target', actualContext: {}, patch: { speed },
+		});
+		const visit = async (id: string): Promise<ControlIntent> => {
+			registry.target.mediaId = id; messages.length = 0; registry.emit('selected');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const changed = messages.findIndex((message) => message.type === 'spectra.content.target.changed');
+			const restored = messages.findIndex((message) => message.type === 'spectra.control.intent.submit');
+			expect(changed).toBeGreaterThanOrEqual(0); expect(restored).toBeGreaterThan(changed);
+			return { ...intent(0, 'restore'), ...messages[restored]?.payload } as ControlIntent;
+		};
+		try {
+			await executor.execute(intent(2));
+			await visit('media:b'); await executor.execute(intent(1.5));
+			const a = await visit('media:a');
+			expect(a.patch.speed).toBe(2); expect((await executor.execute(a)).fields.speed?.actual).toBe(2);
+			const b = await visit('media:b');
+			expect(b.patch.speed).toBe(1.5); expect((await executor.execute(b)).fields.speed?.actual).toBe(1.5);
+			const older = await visit('media:a'); await executor.execute(intent(2.4));
+			await expect(executor.execute(older)).rejects.toMatchObject({ code: 'stale-media-source' });
+			expect(registry.element.playbackRate).toBe(2.4);
+			expect((await executor.execute(intent(0.5, 'restore'))).fields.speed?.actual).toBe(2.4);
+		} finally { executor.dispose(); }
+	});
+
+	test('resolves a playback toggle locally and performs one native write with an exact ACK', async () => {
+		installFakeMediaGlobals(); const registry = new FakeRegistry(); let writes = 0;
+		const pause = registry.element.pause.bind(registry.element);
+		registry.element.pause = () => { writes += 1; pause(); };
+		registry.element.paused = false;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			const result = await executor.togglePlayback({ operationId: 'local:toggle', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'hotkey', target: null, operation: 'playback-toggle', payload: {} });
+			expect(writes).toBe(1); expect(result.actual).toBe(false); expect(result.target).toEqual(registry.target);
+			expect(result.fields.playing).toMatchObject({ phase: 'applied', actual: false });
+		} finally { executor.dispose(); }
+	});
 	test.each(['intercepted', 'replayed', 'selection-changed'] as const)('proves physical pause independently of event delivery (%s)', async (scenario) => {
 		installFakeMediaGlobals();
 		const media = new FakeMediaElement();
@@ -724,6 +878,8 @@ describe('native media single-writer correlation', () => {
 
 			available = true;
 			listener?.({ ...target }, 'registered', element as unknown as HTMLMediaElement);
+			expect(sent).not.toContainEqual(expect.objectContaining({ type: 'spectra.control.intent.submit' }));
+			listener?.({ ...target }, 'selected', element as unknown as HTMLMediaElement);
 			await Promise.resolve();
 			if (source === 'popup') expect(sent).not.toContainEqual(expect.objectContaining({ type: 'spectra.control.intent.submit' }));
 			else expect(sent).toContainEqual(expect.objectContaining({
@@ -1557,7 +1713,7 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	}, 4_000);
 
-	test('upgrades a DOM-owned restore when a page controller appears later in the same document', async () => {
+	test.each([false, true])('upgrades a DOM-owned restore when a page controller appears later in the same document (route settled %s)', async (routeSettled) => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -1609,6 +1765,32 @@ describe('native media single-writer correlation', () => {
 			expect(media.playbackRate).toBe(2);
 
 			state.supported = true;
+			if (routeSettled) {
+				let automatic: Promise<Awaited<ReturnType<NativeMediaExecutor['execute']>>> | undefined;
+				Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+					id: 'spectra-test',
+					sendMessage: async (message: { type: string; payload: Partial<ControlIntent> }) => {
+						if (message.type !== 'spectra.control.intent.submit' || message.payload.source !== 'restore') {
+							return { ok: true, data: { recorded: true } };
+						}
+						automatic = executor.execute({
+							intentId: 'route:late-controller', tabId: 7, documentId: registry.documentId,
+							generation: 1, baseRevision: 2, actualContext: {}, ...message.payload,
+						} as ControlIntent);
+						return { ok: true, data: await automatic };
+					},
+				} } });
+				executor.reconcileRoute('https://fixture.example/modal');
+				if (!automatic) throw new Error('Route settlement must schedule the retained speed upgrade');
+				expect((await automatic).fields.speed).toMatchObject({ phase: 'applied', strategy: 'page-native', actual: 2 });
+				await new Promise((resolve) => setTimeout(resolve, 0));
+				expect(state.speedWriteCount).toBe(1);
+				expect(state.speed).toBe(2);
+				expect(media.playbackRate).toBe(2);
+				executor.reconcileRoute('https://fixture.example/modal');
+				await new Promise((resolve) => setTimeout(resolve, 0));
+				expect(state.speedWriteCount).toBe(1);
+			}
 			const adjusted = await executor.execute({
 				intentId: 'intent:page-media:late-controller-adjust',
 				tabId: 7,
@@ -1626,7 +1808,7 @@ describe('native media single-writer correlation', () => {
 				strategy: 'page-native',
 				actual: 2.5,
 			});
-			expect(state.speedWriteCount).toBe(1);
+			expect(state.speedWriteCount).toBe(routeSettled ? 2 : 1);
 			expect(state.speed).toBe(2.5);
 			expect(media.playbackRate).toBe(2.5);
 

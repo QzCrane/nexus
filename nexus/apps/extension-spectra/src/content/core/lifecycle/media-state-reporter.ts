@@ -6,7 +6,7 @@ import { debounce, createCleanupManager, createEventListener } from '../../utils
 import { sendSpectraRequest } from '../../../shared/spectra-client';
 import { hasPlayableMedia } from '../../../shared/media-presence';
 import { getActiveMediaRegistry } from '../media-registry';
-import { updatePausedAt } from '../../utils/pause-tracker';
+import { getPausedAt, updatePausedAt } from '../../utils/pause-tracker';
 import { logger } from '../../../shared/logger';
 import { getContentBootstrapState } from '../../../shared/content-runtime';
 
@@ -30,6 +30,8 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 	// report answer it with the same shared predicate, so the background never
 	// sees a document flip between two definitions of "has media".
 	const hasMedia = hasPlayableMedia(document);
+	const playing = getActiveMediaRegistry()?.hasPlayingMedia() ?? false;
+	updatePausedAt(playing, hasMedia);
 	const interacted = state?.userHasInteracted ?? false;
 
 	// The bootstrap and the runtime share one isolated-world revision counter, so
@@ -46,6 +48,8 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 		hasMediaElement: hasMedia,
 		userInteracted: interacted,
 		reportRevision: nextRevision,
+		playing,
+		pausedAt: getPausedAt(),
 	})).catch((error: unknown) => {
 		log.warn('Media-state report failed outside the known context-invalidation boundary', error);
 	});

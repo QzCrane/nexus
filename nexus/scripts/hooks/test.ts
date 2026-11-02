@@ -41,6 +41,7 @@ import {
 } from './_hook-helpers.ts';
 import { frontmatterProblem } from './ai-pre-write-guard.ts';
 import { strictLintTargets } from './ai-post-write-lint.ts';
+import { preCommitGates } from './git-pre-commit.ts';
 import { splitCommands } from './codex-bash-guard.ts';
 import { scanFileContent } from './ai-pitfall-detector.ts';
 import {
@@ -776,6 +777,30 @@ ok(
 	'post-write feedback must remain non-mutating',
 );
 
+eq('pre-commit fallback: root and workspace paths retain their own base', preCommitGates([
+	'nexus/apps/extension-spectra/src/popup/index.ts',
+	'remote-site/dist/protocol.js',
+	'package.json',
+]), [[
+	'scripts/run-strict-biome.ts',
+	'apps/extension-spectra/src/popup/index.ts',
+	'../remote-site/dist/protocol.js',
+	'../package.json',
+]]);
+eq('pre-commit fallback: whitespace stays inside one process argument', preCommitGates([
+	'nexus/scripts/space and\nnewline.ts',
+]), [['scripts/run-strict-biome.ts', 'scripts/space and\nnewline.ts']]);
+eq('pre-commit fallback: documentation-only commits run the canonical gate', preCommitGates([
+	'rules.md',
+]), [['run', 'docs:check']]);
+eq('pre-commit fallback: mixed commits keep both mandatory gates', preCommitGates([
+	'nexus/scripts/example.ts',
+	'nexus/docs/README.md',
+]), [['scripts/run-strict-biome.ts', 'scripts/example.ts'], ['run', 'docs:check']]);
+eq('pre-commit fallback: no relevant staged files adds no gate', preCommitGates([
+	'image.png',
+]), []);
+eq('pre-commit fallback: an empty index adds no gate', preCommitGates([]), []);
 const lefthookPath = join(repoRoot, 'lefthook.yml');
 const lefthookConfig = readFileSync(lefthookPath, 'utf8');
 ok(

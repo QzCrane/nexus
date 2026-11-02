@@ -19,8 +19,8 @@ last_reviewed: 2026-11-02
 Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠正。首次卡片读取是并发观察：精确文档的已稳定 runtime 状态在 generation 不落后于 session 时优先，双向覆盖 Capture 启动与停止；pending/error 不能冒充稳定结果。后续 ControlSnapshot 只允许 revision 前进的处理器字段改变生命周期，未变化的旧字段和重复回执不能覆盖较新的 session。首份控制快照缺少处理器字段时，不得清除已由精确 runtime 证明的颜色；只有真正文档替换或不匹配的非空音频身份才重置。颜色仍表示路由：已确认 active Capture 在任何音量都是紫色；只有手势进行中且文档为 `dom-native`、数值越过原生上限时才允许提前一个 ACK 预测紫色；原生支持的超过 100% 音量仍不得凭阈值变紫。这种手势前瞻不是“投影旧状态”：它描述本次手势将进入的路由，只影响 tone，且只在那一个条件下生效。
 调节中的手柄位置、音量数字与填充条立即跟随当前请求，任何路由边界（含 100%）都不得冻结它们。存在未结算的路由事务时，**已结算投影**保留上一次已确认路由，不得把新路由的色调与旧路由证据拼接；**手势路径**允许 `resolveVolumeTone` 对唯一情形前瞻（`dom-native` 越界），且只影响 tone、不产生 Capture 事实。数值不得回退或冻结，也不能让较早的 session/ACK 把新数值改色。路由结算后一次提交新色调；通道失败或文档替换清除等待投影。该显示快照不拥有音频状态、不参与 Capture 准入，也不增加计时器或等待时长；等待仅来自既有控制事务的真实执行确认。
 
-- **Popup 高度**: 主视图使用内容固有高度；只有 Settings 导航模式为容器施加 600px 滚动视口。视图布局由 CSS 拥有，导航只切换模式类，禁止读取 `offsetHeight` 后写 inline `min-height` 或调用 `resizeTo`。窗口高度是另一个 owner：`popup/frame-height.ts` 唯一写入 `html` 的 `height`/`overflow-y`，输入是首帧保留值（Background 在 Popup URL 中公告的卡片数所对应的历史高度）与 `.view-container` 的实际高度；`data-spectra-ready` 之前钉住预测值，发布后最多纠正一次，且只记录已结算的发布高度。超过 Chrome 的 600px 上限时整文档保持单一滚动面。
-- **Popup 首帧**: 主题、surface、已公告主卡结构、语言及 visualizer 形状在首帧前决定。当前语言不能先显示英文再纠正，主卡不能因实际值 RPC 延迟而后一帧挂载；规范模板预绘制后原位绑定，不替换节点、不复制 HTML 缓存、不用全页隐藏/淡入或延时伪装。无主卡公告时不猜测受限页主卡。实际播放未知仍显示 `aria-pressed=mixed`，不拿缓存冒充 actual；临时同步提示不改变布局，终态读取失败必须可见。机制与状态图的唯一 owner 是 [runtime architecture](../architecture/runtime.md#action-popup-first-frame)。
+- **Popup 高度**: 全部已知可见 slot 在解析期建立，由真实结构的固有 CSS 高度决定首帧；不读取同卡片数、最近一次或 legacy 高度预测，不钉住旧窗口尺寸，也不等新检测或 actual ready 才显示后台卡。只有 Settings 导航模式为容器施加 600px 滚动视口。布局由 CSS 拥有，导航只切换模式类，禁止读取 `offsetHeight` 后写 inline `min-height` 或调用 `resizeTo`。`popup/frame-height.ts` 唯一拥有 live frame 几何、600px 上限和整文档单一滚动面，observer 失效只合并到一次 rAF。
+- **Popup 首帧**: 主题、surface、全部已公告可见 slot、语言及 visualizer 形状在首帧前决定。一张主卡与动态数量的后台卡共用唯一模板：解析期预绘制，异步取得身份后原节点绑定；不能等实际值 RPC 才挂载后台卡，也不替换节点、复制 HTML 缓存或用全页隐藏/淡入掩盖晚挂载。无主卡公告时不猜测受限页主卡。无身份节点保持 inert；实际播放未知为 `aria-pressed=mixed`，音量未知为 `—`，不拿缓存冒充 actual。冻结、丢弃或 unloaded 的已知成员只显示元数据与返回标签页入口，不探测、不建立控制 Port。机制和时序的唯一 owner 是 [runtime architecture](../architecture/runtime.md#action-popup-first-frame)。
 - Favicon 走标准 URL/service 机制，禁止未知 `_favicon` 权限。远程 QR 图显式生成本地 `data:`/SVG URL。
 
 ### §7.1 Strategy admission and performance gates
@@ -68,8 +68,9 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 ## §19 User experience
 
 - 主面板展示音量/静音/倍速/播放与目标媒体。Boost 与 DSP 为高级控制。
-- 播放按钮首次绘制前确认当前 document 的实际暂停状态；缓存不签发播放事实。
-  未知播放字段使用既有有界恢复，不把持久 ACK 当作当前状态。切换基线、旧 ACK
+- 播放按钮随结构首帧出现，actual 未确认时明确未知；当前 document 的实际暂停状态
+  异步确认后投影播放/暂停动作，缓存不签发播放事实。未知播放字段使用既有有界恢复，
+  不把持久 ACK 当作当前状态。切换基线、旧 ACK
   入场与缓冲等待由 [媒体 owner](06-media-and-video.md#playback-button-and-buffered-play) 定义。
 - 颜色由一个判定产出：`resolveVolumeTone`。`gray` 表示静音/0，`blue` 表示非 Capture 路径（原生或 MediaElement WebAudio），`purple` 表示已确认 active Capture（任意音量），并允许唯一的手势前瞻——文档为 `dom-native` 且数值越过原生上限时，可在 ACK 前一个手势帧显示紫色。`page-native`、已确认的 `media-webaudio` Boost 路由和未知路由不得预测。Popup 音量条与 Action 角标消费同一结果；角标不得用阈值反推，表面不得把 `blue` 解释成物理处理器类型。
 - 连续数值控制在输入任务中显示最新请求值；音量跨过 100% 不冻结数字、滑块或 OSD。已结算颜色消费已确认生命周期；手势前瞻只影响 tone，且必须由同一 `resolveVolumeTone` 产出。旧 ACK 不覆盖新目标，当前请求失败则回到已确认值并显示错误。Popup、快捷键和滚轮遵守同一规则。

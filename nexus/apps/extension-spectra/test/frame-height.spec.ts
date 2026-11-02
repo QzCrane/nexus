@@ -5,32 +5,30 @@ import { injectFrameHeightKey } from '../scripts/frame-reserve-key';
 import { releasePopupFrame, resolveFrameTarget, trackPopupFrame } from '../src/popup/frame-height';
 import {
 	ACTION_POPUP_PATH,
-	FRAME_HEIGHT_KEY,
-	FRAME_HEIGHT_KEY_LAST,
 	FRAME_HEIGHT_KEY_PLACEHOLDER,
 	FRAME_PLAN_PARAM,
 	POPUP_BOOTSTRAP,
 	actionPopupPath,
-	frameHeightKeyForCards,
 } from '../src/shared/popup-bootstrap';
 
-// The frame is the one size the user cannot help but compare across opens: two
-// opens of the same content must land on the same height, and a shorter open
-// must not inherit a taller one's. These are the rule's three states, none of
-// which needs a browser to pin.
+// Root geometry follows committed content. A shorter open never inherits an
+// earlier height, and pending actual reads do not participate in sizing.
 describe('popup frame target', () => {
 	test('defers observer writes and retires queued geometry work on release or retrack', () => {
 		const keys = ['window', 'document', 'ResizeObserver', 'MutationObserver', 'requestAnimationFrame', 'cancelAnimationFrame'] as const;
 		const originals = new Map(keys.map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
 		let contentHeight = 352;
-		const html = { dataset: { spectraReady: 'true' }, style: { height: '', overflowY: '' }, classList: { add() {}, remove() {} } };
+		const html = { dataset: { spectraStructureReady: 'true' }, style: { height: '600px', overflowY: 'hidden' }, classList: { add() {}, remove() {} } };
 		const container = { getBoundingClientRect: () => ({ height: contentHeight }) };
 		const callbacks = new Map<number, FrameRequestCallback>();
 		let nextFrame = 0;
 		const resizeCallbacks: Array<() => void> = [];
 		const mutations: Array<() => void> = [];
 		const globals = {
-			window: { location: { search: '?cards=3' }, localStorage: { setItem() {} } },
+			window: { location: { search: '?cards=1' }, localStorage: {
+				getItem() { throw new Error('Live geometry must not read historical hints'); },
+				setItem() { throw new Error('Live geometry must not persist height'); },
+			} },
 			document: { documentElement: html, querySelector: () => container },
 			ResizeObserver: class { constructor(callback: () => void) { resizeCallbacks.push(callback); } observe() {} disconnect() {} },
 			MutationObserver: class { constructor(callback: () => void) { mutations.push(callback); } observe() {} disconnect() {} },
@@ -82,56 +80,29 @@ describe('popup frame target', () => {
 		}
 	});
 
-	test('follows the content once the inventory has published', () => {
-		expect(resolveFrameTarget(352, true, null)).toBe(352);
-	});
-
-	test('drops a stale prediction when the inventory publishes', () => {
-		// The regression: a tall open persists 600, the next open's content is 352,
-		// and keeping the prediction leaves 248px of blank under the only card.
-		expect(resolveFrameTarget(352, true, 600)).toBe(352);
-	});
-
-	test('holds the prediction as a floor only while the inventory is pending', () => {
-		// Before the inventory answers, a half-populated measurement must not be
-		// allowed to shrink the window back through itself.
-		expect(resolveFrameTarget(352, false, 600)).toBe(600);
-		expect(resolveFrameTarget(352, false, null)).toBe(352);
+	test('uses committed intrinsic content without waiting for actual hydration', () => {
+		expect(resolveFrameTarget(352)).toBe(352);
+		expect(resolveFrameTarget(280)).toBe(280);
 	});
 
 	test('never past the height Chrome grants the Action Popup', () => {
-		expect(resolveFrameTarget(675.38, true, null)).toBe(600);
-		expect(resolveFrameTarget(675.38, false, 600)).toBe(600);
+		expect(resolveFrameTarget(675.38)).toBe(600);
+		expect(resolveFrameTarget(0)).toBe(0);
 	});
 });
 
-// The height belongs to a shape, not to a session. One number meant every switch
-// between a one-card and a two-card Popup opened at the other one's height and
-// then had to resize the window in front of the user.
+// The announcement carries structure, never a historical height lookup.
 describe('popup frame plan', () => {
-	test('keeps one entry per card count', () => {
-		expect(frameHeightKeyForCards(1)).not.toBe(frameHeightKeyForCards(2));
-		expect(frameHeightKeyForCards(0)).toBe(`${POPUP_BOOTSTRAP.prefix}.0`);
-	});
-
 	test('announces the count the Popup will draw', () => {
 		expect(actionPopupPath(0)).toBe(`${ACTION_POPUP_PATH}?${FRAME_PLAN_PARAM}=0`);
 		expect(actionPopupPath(3)).toBe(`${ACTION_POPUP_PATH}?${FRAME_PLAN_PARAM}=3`);
 	});
 
 	test('opens the bare document when the count cannot be decided', () => {
-		// A wrong count is worse than no count: the head script then falls back to
-		// the last settled height instead of a shape that was never measured.
+		// No count means no announced slots, never a guess from an older open.
 		expect(actionPopupPath(null)).toBe(ACTION_POPUP_PATH);
 		expect(actionPopupPath(-1)).toBe(ACTION_POPUP_PATH);
 		expect(actionPopupPath(Number.NaN)).toBe(ACTION_POPUP_PATH);
-	});
-
-	test('the last-resort keys are distinct from every shape key', () => {
-		for (const cards of [0, 1, 2, 7]) {
-			expect(frameHeightKeyForCards(cards)).not.toBe(FRAME_HEIGHT_KEY_LAST);
-			expect(frameHeightKeyForCards(cards)).not.toBe(FRAME_HEIGHT_KEY);
-		}
 	});
 });
 
@@ -147,12 +118,12 @@ describe('popup bootstrap injection', () => {
 		// second definition of the same strings, and nothing would keep the two in
 		// step once either changed.
 		expect(headScript.replaceAll(FRAME_HEIGHT_KEY_PLACEHOLDER, ''))
-			.not.toContain(FRAME_HEIGHT_KEY);
+			.not.toContain('spectra.popup.frameHeight');
 		expect(headScript.replaceAll(FRAME_HEIGHT_KEY_PLACEHOLDER, ''))
 			.not.toContain(POPUP_BOOTSTRAP.themeKey);
 	});
 
-	test('the build writes every key the Popup module persists under', () => {
+	test('the build injects the canonical theme and surface contract', () => {
 		const built = injectFrameHeightKey(headScript);
 		expect(built).not.toContain(FRAME_HEIGHT_KEY_PLACEHOLDER);
 		const injected = JSON.parse(

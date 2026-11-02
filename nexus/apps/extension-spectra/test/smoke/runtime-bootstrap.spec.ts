@@ -118,11 +118,11 @@ describe('SPECTRA built extension smoke: runtime-bootstrap', () => {
 			expect(first.data.tabs).toContain(tabId);
 
 			// Deterministic proof that persistence no longer waits for onSuspend:
-			// the settled fact must already be in durable local storage after the scan.
+			// the settled fact must already be in browser-session storage after the scan.
 			await eventually(
 				() => evaluateServiceWorker(async (targetTabId) => {
 					const key = 'spectra.media-facts.v1';
-					const raw = (await chrome.storage.local.get(key))[key] as
+					const raw = (await chrome.storage.session.get(key))[key] as
 						Record<string, { outcome?: string }> | undefined;
 					return raw?.[String(targetTabId)]?.outcome ?? null;
 				}, tabId),

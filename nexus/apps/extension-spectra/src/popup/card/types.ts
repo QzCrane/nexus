@@ -26,6 +26,8 @@ export interface CardInternalState {
   // Set when the bounded snapshot probe gave up: the card has no authoritative
   // control state, and must say so instead of promising a sync forever.
   controlSyncExpired?: boolean;
+  /** A local operation is settling; this never certifies the media actual. */
+  playbackPending?: boolean;
   lifecycleSnapshotKnown?: boolean;
   isCaptureActive: boolean;
   userInteracted: boolean;
@@ -83,6 +85,12 @@ export interface InitCardParams {
   allowCached?: boolean;
   loadVisualizer?: () => Promise<PopupVisualizerFactories>;
   registerCleanup?: (cleanup: () => void) => () => void;
+  /** Structure allocated in member order before any snapshot is awaited. */
+  cardEl?: HTMLElement;
+  /** Retiring a member also fences any initialization already in flight. */
+  isCurrent?: () => boolean;
+  onDocumentReplaced?: () => void;
+  onBindingStateChanged?: (binding: { available: true; documentId: string } | { available: false; documentId: string | null }) => void;
 }
 
 // CardContext: unified handle passed to sub-modules (rendering, messaging, events) to access shared tab state and UI refs

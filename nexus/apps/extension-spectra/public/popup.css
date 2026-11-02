@@ -68,25 +68,9 @@ html {
    * content box. The overlay is installed by `installOverlayScrollbar` in
    * `src/popup/overlay-scrollbar.ts`. */
   scrollbar-width: none; /* Firefox: hide the native root scrollbar */
-  /* The reserved height is applied before the first paint, so an open starts at
-   * the size it will keep. The class below is added by the Popup at the moment
-   * the inventory publishes, which is the only point an open can disagree with
-   * its own reservation - the one disagreement worth travelling instead of
-   * snapping. Until then nothing is allowed to animate the frame. */
+  /* Full card structure is present before paint. Root geometry follows its
+   * intrinsic size; no transition stretches a previous open's blank frame. */
   transition: none;
-}
-
-/* From the publish onwards every frame change travels: the settling correction,
- * then the runtime layout adjustments (side-panel toggle, settings view). */
-html.spectra-frame-stable {
-  transition: height 160ms cubic-bezier(0.2, 0.8, 0.2, 1);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  html,
-  html.spectra-frame-stable {
-    transition: none;
-  }
 }
 
 /* Side panel expanded: width increases immediately, no min-height constraint */
@@ -877,10 +861,12 @@ input:checked + .slider-round:before {
 }
 
 /* Card disabled state */
-.glass-card.disabled .sleep-mask {
+.glass-card.disabled .sleep-mask,
+.glass-card.media-unavailable .sleep-mask {
   opacity: 1;
   pointer-events: auto;
 }
+
 
 /* 4. Sleep content layout: avoid header area */
 .sleep-content {

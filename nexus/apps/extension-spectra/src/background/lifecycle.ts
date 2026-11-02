@@ -22,6 +22,8 @@ import { beginDocumentNavigation } from './control-coordinator';
 import { settingsRepository } from './settings-repository';
 import { clearBadgeUsage } from './badge-usage';
 import { mediaFacts } from './media-facts';
+import { mediaTabAvailability } from '../shared/media-card-policy';
+import { syncActiveActionPopups } from './popup-frame';
 import { swLog } from '../shared/logger';
 import {
 	handleVisualizerTabRemoved,
@@ -154,9 +156,21 @@ export function setupLifecycleListeners(): void {
 		}
 		activeTabsByWindow.set(activeInfo.windowId, activeInfo.tabId);
 		markTabActivated(activeInfo.tabId, now);
+		void mediaFacts.ready().then(async () => {
+			mediaFacts.touchMediaFact(activeInfo.tabId, now);
+			await mediaFacts.flushMediaFacts();
+			syncActiveActionPopups();
+		}).catch((error: unknown) => swLog.warn('[Lifecycle] Unable to record media activation', error));
 	});
 
-	chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+	chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
+		if (changeInfo.frozen !== undefined || changeInfo.discarded !== undefined || changeInfo.status !== undefined) {
+			void mediaFacts.ready().then(async () => {
+				mediaFacts.markMediaUnavailable(tabId, mediaTabAvailability(tab) !== 'runnable');
+				await mediaFacts.flushMediaFacts();
+				syncActiveActionPopups();
+			}).catch((error: unknown) => swLog.warn('[Lifecycle] Unable to record media availability', error));
+		}
 		// eff: update activity timestamp if the tab generates sound
 		if (changeInfo.audible !== undefined) {
 			markTabAudible(tabId, changeInfo.audible);

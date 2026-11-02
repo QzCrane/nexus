@@ -317,11 +317,11 @@ export interface SpectraRequestMap {
 		response: { accepted: true };
 	};
 	'spectra.content.source.released': {
-		payload: { target: MediaTarget };
+		payload: { target: MediaTarget; mediaObservation?: ControlReadResult['mediaObservation'] };
 		response: { accepted: true };
 	};
 	'spectra.content.target.changed': {
-		payload: { target: MediaTarget };
+		payload: { target: MediaTarget; mediaObservation?: ControlReadResult['mediaObservation'] };
 		response: { accepted: true };
 	};
 	'spectra.control.snapshot.get': {
@@ -605,7 +605,7 @@ export interface SpectraRequestMap {
 		response: { markers: TimeMarkerResult[] };
 	};
 	'spectra.tab.media.report': {
-		payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number };
+		payload: { hasMediaElement: boolean; userInteracted: boolean; reportRevision?: number; playing?: boolean; pausedAt?: number | null };
 		response: { reported: true };
 	};
 	'spectra.tab.visible.list': {
@@ -782,7 +782,7 @@ const OPENED_RESULT_KEYS = new Set(['opened']);
 const INJECTED_RESULT_KEYS = new Set(['injected']);
 const REPORTED_RESULT_KEYS = new Set(['reported']);
 const HANDLED_RESULT_KEYS = new Set(['handled']);
-const TABS_RESULT_KEYS = new Set(['tabs']);
+const TABS_RESULT_KEYS = new Set(['tabs', 'inactiveTabs', 'nextExpiryAt', 'expiryByTab']);
 const PLAYING_RESULT_KEYS = new Set(['playing']);
 const ACTIVE_RESULT_KEYS = new Set(['active']);
 const MEDIA_STATE_RESULT_KEYS = new Set(['playing', 'speed', 'pipActive', 'preservePitch']);
@@ -1126,6 +1126,9 @@ function isMediaSpeedResult(
 // audible flag - so there is no partial state to report or converge later.
 export interface VisibleTabsResult {
 	tabs: number[];
+	inactiveTabs?: number[];
+	nextExpiryAt?: number;
+	expiryByTab?: Record<string, number>;
 }
 
 function isVisibleTabsResult(
@@ -1136,9 +1139,23 @@ function isVisibleTabsResult(
 		|| !Array.isArray(value.tabs)
 		|| value.tabs.length > 10_000) return false;
 	const unique = new Set<number>();
+	if (value.nextExpiryAt !== undefined && (!Number.isSafeInteger(value.nextExpiryAt) || Number(value.nextExpiryAt) < 0)) return false;
 	for (const tabId of value.tabs) {
 		if (!isPositiveInteger(tabId) || unique.has(tabId)) return false;
 		unique.add(tabId);
+	}
+	if (value.expiryByTab !== undefined) {
+		if (!isRecord(value.expiryByTab)) return false;
+		for (const [tabId, expiry] of Object.entries(value.expiryByTab)) {
+			if (String(Number(tabId)) !== tabId || !unique.has(Number(tabId)) || !Number.isSafeInteger(expiry) || Number(expiry) <= 0) return false;
+		}
+	}
+	if (value.inactiveTabs !== undefined) {
+		if (!Array.isArray(value.inactiveTabs) || value.inactiveTabs.length > 10_000) return false;
+		for (const tabId of value.inactiveTabs) {
+			if (!isPositiveInteger(tabId) || unique.has(tabId)) return false;
+			unique.add(tabId);
+		}
 	}
 	return true;
 }

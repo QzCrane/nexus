@@ -41,13 +41,17 @@ These totals mirror executable contracts and gates. A count changes only with co
 
 | 图 / 规则 | 唯一位置 |
 | --- | --- |
+| 卡片 queued/hydrating/bound/unavailable、原节点重绑与退休 | [Runtime first frame](../architecture/runtime.md#action-popup-first-frame) |
 | 从意图到实际快照的总控制流 | [01 §2](01-foundations.md#2-control-flow-and-state-ownership) |
 | 字段事务状态机 | [05 Field transaction state](05-control-state.md#field-transaction-state) |
-| Popup 首帧结构、身份绑定与实际值确认状态机 | [Runtime presentation and actual confirmation](../architecture/runtime.md#presentation-and-actual-confirmation) |
+| 浏览器可运行性、document 与媒体场景独立状态轴 | [Runtime lifecycle axes](../architecture/runtime.md#browser-document-and-media-lifecycle-axes) |
+| 自然登记、动态成员、最近暂停与到期隐藏决策图 | [06 Document-level inventory](06-media-and-video.md#131-document-level-inventory) |
+| Popup 全部 slot 首帧、原节点绑定与实际值时序 | [Runtime presentation and actual confirmation](../architecture/runtime.md#presentation-and-actual-confirmation) |
+| 物理采样与长 speed writer 的双 lane、字段顺序保护 | [05 Ordered physical observations](05-control-state.md#ordered-physical-observations) |
 | written / confirmed / drifted / unconfirmed 证明状态机 | [05 Native write proof state](05-control-state.md#native-write-proof-state) |
 | SPA route / document / media source 生命线及 source 状态机 | [06 SPA identity and source lifecycle](06-media-and-video.md#spa-identity-and-source-lifecycle) |
 | 关闭直播、隐藏、移除、无目标、Popup 关闭与恢复决策表 | [06 Closing live players and speed inheritance](06-media-and-video.md#closing-live-players-and-speed-inheritance) |
-| document 恢复意图三态、选择访问、运行时租约与后台重启 | [06 Document replay intent lifetime](06-media-and-video.md#document-replay-intent-lifetime) |
+| document 恢复意图三态、场景 2/1.5 往返与 stale restore 取消 | [06 Document replay intent lifetime](06-media-and-video.md#document-replay-intent-lifetime) |
 | 首次 Popup 播放状态、切换 baseline、缓冲播放与有界 ACK | [06 Playback button and buffered play](06-media-and-video.md#playback-button-and-buffered-play) |
 | 自由倍速准入、page/DOM writer、失败与补偿决策图 | [06 Speed decision and failure](06-media-and-video.md#speed-decision-and-failure) |
 | 直播传输不能调速的边界 | [06 Live transport limits](06-media-and-video.md#live-transport-limits) |

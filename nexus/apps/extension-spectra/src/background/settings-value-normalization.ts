@@ -3,6 +3,7 @@
 import {
 	DEFAULT_AUDIO_CONFIG,
 	DEFAULT_GLOBAL_SETTINGS,
+	MAX_PAUSE_RETENTION_SECONDS,
 	DEFAULT_HOTKEY_SETTINGS,
 	clampControlValue,
 	compileEffectiveVolume,
@@ -23,8 +24,6 @@ import {
 	type HotkeySettings,
 	type SiteHotkeyConfig,
 } from '@nexus/contracts';
-
-export const MAX_PAUSE_RETENTION_SECONDS = 86_400;
 
 const UNSUPPORTED_ACTIONS = new Set<HotkeyAction>(
 	HOTKEY_ACTIONS.filter((action) => selectHotkeyAvailability(action) === 'disabled-legacy'),

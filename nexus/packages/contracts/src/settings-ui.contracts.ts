@@ -143,7 +143,7 @@ const HOTKEY_SITE_DELETE_MUTATION_KEYS = new Set(['type']);
 const HOTKEY_SITE_ENABLED_MUTATION_KEYS = new Set(['type', 'enabled']);
 const HOTKEY_SITE_UPSERT_MUTATION_KEYS = new Set(['type', 'binding']);
 const HOTKEY_SITE_REMOVE_MUTATION_KEYS = new Set(['type', 'bindingId']);
-const MAX_PAUSE_RETENTION_SECONDS = 86_400;
+export const MAX_PAUSE_RETENTION_SECONDS = 86_400;
 const MAX_HOTKEY_BINDINGS = 1000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

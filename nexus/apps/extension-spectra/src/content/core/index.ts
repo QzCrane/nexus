@@ -357,7 +357,7 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 		}
 		void sendSpectraRequest(
 			'spectra.content.source.released',
-			{ target },
+			{ target, mediaObservation: mediaRegistry.captureObservation() },
 			{ documentId: target.documentId },
 		).catch(() => undefined);
 	}));

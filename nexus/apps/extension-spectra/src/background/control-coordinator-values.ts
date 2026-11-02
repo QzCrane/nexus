@@ -1,7 +1,9 @@
 import {
 	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS,
 	CONTROL_SESSION_FIELDS,
+	MEDIA_OBSERVATION_FIELDS,
 	clampControlValue,
+	compareMediaObservations,
 	selectControlCapabilityScope,
 	type CaptureAdmission,
 	type ControlActualContext,
@@ -21,6 +23,7 @@ import {
 	type ControlSubmitRequest,
 	type ControlValues,
 	type MediaTarget,
+	type MediaObservationStamp,
 } from '@nexus/contracts';
 
 export const PAGE_OBSERVABLE_FIELDS = new Set<ControlField>([
@@ -34,6 +37,8 @@ export const PAGE_OBSERVABLE_FIELDS = new Set<ControlField>([
 	'pip',
 	'fullscreen',
 ]);
+
+export const ORDERED_MEDIA_FIELDS = new Set<ControlField>(MEDIA_OBSERVATION_FIELDS);
 
 export const BOOTSTRAP_PAGE_OBSERVABLE_FIELDS = new Set<ControlField>(
 	CONTROL_BOOTSTRAP_OBSERVATION_GROUPS.flat(),
@@ -123,6 +128,64 @@ export function sameMediaTarget(
 		&& left.kind === right.kind);
 }
 
+export function sameMediaObservationSelection(left: MediaObservationStamp, right: MediaObservationStamp): boolean {
+	return left.epoch === right.epoch && left.owner === right.owner && left.selection === right.selection;
+}
+
+/** Retire source actuals without manufacturing a replacement's desired values. */
+export function retireMediaActualFields(
+	fields: ControlFieldStates,
+	media: boolean,
+	video: boolean,
+	revision: number,
+): ControlFieldStates {
+	const retired: ControlFieldStates = {};
+	for (const [rawField, state] of Object.entries(fields)) {
+		if (!state) continue;
+		const field = rawField as ControlField;
+		const scope = selectControlCapabilityScope(field);
+		if (!(media && (scope === 'active-media' || scope === 'media-source' || scope === 'requested-audio-scope')
+			|| video && scope === 'active-video')) continue;
+		Object.assign(retired, { [field]: { ...state, desired: null, actual: null, revision,
+			phase: 'idle', controlled: false, lastError: null } });
+	}
+	return retired;
+}
+
+/** Field samples are ordered independently of control intent revisions. */
+export function mergeMediaObservedFields(
+	current: ControlFieldStates,
+	incoming: ControlFieldStates,
+	stamp: MediaObservationStamp | undefined,
+	observation: boolean,
+): ControlFieldStates {
+	const fields: ControlFieldStates = { ...current };
+	for (const [rawField, state] of Object.entries(incoming)) {
+		if (!state) continue;
+		const field = rawField as ControlField;
+		const previous = current[field];
+		const sample = ORDERED_MEDIA_FIELDS.has(field) ? state.mediaObservation ?? stamp : undefined;
+		if (previous?.mediaObservation && ORDERED_MEDIA_FIELDS.has(field)) {
+			if (!sample && !observation && state.desired === null && !state.controlled && state.lastError === null) {
+				// A release ACK may relinquish writer ownership without supplying a
+				// new physical sample. Preserve the actual value and its proof.
+				Object.assign(fields, { [field]: { ...previous, desired: null, controlled: false,
+					revision: state.revision, intentId: state.intentId } });
+				continue;
+			}
+			const order = sample ? compareMediaObservations(sample, previous.mediaObservation) : -1;
+			if (order === null || order < 0) continue;
+		}
+		// Reading the same physical value is not a new page gesture that releases
+		// an acknowledged writer. The newer sample still advances its evidence.
+		const value = observation && previous?.phase === 'applied' && previous.actual === state.actual
+			? { ...previous, ...(sample ? { mediaObservation: sample } : {}) }
+			: { ...state, ...(sample ? { mediaObservation: sample } : {}) };
+		Object.assign(fields, { [field]: value });
+	}
+	return fields;
+}
+
 // An observation is a value and the writer that produced it. The two travel
 // together so no caller can synthesise an "actual" value and guess its
 // provenance: `applyPageObservation` already refuses that, and native
@@ -176,6 +239,7 @@ export interface ResolvedControlIntentRequest {
 	requestedCoverage: ControlIntent['requestedCoverage'];
 	target: MediaTarget | null;
 	patch: ControlPatch;
+	mediaRestore?: ControlIntent['mediaRestore'];
 	captureAdmission?: CaptureAdmission;
 }
 
@@ -208,6 +272,7 @@ export function createIntent(
 		target: request.target,
 		actualContext,
 		patch: request.patch,
+		...(request.mediaRestore ? { mediaRestore: request.mediaRestore } : {}),
 		...(request.captureAdmission
 			? { captureAdmission: request.captureAdmission }
 			: {}),

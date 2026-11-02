@@ -83,6 +83,92 @@ function harness(options: {
 }
 
 describe('MV3 startup runtime recovery adapter', () => {
+	test('filters frozen, discarded and unloaded tabs before reading frames and scopes retries to the same failed document', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const frameReads: number[] = [];
+		const tabs = [
+			{ id: 1, url: 'https://media.example/a', status: 'complete' },
+			{ id: 2, url: 'https://media.example/b', frozen: true },
+			{ id: 3, url: 'https://media.example/c', discarded: true },
+			{ id: 4, url: 'https://media.example/d', status: 'unloaded' },
+			{ id: 5, url: 'chrome://settings/' },
+			{ id: 6, url: 'https://media.example/committing', status: 'loading' },
+		] as chrome.tabs.Tab[];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { query: async () => tabs },
+			webNavigation: { getFrame: async ({ tabId }: { tabId: number }) => {
+				frameReads.push(tabId); return { documentId: `document-${tabId}`, url: `https://media.example/${tabId}` };
+			} },
+		} });
+		try {
+			const discovered = await runtimeRestartStartupTestApi.currentHttpTargets();
+			expect(discovered.map((item) => item.tabId).sort()).toEqual([1, 6]);
+			expect(frameReads.sort()).toEqual([1, 6]);
+			frameReads.length = 0;
+			const retry = await runtimeRestartStartupTestApi.currentHttpTargets(new Map([[1, { ...target, tabId: 1, documentId: 'document-old' }], [2, { ...target, tabId: 2 }]]));
+			expect(retry).toEqual([]);
+			expect(frameReads).toEqual([1]);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('retries only failed runnable targets instead of reproving healthy documents', async () => {
+		const queued: Array<() => void> = [];
+		const scopeReads: Array<number[] | null> = [];
+		const recovered: number[] = [];
+		const targets = [1, 2].map((tabId) => ({ ...target, tabId, documentId: `document-${tabId}` }));
+		let firstFailure = true;
+		runtimeRestartStartupTestApi.initialize({
+			readSettings: async () => DEFAULT_HOTKEY_SETTINGS,
+			discoverTargets: async (retryOnly) => {
+				scopeReads.push(retryOnly ? [...retryOnly.keys()] : null);
+				return targets.filter((item) => !retryOnly || retryOnly.has(item.tabId));
+			},
+			recover: async (item) => {
+				recovered.push(item.tabId);
+				if (item.tabId === 2 && firstFailure) { firstFailure = false; throw new Error('temporarily-unavailable'); }
+			},
+			schedule: (callback) => { queued.push(callback); },
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(recovered).toEqual([1, 2]);
+		expect(queued).toHaveLength(1);
+		queued.shift()?.();
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(recovered).toEqual([1, 2, 2]);
+		expect(scopeReads).toEqual([null, [2]]);
+		expect(queued).toEqual([]);
+	});
+
+	test.each(['discovery', 'document'] as const)('terminates repeated %s failures after the canonical bounded retry schedule', async (phase) => {
+		const queued: Array<() => void> = [];
+		const delays: number[] = [];
+		const scopes: Array<number[] | null> = [];
+		let attempts = 0;
+		runtimeRestartStartupTestApi.initialize({
+			readSettings: async () => DEFAULT_HOTKEY_SETTINGS,
+			discoverTargets: async (retryOnly) => {
+				attempts += 1;
+				scopes.push(retryOnly ? [...retryOnly.keys()] : null);
+				if (phase === 'discovery') throw new Error('discovery-unavailable');
+				return [target];
+			},
+			recover: async () => { throw new Error('document-unavailable'); },
+			schedule: (callback, delay) => { queued.push(callback); delays.push(delay); },
+		});
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		for (let retry = 0; retry < 3; retry += 1) {
+			expect(queued).toHaveLength(1);
+			queued.shift()?.();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+		}
+		expect(delays).toEqual([250, 1_000, 4_000]);
+		expect(attempts).toBe(4);
+		expect(queued).toEqual([]);
+		expect(scopes).toEqual(phase === 'discovery' ? [null, null, null, null] : [null, [7], [7], [7]]);
+	});
 	test.each(['released', 'retained'] as const)('uses the surviving document template instead of inferring it from old resource actuals (%s)', async (mediaIntentState) => {
 		const h = harness({ status: { mediaIntentState }, restoreCapability: 'settings:old-resource' });
 		await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);

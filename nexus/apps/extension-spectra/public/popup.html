@@ -4,8 +4,8 @@
 <html id="spectra-scroll-root" lang="en">
   <head>
     <meta charset="UTF-8" />
-    <!-- Render-blocking on purpose: reserves the popup height before the first
-         paint, so the window never opens at one height and jumps to another. -->
+    <!-- Theme and surface precede parsing; all announced card slots precede
+         first paint. Intrinsic CSS owns size without historical height hints. -->
     <script src="frame-reserve.js"></script>
     <script src="popup-first-paint.js" defer blocking="render"></script>
     <link rel="stylesheet" href="popup.css" />

@@ -29,7 +29,7 @@ last_reviewed: 2026-11-01
 - `SCTRL-015`: MAIN cannot bypass user activation, CORS, DRM or inaccessible media.
 - `SCTRL-016`: product UX exposes outcomes, not implementation modes; records exact 28 persistent snapshot fields plus 23 momentary operations inventory.
 - `SCTRL-017`: a page-native observation is admitted by the pure coordinator-value owner, commits actual state once, and never echoes a second write.
-- `SCTRL-018`: control target scope is top-level-only; passive inventory separately performs a bounded document-fenced frame census, preserves unknown coverage, never loads the heavy runtime, and maps legacy v2 responses without coverage to unknown rather than complete.
+- `SCTRL-018`: control target scope is top-level-only; inventory projects natural document reports, session media facts and Chrome evidence through the shared membership policy, without frame census, tab probes or heavy-runtime acquisition. Unknown/unloaded tabs without current media evidence create no card, placeholder or folded count. Report high-water ordering and retirement tombstones protect fact identity; retention expiry hides membership without deleting facts or settings, and browser availability never grants control authority.
 - `SCTRL-019`: one visualizer IPC owns the next schedule.
 - `SCTRL-020`: Popup fields project only `ControlSnapshot`; audio session data owns lifecycle only.
 - `SCTRL-021`: visualizer ownership is per subscriber and exact document; it expires abnormal exits, retains a bounded generation tombstone, compensates ambiguous enable/release ACKs, and cannot persist transient Capture demand across worker/session restoration.
@@ -61,7 +61,7 @@ last_reviewed: 2026-11-01
 - `SCTRL-047`: within one projection surface every projection element (fill, readout, native thumb) has exactly one writing module, and no projection surface imports another Anchor: `createVolumeView` Anchor: `check-architecture-layers`.
 - `SCTRL-048`: the presented volume number is always the live optimistic value; a route transaction holds the tone and mute only, never the number Anchor: `resolveVolumePresentation`.
 - `SCTRL-049`: the Popup volume bar and the Action badge consume one tone predicate, so violet always means an acknowledged active Capture or the single live-gesture case in which a `dom-native` document crosses its native ceiling; a threshold never implies Capture, a predicted tone is not a Capture fact, and no surface may derive a route from a number Anchor: `resolveVolumeTone`.
-- `SCTRL-050`: the Action Popup's first frame is decided before the document is visible: the Background states the card count in the tab's popup URL, the render-blocking head script applies the committed theme and the height that shape settled on, and the frame stays pinned at that prediction until the inventory publishes; only a settled published height may be recorded, under the announced count Anchor: `actionPopupPath` Anchor: `POPUP_BOOTSTRAP`.
+- `SCTRL-050`: the Action Popup's first frame contains every announced visible main/background slot from the sole localized template, with same-node identity binding and asynchronous actual confirmation. Normal opening waits for no fresh media detection; unknown pages create no reserved slots. Intrinsic CSS structure determines size without historical-height reservation, while frame-height remains the sole live geometry/600 px cap/single-scroll owner. Anchor: `actionPopupPath` Anchor: `POPUP_BOOTSTRAP`.
 
 ## §21 Migration and release gate
 

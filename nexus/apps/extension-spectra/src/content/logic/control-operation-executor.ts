@@ -128,6 +128,11 @@ export async function executeControlOperation(
 		return current?.target ?? operationTarget;
 	};
 	switch (intent.operation) {
+		case 'playback-toggle': {
+			const playback = await nativeExecutor.togglePlayback(intent);
+			return { ...ack(intent, 'dom-native', { playing: playback.actual }, playback.fields, playback.target),
+				mediaObservation: playback.mediaObservation };
+		}
 		case 'restore-page-settings': {
 			const released = await nativeExecutor.releasePageSettings(intent);
 			return ack(intent, 'extension-state', {

@@ -33,14 +33,24 @@ export function recordMediaState(
 		hasMediaElement: boolean;
 		userInteracted: boolean;
 		reportRevision?: number;
+		playing?: boolean;
+		pausedAt?: number | null;
 	},
 ): { reported: true } {
 	// v2 legacy producers have no ordering token. Accept the additive wire shape,
 	// but never let an unordered report create or replace a current media fact.
 	const ordering = classifyMediaReport(payload);
 	if (ordering.status === 'legacy-unversioned') return { reported: true };
+	const accepted = mediaFacts.rememberMediaFact(
+		tabId, documentId, payload.hasMediaElement ? 'found' : 'no-media', 'report', Date.now(), ordering.revision,
+		{
+			userInteracted: payload.userInteracted,
+			...(payload.playing === undefined ? {} : { playing: payload.playing }),
+			...(payload.pausedAt === undefined ? {} : { pausedAt: payload.pausedAt }),
+		},
+	);
+	if (!accepted) return { reported: true };
 	const state = getOrCreateTabAudioState(tabId, documentId);
-	if (ordering.revision <= state.reportRevision) return { reported: true };
 	state.hasMediaElement = payload.hasMediaElement;
 	state.reportRevision = ordering.revision;
 	// The content script report is the authority for its own document: it is the
@@ -50,7 +60,6 @@ export function recordMediaState(
 	// media nested in a frame this world cannot read is not controllable from the
 	// Popup either, so pretending the tab is "still unknown" would only preserve
 	// a card whose controls cannot reach the player.
-	mediaFacts.rememberMediaFact(tabId, documentId, payload.hasMediaElement ? 'found' : 'no-media', 'report');
 
 	// The media tabs are what the Popup draws cards for, and the Action Popup
 	// URL states how many of them it will draw before the Popup exists. A report
@@ -86,11 +95,18 @@ function registerTabStateV2Listener(): void {
 				if (!tabId || (message.tabId !== undefined && message.tabId !== tabId)) {
 					throw new Error('Media report requires its content-script tab');
 				}
+				// Hydrate the durable high-water mark before accepting the report.
+				// Recheck Chrome identity after this await, so an old document cannot
+				// cross a navigation while the local store is being read.
+				await mediaFacts.ready();
 				if (sender.frameId !== 0 || !sender.documentId
 					|| await currentTopDocumentId(tabId) !== sender.documentId) {
 					throw new Error('Media report belongs to a stale or non-top-level document');
 				}
-				return recordMediaState(tabId, sender.documentId, message.payload);
+				const result = recordMediaState(tabId, sender.documentId, message.payload);
+				if (sender.tab?.active === true) mediaFacts.touchMediaFact(tabId);
+				await mediaFacts.flushMediaFacts();
+				return result;
 			}
 			if (message.type === 'spectra.content.inject') {
 				return { injected: await injectContentScriptOnDemand(message.payload.tabId) };

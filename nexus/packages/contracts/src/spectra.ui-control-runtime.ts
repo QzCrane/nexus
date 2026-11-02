@@ -18,6 +18,7 @@ import type {
 	VideoFilterState,
 } from './control.contracts.js';
 import { keySetOf } from './key-set.js';
+import { isMediaObservationStamp } from './media-observation.contracts.js';
 import type { AudioSessionPhase, SpectraAudioMode } from './audio.contracts.js';
 import { isAudioVolumeProjection, isFiniteControlValue } from './control-value-limits.js';
 
@@ -103,6 +104,7 @@ const MEDIA_TARGET_KEYS = keySetOf<MediaTarget>()(['frameId', 'documentId', 'med
 const FILTER_KEYS = keySetOf<VideoFilterState>()(['brightness', 'contrast', 'saturate', 'grayscale', 'invert']);
 const AB_LOOP_KEYS = keySetOf<ABLoopState>()(['pointA', 'pointB', 'enabled']);
 const CONTROL_FIELD_STATE_KEYS = keySetOf<ControlFieldState<unknown>>()([
+	'mediaObservation',
 	'desired',
 	'actual',
 	'restoreBaseline',
@@ -143,6 +145,7 @@ const CONTROL_SNAPSHOT_KEYS = keySetOf<ControlSnapshot>()([
 	'activeMedia',
 	'activeVideo',
 	'fields',
+	'mediaObservation',
 ]);
 const APPLY_ACK_KEYS = keySetOf<ControlApplyAck>()([
 	'intentId',
@@ -153,8 +156,10 @@ const APPLY_ACK_KEYS = keySetOf<ControlApplyAck>()([
 	'target',
 	'fields',
 	'audioVolume',
+	'mediaObservation',
 ]);
 const OPERATION_ACK_KEYS = keySetOf<ControlOperationAck<ControlOperation>>()([
+	'mediaObservation',
 	'operationId',
 	'tabId',
 	'documentId',
@@ -299,7 +304,8 @@ function isControlFieldStates(value: unknown): boolean {
 		if (!CONTROL_FIELDS.has(fieldName as ControlField)) return false;
 		const state = value[fieldName];
 		const field = fieldName as ControlField;
-		if (!isRecord(state) || !hasOnly(state, CONTROL_FIELD_STATE_KEYS)) return false;
+		if (!isRecord(state) || !hasOnly(state, CONTROL_FIELD_STATE_KEYS)
+			|| state.mediaObservation !== undefined && !isMediaObservationStamp(state.mediaObservation)) return false;
 		if (!((state.desired === null || isControlValue(field, state.desired))
 			&& (state.actual === null || isControlValue(field, state.actual))
 			&& (state.restoreBaseline === undefined || isControlValue(field, state.restoreBaseline))
@@ -421,7 +427,8 @@ export function isUiControlSnapshot(value: unknown): value is ControlSnapshot {
 		&& isInteger(value.revision)
 		&& (value.activeMedia === null || isMediaTarget(value.activeMedia))
 		&& (value.activeVideo === null || isMediaTarget(value.activeVideo) && value.activeVideo.kind === 'video')
-		&& isControlFieldStates(value.fields);
+		&& isControlFieldStates(value.fields)
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation));
 }
 
 export function isUiControlApplyAck(value: unknown): value is ControlApplyAck {
@@ -434,11 +441,13 @@ export function isUiControlApplyAck(value: unknown): value is ControlApplyAck {
 		&& isInteger(value.revision)
 		&& (value.target === null || isMediaTarget(value.target))
 		&& isControlFieldStates(value.fields)
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation))
 		&& (value.audioVolume === undefined || isAudioVolumeProjection(value.audioVolume));
 }
 
 export function isUiControlOperationAck(value: unknown): value is ControlOperationAck {
 	return isRecord(value)
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation))
 		&& hasOnly(value, OPERATION_ACK_KEYS)
 		&& isBoundedString(value.operationId, 128)
 		&& isInteger(value.tabId, true)

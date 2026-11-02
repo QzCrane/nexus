@@ -5,7 +5,7 @@ import type { CardInternalState } from './types';
 import type { AudioConfig } from '@nexus/kernel';
 import { mergeAudioConfig, mergeControlSnapshot } from './types';
 import { projectAcknowledgedProcessorLifecycle } from './state';
-import { classifyControlSnapshot, isControlClockStale } from '../control-snapshot-order';
+import { classifyControlSnapshot, isControlClockStale, reconcileControlMedia } from '../control-snapshot-order';
 import { subscribePopupTabUiEvents, type PopupUiEvent } from '../ui-event-hub';
 import { currentTopDocumentId } from '../../shared/top-document';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
@@ -28,6 +28,8 @@ export interface MessagingParams {
 	render: () => void;
 	/** The painted snapshot came from the Popup cache and still needs one confirmation. */
 	cachedSnapshotForecast?: boolean;
+	/** Unavailable tabs are metadata only; never probe or bind their old document. */
+	observe?: boolean;
 }
 
 // post: applies one authoritative ControlSnapshot to the card projection.  The
@@ -35,12 +37,13 @@ export interface MessagingParams {
 // separately below and can only contribute processor lifecycle.
 export function applyControlSnapshot(
 	state: CardInternalState,
-	snapshot: import('@nexus/contracts').ControlSnapshot,
+	incomingSnapshot: import('@nexus/contracts').ControlSnapshot,
 	render: () => void,
 	hasPendingVolume = false,
 	pendingConfigFields: ReadonlySet<keyof AudioConfig> = new Set(),
 ): boolean {
 	const current = state.controlSnapshot;
+	const snapshot = reconcileControlMedia(current, incomingSnapshot);
 	if (isControlClockStale(
 		state.controlGeneration,
 		state.controlRevision,
@@ -162,6 +165,7 @@ export function applyAudioSessionSnapshot(
 
 // post: returns a cleanup function that removes the chrome.runtime.onMessage listener
 export function setupCardMessaging(params: MessagingParams): () => void {
+  if (params.observe === false) return () => undefined;
   const { tabId, state, render } = params;
   const documentId = params.documentId;
   let disposed = false;

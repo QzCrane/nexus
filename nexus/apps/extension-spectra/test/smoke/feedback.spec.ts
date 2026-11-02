@@ -3,7 +3,7 @@ import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
 import type { Page } from 'puppeteer';
 import { SPECTRA_CONTENT_RUNTIME_REVISION } from '@nexus/contracts';
 import { requireValue } from '../helpers/require-value';
-import { DEFAULT_AUDIO_CONFIG, acquireSmokeRuntime, browser, collectPageErrors, configureRuntime, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, holdDefaultShortcut, inspectContentRuntime, openExtensionClient, readContentBootstrapStatus, readOsdFeedback, reinjectContent, releaseSmokeRuntime, setGlobalLanguage, setHotkeyTarget, startOsdFeedbackProbe, submitEffectiveVolume, submitPopupControlIntent, tapDefaultShortcut, waitForContentBootstrapStatus, withDiagnosticTimeout } from './harness';
+import { DEFAULT_AUDIO_CONFIG, acquireSmokeRuntime, browser, collectPageErrors, configureRuntime, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, holdDefaultShortcut, inspectContentRuntime, openExtensionClient, readContentBootstrapStatus, readOsdFeedback, reinjectContent, releaseSmokeRuntime, sendFromActionPopup, setGlobalLanguage, setHotkeyTarget, startOsdFeedbackProbe, submitEffectiveVolume, submitPopupControlIntent, tapDefaultShortcut, waitForContentBootstrapStatus, withDiagnosticTimeout } from './harness';
 import type { OsdFeedbackSnapshot, SmokeRuntimeLease } from './harness';
 import { prepareSmokeSession, startSmokeSession, teardownSmokeSession } from './harness';
 
@@ -436,6 +436,16 @@ describe('SPECTRA built extension smoke: feedback', () => {
 				};
 			})).toEqual({ osd: 1, toast: 1 });
 
+			// A restored media template is a separate runtime owner, even when its
+			// scalar values are neutral. Release it explicitly before asserting that
+			// the smoke lease is the final owner of this document generation.
+			await page.bringToFront();
+			const release = await sendFromActionPopup<{ ok: boolean; error?: { message?: string } }>({
+				protocolVersion: 2, tabId, type: 'spectra.control.operation.submit', payload: {
+					tabId, source: 'popup', target: null, operation: 'restore-page-settings', payload: {},
+				},
+			});
+			if (!release.ok) throw new Error(release.error?.message ?? 'Unable to release the restored media template');
 			await releaseSmokeRuntime(lease);
 			lease = null;
 			const retired = await eventually(

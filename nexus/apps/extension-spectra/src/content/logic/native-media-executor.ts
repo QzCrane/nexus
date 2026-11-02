@@ -87,6 +87,16 @@ interface PendingWrite {
 	timeoutId: ReturnType<typeof setTimeout>;
 }
 
+interface MediaScene {
+	id: string;
+	root: HTMLMediaElement | Element;
+	route: string;
+	source: string | object | null;
+	speed?: number;
+}
+
+const MAX_RETAINED_MEDIA_SCENES = 128;
+
 type RestorableMediaWriter = 'declared-official' | 'page-native' | 'dom-native';
 
 /**
@@ -601,8 +611,12 @@ export class NativeMediaExecutor {
 	private audioRuntimeDelegate: AudioRuntimeControlDelegate | null = null;
 	private tabId: number | null = null;
 	private desiredRevision = 0;
-	private selectionRevision = 0;
+	private get selectionRevision(): number { return this.registry.selectionRevision ?? 0; }
 	private mediaIntentReleased = false;
+	private readonly scenes = new Map<string, MediaScene>();
+	private readonly sceneRoots = new WeakMap<Element, Map<string, MediaScene>>();
+	private readonly targetScenes = new Map<string, MediaScene>();
+	private nextSceneId = 1;
 	private disposed = false;
 	private readonly lifecycleController = new AbortController();
 	private readonly sourceOperationScopes = new Map<string, Set<AbortController>>();
@@ -644,6 +658,57 @@ export class NativeMediaExecutor {
 	mediaIntentState(): 'unset' | 'retained' | 'released' {
 		if (this.disposed || this.mediaIntentReleased) return 'released';
 		return Object.keys(this.desiredMedia).length > 0 ? 'retained' : 'unset';
+	}
+
+	private sceneFor(target: MediaTarget, element: HTMLMediaElement): MediaScene {
+		const key = this.targetKey(target);
+		const exact = this.targetScenes.get(key);
+		if (exact) return exact;
+		const selector = resolveDeclaredSiteAdapter('speed')?.projection?.rootSelector;
+		const candidate = selector ? element.closest(selector) : null;
+		// A declared root is usable only when it names exactly this media. Nested
+		// or multi-media roots cannot merge unrelated playback preferences.
+		const exactRoot = candidate && candidate.querySelectorAll('video,audio').length === 1 ? candidate : null;
+		const root = exactRoot ?? element;
+		const route = typeof window === 'undefined' ? '' : window.location.href;
+		const source = element.srcObject ?? (element.currentSrc || element.src || null);
+		let routes = this.sceneRoots.get(root);
+		if (!routes) { routes = new Map(); this.sceneRoots.set(root, routes); }
+		let scene = exactRoot ? routes.get(route) : source === null ? undefined
+			: [...this.scenes.values()].find((value) => value.root === root && value.route === route && value.source === source);
+		if (!scene) {
+			scene = { id: `scene:${this.nextSceneId++}`, root, route, source };
+			if (exactRoot) routes.set(route, scene);
+			this.scenes.set(scene.id, scene);
+		}
+		this.targetScenes.set(key, scene);
+		while (this.scenes.size > MAX_RETAINED_MEDIA_SCENES) {
+			const oldest = this.scenes.values().next().value as MediaScene;
+			this.scenes.delete(oldest.id);
+			const oldRoutes = this.sceneRoots.get(oldest.root);
+			if (oldRoutes?.get(oldest.route) === oldest) oldRoutes.delete(oldest.route);
+			for (const [binding, value] of this.targetScenes) if (value === oldest) this.targetScenes.delete(binding);
+		}
+		return scene;
+	}
+
+	/** The browser navigation settlement signal wakes the latest obligation. */
+	reconcileRoute(_routeIdentity: string): void {
+		if (this.disposed) return;
+		const selected = this.registry.resolve(null);
+		if (!selected) return;
+		// Selection/play reports can have met the navigation fence. Settlement is
+		// an independent observation boundary, even without a desired template or
+		// another play event. Publish truth before scheduling any restore effect.
+		const actual = this.read({ target: selected.target, fields: ['playing'] });
+		void sendSpectraRequest('spectra.content.target.changed', {
+			target: selected.target, mediaObservation: actual.mediaObservation,
+		}, { documentId: selected.target.documentId }).catch(() => undefined);
+		void sendSpectraRequest('spectra.control.intent.submit', {
+			source: 'page', requestedCoverage: 'active-target', target: selected.target,
+			patch: actual.patch, observedStrategies: actual.observedStrategies, mediaObservation: actual.mediaObservation,
+		}).catch(() => undefined);
+		this.replayDesired(selected.target, selected.element, true);
 	}
 
 	setAudioRuntimeDelegate(delegate: AudioRuntimeControlDelegate | null): void {
@@ -775,21 +840,34 @@ export class NativeMediaExecutor {
 		const resolved = onlyVideoFields && typeof videoResolver.resolveVideo === 'function'
 			? videoResolver.resolveVideo(intent.target)
 			: this.registry.resolve(intent.target);
+		const scene = resolved ? this.sceneFor(resolved.target, resolved.element) : null;
+		if (intent.mediaRestore && (!resolved || !scene
+			|| intent.mediaRestore.revision !== this.desiredRevision
+			|| intent.mediaRestore.scene !== scene.id || intent.mediaRestore.visit !== this.selectionRevision
+			|| !this.isSelectedTarget(resolved.target, resolved.element))) {
+			throw new ContentLifecycleError('stale-media-source', 'The media restore obligation has been superseded');
+		}
 		const sourceScope = resolved ? this.beginSourceOperation(resolved.target) : null;
 		const operationSignal = this.operationSignal(sourceScope?.signal);
 		try {
 		if (intent.source === 'restore') {
 			for (const [field, value] of directEntries) {
-				if (isRestorableMediaField(field)) this.rememberDesired(field, value);
+				if (isRestorableMediaField(field) && !intent.mediaRestore && this.desiredMedia[field] === undefined) {
+					this.rememberDesired(field, value);
+				}
 			}
 		}
-		for (const [field, value] of directEntries) {
+		for (const [field, requested] of directEntries) {
+			const value = intent.source !== 'restore' ? requested
+				: field === 'speed' && scene?.speed !== undefined ? scene.speed
+					: !intent.mediaRestore && isRestorableMediaField(field) ? this.desiredMedia[field] ?? requested : requested;
 			await this.applyField(intent, resolved, field, value, fields, operationSignal);
 			const state = fields[field];
 			if (isRestorableMediaField(field)
 				&& state?.phase === 'applied'
-				&& state.desired !== null) {
+				&& state.desired !== null && intent.source !== 'restore') {
 				this.rememberDesired(field, state.desired);
+				if (field === 'speed' && scene) scene.speed = state.desired as number;
 			}
 		}
 		this.synchronizeAppliedNative(fields);
@@ -834,8 +912,21 @@ export class NativeMediaExecutor {
 				console.warn('[SPECTRA] Audio feedback readback unavailable', error);
 			}
 		}
-		if (resolved && directEntries.some(([field]) => field === 'playing')) {
-			this.assertCurrentTarget(resolved.target, resolved.element, operationSignal, true);
+		if (resolved && directEntries.length > 0) {
+			if (onlyVideoFields) {
+				// Audio may acquire activeMedia while the same activeVideo retains its
+				// own presentation controls. Fence that separate selection explicitly.
+				const selectedVideo = videoResolver.resolveVideo?.(null) ?? this.registry.resolve(null);
+				if (!selectedVideo || selectedVideo.element !== resolved.element
+					|| this.targetKey(selectedVideo.target) !== this.targetKey(resolved.target)) {
+					throw new ContentLifecycleError('stale-media-source', 'The active video changed before its control ACK');
+				}
+			} else {
+				if (selectionRevision !== this.selectionRevision) {
+					throw new ContentLifecycleError('stale-media-source', 'The media selection visit changed before its control ACK');
+				}
+				this.assertCurrentTarget(resolved.target, resolved.element, operationSignal, true);
+			}
 		}
 		return {
 			...(audioVolume ? { audioVolume } : {}),
@@ -848,6 +939,7 @@ export class NativeMediaExecutor {
 			// requested-but-stale target would let Background publish a false owner.
 			target: resolved?.target ?? null,
 			fields,
+			mediaObservation: this.registry.captureObservation?.(),
 		};
 		} catch (error) {
 			// A source change mid-write cancels the operation and discards the
@@ -946,6 +1038,24 @@ export class NativeMediaExecutor {
 		} finally {
 			sourceScope.close();
 		}
+	}
+
+	async togglePlayback(intent: ControlOperationIntent<'playback-toggle'>): Promise<{
+		target: MediaTarget; actual: boolean; fields: ControlFieldStates;
+		mediaObservation?: ControlApplyAck['mediaObservation'];
+	}> {
+		this.bindRequestContext(intent.tabId, intent.documentId);
+		const selected = this.registry.resolve(intent.target);
+		if (!selected) throw new ContentLifecycleError('stale-media-source', 'No selected media is available for playback');
+		const playing = selected.element.paused;
+		const ack = await this.execute({
+			intentId: intent.operationId, tabId: intent.tabId, documentId: intent.documentId,
+			generation: intent.generation, baseRevision: intent.baseRevision, source: intent.source,
+			requestedCoverage: 'active-target', target: selected.target, actualContext: {}, patch: { playing },
+		});
+		const state = ack.fields.playing;
+		if (state?.phase !== 'applied' || typeof state.actual !== 'boolean') throw new Error(state?.lastError?.message ?? 'Playback was not applied');
+		return { target: selected.target, actual: state.actual, fields: ack.fields, mediaObservation: ack.mediaObservation };
 	}
 
 	async stepFrame(
@@ -1085,6 +1195,7 @@ export class NativeMediaExecutor {
 			}
 		}
 		for (const key of Object.keys(this.desiredMedia)) delete (this.desiredMedia as Record<string, unknown>)[key];
+		for (const scene of this.scenes.values()) delete scene.speed;
 		this.mediaIntentReleased = true;
 		this.desiredRevision += 1;
 		this.automaticPageMaturationRevision.clear();
@@ -1155,7 +1266,8 @@ export class NativeMediaExecutor {
 				}
 				if (actual !== undefined) (patch as Record<string, unknown>)[field] = actual;
 			}
-			if (Object.keys(patch).length > 0) return { target, patch, observedStrategies };
+			if (Object.keys(patch).length > 0) return { target, patch, observedStrategies,
+				mediaObservation: this.registry.captureObservation?.() };
 		}
 		if (Object.keys(patch).length === 0) {
 			throw new Error('No requested control field has an observable actual value');
@@ -1440,6 +1552,7 @@ export class NativeMediaExecutor {
 					break;
 				}
 				case 'playing': {
+					if (value === false) this.registry.pinPaused?.(target);
 					const actual = await writePlaybackWithStableAck(
 						element,
 						value as boolean,
@@ -1917,6 +2030,7 @@ export class NativeMediaExecutor {
 			this.abortSourceOperations(target);
 			if (this.disposed) return;
 			const key = this.targetKey(target);
+			this.targetScenes.delete(key);
 			const pending = this.pending.get(target.mediaId);
 			if (pending) {
 				for (const write of pending.values()) clearTimeout(write.timeoutId);
@@ -1952,24 +2066,22 @@ export class NativeMediaExecutor {
 			// A proof belongs to this selection visit. The page may reset a retained
 			// element and release its field ownership while another player is open;
 			// its earlier success cannot suppress the explicit template on return.
-			this.selectionRevision += 1;
 			const key = this.targetKey(target);
 			this.appliedDesiredRevision.delete(key);
 			for (const attemptKey of this.automaticPageMaturationRevision.keys()) {
 				if (attemptKey.startsWith(`${key}:`)) this.automaticPageMaturationRevision.delete(attemptKey);
 			}
 			this.primeObserved(target);
-			this.replayDesired(target, element, true);
 			void sendSpectraRequest(
 				'spectra.content.target.changed',
-				{ target },
+				{ target, mediaObservation: this.registry.captureObservation?.() },
 				{ documentId: target.documentId },
 			).catch(() => undefined);
+			this.replayDesired(target, element, true);
 			return;
 		}
 		if (event === 'registered') this.primeObserved(target);
-		if (event === 'registered') this.replayDesired(target);
-		else if (event === 'loadedmetadata' || event === 'play') {
+		if (event === 'loadedmetadata' || event === 'play') {
 			this.replayDesired(target, element, true);
 		}
 		const resolved = this.registry.resolve(null);
@@ -2109,6 +2221,9 @@ export class NativeMediaExecutor {
 			const selected = this.registry.resolve(null);
 			if (!selected || selected.target.frameId !== target.frameId
 				|| this.targetKey(selected.target) !== this.targetKey(target)) continue;
+			// Queueing is not a sample. Read this batch again in one synchronous
+			// turn so the stamp cannot make an older queued value look newer.
+			const current = this.read({ target, fields: Object.keys(patch) as ControlReadRequest['fields'] });
 			// Observation starts with this document's registry, before any control
 			// request binds this.tabId. Background derives the tab from Chrome's
 			// sender and validates this exact target/document, as for lean bootstrap.
@@ -2116,8 +2231,9 @@ export class NativeMediaExecutor {
 				source: 'page',
 				requestedCoverage: 'active-target',
 				target,
-				patch,
-				observedStrategies,
+				patch: current.patch,
+				observedStrategies: { ...observedStrategies, ...current.observedStrategies },
+				mediaObservation: current.mediaObservation,
 			}).catch(() => undefined);
 		}
 	}
@@ -2172,8 +2288,10 @@ export class NativeMediaExecutor {
 		}
 		const revision = this.desiredRevision;
 		const selectionRevision = this.selectionRevision;
+		const scene = this.sceneFor(target, selected.element);
 		const alreadyApplied = (this.appliedDesiredRevision.get(key) ?? -1) >= revision;
 		let patch: ControlPatch = { ...this.desiredMedia };
+		if (scene.speed !== undefined) patch.speed = scene.speed;
 		const automaticFields: SpectraPageMediaField[] = [];
 		if (alreadyApplied) {
 			if (!allowPageMaturation || !element) return;
@@ -2181,7 +2299,7 @@ export class NativeMediaExecutor {
 			const ownership = nativeMediaOwnership.byElement.get(element);
 			for (const field of SPECTRA_PAGE_MEDIA_FIELDS) {
 				const attemptKey = `${key}:${field}`;
-				const desired = this.desiredMedia[field];
+				const desired = field === 'speed' ? scene.speed ?? this.desiredMedia.speed : this.desiredMedia[field];
 				if (desired === undefined
 					|| this.pending.get(target.mediaId)?.has(field)
 					|| (this.automaticPageMaturationRevision.get(attemptKey) ?? -1) >= revision) {
@@ -2234,6 +2352,7 @@ export class NativeMediaExecutor {
 			requestedCoverage: 'active-target',
 			target,
 			patch,
+			mediaRestore: { revision, scene: scene.id, visit: selectionRevision },
 		}).then((response) => {
 			if (selectionRevision !== this.selectionRevision) return;
 			if (!this.isCurrentTarget(target, element)) return;
@@ -2311,6 +2430,8 @@ export class NativeMediaExecutor {
 		this.replayPending.clear();
 		this.automaticPageMaturationRevision.clear();
 		this.pageMaturationRequested.clear();
+		this.scenes.clear();
+		this.targetScenes.clear();
 		this.unsubscribeRegistry();
 		if (this.ownsEffects) this.effects?.dispose();
 		this.effects = null;

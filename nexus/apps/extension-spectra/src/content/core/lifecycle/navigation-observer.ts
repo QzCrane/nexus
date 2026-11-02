@@ -2,6 +2,7 @@
 
 import { isExtensionContextValid } from '../context-guard';
 import { createEventListener, createCleanupManager } from '../../utils/timing';
+import { getActiveNativeMediaExecutor } from '../../logic/native-media-executor';
 
 interface NavigationObserverDeps {
 	onNavigate: (routeIdentity: string) => void;
@@ -21,6 +22,7 @@ export function createNavigationObserver(deps: NavigationObserverDeps): () => vo
 	const handleNav = () => {
 		if (!isExtensionContextValid()) return;
 		const currentRoute = getDocumentRouteIdentity(window.location);
+		getActiveNativeMediaExecutor()?.reconcileRoute(currentRoute);
 		if (currentRoute === lastRoute) return;
 
 		// Invalidate the previous document generation immediately. Delaying this

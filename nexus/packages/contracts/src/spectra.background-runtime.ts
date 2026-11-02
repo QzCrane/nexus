@@ -5,6 +5,7 @@ import {
 	isAudioConfig,
 } from './audio.contracts.js';
 import { isCaptureAdmission } from './capture-admission.contracts.js';
+import { isMediaObservationStamp } from './media-observation.contracts.js';
 import {
 	isControlIntent,
 	isControlOperationIntent,
@@ -43,8 +44,8 @@ const CONTENT_RUNTIME_REVISION_PAYLOAD_KEYS = new Set(['runtimeRevision']);
 const CONTENT_RUNTIME_RELEASE_PAYLOAD_KEYS = new Set([
 	'runtimeRevision', 'tabId', 'documentId', 'reason', 'capability',
 ]);
-const CONTENT_SOURCE_RELEASED_PAYLOAD_KEYS = new Set(['target']);
-const CONTENT_TARGET_CHANGED_PAYLOAD_KEYS = new Set(['target']);
+const CONTENT_SOURCE_RELEASED_PAYLOAD_KEYS = new Set(['target', 'mediaObservation']);
+const CONTENT_TARGET_CHANGED_PAYLOAD_KEYS = new Set(['target', 'mediaObservation']);
 const AUDIO_SESSION_GET_PAYLOAD_KEYS = new Set(['tabId']);
 const AUDIO_CONFIG_PAYLOAD_KEYS = new Set(['config']);
 const AUDIO_SESSION_PUBLISH_PAYLOAD_KEYS = new Set([
@@ -65,7 +66,7 @@ const TAB_ID_PAYLOAD_KEYS = new Set(['tabId']);
 const REMOTE_SESSION_PAYLOAD_KEYS = new Set(['tabId']);
 const REMOTE_SESSION_CLOSE_PAYLOAD_KEYS = new Set(['tabId', 'sessionId']);
 const USER_SCRIPT_PAYLOAD_KEYS = new Set(['script']);
-const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted', 'reportRevision']);
+const TAB_MEDIA_REPORT_PAYLOAD_KEYS = new Set(['hasMediaElement', 'userInteracted', 'reportRevision', 'playing', 'pausedAt']);
 const CONTENT_RUNTIME_LEASE_REASONS = new Set<ContentRuntimeLeaseReason>([
 	'control',
 	'restore',
@@ -135,7 +136,8 @@ export function isContentSourceReleasedPayload(
 ): value is SpectraRequestPayload<'spectra.content.source.released'> {
 	return isProtocolRecord(value)
 		&& hasOnlyProtocolKeys(value, CONTENT_SOURCE_RELEASED_PAYLOAD_KEYS)
-		&& isMediaTarget(value.target);
+		&& isMediaTarget(value.target)
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation));
 }
 
 export function isContentTargetChangedPayload(
@@ -143,7 +145,8 @@ export function isContentTargetChangedPayload(
 ): value is SpectraRequestPayload<'spectra.content.target.changed'> {
 	return isProtocolRecord(value)
 		&& hasOnlyProtocolKeys(value, CONTENT_TARGET_CHANGED_PAYLOAD_KEYS)
-		&& isMediaTarget(value.target);
+		&& isMediaTarget(value.target)
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation));
 }
 
 export function isTabIdPayload(value: unknown): value is { tabId: number } {
@@ -261,6 +264,9 @@ export function isTabMediaReportPayload(
 		&& hasOnlyProtocolKeys(value, TAB_MEDIA_REPORT_PAYLOAD_KEYS)
 		&& typeof value.hasMediaElement === 'boolean'
 		&& typeof value.userInteracted === 'boolean'
+		&& (value.playing === undefined || typeof value.playing === 'boolean')
+		&& (value.pausedAt === undefined || value.pausedAt === null || Number.isSafeInteger(value.pausedAt) && Number(value.pausedAt) >= 0)
+		&& (value.playing !== true || value.pausedAt === undefined || value.pausedAt === null)
 		&& (value.reportRevision === undefined || isPositiveInteger(value.reportRevision));
 }
 

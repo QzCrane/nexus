@@ -1,6 +1,30 @@
 // goal: owns the tab-scoped monotonic admission rule for every Popup projection of ControlSnapshot
 
 import type { ControlSnapshot } from '@nexus/contracts';
+import { compareMediaObservations, MEDIA_OBSERVATION_FIELDS } from '@nexus/contracts/ui-runtime';
+
+/** Control and physical-observation clocks have distinct duties in one snapshot. */
+export function reconcileControlMedia(current: ControlSnapshot | null, incoming: ControlSnapshot): ControlSnapshot {
+	if (!current || current.tabId !== incoming.tabId || current.documentId !== incoming.documentId
+		|| current.generation !== incoming.generation || !current.mediaObservation) return incoming;
+	const physicalOrder = incoming.mediaObservation ? compareMediaObservations(incoming.mediaObservation, current.mediaObservation) : null;
+	const fields = { ...incoming.fields };
+	for (const field of MEDIA_OBSERVATION_FIELDS) {
+		const next = fields[field];
+		const prior = current.fields[field];
+		const nextStamp = next?.mediaObservation ?? incoming.mediaObservation;
+		const priorStamp = prior?.mediaObservation ?? current.mediaObservation;
+		const fieldOrder = nextStamp ? compareMediaObservations(nextStamp, priorStamp) : null;
+		if (physicalOrder === null || physicalOrder < 0 || fieldOrder === null || fieldOrder < 0) {
+			if (prior) Object.assign(fields, { [field]: prior });
+			else delete fields[field];
+		}
+	}
+	return { ...incoming, fields,
+		...(physicalOrder === null || physicalOrder < 0
+			? { activeMedia: current.activeMedia, activeVideo: current.activeVideo, mediaObservation: current.mediaObservation } : {}),
+	};
+}
 
 export type ControlSnapshotAdmission =
 	| 'accepted'

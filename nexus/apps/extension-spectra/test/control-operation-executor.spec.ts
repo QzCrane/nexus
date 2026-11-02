@@ -53,6 +53,20 @@ afterEach(() => {
 });
 
 describe('control operation truthfulness', () => {
+	test('routes playback toggle through one local native operation and preserves its exact acknowledgement', async () => {
+		const media = new FakeMediaElement();
+		const disposeRegistry = setActiveMediaRegistry({ resolve: () => ({ element: media, target }) } as unknown as MediaRegistry);
+		let calls = 0;
+		try {
+			const result = await executeControlOperation(intent('playback-toggle', {}, null), {
+				togglePlayback: async (request: ControlOperationIntent<'playback-toggle'>) => {
+					calls += 1; expect(request.target).toEqual(target);
+					return { target, actual: true, fields: {} };
+				},
+			} as unknown as NativeMediaExecutor);
+			expect(calls).toBe(1); expect(result.target).toEqual(target); expect(result.result).toEqual({ playing: true });
+		} finally { disposeRegistry(); }
+	});
 	test('does not acknowledge marker creation without a resolved media source', async () => {
 		const disposeRegistry = setActiveMediaRegistry({
 			resolve: () => null,

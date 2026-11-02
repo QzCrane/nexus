@@ -463,7 +463,7 @@ function main() {
 			'--bun',
 			'biome',
 			'check',
-			...targets,
+			...biomeFiles.map((file) => `.${path.sep}${path.relative(process.cwd(), file)}`),
 			'--reporter=json',
 			'--max-diagnostics=none',
 			'--colors=off',
