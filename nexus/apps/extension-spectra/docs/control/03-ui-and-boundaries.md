@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-02
 ---
 
 # 03. UI & Boundaries (Visualizer, favicon, remote, UX)
@@ -68,6 +68,9 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 ## §19 User experience
 
 - 主面板展示音量/静音/倍速/播放与目标媒体。Boost 与 DSP 为高级控制。
+- 播放按钮首次绘制前确认当前 document 的实际暂停状态；缓存不签发播放事实。
+  未知播放字段使用既有有界恢复，不把持久 ACK 当作当前状态。切换基线、旧 ACK
+  入场与缓冲等待由 [媒体 owner](06-media-and-video.md#playback-button-and-buffered-play) 定义。
 - 颜色由一个判定产出：`resolveVolumeTone`。`gray` 表示静音/0，`blue` 表示非 Capture 路径（原生或 MediaElement WebAudio），`purple` 表示已确认 active Capture（任意音量），并允许唯一的手势前瞻——文档为 `dom-native` 且数值越过原生上限时，可在 ACK 前一个手势帧显示紫色。`page-native`、已确认的 `media-webaudio` Boost 路由和未知路由不得预测。Popup 音量条与 Action 角标消费同一结果；角标不得用阈值反推，表面不得把 `blue` 解释成物理处理器类型。
 - 连续数值控制在输入任务中显示最新请求值；音量跨过 100% 不冻结数字、滑块或 OSD。已结算颜色消费已确认生命周期；手势前瞻只影响 tone，且必须由同一 `resolveVolumeTone` 产出。旧 ACK 不覆盖新目标，当前请求失败则回到已确认值并显示错误。Popup、快捷键和滚轮遵守同一规则。
 - 快捷键手势在按住和松键冻结阶段都保留最新同手势 actual ACK；按住时不回退预测数字，松键并结算后只纠正到最后实际值。最后 ACK 先于 keyup 到达时也必须完成纠正，不能等待一个不会再来的 ACK；新手势始终隔离旧手势结果。

@@ -257,8 +257,7 @@ export function bindMediaControls(
 				if (!response.ok) throw new ControlUiError(response.error);
 				const acknowledgement = response.data as ControlOperationAck<'playback-toggle'>;
 				projectAcknowledgedControl(state, acknowledgement);
-				const playing = acknowledgement.result.playing;
-				if (typeof playing === 'boolean' && ui.btnPause) renderPlaybackButton(ui.btnPause, playing);
+				render();
 			}).catch((error: unknown) => reportControlFailure(error, state, onError));
 		};
 	}
@@ -364,9 +363,16 @@ export function bindMediaControls(
 	}
 }
 
-export function renderPlaybackButton(button: HTMLElement, playing: boolean): void {
-	button.replaceChildren(createPlaybackIcon(playing));
-	button.setAttribute('aria-pressed', String(playing));
+export function renderPlaybackButton(button: HTMLElement, playing: boolean | null): void {
+	if (playing === null) {
+		button.textContent = '…';
+		button.setAttribute('aria-pressed', 'mixed');
+		button.setAttribute('aria-busy', 'true');
+	} else {
+		button.replaceChildren(createPlaybackIcon(playing));
+		button.setAttribute('aria-pressed', String(playing));
+		button.removeAttribute('aria-busy');
+	}
 	const localized = getCurrentDict()?.btnPause;
 	const label = typeof localized === 'string' && localized.trim().length > 0
 		? localized

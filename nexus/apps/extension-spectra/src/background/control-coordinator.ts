@@ -109,6 +109,8 @@ import {
 	releaseContentRuntimeLease,
 	releaseSourceRuntimeLease,
 	retainSourceRuntimeLease,
+	retainMediaIntentRuntimeLease,
+	releaseMediaIntentRuntimeLease,
 } from './runtime-loader';
 import { swLog } from '../shared/logger';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from './background-rpc';
@@ -428,7 +430,7 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 		throw new Error('Control view read completed for a stale document');
 	}
 	assertPassiveReadFence(tabId, expectedEpoch, generation);
-	if (!mediaResponse?.ok && !videoResponse?.ok) return existing;
+	if (!mediaResponse?.ok && !videoResponse?.ok && !existing) return null;
 	const base: ControlSnapshot = existing ?? {
 		tabId,
 		documentId: identity.documentId,
@@ -452,7 +454,7 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 		const observed = nativeObservationFields(response.data, base.revision);
 		for (const field of Object.keys(observed) as ControlField[]) {
 			const owned = base.fields[field];
-			if (owned?.controlled === true && owned.phase === 'applied') delete observed[field];
+			if (field !== 'playing' && owned?.controlled === true && owned.phase === 'applied') delete observed[field];
 		}
 		return observed;
 	};
@@ -461,6 +463,9 @@ export async function getControlViewSnapshot(tabId: number): Promise<ControlSnap
 		...observedViewFields(mediaResponse),
 		...observedViewFields(videoResponse),
 	};
+	// A historical play ACK does not prove current playback after a passive
+	// read failed. Preserve other owned fields while exposing playback unknown.
+	if (!mediaResponse?.ok || typeof mediaResponse.data.patch.playing !== 'boolean') delete fields.playing;
 	const activeMedia = mediaResponse?.ok
 		? mediaResponse.data.target
 		: mediaResponse?.error.code === 'capability-unavailable'
@@ -530,7 +535,7 @@ async function resolveSubmitRequest(
 	const missingFields = [...new Set((request.mutations ?? [])
 		.map((mutation) => mutation.field)
 		.filter((field) => patch[field] === undefined
-			&& (snapshot.fields[field]?.actual === undefined
+			&& (field === 'playing' || snapshot.fields[field]?.actual === undefined
 				|| request.target === null && field !== 'tabMuted' && field !== 'tabPinned'
 					&& (PAGE_OBSERVABLE_FIELDS.has(field) || !AUDIO_PROJECTION_FIELDS.has(field)))))];
 	const tabFields = missingFields.filter((field) => field === 'tabMuted' || field === 'tabPinned');
@@ -556,8 +561,8 @@ async function resolveSubmitRequest(
 	}
 	for (const mutation of request.mutations ?? []) {
 		const pending = patch[mutation.field] as ControlValues[ControlField] | undefined;
-		const existing = snapshot.fields[mutation.field]?.actual
-			?? baselines[mutation.field]
+		const existing = baselines[mutation.field]
+			?? snapshot.fields[mutation.field]?.actual
 			?? snapshot.fields[mutation.field]?.desired
 			?? defaultControlValue(mutation.field);
 		(patch as Record<string, unknown>)[mutation.field] = applyMutation(
@@ -962,6 +967,10 @@ async function commitControlFields(
 	};
 	await publishSnapshot(committed, expectedEpoch);
 	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
+	if (Object.entries(fields).some(([field, state]) => RUNTIME_RESIDENT_NATIVE_FIELDS.has(field as ControlField)
+		&& state?.phase === 'applied' && state.controlled)) {
+		retainMediaIntentRuntimeLease(committed.tabId, committed.documentId);
+	}
 	await reconcileRuntimeOwnership(committed);
 	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
 	// The ACK only depends on the memory + snapshot-storage commit and runtime
@@ -2013,6 +2022,7 @@ async function executeControlOperation(
 				released.target,
 				{ sessionScope: controlSessionScopeForSource(request.source) },
 			);
+			releaseMediaIntentRuntimeLease(committed.tabId, committed.documentId);
 			return {
 				...released,
 				revision: committed.revision,

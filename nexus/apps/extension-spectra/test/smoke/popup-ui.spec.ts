@@ -3,7 +3,7 @@ import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
 import type { Page } from 'puppeteer';
 import type { MediaRouteRulesSnapshot, MediaRouteDecision } from '@nexus/contracts';
 import { requireValue } from '../helpers/require-value';
-import { EXTENSION_COMMAND_COUNT, browser, closeActionPopup, collectPageErrors, evaluateServiceWorker, eventually, extensionId, fixtureErrors, fixturePage, fixtureUrl, getOffscreenContextCount, getTabId, inspectExtensionAccessibility, inspectExtensionLayout, installPageMediaControllerHarness, openActionPopupTarget, openExtensionClient, readBadgeText, readPageMediaControllerHarness, readSiteRouteRegistry, removePageMediaControllerHarness, restartServiceWorker, sendExtensionMessage, sendFromActionPopup, submitEffectiveVolume, submitPopupControlIntent, updatePageMediaControllerHarness, waitForContentBootstrapStatus } from './harness';
+import { EXTENSION_COMMAND_COUNT, FIXTURE_HTML, browser, closeActionPopup, collectPageErrors, evaluateServiceWorker, eventually, extensionId, fixtureErrors, fixturePage, fixtureUrl, getOffscreenContextCount, getTabId, inspectExtensionAccessibility, inspectExtensionLayout, installPageMediaControllerHarness, openActionPopupTarget, openExtensionClient, readBadgeText, readPageMediaControllerHarness, readSiteRouteRegistry, removePageMediaControllerHarness, restartServiceWorker, sendExtensionMessage, sendFromActionPopup, submitEffectiveVolume, submitPopupControlIntent, updatePageMediaControllerHarness, waitForContentBootstrapStatus } from './harness';
 import type { SmokeRpcResult } from './harness';
 import { prepareSmokeSession, startSmokeSession, teardownSmokeSession } from './harness';
 
@@ -20,6 +20,53 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 	afterAll(async () => {
 		await teardownSmokeSession();
 	});
+
+	test('opens with current playback and toggles an unbuffered source without blocking pause', async () => {
+		const page = await browser.newPage();
+		await page.goto(`${fixtureUrl}?buffered-playback=1`, { waitUntil: 'domcontentloaded' });
+		await page.bringToFront();
+		const tabId = await getTabId(page.url());
+		// An empty MediaSource leaves play() pending until data arrives. Its play
+		// event still proves paused=false, exactly the state the button controls.
+		await page.evaluate(() => {
+			const media = document.querySelector<HTMLMediaElement>('#v');
+			if (!media) throw new Error('Playback fixture is missing');
+			media.pause(); media.muted = true;
+			media.src = URL.createObjectURL(new MediaSource());
+		});
+		let popup = await (await openActionPopupTarget()).asPage();
+		const selector = `.glass-card[data-tab-id="${tabId}"] .btn-pause`;
+		try {
+			await popup.waitForSelector(selector, { timeout: 8_000 });
+			await popup.waitForFunction((s) => document.querySelector(s)?.getAttribute('aria-pressed') === 'false', {}, selector);
+			for (const desired of [true, false, true, false]) {
+				await popup.click(selector);
+				await popup.waitForFunction((s, value) => document.querySelector(s)?.getAttribute('aria-pressed') === String(value),
+					{ timeout: 2_000 }, selector, desired);
+				expect(await page.evaluate(() => !document.querySelector<HTMLMediaElement>('#v')?.paused)).toBe(desired);
+			}
+			// Reopen after a page-side change, first with only durable state and
+			// then with a Popup cache. Neither may paint the stale paused ACK.
+			for (const keepCache of [false, true]) {
+				await closeActionPopup(popup);
+				await page.evaluate(() => {
+					void document.querySelector<HTMLMediaElement>('#v')?.play().catch(() => undefined);
+				});
+				if (!keepCache) await evaluateServiceWorker(async (id) => chrome.storage.local.remove(`spectra.popup.card_cache.${id}`), tabId);
+				await page.bringToFront();
+				popup = await (await openActionPopupTarget()).asPage();
+				await popup.waitForSelector(selector, { timeout: 8_000 });
+				expect(await popup.$eval(selector, (button) => button.getAttribute('aria-pressed'))).toBe('true');
+				await popup.click(selector);
+				await popup.waitForFunction((s) => document.querySelector(s)?.getAttribute('aria-pressed') === 'false',
+					{ timeout: 2_000 }, selector);
+				expect(await page.evaluate(() => document.querySelector<HTMLMediaElement>('#v')?.paused)).toBe(true);
+			}
+		} finally {
+			await closeActionPopup(popup);
+			await page.close();
+		}
+	}, 30_000);
 
 	test('synchronizes page-native media bidirectionally through Popup and the mute hotkey', async () => {
 		await installPageMediaControllerHarness();
@@ -55,7 +102,7 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 					fields: {
 						volumeBase: { actual: 100, strategy: 'page-native' },
 						mediaMuted: { actual: false, strategy: 'page-native' },
-						speed: { actual: 1, strategy: 'page-native' },
+						speed: { actual: 1, strategy: 'dom-native' },
 					},
 				},
 			});
@@ -125,7 +172,7 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 					fields: {
 						volumeBase: { actual: 70, strategy: 'page-native' },
 						mediaMuted: { actual: false, strategy: 'page-native' },
-						speed: { actual: 1.25, strategy: 'page-native' },
+						speed: { actual: 1.25, strategy: 'dom-native' },
 					},
 				},
 			});
@@ -167,7 +214,7 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 					fields: {
 						volumeBase: { actual: 70, strategy: 'page-native' },
 						mediaMuted: { actual: true, strategy: 'page-native' },
-						speed: { actual: 1.25, strategy: 'page-native' },
+						speed: { actual: 1.25, strategy: 'dom-native' },
 					},
 				},
 			});
@@ -185,6 +232,9 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
 		await waitForContentBootstrapStatus(fixtureUrl);
 		await fixturePage.bringToFront();
+		// The preceding origin may retain a muted autoplay preview. This test
+		// explicitly restores unmuted media, so establish real page activation.
+		await fixturePage.click('body');
 		const tabId = await getTabId(fixturePage.url());
 		try {
 			await submitEffectiveVolume(tabId, 63);
@@ -195,6 +245,7 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 			if (!speed.ok) {
 				throw new Error(speed.error?.message ?? 'Unable to set refresh mute and speed');
 			}
+			expect(speed.data.fields).toMatchObject({ mediaMuted: { phase: 'applied', actual: false }, speed: { phase: 'applied', actual: 1.75 } });
 			await eventually(
 				() => fixturePage.evaluate(() => {
 					const media = document.querySelector<HTMLMediaElement>('#v');
@@ -215,6 +266,13 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				5_000,
 			);
 
+			// Control ACK and badge do not promise the later session projection is
+			// durable. Observe every required field before killing that writer.
+			await eventually(() => evaluateServiceWorker(async (id) => {
+				const key = `tab_session_${id}`;
+				return (await chrome.storage.session.get(key))[key]?.patch;
+			}, tabId), (patch) => patch?.volumeBase === 63 && patch.boost === 1
+				&& patch.mediaMuted === false && patch.speed === 1.75, 'complete durable refresh projection');
 			await restartServiceWorker();
 			const durableProjection = await evaluateServiceWorker(async (targetTabId) => {
 				const key = `tab_session_${targetTabId}`;
@@ -278,6 +336,8 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 	}, 35_000);
 
 	test('applies a site preset before the default global preset after worker replacement', async () => {
+		// Earlier explicit controls intentionally own origin-portable values.
+		// A new port supplies an untouched origin for this preset precedence test.
 		const presetName = 'smoke-initialization-default';
 		const siteUrl = new URL(fixtureUrl);
 		siteUrl.hostname = 'localhost';
@@ -329,6 +389,10 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 		let sitePage: Page | null = null;
 		let globalPage: Page | null = null;
 		const presetErrors: string[] = [];
+		const presetServer = Bun.serve({ port: 0, hostname: '127.0.0.1', fetch: () => new Response(FIXTURE_HTML, {
+			headers: { 'content-type': 'text/html' },
+		}) });
+		globalUrl.port = String(presetServer.port);
 		try {
 			await restartServiceWorker();
 			sitePage = await browser.newPage();
@@ -396,6 +460,7 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 			await eventually(() => readBadgeText(siteTabId), (text) => text === '73', 'site preset badge');
 			await eventually(() => readBadgeText(globalTabId), (text) => text === '54', 'global preset badge');
 		} finally {
+			presetServer.stop(true);
 			await sitePage?.close().catch(() => undefined);
 			await globalPage?.close().catch(() => undefined);
 			await client.evaluate(async ({

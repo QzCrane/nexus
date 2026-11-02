@@ -453,6 +453,7 @@ if (!getContentBootstrapState()) {
 				runtimeRevision: state.runtimeRevision,
 				ready: state.ready,
 				ownedSources: state.getOwnedSources?.() ?? [],
+				mediaIntentState: state.getMediaIntent?.() ?? 'unset',
 			}));
 			return false;
 		}

@@ -1,6 +1,6 @@
 // goal: shared, side-effect-free content-runtime capability and bootstrap state helpers
 
-import type { ContentRuntimeSourceOwnership, SpectraRequestType } from '@nexus/contracts';
+import type { ContentRuntimeSourceOwnership, ContentRuntimeStatus, SpectraRequestType } from '@nexus/contracts';
 
 export interface ContentBootstrapState {
 	bootstrapRevision: string;
@@ -16,6 +16,7 @@ export interface ContentBootstrapState {
 	mediaReportRevision?: number;
 	disposeRuntime?: () => Promise<void>;
 	getOwnedSources?: () => ContentRuntimeSourceOwnership[];
+	getMediaIntent?: () => NonNullable<ContentRuntimeStatus['mediaIntentState']>;
 	dispose(): void;
 }
 
@@ -82,12 +83,15 @@ export function setContentRuntimeDisposer(disposer: (() => Promise<void>) | null
 
 export function setContentRuntimeOwnershipProvider(
 	provider: (() => ContentRuntimeSourceOwnership[]) | null,
+	mediaIntentProvider?: () => NonNullable<ContentRuntimeStatus['mediaIntentState']>,
 ): () => void {
 	const state = getContentBootstrapState();
 	if (!state) return () => undefined;
 	if (provider) state.getOwnedSources = provider;
 	else delete state.getOwnedSources;
+	if (mediaIntentProvider) state.getMediaIntent = mediaIntentProvider;
 	return () => {
 		if (state.getOwnedSources === provider) delete state.getOwnedSources;
+		if (state.getMediaIntent === mediaIntentProvider) delete state.getMediaIntent;
 	};
 }

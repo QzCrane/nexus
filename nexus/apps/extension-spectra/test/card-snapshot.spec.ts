@@ -10,6 +10,42 @@ import {
 } from '../src/popup/card/snapshot';
 
 describe('field-level card snapshot coverage', () => {
+	test.each([false, true])('confirms current playback before first paint despite durable or Popup cached ACK (cache: %s)', async (cached) => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const tabId = cached ? 4_244 : 4_243;
+		const documentId = `doc-playback-${tabId}`;
+		const oldControl = {
+			tabId, documentId, origin: 'https://media.test', generation: 1, revision: 1, activeMedia: null, activeVideo: null,
+			fields: { playing: { desired: true, actual: true, revision: 1, phase: 'applied', strategy: 'dom-native',
+				coverage: 'active-target', controlled: true, lastError: null } },
+		};
+		const current = { ...oldControl, fields: { playing: { ...oldControl.fields.playing, desired: false, actual: false, controlled: false } } };
+		const cache = { documentId, status: { state: 'unknown', reason: 'unavailable' },
+			controlSnapshot: { state: 'known', value: oldControl }, sessionSnapshot: { state: 'known', value: null },
+			isRemoteActive: { state: 'known', value: false } };
+		const store: Record<string, unknown> = { [`spectra.control.tab.${tabId}`]: oldControl };
+		if (cached) store[`spectra.popup.card_cache.${tabId}`] = { snapshot: cache };
+		let reads = 0;
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			storage: { local: { get: async (input: string | string[]) => Object.fromEntries((Array.isArray(input) ? input : [input])
+				.map((key) => [key, store[key]])), set: async () => undefined } },
+			webNavigation: { getFrame: async () => ({ documentId }) },
+			runtime: { sendMessage: async (message: { type: string }) => {
+				if (message.type === 'spectra.control.snapshot.get') { reads += 1; return { ok: true, data: current }; }
+				return { ok: true, data: { connected: false } };
+			} },
+			tabs: { sendMessage: async () => ({ ok: false, error: { code: 'unavailable', message: 'No runtime', retryable: false } }) },
+		} });
+		try {
+			const result = await readCardSnapshot(tabId, { allowCached: cached });
+			expect(result?.controlSnapshot).toMatchObject({ state: 'known', value: { fields: { playing: { actual: false } } } });
+			expect(result?.controlSnapshotFresh).toBe(true);
+			expect(reads).toBe(1);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
 	test.each(['capture', 'bypass'] as const)('uses the newer settled runtime %s before the first card paint', (mode) => {
 		const runtime = { actualMode: mode, desiredMode: mode, phase: mode === 'capture' ? 'active' as const : 'idle' as const, generation: 6 };
 		const oldMode = mode === 'capture' ? 'bypass' as const : 'capture' as const;

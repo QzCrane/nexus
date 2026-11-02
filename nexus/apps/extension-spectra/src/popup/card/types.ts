@@ -67,6 +67,8 @@ export interface CardSnapshot {
   sessionSnapshot: CardObservation<AudioSessionSnapshot | null>;
   isRemoteActive: CardObservation<boolean>;
   fromCache?: boolean;
+  /** Current document control was passively read for this open, not copied from storage. */
+  controlSnapshotFresh?: boolean;
 }
 
 export interface InitCardParams {

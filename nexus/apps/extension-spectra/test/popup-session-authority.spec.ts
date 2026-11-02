@@ -9,6 +9,37 @@ type RuntimeListener = (
 ) => boolean | undefined;
 
 describe('Popup audio-session authority', () => {
+	test('retries a current snapshot that still lacks playback until the native state is known', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const state = createState();
+		state.controlSnapshotKnown = true;
+		state.lifecycleSnapshotKnown = true;
+		let reads = 0;
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			onMessage: { addListener() {}, removeListener() {} },
+			sendMessage: async () => {
+				reads += 1;
+				return { ok: true, data: { ...state.controlSnapshot, fields: reads === 1 ? {} : {
+					playing: { desired: false, actual: false, revision: 0, phase: 'applied', strategy: 'dom-native',
+						coverage: 'active-target', controlled: false, lastError: null },
+				} } };
+			},
+		} } });
+		let finished!: () => void;
+		const recovered = new Promise<void>((resolve) => { finished = resolve; });
+		const cleanup = setupCardMessaging({ tabId: 17, state, render: () => {
+			if (state.controlSnapshot?.fields.playing?.actual === false) finished();
+		} });
+		try {
+			await Promise.race([recovered, Bun.sleep(1_000)]);
+			expect(reads).toBe(2);
+			expect(state.controlSnapshot?.fields.playing?.actual).toBe(false);
+		} finally {
+			cleanup();
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
 	test('initializes fields only from ControlSnapshot actual state', () => {
 		const config = initialControlConfig({
 			tabId: 17,

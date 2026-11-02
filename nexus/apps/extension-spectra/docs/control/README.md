@@ -46,6 +46,8 @@ These totals mirror executable contracts and gates. A count changes only with co
 | written / confirmed / drifted / unconfirmed 证明状态机 | [05 Native write proof state](05-control-state.md#native-write-proof-state) |
 | SPA route / document / media source 生命线及 source 状态机 | [06 SPA identity and source lifecycle](06-media-and-video.md#spa-identity-and-source-lifecycle) |
 | 关闭直播、隐藏、移除、无目标、Popup 关闭与恢复决策表 | [06 Closing live players and speed inheritance](06-media-and-video.md#closing-live-players-and-speed-inheritance) |
+| document 恢复意图三态、选择访问、运行时租约与后台重启 | [06 Document replay intent lifetime](06-media-and-video.md#document-replay-intent-lifetime) |
+| 首次 Popup 播放状态、切换 baseline、缓冲播放与有界 ACK | [06 Playback button and buffered play](06-media-and-video.md#playback-button-and-buffered-play) |
 | 自由倍速准入、page/DOM writer、失败与补偿决策图 | [06 Speed decision and failure](06-media-and-video.md#speed-decision-and-failure) |
 | 直播传输不能调速的边界 | [06 Live transport limits](06-media-and-video.md#live-transport-limits) |
 | 倍速写入、actual 标签、ACK 和 Popup 时序图 | [06 Speed intent and projection sequence](06-media-and-video.md#speed-intent-and-projection-sequence) |

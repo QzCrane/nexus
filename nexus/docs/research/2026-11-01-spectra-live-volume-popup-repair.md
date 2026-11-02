@@ -8,6 +8,82 @@ last_reviewed: 2026-11-02
 
 # Live volume and Popup observer repair
 
+## Follow-up: retained video speed and Popup playback
+
+The reported 2x video → live room → original video regression adds a boundary
+the earlier reverse-close fixture did not exercise: the returning element may
+have lost ownership and been reset to 1x without a source revision change.
+Applied desired revisions must certify one selection visit, not every future
+visit to that source. Active same-visit page changes still take precedence.
+
+Popup playback has separate stale-ACK, durable-read and mutation-baseline
+boundaries. Its `playing` value means `!paused`; the `play` event and physical
+getter can prove that intent while buffering, before `playing` or the native
+`play()` Promise completes. The native ACK deadline and cancellation must also
+bound an unresolved write Promise, so the actor and subsequent pause cannot hang.
+
+- [x] Regress selection revisit after ownership loss and a rejected live speed.
+- [x] Reconcile cold Popup playback from the current document and toggle from
+  native current state; keep older ACKs behind the common render fence.
+- [x] Bound native Promise/event ACK and prove buffered play → pause in Chrome.
+- [x] Unify the template lease across initialization, successful control,
+  worker recovery and release; fence late probes against navigation/release.
+- [x] Complete final owner/gate validation on the frozen artifact.
+
+Reuse native media events, Promise.race and existing identity/ACK owners. A state
+or queue library cannot own SPECTRA's source/selection authority and would add a
+second owner; no package or new retry/polling mechanism is needed.
+
+The full Chrome regression also exposed the missing template consumer: a page
+ratechange released physical ownership, then the runtime unloaded even though
+its document desired still needed to restore later selections. The repair keeps
+one document-template lease separate from field ownership. It also replaces the
+old initialization/restart `settings:<hostname>` lease with that same capability.
+Content reports `unset/retained/released`; same-document worker reinitialization
+cannot replay live 1x resource actuals over a retained 2x template or recreate a
+released template. Late status replies are read-only and cannot revive leases
+after navigation or page-settings release. Release decisions contain no desired
+values, are cleared only by a new successful intent, and retire with the document.
+
+The built Chrome regression now uses a real rate-capable WAV video, resets its
+same-source rate to 1x, opens a Canvas MediaStream that rejects 2x, restarts the
+worker, and returns to the original video twice at physical 2x. It then invokes
+restore-page-settings through the real Action Popup and observes runtime READY
+become false after all consumers leave. A real empty MediaSource proves that
+buffered play and subsequent pause remain operable; durable-only and cached
+Popup reopens confirm the page's current paused state before the first card paint.
+
+Process correction: the earlier close fixture changed speed successfully inside
+the live modal, so it did not cover an unsupported live stream after the page
+had erased the original source's ownership. Keep that distinct vector instead
+of relying on a matching label or adding arbitrary sleeps/retries. Source-only
+selection, template residency, worker restoration and buffered play are separate
+proof boundaries. No new dependency, watcher, persistent profile or diagnostic
+script is retained.
+
+Final validation: 248 focused unit tests / 1,189 assertions and 48 built-Chrome
+tests / 282 assertions pass. The canonical SPECTRA typecheck passes all four
+packages (extension ActionKey `178b2d1191da3803`; its program includes `src`, not
+the smoke fixtures). Strict Biome passes all 28 changed TypeScript files.
+Development bootstrap 1.3.5 / runtime 3.6.5 builds and all 12 dist entrypoints
+pass integrity. Strict documentation passes 130 Markdown files / 21 entrypoints.
+The native ACK static gate now requires event/getter completion raced against
+native write completion and the buffered play regression; its previous literal
+`await write()`/`playing` requirement described the very hang being removed.
+Canonical verify passes 24 regression tests / 58 assertions and all media rules;
+its sole architecture error remains the pre-existing `PUBLIC-PARITY-002` for the
+same three missing public files, with seven warnings. The public checkout's
+eight pre-existing modified files are untouched.
+
+Broader smoke validation also corrected fixture ownership without changing the
+product invariants: the buffered-play test owns its page; preset precedence uses
+an untouched origin instead of one with earlier explicit portable adjustments;
+the unmute persistence case proves real document activation and complete durable
+session projection before stopping the worker; fullscreen page gestures begin
+after that document's initialization barrier. Speed observation assertions now
+name the physical DOM getter, as the current contract requires. No failed field
+ACK, arbitrary sleep or weaker actual-value assertion is accepted as success.
+
 ## Completed follow-up: media state and SPA close lifecycle
 
 2026-11-02 audit: the control owners contain field definitions but lack complete

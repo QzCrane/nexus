@@ -22,6 +22,7 @@ import {
 	getControlViewSnapshot,
 } from '../src/background/control-coordinator';
 import { readSpectraTabPassively } from '../src/background/spectra-tab-client';
+import { hasRuntimeLease, MEDIA_INTENT_RUNTIME_CAPABILITY, retainMediaIntentRuntimeLease } from '../src/background/runtime-loader';
 import type { ExtensionInvocationContext } from '../src/background/extension-invocation';
 import { resetBadgeUsageForTests } from '../src/background/badge-usage';
 import { badgeState } from '../src/background/state';
@@ -466,6 +467,51 @@ describe('authoritative control coordinator', () => {
 		// painting a background card had loaded that tab's heavy runtime.
 		expect(harness.contentMessages.map(({ type }) => type))
 			.toEqual(['spectra.control.actual.read', 'spectra.control.actual.read']);
+	});
+
+	test.each([false, true])('refreshes playback and toggles the live getter instead of an old ACK (exact target: %s)', async (exact) => {
+		const harness = installHarness();
+		let playing = true;
+		const target = { frameId: 0, documentId: harness.documentId, mediaId: 'media:playback', sourceRevision: 0, kind: 'video' as const };
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') return actualReadAck(payload as ControlReadRequest, target, { playing });
+			const intent = payload as ControlIntent;
+			if (typeof intent.patch?.playing === 'boolean') playing = intent.patch.playing;
+			return { ok: true, data: appliedPatchAck(intent, () => 'dom-native') };
+		};
+		await controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', requestedCoverage: 'active-target',
+			target, patch: { playing: true } }, invocation(harness, 'popup'));
+		// The page paused while there was no observation lease.
+		playing = false;
+		expect((await getControlViewSnapshot(7))?.fields.playing).toMatchObject({ actual: false, controlled: false });
+		await controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', requestedCoverage: 'active-target',
+			target: exact ? target : null, mutations: [{ field: 'playing', operation: 'toggle' }] }, invocation(harness, 'popup'));
+		expect(playing).toBe(true);
+	});
+
+	test('retains the document media template lease when the page takes current speed ownership', async () => {
+		const harness = installHarness();
+		harness.documentId = 'document-speed-template';
+		const target = { frameId: 0, documentId: harness.documentId, mediaId: 'media:template', sourceRevision: 0, kind: 'video' as const };
+		harness.contentResponder = ({ payload }) => ({ ok: true, data: appliedPatchAck(payload as ControlIntent, () => 'dom-native') });
+		await controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', requestedCoverage: 'active-target',
+			target, patch: { speed: 2 } }, invocation(harness, 'popup'));
+		expect(hasRuntimeLease(7, harness.documentId, 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY)).toBe(true);
+		await controlCoordinatorTestApi.submit({ tabId: 7, source: 'page', requestedCoverage: 'active-target',
+			target, patch: { speed: 1 }, observedStrategies: { speed: 'dom-native' } });
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.speed).toMatchObject({ actual: 1, controlled: false });
+		expect(hasRuntimeLease(7, harness.documentId, 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY)).toBe(true);
+	});
+
+	test('keeps playback unknown when a current passive read cannot confirm an old play ACK', async () => {
+		const harness = installHarness();
+		harness.contentResponder = ({ payload }) => ({ ok: true, data: appliedPatchAck(payload as ControlIntent, () => 'dom-native') });
+		await controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', requestedCoverage: 'active-target',
+			target: null, patch: { playing: true, volumeBase: 80 } }, invocation(harness, 'popup'));
+		harness.contentResponder = () => ({ ok: false, error: { code: 'capability-unavailable', message: 'No media', retryable: true } });
+		const view = await getControlViewSnapshot(7);
+		expect(view?.fields.playing).toBeUndefined();
+		expect(view?.fields.volumeBase).toMatchObject({ actual: 80, controlled: true });
 	});
 
 	test('refuses to route a runtime-requiring request through the passive read', async () => {
@@ -2182,6 +2228,8 @@ describe('authoritative control coordinator', () => {
 			processorIntent = payload as ControlIntent;
 			return { ok: true, data: releasedPatchAck(processorIntent) };
 		};
+		// The initialization and explicit media template share this one lease.
+		retainMediaIntentRuntimeLease(7, harness.documentId);
 
 		const ack = await controlCoordinatorTestApi.submitOperation({
 			tabId: 7,
@@ -2197,6 +2245,7 @@ describe('authoritative control coordinator', () => {
 		expect(ack.result.releasedFields).toContain('boost');
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.revision).toBe(1);
 		expect(harness.snapshotEvents).toBe(1);
+		expect(hasRuntimeLease(7, harness.documentId, 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY)).toBe(false);
 	});
 
 	test('clears retired-source A/B state without regressing a newer active media target', async () => {

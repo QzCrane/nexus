@@ -225,7 +225,8 @@ export function setupCardMessaging(params: MessagingParams): () => void {
   };
 
   let recoveryTimer: ReturnType<typeof setTimeout> | null = null;
-  const controlPending = () => state.controlSnapshotKnown !== true;
+  const controlPending = () => state.controlSnapshotKnown !== true
+    || state.controlSnapshot !== null && typeof state.controlSnapshot.fields.playing?.actual !== 'boolean';
   const lifecyclePending = () => state.lifecycleSnapshotKnown !== true;
   // A snapshot restored from the Popup's own cache is a forecast of right now,
   // not an observation of it: another Popup document may have painted it up to a
@@ -258,11 +259,14 @@ export function setupCardMessaging(params: MessagingParams): () => void {
   const pollControlSnapshot = async (silent = false): Promise<boolean> => {
     try {
       const response = await sendSpectraRequest('spectra.control.snapshot.get', { tabId });
-      if (disposed || (!silent && state.controlSnapshotKnown)) return true;
+      if (disposed || (!silent && !controlPending())) return true;
       if (!response.ok) return false;
       // A confirmation applies only what the broadcaster admits; an older
       // revision is refused by the clock check, never painted as news.
-      if (response.data) return applyControlSnapshot(state, response.data, render);
+      if (response.data) {
+        const accepted = applyControlSnapshot(state, response.data, render);
+        return accepted && !controlPending();
+      }
       if (silent) return true;
       // A known-empty snapshot is an answer: this tab has no control state.
       state.controlSnapshotKnown = true;

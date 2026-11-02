@@ -241,6 +241,61 @@ afterEach(() => {
 });
 
 describe('native media single-writer correlation', () => {
+	test('replays a retained speed on a new selection visit without fighting same-visit page changes', async () => {
+		installFakeMediaGlobals();
+		const media = new FakeMediaElement();
+		const registry = new FakeRegistry(media);
+		const messages: Array<{ type: string; payload?: { source?: string; patch?: { speed?: number } } }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		media.addEventListener('ratechange', () => registry.emit('ratechange'));
+		try {
+			await executor.execute({
+				intentId: 'speed:before-live', tabId: 7, documentId: registry.documentId, generation: 1,
+				baseRevision: 0, source: 'popup', requestedCoverage: 'active-target', target: registry.target,
+				actualContext: {}, patch: { speed: 2 },
+			});
+			media.playbackRate = 1;
+			await Promise.resolve();
+			registry.emit('play');
+			await Promise.resolve();
+			expect(messages.filter((message) => message.payload?.source === 'restore')).toEqual([]);
+			const feedId = registry.target.mediaId;
+			registry.target.mediaId = 'media:live';
+			registry.emit('selected');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			messages.length = 0;
+			registry.target.mediaId = feedId;
+			registry.emit('selected');
+			await Promise.resolve();
+			expect(messages.some((message) => message.payload?.source === 'restore' && message.payload.patch?.speed === 2)).toBe(true);
+		} finally { executor.dispose(); }
+	});
+
+	test('acknowledges play before buffering completes so a later pause can run', async () => {
+		installFakeMediaGlobals();
+		const media = new FakeMediaElement();
+		media.play = () => {
+			media.paused = false;
+			queueMicrotask(() => media.dispatchEvent(new Event('play')));
+			return new Promise<void>(() => undefined);
+		};
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		const intent = (playing: boolean): ControlIntent => ({
+			intentId: `playback:${playing}`, tabId: 7, documentId: registry.documentId, generation: 1,
+			baseRevision: 0, source: 'popup', requestedCoverage: 'active-target', target: registry.target,
+			actualContext: {}, patch: { playing },
+		});
+		try {
+			const play = await Promise.race([executor.execute(intent(true)), new Promise<null>((resolve) => setTimeout(() => resolve(null), 300))]);
+			expect(play?.fields.playing).toMatchObject({ phase: 'applied', actual: true });
+			expect((await executor.execute(intent(false))).fields.playing).toMatchObject({ phase: 'applied', actual: false });
+		} finally { executor.dispose(); }
+	}, 500);
+
 	test('keeps the standard default and current playback rates coherent', () => {
 		const media = new FakeMediaElement();
 		expect(writeNativePlaybackRate(media as unknown as HTMLMediaElement, 1.5)).toBe(1.5);

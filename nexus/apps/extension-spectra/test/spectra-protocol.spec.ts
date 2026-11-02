@@ -141,6 +141,15 @@ function createSettingsSnapshot(): SettingsSnapshot {
 }
 
 describe('SPECTRA audio runtime guards', () => {
+	test('validates document media intent lifecycle without admitting arbitrary states', () => {
+		const status = { bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION, runtimeRevision: SPECTRA_CONTENT_RUNTIME_REVISION, ready: true, ownedSources: [] };
+		for (const mediaIntentState of ['unset', 'retained', 'released']) {
+			expect(isSpectraResponse('spectra.content.runtime.status', rpcSuccess({ ...status, mediaIntentState }))).toBe(true);
+		}
+		for (const mediaIntentState of [true, 'applied', null, 1]) {
+			expect(isSpectraResponse('spectra.content.runtime.status', rpcSuccess({ ...status, mediaIntentState }))).toBe(false);
+		}
+	});
 	test('accepts only complete, finite and implementable audio configs', () => {
 		expect(isAudioConfig(createAudioConfig())).toBe(true);
 		expect(isAudioConfig(createAudioConfig({ delay: -1 }))).toBe(false);

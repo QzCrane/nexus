@@ -6,6 +6,7 @@ import {
 	isDefaultAudioConfig,
 	type AudioSessionSnapshot,
 	type ContentRuntimeSourceOwnership,
+	type ContentRuntimeStatus,
 	type HotkeySettings,
 } from '@nexus/contracts';
 import { swLog } from '../shared/logger';
@@ -18,6 +19,7 @@ import {
 	ensureContentRuntime,
 	reconcileHotkeyRuntimeLease,
 	releaseContentRuntimeLease,
+	MEDIA_INTENT_RUNTIME_CAPABILITY,
 } from './runtime-loader';
 import { recoverDocumentRuntimeAfterWorkerRestart } from './runtime-restart-recovery';
 import { forEachBounded } from './bounded-fanout';
@@ -36,6 +38,7 @@ export interface RuntimeRestartStatus {
 	readonly ready: boolean;
 	readonly runtimeRevision: string | null;
 	readonly ownedSources: readonly ContentRuntimeSourceOwnership[];
+	readonly mediaIntentState?: ContentRuntimeStatus['mediaIntentState'];
 }
 
 export interface RuntimeRestartStartupPort {
@@ -76,7 +79,7 @@ async function persistentRestoreCapability(target: RuntimeRestartTarget): Promis
 		return null;
 	}
 	const hostname = new URL(identity.resourceUrl).hostname;
-	const capability = `settings:${hostname}`;
+	const capability = MEDIA_INTENT_RUNTIME_CAPABILITY;
 	const sessionPatch = await storage.tabSession.rebind(target.tabId, identity);
 	if (sessionPatch && Object.keys(sessionPatch).length > 0) return capability;
 	const config = await settingsRepository.resolveAudioConfig(hostname);
@@ -167,6 +170,7 @@ export async function recoverDocumentRuntimeOnWorkerStartup(
 	let runtimeWasPresent = false;
 	let recoveryLeaseHeld = false;
 	let durableOwner = false;
+	let survivingMediaIntent: ContentRuntimeStatus['mediaIntentState'];
 
 	await recoverDocumentRuntimeAfterWorkerRestart({
 		async probeExistingRuntime() {
@@ -181,13 +185,19 @@ export async function recoverDocumentRuntimeOnWorkerStartup(
 				throw new Error(`Unexpected surviving runtime revision: ${String(status.runtimeRevision)}`);
 			}
 			runtimeWasPresent = true;
+			survivingMediaIntent = status.mediaIntentState;
 			durableOwner = hasOwnedSource(status);
 			await port.retainRecoveryRuntime(target);
 			recoveryLeaseHeld = true;
 			return true;
 		},
 		async restoreDocumentOwnership() {
-			const restoreCapability = await port.resolvePersistentRestoreCapability(target);
+			// A surviving executor owns its template. Resource/session actuals may
+			// reflect an unchangeable 1x live stream or a released page baseline;
+			// neither is proof that a document replay template still exists.
+			const restoreCapability = runtimeWasPresent && survivingMediaIntent !== undefined && survivingMediaIntent !== 'unset'
+				? survivingMediaIntent === 'retained' ? MEDIA_INTENT_RUNTIME_CAPABILITY : null
+				: await port.resolvePersistentRestoreCapability(target);
 			if (restoreCapability) {
 				durableOwner = true;
 				// Do not create a new heavy runtime solely for restart recovery. If one

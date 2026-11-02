@@ -179,6 +179,8 @@ export interface ContentRuntimeStatus {
 	runtimeRevision: string | null;
 	ready: boolean;
 	ownedSources: ContentRuntimeSourceOwnership[];
+	/** Document template lifecycle, distinct from any source's current actual. */
+	mediaIntentState?: 'unset' | 'retained' | 'released';
 }
 
 export interface ContentRuntimeReadyResult {
@@ -765,7 +767,7 @@ const MARKER_LABEL_PAYLOAD_KEYS = new Set(['label']);
 const MARKER_ID_PAYLOAD_KEYS = new Set(['id']);
 const ACCEPTED_RESULT_KEYS = new Set(['accepted']);
 const BOOTSTRAP_HELLO_RESULT_KEYS = new Set(['accepted', 'runtimeRevision']);
-const CONTENT_RUNTIME_STATUS_KEYS = new Set(['bootstrapRevision', 'runtimeRevision', 'ready', 'ownedSources']);
+const CONTENT_RUNTIME_STATUS_KEYS = new Set(['bootstrapRevision', 'runtimeRevision', 'ready', 'ownedSources', 'mediaIntentState']);
 const CONTENT_RUNTIME_SOURCE_OWNERSHIP_KEYS = new Set(['target', 'markerCount', 'abActive']);
 const CONTENT_RUNTIME_IDENTITY_KEYS = new Set(['documentId', 'frameId']);
 const CONTENT_RUNTIME_READY_RESULT_KEYS = new Set(['documentId', 'runtimeRevision', 'ready']);
@@ -1203,6 +1205,8 @@ function isContentRuntimeStatus(
 		&& (value.runtimeRevision === null || isRuntimeRevision(value.runtimeRevision))
 		&& typeof value.ready === 'boolean'
 		&& (!value.ready || value.runtimeRevision !== null)
+		&& (value.mediaIntentState === undefined || value.mediaIntentState === 'unset'
+			|| value.mediaIntentState === 'retained' || value.mediaIntentState === 'released')
 		&& Array.isArray(value.ownedSources)
 		&& value.ownedSources.length <= 2_000
 		&& value.ownedSources.every((ownership) => isRecord(ownership)

@@ -116,7 +116,7 @@ export function createRenderFn(params: RenderParams): () => void {
     }
 
 		const playing = state.controlSnapshot?.fields.playing?.actual;
-		if (ui.btnPause && typeof playing === 'boolean') renderPlaybackButton(ui.btnPause, playing);
+		if (ui.btnPause) renderPlaybackButton(ui.btnPause, typeof playing === 'boolean' ? playing : null);
 		const pip = state.controlSnapshot?.fields.pip?.actual;
 		if (ui.btnPip && typeof pip === 'boolean') {
 			ui.btnPip.classList.toggle('active', pip);

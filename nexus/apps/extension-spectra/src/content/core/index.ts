@@ -39,6 +39,7 @@ import type { ContentDeps, PolicyExecutorState } from '../types';
 import type { SettingsManager } from './settings-manager';
 import {
 	NativeMediaExecutor,
+	getActiveNativeMediaExecutor,
 	registerNativeMediaExecutor,
 } from '../logic/native-media-executor';
 import { createAudioRuntimeControlDelegate } from '../logic/audio-runtime-control-delegate';
@@ -321,7 +322,7 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 			});
 		}
 		return [...ownership.values()];
-	}));
+	}, () => getActiveNativeMediaExecutor()?.mediaIntentState() ?? 'unset'));
 	let policyRefreshQueued = false;
 	const schedulePolicyRefresh = (): void => {
 		if (policyRefreshQueued) return;

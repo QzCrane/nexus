@@ -223,15 +223,36 @@ async function observeSource<T>(
 	}
 }
 
+function observeControlSnapshot(tabId: number, documentId: string): Promise<CardObservation<ControlSnapshot | null>> {
+	return observeSource<ControlSnapshot | null>(
+		`${tabId}:${documentId}:control`,
+		() => sendSpectraRequest('spectra.control.snapshot.get', { tabId }, { tabId, documentId }),
+		(value) => {
+			const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.control.snapshot.get'>>>;
+			return response.ok && (!response.data || response.data.documentId === documentId)
+				? { value: response.data }
+				: null;
+		},
+	);
+}
+
+function preserveControlForecast(
+	current: CardObservation<ControlSnapshot | null>,
+	forecast: ControlSnapshot | null,
+): CardObservation<ControlSnapshot | null> {
+	if (current.state === 'known' || !forecast) return current;
+	const fields = { ...forecast.fields };
+	delete fields.playing;
+	return { state: 'known', value: { ...forecast, fields } };
+}
+
 export async function collectCardSnapshot(tabId: number): Promise<CardSnapshot | null> {
 	const documentId = await currentTopDocumentId(tabId);
 	if (!documentId) return null;
 	const key = `${tabId}:${documentId}`;
-	// Control and session are durable facts the background retires on navigation,
-	// so a present value is a value for this exact document. Reading them first
-	// removes the two service-worker round trips that dominated the cold open; the
-	// runtime and remote observations still round-trip because they have no
-	// durable mirror and are corrected by the card's own bounded re-read anyway.
+	// A durable control ACK identifies the document but cannot prove current
+	// playback after an observation lease was closed. Always reconcile control
+	// through the passive getter; the durable session still owns processor state.
 	const durable = await readDurableCardFacts(tabId, documentId);
 	const [status, controlSnapshot, sessionSnapshot, isRemoteActive] = await Promise.all([
 		observeSource<AudioRuntimeStatus>(
@@ -242,18 +263,7 @@ export async function collectCardSnapshot(tabId: number): Promise<CardSnapshot |
 				return response.ok && response.data ? { value: response.data } : null;
 			},
 		),
-		durable.control !== null
-			? Promise.resolve<CardObservation<ControlSnapshot | null>>({ state: 'known', value: durable.control })
-			: observeSource<ControlSnapshot | null>(
-				`${key}:control`,
-				() => sendSpectraRequest('spectra.control.snapshot.get', { tabId }, { tabId, documentId }),
-				(value) => {
-					const response = value as Awaited<ReturnType<typeof sendSpectraRequest<'spectra.control.snapshot.get'>>>;
-					return response.ok && (!response.data || response.data.documentId === documentId)
-						? { value: response.data }
-						: null;
-				},
-			),
+		observeControlSnapshot(tabId, documentId),
 		durable.session !== null
 			? Promise.resolve<CardObservation<AudioSessionSnapshot | null>>({ state: 'known', value: durable.session })
 			: observeSource<AudioSessionSnapshot | null>(
@@ -280,7 +290,8 @@ export async function collectCardSnapshot(tabId: number): Promise<CardSnapshot |
 	const snapshot: CardSnapshot = {
 		documentId,
 		status,
-		controlSnapshot,
+		controlSnapshot: preserveControlForecast(controlSnapshot, durable.control),
+		controlSnapshotFresh: controlSnapshot.state === 'known',
 		sessionSnapshot,
 		isRemoteActive,
 	};
@@ -311,13 +322,16 @@ export function updateCachedControlSnapshot(tabId: number, controlSnapshot: Cont
 async function readCachedCardSnapshotWithDurableRoute(tabId: number): Promise<CardSnapshot | null> {
 	const cached = await readCachedCardSnapshot(tabId);
 	if (!cached) return null;
-	const durable = await readDurableCardFacts(tabId, cached.documentId);
-	if (!durable.control && !durable.session) return cached;
+	const [durable, control] = await Promise.all([
+		readDurableCardFacts(tabId, cached.documentId),
+		observeControlSnapshot(tabId, cached.documentId),
+	]);
 	return {
 		...cached,
-		controlSnapshot: durable.control
-			? { state: 'known', value: durable.control }
-			: cached.controlSnapshot,
+		// Retain the route forecast on read failure, but never its stale playback.
+		controlSnapshot: preserveControlForecast(control, durable.control
+			?? (cached.controlSnapshot.state === 'known' ? cached.controlSnapshot.value : null)),
+		controlSnapshotFresh: control.state === 'known',
 		sessionSnapshot: durable.session
 			? { state: 'known', value: durable.session }
 			: cached.sessionSnapshot,
@@ -332,11 +346,9 @@ export async function readCardSnapshot(
 	if (options?.allowCached ?? true) {
 		const cached = await readCachedCardSnapshotWithDurableRoute(tabId);
 		// The background retires the cache key on navigation and tab removal, so a
-		// stored record is a record for the tab's current document. There is no
-		// document fence to re-verify: the card paints this forecast immediately
-		// and re-confirms its control projection once through its own bounded
-		// read, so a stale value (navigation raced the retirement) is corrected in
-		// place instead of standing until the next reopen.
+		// stored record supplies the processor route forecast. Playback is
+		// refreshed through the same bounded passive getter before first paint;
+		// init still verifies the document before committing the card DOM.
 		if (cached) return cached;
 	}
 	return collectCardSnapshot(tabId);

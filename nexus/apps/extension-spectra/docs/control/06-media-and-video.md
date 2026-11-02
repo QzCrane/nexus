@@ -132,6 +132,29 @@ document 内 successful desired 与精确 source ownership 分离。用户成功
 的 `volumechange/ratechange` 不能切换目标。源相同且已失去扩展 ownership 时，
 自动成熟探测不能覆盖页面的新手势。
 
+### Document replay intent lifetime
+
+`NativeMediaExecutor` 是 document desired 的唯一值 owner；运行时状态协议只报告
+`mediaIntentState`，不复制 desired 值。当前 source 的 `controlled=false` 或直播
+物理 1x，均不能证明这个 document 的 2x 恢复模板已被用户取消。
+
+| 模板状态 | 进入和离开条件 | 生命周期结果 |
+| --- | --- | --- |
+| `unset` | 新 executor 尚未保存模板；成功的可恢复字段写入或授权 restore 暂存进入 `retained` | 初始化仍可按现有 session/preset 规则裁决 |
+| `retained` | `volumeBase/mediaMuted/speed/preservePitch/loop` 的 document desired 非空；页面改变 actual、切换 source、直播能力失败均保持 | 初始化、显式成功控制和 worker 恢复共用 `restore:document-media-intent` 租约；不能随当前字段 ownership 一起卸载 |
+| `released` | `restore-page-settings` 清空模板并释放上述同一租约；新成功显式写入可重新进入 `retained` | 存活 document 的 worker 恢复不能根据旧 resource actual/session 重新创造模板；新 document 独立初始化 |
+
+每次真正 `selected` 都是一次新的选择访问：该 source 以前应用过同一 desired
+revision 的缓存证明失效，返回已被页面重置的原 video 也必须重新经协调器恢复。
+选择访问未变时，重复 `play/loadedmetadata` 仍受 ownership 和有界成熟探测约束，
+不会持续覆盖页面新手势。旧访问的异步回复不得重建本次访问的已应用证明。
+
+runtime status probe 是纯读。只有仍持有 loading/initialization 身份的调用方才能
+恢复租约；导航或 tab 关闭退休旧身份。恢复网页设置的同文档释放决定也必须挡住
+此前已读到 `retained` 的迟到回复，直到新的成功显式控制重新建立模板。释放记录
+随 document/tab 一起清理；它不保存第二份 desired。所有其它消费者释放后才允许
+唯一 runtime owner 发 RELEASE。
+
 初始 IntersectionObserver 面积送达只补几何事实，不能伪造一次目标切换并把
 尚在提交的 portable restore 降为页面观察。隐藏、结束或退出 PiP/fullscreen 时，
 先协调选择，再投递相应媒体状态事件。source retirement 仍先发 `removed` 取消
@@ -139,6 +162,24 @@ document 内 successful desired 与精确 source ownership 分离。用户成功
 旧但仍注册的隐藏播放器不能用迟到观察把 Background 的目标改回去。
 
 ## §14 Media controls
+
+### Playback button and buffered play
+
+`playing` 的实际布尔定义为 `!HTMLMediaElement.paused`。Popup 打开时必须通过
+当前 document 的 passive getter 确认；持久控制 ACK 和 Popup cache 只能预测其它
+已确认字段，不能遮住新读取的暂停状态。当前读取失败或没有播放字段时，按钮
+显示未知（`aria-pressed=mixed`），由既有有界快照恢复继续确认，不能伪造播放/暂停。
+
+Popup 播放按钮提交当前媒体操作，不冻结缓存中的旧 modal target。协调器在本次
+串行事务内读目标实际 `playing` 再 toggle；新鲜 baseline 优先于历史快照。
+ACK 和页面广播共用相同的 document/generation/revision 入场规则，按钮只渲染
+被接受的快照，旧 ACK 的 `result.playing` 不能旁路重绘。
+
+播放以原生 `play`、暂停以 `pause` 事件加稳定 getter 确认。数据不足时，`paused`
+已为 false，但 `playing` 事件和 `play()` Promise 仍可能等待缓冲；这不应阻塞下一次
+暂停。原生事件/读回证明、写入拒绝、deadline、source/document abort 共同结算
+唯一 ACK 等待；未完成的写入 Promise 不能绕过 deadline 或挂住 actor。晚到的
+play rejection 必须被消费，真实后续状态仍由媒体事件同步，不宣称首帧已播放。
 
 ### Physical readback and autoplay admission
 
@@ -273,7 +314,9 @@ sequenceDiagram
 | 选择、可见性、移除、source epoch、pure read、PiP/fullscreen/audio 保护 | [media-registry.spec.ts](../../test/media-registry.spec.ts) |
 | 失败不传播、无目标 actual、延迟 restore、激活、baseline、稳定读回 | [native-media-executor.spec.ts](../../test/native-media-executor.spec.ts) |
 | 未列出值零试写、迟挂载选项、失败值 memo | [page-media-declared-adapter.spec.ts](../../test/page-media-declared-adapter.spec.ts) |
-| SPA 打开/关闭反向交接、同元素/后挂 controller、真实 MediaStream 拒绝 | [page-media.spec.ts](../../test/smoke/page-media.spec.ts) |
+| SPA 打开/关闭反向交接、原 video 重置后两次直播返回及 worker 重启、释放模板、真实 MediaStream 拒绝 | [page-media.spec.ts](../../test/smoke/page-media.spec.ts) |
+| Popup 首次/缓存播放读回、缓冲未完成时连续播放暂停 | [popup-ui.spec.ts](../../test/smoke/popup-ui.spec.ts) |
+| 模板租约、迟到 probe 对导航/释放的隔离、后台重启恢复 | [runtime-loader.spec.ts](../../test/runtime-loader.spec.ts) · [runtime-restart-startup.spec.ts](../../test/runtime-restart-startup.spec.ts) |
 | 首次 actual 标签、React 文本替换、多根/歧义根、真实 Action Popup 自由值 | [speed-toolbar.spec.ts](../../test/smoke/speed-toolbar.spec.ts) |
 | 跨 document 的 exact-resource / same-origin portable / cross-origin 退休 | [tab-session.spec.ts](../../test/tab-session.spec.ts) |
 

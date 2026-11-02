@@ -17,6 +17,10 @@ import {
 	releaseSourceRuntimeLease,
 	resetContentRuntimeLoaderForTests,
 	runtimeLoaderTestApi,
+	retainMediaIntentRuntimeLease,
+	releaseMediaIntentRuntimeLease,
+	hasRuntimeLease,
+	MEDIA_INTENT_RUNTIME_CAPABILITY,
 } from '../src/background/runtime-loader';
 import { settingsRepository } from '../src/background/settings-repository';
 import { storage } from '../src/background/state';
@@ -533,6 +537,37 @@ describe('document-scoped content runtime loader', () => {
 		}
 	});
 
+	test.each(['navigation', 'release'] as const)('does not resurrect a template from a status probe after %s', async (transition) => {
+		const harness = installChromeHarness(true);
+		const send = chrome.tabs.sendMessage;
+		let enterProbe!: () => void;
+		let finishProbe!: () => void;
+		const entered = new Promise<void>((resolve) => { enterProbe = resolve; });
+		const pending = new Promise<void>((resolve) => { finishProbe = resolve; });
+		chrome.tabs.sendMessage = (async (...args: Parameters<typeof send>) => {
+			if (args[1]?.type === 'spectra.content.runtime.status') {
+				enterProbe();
+				await pending;
+				const response = await send(...args);
+				return { ...response, data: { ...response.data, mediaIntentState: 'retained' } };
+			}
+			return send(...args);
+		}) as typeof send;
+		const operation = ensureContentRuntime(7, 'document-7', 'observation', 'late-template-probe');
+		const observed = operation.then((value) => value, (error: unknown) => error);
+		await entered;
+		if (transition === 'navigation') {
+			harness.currentDocumentId = 'document-new';
+			for (const listener of harness.navigationCommitted.listeners) listener({ tabId: 7, frameId: 0 } as never);
+		} else releaseMediaIntentRuntimeLease(7, 'document-7');
+		finishProbe();
+		const result = await observed;
+		if (transition === 'navigation') expect(result).toBeInstanceOf(Error);
+		else expect(result).toMatchObject({ ready: true });
+		expect(hasRuntimeLease(7, 'document-7', 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY)).toBe(false);
+		expect(harness.executeCount).toBe(0);
+	});
+
 	test('recovers an already-ready document after a service-worker restart without injection', async () => {
 		const harness = installChromeHarness(true);
 		const result = await ensureContentRuntime(7, undefined, 'control', 'owned-fields');
@@ -573,6 +608,16 @@ describe('document-scoped content runtime loader', () => {
 		await expectRelease(harness, 0, 50);
 
 		releaseContentRuntimeLease(7, 'document-7', 'remote', 'remote-a');
+		await expectRelease(harness, 1);
+	});
+
+	test('retains a document template independently of current media ownership and releases it with page settings', async () => {
+		const harness = installChromeHarness(true);
+		await ensureContentRuntime(7, 'document-7', 'observation', 'popup-template');
+		retainMediaIntentRuntimeLease(7, 'document-7');
+		releaseContentRuntimeLease(7, 'document-7', 'observation', 'popup-template');
+		await expectRelease(harness, 0, 50);
+		releaseMediaIntentRuntimeLease(7, 'document-7');
 		await expectRelease(harness, 1);
 	});
 

@@ -135,7 +135,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     config,
     stableConfig: mergeAudioConfig(config, { eqValues: [...config.eqValues] }),
     controlSnapshot,
-		controlSnapshotKnown: snapshot.controlSnapshot.state === 'known',
+		controlSnapshotKnown: snapshot.controlSnapshotFresh === true && snapshot.controlSnapshot.state === 'known',
 		lifecycleSnapshotKnown: lifecycle !== null,
     isCaptureActive,
     userInteracted: status?.userInteracted ?? (controlSnapshot?.revision ?? 0) > 0,
@@ -338,7 +338,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     tabId, documentId, state, render,
     hasPendingVolume: update.hasPendingVolume,
 		pendingConfigFields: update.pendingConfigFields,
-		cachedSnapshotForecast: snapshot.fromCache === true,
+		cachedSnapshotForecast: snapshot.controlSnapshotFresh !== true,
     onDocumentReplaced: () => {
       disposeCard();
       // The cached snapshot belongs to the retired document. Drop it before the

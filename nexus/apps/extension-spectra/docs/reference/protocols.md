@@ -193,6 +193,15 @@ Background serializes `offscreen.html` creation, reconstructs via HELLO, owns `a
 
 Wire request is `spectra.content.runtime.ensure`. Content ACKs with `runtimeRevision`. READY means the full initialization barrier passed.
 
+`spectra.content.runtime.status` adds optional `mediaIntentState` with the closed
+values `unset/retained/released`. Current bootstrap always emits it by reading
+the surviving executor; older responses may omit it. This is lifecycle evidence,
+not a second desired-value store or a physical speed ACK. Same-document worker
+recovery preserves retained/released decisions and uses the single restore lease;
+the [media owner](../control/06-media-and-video.md#document-replay-intent-lifetime)
+defines the transitions. Pure status replies cannot revive retired documents or
+templates explicitly released after their read began.
+
 `spectra.content.default-hotkey.trigger` carries:
 
 ```text

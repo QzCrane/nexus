@@ -62,7 +62,9 @@ export async function submitControlOperation<O extends ControlOperation>(
 		{
 			...body,
 			source: 'popup',
-			target: ctx.state.controlSnapshot?.activeMedia ?? null,
+			// The card's playback button controls whichever media is active when
+			// this serialized operation runs, including a just-closed SPA modal.
+			target: body.operation === 'playback-toggle' ? null : ctx.state.controlSnapshot?.activeMedia ?? null,
 			baseRevision: ctx.state.controlRevision,
 		} as ControlOperationRequest,
 		{ tabId: ctx.tabId },

@@ -600,6 +600,8 @@ export class NativeMediaExecutor {
 	private audioRuntimeDelegate: AudioRuntimeControlDelegate | null = null;
 	private tabId: number | null = null;
 	private desiredRevision = 0;
+	private selectionRevision = 0;
+	private mediaIntentReleased = false;
 	private disposed = false;
 	private readonly lifecycleController = new AbortController();
 	private readonly sourceOperationScopes = new Map<string, Set<AbortController>>();
@@ -636,6 +638,11 @@ export class NativeMediaExecutor {
 		if (this.disposed) throw new ContentLifecycleError('cancelled', 'Native media executor is disposed');
 		this.effects = new Controller();
 		return this.effects;
+	}
+
+	mediaIntentState(): 'unset' | 'retained' | 'released' {
+		if (this.disposed || this.mediaIntentReleased) return 'released';
+		return Object.keys(this.desiredMedia).length > 0 ? 'retained' : 'unset';
 	}
 
 	setAudioRuntimeDelegate(delegate: AudioRuntimeControlDelegate | null): void {
@@ -734,6 +741,7 @@ export class NativeMediaExecutor {
 		if (this.disposed) throw new Error('Native media executor is disposed');
 		this.tabId = intent.tabId;
 		const fields: ControlFieldStates = {};
+		const selectionRevision = this.selectionRevision;
 		const runtimePatch: ControlPatch = {};
 		const directEntries: Array<[ControlField, ControlValues[ControlField]]> = [];
 		this.audioRuntimeDelegate?.synchronizeNative(intent.actualContext);
@@ -795,7 +803,9 @@ export class NativeMediaExecutor {
 			const restored = directEntries
 				.filter(([field]) => RESTORABLE_MEDIA_FIELDS.has(field))
 				.every(([field]) => fields[field]?.phase === 'applied');
-			if (restored) this.appliedDesiredRevision.set(this.targetKey(resolved.target), this.desiredRevision);
+			if (restored && selectionRevision === this.selectionRevision) {
+				this.appliedDesiredRevision.set(this.targetKey(resolved.target), this.desiredRevision);
+			}
 		}
 		if (resolved) this.assertCurrentTarget(resolved.target, resolved.element, operationSignal);
 		// Feedback is a physical readback, not a mutation of unrelated snapshot
@@ -1061,6 +1071,7 @@ export class NativeMediaExecutor {
 			}
 		}
 		for (const key of Object.keys(this.desiredMedia)) delete (this.desiredMedia as Record<string, unknown>)[key];
+		this.mediaIntentReleased = true;
 		this.desiredRevision += 1;
 		this.automaticPageMaturationRevision.clear();
 		this.pageMaturationRequested.clear();
@@ -1417,7 +1428,7 @@ export class NativeMediaExecutor {
 				case 'playing': {
 					const actual = await writeWithStableEventAck(
 						element,
-						value ? 'playing' : 'pause',
+						value ? 'play' : 'pause',
 						() => value ? element.play() : element.pause(),
 						() => !element.paused,
 						 effectiveDesired,
@@ -1929,6 +1940,15 @@ export class NativeMediaExecutor {
 		}
 		if (this.disposed) return;
 		if (event === 'selected') {
+			// A proof belongs to this selection visit. The page may reset a retained
+			// element and release its field ownership while another player is open;
+			// its earlier success cannot suppress the explicit template on return.
+			this.selectionRevision += 1;
+			const key = this.targetKey(target);
+			this.appliedDesiredRevision.delete(key);
+			for (const attemptKey of this.automaticPageMaturationRevision.keys()) {
+				if (attemptKey.startsWith(`${key}:`)) this.automaticPageMaturationRevision.delete(attemptKey);
+			}
 			this.primeObserved(target);
 			this.replayDesired(target, element, true);
 			void sendSpectraRequest(
@@ -2094,6 +2114,7 @@ export class NativeMediaExecutor {
 	}
 
 	private rememberDesired(field: ControlField, value: ControlValues[ControlField]): void {
+		this.mediaIntentReleased = false;
 		if (nativeValuesMatch((this.desiredMedia as Record<string, unknown>)[field], value, 0.001)) return;
 		(this.desiredMedia as Record<string, unknown>)[field] = value;
 		this.desiredRevision += 1;
@@ -2141,6 +2162,7 @@ export class NativeMediaExecutor {
 			return;
 		}
 		const revision = this.desiredRevision;
+		const selectionRevision = this.selectionRevision;
 		const alreadyApplied = (this.appliedDesiredRevision.get(key) ?? -1) >= revision;
 		let patch: ControlPatch = { ...this.desiredMedia };
 		const automaticFields: SpectraPageMediaField[] = [];
@@ -2204,6 +2226,7 @@ export class NativeMediaExecutor {
 			target,
 			patch,
 		}).then((response) => {
+			if (selectionRevision !== this.selectionRevision) return;
 			if (!this.isCurrentTarget(target, element)) return;
 			if (!response.ok) return;
 			const applied = Object.values(response.data.fields)

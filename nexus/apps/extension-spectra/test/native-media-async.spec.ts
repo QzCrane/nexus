@@ -67,6 +67,41 @@ describe('bounded native-media async capability', () => {
 
 		await expect(operation).rejects.toThrow('did not acknowledge');
 	});
+
+	test.each(['timeout', 'abort', 'accepted'] as const)('settles a native operation whose write Promise never completes (%s)', async (outcome) => {
+		const target = new EventTarget();
+		const controller = new AbortController();
+		let actual = false;
+		const operation = writeWithStableEventAck(target, 'play', () => {
+			if (outcome === 'accepted') {
+				actual = true;
+				target.dispatchEvent(new Event('play'));
+			}
+			return new Promise<void>(() => undefined);
+		}, () => actual, true, 0, outcome === 'accepted' ? 250 : 15, { signal: controller.signal });
+		if (outcome === 'abort') controller.abort();
+		const bounded = Promise.race([operation, new Promise<string>((resolve) => setTimeout(() => resolve('hung write'), 300))]);
+		if (outcome === 'accepted') expect(await bounded).toBe(true);
+		else if (outcome === 'abort') await expect(bounded).rejects.toMatchObject({ code: 'cancelled' });
+		else await expect(bounded).rejects.toThrow('did not acknowledge');
+	}, 500);
+
+	test('preserves an immediate native write rejection and handles a rejection after event proof', async () => {
+		const denied = new DOMException('Gesture required', 'NotAllowedError');
+		await expect(writeWithStableEventAck(new EventTarget(), 'play', () => Promise.reject(denied),
+			() => false, true, 0)).rejects.toBe(denied);
+		const target = new EventTarget();
+		let actual = false;
+		let rejectWrite!: (error: Error) => void;
+		const accepted = writeWithStableEventAck(target, 'play', () => {
+			actual = true;
+			target.dispatchEvent(new Event('play'));
+			return new Promise<void>((_resolve, reject) => { rejectWrite = reject; });
+		}, () => actual, true, 0);
+		expect(await Promise.race([accepted, new Promise<null>((resolve) => setTimeout(() => resolve(null), 300))])).toBe(true);
+		rejectWrite(new Error('Later pause interrupted the play promise'));
+		await Promise.resolve();
+	});
 });
 
 describe('speed settle acknowledgement', () => {

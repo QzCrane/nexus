@@ -45,6 +45,7 @@ function harness(options: {
 		ready: options.status?.ready ?? true,
 		runtimeRevision: options.status?.runtimeRevision ?? SPECTRA_CONTENT_RUNTIME_REVISION,
 		ownedSources: options.status?.ownedSources ?? [],
+		mediaIntentState: options.status?.mediaIntentState,
 	};
 	const port: RuntimeRestartStartupPort = {
 		async readStatus() {
@@ -82,6 +83,13 @@ function harness(options: {
 }
 
 describe('MV3 startup runtime recovery adapter', () => {
+	test.each(['released', 'retained'] as const)('uses the surviving document template instead of inferring it from old resource actuals (%s)', async (mediaIntentState) => {
+		const h = harness({ status: { mediaIntentState }, restoreCapability: 'settings:old-resource' });
+		await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
+		expect(h.events).not.toContain('resolve-restore');
+		expect(h.events.includes('retain-restore:document-media-intent')).toBe(mediaIntentState === 'retained');
+		expect(h.events.at(-1)).toBe('release-recovery');
+	});
 	test('releases only the temporary recovery lease when a surviving runtime has no durable owner', async () => {
 			const h = harness();
 			await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);

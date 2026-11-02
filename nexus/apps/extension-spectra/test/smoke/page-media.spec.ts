@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
 import { SPECTRA_PAGE_MEDIA_EVENT, SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE, SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE } from '../../src/shared/page-media-bridge';
-import { SMOKE_TONE_WAV, acquireSmokeRuntime, browser, collectPageErrors, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, openExtensionClient, patchExtensionSettings, readBadgeText, readContentBootstrapStatus, readContentStatus, submitEffectiveVolume, submitPopupControlIntent, waitForContentBootstrapStatus, waitForContentStatus } from './harness';
+import { SMOKE_TONE_WAV, acquireSmokeRuntime, browser, collectPageErrors, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, openExtensionClient, patchExtensionSettings, readBadgeText, readContentBootstrapStatus, readContentStatus, restartServiceWorker, sendFromActionPopup, submitEffectiveVolume, submitPopupControlIntent, waitForContentBootstrapStatus, waitForContentStatus } from './harness';
 import { installAudioContextProbe, prepareSmokeSession, releaseSmokeRuntimes, startSmokeSession, teardownSmokeSession } from './harness';
 
 describe('SPECTRA built extension smoke: page-media', () => {
@@ -677,6 +677,86 @@ describe('SPECTRA built extension smoke: page-media', () => {
 		}
 	}, 35_000);
 
+	test('restores 2x when returning twice to a reset video after a realtime live room rejects speed', async () => {
+		const url = `${fixtureUrl}?retained-video-live-return=1`;
+		const page = await browser.newPage();
+		const client = await openExtensionClient();
+		try {
+			await page.goto(url, { waitUntil: 'domcontentloaded' });
+			await waitForContentBootstrapStatus(url);
+			await page.bringToFront();
+			const tabId = await getTabId(url);
+			await page.evaluate(async (toneBytes) => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (!feed) throw new Error('Retained feed is missing');
+				feed.muted = true;
+				feed.loop = true;
+				feed.src = URL.createObjectURL(new Blob([Uint8Array.from(toneBytes)], { type: 'audio/wav' }));
+				await feed.play();
+			}, [...SMOKE_TONE_WAV]);
+			const seeded = await submitPopupControlIntent(tabId, { patch: { speed: 2 } });
+			expect(seeded).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 2 } } } });
+			const feedTarget = seeded.ok ? seeded.data.target : null;
+			for (let visit = 0; visit < 2; visit += 1) {
+				await page.evaluate(async () => {
+					const feed = document.querySelector<HTMLVideoElement>('#v');
+					if (!feed) throw new Error('Retained feed is missing');
+					// A player can reset its retained video before hiding it, without
+					// changing its source identity. This must not erase the 2x template.
+					feed.pause();
+					feed.playbackRate = 1;
+					await new Promise<void>((resolve) => feed.addEventListener('ratechange', () => resolve(), { once: true }));
+					feed.style.display = 'none';
+					const canvas = document.createElement('canvas');
+					canvas.width = 640; canvas.height = 360;
+					canvas.getContext('2d')?.fillRect(0, 0, 640, 360);
+					const live = document.createElement('video');
+					live.id = 'realtime-room'; live.muted = true;
+					live.style.cssText = 'position:fixed;inset:0;width:640px;height:360px';
+					live.srcObject = canvas.captureStream(1);
+					document.body.append(live);
+					await live.play();
+				});
+				await eventually(() => client.evaluate(async (id) => chrome.runtime.sendMessage({
+					protocolVersion: 2, requestId: crypto.randomUUID(), tabId: id,
+					type: 'spectra.control.snapshot.get', payload: { tabId: id },
+				}), tabId), (r) => r.ok && r.data?.activeMedia?.mediaId !== feedTarget?.mediaId
+					&& r.data?.fields.speed?.actual === 1, 'realtime room observes its physical 1x');
+				const rejected = await submitPopupControlIntent(tabId, { patch: { speed: 2 } });
+				expect(rejected).toMatchObject({ ok: true, data: { fields: { speed: {
+					phase: 'error', actual: null, controlled: false,
+				} } } });
+				expect(await page.evaluate(() => document.querySelector<HTMLVideoElement>('#realtime-room')?.playbackRate)).toBe(1);
+				if (visit === 0) await restartServiceWorker();
+				await page.evaluate(async () => {
+					const live = document.querySelector<HTMLVideoElement>('#realtime-room');
+					const feed = document.querySelector<HTMLVideoElement>('#v');
+					if (!live || !feed) throw new Error('Expected the room above its retained video');
+					live.remove();
+					if (live.srcObject instanceof MediaStream) for (const track of live.srcObject.getTracks()) track.stop();
+					feed.style.display = '';
+					await feed.play();
+				});
+				await eventually(() => page.evaluate(() => document.querySelector<HTMLVideoElement>('#v')?.playbackRate),
+					(rate) => rate === 2, `retained video gets 2x after live visit ${visit + 1}`);
+				await eventually(() => client.evaluate(async (id) => chrome.runtime.sendMessage({
+					protocolVersion: 2, requestId: crypto.randomUUID(), tabId: id,
+					type: 'spectra.control.snapshot.get', payload: { tabId: id },
+				}), tabId), (r) => r.ok && r.data?.activeMedia?.mediaId === feedTarget?.mediaId
+					&& r.data.fields.speed?.phase === 'applied' && r.data.fields.speed.actual === 2,
+					'returned video control matches physical speed');
+			}
+			const released = await sendFromActionPopup({
+				protocolVersion: 2, requestId: crypto.randomUUID(), tabId,
+				type: 'spectra.control.operation.submit', payload: { tabId, source: 'popup', target: null,
+					operation: 'restore-page-settings', payload: {} },
+			});
+			expect(released).toMatchObject({ ok: true });
+			await eventually(() => readContentBootstrapStatus(url), (status) => status.ready === false,
+				'page settings release retires the shared initial/explicit media-template lease');
+		} finally { await client.close(); await page.close().catch(() => undefined); }
+	}, 35_000);
+
 	test('does not acknowledge or replay a rejected speed on a realtime MediaStream', async () => {
 		const url = `${fixtureUrl}?unsupported-live-rate=1`;
 		const page = await browser.newPage();
@@ -898,6 +978,12 @@ describe('SPECTRA built extension smoke: page-media', () => {
 	}, 25_000);
 
 	test('fullscreen lifecycle preserves the site volume, mute, and playback rate', async () => {
+		// A preceding regression restarts the worker. Finish this document's
+		// initialization before exercising a subsequent page-owned gesture.
+		const tabId = await getTabId(fixturePage.url());
+		await fixturePage.bringToFront();
+		await sendFromActionPopup({ protocolVersion: 2, requestId: crypto.randomUUID(), tabId,
+			type: 'spectra.control.snapshot.get', payload: { tabId } });
 		const preserved = await fixturePage.evaluate(async () => {
 			const video = document.querySelector<HTMLVideoElement>('#v');
 			if (!video) throw new Error('SPA video is missing');

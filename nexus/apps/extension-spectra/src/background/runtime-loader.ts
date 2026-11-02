@@ -15,6 +15,7 @@ import {
 	type ContentRuntimeLeaseReason,
 	type ContentRuntimeReadyResult,
 	type ContentRuntimeSourceOwnership,
+	type ContentRuntimeStatus,
 	type ControlField,
 	type ControlPatch,
 	type ControlSessionPatch,
@@ -69,6 +70,9 @@ const waiters = new Map<string, RuntimeWaiter>();
  */
 const retiredRuntimeKeys = createBoundedSet<string>({ cap: 256, ttlMs: 300_000 });
 const leases = new Map<string, Set<string>>();
+// A same-document release defeats older status replies. Only a new confirmed
+// intent clears this decision; navigation/tab removal retires it with the key.
+const releasedMediaIntents = new Set<string>();
 const disposeTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const documentInitializations = new Map<string, Promise<void>>();
 let initialized = false;
@@ -162,6 +166,27 @@ export function retainSourceRuntimeLease(
 		'control',
 		sourceLeaseCapability(kind, target),
 	);
+}
+
+export const MEDIA_INTENT_RUNTIME_CAPABILITY = 'document-media-intent';
+
+// This lease owns the executor's document template, not any current source's
+// physical field. A rejected live speed or page observation cannot release it.
+export function retainMediaIntentRuntimeLease(tabId: number, documentId: string): void {
+	const key = runtimeKey(tabId, documentId);
+	releasedMediaIntents.delete(key);
+	acquireRuntimeLease(key, 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY);
+}
+
+export function releaseMediaIntentRuntimeLease(tabId: number, documentId: string): void {
+	releasedMediaIntents.add(runtimeKey(tabId, documentId));
+	releaseContentRuntimeLease(tabId, documentId, 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY);
+}
+
+function recoverMediaIntentRuntimeLease(tabId: number, documentId: string): void {
+	const key = runtimeKey(tabId, documentId);
+	if (retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) return;
+	acquireRuntimeLease(key, 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY);
 }
 
 export function releaseSourceRuntimeLease(
@@ -328,7 +353,11 @@ export async function awaitDocumentInitialization(
 	await beginDocumentInitialization(tabId, current.documentId, current.url);
 }
 
-async function probeRuntime(tabId: number, documentId: string): Promise<ContentRuntimeReadyResult | null> {
+async function probeRuntime(tabId: number, documentId: string): Promise<{
+	ready: ContentRuntimeReadyResult;
+	mediaIntentState: ContentRuntimeStatus['mediaIntentState'];
+	ownedSources: ContentRuntimeSourceOwnership[];
+} | null> {
 	const operation = runtimeProbes.getOrStart(runtimeKey(tabId, documentId), () => sendBackgroundTabRequestOnce(
 		tabId,
 		'spectra.content.runtime.status',
@@ -344,11 +373,10 @@ async function probeRuntime(tabId: number, documentId: string): Promise<ContentR
 	if (!response?.ok
 		|| !response.data.ready
 		|| response.data.runtimeRevision !== SPECTRA_CONTENT_RUNTIME_REVISION) return null;
-	recoverSourceRuntimeLeases(tabId, documentId, response.data.ownedSources);
 	return {
-		documentId,
-		runtimeRevision: response.data.runtimeRevision,
-		ready: true,
+		ready: { documentId, runtimeRevision: response.data.runtimeRevision, ready: true },
+		mediaIntentState: response.data.mediaIntentState,
+		ownedSources: response.data.ownedSources,
 	};
 }
 
@@ -381,7 +409,7 @@ function forgetDocument(tabId: number, documentId?: string): void {
 	// Build the retirement set before dropping the maps: after this point the
 	// keys are gone and nothing else can tell an in-flight step that its
 	// document no longer exists.
-	for (const map of [readyDocuments, loadingDocuments, disposingDocuments, leases, documentInitializations]) {
+	for (const map of [readyDocuments, loadingDocuments, disposingDocuments, leases, documentInitializations, releasedMediaIntents]) {
 		for (const key of map.keys()) {
 			if (!key.startsWith(prefix)) continue;
 			if (documentId && key !== runtimeKey(tabId, documentId)) continue;
@@ -414,6 +442,9 @@ function forgetDocument(tabId: number, documentId?: string): void {
 		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
 			leases.delete(key);
 		}
+	}
+	for (const key of releasedMediaIntents) {
+		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) releasedMediaIntents.delete(key);
 	}
 	for (const [key, timer] of [...disposeTimers.entries()]) {
 		if (!key.startsWith(prefix) || documentId && key !== runtimeKey(tabId, documentId)) continue;
@@ -472,13 +503,15 @@ async function ensureReadyDocument(
 		if (known?.runtimeRevision === SPECTRA_CONTENT_RUNTIME_REVISION) return known;
 
 		const probed = await probeRuntime(tabId, documentId);
+		assertStillLoading(key, loading);
 		if (probed) {
 			// A navigation during the probe retires the document. Writing its READY
 			// entry afterwards would hand the next consumer a runtime for a document
 			// that no longer exists, and nothing would ever release it.
-			assertStillLoading(key, loading);
-			readyDocuments.set(key, probed);
-			return probed;
+			recoverSourceRuntimeLeases(tabId, documentId, probed.ownedSources);
+			if (probed.mediaIntentState === 'retained') recoverMediaIntentRuntimeLease(tabId, documentId);
+			readyDocuments.set(key, probed.ready);
+			return probed.ready;
 		}
 		return loadRuntime(tabId, documentId);
 	})()
@@ -522,6 +555,9 @@ export async function ensureContentRuntime(
 	if (retiredRuntimeKeys.has(key)) {
 		throw new Error('Content runtime document was retired before its lease was acquired');
 	}
+	if (reason === 'restore' && capability === MEDIA_INTENT_RUNTIME_CAPABILITY && releasedMediaIntents.has(key)) {
+		throw new Error('Document media template was released before its recovery lease was acquired');
+	}
 	acquireRuntimeLease(key, reason, capability);
 	try {
 		// A lease acquired while the last consumer is awaiting its RELEASE ACK
@@ -541,7 +577,14 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 	try {
 		identity = storage.tabSession.identity(tabId, documentId, url);
 	} catch { return; }
-	const hostname = new URL(identity.resourceUrl).hostname;
+	const surviving = await probeRuntime(tabId, documentId);
+	if (retiredRuntimeKeys.has(runtimeKey(tabId, documentId))) throw new Error('Restore document was retired during its probe');
+	if (surviving?.mediaIntentState === 'retained' || surviving?.mediaIntentState === 'released') {
+		// Same-document worker restart must preserve the executor's explicit
+		// template or release decision. A resource actual of 1x is neither.
+		if (surviving.mediaIntentState === 'retained') recoverMediaIntentRuntimeLease(tabId, documentId);
+		return;
+	}
 	const restore = await resolveDocumentRestorePlan(
 		tabId,
 		documentId,
@@ -555,7 +598,7 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 	// video CSS/overlay augmentation proves the extension is actively reshaping
 	// output. An earlier SPECTRA action is already sticky in badge-usage storage.
 	if (hasExtensionOnlyContribution(restore.patch)) await markBadgeUsedForTab(tabId);
-	const capability = `settings:${hostname}`;
+	const capability = MEDIA_INTENT_RUNTIME_CAPABILITY;
 	await ensureContentRuntime(tabId, documentId, 'restore', capability);
 	let retained = false;
 	try {
@@ -787,6 +830,8 @@ export function resetContentRuntimeLoaderForTests(): void {
 	disposingDocuments.clear();
 	waiters.clear();
 	leases.clear();
+	releasedMediaIntents.clear();
+	retiredRuntimeKeys.clear();
 	for (const timer of disposeTimers.values()) clearTimeout(timer);
 	disposeTimers.clear();
 	resetDocumentSiteHotkeysForTests();

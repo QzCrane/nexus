@@ -216,10 +216,16 @@ export async function writeWithStableEventAck<T>(
 	}
 	timeoutId = setTimeout(() => finish(false), timeoutMs);
 	try {
-		await write();
+		// The event/getter proof owns completion, including while play() is still
+		// waiting for data. Race the write rejection against that proof so timeout
+		// and lifecycle cancellation also bound a never-settling native Promise.
+		// Promise.race retains its rejection handler after the proof wins (e.g. a
+		// later pause rejects the pending play Promise with AbortError).
+		const written = Promise.resolve(write());
+		const matched = await Promise.race([written.then(() => acknowledgement), acknowledgement]);
 		assertNativeOperationCurrent(options);
 		if (cancellation) throw cancellation;
-		if (!await acknowledgement) {
+		if (!matched) {
 			if (cancellation) throw cancellation;
 			assertNativeOperationCurrent(options);
 			throw new Error(`Native ${type} event readback did not acknowledge the requested value`);

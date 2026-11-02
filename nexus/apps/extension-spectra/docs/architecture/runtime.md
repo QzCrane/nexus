@@ -146,6 +146,10 @@ registration/play/selection events and the same Background coordinator; the
 registry never binds an audio graph. The [media lifecycle owner](../control/06-media-and-video.md#closing-live-players-and-speed-inheritance)
 defines hidden/detached live-player handoff, source retirement, Popup closure
 and the distinction between route, document and media identity.
+The document replay template has its own single restore lease, separate from a
+source's physical field ownership. Initial restore, explicit control, worker
+recovery and page-settings release follow the [template lifetime owner](../control/06-media-and-video.md#document-replay-intent-lifetime).
+Status probes cannot recreate leases after navigation or an explicit release.
 Passive bootstrap may do a bounded top-level getter. It observes `volumechange`/`ratechange` and submits complete actual pairs to Background without media identity. While the initial HELLO verdict is pending, it retains the latest observation without dispatching it. A lean verdict drains that observation; a heavy-runtime verdict discards it because the runtime owns observation. Restoration acquires the heavy runtime before writing media, so restored native events cannot be replayed by the lean bootstrap.
 
 The bootstrap also owns the declared site's actual-speed toolbar projection for
