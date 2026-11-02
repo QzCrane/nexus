@@ -1,6 +1,6 @@
 ---
 type: explanation
-status: draft
+status: stable
 audience: developer
 owner: spectra-tab-lifecycle-popup-closure-research
 last_reviewed: 2026-11-02
@@ -10,7 +10,7 @@ last_reviewed: 2026-11-02
 
 ## 范围、权威与当前进度
 
-本记录保存 2026-11-02 用户约束、源码审计、反例和实施检查单。它是任务研究与进度记录，**不签发实现 authority，不表示下面的目标已经全部实现**。审计基线为 `dd3c18f7`；实施进度另列，最终以主线程冻结树和证据为准。中间开发包的首帧浏览器证据只覆盖明确列出的用例，不签发生产包或发布 PASS。
+本记录保存 2026-11-02 用户约束、源码审计、反例、实施检查单与最终交付证据。它不签发实现 authority；已落地范围和未验证层以末尾最终记录为准。审计基线为 `dd3c18f7`。中间开发包的首帧浏览器证据只覆盖明确列出的用例，不签发生产包或发布 PASS。
 
 当前行为 authority 仍为[控制架构](../../apps/extension-spectra/docs/control/README.md)、[媒体与视频](../../apps/extension-spectra/docs/control/06-media-and-video.md)、[运行时架构](../../apps/extension-spectra/docs/architecture/runtime.md)、可执行 contracts、实现和真实机制测试。规范更新须回到这些唯一 owner，不能把本记录变成第二份长期规范。
 
@@ -206,7 +206,7 @@ sequenceDiagram
 
 已有 [popup-frame-geometry-chrome.spec.ts](../../apps/extension-spectra/test/popup-frame-geometry-chrome.spec.ts) 先等 `spectraReady` 和最终卡数再测几何，不能证明后台卡首帧已存在。[card-snapshot.spec.ts](../../apps/extension-spectra/test/card-snapshot.spec.ts) 的旧后台读取合同要求首帧前确认实际播放，实施时需按新的结构/actual 边界更新，不能保留相反断言再宣称全通过。
 
-## Popup 子任务实施与验证进度
+## Popup 子任务中间实施与验证进度
 
 2026-11-02 已在当前工作树实施：render-blocking prepaint 按动态 `cards - mainCount` 创建全部后台模板 slot；index 在每卡状态读取前按成员分配同一节点，8 路并发仅限制水合。主/后台均调用不含状态 RPC 的 readInitialCardSnapshot，移除 init 内 retention 二次裁决。frozen/discarded/unloaded 的已知成员以及缺 document 的成员只提供不可用状态和显式返回入口，不建立可写 controlPort，不进行控制/运行时/会话/Remote 探测。
 
@@ -214,7 +214,7 @@ sequenceDiagram
 
 最终审计补齐关闭期间的到期反例：数量公告单独携带时，worker 未唤醒会让过期成员先产生空 slot 再删除。唯一资格 selector 现在输出 `expiryByTab`，Action 只携带排除主卡后的匿名 `expires` 时间数组；prepaint 在创建节点前按当前时间扣除到期项，不依赖 alarm 准时性，不增加页面身份或控制权限。开放 Popup 仍使用同一 selector 和一个 nextExpiryAt timer。相关纯策略、URL 与 canonical/UI guard parity 回归已加入；真实 Chrome 用例包含关闭期间到期后重开。
 
-当前已记录证据：
+中间阶段证据（后续最终验证表覆盖）：
 
 - 聚焦 `card-snapshot.spec.ts`、`popup-frame.spec.ts`、`popup-volume-ux.spec.ts`：32 PASS，105 assertions；包括 retain=0、合法上限、非法 query 和 unavailable messaging 不观察边界。
 - canonical strict Biome：10 个修改 TypeScript 文件 PASS，0 diagnostics、0 silent handlers。
@@ -285,6 +285,14 @@ sequenceDiagram
 交付入口聚焦验证：hooks 152 PASS；strict Biome scope/report、参数长度和 workspace coverage 联合 21 PASS、88 assertions。strict owner 直接把已校验、已过滤的文件集合传给 Biome，保留所有数量和零诊断门禁，避免外部显式 generated 路径额外进入扫描；真实子进程反例已固化。完整 6 包 lint 还暴露 Windows 参数长度限制，现按字符容量分批，每批严格核对文件数和零诊断，整体仍扫描全部 silent handler；1200 文件保序无遗漏与容量边界回归通过，实际 HALO 1038 文件、SPECTRA 466 文件和其它 4 包及 162 个仓库 surface 全部 PASS，不修改 HALO 产品代码。最终提交入口实际通过 80 文件 strict、131 Markdown 和 commitlint。26 个旧混合换行文件仅从 exact HEAD blob 恢复 LF，读回与 public 相同，不产生语义 diff，也未修改 verifier 来容忍字节漂移。
 
 首次 public 远程推送已成功：`QzCrane/spectra` 的 main 从 `4a44f1f` 快进到 `359e059`。后续 lint 工具链分批修复须再次经 canonical 生成器投影。Nexus 首次 push 被该 Windows 参数限制正确拦下；最终推送仍以后续全部 pre-push 门禁和远程 readback 为准。
+
+### 最终交付 readback
+
+2026-11-02 最终运行时与工具链 checkpoint 为 Nexus `b3d815c647c5e162bad1422842cbbef88c265986`，已正常推送到 `QzCrane/nexus` 的 `docs/spectra-douyin-speed-sync`，`git ls-remote` 与本地 HEAD 完全一致。公共最终生成提交 `911eaf66fbb4a475fc7960c9d4d59392a4c73476` 已快进推送到 `QzCrane/spectra` 的 main，独立 `git ls-remote` 读回一致。没有 force push、历史重写、跳过 hooks 或旧 dirty 备份。此后的记录收口只改本 Markdown；不改变任何 public 投影输入。
+
+Nexus 最终完整 pre-push 所有 12 项 gate 均通过：全 6 包 lint、platform、toolchain、dependency revalidation、131 Markdown strict、public projections、hooks 152 项、architecture、全 6 包 typecheck、SPECTRA 131 隔离文件与 HALO 444 项/2351 assertions、AI pitfalls、12 skills index。Windows nested MSYS 的 Lefthook 启动失败由现有直接 Bun 路径执行相同 gate；没有把启动失败或跳过执行签发为 PASS。架构保留 6 项非阻断 warning，生产体积复审信号和前表未验证层继续保留。
+
+远程 readback 时两个工作区均 clean，public 全量生成 diff 的 `git diff --check` PASS。保留的物理产物是主工作区既有 `apps/extension-spectra/dist` 生产包及 canonical 构建缓存；public 的生成 dist 已由同步器正常清理，node_modules 按生成器既有规则保留。未留下补丁备份、临时辅助脚本、服务或额外监视器。图与长期行为继续只归 runtime/control/contracts owner，本记录负责本次证据和交付状态。
 
 2026-11-02 文档更新后静态检查记录：canonical `bun run docs:check --path nexus/docs/research/2026-11-02-spectra-tab-lifecycle-popup-closure.md` PASS（1 Markdown，strict）；Mermaid skill 的 `mermaid_tool.py lint` PASS（5 图，diagnostics 为空，evidence 为 static，未生成产物）。指定 Popup 写集 `git diff --check` PASS。未进行 Mermaid 宿主渲染或发布验证。
 
