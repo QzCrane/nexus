@@ -449,13 +449,29 @@ function validateNoEmptyCatches(
 	);
 }
 
-function main() {
-	validateTargets(targets);
-	const biomeFiles = collectBiomeFiles(targets);
-	if (biomeFiles.length === 0) {
-		console.log('✓ Strict Biome: no files inside the lint scope for the requested targets');
-		return;
+// Bound native process arguments by characters rather than file count. The
+// doubled cost covers Windows quoting/backslash expansion; 16 KiB leaves room
+// for the executable and fixed flags without approaching its command limit.
+function partitionBiomeFileArguments(fileArguments, maximumCharacters = 16 * 1024) {
+	const batches = [];
+	let current = [];
+	let characters = 0;
+	for (const argument of fileArguments) {
+		const cost = 2 * argument.length + 3;
+		if (cost > maximumCharacters) throw new Error(`Biome file argument is too long: ${argument}`);
+		if (characters + cost > maximumCharacters) {
+			batches.push(current);
+			current = [];
+			characters = 0;
+		}
+		current.push(argument);
+		characters += cost;
 	}
+	if (current.length > 0) batches.push(current);
+	return batches;
+}
+
+function runBiomeBatch(fileArguments) {
 	const result = spawnSync(
 		process.execPath,
 		[
@@ -463,7 +479,7 @@ function main() {
 			'--bun',
 			'biome',
 			'check',
-			...biomeFiles.map((file) => `.${path.sep}${path.relative(process.cwd(), file)}`),
+			...fileArguments,
 			'--reporter=json',
 			'--max-diagnostics=none',
 			'--colors=off',
@@ -491,17 +507,26 @@ function main() {
 			}`,
 		);
 	}
-	validateZeroDiagnosticReport(report, biomeFiles.length);
+	validateZeroDiagnosticReport(report, fileArguments.length);
 	if (result.status !== 0) {
 		const detail = result.stderr.trim();
 		throw new Error(`Biome returned exit ${result.status} without diagnostics${detail ? `: ${detail}` : ''}`);
 	}
-	validateNoEmptyCatchesInFiles(biomeFiles);
+}
 
+
+function main() {
+	validateTargets(targets);
+	const biomeFiles = collectBiomeFiles(targets);
+	if (biomeFiles.length === 0) {
+		console.log('✓ Strict Biome: no files inside the lint scope for the requested targets');
+		return;
+	}
+	const fileArguments = biomeFiles.map((file) => `.${path.sep}${path.relative(process.cwd(), file)}`);
+	for (const batch of partitionBiomeFileArguments(fileArguments)) runBiomeBatch(batch);
+	validateNoEmptyCatchesInFiles(biomeFiles);
 	console.log(
-		`✓ Strict Biome: ${
-			report.summary.changed + report.summary.unchanged
-		} files, 0 diagnostics, 0 silent handlers`,
+		`✓ Strict Biome: ${biomeFiles.length} files, 0 diagnostics, 0 silent handlers`,
 	);
 }
 
@@ -509,6 +534,7 @@ export {
 	collectBiomeFiles,
 	findEmptyCatchBlocks,
 	findEmptyRejectionHandlers,
+	partitionBiomeFileArguments,
 	validateNoEmptyCatches,
 	validateTargets,
 	validateZeroDiagnosticReport,

@@ -282,7 +282,9 @@ sequenceDiagram
 
 提交闭环发现并修复 Git pre-commit 的既有降级缺陷：Windows nested MSYS 失败后，旧 shell 字符串拆分丢失 root/workspace 基址并漏跑 docs。现复用已有路径投影，使用 Git NUL 输出和原生子进程参数数组，调用原 canonical strict Biome/docs owner，并保留失败退出。该改动只影响本次必要交付入口，不改变已验证的产品运行时；路径含空格/换行、根目录资产、混合及纯文档提交均进入 hooks 回归，不绕过 gate。
 
-交付入口聚焦验证：hooks 152 PASS；strict Biome scope/report 和 workspace coverage 联合 19 PASS、73 assertions。strict owner 直接把已校验、已过滤的文件集合传给 Biome，保留所有数量和零诊断门禁，避免外部显式 generated 路径额外进入扫描；真实子进程反例已固化。最终提交入口实际通过 80 文件 strict、131 Markdown 和 commitlint。26 个旧混合换行文件仅从 exact HEAD blob 恢复 LF，读回与 public 相同，不产生语义 diff，也未修改 verifier 来容忍字节漂移。最终推送仍以实际 pre-push 门禁和远程 readback 为准。
+交付入口聚焦验证：hooks 152 PASS；strict Biome scope/report、参数长度和 workspace coverage 联合 21 PASS、88 assertions。strict owner 直接把已校验、已过滤的文件集合传给 Biome，保留所有数量和零诊断门禁，避免外部显式 generated 路径额外进入扫描；真实子进程反例已固化。完整 6 包 lint 还暴露 Windows 参数长度限制，现按字符容量分批，每批严格核对文件数和零诊断，整体仍扫描全部 silent handler；1200 文件保序无遗漏与容量边界回归通过，实际 HALO 1038 文件、SPECTRA 466 文件和其它 4 包及 162 个仓库 surface 全部 PASS，不修改 HALO 产品代码。最终提交入口实际通过 80 文件 strict、131 Markdown 和 commitlint。26 个旧混合换行文件仅从 exact HEAD blob 恢复 LF，读回与 public 相同，不产生语义 diff，也未修改 verifier 来容忍字节漂移。
+
+首次 public 远程推送已成功：`QzCrane/spectra` 的 main 从 `4a44f1f` 快进到 `359e059`。后续 lint 工具链分批修复须再次经 canonical 生成器投影。Nexus 首次 push 被该 Windows 参数限制正确拦下；最终推送仍以后续全部 pre-push 门禁和远程 readback 为准。
 
 2026-11-02 文档更新后静态检查记录：canonical `bun run docs:check --path nexus/docs/research/2026-11-02-spectra-tab-lifecycle-popup-closure.md` PASS（1 Markdown，strict）；Mermaid skill 的 `mermaid_tool.py lint` PASS（5 图，diagnostics 为空，evidence 为 static，未生成产物）。指定 Popup 写集 `git diff --check` PASS。未进行 Mermaid 宿主渲染或发布验证。
 

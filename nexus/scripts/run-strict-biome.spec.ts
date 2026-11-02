@@ -13,6 +13,7 @@ import {
 	collectBiomeFiles,
 	findEmptyCatchBlocks,
 	findEmptyRejectionHandlers,
+	partitionBiomeFileArguments,
 	validateTargets,
 	validateZeroDiagnosticReport,
 } from './run-strict-biome.ts';
@@ -35,6 +36,23 @@ function report(summary = {}, diagnostics = []) {
 }
 
 describe('strict Biome report contract', () => {
+	test('bounds native command arguments without losing, duplicating or reordering files', () => {
+		const files = Array.from({ length: 1200 }, (_, index) => `./space and Unicode/界面-${index}.ts`);
+		const batches = partitionBiomeFileArguments(files);
+		expect(batches.length).toBeGreaterThan(1);
+		expect(batches.flat()).toEqual(files);
+		for (const batch of batches) {
+			expect(batch.length).toBeGreaterThan(0);
+			expect(batch.reduce((sum, argument) => sum + 2 * argument.length + 3, 0)).toBeLessThanOrEqual(16 * 1024);
+		}
+	});
+
+	test('accepts the exact argument budget and rejects a single oversized path', () => {
+		expect(partitionBiomeFileArguments(['abcd', 'efgh'], 11)).toEqual([['abcd'], ['efgh']]);
+		expect(partitionBiomeFileArguments([])).toEqual([]);
+		expect(() => partitionBiomeFileArguments(['abcde'], 11)).toThrow('argument is too long');
+	});
+
 	test('passes only admitted files when a staged generated artifact is outside the workspace', () => {
 		const result = spawnSync(process.execPath, [
 			'scripts/run-strict-biome.ts',

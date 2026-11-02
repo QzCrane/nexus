@@ -77,6 +77,9 @@ The strict Biome runner passes its already validated, scope-filtered file set to
 Biome itself, so an explicit generated path outside the workspace cannot be
 processed in addition to the expected set. Generated Remote protocol integrity
 continues to belong to the public-projection gate.
+The admitted set runs in bounded argument batches to fit Windows process limits.
+Each batch must prove its exact file count and zero diagnostics; all admitted
+scripts still pass the silent-handler scan before the overall gate succeeds.
 
 Do not hard-code the assertion count or runtime in this README; both change as coverage grows. The current test output is the source for those values.
 
