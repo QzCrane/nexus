@@ -13,12 +13,13 @@ import { runBoundedCardBootstrap } from './bounded-card-bootstrap';
 import { flushPredictedFrameHeight, releasePopupFrame, reservePopupFrame, trackPopupFrame } from './frame-height';
 import { installOverlayScrollbar } from './overlay-scrollbar';
 import { getSettingsSnapshot } from '../shared/settings-client';
-import { loadPopupLocaleCatalog } from '../shared/i18n/popup-catalog';
-import { EN_US } from './constants/i18n/en';
+import { getPopupDictionary, loadPopupLocaleCatalog } from '../shared/i18n/popup-catalog';
 import { DEFAULT_GLOBAL_SETTINGS, type GlobalSettings } from '@nexus/kernel';
 import type { I18NDict } from './types';
 import { readVisibleMediaTabIdsFromStorage } from './media-inventory-from-storage';
 import { readSettingsForecast } from './settings-forecast';
+import { readPopupAppearance } from '../shared/popup-bootstrap';
+import { applyLang } from './views/i18n-apply';
 
 type PopupVisualizerModule = typeof import('./visualizer/loop');
 
@@ -29,6 +30,8 @@ let popupRetired = false;
 // last committed settings are what let the first card be drawn in its final
 // shape, and what the locale asset can be prefetched for.
 const settingsForecast = readSettingsForecast();
+const appearance = readPopupAppearance(location.search);
+const initialLanguage = appearance?.language ?? settingsForecast?.lang ?? document.documentElement.lang;
 
 function tabIdMap(tabs: readonly chrome.tabs.Tab[]): Map<number, chrome.tabs.Tab> {
 	return new Map(tabs.flatMap((tab) => tab.id === undefined ? [] : [[tab.id, tab] as const]));
@@ -65,10 +68,12 @@ function disposePopupAttempt(): void {
 
 async function startPopup(): Promise<void> {
 	try {
+		applyLang(initialLanguage);
 		await main();
 	} catch (error) {
 		console.error('[SPECTRA Popup] Startup failed:', error);
 		disposePopupAttempt();
+		document.querySelector('#main-stage > [data-spectra-prepaint]')?.remove();
 		releasePopupFrame();
 		document.documentElement.dataset.spectraReady = 'failed';
 		try {
@@ -95,10 +100,9 @@ const inventoryRequest = sendSpectraRequest('spectra.tab.visible.list', {});
 // Warm the settings snapshot and the locale assets: card rendering must not
 // be serialized behind those two reads. A failed warm-up only sends
 // initSettings down its own path, so card rendering is unaffected.
-// The locale asset starts from the forecast language rather than from the
-// settings answer, because the dictionary it carries is what the first card's
-// labels are drawn with. A wrong guess only costs a second fetch.
-void loadPopupLocaleCatalog(settingsForecast?.lang ?? 'en-US').catch(() => undefined);
+// The render-critical Popup dictionaries are installed by prepaint. Settings
+// hydrate asynchronously without introducing an English startup projection.
+void loadPopupLocaleCatalog(initialLanguage).catch(() => undefined);
 void getSettingsSnapshot()
 	.then((snapshot) => loadPopupLocaleCatalog(snapshot.globalSettings.lang))
 	.catch(() => undefined);
@@ -139,9 +143,8 @@ async function main(): Promise<void> {
 
 	// Settings initialisation runs in parallel with tabs/inventory: card
 	// rendering is no longer serialized behind the settings RPC or the locale
-	// asset download. Until they are ready the built-in English dictionary and
-	// the default global settings stand in; once they land, the projection
-	// chain in initSettings overwrites them in place.
+	// asset download. The announced language and packaged dictionary already
+	// own visible text; the settings projection reconciles the same DOM.
 	let settings: SettingsState | null = null;
 	const settingsPromise = initSettings().then((resolved) => {
 		settings = resolved;
@@ -156,9 +159,10 @@ async function main(): Promise<void> {
 		return resolved;
 	});
 	const getGlobalSettings = (): GlobalSettings => (
-		settings?.gSettings ?? settingsForecast ?? DEFAULT_GLOBAL_SETTINGS
+		settings?.gSettings ?? (appearance ? { ...(settingsForecast ?? DEFAULT_GLOBAL_SETTINGS),
+			lang: appearance.language, visualizerEnabled: appearance.visualizerEnabled } : settingsForecast) ?? DEFAULT_GLOBAL_SETTINGS
 	);
-	const getDictionary = (): I18NDict => settings?.dict ?? EN_US;
+	const getDictionary = (): I18NDict => settings?.dict ?? getPopupDictionary(initialLanguage);
 
 	const mainStage = $<HTMLElement>('main-stage');
 	const bgStack = $<HTMLElement>('bg-stack');
@@ -223,12 +227,14 @@ async function main(): Promise<void> {
 			allowCached: true,
 		}).then((initialized) => {
 			if (!initialized) {
+				if (!background) mainStage.querySelector('[data-spectra-prepaint]')?.remove();
 				renderedBackgroundTabIds.delete(tabId);
 				if (renderedActiveTabId === tabId) renderedActiveTabId = null;
 			}
 			reconcileCardInventory();
 			return initialized;
 		}).catch((error: unknown) => {
+			if (!background) mainStage.querySelector('[data-spectra-prepaint]')?.remove();
 			renderedBackgroundTabIds.delete(tabId);
 			if (renderedActiveTabId === tabId) renderedActiveTabId = null;
 			console.debug(`[SPECTRA Popup] Card ${tabId} was not initialized:`, error);
@@ -269,9 +275,13 @@ async function main(): Promise<void> {
 	// nothing but the active tab: starting it here - instead of after the tab list
 	// and the inventory land - is the difference between the first card committing
 	// on the first or the second round trip. The frame is already reserved, so this
-	// only decides how long the reserved frame stays empty.
+	// binds the already visible canonical structure to its current document.
 	void activeTabRequest.then((tab) => {
-		if (popupRetired || !tab || tab.id === undefined || isRestrictedUrl(tab.url)) return;
+		if (popupRetired) return;
+		if (!tab || tab.id === undefined || isRestrictedUrl(tab.url)) {
+			mainStage.querySelector('[data-spectra-prepaint]')?.remove();
+			return;
+		}
 		connectActiveTab(tab.id);
 		void startCard(tab, false);
 	}).catch((error: unknown) => {
@@ -336,10 +346,8 @@ async function main(): Promise<void> {
 	reconcileCardInventory();
 	document.documentElement.dataset.spectraReady = 'true';
 
-	// Settings finishing only corrects what is already on screen: the cards
-	// have rendered with the built-in English dictionary and the default global
-	// settings, and this adds the authoritative dictionary, the Remote UI and
-	// the localized strings.
+	// Settings hydrate controls and Remote UI in place. They do not establish
+	// the startup language or replace the prepaint card node.
 	const resolvedSettings = await settingsPromise;
 	if (popupRetired) return;
 	settings = resolvedSettings;

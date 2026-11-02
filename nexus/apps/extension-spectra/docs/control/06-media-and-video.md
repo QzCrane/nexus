@@ -166,7 +166,8 @@ runtime status probe 是纯读。只有仍持有 loading/initialization 身份�
 ### Playback button and buffered play
 
 `playing` 的实际布尔定义为 `!HTMLMediaElement.paused`。Popup 打开时必须通过
-当前 document 的 passive getter 确认；持久控制 ACK 和 Popup cache 只能预测其它
+当前 document 的 passive getter 异步确认；主卡结构和当前语言不等待这个读取，
+绑定前保持无身份且 inert，绑定后原位确认。持久控制 ACK 和 Popup cache 只能预测其它
 已确认字段，不能遮住新读取的暂停状态。当前读取失败或没有播放字段时，按钮
 显示未知（`aria-pressed=mixed`），由既有有界快照恢复继续确认，不能伪造播放/暂停。
 
@@ -175,11 +176,15 @@ Popup 播放按钮提交当前媒体操作，不冻结缓存中的旧 modal targ
 ACK 和页面广播共用相同的 document/generation/revision 入场规则，按钮只渲染
 被接受的快照，旧 ACK 的 `result.playing` 不能旁路重绘。
 
-播放以原生 `play`、暂停以 `pause` 事件加稳定 getter 确认。数据不足时，`paused`
-已为 false，但 `playing` 事件和 `play()` Promise 仍可能等待缓冲；这不应阻塞下一次
-暂停。原生事件/读回证明、写入拒绝、deadline、source/document abort 共同结算
-唯一 ACK 等待；未完成的写入 Promise 不能绕过 deadline 或挂住 actor。晚到的
-play rejection 必须被消费，真实后续状态仍由媒体事件同步，不宣称首帧已播放。
+播放/暂停由专用 `writePlaybackWithStableAck` 做一次原生写入，再经过既有 64ms
+稳定窗和两个有界渲染边界读取物理 `!paused`；ACK 类别是 `dom-stable-getter`。
+网页可拦截 `pause` 事件，不能因此否认已暂停的事实；网页若恢复播放，稳定值不符
+仍明确失败，不能重试写入或循环强制暂停。通用 volume 等事件 ACK 不放宽。
+数据不足时 `paused` 已为 false，但 `playing` 事件和 `play()` Promise 可能等待缓冲；
+物理证明必须能先结算，使下一次暂停可执行。早到的原生写入拒绝仍失败，晚到的
+play rejection 被消费。稳定等待、executor 续体和最终 ACK 都核对 source/document
+及当前选择；旧媒体仍注册不能代替“仍是当前目标”。后续真实状态仍由事件同步，
+此 ACK 不宣称视频已解码出首帧。
 
 ### Physical readback and autoplay admission
 

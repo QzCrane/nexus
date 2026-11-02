@@ -17,6 +17,7 @@ import {
 	scheduleSettingsProjection,
 } from '../settings-projection';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
+import { flushActiveActionPopups } from '../popup-frame';
 
 function isAttemptedSettingsV2Message(message: unknown): boolean {
 	if (!message || typeof message !== 'object') return false;
@@ -69,6 +70,7 @@ function registerV2SettingsListener(): void {
 						payload.expectedRevision,
 					);
 					scheduleSettingsProjection(next, payload.patch);
+					if (payload.patch.scope === 'global') await flushActiveActionPopups();
 					return rpcSuccess(next);
 				}
 				if (message.type === 'spectra.settings.ui.patch') {
@@ -78,6 +80,7 @@ function registerV2SettingsListener(): void {
 						payload.expectedRevision,
 					);
 					scheduleSettingsProjection(next, payload.patch);
+					if (payload.patch.scope === 'global') await flushActiveActionPopups();
 					return rpcSuccess(toSettingsUiSnapshot(next));
 				}
 				if (message.type === 'spectra.settings.flush') {

@@ -121,8 +121,9 @@ describe('Popup single effective-volume control', () => {
 			},
 		};
 
+		const syncStatus = { hidden: true, dataset: { i18n: 'controlSyncing' }, textContent: 'Syncing' };
 		const dummyUi = {
-			card: { classList: { toggle: () => {} }, dataset: {}, querySelector: () => null },
+			card: { classList: { toggle: () => {} }, dataset: {}, querySelector: (selector: string) => selector === '.control-sync-status' ? syncStatus : null },
 			val: { setAttribute: () => {}, textContent: '', style: {} },
 			mask: { classList: { toggle: () => {} }, setAttribute: () => {}, toggleAttribute: () => {} },
 			mute: { classList: { toggle: () => {} }, setAttribute: () => {}, replaceChildren: () => {}, style: {} },
@@ -136,6 +137,7 @@ describe('Popup single effective-volume control', () => {
 			actualMode: 'capture' as const,
 			phase: 'active' as const,
 			controlSnapshotKnown: true,
+			controlSyncExpired: false,
 			lifecycleSnapshotKnown: true,
 		};
 
@@ -147,12 +149,23 @@ describe('Popup single effective-volume control', () => {
 			volumeView,
 			getVizEnabled: () => false,
 			getGlobalSettings: () => ({}) as never,
+			getDictionary: () => ({ controlSyncing: 'Syncing', controlSyncUnavailable: 'Unable to confirm current controls' }) as never,
 		});
 
 		(globalThis as unknown as { document: unknown }).document = {
 			createElement: () => ({ className: "", textContent: "", style: {} }),
 		};
 		render();
+		expect(syncStatus.hidden).toBe(true);
+		// A snapshot can contain volume without current playing. Exhausting that
+		// field's recovery must stay visible even though the snapshot is known.
+		dummyState.controlSyncExpired = true;
+		render();
+		expect(syncStatus.hidden).toBe(false);
+		expect(syncStatus.textContent).toBe('Unable to confirm current controls');
+		dummyState.controlSyncExpired = false;
+		render();
+		expect(syncStatus.hidden).toBe(true);
 
 		// The card owns its own pixels; the Action badge has exactly one writer.
 		// A Popup-side write carried the card's *own* mute flag, which is how a

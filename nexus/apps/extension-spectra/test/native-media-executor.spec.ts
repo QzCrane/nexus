@@ -241,6 +241,63 @@ afterEach(() => {
 });
 
 describe('native media single-writer correlation', () => {
+	test.each(['intercepted', 'replayed', 'selection-changed'] as const)('proves physical pause independently of event delivery (%s)', async (scenario) => {
+		installFakeMediaGlobals();
+		const media = new FakeMediaElement();
+		media.paused = false;
+		let writes = 0;
+		media.addEventListener('pause', (event) => event.stopImmediatePropagation());
+		media.pause = () => {
+			writes += 1;
+			media.paused = true;
+			queueMicrotask(() => {
+				if (scenario === 'replayed') media.paused = false;
+				media.dispatchEvent(new Event('pause'));
+			});
+		};
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			const operation = executor.execute({ intentId: 'pause:physical', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+				target: registry.target, actualContext: {}, patch: { playing: false } });
+			if (scenario === 'selection-changed') registry.target.mediaId = 'media:another-active';
+			if (scenario === 'selection-changed') await expect(operation).rejects.toMatchObject({ code: 'stale-media-source' });
+			else {
+				const ack = await operation;
+				expect(ack.fields.playing).toMatchObject(scenario === 'intercepted'
+					? { phase: 'applied', actual: false }
+					: { phase: 'error', actual: null, lastError: { code: 'readback-mismatch' } });
+			}
+			expect(writes).toBe(1);
+		} finally { executor.dispose(); }
+	}, 2_000);
+
+	test('rejects playback ACK when selection changes after physical proof while the old source remains registered', async () => {
+		installFakeMediaGlobals();
+		const media = new FakeMediaElement();
+		media.paused = false;
+		const registry = new FakeRegistry(media);
+		const source = registry.resolve();
+		let selected = source;
+		registry.resolve = (requested?: MediaTarget | null) => requested ? source : selected;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		executor.setAudioRuntimeDelegate({
+			synchronizeNative() {},
+			read: () => ({ patch: {}, observedStrategies: {} }),
+			apply: async () => {
+				selected = { element: source.element, target: { ...source.target, mediaId: 'media:next-selection' } };
+				return {};
+			},
+		});
+		try {
+			await expect(executor.execute({ intentId: 'pause:late-selection', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+				target: registry.target, actualContext: {}, patch: { playing: false, boost: 2 } })).rejects.toMatchObject({ code: 'stale-media-source' });
+			expect(media.paused).toBe(true);
+		} finally { executor.dispose(); }
+	});
+
 	test('replays a retained speed on a new selection visit without fighting same-visit page changes', async () => {
 		installFakeMediaGlobals();
 		const media = new FakeMediaElement();

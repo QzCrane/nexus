@@ -43,6 +43,7 @@ These totals mirror executable contracts and gates. A count changes only with co
 | --- | --- |
 | 从意图到实际快照的总控制流 | [01 §2](01-foundations.md#2-control-flow-and-state-ownership) |
 | 字段事务状态机 | [05 Field transaction state](05-control-state.md#field-transaction-state) |
+| Popup 首帧结构、身份绑定与实际值确认状态机 | [Runtime presentation and actual confirmation](../architecture/runtime.md#presentation-and-actual-confirmation) |
 | written / confirmed / drifted / unconfirmed 证明状态机 | [05 Native write proof state](05-control-state.md#native-write-proof-state) |
 | SPA route / document / media source 生命线及 source 状态机 | [06 SPA identity and source lifecycle](06-media-and-video.md#spa-identity-and-source-lifecycle) |
 | 关闭直播、隐藏、移除、无目标、Popup 关闭与恢复决策表 | [06 Closing live players and speed inheritance](06-media-and-video.md#closing-live-players-and-speed-inheritance) |

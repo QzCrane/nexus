@@ -25,7 +25,7 @@ Exhaustive matrix for fields and operations in `control.contracts.ts`. Adding fe
 | Tab mute | tab | `chrome.tabs.update({muted})` | `tabs.onUpdated`/`tabs.get` readback; never aliases media mute. |
 | Playback speed | active target | exact page controller, then `playbackRate` | Actual is physical `playbackRate`. Page ACK requires controller and physical convergence; both must prove baseline restoration before DOM fallback, including an owned speed handoff. |
 | Preserve pitch | active target | standard `preservesPitch` only | Property/getter readback; unsupported if absent. |
-| Playing | active target | awaited standard `play()`/`pause()` only | `playing`/`pause` event; autoplay rejection returned. |
+| Playing | active target | single standard `play()`/`pause()` write | stable physical `!paused`; pending play cannot block ACK; autoplay rejection returned. |
 | Current time | active target | seekable standard media timeline only | Clamp to `TimeRanges`; acknowledge `seeked` and getter. |
 | Whole-media loop | active target | standard `HTMLMediaElement.loop` only | Getter/readback; independent of A/B state. |
 | Picture-in-Picture | active video | standard Picture-in-Picture API only | Popup click runs ISOLATED script synchronously. Success requires native enter/leave event and `pictureInPictureElement`. |
@@ -46,7 +46,7 @@ Exhaustive matrix for fields and operations in `control.contracts.ts`. Adding fe
 | --- | --- | --- |
 | Restore page settings | coordinator releases owned fields | Restores captured baselines; doesn't translate 100%/1x to release. |
 | Effective volume `0–800` | exact page controller first; standard DOM second | Page ACK: write the exact value with Boost unity and no audio runtime. If the page/DOM path cannot acknowledge a value above 100, use portable base 100 plus hidden Boost in proven MediaElement WebAudio, falling back to Capture only for incomplete/unsafe page coverage. Identical values do 0 IPC. |
-| Play/pause toggle | read actual state, execute `playing` plan | Commits only resulting event. |
+| Play/pause toggle | read actual state, execute `playing` plan | Commits stable physical getter for the still-selected exact source. |
 | Relative seek | resolve target/seekable, execute `currentTime` | Structured unavailable result. |
 | Frame step | source-scoped cadence -> standard DOM seek | Uses recent `requestVideoFrameCallback` or bounded median. Always `approximate:true`. |
 | Screenshot | Chrome `captureVisibleTab` + verified geometry | Capture token checked before/after against document/source/geometry. Fails on hidden/moving targets. |
@@ -96,7 +96,7 @@ One row per capability in `CONTROL_ALGORITHM_ADJUDICATIONS`. 17 native-only, 6 h
 | `tabMuted` | native-only via Chrome tab | none | `tabs.get`/tab event readback |
 | `speed` | native-only: exact-element page, then DOM | none | page getter plus physical `playbackRate` convergence; DOM stable readback; all observations use physical actual |
 | `preservePitch` | native-only via DOM `preservesPitch` | none | property readback; unsupported if absent |
-| `playing` | native-only via awaited `play`/`pause` | none | `playing`/`pause` event + getter |
+| `playing` | native-only via single `play`/`pause` | none | stable physical `!paused`, independent of intercepted events |
 | `currentTime` | native-only via seekable timeline | none | `seeked` + getter |
 | `loop` | native-only via DOM `loop` | none | authoritative getter; no A/B alias |
 | `pip` | native-only via PiP API | none | enter/leave event + `pictureInPictureElement` |
@@ -111,7 +111,7 @@ One row per capability in `CONTROL_ALGORITHM_ADJUDICATIONS`. 17 native-only, 6 h
 | `eqValues`/`bass`/`compressor`/`mono`/`pan`/`delay` | augmentation-only | proven MediaElement WebAudio, then admitted Capture | processor topology/parameter/source-count readback; disabled nodes absent |
 | `visualizer` | observation-only | trusted visible-foreground subscription uses proven safe MediaElement WebAudio or observes Capture required by non-neutral DSP; background cards are passive | exact subscriber/document/processor ACK; max 15 Hz; no Capture admission or retention; unsafe neutral sources settle without retry; hide, close, navigation, expiry, disconnect, or final release retires analyser demand |
 | `restore-page-settings` | augmentation-only | release extension-owned fields; native restores baseline | final per-field ACK releases leases |
-| `playback-toggle` | native-only: observe `playing`, execute plan | none | native play/pause event |
+| `playback-toggle` | native-only: observe `playing`, execute plan | none | stable physical `!paused` for the selected source |
 | `seek-relative` | native-only: compute against time/ranges | none | same native seek ACK |
 | `frame-step` | hybrid-extension-native: approx delta -> DOM seek | max 8 `requestVideoFrameCallback` obs -> median | `seeked` readback, `approximate:true` |
 | `screenshot` | Chrome-native capture, verified crop/ACK | none | active geometry/download readback; no image IPC |
@@ -137,7 +137,7 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | `tabMuted` | `native-only` | `none` | `chrome-native` | `forbidden` | `chrome-event-getter` | `none` |
 | `speed` | `native-only` | `none` | `page-native -> dom-native` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter` | `none` |
 | `preservePitch` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-stable-getter` | `none` |
-| `playing` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
+| `playing` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-stable-getter` | `none` |
 | `currentTime` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
 | `loop` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-stable-getter` | `none` |
 | `pip` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
@@ -160,7 +160,7 @@ Compact mirror checked against `CONTROL_ALGORITHM_ADJUDICATIONS` and `CONTROL_AL
 | `visualizer` | `observation-only` | `explicit-foreground-subscription` | `safe-media-webaudio / existing-dsp-capture-observe` | `forbidden` | `subscription-state` | `while-subscribed` |
 | `restore-page-settings` | `augmentation-only` | `extension-owned-capability` | `extension-state` | `forbidden` | `coordinator-snapshot` | `none` |
 | `effective-volume` | `hybrid-extension-native` | `explicit-full-output-only` | `page-native -> dom-native -> extension-state -> media-webaudio -> capture` | `exact-element-page-bridge` | `page-controller-getter + dom-event-getter + processor-readback` | `none` |
-| `playback-toggle` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
+| `playback-toggle` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-stable-getter` | `none` |
 | `seek-relative` | `native-only` | `none` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
 | `frame-step` | `hybrid-extension-native` | `extension-owned-capability` | `dom-native` | `forbidden` | `dom-event-getter` | `none` |
 | `screenshot` | `native-only` | `none` | `chrome-native` | `forbidden` | `operation-result` | `none` |

@@ -689,6 +689,7 @@ html.spectra-scrollbar-dragging {
 }
 
 .meta-title {
+  min-height: 1lh;
   font-weight: 700;
   font-size: 13px;
   line-height: 1.4;
@@ -698,15 +699,34 @@ html.spectra-scrollbar-dragging {
 }
 
 .meta-domain {
+  min-height: 1lh;
   font-size: 11px;
   color: var(--g2);
   margin-top: 2px;
 }
 
 .control-sync-status {
-  margin: 0 0 8px;
-  color: var(--g3);
-  font-size: 12px;
+  /* Live announcements do not add/remove a layout band during confirmation. */
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.control-sync-status[data-i18n="controlSyncUnavailable"] {
+  /* Terminal read failure remains visible without changing the card geometry. */
+  inset: auto 12px 6px;
+  width: auto;
+  height: auto;
+  clip-path: none;
+  text-align: center;
+  font-size: 11px;
+  color: var(--g2);
+  background: var(--card-bg);
+  pointer-events: none;
+  z-index: 1;
 }
 
 .btn-text.btn-effects {

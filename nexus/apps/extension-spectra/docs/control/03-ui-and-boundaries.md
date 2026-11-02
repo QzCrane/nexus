@@ -20,7 +20,7 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 调节中的手柄位置、音量数字与填充条立即跟随当前请求，任何路由边界（含 100%）都不得冻结它们。存在未结算的路由事务时，**已结算投影**保留上一次已确认路由，不得把新路由的色调与旧路由证据拼接；**手势路径**允许 `resolveVolumeTone` 对唯一情形前瞻（`dom-native` 越界），且只影响 tone、不产生 Capture 事实。数值不得回退或冻结，也不能让较早的 session/ACK 把新数值改色。路由结算后一次提交新色调；通道失败或文档替换清除等待投影。该显示快照不拥有音频状态、不参与 Capture 准入，也不增加计时器或等待时长；等待仅来自既有控制事务的真实执行确认。
 
 - **Popup 高度**: 主视图使用内容固有高度；只有 Settings 导航模式为容器施加 600px 滚动视口。视图布局由 CSS 拥有，导航只切换模式类，禁止读取 `offsetHeight` 后写 inline `min-height` 或调用 `resizeTo`。窗口高度是另一个 owner：`popup/frame-height.ts` 唯一写入 `html` 的 `height`/`overflow-y`，输入是首帧保留值（Background 在 Popup URL 中公告的卡片数所对应的历史高度）与 `.view-container` 的实际高度；`data-spectra-ready` 之前钉住预测值，发布后最多纠正一次，且只记录已结算的发布高度。超过 Chrome 的 600px 上限时整文档保持单一滚动面。
-- **Popup 首帧**: 主题、surface 标记与卡片形状必须在首帧前由已提交事实决定（`public/frame-reserve.js` + `shared/popup-bootstrap.ts`）；`system` 由 head script 与模块使用同一 media query 解析。机制 owner 是 [runtime architecture](../architecture/runtime.md#action-popup-first-frame)；本节只约束 UI 边界，不复制其规则。
+- **Popup 首帧**: 主题、surface、已公告主卡结构、语言及 visualizer 形状在首帧前决定。当前语言不能先显示英文再纠正，主卡不能因实际值 RPC 延迟而后一帧挂载；规范模板预绘制后原位绑定，不替换节点、不复制 HTML 缓存、不用全页隐藏/淡入或延时伪装。无主卡公告时不猜测受限页主卡。实际播放未知仍显示 `aria-pressed=mixed`，不拿缓存冒充 actual；临时同步提示不改变布局，终态读取失败必须可见。机制与状态图的唯一 owner 是 [runtime architecture](../architecture/runtime.md#action-popup-first-frame)。
 - Favicon 走标准 URL/service 机制，禁止未知 `_favicon` 权限。远程 QR 图显式生成本地 `data:`/SVG URL。
 
 ### §7.1 Strategy admission and performance gates

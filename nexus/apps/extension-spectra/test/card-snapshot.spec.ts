@@ -4,12 +4,37 @@ import {
 	hasKnownBackgroundRetentionInputs,
 	readCachedCardSnapshot,
 	readCardSnapshot,
+	readInitialCardSnapshot,
 	resolveInitialProcessorLifecycle,
 	sessionBelongsToCard,
 	writeCachedCardSnapshot,
 } from '../src/popup/card/snapshot';
 
 describe('field-level card snapshot coverage', () => {
+	test('binds initial presentation without awaiting live RPC or reusing cached playing', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const tabId = 4_245;
+		const documentId = 'doc-presentation';
+		let messages = 0;
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			webNavigation: { getFrame: async () => ({ documentId }) },
+			storage: { local: { get: async () => ({ [`spectra.control.tab.${tabId}`]: {
+				tabId, documentId, origin: 'https://media.test', generation: 1, revision: 2, activeMedia: null, activeVideo: null,
+				fields: { playing: { actual: true }, speed: { actual: 2 } },
+			} }) } },
+			runtime: { sendMessage: () => { messages += 1; return new Promise(() => undefined); } },
+		} });
+		try {
+			const snapshot = await readInitialCardSnapshot(tabId);
+			expect(snapshot?.controlSnapshot).toMatchObject({ state: 'known', value: { fields: { speed: { actual: 2 } } } });
+			if (snapshot?.controlSnapshot.state === 'known') expect(snapshot.controlSnapshot.value?.fields.playing).toBeUndefined();
+			expect(snapshot?.controlSnapshotFresh).toBe(false);
+			expect(messages).toBe(0);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
 	test.each([false, true])('confirms current playback before first paint despite durable or Popup cached ACK (cache: %s)', async (cached) => {
 		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const tabId = cached ? 4_244 : 4_243;

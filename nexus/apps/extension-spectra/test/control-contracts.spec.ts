@@ -421,6 +421,8 @@ describe('per-field SPECTRA control contracts', () => {
 	});
 
 	test('classifies every algorithm exhaustively and keeps native candidates ahead of augmentation', () => {
+		expect(CONTROL_ALGORITHM_POLICIES.playing.acknowledgements).toEqual(['dom-stable-getter']);
+		expect(CONTROL_ALGORITHM_POLICIES['playback-toggle'].acknowledgements).toEqual(['dom-stable-getter']);
 		expect(Object.keys(CONTROL_ALGORITHM_POLICIES).sort()).toEqual(
 			[...CONTROL_CAPABILITIES].sort(),
 		);

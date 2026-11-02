@@ -246,6 +246,25 @@ function preserveControlForecast(
 	return { state: 'known', value: { ...forecast, fields } };
 }
 
+/** Initial presentation never waits for Content, worker restore, or remote RPC.
+ * Media identity is still fenced by Chrome; actual playback is confirmed only
+ * by the existing messaging reducer after the same DOM has been bound. */
+export async function readInitialCardSnapshot(tabId: number): Promise<CardSnapshot | null> {
+	const documentId = await currentTopDocumentId(tabId);
+	if (!documentId) return null;
+	const [cached, durable] = await Promise.all([readCachedCardSnapshot(tabId), readDurableCardFacts(tabId, documentId)]);
+	const matchingCache = cached?.documentId === documentId ? cached : null;
+	const forecast = durable.control ?? (matchingCache?.controlSnapshot.state === 'known' ? matchingCache.controlSnapshot.value : null);
+	return {
+		documentId,
+		status: { state: 'unknown', reason: 'unavailable' },
+		controlSnapshot: preserveControlForecast({ state: 'unknown', reason: 'unavailable' }, forecast),
+		sessionSnapshot: durable.session ? { state: 'known', value: durable.session } : { state: 'unknown', reason: 'unavailable' },
+		isRemoteActive: { state: 'unknown', reason: 'unavailable' },
+		fromCache: true, controlSnapshotFresh: false,
+	};
+}
+
 export async function collectCardSnapshot(tabId: number): Promise<CardSnapshot | null> {
 	const documentId = await currentTopDocumentId(tabId);
 	if (!documentId) return null;

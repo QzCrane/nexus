@@ -20,9 +20,13 @@ export function prepareCardDom(params: {
 }): { cardEl: HTMLElement; ui: CardUIElements } {
 	const { template, container, tab, dict } = params;
 
-	const cardFragment = template.content.cloneNode(true) as DocumentFragment;
-	const cardEl = cardFragment.querySelector('.glass-card') as HTMLElement;
+	const prepaint = container.querySelector<HTMLElement>(':scope > .glass-card[data-spectra-prepaint]');
+	const cardFragment = prepaint ? null : template.content.cloneNode(true) as DocumentFragment;
+	const cardEl = prepaint ?? cardFragment?.querySelector<HTMLElement>('.glass-card');
 	if (!cardEl) throw new Error('Card element not found in template');
+	delete cardEl.dataset.spectraPrepaint;
+	cardEl.removeAttribute('inert');
+	cardEl.removeAttribute('aria-busy');
 
 	const ui = getCardUIElements(cardEl);
 	const domain = getDomain(tab.url || '');
@@ -75,7 +79,7 @@ export function prepareCardDom(params: {
 	}
 	if (ui.btnGotoTab) ui.btnGotoTab.setAttribute('aria-label', dict.btnGotoTab);
 
-	container.appendChild(cardFragment);
+	if (cardFragment) container.appendChild(cardFragment);
 
 	return { cardEl, ui };
 }

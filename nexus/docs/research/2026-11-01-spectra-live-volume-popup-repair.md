@@ -8,6 +8,101 @@ last_reviewed: 2026-11-02
 
 # Live volume and Popup observer repair
 
+## 2026-11-02: playback proof and first visible Popup frame
+
+The user reports that native pause still times out, Effects first appears in
+English, and the primary card is absent for an initial visible frame. The prior
+completion boundary was insufficient: ordinary event delivery and settled DOM
+checks cannot prove site event isolation or a first visible frame.
+
+| Required invariant | Existing gap | Canonical repair owner |
+| --- | --- | --- |
+| Pause success describes the precise source's stable `paused` state | pause event delivery is treated as physical success; event interception and actual replay share one timeout | native playback proof; retain volume/event proof independently |
+| First visible text uses the committed language | startup explicitly falls back to English and freezes a dictionary across awaits; runtime docs permit later correction | Popup locale catalog and prepaint projection |
+| Primary card structure exists before asynchronous actual reads | `readCardSnapshot` blocks DOM on live control/runtime/remote RPC | canonical template prepaint and in-place card binding |
+| Unknown actuals remain unknown without blocking structure | first-paint latency was traded against live playback accuracy | existing snapshot reducer and bounded confirmation |
+
+- [x] Regress intercepted pause, true page replay, and selection/source retirement.
+- [x] Build the first-paint card from the sole template, with no whole-page hide,
+  fade, arbitrary delay, copied HTML cache or fabricated media identity/actual.
+- [x] Make committed language synchronously available from the Popup catalog
+  owner; evaluate packaged payload cost, preserve Options/action asset separation.
+- [x] Observe Popup from creation with module response, settings/control RPC blocked;
+  assert every visible frame, label trajectory and card node identity.
+- [x] Reconcile runtime, UI, media, algorithm matrix and executable gate owners;
+  report proof and any online-site uncertainty separately.
+
+Reuse decision: native media properties and existing cancellation/stable-readback
+own playback completion; the template, catalog, esbuild and Popup appearance
+announcement already own structure and text. A UI/state library, controller
+guess, new timer loop, or generic parser cannot supply these missing contracts.
+
+The old owner documents did not form a complete executable specification. UI
+required prepaint shape, but runtime explicitly allowed language correction
+after asynchronous settings. The media owner had moved toward buffered `play`,
+while the algorithm matrix still required awaited `play()` and `playing` events.
+Cached snapshot tests called their result first paint without observing the
+browser's first rendering frame. Those contradictions are corrected in the
+existing owners, with the presentation state diagram in runtime architecture.
+
+Playback uses one native write plus a stable physical getter, independently of
+event delivery; real page replay still rejects. Both the helper and final ACK
+recheck the current selection, even when the old source is still registered.
+The intercepted-pause unit regression failed before the repair and now passes;
+real Chrome separately proves intercepted event success and genuine replay
+failure. No inferred Douyin controller API or forced pause loop was added.
+
+Prepaint clones the canonical card template and localizes it from the same typed
+Popup catalogs. Chrome identity binds that node in place; actual playback stays
+unknown until the existing reducer accepts current evidence. Dynamic playback
+title/ARIA uses the same startup language. Failed binding removes the inert
+structure; unknown appearance does not invent a main card. Temporary status
+announcements preserve geometry, while exhausted recovery remains visibly
+reported. Global settings ACK waits for immediate active-tab appearance delivery
+attempt rather than the coalesced report timer.
+
+Production validation: 43 Chrome smoke cases / 257 assertions cover Popup,
+page-media and actual-speed toolbar; four native Popup geometry cases / 35
+assertions cover reopen, card counts, scrolling and ResizeObserver delivery.
+The creation-time probe holds the module response, checks parsed structure,
+then records every rendering callback with settings/control RPC blocked. It
+requires Chinese Effects and playback labels, one identical node, unknown
+playing and constant card height. The final 131 focused unit cases / 1,121 assertions
+cover native proof, snapshot, contracts, locale, frame, sender and partial-read
+failure presentation. Final SPECTRA typecheck passes all four packages (extension
+ActionKey `718776bc43f1c889`); strict Biome passes all 26 changed TypeScript files.
+Runtime revision is 3.6.6, bootstrap remains 1.3.5. Strict docs pass 130 Markdown
+files / 21 entrypoints; the new state diagram passes static Mermaid validation.
+
+The production prepaint entry is 47.5 KiB; Popup static scripts including it are
+238.5 KiB, eventual scripts 278.1 KiB. The latter emits the existing nonblocking
+256 KiB review signal. The first-frame owner accepts these render-critical
+Popup catalogs; additional growth must be assessed against actual entry closure
+and optional-surface ownership, not a raised threshold. No size policy was
+changed and no Options/action catalog was pulled into prepaint. The package has
+13 checked entrypoints, zero duplicate artifacts and no missing references.
+
+Online Douyin's exact pause behavior is **UNVERIFIED** in this environment;
+fixture evidence distinguishes event interception from actual page replay but
+cannot prove which path the reported online player used. An isolated Chrome
+attempt on the supplied live URL found one video with `readyState=0`, paused and
+no loaded media, so there was no real online playback to toggle. No user account
+or existing browser profile was used. Repository delivery is
+also not complete: canonical verify passes the media/HTML/contract rules and 24
+verifier tests, but `PUBLIC-PARITY-002` remains for three previously missing
+public files plus the new `src/popup-first-paint.ts`. The separate public
+checkout's eight pre-existing modified files are preserved. The repair does not
+claim a successful push or overwrite that work.
+
+Process correction: subscribe the first-frame probe before document scripts;
+do not wait for `spectraReady`, `load`, or a post-load screenshot to assert
+prepaint behavior. Chrome can keep the native window unpainted while the module
+response is held, so parsed structure and visible rendering callbacks are two
+distinct observations. The initial probe waited for unavailable paint timing
+entries; it now records rendering callbacks from creation and asserts the whole
+trajectory. Mermaid spec/lint temporary files and Chrome profiles are disposed;
+no diagnostic script, watcher or persistent profile is retained.
+
 ## Follow-up: retained video speed and Popup playback
 
 The reported 2x video → live room → original video regression adds a boundary

@@ -1,11 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
-import type { Page } from 'puppeteer';
+import type { CDPSession, Page } from 'puppeteer';
 import type { MediaRouteRulesSnapshot, MediaRouteDecision } from '@nexus/contracts';
 import { requireValue } from '../helpers/require-value';
 import { EXTENSION_COMMAND_COUNT, FIXTURE_HTML, browser, closeActionPopup, collectPageErrors, evaluateServiceWorker, eventually, extensionId, fixtureErrors, fixturePage, fixtureUrl, getOffscreenContextCount, getTabId, inspectExtensionAccessibility, inspectExtensionLayout, installPageMediaControllerHarness, openActionPopupTarget, openExtensionClient, readBadgeText, readPageMediaControllerHarness, readSiteRouteRegistry, removePageMediaControllerHarness, restartServiceWorker, sendExtensionMessage, sendFromActionPopup, submitEffectiveVolume, submitPopupControlIntent, updatePageMediaControllerHarness, waitForContentBootstrapStatus } from './harness';
 import type { SmokeRpcResult } from './harness';
-import { prepareSmokeSession, startSmokeSession, teardownSmokeSession } from './harness';
+import { SMOKE_TONE_WAV, patchExtensionSettings, prepareSmokeSession, startSmokeSession, teardownSmokeSession, withDiagnosticTimeout } from './harness';
 
 describe('SPECTRA built extension smoke: popup-ui', () => {
 	beforeAll(async () => {
@@ -20,6 +20,105 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 	afterAll(async () => {
 		await teardownSmokeSession();
 	});
+
+	test('paints one localized primary card before the module or actual-state RPC can answer', async () => {
+		const settingsClient = await openExtensionClient('options.html');
+		await fixturePage.bringToFront();
+		const tabId = await getTabId(fixturePage.url());
+		const settings = await patchExtensionSettings(settingsClient, { scope: 'global', changes: { lang: 'zh-CN' } });
+		expect(new URL(await evaluateServiceWorker(async (id) => chrome.action.getPopup({ tabId: id }), tabId),
+			'https://fixture.test').searchParams.get('lang')).toBe('zh-CN');
+		const root = await browser.target().createCDPSession();
+		let popup: Page | null = null;
+		let opened: ReturnType<typeof openActionPopupTarget> | null = null;
+		let attached: CDPSession | null = null;
+		let releaseModule: (() => Promise<void>) | null = null;
+		let modulePaused!: () => void;
+		const moduleHeld = new Promise<void>((resolve) => { modulePaused = resolve; });
+		const localeRequests: string[] = [];
+		const attachFailures: string[] = [];
+		const attachedUrls: string[] = [];
+		root.on('Target.attachedToTarget', (event) => {
+			attachedUrls.push(`${event.targetInfo.type}:${event.targetInfo.url}:${event.waitingForDebugger}`);
+			const session = root.connection()?.session(event.sessionId);
+			if (!session) { attachFailures.push(`Missing session for ${event.targetInfo.url}`); return; }
+			void (async () => {
+				if (!event.targetInfo.url || event.targetInfo.url.includes(`chrome-extension://${extensionId}/popup.html`)) {
+					attached = session;
+					await session.send('Page.enable');
+					await session.send('Page.addScriptToEvaluateOnNewDocument', { source: `(() => {
+						const original = chrome.runtime.sendMessage.bind(chrome.runtime);
+						chrome.runtime.sendMessage = (message, ...args) => ['spectra.control.snapshot.get', 'spectra.settings.get', 'spectra.settings.ui.get'].includes(message?.type)
+							? new Promise(() => {}) : original(message, ...args);
+						window.__spectraFirstFrames = [];
+						const sample = () => {
+							const card = document.querySelector('#main-stage > .glass-card');
+							if (card && !window.__spectraFirstCard) window.__spectraFirstCard = card;
+							window.__spectraFirstFrames.push({
+								label: card?.querySelector('.btn-effects')?.textContent,
+								cards: document.querySelectorAll('#main-stage > .glass-card').length,
+								playing: card?.querySelector('.btn-pause')?.getAttribute('aria-pressed'),
+								playLabel: card?.querySelector('.btn-pause')?.getAttribute('aria-label'),
+								height: card?.getBoundingClientRect().height, same: card === window.__spectraFirstCard
+							});
+							if (window.__spectraFirstFrames.length < 120) requestAnimationFrame(sample);
+						};
+						requestAnimationFrame(sample);
+					})();` });
+					await session.send('Fetch.enable', { patterns: [{ urlPattern: '*popup.js' }, { urlPattern: '*i18n/popup/*' }] });
+					session.on('Fetch.requestPaused', (request) => {
+						if (request.request.url.endsWith('/popup.js')) {
+							releaseModule = async () => { await session.send('Fetch.continueRequest', { requestId: request.requestId }); };
+							modulePaused();
+						} else {
+							localeRequests.push(request.request.url);
+							void session.send('Fetch.failRequest', { requestId: request.requestId, errorReason: 'BlockedByClient' });
+						}
+					});
+				}
+				await session.send('Runtime.runIfWaitingForDebugger');
+			})().catch((error: unknown) => { attachFailures.push(String(error)); void session.send('Runtime.runIfWaitingForDebugger').catch(() => undefined); });
+		});
+		try {
+			await root.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true,
+				filter: [{ type: 'page' }, { type: 'other' }, { exclude: true }] });
+			opened = openActionPopupTarget();
+			void opened.catch(() => undefined);
+			await withDiagnosticTimeout(`intercept Popup module (${JSON.stringify({ attachedUrls, attachFailures })})`, () => moduleHeld, 5_000);
+			if (!attached) throw new Error('Missing pre-execution Popup session');
+			const session = attached as CDPSession;
+			await eventually(() => session.send('Runtime.evaluate', {
+				expression: `!!document.querySelector('#main-stage [data-spectra-prepaint]')`, returnByValue: true,
+			}), (result) => result.result.value === true, 'canonical prepaint card while module is held');
+			const initial = await session.send('Runtime.evaluate', { expression: `({
+				label: document.querySelector('#main-stage .btn-effects')?.textContent,
+				playing: document.querySelector('#main-stage .btn-pause')?.getAttribute('aria-pressed'),
+				unbound: document.querySelector('#main-stage .glass-card')?.hasAttribute('data-spectra-prepaint')
+			})`, returnByValue: true });
+			expect(initial.result.value).toEqual({ label: '效果', playing: 'mixed', unbound: true });
+			if (!releaseModule) throw new Error('Missing held Popup module');
+			await releaseModule();
+			popup = await (await opened).asPage();
+			await popup.waitForSelector(`#main-stage .glass-card[data-tab-id="${tabId}"]`);
+			await popup.waitForFunction(() => ((window as Window & { __spectraFirstFrames?: unknown[] }).__spectraFirstFrames?.length ?? 0) >= 8);
+			const frames = await popup.evaluate(() => (window as Window & {
+				__spectraFirstFrames: Array<{ label: string; cards: number; playing: string; playLabel: string; height: number; same: boolean }>;
+			}).__spectraFirstFrames);
+			expect(frames.every((frame) => frame.label === '效果' && frame.cards === 1 && frame.playing === 'mixed' && frame.same)).toBe(true);
+			expect(new Set(frames.map((frame) => frame.playLabel))).toEqual(new Set(['暂停/播放']));
+			expect(Math.max(...frames.map((frame) => frame.height)) - Math.min(...frames.map((frame) => frame.height))).toBeLessThanOrEqual(1);
+			expect(localeRequests).toEqual([]);
+			expect(attachFailures).toEqual([]);
+		} finally {
+			if (releaseModule) await releaseModule().catch(() => undefined);
+			if (popup) await closeActionPopup(popup);
+			if (attached) await attached.send('Fetch.disable').catch(() => undefined);
+			await root.send('Target.setAutoAttach', { autoAttach: false, waitForDebuggerOnStart: false, flatten: true }).catch(() => undefined);
+			await root.detach();
+			await patchExtensionSettings(settingsClient, { scope: 'global', changes: { lang: settings.previous.globalSettings.lang } });
+			await settingsClient.close();
+		}
+	}, 25_000);
 
 	test('opens with current playback and toggles an unbuffered source without blocking pause', async () => {
 		const page = await browser.newPage();
@@ -56,7 +155,9 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				await page.bringToFront();
 				popup = await (await openActionPopupTarget()).asPage();
 				await popup.waitForSelector(selector, { timeout: 8_000 });
-				expect(await popup.$eval(selector, (button) => button.getAttribute('aria-pressed'))).toBe('true');
+				expect(await popup.$eval(selector, (button) => button.getAttribute('aria-pressed'))).not.toBe('false');
+				await popup.waitForFunction((s) => document.querySelector(s)?.getAttribute('aria-pressed') === 'true',
+					{ timeout: 2_000 }, selector);
 				await popup.click(selector);
 				await popup.waitForFunction((s) => document.querySelector(s)?.getAttribute('aria-pressed') === 'false',
 					{ timeout: 2_000 }, selector);
@@ -67,6 +168,38 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 			await page.close();
 		}
 	}, 30_000);
+
+	test.each([false, true])('distinguishes an intercepted native pause from a page that resumes playback (replay: %s)', async (replay) => {
+		const page = await browser.newPage();
+		try {
+			await page.evaluateOnNewDocument((resume) => {
+				document.addEventListener('pause', (event) => {
+					if (!(event.target instanceof HTMLMediaElement)) return;
+					event.stopImmediatePropagation();
+					if (resume) void event.target.play().catch(() => undefined);
+				}, true);
+			}, replay);
+			await page.goto(`${fixtureUrl}?intercept-pause=${replay}`, { waitUntil: 'domcontentloaded' });
+			await page.evaluate(async (bytes) => {
+				const media = document.querySelector<HTMLMediaElement>('#v');
+				if (!media) throw new Error('Missing pause fixture');
+				media.muted = true; media.loop = true;
+				media.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+				await media.play();
+			}, [...SMOKE_TONE_WAV]);
+			await page.bringToFront();
+			const tabId = await getTabId(page.url());
+			const response = await sendFromActionPopup<SmokeRpcResult<{ result: { playing: boolean } }>>({
+				protocolVersion: 2, requestId: crypto.randomUUID(), tabId, type: 'spectra.control.operation.submit',
+				payload: { tabId, source: 'popup', target: null, operation: 'playback-toggle', payload: {} },
+			});
+			if (replay) {
+				expect(response.ok).toBe(false);
+				if (!response.ok) expect(response.error?.message).toContain('Playback readback mismatch');
+			} else expect(response).toMatchObject({ ok: true, data: { result: { playing: false } } });
+			expect(await page.evaluate(() => document.querySelector<HTMLMediaElement>('#v')?.paused)).toBe(!replay);
+		} finally { await page.close(); }
+	}, 20_000);
 
 	test('synchronizes page-native media bidirectionally through Popup and the mute hotkey', async () => {
 		await installPageMediaControllerHarness();

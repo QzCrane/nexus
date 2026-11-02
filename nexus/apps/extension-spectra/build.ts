@@ -85,6 +85,7 @@ const entries = [
 		sharingDomain: 'isolated-video-module',
 	},
 	{ entry: 'src/popup/index.ts', out: 'popup.js' },
+	{ entry: 'src/popup-first-paint.ts', out: 'popup-first-paint.js', format: 'iife', sharingDomain: 'popup-prepaint' },
 	{ entry: 'src/offscreen/index.ts', out: 'offscreen.js' },
 	{ entry: 'src/options/index.ts', out: 'options.js' },
 ];
@@ -104,10 +105,12 @@ const isolatedEntries = entries.filter(({ out }) => out.startsWith('content-'));
 const backgroundEntries = entries.filter(
 	({ sharingDomain }) => sharingDomain === 'background-service-worker',
 );
+const prepaintEntries = entries.filter(({ sharingDomain }) => sharingDomain === 'popup-prepaint');
 const moduleEntries = entries.filter(
 	({ out, sharingDomain }) => (
 		!out.startsWith('content-')
 		&& sharingDomain !== 'background-service-worker'
+		&& sharingDomain !== 'popup-prepaint'
 	),
 );
 const moduleEntryGroups = [
@@ -500,6 +503,7 @@ if (isWatch) {
 		// module so worker startup never depends on a separately initialized
 		// shared chunk. Extension pages may still share deterministic chunks.
 		for (const entry of backgroundEntries) await buildOne(entry);
+		for (const entry of prepaintEntries) await buildOne(entry);
 		for (const group of moduleEntryGroups) {
 			const moduleEntryPoints = Object.fromEntries(group.entries.map(({ entry, out }) => [
 				out.slice(0, -'.js'.length),

@@ -21,6 +21,7 @@ import { actionPopupPath } from '../shared/popup-bootstrap';
 import { isRestrictedUrl } from '../shared/restricted-url';
 import { swLog } from '../shared/logger';
 import { readMediaTabInventory } from './media-inventory-runtime';
+import { settingsRepository } from './settings-repository';
 
 /**
  * post: how many cards a Popup opened on `activeTab` will render, or null when
@@ -83,9 +84,10 @@ async function announceForTab(tabId: number): Promise<void> {
 		const tab = await chrome.tabs.get(tabId);
 		// The count is only meaningful for the inventory this tab belongs to, so
 		// it is read after the tab itself is known.
-		const inventory = await readMediaTabInventory();
+		const [inventory, settings] = await Promise.all([readMediaTabInventory(), settingsRepository.getSnapshot()]);
 		const cards = popupCardCount(tab, inventory.tabs);
-		popupPath = actionPopupPath(cards);
+		popupPath = actionPopupPath(cards, { hasMainCard: !isRestrictedUrl(tab.url),
+			language: settings.globalSettings.lang, visualizerEnabled: settings.globalSettings.visualizerEnabled });
 	} catch (error) {
 		swLog.debug(`[PopupFrame] Popup shape for tab ${tabId} stays unannounced`, error);
 	}
@@ -111,6 +113,19 @@ export function syncActionPopup(tabId: number): void {
 // inventory several times for one visible change.
 let activeSyncHandle: ReturnType<typeof setTimeout> | null = null;
 const ACTIVE_SYNC_COALESCE_MS = 60;
+
+/** Settings ACKs wait for the appearance announcement, not the report timer. */
+export async function flushActiveActionPopups(): Promise<void> {
+	if (!actionApiAvailable()) return;
+	if (activeSyncHandle !== null) clearTimeout(activeSyncHandle);
+	activeSyncHandle = null;
+	try {
+		const tabs = await chrome.tabs.query({ active: true });
+		await Promise.all(tabs.map((tab) => tab.id === undefined ? undefined : announceForTab(tab.id)));
+	} catch (error) {
+		swLog.debug('[PopupFrame] Active appearance announcement unavailable', error);
+	}
+}
 
 /**
  * eff: (re)announces the card count for the active tab of every window

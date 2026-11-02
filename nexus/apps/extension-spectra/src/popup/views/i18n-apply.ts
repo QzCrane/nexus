@@ -17,8 +17,13 @@ export function applyLang(lang: string): I18NDict {
 	const dict = getPopupDictionary(lang);
 	currentDictCache = dict;
 	document.documentElement.lang = lang;
+	applyDictionaryToRoot(document, dict);
+	return dict;
+}
 
-	$$<HTMLElement>('[data-i18n]').forEach((el) => {
+export function applyDictionaryToRoot(root: ParentNode, dict: I18NDict): void {
+
+	root.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => {
 		const key = el.dataset.i18n as keyof I18NDict;
 		const value = dict[key];
 		if (typeof value === 'string') {
@@ -26,13 +31,13 @@ export function applyLang(lang: string): I18NDict {
 		}
 	});
 
-	$$<HTMLElement>('[data-i18n-title]').forEach((el) => {
+	root.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => {
 		const key = el.dataset.i18nTitle as keyof I18NDict;
 		const value = dict[key];
 		setInteractiveLabel(el, value, el.title || el.getAttribute('aria-label') || 'Action');
 	});
 
-	$$<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => {
+	root.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]').forEach((el) => {
 		const key = el.dataset.i18nPlaceholder as keyof I18NDict;
 		const value = dict[key];
 		if (typeof value === 'string') {
@@ -44,7 +49,7 @@ export function applyLang(lang: string): I18NDict {
 	// explicit data-i18n-aria attribute. Static markup previously hard-coded
 	// English aria-labels (preset search and related controls) which broke
 	// screen-reader output under non-English locales.
-	$$<HTMLElement>('[data-i18n-aria]').forEach((el) => {
+	root.querySelectorAll<HTMLElement>('[data-i18n-aria]').forEach((el) => {
 		const key = el.dataset.i18nAria as keyof I18NDict;
 		const value = dict[key];
 		if (typeof value === 'string' && value.trim().length > 0) {
@@ -53,7 +58,6 @@ export function applyLang(lang: string): I18NDict {
 		}
 	});
 
-	return dict;
 }
 
 // goal: updates text/tooltips for dynamically generated tab cards and side panel components

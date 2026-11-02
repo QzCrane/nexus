@@ -151,6 +151,28 @@ export async function stablePageReadback<T>(
 	return stableReadback(read, options);
 }
 
+/** Native playback changes paused synchronously; a page can stop event delivery.
+ * The physical getter, stable boundary and exact selection fence own this ACK.
+ * A pending play Promise cannot block a later pause, and a real replay is an
+ * error rather than an invitation to repeatedly force the page to pause. */
+export async function writePlaybackWithStableAck(
+	element: HTMLMediaElement,
+	playing: boolean,
+	options: NativeMediaOperationOptions = {},
+): Promise<boolean> {
+	assertNativeOperationCurrent(options);
+	const written = Promise.resolve(!element.paused === playing
+		? undefined : playing ? element.play() : element.pause());
+	const afterWrite = !element.paused;
+	const proof = stablePageReadback(() => !element.paused, options);
+	const actual = await Promise.race([written.then(() => proof), proof]);
+	assertNativeOperationCurrent(options);
+	if (actual !== playing) {
+		throw new Error(`Playback readback mismatch: requested playing=${playing}; after write=${afterWrite}; stable=${actual}`);
+	}
+	return actual;
+}
+
 function waitWithNativeTimeout(
 	timeoutMs: number,
 	options: NativeMediaOperationOptions = {},

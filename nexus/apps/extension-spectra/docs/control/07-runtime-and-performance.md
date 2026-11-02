@@ -25,7 +25,7 @@ Manifest 仅包含轻量 ISOLATED bootstrap 与两个闭合版本化 MAIN bridge
 0 recurring timer/rAF/IPC
 ```
 
-Action Popup 的首帧不等待 service-worker 往返：卡片数由 Background 在 URL 中公告，主题、surface 与分形状高度由 render-blocking head script 在首帧前写入；`spectra.tab.visible.list` 与 settings 仍会到达，但只用于对账与文案纠正，不决定窗口尺寸。
+Action Popup 首帧不等待实际值 RPC：Background 公告卡片数、主卡是否存在、语言与 visualizer 形状；head script 保留主题/尺寸，独立 prepaint entry 使用唯一模板和 Popup catalog 提交中文等当前语言结构。设置水合与媒体实际值在同一节点对账，不允许英文首帧后纠正。所有九种 Popup catalog 属于关键脚本闭包，必须连同 `popup-first-paint.js` 计入 Popup 静态及可能脚本统计；Options/action catalog 仍分离。机制见 [first-frame owner](../architecture/runtime.md#action-popup-first-frame)。
 
 ## §17 Implementation ownership and migration map
 
@@ -46,13 +46,14 @@ Action Popup 的首帧不等待 service-worker 往返：卡片数由 Background 
 | `src/background/media-inventory-runtime.ts` | 该投影的唯一实例；`spectra.tab.visible.list` 与 Popup 卡片数公告共用，避免第二份组合 |
 | `src/background/media-facts.ts` | 单一文档作用域的持久媒体判定，随导航/标签移除退役，不设 TTL |
 | `src/shared/media-presence.ts` | “可控制媒体”的唯一可执行定义（readyState/currentTime/played），bootstrap 与重级 runtime 共用 |
-| `src/background/popup-frame.ts` | 在 tab 的 Popup URL 中公告卡片数；按 tab 单调代际只允许最新公告写入，无法判定时回到裸 `popup.html` |
+| `src/background/popup-frame.ts` | 公告卡片数及非敏感外观；设置 RPC 在 global ACK 前等待当前 active tabs 的立即公告尝试，媒体报告仍合并；按 tab 代际防迟到覆盖，失败退回未公告状态 |
 | `src/background/popup-control-port.ts` + `src/shared/popup-control-port.ts` | 连续 Popup 控制的唯一私有端口：严格 guard、每字段 latest slot、合并后调用同一 coordinator；不拥有第二个状态 owner |
 | `src/background/audio-session-store.ts` | 每文档音频会话快照的 durable owner：文档 fence、250ms 合并写、最多 5 次重试、有界拒绝账本 |
 | `src/shared/popup-bootstrap.ts` + `public/frame-reserve.js` | Popup 首帧契约：参数名、分形状高度键、主题键、surface 标记与 600px 上限的唯一来源；head script 由构建注入，不携带字面量 |
+| `src/popup-first-paint.ts` + `src/shared/i18n/popup-catalog.ts` | render-blocking deferred 独立 entry，复用规范模板与九种 Popup-only catalog；无身份 inert 结构原位绑定，模块同步初始化同一语言 |
 | `src/background/main-runtime-manager.ts` | 幂等注入 Fullscreen V1 与 Page-Media V2 bridges |
 | `src/content/core/media-registry.ts` | `mediaId`、`sourceRevision`、缓存可见性与 Sticky Active Target 追踪 |
-| `src/content/logic/native-media-async.ts` | 唯一物理 DOM 标准媒体异步写/事件+getter ACK、source cancellation 与 frame cadence cache |
+| `src/content/logic/native-media-async.ts` | 唯一标准媒体异步 ACK：playing 使用物理稳定 getter，其它字段保留既有事件+getter；source cancellation 与 frame cadence cache |
 | `src/content/logic/native-media-executor.ts` | Registry/target/native ownership/page fallback/rollback 编排，不复制 async writer |
 | `src/content/logic/native-write-policy.ts` | 每站点 `optimistic`/`verified` 策略与 drift 降级阈值：证明会回滚写入的站点被降级为“先证明后作答” |
 | `src/content/logic/native-write-confirmation.ts` | 稳定化证明的独立注册表：写由 executor 拥有，证明脱钩于控制路径，可取消且不阻塞作答 |

@@ -21,6 +21,7 @@ const ENTRYPOINTS = [
 	'content-runtime.js',
 	'content-video-effects.js',
 	'popup.js',
+	'popup-first-paint.js',
 	'options.js',
 	'offscreen.js',
 	'offscreen.html',

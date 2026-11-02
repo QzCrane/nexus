@@ -15,6 +15,9 @@
 // shapes had to resize the window in front of the user. Keyed by the count, the
 // height belongs to the shape that is about to be drawn.
 
+import type { SupportedLanguage } from '@nexus/contracts';
+import { normalizeLanguage } from './i18n/locale-sections';
+
 /** Prefix of the per-count frame heights; `<prefix>.<cards>` holds one shape. */
 export const FRAME_HEIGHT_KEY_PREFIX = 'spectra.popup.frame';
 
@@ -34,6 +37,26 @@ export const FRAME_HEIGHT_KEY = 'spectra.popup.frameHeight';
  * document does: the Background can count the media tabs, the document cannot.
  */
 export const FRAME_PLAN_PARAM = 'cards';
+export const POPUP_MAIN_PARAM = 'main';
+export const POPUP_LANGUAGE_PARAM = 'lang';
+export const POPUP_VISUALIZER_PARAM = 'viz';
+
+export interface PopupAppearance {
+	hasMainCard: boolean;
+	language: SupportedLanguage;
+	visualizerEnabled: boolean;
+}
+
+export function readPopupAppearance(search: string): PopupAppearance | null {
+	const query = new URLSearchParams(search);
+	const main = query.get(POPUP_MAIN_PARAM);
+	const language = query.get(POPUP_LANGUAGE_PARAM);
+	const visualizer = query.get(POPUP_VISUALIZER_PARAM);
+	if ((main !== '0' && main !== '1') || !language || (visualizer !== '0' && visualizer !== '1')) return null;
+	const normalizedLanguage = normalizeLanguage(language);
+	if (normalizedLanguage !== language) return null;
+	return { hasMainCard: main === '1', language: normalizedLanguage, visualizerEnabled: visualizer === '1' };
+}
 
 /** The Action Popup's document path, with the announced count attached. */
 export const ACTION_POPUP_PATH = 'popup.html';
@@ -53,11 +76,17 @@ export function frameHeightKeyForCards(cards: number): string {
  * post: the URL the action should open for a tab whose Popup will draw `cards`
  * cards, or the bare document when the count could not be decided
  */
-export function actionPopupPath(cards: number | null): string {
+export function actionPopupPath(cards: number | null, appearance?: PopupAppearance): string {
 	if (cards === null || !Number.isSafeInteger(cards) || cards < 0 || cards > 999) {
 		return ACTION_POPUP_PATH;
 	}
-	return `${ACTION_POPUP_PATH}?${FRAME_PLAN_PARAM}=${cards}`;
+	const query = new URLSearchParams({ [FRAME_PLAN_PARAM]: String(cards) });
+	if (appearance) {
+		query.set(POPUP_MAIN_PARAM, appearance.hasMainCard ? '1' : '0');
+		query.set(POPUP_LANGUAGE_PARAM, appearance.language);
+		query.set(POPUP_VISUALIZER_PARAM, appearance.visualizerEnabled ? '1' : '0');
+	}
+	return `${ACTION_POPUP_PATH}?${query}`;
 }
 
 /**

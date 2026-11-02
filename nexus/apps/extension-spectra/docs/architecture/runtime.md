@@ -165,17 +165,19 @@ these observers and conditionally restores its text.
 ## Action Popup first frame
 
 Chrome sizes an Action Popup from its document, and every open is a new realm.
-`popup.js` is a module, so it executes after parsing — which is also the earliest
-moment the browser may paint. A decision taken there (the theme, the height, the
-shape of a card) is therefore always one frame late, and that frame is what the
-user sees as a window that opens at one size and jumps to another, or a surface
-that repaints once settings resolve.
+`popup.js` is a module; asynchronous settings, identity and media-state reads
+cannot establish the first visible structure or language. Waiting for them
+leaves the primary stage empty; painting an English/default projection before
+they settle causes a second visible presentation. Structure and actual-state
+confirmation therefore have separate completion boundaries.
 
-Three facts are decided before the document exists:
+The render-critical appearance is announced before the document exists:
 
 | Fact | Decided by | Read before the first paint from |
 | --- | --- | --- |
 | How many cards the Popup will draw | Background, `popup-frame.ts` | `popup.html?cards=N` |
+| Whether this active tab has a primary card | Background's restricted-URL rule | `main=0/1` |
+| Language and visualizer shape | committed global settings | `lang=...&viz=0/1` |
 | The height that shape settled on | the previous open of the same shape | `spectra.popup.frame.<N>` |
 | The colour the surface paints in | the last committed theme mode | `spectra.popup.themeMode` |
 
@@ -197,6 +199,12 @@ startup. A per-tab monotonic generation means a slow inventory read that began
 before a tab switch cannot overwrite the newer announcement. When the count
 cannot be decided, the bare `popup.html` is announced — the pre-announcement
 behaviour, which costs one prediction and no correctness.
+
+Global settings RPCs wait for an immediate active-tab appearance announcement
+attempt before returning their durable ACK; they do not wait for the 60ms media
+report timer or Content delivery. The projection queue also reconciles it.
+An Action API failure cannot undo a durable settings commit and remains an
+unannounced/fallback boundary, not a claimed first-frame proof.
 
 The count is a projection, never a promise: a background tab paused past the
 retention window is still listed by the inventory and then dropped by the card,
@@ -276,10 +284,60 @@ Two more late reads shaped the first frame:
   `spectra.tab.visible.list` request still runs and remains the authority that
   reconciles a tab which navigated or reported media while the Popup was opening.
 
-The active card starts as soon as `tabs.query({ active: true })` answers, instead
-of waiting for the full tab list and the inventory it does not use. Settings and
-locale assets load in parallel and correct labels later; nothing about the card's
-size depends on them.
+### Presentation and actual confirmation
+
+`popup-first-paint.js` is a separate classic head script with `defer` and explicit
+`blocking="render"`: parsing supplies the existing `#tmpl-card`, then the script
+localizes and clones that sole template before rendering is unblocked. All nine
+Popup-only dictionaries come from their existing typed source catalog. The
+classic script publishes that immutable packaged catalog to the module realm;
+Options and action catalogs remain separate. Build/integrity and both Popup
+script-size measurements include this entry, rather than moving its bytes out
+of the measured closure.
+
+An announced primary card is an unbound, inert structure with no tab/document
+identity or media actuals. Unknown playback is `aria-pressed=mixed`; volume and
+speed have no invented actual. Missing/invalid appearance does not imply a main
+card; restricted pages do not receive a guessed card. Chrome's current active
+tab/document read then binds the same node. `readInitialCardSnapshot` reads only
+document-fenced durable/cache presentation, strips cached `playing`, and never
+waits for control/runtime/remote RPC. The existing messaging reducer and bounded
+recovery confirm actual values. Background-card inventory keeps its existing
+bounded read and retention policy.
+
+The module initializes the announced dictionary synchronously, before settings
+RPC; dynamic title/ARIA rendering cannot reintroduce English. Async metadata
+has reserved line height. Temporary sync announcements do not add a layout band;
+exhausted recovery has a visible status overlay with the same geometry. A bind
+failure removes the unbound node, and Popup/document retirement disposes the
+existing handlers. There is no HTML snapshot cache, second media state owner,
+whole-page visibility delay, fade or repeated node replacement.
+
+<!-- mermaid:id=popup-first-frame -->
+```mermaid
+stateDiagram-v2
+  state "Localized structure / no identity" as Unbound
+  state "Current document bound / playing unknown" as BoundUnknown
+  state "Accepted actual snapshot" as Confirmed
+  state "Visible read failure / explicit controls allowed" as Unavailable
+  state "Closed or document retired" as Retired
+  [*] --> Unbound
+  Unbound --> BoundUnknown: Chrome identity verified / same node
+  BoundUnknown --> Confirmed: Current getter or accepted ACK
+  BoundUnknown --> Unavailable: Bounded recovery exhausted
+  Unavailable --> Confirmed: Later valid observation
+  Confirmed --> Confirmed: New admitted revision
+  Unbound --> Retired: Binding failed or Popup closed
+  BoundUnknown --> Retired: Document or Popup retired
+  Confirmed --> Retired: Document or Popup retired
+  Unavailable --> Retired: Document or Popup retired
+```
+
+The built-Chrome Popup spec attaches before document scripts, holds the module
+response, verifies parsed localized/unbound structure, then records every
+rendering frame while settings and actual-state RPC remain blocked. It requires
+one card, the same node, current-language text and playback ARIA labels, unknown
+playing and unchanged card height. A settled-DOM assertion alone is insufficient.
 
 ## Runtime loading and shortcuts
 
@@ -529,7 +587,7 @@ Release and cross-platform lanes build the production SPECTRA candidate exactly 
 | Card view reads | `control-coordinator.ts` `getControlViewSnapshot` + `spectra-tab-client.ts` `readSpectraTabPassively` | A view read is one-way: it asks the document's lean bootstrap what it already observes (`PASSIVE_FIELDS`) and never acquires the Content runtime, so painting a card for a tab the user is not looking at cannot wake that tab; a passive observation may not overwrite a field the extension is currently controlling, because for such a field the DOM value is the processor's input, not the effective output |
 | Popup view geometry | `popup.css` + `views/navigation.ts` | The main view follows intrinsic card content and only `settings-view-active` owns the 600 px settings scroll viewport; navigation switches a mode class and never reads `offsetHeight`, writes inline height or calls `resizeTo`; `#empty-state` is an inventory result, never an initial view; the blank under the last card has one owner (`#view-main`'s asymmetric bottom padding, with the last card's own margin zeroed), so it is the same 24 px in every state; above Chrome's ceiling the whole document scrolls as one surface, never a nested list, so that 24 px is on screen when the content fits and exactly one scroll away when it does not |
 | Action Popup frame | `popup-frame.ts` + `shared/popup-bootstrap.ts` + `public/frame-reserve.js` + `popup/frame-height.ts` | The Background states the card count in the tab's Popup URL; the render-blocking head script opens the window at the height that exact shape settled on; the frame is pinned at that prediction until `data-spectra-ready`, corrected at most once, and only a settled published height is recorded — under the announced count, so the next open of that shape needs no correction |
-| Action Popup first frame | `public/frame-reserve.js` + `popup/utils/theme.ts` + `popup/settings-forecast.ts` | Theme, surface marker and card shape come from committed facts before the first paint; `system` is resolved by the same media query in the head script and the module; the settings forecast is validated on read, overwritten by the first authoritative projection and never merged |
+| Action Popup first frame | `public/frame-reserve.js` + `popup-first-paint.ts` + `shared/popup-bootstrap.ts` | Announced appearance and packaged Popup dictionary establish structure/text before async actual confirmation; same-node binding; theme/height remain with their existing owners |
 | Popup inventory forecast | `popup/media-inventory-from-storage.ts` + `media-facts.ts` | The first card list is projected from durable media facts plus Chrome's `audible` flag, so it needs no worker round trip; `spectra.tab.visible.list` still runs and reconciles any drift; the forecast is never a second authority |
 | Favicon/QR | Popup/remote renderers | Validated payload, no undeclared capability |
 | Remote transport/session | `vendor/peerjs/peerjs.min.js` + `offscreen-remote/peerjs-loader.ts` + `remote-host.ts` | One extension-owned JSON/DataChannel-only transport source projected to the static page, one lazy extension output, one Offscreen session/Peer owner, 16 KiB wire cap; epoch/command receipt/recovery remain bounded |

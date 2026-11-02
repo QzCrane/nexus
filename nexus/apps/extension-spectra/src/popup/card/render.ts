@@ -43,7 +43,7 @@ export function createRenderFn(params: RenderParams): () => void {
     const volumePresentation = resolveVolumePresentation(state);
     const disabled = !config.enabled;
 		const controlUnknown = state.controlSnapshotKnown === false;
-		const controlUnavailable = controlUnknown && state.controlSyncExpired === true;
+		const controlUnavailable = state.controlSyncExpired === true;
     const muted = state.pendingVolumePresentation?.muted ?? config.muted;
 
     ui.card.classList.toggle('disabled', disabled);
@@ -55,7 +55,7 @@ export function createRenderFn(params: RenderParams): () => void {
 			// Two states, one line: still asking, or answered with nothing. The key
 			// travels with the text so a language switch keeps whichever one applies.
 			const key = controlUnavailable ? 'controlSyncUnavailable' : 'controlSyncing';
-			syncStatus.hidden = !controlUnknown;
+			syncStatus.hidden = !controlUnknown && !controlUnavailable;
 			if (syncStatus.dataset.i18n !== key) {
 				syncStatus.dataset.i18n = key;
 				syncStatus.textContent = getDictionary()[key];

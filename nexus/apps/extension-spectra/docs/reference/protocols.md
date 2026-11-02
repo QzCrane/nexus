@@ -101,14 +101,21 @@ instead of creating a waiter nobody settles.
 
 ## Action Popup bootstrap parameter
 
-`popup.html?cards=N` is a Popup-URL parameter written by
+`popup.html?cards=N&main=0/1&lang=LANG&viz=0/1` contains Popup-URL parameters written by
 `chrome.action.setPopup`, not a runtime envelope: it crosses no context boundary
 as a message and carries no authority. `N` is a one-to-three digit non-negative
 count of cards the Background expects this open to draw. The render-blocking head
-script reads it only to select a recorded height (`spectra.popup.frame.<N>`); it
-never renders or hides a card, and an absent or invalid value falls back to the
+script reads `cards` only to select a recorded height (`spectra.popup.frame.<N>`);
+an absent or invalid value falls back to the
 last settled height and then to the legacy single hint. `shared/popup-bootstrap.ts`
-is the sole owner of the parameter name and every storage key it selects.
+is the sole owner of the parameter names and every storage key selected.
+`main`, `lang` and `viz` carry only the announced primary-card presence, committed
+language and visualizer shape. They contain no page URL/title/media identity or
+actual control value and grant no request authority. Prepaint uses this appearance
+to project the sole card template before async reads; see the
+[first-frame owner](../architecture/runtime.md#action-popup-first-frame).
+The privileged sender gate still validates the exact `popup.html` pathname and
+browser-owned Action Popup context; query parameters do not authenticate it.
 
 ## Private diagnostic port
 

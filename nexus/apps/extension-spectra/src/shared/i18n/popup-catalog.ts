@@ -1,7 +1,7 @@
 // goal: load only the locale sections rendered by Popup
 
 import type { SupportedLanguage } from '@nexus/contracts';
-import type { I18NDict } from '../../popup/types';
+import type { I18NDict, I18NMap } from '../../popup/types';
 import {
 	cacheLocaleSection,
 	cacheLocaleValue,
@@ -19,6 +19,17 @@ const FUNCTION_KEYS = [
 ] as const satisfies ReadonlyArray<keyof I18NDict>;
 const popupStore = createLocaleSectionStore();
 const hydratedPopupCache = new Map<SupportedLanguage, I18NDict>();
+
+interface PopupCatalogWindow extends Window { __SPECTRA_POPUP_CATALOGS__?: I18NMap; }
+
+/** Same packaged catalog, shared between the classic prepaint and module realm. */
+export function installPrepaintPopupCatalogs(catalogs: I18NMap): void {
+	(window as PopupCatalogWindow).__SPECTRA_POPUP_CATALOGS__ = catalogs;
+}
+
+function prepaintDictionary(language: SupportedLanguage): I18NDict | undefined {
+	return typeof window === 'undefined' ? undefined : (window as PopupCatalogWindow).__SPECTRA_POPUP_CATALOGS__?.[language];
+}
 
 function fetchPopupSection(language: SupportedLanguage): Promise<EncodedLocaleSectionAsset> {
 	return fetch(chrome.runtime.getURL(`i18n/popup/${language}.json.gz`))
@@ -50,6 +61,7 @@ export function loadPopupSection(
 }
 
 export async function loadPopupLocaleCatalog(language: string): Promise<void> {
+	if (prepaintDictionary(normalizeLanguage(language))) return;
 	// Popup controls do not render Options' hotkey action labels. Keep the
 	// action catalog owned by the Options surface so opening Popup cannot pull
 	// all nine action assets into its eventual closure.
@@ -59,7 +71,7 @@ export async function loadPopupLocaleCatalog(language: string): Promise<void> {
 
 export function getPopupDictionary(language: string): I18NDict {
 	const normalized = normalizeLanguage(language);
-	const catalog = hydratedPopupCache.get(normalized);
+	const catalog = prepaintDictionary(normalized) ?? hydratedPopupCache.get(normalized);
 	if (!catalog) throw new Error(`Locale ${normalized} must be loaded before use`);
 	return catalog;
 }

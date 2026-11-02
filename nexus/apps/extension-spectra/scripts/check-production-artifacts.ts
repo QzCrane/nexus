@@ -67,6 +67,7 @@ export function productionSizePolicy(): ProductionSizePolicy {
 
 function productionSizeMeasurements(report): ProductionSizeMeasurement[] {
 	const entries = new Map(report.entrypoints.map((entry) => [entry.name, entry]));
+	const prepaintBytes = entries.get('popup-first-paint.js')?.static.scriptBytes ?? 0;
 	return [
 		{ key: 'serviceWorkerWake', label: 'service-worker wake', actualBytes: report.serviceWorkerWake?.scriptBytes ?? 0 },
 		{ key: 'documentStart', label: 'document_start', actualBytes: report.documentStart?.scriptBytes ?? 0 },
@@ -74,8 +75,8 @@ function productionSizeMeasurements(report): ProductionSizeMeasurement[] {
 		{ key: 'contentSiteHotkeys', label: 'content-site-hotkeys.js static script closure', actualBytes: entries.get('content-site-hotkeys.js')?.static.scriptBytes ?? 0 },
 		{ key: 'offscreenCapture', label: 'offscreen Capture-only closure', actualBytes: report.offscreenAudioOnly?.scriptBytes ?? 0 },
 		{ key: 'offscreenRemote', label: 'offscreen Remote possible script closure', actualBytes: report.offscreenRemote?.scriptBytes ?? 0 },
-		{ key: 'popupStatic', label: 'popup.js static script closure', actualBytes: entries.get('popup.js')?.static.scriptBytes ?? 0 },
-		{ key: 'popupPossibleScript', label: 'popup.js possible script closure', actualBytes: entries.get('popup.js')?.possible.scriptBytes ?? 0 },
+		{ key: 'popupStatic', label: 'Popup static script closure including prepaint', actualBytes: (entries.get('popup.js')?.static.scriptBytes ?? 0) + prepaintBytes },
+		{ key: 'popupPossibleScript', label: 'Popup possible script closure including prepaint', actualBytes: (entries.get('popup.js')?.possible.scriptBytes ?? 0) + prepaintBytes },
 		{ key: 'contentRuntimePossibleScript', label: 'content-runtime.js possible script closure', actualBytes: entries.get('content-runtime.js')?.possible.scriptBytes ?? 0 },
 		{ key: 'contentVideoEffectsPossibleScript', label: 'content-video-effects.js possible script closure', actualBytes: entries.get('content-video-effects.js')?.possible.scriptBytes ?? 0 },
 		{ key: 'optionsPossibleScript', label: 'options.js possible script closure', actualBytes: entries.get('options.js')?.possible.scriptBytes ?? 0 },

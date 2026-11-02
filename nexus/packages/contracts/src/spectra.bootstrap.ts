@@ -6,7 +6,7 @@ import { SPECTRA_PROTOCOL_VERSION } from './spectra.wire.js';
 
 export { SPECTRA_PROTOCOL_VERSION, createSpectraRequest } from './spectra.wire.js';
 export const SPECTRA_CONTENT_BOOTSTRAP_REVISION = '1.3.5' as const;
-export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.6.5' as const;
+export const SPECTRA_CONTENT_RUNTIME_REVISION = '3.6.6' as const;
 
 export const SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE = {
 	ArrowLeft: 'speed_down',

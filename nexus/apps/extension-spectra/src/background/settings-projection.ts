@@ -19,6 +19,7 @@ import {
 	type SettingsProjectionWork,
 } from './settings-projection-queue';
 import { DeadlineExceededError, RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
+import { syncActiveActionPopups } from './popup-frame';
 
 const PROJECTION_REVISION_KEY = 'spectraSettingsProjectedRevision';
 const PROJECTION_RETRY_ALARM = 'spectra-settings-projection-retry';
@@ -109,6 +110,7 @@ async function projectSettings(work: SettingsProjectionWork<SettingsSnapshot>): 
 	}
 
 	if (work.global) {
+		syncActiveActionPopups();
 		const settings = withContentOSDMessages(work.snapshot.globalSettings);
 		const contentEvent = createSpectraEvent('spectra.content.settings.changed', settings);
 		await forEachBounded(tabs, SETTINGS_PROJECTION_TAB_CONCURRENCY, async (tab) => {

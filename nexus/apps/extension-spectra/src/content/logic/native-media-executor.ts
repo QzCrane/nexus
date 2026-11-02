@@ -53,6 +53,7 @@ import {
 	stableReadback,
 	writeSpeedWithSettleAck,
 	writeWithStableEventAck,
+	writePlaybackWithStableAck,
 	type NativeMediaOperationOptions,
 } from './native-media-async';
 import {
@@ -690,6 +691,7 @@ export class NativeMediaExecutor {
 		target: MediaTarget,
 		element: HTMLMediaElement,
 		signal?: AbortSignal,
+		requireSelected = false,
 	): void {
 		assertNotAborted(signal);
 		if (this.disposed || this.lifecycleController.signal.aborted) {
@@ -707,6 +709,15 @@ export class NativeMediaExecutor {
 				'The media target is no longer the registered source identity',
 			);
 		}
+		if (requireSelected && !this.isSelectedTarget(target, element)) {
+			throw new ContentLifecycleError('stale-media-source', 'Playback target is no longer the selected media');
+		}
+	}
+
+	private isSelectedTarget(target: MediaTarget, element: HTMLMediaElement): boolean {
+		const selected = this.registry.resolve(null);
+		return this.isCurrentTarget(target, element) && !!selected && selected.element === element
+			&& this.targetKey(selected.target) === this.targetKey(target);
 	}
 
 	private isCurrentTarget(target: MediaTarget, element?: HTMLMediaElement): boolean {
@@ -822,6 +833,9 @@ export class NativeMediaExecutor {
 				// Preserve the applied mutation, but report the unavailable feedback sample.
 				console.warn('[SPECTRA] Audio feedback readback unavailable', error);
 			}
+		}
+		if (resolved && directEntries.some(([field]) => field === 'playing')) {
+			this.assertCurrentTarget(resolved.target, resolved.element, operationSignal, true);
 		}
 		return {
 			...(audioVolume ? { audioVolume } : {}),
@@ -1426,17 +1440,12 @@ export class NativeMediaExecutor {
 					break;
 				}
 				case 'playing': {
-					const actual = await writeWithStableEventAck(
+					const actual = await writePlaybackWithStableAck(
 						element,
-						value ? 'play' : 'pause',
-						() => value ? element.play() : element.pause(),
-						() => !element.paused,
-						 effectiveDesired,
-						tolerance,
-						750,
-						{ signal, isCurrent },
+						value as boolean,
+						{ signal, isCurrent: () => this.isSelectedTarget(target, element) },
 					);
-					assertCurrent();
+					this.assertCurrentTarget(target, element, signal, true);
 					if (!nativeValuesMatch(effectiveDesired, actual, tolerance)) {
 						throw new Error('Playback readback mismatch after the stable boundary');
 					}

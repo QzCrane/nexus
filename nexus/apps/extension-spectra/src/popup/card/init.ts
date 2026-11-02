@@ -11,6 +11,7 @@ import {
 	evictCachedCardSnapshot,
 	hasKnownBackgroundRetentionInputs,
 	readCardSnapshot,
+	readInitialCardSnapshot,
 	resolveInitialProcessorLifecycle,
 	sessionBelongsToCard,
 } from './snapshot';
@@ -85,10 +86,11 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
   // Live accessor: the card must be able to re-read the dictionary when a
   // status line changes key, not only when the Popup reopens.
   const getDictionary = params.getDictionary ?? (() => initialDictionary);
-  const dict = getDictionary();
   const tabId = tab.id;
 
-  const snapshot = await readCardSnapshot(tabId, { allowCached: params.allowCached });
+  const snapshot = params.isBackground
+    ? await readCardSnapshot(tabId, { allowCached: params.allowCached })
+    : await readInitialCardSnapshot(tabId);
   if (!snapshot || popupClosing) return false;
   const { documentId } = snapshot;
   const status = snapshot.status.state === 'known' ? snapshot.status.value : null;
@@ -161,7 +163,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 
   // A document can retire after any asynchronous read; check again at the DOM commit boundary.
   if (!await isCurrentTopDocument(tabId, documentId) || popupClosing) return false;
-  const { ui, cardEl } = prepareCardDom({ template, container, tab, dict });
+  const { ui, cardEl } = prepareCardDom({ template, container, tab, dict: getDictionary() });
   const cleanupStack: Array<() => void> = [];
   let disposed = false;
   const disposeCard = (): void => {
