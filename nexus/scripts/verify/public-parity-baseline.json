@@ -1,18 +1,7 @@
 {
-	"reason": "The published checkout predates this branch. This baseline records the accepted gap; the gate fails when it grows and warns when it shrinks, so the only allowed direction is convergence. Re-recorded after the pre-paint decision change set: the shared bootstrap contract, the popup shape announcer, the shared inventory runtime and the settings forecast are new shipped sources, and the Popup's frame-height constants moved into the shared contract.",
+	"reason": "The public checkout was regenerated with the canonical sync owner from this task's committed source after explicit authorization to overwrite its prior uncommitted changes. Every shipped application source now matches, so no missing or differing source is accepted. Remote delivery readback is recorded separately from this local-checkout parity gate.",
 	"version": "1.4.2",
-	"maxDiffering": 96,
-	"knownMissing": [
-		"src/background/media-inventory-runtime.ts",
-		"src/background/media-inventory.ts",
-		"src/background/popup-frame.ts",
-		"src/popup/frame-height.ts",
-		"src/popup/frame-observers.ts",
-		"src/popup/media-inventory-from-storage.ts",
-		"src/popup/settings-forecast.ts",
-		"src/shared/media-presence.ts",
-		"src/shared/popup-bootstrap.ts",
-		"src/shared/restricted-url.ts"
-	],
+	"maxDiffering": 0,
+	"knownMissing": [],
 	"publishedVersion": "1.4.2"
 }

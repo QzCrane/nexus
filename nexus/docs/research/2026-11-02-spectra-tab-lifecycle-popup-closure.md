@@ -274,12 +274,15 @@ sequenceDiagram
 | 完整 Chrome | 最终生产包 `test:smoke`：73 PASS、0 FAIL、605 assertions，9 文件，90.08 秒；包含媒体场景与倍速、自由倍速 UI、音量、Playback、Capture、Remote、快捷键、OSD、visualizer、bootstrap 和 Popup。 |
 | 首帧与并发 | 原生 Action Popup document-start 拦截模块与 live RPC，0/3/11 后台均在状态水合前具有全部结构；中文、mixed playing、同节点、无可写 discarded IPC、无重复 visible.list、关闭期间到期后重开均通过。11 卡样本断言实际 runnable 超过 8，约 2.3 秒完成准备、阻断、同成员零移动与清理；Chrome 实际冻结的暂停 tab 不能充当超过并发数的 runnable fixture。未提高超时或放宽节点断言。 |
 | 几何与启动 | 最终运行时的 `popup-frame-geometry-chrome.spec.ts` 与 `popup-inventory-latency.spec.ts`：8 PASS、0 FAIL、69 assertions，89.46 秒；600px cap、底部 24px 空白、单滚动、viz intrinsic 高度、忽略旧高度缓存、无 ResizeObserver loop。每轮 1 主卡和 2 后台；cold 两样本平均 335.1ms、warm 两样本平均 275.1ms，仅为该机并发测试样本，不签发性能上界。 |
-| 架构 | 同步 public 前 verifier 自测 24 PASS、58 assertions；唯一架构错误为 PUBLIC-PARITY-002。公开投影已获覆盖授权，最终同步与 gate readback 仍须单独登记，不能据此提前宣称总体 PASS。 |
+| 架构 | 同步后 verifier 自测 24 PASS、58 assertions；架构 0 errors、6 warnings（4 个 response coverage、2 个文件长度）；public-parity 0 errors、0 warnings。259 个 shipped app source 与实际 public checkout 字节一致，baseline 收紧到 0 differing、0 missing，未放宽规则。 |
+| Public 生成 | canonical APPLY 从已提交 source 全量投影 396 文件，经 public 自身 lint、4 包 typecheck 和 production build PASS 后自动提交；原有 8 项 dirty 按用户要求直接丢弃，无备份。检查覆盖全部生成变更路径、metadata/privacy 投影和新增 probe；没有导出内部文档或 agent 目录。随后发现的既有 badge 尾空行回到源文件删除，再经生成器更新，不手改 public。 |
 | 未验证层 | 用户当前登录的抖音页面未被接管；浏览器证明使用隔离 Chrome fixture。没有商店发布、正式 release receipt、所有生命周期排列的穷举或专门的 startup-error Chrome 故障注入；Mermaid 仅静态检查，未宿主渲染。 |
 
 当前最终物理产物是 `apps/extension-spectra/dist` 的生产构建，不再用开发包覆盖。浏览器测试使用现有 fixture 和退出清理，未添加后台服务、通用监视器或临时脚本。后续公开同步只通过现有生成器；不保留用户已明确要求丢弃的 public dirty 备份。
 
 提交闭环发现并修复 Git pre-commit 的既有降级缺陷：Windows nested MSYS 失败后，旧 shell 字符串拆分丢失 root/workspace 基址并漏跑 docs。现复用已有路径投影，使用 Git NUL 输出和原生子进程参数数组，调用原 canonical strict Biome/docs owner，并保留失败退出。该改动只影响本次必要交付入口，不改变已验证的产品运行时；路径含空格/换行、根目录资产、混合及纯文档提交均进入 hooks 回归，不绕过 gate。
+
+交付入口聚焦验证：hooks 152 PASS；strict Biome scope/report 和 workspace coverage 联合 19 PASS、73 assertions。strict owner 直接把已校验、已过滤的文件集合传给 Biome，保留所有数量和零诊断门禁，避免外部显式 generated 路径额外进入扫描；真实子进程反例已固化。最终提交入口实际通过 80 文件 strict、131 Markdown 和 commitlint。26 个旧混合换行文件仅从 exact HEAD blob 恢复 LF，读回与 public 相同，不产生语义 diff，也未修改 verifier 来容忍字节漂移。最终推送仍以实际 pre-push 门禁和远程 readback 为准。
 
 2026-11-02 文档更新后静态检查记录：canonical `bun run docs:check --path nexus/docs/research/2026-11-02-spectra-tab-lifecycle-popup-closure.md` PASS（1 Markdown，strict）；Mermaid skill 的 `mermaid_tool.py lint` PASS（5 图，diagnostics 为空，evidence 为 static，未生成产物）。指定 Popup 写集 `git diff --check` PASS。未进行 Mermaid 宿主渲染或发布验证。
 

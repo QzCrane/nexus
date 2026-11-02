@@ -298,4 +298,3 @@ export function updateBadgeStagedVolume(
 	void markBadgeUsed(tabId);
 	void paintBadge(tabId);
 }
-
