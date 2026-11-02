@@ -29,10 +29,12 @@
 			if (rate !== 1) document.querySelector('.select').classList.remove('select');
 			if (parameters.has('late')) document.querySelector('.xgplayer-playback-setting').remove();
 			if (parameters.has('controller')) {
+				window.speedWrites = [];
 				const plugin = {
 					config: { playBackRatio: 1 },
 					player: null,
 					onPlayRatioChange(value) {
+						window.speedWrites.push(value);
 						this.config.playBackRatio = value;
 						video.playbackRate = value === 1.3 || value === 1.4 ? 1.25 : value;
 						for (const item of document.querySelectorAll('.xgplayer-playratio-item')) {

@@ -8,6 +8,68 @@ last_reviewed: 2026-11-02
 
 # Live volume and Popup observer repair
 
+## Active follow-up: free-speed bounce
+
+The user reprioritized the live free-speed bounce ahead of the blocked push.
+Keep the separate public checkout and its dirty files untouched. The previous
+scope question must not suspend an independent, already authorized Nexus repair;
+reuse the user's recorded commit/push authorization without another question.
+
+- [x] Trace speed writer selection, settle, rollback and toolbar ownership.
+- [x] Reproduce the intermediate physical/label trajectory in built Chrome.
+- [x] Admit declared page speed writes by the exact player's offered values;
+  send unlisted or unreadable values directly to the existing DOM owner.
+- [x] Prove page-to-DOM handoff without a page mutation, preserve supported
+  page writes and later controller maturation, and verify the built artifact.
+
+Reuse native DOM queries and the existing declared registry, numeric label
+parser, writer and lifecycle. No package, second adapter, optimistic label or
+shorter timeout is needed. Record options as selectors, never hardcoded rates.
+
+Root cause: writer discovery proved a setter exists, but not that it can play
+the requested value. Every new free value retried that setter, waited through
+its 750ms physical/controller convergence budget, restored page and physical
+baselines, then finally reached DOM. The existing label truthfully exposed these
+intermediate rates. A foreground built-Chrome regression failed on that
+trajectory before the repair and passes afterward: consecutive 1.3/1.4 writes
+produce only the requested physical rates and labels, with zero page setters.
+
+The registry now owns an option selector, and the existing numeric text parser
+is shared by menu observation and value admission. The executor's no-write
+handoff retains exact old ownership identity and original release baseline.
+Only an actual failed page attempt populates the single-value rejection memo;
+an offered option cannot override that physical failure. A previously unlisted
+value can become page-admissible when its real option appears later.
+
+The old SPA smoke sampled Background ownership immediately after the page setter
+moved the element, before its asynchronous confirmation committed. It now awaits
+that exact ACK state before retaining the same controlled/confirmed assertions;
+no assertion or production guarantee was weakened.
+
+The real Action Popup test changes the free speed through its input and verifies
+physical playback, the site's label, the Popup value and zero page writes.
+These are isolated fixtures served at the declared live origin, not a claim of
+observing the user's current Edge livestream. Runtime revision is 3.6.3; MAIN
+admission data uses the existing declared registry and injection owner.
+
+Confirmation optimization is recorded in `rules.md`: retain existing scope and
+destination authorization, ask only for a concrete expansion/conflict, and do
+not suspend independent authorized repairs behind a separate delivery blocker.
+The earlier public checkout question remains irrelevant to completing this fix.
+
+Validation for this follow-up: 52 focused unit tests / 239 assertions and
+33 built-Chrome tests / 122 assertions pass, including the real Action Popup,
+first-open labels, live volume, autoplay admission and runtime reload. Strict
+Biome passes all nine affected TypeScript files. Canonical SPECTRA typecheck
+passes all four packages (final extension ActionKey `5cf563aa321dbe4b`); the
+development build and 12-entrypoint dist integrity pass. Canonical verify's 24
+regressions pass; its sole remaining architecture error is the unchanged
+`PUBLIC-PARITY-002` with three missing public files and seven warnings. This does
+not block the local repair and is not reported as a passing push gate. Strict
+docs and Git whitespace checks are required before this checkpoint. No browser
+profile, diagnostic copy or new dependency is retained; keep the normal build
+artifact/caches and executable regression fixtures.
+
 The user reports both directions failing: changing the live site's volume does
 not update SPECTRA, and changing SPECTRA does not change live volume. The same
 three-card Popup reports `ResizeObserver loop completed with undelivered

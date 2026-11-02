@@ -495,7 +495,7 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				'automatic same-document SPA speed restore through the page controller',
 				8_000,
 			);
-			const snapshot = await extensionClient.evaluate(async (targetTabId) => (
+			const snapshot = await eventually(() => extensionClient.evaluate(async (targetTabId) => (
 				chrome.runtime.sendMessage({
 					protocolVersion: 2,
 					requestId: crypto.randomUUID(),
@@ -503,7 +503,10 @@ describe('SPECTRA built extension smoke: page-media', () => {
 					type: 'spectra.control.snapshot.get',
 					payload: { tabId: targetTabId },
 				})
-			), tabId);
+			), tabId), (response) => response.ok
+				&& response.data?.fields.speed?.controlled === true
+				&& response.data.fields.speed.writeState === 'confirmed',
+				'automatic restore ACK commits after the physical write');
 			expect(snapshot).toMatchObject({
 				ok: true,
 				data: {

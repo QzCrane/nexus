@@ -22,6 +22,7 @@ import {
 	SITE_ADAPTER_LIMITS,
 	resolveDeclaredSiteAdapter,
 	siteAdapterBounds,
+	siteSpeedFromText,
 	type SiteAdapterEntry,
 	type SiteSpeedProjectionSpec,
 } from '../../shared/site-adapter-registry';
@@ -52,11 +53,6 @@ interface ControllerCandidate {
 const pageMediaFields = new Set<string>(SPECTRA_PAGE_MEDIA_FIELDS);
 const VOLUME_LIMIT = CONTROL_VALUE_LIMITS.nativeVolume;
 const SPEED_LIMIT = CONTROL_VALUE_LIMITS.speed;
-/**
- * The rate a site calls "normal". A site may render this option as a word
- * instead of a number; that word means 1x, not an unreadable panel.
- */
-const NORMAL_RATE = 1;
 const GENERIC_ASSOCIATION_KEYS = GENERIC_PAGE_MEDIA_VOCABULARY.mediaReferenceKeys;
 const GENERIC_ROOT_KEYS = GENERIC_PAGE_MEDIA_VOCABULARY.rootReferenceKeys;
 /**
@@ -647,9 +643,6 @@ function scanProjectionText(
 	spec: SiteSpeedProjectionSpec,
 ): number | null {
 	const patterns = spec.patterns.map((source) => new RegExp(source));
-	const defaultLabels = (spec.defaultLabels ?? [])
-		.map((label) => label.trim().toLowerCase())
-		.filter((label) => label.length > 0 && label.length <= 24);
 	/**
 	 * Resolve one element's text to a rate: a numeric label (`1.5x`) when a
 	 * pattern matches, otherwise the site's own word for the normal rate
@@ -658,16 +651,7 @@ function scanProjectionText(
 	 * "no projection" and silently breaking UI sync from 1x.
 	 */
 	function rateFromText(raw: string): number | null {
-		const text = raw.trim();
-		for (const pattern of patterns) {
-			const captured = pattern.exec(text)?.[1];
-			if (!captured) continue;
-			const value = Number.parseFloat(captured);
-			if (!Number.isFinite(value) || value < SPEED_LIMIT.min || value > SPEED_LIMIT.max) continue;
-			return value;
-		}
-		if (defaultLabels.includes(text.toLowerCase())) return NORMAL_RATE;
-		return null;
+		return siteSpeedFromText(raw, spec);
 	}
 	/**
 	 * Fallback projection reader used when `selectedSelector` locates nothing.

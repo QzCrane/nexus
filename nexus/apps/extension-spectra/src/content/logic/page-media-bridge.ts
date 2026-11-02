@@ -9,7 +9,32 @@ import {
 	type SpectraPageMediaRequest,
 	type SpectraPageMediaResult,
 } from '../../shared/page-media-bridge';
-import { resolveDeclaredSiteAdapter } from '../../shared/site-adapter-registry';
+import { resolveDeclaredSiteAdapter, SITE_ADAPTER_LIMITS, siteSpeedFromText } from '../../shared/site-adapter-registry';
+
+/** null leaves generic continuous controllers unchanged. A declared menu only
+ * admits a value it offers for this exact, unambiguous player. Our projected
+ * toolbar label is deliberately excluded from this capability evidence.
+ */
+export function declaredPageSpeedAdmission(element: HTMLMediaElement, speed: number): boolean | null {
+	const spec = resolveDeclaredSiteAdapter('speed')?.projection;
+	if (!spec?.optionSelector) return null;
+	const rootSelector = spec.rootSelector;
+	if (!rootSelector) return false;
+	const root = element.closest(rootSelector);
+	if (!root) return false;
+	const media = [...root.querySelectorAll('video, audio')]
+		.filter((candidate) => candidate.closest(rootSelector) === root);
+	if (media.length !== 1 || media[0] !== element) return false;
+	const options = root.querySelectorAll(spec.optionSelector);
+	for (let index = 0; index < Math.min(options.length, SITE_ADAPTER_LIMITS.maxProjectionTextNodes); index += 1) {
+		const option = options[index];
+		if (!option || option.closest(rootSelector) !== root
+			|| option.hasAttribute('disabled') || option.getAttribute('aria-disabled') === 'true') continue;
+		const value = siteSpeedFromText(option.textContent ?? '', spec);
+		if (value !== null && Math.abs(value - speed) <= 0.005) return true;
+	}
+	return false;
+}
 
 /** Bootstrap owns the lifetime, even while the full runtime is resident.
  * This is presentation only: never writes a rate or supplies controller ACKs.

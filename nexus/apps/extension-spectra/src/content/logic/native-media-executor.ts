@@ -68,6 +68,7 @@ import {
 } from './native-write-telemetry';
 import {
 	probePageMediaCapability,
+	declaredPageSpeedAdmission,
 	readPageMediaEvidence,
 	readPageMediaField,
 	writePageMediaField,
@@ -102,7 +103,8 @@ function isPageSideWriter(writer: RestorableMediaWriter): boolean {
  * controller, and a generic controller is promoted to a declared one when a
  * site adapter's projection becomes readable. Anything else is a contradiction
  * this executor refuses to commit silently. Speed alone may return to DOM after
- * a capability failure and proven two-channel baseline restoration, retaining
+ * value admission excludes a page write, or a capability failure and proven
+ * two-channel baseline restoration, retaining
  * the exact prior ownership identity and original physical baseline.
  */
 const WRITER_RANK: Readonly<Record<RestorableMediaWriter, number>> = {
@@ -150,6 +152,8 @@ interface RestorableMediaWriteState {
 	writer: RestorableMediaWriter;
 	upgradeFrom?: OwnedMediaField;
 	controllerBaseline?: number;
+	/** No page setter ran: value admission proves this handoff is mutation-free. */
+	speedFallbackFrom?: OwnedMediaField | null;
 }
 
 interface NativeMediaOwnershipStore {
@@ -347,6 +351,10 @@ function readRestorableMediaFieldForWrite(
 	requested: ControlValues[ControlField],
 ): RestorableMediaWriteState {
 	const owned = nativeMediaOwnership.byElement.get(element)?.get(field);
+	const admission = field === 'speed' ? declaredPageSpeedAdmission(element, requested as number) : null;
+	if (admission === false) {
+		return { actual: element.playbackRate, writer: 'dom-native', speedFallbackFrom: owned ?? null };
+	}
 	if (owned) {
 		if (field === 'speed' && owned.writer === 'dom-native' && owned.rejectedPageSpeed === requested) {
 			return { actual: element.playbackRate, writer: owned.writer };
@@ -1202,6 +1210,7 @@ export class NativeMediaExecutor {
 		let mediaWriter: RestorableMediaWriter = 'dom-native';
 		let writerUpgrade: OwnedMediaField | undefined;
 		let speedFallbackFrom: OwnedMediaField | null | undefined;
+		let rejectedPageSpeed: number | undefined;
 		if (isRestorableMediaField(field)) {
 			try {
 				const baselineState = readRestorableMediaFieldForWrite(element, field, effectiveDesired);
@@ -1209,6 +1218,7 @@ export class NativeMediaExecutor {
 				controllerBaseline = baselineState.controllerBaseline;
 				mediaWriter = baselineState.writer;
 				writerUpgrade = baselineState.upgradeFrom;
+				speedFallbackFrom = baselineState.speedFallbackFrom;
 			} catch (error) {
 				const failure = this.nativeFailure(field, error);
 				this.putError(
@@ -1341,6 +1351,7 @@ export class NativeMediaExecutor {
 					if (!mayFallThrough) throw pageError;
 					if (field === 'speed') {
 						speedFallbackFrom = nativeMediaOwnership.byElement.get(element)?.get(field) ?? null;
+						rejectedPageSpeed = effectiveDesired as number;
 					}
 					if (writerUpgrade) {
 						await writeRestorableMediaFieldWithStableAck(
@@ -1543,6 +1554,7 @@ export class NativeMediaExecutor {
 					mediaWriter,
 					writerUpgrade,
 					speedFallbackFrom,
+					rejectedPageSpeed,
 				);
 			}
 		} catch (error) {
@@ -1588,6 +1600,7 @@ export class NativeMediaExecutor {
 		writer: RestorableMediaWriter,
 		upgradeFrom?: OwnedMediaField,
 		speedFallbackFrom?: OwnedMediaField | null,
+		rejectedPageSpeed?: number,
 	): void {
 		const fields = nativeMediaOwnership.byElement.get(element)
 			?? new Map<RestorableMediaField, OwnedMediaField>();
@@ -1611,7 +1624,7 @@ export class NativeMediaExecutor {
 			baseline: previous?.baseline ?? baseline,
 			lastApplied: actual as ControlValues[RestorableMediaField],
 			writer,
-			...(validSpeedFallback ? { rejectedPageSpeed: actual as number }
+			...(rejectedPageSpeed !== undefined ? { rejectedPageSpeed }
 				: writer === 'dom-native' && previous?.rejectedPageSpeed !== undefined
 					? { rejectedPageSpeed: previous.rejectedPageSpeed } : {}),
 		});
@@ -2160,7 +2173,10 @@ export class NativeMediaExecutor {
 					readDomRestorableMediaField(element, field),
 					0.01,
 				);
-			if (field === 'speed' && desired === owned.rejectedPageSpeed && !mediaDrift) continue;
+			if (field === 'speed' && !mediaDrift) {
+				const admission = declaredPageSpeedAdmission(element, desired as number);
+				if (admission === false || desired === owned.rejectedPageSpeed) continue;
+			}
 			if (!domOwned && !mediaDrift) continue;
 			// The lower-level page write exists to let a later declared controller
 			// take over a value that was written to the DOM. A media drift needs

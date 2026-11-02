@@ -39,6 +39,15 @@ class BridgedElement extends EventTarget {
 	currentTime = 0;
 	loop = false;
 	preservesPitch = true;
+	readonly offeredRates = [1, 1.25, 1.5, 1.75, 2];
+	readonly root = {
+		querySelectorAll: (selector: string) => selector === 'video, audio' ? [this]
+			: this.offeredRates.map((value) => ({
+				textContent: `${value}x`, closest: () => this.root,
+				hasAttribute: () => false, getAttribute: () => null,
+			})),
+	};
+	closest(): typeof this.root { return this.root; }
 	private readonly attributes = new Map<string, string>();
 
 	setAttribute(name: string, value: string): void { this.attributes.set(name, value); }
@@ -94,6 +103,7 @@ interface DeclaredAdapterState {
 	/** When false, the badge stops following the setter (the Douyin shape). */
 	badgeFollowsWrite: boolean;
 	writes: number[];
+	physicalCap?: number;
 }
 
 function installDeclaredBridge(
@@ -108,7 +118,7 @@ function installDeclaredBridge(
 		if (request.operation === 'write' && request.field === 'speed' && typeof request.value === 'number') {
 			state.writes.push(request.value);
 			state.speed = request.value;
-			media.playbackRate = request.value;
+			media.playbackRate = Math.min(request.value, state.physicalCap ?? request.value);
 			// A declared adapter's whole reason to exist: the setter the site's own
 			// UI calls is the one that renders the badge.
 			if (state.badgeFollowsWrite) state.badge = request.value;
@@ -202,6 +212,49 @@ afterEach(() => {
 });
 
 describe('declared official adapter routing', () => {
+	test('skips speculative free-speed writes, preserves release baseline, and admits a later offered option', async () => {
+		installEnvironment('live.douyin.com');
+		const registry = new FakeRegistry();
+		const state: DeclaredAdapterState = { speed: 1, badge: 1, adapterId: 'douyin-speed', badgeFollowsWrite: true, writes: [] };
+		installDeclaredBridge(registry.element, state);
+		const executor = newExecutor(registry);
+		try {
+			expect((await applySpeed(registry, executor, 1.3)).fields.speed).toMatchObject({ strategy: 'dom-native', actual: 1.3 });
+			expect(state.writes).toEqual([]);
+			expect((await applySpeed(registry, executor, 1.5)).fields.speed).toMatchObject({ strategy: 'page-native', actual: 1.5 });
+			expect((await applySpeed(registry, executor, 1.4)).fields.speed).toMatchObject({ strategy: 'dom-native', actual: 1.4 });
+			expect(state.writes).toEqual([1.5]);
+			registry.element.offeredRates.push(1.4);
+			expect((await applySpeed(registry, executor, 1.4)).fields.speed).toMatchObject({ strategy: 'page-native', actual: 1.4 });
+			expect(state.writes).toEqual([1.5, 1.4]);
+			const released = await executor.releasePageSettings({
+				operationId: 'speed:admission:release', tabId: 3, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+				target: null, operation: 'restore-page-settings', payload: {},
+			});
+			expect(released.fields.speed?.actual).toBe(1);
+		} finally { executor.dispose(); }
+	}, 10_000);
+
+	test('an offered option cannot override a proven physical page-speed rejection', async () => {
+		installEnvironment('live.douyin.com');
+		const registry = new FakeRegistry();
+		registry.element.offeredRates.push(1.3);
+		const state: DeclaredAdapterState = { speed: 1, badge: 1, adapterId: 'douyin-speed', badgeFollowsWrite: true, writes: [], physicalCap: 1.25 };
+		installDeclaredBridge(registry.element, state);
+		const executor = newExecutor(registry);
+		try {
+			expect((await applySpeed(registry, executor, 1.3)).fields.speed).toMatchObject({ strategy: 'dom-native', actual: 1.3 });
+			expect(state.writes).toEqual([1.3, 1]);
+			state.writes.length = 0;
+			expect((await applySpeed(registry, executor, 1.3)).fields.speed).toMatchObject({ strategy: 'dom-native', actual: 1.3 });
+			registry.emit('loadedmetadata');
+			// Replay starts synchronously and must reject this same failed page
+			// capability before reaching any asynchronous writer boundary.
+			expect(state.writes).toEqual([]);
+		} finally { executor.dispose(); }
+	}, 10_000);
+
 	test('a declared answer is written through the page and its badge is recorded as confirmed', async () => {
 		installEnvironment('www.douyin.com');
 		const registry = new FakeRegistry();

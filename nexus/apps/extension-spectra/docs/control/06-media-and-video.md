@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-30
+last_reviewed: 2026-11-02
 ---
 
 # 06. Media & Video (Active media, media controls, video effects)
@@ -74,13 +74,22 @@ Popup 枚举使用 `tabId + document generation` 隔离在途探测，并在一�
 允许异步追上，永久不一致则按能力失败处理。冷态 bootstrap、完整 runtime 和释放
 后的观察都以 `dom-native` 归因实际倍速，写入归因仍保留实际 page/DOM writer。
 
-页面不能承接自由值时，分别保留尝试前的 controller 与 physical baseline；先经
+声明注册表的 `projection.optionSelector` 是 page speed 的数值准入边界：只读取
+精确播放器根内、唯一媒体对应的可用档位，文本解析与独立菜单证人共用同一函数。
+未列出、菜单未挂载或无法唯一关联时，直接由既有 DOM writer 同步写入实际倍速；
+不先试网页 setter，不等待能力超时，不先写其它速率，也不写乐观标签。该无页面
+写入的证明允许精确旧 ownership 交接并保留原物理 baseline。后续档位真实挂载时
+可重新准入；通用连续控制器保留既有发现与稳定确认语义。
+
+已准入的页面控制器仍不能承接请求值时，分别保留尝试前的 controller 与 physical baseline；先经
 原 page writer 证明其自身基线已恢复，再由既有 DOM writer 恢复物理基线，才应用
 新的 DOM speed。不得要求页面支持此前由 DOM 承接的自由值。已持有的 page speed
 也可按此证明交接；保留
 原始 baseline 与旧 ownership 的精确身份。终止性的激活、安全和生命周期错误
-不得以 DOM 绕过。每源只记住最近一次拒绝的数值，避免对同值自动反复升级；不同
-数值仍可探测页面能力，源退休时清除。音量/静音不因该 speed 交接扩大降级权限。
+不得以 DOM 绕过。每源只记住最近一次**实际 page 写入失败**的数值，避免对同值
+显式或自动反复升级；菜单仍有该档位也不能覆盖已证明的物理拒绝。未试写的数值
+不计入失败 memo；不同数值仍按准入规则探测，源退休时清除。音量/静音不因该
+speed 交接扩大降级权限。
 
 取消静音必须在公共原生写入入口、page/DOM 分支之前检查文档激活。尚未真实交互
 的文档不得把媒体从 muted 改为 unmuted；返回 `user-activation-required`，保留真实

@@ -223,6 +223,39 @@ describe('SPECTRA built extension smoke: actual speed toolbar', () => {
 		}
 	}, 20_000);
 
+	test('applies unlisted live speeds without a trial, clamp or baseline bounce', async () => {
+		const page = await openPlayer('?controller=1', 'https://live.douyin.com');
+		try {
+			await page.bringToFront();
+			await executeNative(page.url(), { speed: 1.5 });
+			await page.evaluate(() => { Object.assign(window, { speedWrites: [] }); });
+			for (const speed of [1.3, 1.4]) {
+				await page.evaluate(() => {
+					const media = document.querySelector('video');
+					if (!media) throw new Error('Missing media');
+					const trace: Array<{ rate: number; label: string | null }> = [];
+					const sample = () => trace.push({ rate: media.playbackRate, label: document.querySelector('.xgplayer-setting-playbackRatio')?.textContent ?? null });
+					media.addEventListener('ratechange', sample);
+					Object.assign(window, { speedTrace: trace, stopSpeedTrace: () => media.removeEventListener('ratechange', sample) });
+				});
+				expect(await executeNative(page.url(), { speed })).toMatchObject({
+					ok: true, data: { fields: { speed: { phase: 'applied', strategy: 'dom-native', actual: speed } } },
+				});
+				const trace = await page.evaluate(() => {
+					const scope = window as Window & { speedTrace?: Array<{ rate: number; label: string | null }>; stopSpeedTrace?: () => void };
+					scope.stopSpeedTrace?.();
+					return scope.speedTrace;
+				});
+				expect(trace?.length).toBeGreaterThan(0);
+				expect(trace?.every((sample) => sample.rate === speed && sample.label === `${speed}x`)).toBe(true);
+			}
+			expect(await page.evaluate(() => (window as Window & { speedWrites?: number[] }).speedWrites)).toEqual([]);
+		} finally {
+			await releaseSmokeRuntimes();
+			await page.close();
+		}
+	}, 20_000);
+
 	test('reads physical speed through cold bootstrap, full runtime and release despite a stale controller', async () => {
 		const page = await openPlayer('?controller=1&rate=1.3');
 		const tabId = await getTabId(page.url());
@@ -241,6 +274,29 @@ describe('SPECTRA built extension smoke: actual speed toolbar', () => {
 			expect(await read()).toMatchObject(expected);
 		} finally {
 			await releaseSmokeRuntimes();
+			await page.close();
+		}
+	}, 20_000);
+
+	test('the real live Action Popup sets an unlisted speed without changing the page controller', async () => {
+		const page = await openPlayer('?controller=1', 'https://live.douyin.com');
+		const tabId = await getTabId(page.url());
+		await page.bringToFront();
+		const popup = await (await openActionPopupTarget()).asPage();
+		const inputSelector = `.glass-card[data-tab-id="${tabId}"] .speed-input`;
+		try {
+			await popup.waitForSelector(inputSelector);
+			await popup.$eval(inputSelector, (input) => {
+				(input as HTMLInputElement).value = '1.3';
+				input.dispatchEvent(new Event('change', { bubbles: true }));
+				(input as HTMLInputElement).blur();
+			});
+			await eventually(() => page.$eval('video', (video) => video.playbackRate), (speed) => speed === 1.3, 'Popup changes physical live speed');
+			await eventually(() => popup.$eval(inputSelector, (input) => (input as HTMLInputElement).value), (value) => Number(value) === 1.3, 'Popup keeps the acknowledged free speed');
+			expect(await page.$eval(labelSelector, (label) => label.textContent)).toBe('1.3x');
+			expect(await page.evaluate(() => (window as Window & { speedWrites?: number[] }).speedWrites)).toEqual([]);
+		} finally {
+			await closeActionPopup(popup);
 			await page.close();
 		}
 	}, 20_000);

@@ -45,6 +45,13 @@ owner documents.
 
 ## Authority and delivery
 
+- Reuse authorization already given in the current task for the same object,
+  destination and write scope; do not ask again for necessary preparation,
+  repair, verification or delivery steps. Ask only for a concrete expansion or
+  unresolved ownership conflict. A blocked delivery gate must not suspend an
+  independent repair the user has authorized; preserve the blocker and continue
+  that repair.
+
 - Use the repository's current executable owners for toolchain, build, test,
   verification, release, and public projection. Roadmaps, proposals, reports,
   archives, and tests are not implementation authority.

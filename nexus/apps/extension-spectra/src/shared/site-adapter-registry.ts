@@ -8,6 +8,7 @@
 // exactly one MAIN owner and turns "support Douyin" into a data edit plus a
 // verification run, not a new injection surface.
 
+import { CONTROL_VALUE_LIMITS } from '@nexus/contracts';
 import type { SpectraPageMediaField } from './page-media-bridge';
 
 /**
@@ -114,6 +115,10 @@ export interface SiteAdapterDiscovery {
  */
 export interface SiteSpeedProjectionSpec {
 	readonly kind: 'text';
+	/** Page writes require an offered option in this exact root. Missing,
+	 * closed or gated menus use DOM without a speculative page setter.
+	 */
+	readonly optionSelector?: string;
 	/** Dedicated toolbar text, projected from this player's actual media rate.
 	 * Separate from the selected menu item: never use our own label as evidence
 	 * that a page controller accepted a write. Requires an exact player root.
@@ -242,7 +247,7 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 	id: 'douyin-speed',
 	hosts: Object.freeze(['douyin.com', 'iesdouyin.com']),
 	field: 'speed',
-	revision: 3,
+	revision: 4,
 	status: 'verified',
 	discovery: Object.freeze({
 		setterNames: Object.freeze([
@@ -289,6 +294,7 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 	}),
 	projection: Object.freeze({
 		kind: 'text',
+		optionSelector: '.xgplayer-playratio-item',
 		rootSelector: '.xgplayer',
 		labelSelector: '.xgplayer-setting-playbackRatio',
 		scopeSelectors: Object.freeze(['.xgplayer-playback-setting']),
@@ -317,6 +323,21 @@ const DOUYIN_SPEED: SiteAdapterEntry = Object.freeze({
 export const SITE_ADAPTER_REGISTRY: readonly SiteAdapterEntry[] = Object.freeze([
 	DOUYIN_SPEED,
 ]);
+
+/** One parser for the independent menu witness and value admission. */
+export function siteSpeedFromText(raw: string, spec: SiteSpeedProjectionSpec): number | null {
+	const text = raw.trim();
+	if (text.length === 0 || text.length > 24) return null;
+	for (const source of spec.patterns) {
+		const captured = new RegExp(source).exec(text)?.[1];
+		if (!captured) continue;
+		const value = Number.parseFloat(captured);
+		if (Number.isFinite(value)
+			&& value >= CONTROL_VALUE_LIMITS.speed.min
+			&& value <= CONTROL_VALUE_LIMITS.speed.max) return value;
+	}
+	return spec.defaultLabels?.some((label) => label.trim().toLowerCase() === text.toLowerCase()) ? 1 : null;
+}
 
 function normalizeHost(host: string): string {
 	return host.trim().toLowerCase().replace(/^\.+/, '');

@@ -13,6 +13,7 @@ import {
 	resolveSiteAdapter,
 	siteAdapterBounds,
 	siteAdapterMatchesHost,
+	siteSpeedFromText,
 } from '../src/shared/site-adapter-registry';
 
 const douyin = SITE_ADAPTER_REGISTRY.find((entry) => entry.id === 'douyin-speed');
@@ -103,7 +104,7 @@ describe('site adapter registry invariants', () => {
 		for (const entry of SITE_ADAPTER_REGISTRY) {
 			const projection = entry.projection;
 			if (!projection) continue;
-			if (projection.labelSelector) expect(projection.rootSelector).toBeTruthy();
+			if (projection.labelSelector || projection.optionSelector) expect(projection.rootSelector).toBeTruthy();
 			expect(projection.tolerance).toBeGreaterThan(0);
 			expect(projection.patterns.length).toBeGreaterThan(0);
 			expect(projection.scopeSelectors.length).toBeLessThanOrEqual(
@@ -196,9 +197,17 @@ describe('site adapter bounds', () => {
 			id: 'douyin-speed',
 			host: 'www.douyin.com',
 			field: 'speed',
-			revision: 3,
+			revision: 4,
 			status: 'verified',
 			hasProjection: true,
 		});
 	});
+});
+
+test('speed text admission shares the menu witness parser and rejects malformed or out-of-contract values', () => {
+	const spec = douyin.projection;
+	if (!spec) throw new Error('Missing speed projection');
+	expect(siteSpeedFromText(' 倍速 ', spec)).toBe(1);
+	expect(siteSpeedFromText('1.30x', spec)).toBe(1.3);
+	for (const text of ['速度 1.3x', '1x 1.5x', 'NaNx', '99x', '0x', '']) expect(siteSpeedFromText(text, spec)).toBeNull();
 });
