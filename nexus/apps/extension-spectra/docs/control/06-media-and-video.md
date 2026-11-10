@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-09
+last_reviewed: 2026-11-11
 ---
 
 # 06. Media & Video (Active media, media controls, video effects)
@@ -227,11 +227,20 @@ ACK、物理音量、角标与无错误 Toast，不能用第二次输入替第�
 `mediaId` 的请求（Background 投影落后于页面替换时必然发生）由 `recordForTarget`
 解析到当前选中目标，因此视频页→直播页后的第一次快捷键直接生效。写入已在旧元素
 开始、替换落在其 `await` 窗口内时，`execute` 对已退役身份做一次继任重试；
-仅失去选中的目标不重试。选中为空（旧目标已注销）时，补选退回冷态排序：只要求
+仅失去选中的目标不重试。`requestedCoverage = 'active-target'` 的意图描述的是
+"这个标签页当前的控制目标"而不是某个历史身份：当它携带的 `mediaId` 在本 document
+的注册表里根本不存在（同一 document 内 runtime 重建后计数器重新发号，旧投影必然
+如此）时，`normalizeIntentTarget` 直接把意图应用到当前选中目标，不再用第一次写入
+报错来换一次重试。stale 诊断同时记录 requested 身份与注册表快照，下一次故障可以
+直接区分"身份跨 document"与"身份跨 runtime"。选中为空（旧目标已注销）时，补选退回冷态排序：只要求
 `isConnected`，不要求面积，因此替换直播元素即使尚未布局也会立即成为目标并发布 `selected`。
 `compare` 先比较呈现类别（直播 vs 有限视频），再比较交互证据，然后才是播放态与面积：
 页面换页后仍留在文档里的旧播放器不能凭历史点击压制正在播放的直播；同类呈现内
-交互证据仍然决定哪个播放器归用户。当前选中停止呈现（`paused`/`ended`/面积归零）时，
+交互证据仍然决定哪个播放器归用户。呈现类别与候选准入的证据是**布局框**
+（`presentationHidden = boundingClientRect 宽或高 ≤ 0`），不是交集面积：滚动容器/
+裁剪会把 `visibleArea` 压成 0，而元素仍有真实布局，用面积当呈现证据会让所有
+feed 播放器都像"未呈现"，选中永远停在旧元素上。当前选中停止呈现
+（`paused`/`ended`/布局框消失）时，
 同一呈现作用域内**最近注册**的可见视频直接接管，不再要求它已经在播放：直播元素在
 首帧前普遍是 `readyState = 0` 且 `paused`，把"正在播放"当作准入条件会让控制权停在
 已退场的旧播放器上，直到用户点一次新画面。全屏/PiP 拥有者与显式选择/暂停固定仍然

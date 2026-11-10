@@ -828,6 +828,58 @@ describe('event-driven media registry', () => {
 		}
 	});
 
+	test('ranks a laid-out broadcast above a playing pre-roll whose scroll container clips the intersection to zero', () => {
+		// Douyin's feed scrolls every player inside a clipping container, so the
+		// intersection area is zero for all of them while each keeps a real layout
+		// box. Area is not presentation evidence there; the box is.
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const cover = new FakeVideoElement(1, true);
+		const live = new FakeVideoElement(1, true);
+		cover.paused = false;
+		cover.duration = 8;
+		cover.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+		live.paused = true;
+		live.duration = Number.NaN;
+		live.rect = { ...cover.rect };
+		document.documentElement.descendants.push(cover);
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:clipped-feed', frameId: 0 }));
+			const coverTarget = requireValue(registry.list().find(({ element }) => element === cover)?.target,
+				'Expected the pre-roll target');
+			expect(registry.resolve(null)?.target).toEqual(coverTarget);
+			document.documentElement.descendants.push(live);
+			FakeMutationObserver.latest?.emit([live]);
+			const liveTarget = requireValue(registry.list().find(({ element }) => element === live)?.target,
+				'Expected the broadcast target');
+			// The scroll container clips both players to zero intersection area while
+			// both keep their layout box.
+			FakeIntersectionObserver.latest?.callback([cover, live].map((target) => ({
+				target,
+				isIntersecting: true,
+				intersectionRect: { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 },
+				boundingClientRect: target.rect,
+			})) as unknown as IntersectionObserverEntry[], FakeIntersectionObserver.latest as unknown as IntersectionObserver);
+			expect(registry.resolve(null)?.target).toEqual(coverTarget);
+			live.duration = Number.POSITIVE_INFINITY;
+			live.dispatchEvent(new Event('loadedmetadata'));
+			expect(registry.resolve(null)?.target).toEqual(liveTarget);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
 	test.each(['loadedmetadata', 'loadeddata', 'durationchange', 'live-paused', 'explicit', 'paused', 'pip', 'fullscreen', 'fullscreen-container', 'fullscreen-container-play'] as const)('admits live evidence without overriding a protected selection (%s)', (trigger) => {
 		// The finite pre-roll is not the requested broadcast. Its greater area
 		// must not keep volume/mute gestures on the ad after live metadata arrives.

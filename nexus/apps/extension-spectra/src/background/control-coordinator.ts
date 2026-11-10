@@ -1783,7 +1783,20 @@ async function handleTargetChanged(
 		const response = await readSpectraTabPassively(tabId, PROTO_ACTUAL_READ,
 			{ fields: [...PAGE_OBSERVABLE_FIELDS] as ControlDirectField[], target },
 			{ documentId: baseline.documentId, generation: baseline.generation });
-		if (response.ok && sameMediaTarget(response.data.target, target)) await admitPhysicalObservation(baseline, response.data);
+		if (response.ok) {
+			// The document owns its current resource. A revision that advanced
+			// between the announcement and this passive read is still the same
+			// control target, and a page that swapped players has already moved to
+			// the successor. Requiring the readback to equal the announced target
+			// left the projection on the retired source and failed the viewer's
+			// first write after a stream swap (SP-22.3 §1/§2).
+			const authoritative = response.data.target;
+			if (authoritative && authoritative.documentId === baseline.documentId
+				&& authoritative.frameId === 0
+				&& !isRetiredMediaSample(tabId, authoritative, response.data.mediaObservation)) {
+				await admitPhysicalObservation(baseline, response.data);
+			}
+		}
 		return;
 	}
 	if (baseline.mediaObservation) return;

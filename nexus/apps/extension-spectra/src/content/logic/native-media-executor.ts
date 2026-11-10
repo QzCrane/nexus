@@ -908,23 +908,41 @@ export class NativeMediaExecutor {
 
 	async execute(intent: ControlIntent): Promise<ControlApplyAck> {
 		if (this.disposed) throw new Error('Native media executor is disposed');
+		const effective = this.normalizeIntentTarget(intent);
 		try {
-			return await this.executeAttempt(intent);
+			return await this.executeAttempt(effective);
 		} catch (error) {
 			// An SPA can replace the player between the message and this write. The
 			// request was captured against the element the viewer owned, so the
 			// same intent belongs to the successor the registry selected. Retry
 			// exactly once for a genuinely retired identity; a target that is still
 			// registered (the viewer changed selection) keeps its original failure.
-			const successor = this.retiredSuccessor(intent);
+			const successor = this.retiredSuccessor(effective);
 			if (!successor || !isContentLifecycleError(error) || error.code !== 'stale-media-source'
-				|| intent.source === 'restore' || this.disposed) throw this.annotateStale(error);
+				|| effective.source === 'restore' || this.disposed) throw this.annotateStale(error, effective.target);
 			try {
-				return await this.executeAttempt({ ...intent, target: successor });
+				return await this.executeAttempt({ ...effective, target: successor });
 			} catch (retryError) {
-				throw this.annotateStale(retryError);
+				throw this.annotateStale(retryError, successor);
 			}
 		}
+	}
+
+	/**
+	 * An `active-target` intent describes the viewer's current tab, not a
+	 * particular historical element. A projection can name a mediaId that belongs
+	 * to another document or runtime (reload, SPA route, worker restart) or to an
+	 * element this document never registered. The registry owns the document, so
+	 * the intent is applied to its selection instead of failing the first gesture
+	 * after every navigation (SP-22.3 §2).
+	 */
+	private normalizeIntentTarget(intent: ControlIntent): ControlIntent {
+		const requested = intent.target;
+		if (!requested || intent.requestedCoverage !== 'active-target') return intent;
+		if (this.registry.resolve(requested)) return intent;
+		const selected = this.registry.resolve(null);
+		if (!selected || selected.target.kind !== requested.kind) return intent;
+		return { ...intent, target: selected.target };
 	}
 
 	/**
@@ -932,12 +950,16 @@ export class NativeMediaExecutor {
 	 * report is a symptom the viewer cannot act on and the cause cannot be traced
 	 * from a single repro (SP-22.3 §2).
 	 */
-	private annotateStale(error: unknown): unknown {
+	private annotateStale(error: unknown, requested?: MediaTarget | null): unknown {
 		if (!isContentLifecycleError(error) || error.code !== 'stale-media-source') return error;
 		const diagnostic = this.registry.describeMedia?.();
-		if (!diagnostic) return error;
-		console.warn('[SPECTRA][stale-media-source]', diagnostic);
-		return new ContentLifecycleError('stale-media-source', `${error.message} | ${diagnostic}`);
+		const identity = requested
+			? `requested=${requested.documentId}/${requested.mediaId}@${requested.sourceRevision}(${requested.kind})`
+			: 'requested=none';
+		console.warn('[SPECTRA][stale-media-source]', identity, diagnostic);
+		return diagnostic
+			? new ContentLifecycleError('stale-media-source', `${error.message} | ${identity} | ${diagnostic}`)
+			: error;
 	}
 
 	private retiredSuccessor(intent: ControlIntent): import('@nexus/contracts').MediaTarget | null {

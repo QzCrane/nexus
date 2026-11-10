@@ -405,6 +405,24 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
+	test('applies an active-target intent to the selection when it names an identity this document never registered', async () => {
+		installFakeMediaGlobals(); const registry = new FakeRegistry();
+		const selection = registry.resolve();
+		// A projection can be built against another runtime instance of the same
+		// document. Its mediaId was minted by a counter that instance owned, so this
+		// registry has never seen it; the viewer's tab is still the selection.
+		registry.resolve = (requested?: MediaTarget | null) => !requested
+			|| requested.mediaId === registry.target.mediaId ? selection : null;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			const result = await executor.execute({ intentId: 'volume:foreign-identity', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+				target: { ...registry.target, mediaId: 'media:9:6' }, actualContext: {}, patch: { volumeBase: 40 } });
+			expect(result.target).toEqual(registry.target);
+			expect(registry.element.volume).toBeCloseTo(0.4, 5);
+		} finally { executor.dispose(); }
+	});
+
 	test('keeps active-video acknowledgement valid when an independent audio source acquires activeMedia', async () => {
 		installFakeMediaGlobals(); Object.defineProperty(globalThis, 'HTMLVideoElement', { configurable: true, value: FakeMediaElement });
 		const registry = new FakeRegistry(); registry.target.kind = 'video'; const video = registry.resolve();
