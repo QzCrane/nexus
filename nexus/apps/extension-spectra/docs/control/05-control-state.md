@@ -337,7 +337,7 @@ OSD 保留本地即时反馈；实际目标由既有 shortcut route 决定。固
 - usage 的异步读取完成后重新读取当前 audio-session lifecycle；不同 document/origin 或已退休 identity 拒绝投影。Popup 首帧只在音频观测之间比较 audio generation，control generation 不得冒充音频时钟。
 - Popup 连续通道结算附带当前 audio-session-store 的同文档事实，在同一次 render 前按音频自己的 generation/configRevision 接纳，然后撤下 pending。已有可信生命周期时，control ACK 不再覆盖它；无音频事实才使用字段 ACK 兜底。迟到的 Capture ACK 不能复活更晚的停止状态，首次成功 Capture 也不因广播稍迟而闪回旧蓝色。
 - `observationOnly` 下若该 tab 没有已点亮的角标，投影直接返回：未触碰的页面不会因为页面自己调音量而凭空出现角标。
-- 一次真正写进站点播放器的恢复也算扩展使用：`restoreLightsBadgeUsage` 在恢复计划含 `volumeBase`、`mediaMuted`、`speed`、`preservePitch`、`loop` 或扩展专属贡献时点亮 sticky usage。否则只有 Boost/DSP/视频样式会点亮，纯音量配置的站点在首次打开 Popup 前根本没有角标，原生音量手势无处可投影——这就是「插件没打开前原生音量不同步」。
+- 三件事互相独立，不能互为门闩。**同步**是事实：`admitPhysicalObservation` 与资源行写入永远发生，与角标是否存在无关。**使用**只由显式来源（`popup` / `hotkey` / `remote`）的成功 ACK 记录；自动恢复 `restore`、页面观测 `page` 和系统 `system` 都不是显式使用，不得点亮 sticky usage。**隐藏**只由 usage 决定：没有显式使用的 tab 角标保持空。首次显式使用发生时，`markBadgeUsedForTab` 与 `reprojectBadgeForCurrentDocument` 直接用已同步的规范快照投影，不需要重新观察页面。「插件没打开前原生音量不同步」不是靠把恢复当使用来修的——那条路会让未使用的页面凭空出现角标；真正的契约是同步无条件、可见性按显式使用。
 - 「已点亮」的判据是**持久事实**，不是 worker 的内存：`isBadgeProjected` 先看 `badgeState`，再退回 `hasBadgeUsage`（`chrome.storage.session`）。MV3 worker 随时可能被回收，回收后 `badgeState` 是空的，而 Chrome 仍持有 tab 级 Action 投影、usage 记录也还在。只查内存会让重启后的每一次原生音量手势都被静默拦掉，角标永远停在死掉的那个 worker 最后画的值——这就是「原生调音量后角标不同步」在长生命周期标签页上的第二种形态。
 - `boost` 缺失按中性 1 合成：页面只报告 0–100 的自身档位，从未 ACK 过 Boost 不等于没有音量。两者都缺才表示「尚无 ACK」。
 - `paintBadge` 记住最后一次真正送达 Action API 的 `{text, color, documentId, generation}`；值未变则不重复调用。Chrome 会在整页导航时自行清除 tab 投影，所以 `reprojectBadgeForCurrentDocument` 先 `invalidatePaintedBadge` 再重画——缓存从不假设屏幕状态。

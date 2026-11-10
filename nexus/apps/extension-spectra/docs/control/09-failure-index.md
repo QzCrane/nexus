@@ -133,15 +133,15 @@ flowchart TD
   同站切到下一个视频时 `rebind` 的 portable patch 已空，只剩站点/全局预设——表现为
   「同网站内切视频配置变回预设」。恢复顺序固定为：本 tab 保留投影（同文档、整资源重载）
   → 同源 portable 补丁 → origin session → 站点预设 → 全局预设。
-- 已落地的角标点亮：恢复计划含 `volumeBase`、`mediaMuted`、`speed`、`preservePitch`、
-  `loop` 或扩展专属贡献时点亮 sticky usage。此前只有 Boost/DSP/视频样式会点亮，纯音量
-  配置的站点在首次打开 Popup 前没有角标，`observationOnly` 会拦掉所有原生音量观测，
-  表现为「插件没打开前原生音量不同步」。
+- 已落地的职责分离：同步、使用、可见性互不门闩。页面观测/自动恢复永远更新规范快照与
+  资源行；只有显式来源（`popup` / `hotkey` / `remote`）的成功 ACK 点亮 sticky usage；
+  没有显式使用的 tab 角标保持空。把恢复当使用会凭空造出角标，把 usage 当同步门闩会让
+  原生音量事实丢失——两者都不允许。
 - 测试：`test/tab-session.spec.ts` 的
   "carries explicit extension fields and never lets a page observation revoke them"、
   "keeps a configured volume when the page reports a different one"；
-  `test/runtime-loader.spec.ts` 的
-  "lights badge usage when a restore authors a value the page itself displays"。
+  `test/control-coordinator.spec.ts` 的
+  "syncs an untouched tab without painting, then draws that synced value on first explicit use"。
 - 测试：`test/media-registry.spec.ts` 的
   "keeps the selection visit stable when the resource revision advances"、
   "self-heals the selection when a live replacement registers before layout and the old target unregisters"、

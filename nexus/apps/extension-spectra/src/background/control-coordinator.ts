@@ -89,7 +89,6 @@ import {
 } from './extension-invocation';
 import { createPopupVisualizerSource } from './popup-visualizer-source';
 import { isActionPopupSender } from './popup-document-sender';
-import { restoreLightsBadgeUsage } from './badge-usage';
 import { authorizeRuntimeControl } from './control-source-authorization';
 import {
 	mintCaptureAdmission,
@@ -2712,26 +2711,20 @@ async function recordSuccessfulExtensionUse(
 	tabId: number,
 	source: ControlIntent['source'],
 ): Promise<void> {
-	if (source === 'page' || source === 'system') return;
+	if (source === 'page' || source === 'restore' || source === 'system') return;
 	await markBadgeUsedForTab(tabId);
 	await reprojectBadgeForCurrentDocument(tabId);
 }
 
-// Presentation follows a successful physical/durable control acknowledgement.
-// Reuse the existing per-tab projection tail so sticky usage and the final
-// badge remain ordered with tab-session projection without delaying the caller.
+// Presentation follows a successful explicit control acknowledgement. Sync is a
+// separate concern: an automatic restore or a page observation updates the
+// canonical snapshot unconditionally, but only a viewer gesture may light the
+// sticky usage fact that makes the badge visible at all.
 function scheduleSuccessfulExtensionUse(
 	tabId: number,
 	source: ControlIntent['source'],
-	patch: ControlPatch | undefined,
 ): void {
-	if (source === 'page' || source === 'system') return;
-	// An automatic restore is a successful extension use only when it authored a
-	// value the site's own player displays. Without this, a volume-only session or
-	// preset left an untouched tab with no badge, and `observationOnly` hid every
-	// native volume gesture until the Popup was opened once. The ACK path covers
-	// both document initialization and the SPA replay of the same template.
-	if (source === 'restore' && (!patch || !restoreLightsBadgeUsage(patch))) return;
+	if (source === 'page' || source === 'restore' || source === 'system') return;
 	scheduleSessionProjection(tabId, () => recordSuccessfulExtensionUse(tabId, source));
 }
 
@@ -2777,7 +2770,7 @@ function submitSerialized(
 			if (!isControlApplyAck(acknowledgement)) {
 				throw new Error('Control executor returned a strategy outside the capability policy');
 			}
-			scheduleSuccessfulExtensionUse(request.tabId, request.source, request.patch);
+			scheduleSuccessfulExtensionUse(request.tabId, request.source);
 			return acknowledgement;
 		} finally {
 			revokeCaptureAdmission(captureAdmission);
@@ -2849,7 +2842,7 @@ function submitOperationSerialized(
 			if (!isControlOperationAck(acknowledgement)) {
 				throw new Error('Control operation returned a strategy outside the capability policy');
 			}
-			scheduleSuccessfulExtensionUse(request.tabId, request.source, undefined);
+			scheduleSuccessfulExtensionUse(request.tabId, request.source);
 			return acknowledgement;
 		} finally {
 			revokeCaptureAdmission(captureAdmission);

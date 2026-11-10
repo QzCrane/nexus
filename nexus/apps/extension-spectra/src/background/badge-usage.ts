@@ -1,26 +1,11 @@
 // goal: persist the per-tab fact that SPECTRA has successfully been used
 
 import { createKeyedSerializedQueue } from '@nexus/kernel';
-import { hasExtensionOnlyContribution, type ControlSessionPatch } from '@nexus/contracts';
 
 const BADGE_USAGE_PREFIX = 'spectra.badge.used.';
 const usageCache = new Map<number, boolean>();
 const persistedUsage = new Set<number>();
 const serialized = createKeyedSerializedQueue<number>();
-
-const RESTORE_BADGE_FIELDS = ['volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'loop'] as const;
-
-/**
- * A restore writes values the site's own player also displays. The badge is the
- * projection of those facts, so it must exist before the viewer touches the
- * native UI; otherwise `observationOnly` hides every page volume gesture until
- * the Popup is opened once. A pass-through master switch alone creates no
- * visible output to follow.
- */
-export function restoreLightsBadgeUsage(patch: ControlSessionPatch): boolean {
-	return hasExtensionOnlyContribution(patch)
-		|| RESTORE_BADGE_FIELDS.some((field) => patch[field] !== undefined);
-}
 
 function key(tabId: number): string {
 	return `${BADGE_USAGE_PREFIX}${tabId}`;

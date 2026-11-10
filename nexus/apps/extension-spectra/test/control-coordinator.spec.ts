@@ -2375,11 +2375,11 @@ describe('authoritative control coordinator', () => {
 		expect(badgeText).toBe('30');
 	});
 
-	test('leaves the badge of an untouched tab empty when the page changes its own volume', async () => {
+	test('syncs an untouched tab without painting, then draws that synced value on first explicit use', async () => {
 		const harness = installHarness();
-		let paints = 0;
+		let badgeText = '';
 		Object.assign(chrome.action, {
-			setBadgeText: async () => { paints += 1; },
+			setBadgeText: async ({ text }: { text: string }) => { badgeText = text; },
 			setBadgeBackgroundColor: async () => undefined,
 			setBadgeTextColor: async () => undefined,
 		});
@@ -2387,17 +2387,40 @@ describe('authoritative control coordinator', () => {
 			if (type === 'spectra.control.actual.read') {
 				return actualReadAck(payload as ControlReadRequest, null);
 			}
-			throw new Error(`Unexpected ${type}`);
+			if (type !== 'spectra.control.intent.execute') throw new Error(`Unexpected ${type}`);
+			return {
+				ok: true,
+				data: {
+					...appliedPatchAck(payload as ControlIntent, (field) => field === 'boost' ? 'observe' : 'dom-native'),
+					mediaObservation: sample(2),
+				},
+			};
 		};
 		const target = media(harness);
 
-		// No extension gesture has ever touched this tab, so there is nothing to
-		// refine: the "untouched page stays hidden" rule survives the new route.
+		// Sync is unconditional. A page gesture is admitted to the canonical
+		// snapshot and this resource's durable row even though no badge exists.
 		await observe(target, { volumeBase: 42, mediaMuted: false }, sample(1));
 		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(await controlCoordinatorTestApi.getSnapshot(7)).toMatchObject({
+			fields: { volumeBase: { actual: 42 }, mediaMuted: { actual: false } },
+		});
+		expect((harness.storage.get('tab_session_7') as { patch?: Record<string, unknown> } | undefined)?.patch)
+			.toMatchObject({ volumeBase: 42, mediaMuted: false });
 
-		expect(paints).toBe(0);
+		// Hiding is a separate decision: no explicit use has ever happened, so the
+		// badge stays empty no matter what the page does with its own slider.
+		expect(badgeText).toBe('');
 		expect(badgeState.has(7)).toBe(false);
+
+		// The first explicit gesture lights the badge, and it paints the volume the
+		// page already reported — not the gesture's own field.
+		await controlCoordinatorTestApi.submitInvoked({
+			...request({ speed: 1.5 }),
+			source: 'hotkey',
+		}, invocation(harness, 'site-page'));
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeText).toBe('42');
 	});
 
 	test.each([
