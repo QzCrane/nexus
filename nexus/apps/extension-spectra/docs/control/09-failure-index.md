@@ -122,6 +122,12 @@ flowchart TD
   反复改写 `src` 的播放器此前每次换流都让在途写入与恢复义务失效，表现为第一次调节
   必报 stale、之后才好；`requested=none` 的意图现在也会先固定到当前选中，
   失败与继任重试因此都有一个可命名的身份。
+- 已落地的恢复栅栏：自动恢复 token 的执行栅栏只比较 desired revision、场景和当前选中
+  元素身份，不再比较 `selectionVisit`。单元素页面因此不再出现"requested 与 selected
+  完全一致却过期"的恢复失败（`requested=media:1:1@1`、`selected=media:1:1`）；恢复
+  不执行时页面音量无人接管，看起来就像原生音量变化没有同步。自动 restore 的 stale
+  仍以结构化错误回传后台用于有序重试，但不再 `console.warn`：它是后台义务，不是观众
+  手势失败。
 - 测试：`test/media-registry.spec.ts` 的
   "keeps the selection visit stable when the resource revision advances"、
   "self-heals the selection when a live replacement registers before layout and the old target unregisters"、
@@ -134,7 +140,8 @@ flowchart TD
   `test/native-media-executor.spec.ts` 的
   "moves an active-target write to the new selection when another source becomes selected mid-write"、
   "applies an active-target intent to the selection when it names an identity this document never registered"、
-  "applies an active-target intent to the selection when the projection names a superseded player"。
+  "applies an active-target intent to the selection when the projection names a superseded player"、
+  "accepts an automatic restore after the same element starts a new selection visit"。
 - 证据：[2026-11-01 直播音量修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
 
 **3. 站点原生 UI 不同步（open）**

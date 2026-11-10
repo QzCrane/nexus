@@ -355,6 +355,50 @@ describe('native media single-writer correlation', () => {
 			expect(registry.element.volume).toBe(0.7);
 		} finally { finish(); executor.dispose(); }
 	});
+	test('accepts an automatic restore after the same element starts a new selection visit', async () => {
+		installFakeMediaGlobals();
+		// Earlier cases leave drift evidence for this site, which would force a
+		// verified write; the visit fence is the subject here, not the write mode.
+		resetNativeWritePolicy();
+		const registry = new FakeRegistry();
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		let queued: Partial<ControlIntent> | undefined;
+		let result: Awaited<ReturnType<NativeMediaExecutor['execute']>> | undefined;
+		let failure: unknown;
+		let finish!: () => void;
+		const held = new Promise<void>((resolve) => { finish = resolve; });
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: { type: string; payload: Partial<ControlIntent> }) => {
+				if (message.type !== 'spectra.control.intent.submit' || message.payload.source !== 'restore') return { ok: true, data: { recorded: true } };
+				queued = message.payload;
+				await held;
+				try {
+					result = await executor.execute({ intentId: 'visit:late', tabId: 7, documentId: registry.documentId,
+						generation: 1, baseRevision: 0, actualContext: {}, ...queued } as ControlIntent);
+				} catch (error) { failure = error; throw error; }
+				return { ok: true, data: result };
+			},
+		} } });
+		try {
+			await executor.execute({ intentId: 'visit:seed', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+				target: registry.target, actualContext: {}, patch: { volumeBase: 40 } });
+			registry.element.forceVolume(1);
+			registry.emit('selected');
+			expect(queued?.mediaRestore).toBeDefined();
+			// The page re-announces the same element: the visit advances, but the
+			// selected element, source and desired revision the queued restore names
+			// are still current. Rejecting it left the page volume unrecovered.
+			registry.selectionRevision += 1;
+			finish();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(failure).toBeUndefined();
+			expect(result?.fields.volumeBase).toMatchObject({ actual: 40, lastError: null });
+			expect(registry.element.volume).toBeCloseTo(0.4, 5);
+		} finally { finish(); executor.dispose(); resetNativeWritePolicy(); }
+	});
+
 	test.each([false, true])('re-publishes settled route playback before effects even without a template (%s)', async (withTemplate) => {
 		installFakeMediaGlobals(); const registry = new FakeRegistry(); registry.element.paused = false;
 		let revision = 0;

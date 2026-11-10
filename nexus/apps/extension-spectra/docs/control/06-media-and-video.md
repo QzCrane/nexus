@@ -269,13 +269,17 @@ revision 的缓存证明失效，返回已被页面重置的原 video 也必须�
 场景由精确唯一媒体根和当前 route 绑定；无可证明的声明根时以元素、route 和
 物理 source 绑定，不能用站点名或播放器顺序猜身份。场景记录有界，物理 baseline
 仍属于精确 source ownership。自动恢复携带 `mediaRestore: { scene, visit,
-revision }`，执行前重新检查当前场景、选择访问和 desired revision。选择、source、
-route 或释放使旧恢复失效；同文档 route settled 通知唤醒最新恢复义务，不复活旧
+revision }`，执行前重新检查当前场景、desired revision 和当前选中元素身份
+（`isSelectedTarget`）。`visit` 只作关联证据：按
+[控制身份](../../../../docs/decisions/control-identity.md) 的 L4 规则，
+`owner + epoch + selection + revision` 只排序、不作判决；拿它当栅栏会把身份完全正确的
+恢复判成过期，恢复不执行，页面音量也就没人接管。选择、source、route 或释放使旧恢复
+失效；同文档 route settled 通知唤醒最新恢复义务，不复活旧
 token，也不把 URL 变化当作新媒体。协议见 [restore tokens](../reference/protocols.md#ordered-media-observations-and-restore-tokens)。
 
 该 token 必须完整穿过 Background `resolveSubmitRequest` 与 `createIntent`，
 不能在字段路由时降成无 token 的首次恢复。coordinator 的转发规格与执行器的
-过期 scene/visit/revision 拒绝规格共同保护此边界；只把 Content 发送直接接回
+过期 scene/revision/选中身份拒绝规格共同保护此边界；只把 Content 发送直接接回
 执行器的测试不能证明真实跨上下文链已接通。
 
 target 缓存命中仍须复核 root、完整 route 与适用的 source 身份。页面复用同一个
@@ -705,12 +709,16 @@ document desired；跨 document 恢复继续丢弃未经显式用户选择证实
 ### §14.13 Unfinished automatic source restoration
 
 `NativeMediaExecutor` owns the unfinished fields of an authorized document template,
-bound to the exact source, desired revision and selection visit. `selected`, `play`,
+bound to the exact source, desired revision and the selected element. The restore token
+still carries the selection visit for correlation, but the visit is L4 evidence: it orders
+observations and never judges a restore. `selected`, `play`,
 `loadedmetadata`, `loadeddata` and `durationchange` advance that obligation without a
 Popup read or user retry. A rejected old-source operation remains rejected; recovery
 issues a new fenced request for the current source. Structured `stale-media-source`
 and revision conflicts receive at most three timer retries (100/300/1000 ms) when no
-further maturity event arrives. There is no idle polling or site-specific route.
+further maturity event arrives. There is no idle polling or site-specific route. A
+restore that still loses its fence is reported as a structured failure only; it is a
+background obligation, not a viewer gesture, so it does not print a console warning.
 
 Successful fields and terminal failures leave the pending patch independently.
 An automatic ACK updates the same snapshot and existing badge as an explicit ACK;

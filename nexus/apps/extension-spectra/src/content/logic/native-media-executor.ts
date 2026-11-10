@@ -916,11 +916,15 @@ export class NativeMediaExecutor {
 			// flight. The registry already decided what the tab controls, so the
 			// same gesture is re-applied there exactly once.
 			const retryTarget = this.retryTarget(effective, error);
-			if (!retryTarget) throw this.annotateStale(error, effective.target);
+			// An automatic restore is best-effort by design: its obligation is
+			// re-issued on the next lifecycle event, and the background already
+			// receives the structured failure. Only a gesture failure is worth a
+			// console warning.
+			if (!retryTarget) throw this.annotateStale(error, effective.target, effective.source === 'restore');
 			try {
 				return await this.executeAttempt({ ...effective, target: retryTarget });
 			} catch (retryError) {
-				throw this.annotateStale(retryError, retryTarget);
+				throw this.annotateStale(retryError, retryTarget, effective.source === 'restore');
 			}
 		}
 	}
@@ -983,13 +987,13 @@ export class NativeMediaExecutor {
 	 * report is a symptom the viewer cannot act on and the cause cannot be traced
 	 * from a single repro (SP-22.3 §2).
 	 */
-	private annotateStale(error: unknown, requested?: MediaTarget | null): unknown {
+	private annotateStale(error: unknown, requested?: MediaTarget | null, quiet = false): unknown {
 		if (!isContentLifecycleError(error) || error.code !== 'stale-media-source') return error;
 		const diagnostic = this.registry.describeMedia?.();
 		const identity = requested
 			? `requested=${requested.documentId}/${requested.mediaId}@${requested.sourceRevision}(${requested.kind})`
 			: 'requested=none';
-		console.warn('[SPECTRA][stale-media-source]', identity, diagnostic);
+		if (!quiet) console.warn('[SPECTRA][stale-media-source]', identity, diagnostic);
 		return diagnostic
 			? new ContentLifecycleError('stale-media-source', `${error.message} | ${identity} | ${diagnostic}`)
 			: error;
@@ -1039,9 +1043,15 @@ export class NativeMediaExecutor {
 			? videoResolver.resolveVideo(intent.target)
 			: this.registry.resolve(intent.target);
 		const scene = resolved ? this.sceneFor(resolved.target, resolved.element) : null;
+		// A restore obligation is bound to the desired revision, the scene and the
+		// selected element — all of which are compared here. The selection visit is
+		// deliberately not part of this fence: an automatic restore that arrives
+		// after an unrelated visit advance still describes the current template for
+		// the element it names, and rejecting it surfaced a stale error (and
+		// suppressed the page's own volume) for a write that was never wrong.
 		if (intent.mediaRestore && (!resolved || !scene
 			|| intent.mediaRestore.revision !== this.desiredRevision
-			|| intent.mediaRestore.scene !== scene.id || intent.mediaRestore.visit !== this.selectionRevision
+			|| intent.mediaRestore.scene !== scene.id
 			|| !this.isSelectedTarget(resolved.target, resolved.element))) {
 			throw new ContentLifecycleError('stale-media-source', 'The media restore obligation has been superseded');
 		}
