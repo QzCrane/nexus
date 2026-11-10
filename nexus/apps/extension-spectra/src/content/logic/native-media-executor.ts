@@ -930,11 +930,11 @@ export class NativeMediaExecutor {
 
 	/**
 	 * An `active-target` intent describes the viewer's current tab, not a
-	 * particular historical element. A projection can name a mediaId that belongs
-	 * to another document or runtime (reload, SPA route, worker restart) or to an
-	 * element this document never registered. The registry owns the document, so
-	 * the intent is applied to its selection instead of failing the first gesture
-	 * after every navigation (SP-22.3 §2).
+	 * particular historical element. A projection can name a mediaId minted by
+	 * another runtime instance of this document (the counters are per instance),
+	 * so the registry never saw it. The registry owns the document, so the intent
+	 * is applied to its selection instead of failing the first gesture after a
+	 * runtime rebuild (SP-22.3 §2).
 	 */
 	private normalizeIntentTarget(intent: ControlIntent): ControlIntent {
 		const requested = intent.target;

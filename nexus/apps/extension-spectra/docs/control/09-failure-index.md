@@ -108,17 +108,10 @@ flowchart TD
   携带的 `mediaId` 时（同一 document 内 runtime 重建后计数器重新发号，后台投影必然
   携带旧号），`normalizeIntentTarget` 直接改用当前选中目标，第一次写入不再报错。
   stale 诊断同时打印 requested 身份，可直接区分跨 document 与跨 runtime。
-- 已落地的呈现证据：呈现类别、候选准入、呈现退场交接统一用**布局框**
-  （`presentationHidden`），不再用交集面积。抖音 feed 的滚动容器把 `visibleArea`
-  压成 0，用面积当准入证据会让所有播放器都"未呈现"，选中停在旧元素上。
-- 已落地的后台权威：`handleTargetChanged` 的 observation 分支接受 Content 回读的
-  权威 target（只校验 documentId/frameId 与未退役），不再要求回读 revision 等于
-  公告 target；换流发生在公告与回读之间不再让投影停留在退役源。
 - 测试：`test/media-registry.spec.ts` 的
   "self-heals the selection when a live replacement registers before layout and the old target unregisters"、
   "hands control to a paused live replacement once the old player stops"、
   "hands control to a live broadcast beside a pre-roll the viewer clicked"、
-  "ranks a laid-out broadcast above a playing pre-roll whose scroll container clips the intersection to zero"、
   "resolves a retired control identity to the selected successor"、
   "serves the first gesture after a player replacement from the retired identity"、
   "moves an in-flight gesture to the successor when the player is replaced mid-write"；

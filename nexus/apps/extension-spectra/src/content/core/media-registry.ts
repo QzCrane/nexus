@@ -77,29 +77,15 @@ function preloadCorsEvidence(
 	return { kind: 'preload-cors', resourceUrl };
 }
 
-/** One layout read yields both presentation facts. The layout box decides
- * whether the viewer can see this player at all; the viewport intersection only
- * sizes it. A scroll container clips the intersection to zero while the box
- * stays real, so area alone cannot prove (or disprove) presentation. */
-function initialPresentation(
-	element: HTMLMediaElement,
-): { visibleArea: number; presentationHidden: boolean } {
+function initialVisibleArea(element: HTMLMediaElement): number {
 	const rect = element.getBoundingClientRect();
-	const presentationHidden = rect.width <= 0 || rect.height <= 0;
-	if (presentationHidden) return { visibleArea: 0, presentationHidden };
-	if (typeof window === 'undefined') return { visibleArea: rect.width * rect.height, presentationHidden };
+	if (rect.width <= 0 || rect.height <= 0) return 0;
+	if (typeof window === 'undefined') return rect.width * rect.height;
 	const left = Math.max(0, rect.left);
 	const top = Math.max(0, rect.top);
 	const right = Math.min(window.innerWidth, rect.right);
 	const bottom = Math.min(window.innerHeight, rect.bottom);
-	return {
-		visibleArea: Math.max(0, right - left) * Math.max(0, bottom - top),
-		presentationHidden,
-	};
-}
-
-function initialVisibleArea(element: HTMLMediaElement): number {
-	return initialPresentation(element).visibleArea;
+	return Math.max(0, right - left) * Math.max(0, bottom - top);
 }
 
 /** Lexicographic comparison of two ranking tuples: first difference decides. */
@@ -376,7 +362,6 @@ export class MediaRegistry {
 		// A released runtime can be rebuilt in the same document with a different
 		// DOM order. IDs from the retired registry must never alias new elements.
 		const mediaId = `media:${this.observationEpoch}:${this.nextMediaId++}`;
-		const presentation = initialPresentation(element);
 		const record: MediaRecord = {
 			element,
 			target: {
@@ -396,8 +381,8 @@ export class MediaRegistry {
 			// current geometry so a restore that immediately follows runtime
 			// acquisition cannot choose an earlier hidden/preloaded SPA source
 			// before the observer delivers its initial entries.
-			visibleArea: presentation.visibleArea,
-			presentationHidden: presentation.presentationHidden,
+			visibleArea: initialVisibleArea(element),
+			presentationHidden: false,
 			dispose: () => undefined,
 		};
 		const listeners: Array<[MediaRegistryEvent, EventListener]> = [];
@@ -643,11 +628,10 @@ export class MediaRegistry {
 		const challenger = this.bestRecord([...this.byElement.values()].filter((record) => (
 			record !== active && !this.isSelectionProtected(active, record) && !record.element.ended
 			&& (!record.element.paused || isLiveMedia(record.element))
-			// A hidden or unlaid-out preview is not a presentation. Layout is what
-			// proves the viewer can actually see this element; an intersection area
-			// that a scroll container clips to zero does not, so only a collapsed
-			// layout box disqualifies a candidate (SP-22.3 §2).
-			&& !record.presentationHidden
+			// A hidden or unlaid-out preview is not a presentation. Geometry is
+			// what proves the viewer can actually see this element; a live
+			// timeline does not.
+			&& record.visibleArea > 0
 		)));
 		if (!challenger || this.compare(challenger, active) <= 0) return;
 		this.selectRecord(challenger, notify);
@@ -675,7 +659,7 @@ export class MediaRegistry {
 		if (document.pictureInPictureElement === active.element
 			|| fullscreen === active.element
 			|| fullscreen instanceof Element && fullscreen.contains(active.element)) return;
-		if (!active.element.ended && !active.presentationHidden) {
+		if (!active.element.ended && active.visibleArea > 0) {
 			if (!active.element.paused || this.pausedSelectionKey === this.targetKey(active.target)
 				|| this.explicitSelectionKey === this.targetKey(active.target)) return;
 			// The player the viewer owned is still registered but stopped
@@ -696,7 +680,7 @@ export class MediaRegistry {
 		const candidates = [...this.byElement.values()].filter((record) => (
 			!record.element.ended && (record.target.kind === 'audio'
 				? !record.element.paused
-				: !record.presentationHidden)
+				: record.visibleArea > 0)
 		));
 		const candidate = this.bestRecord(candidates);
 		if (candidate && candidate !== active) this.selectRecord(candidate, true);
@@ -842,18 +826,9 @@ export class MediaRegistry {
 		// clicked earlier: a video -> live swap replaces the presentation, it is not
 		// a second parallel player. Inside the same class the recent interaction
 		// still settles which player the viewer is actually on.
-		//
-		// Presentation evidence is the layout box, not the intersection area. A
-		// feed's scroll container clips the area to zero while the player still
-		// occupies real geometry, so ranking on area alone made a laid-out
-		// broadcast indistinguishable from a hidden preview and kept the retired
-		// pre-roll selected (SP-22.3 §2).
-		const liveRank = (record: MediaRecord): number => record.element.ended || record.presentationHidden
-			|| !isLiveMedia(record.element) ? 0 : 1;
 		const leftRank = mediaRank(left.element, left.visibleArea);
 		const rightRank = mediaRank(right.element, right.visibleArea);
-		const liveDifference = liveRank(left) - liveRank(right);
-		if (liveDifference !== 0) return liveDifference;
+		if (leftRank[0] !== rightRank[0]) return leftRank[0] - rightRank[0];
 		const interactionDifference = interaction(left) - interaction(right);
 		if (interactionDifference !== 0) return interactionDifference;
 		if (leftRank[1] !== rightRank[1]) return leftRank[1] - rightRank[1];

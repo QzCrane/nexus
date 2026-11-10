@@ -1818,12 +1818,8 @@ function checkRetiredPaths(root) {
 	if (!mediaRegistry.includes("this.emit(record.target, 'removed', element, 'source-change')")
 		|| !mediaRegistry.includes("this.emit(record.target, 'registered', element)")
 		|| !mediaRegistry.includes('this.fullscreenMediaId')
-		|| !mediaRegistry.includes('this.emit(record.target, \'selected\', record.element)')
-		// Initial selection is seeded from one layout read before the asynchronous
-		// IntersectionObserver delivers entries. Both facts come from that read:
-		// the intersection area sizes the presentation, the layout box proves it.
-		|| !mediaRegistry.includes('visibleArea: presentation.visibleArea')
-		|| !mediaRegistry.includes('presentationHidden: presentation.presentationHidden')
+		|| !mediaRegistry.includes("this.emit(record.target, 'selected', record.element)")
+		|| !mediaRegistry.includes('visibleArea: initialVisibleArea(element)')
 		|| !mediaRegistryTest.includes('seeds initial selection from visible geometry before IntersectionObserver delivery')) {
 		error('SCTRL-006/SCTRL-007: source revisions and fullscreen events must retain exact media ownership');
 	}
