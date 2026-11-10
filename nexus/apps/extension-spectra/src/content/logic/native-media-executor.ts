@@ -930,19 +930,23 @@ export class NativeMediaExecutor {
 
 	/**
 	 * An `active-target` intent describes the viewer's current tab, not a
-	 * particular historical element. A projection can name a mediaId minted by
-	 * another runtime instance of this document (the counters are per instance),
-	 * so the registry never saw it. The registry owns the document, so the intent
-	 * is applied to its selection instead of failing the first gesture after a
-	 * runtime rebuild (SP-22.3 §2).
+	 * particular historical element. The Background projection can name an
+	 * element this document never registered (per-runtime mediaId counters), or
+	 * one that is still registered but has already been superseded by the
+	 * registry's selection. The registry owns the document, so the intent is
+	 * applied to its selection instead of failing the first gesture after every
+	 * player swap (SP-22.3 §2).
 	 */
 	private normalizeIntentTarget(intent: ControlIntent): ControlIntent {
-		const requested = intent.target;
 		if (intent.requestedCoverage !== 'active-target') return intent;
-		if (requested && this.registry.resolve(requested)) return intent;
 		const selected = this.registry.resolve(null);
 		if (!selected) return intent;
-		if (requested && selected.target.kind !== requested.kind) return intent;
+		const requested = intent.target;
+		if (requested && (requested.documentId !== selected.target.documentId
+			|| requested.frameId !== selected.target.frameId
+			|| requested.kind !== selected.target.kind)) return intent;
+		if (requested && requested.mediaId === selected.target.mediaId
+			&& requested.sourceRevision === selected.target.sourceRevision) return intent;
 		// Establishing the concrete target here (rather than resolving it inside
 		// the write) is what lets a failure name the identity it compared and lets
 		// the successor retry own a targetless intent.

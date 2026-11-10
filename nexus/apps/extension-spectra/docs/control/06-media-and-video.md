@@ -228,10 +228,11 @@ ACK、物理音量、角标与无错误 Toast，不能用第二次输入替第�
 解析到当前选中目标，因此视频页→直播页后的第一次快捷键直接生效。写入已在旧元素
 开始、替换落在其 `await` 窗口内时，`execute` 对已退役身份做一次继任重试；
 仅失去选中的目标不重试。`requestedCoverage = 'active-target'` 的意图描述的是"这个
-标签页当前的控制目标"而不是某个历史身份：当它携带的 `mediaId` 在本 document 的注册表
-里根本不存在（同一 document 内 runtime 重建后计数器重新发号，旧投影必然如此）时，
-`normalizeIntentTarget` 直接把意图应用到当前选中目标，不再用第一次写入报错来换一次
-重试；stale 诊断同时打印 requested 身份与注册表快照。`selectionVisit` 只在控制身份
+标签页当前的控制目标"而不是某个历史身份：无论它携带的 `mediaId` 在本 document 的注册表
+里根本不存在（同一 document 内 runtime 重建后计数器重新发号），还是仍然注册但已被新的
+选中替换（Background 投影落后一个播放器交接），`normalizeIntentTarget` 都直接把意图
+应用到当前选中目标，不再用第一次写入报错来换一次继任重试。投影可以滞后，document 的
+选中只由注册表决定；stale 诊断同时打印 requested 身份与带 `document=` 的注册表快照。`selectionVisit` 只在控制身份
 （documentId + frameId + mediaId）变化时递增：同一元素的 `sourceRevision` 前进只发布
 新的资源 target 供投影与重放，不再开始新的选中访问——否则每次 `src` 改写都会让在途
 写入与恢复义务失效（SP-22.3 §1）。选中为空（旧目标已注销）时，补选退回冷态排序：只要求

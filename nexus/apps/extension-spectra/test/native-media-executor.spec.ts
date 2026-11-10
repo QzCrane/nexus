@@ -423,6 +423,26 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
+	test('applies an active-target intent to the selection when the projection names a superseded player', async () => {
+		installFakeMediaGlobals(); const registry = new FakeRegistry();
+		const selection = registry.resolve();
+		// Another player is still registered, so the projected mediaId resolves; it
+		// is simply no longer what this tab controls. An active-target intent is
+		// addressed to the tab, not to that historical element.
+		const superseded = { ...selection.target, mediaId: 'media:1:3' };
+		registry.resolve = (requested?: MediaTarget | null) => !requested
+			? selection
+			: requested.mediaId === selection.target.mediaId ? selection : { target: superseded, element: selection.element };
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			const result = await executor.execute({ intentId: 'volume:superseded-player', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+				target: superseded, actualContext: {}, patch: { volumeBase: 35 } });
+			expect(result.target).toEqual(registry.target);
+			expect(registry.element.volume).toBeCloseTo(0.35, 5);
+		} finally { executor.dispose(); }
+	});
+
 	test('keeps active-video acknowledgement valid when an independent audio source acquires activeMedia', async () => {
 		installFakeMediaGlobals(); Object.defineProperty(globalThis, 'HTMLVideoElement', { configurable: true, value: FakeMediaElement });
 		const registry = new FakeRegistry(); registry.target.kind = 'video'; const video = registry.resolve();

@@ -513,7 +513,9 @@ export class MediaRegistry {
 			+ `(${record.target.kind},paused=${record.element.paused},ended=${record.element.ended}`
 			+ `,area=${Math.round(record.visibleArea)},hidden=${record.presentationHidden}`
 			+ `,connected=${record.element.isConnected})`);
-		return `selected=${this.activeMediaId ?? 'none'}; media=[${records.join(' ')}]`;
+		// The document identity is part of the digest: a stale write must be
+		// distinguishable from a superseded player inside the same document.
+		return `document=${this.documentId} selected=${this.activeMediaId ?? 'none'}; media=[${records.join(' ')}]`;
 	}
 
 	private successorFor(target: MediaTarget): MediaRecord | null {

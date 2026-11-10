@@ -104,10 +104,12 @@ flowchart TD
   `retiredControlIds` 命中的身份做一次继任重试；仍注册但只是失去选中的目标保持原失败。
   这也是角标能随原生音量变化刷新的前提：选中一旦交接，`volumechange` 不再被
   "非当前目标"过滤。
-- 已落地的身份归一：`requestedCoverage = 'active-target'` 的意图在注册表里解析不到
-  携带的 `mediaId` 时（同一 document 内 runtime 重建后计数器重新发号，后台投影必然
-  携带旧号），`normalizeIntentTarget` 直接改用当前选中目标，第一次写入不再报错。
-  stale 诊断同时打印 requested 身份，可直接区分跨 document 与跨 runtime。
+- 已落地的身份归一：`requestedCoverage = 'active-target'` 的意图一律应用到当前选中
+  目标，不再信任投影携带的 `mediaId`。两种情况都曾让第一次写入报错：同一 document 内
+  runtime 重建后计数器重新发号（注册表解析不到），以及播放器交接后旧 `mediaId` 仍注册
+  但已被新选中替换（`requested=media:1:3`、`selected=media:1:1`）。投影可以滞后，
+  document 的选中只由注册表决定；stale 诊断同时打印 requested 身份与带 `document=`
+  的快照，可直接区分跨 document、跨 runtime 与同 document 内被替换。
 - 已落地的访问计数：`selectionVisit` 只在控制身份变化时递增，同一元素的
   `sourceRevision` 前进只发布新的资源 target，不再开始新的选中访问。抖音直播等
   反复改写 `src` 的播放器此前每次换流都让在途写入与恢复义务失效，表现为第一次调节
@@ -122,7 +124,8 @@ flowchart TD
   "serves the first gesture after a player replacement from the retired identity"、
   "moves an in-flight gesture to the successor when the player is replaced mid-write"；
   `test/native-media-executor.spec.ts` 的
-  "applies an active-target intent to the selection when it names an identity this document never registered"。
+  "applies an active-target intent to the selection when it names an identity this document never registered"、
+  "applies an active-target intent to the selection when the projection names a superseded player"。
 - 证据：[2026-11-01 直播音量修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
 
 **3. 站点原生 UI 不同步（open）**
