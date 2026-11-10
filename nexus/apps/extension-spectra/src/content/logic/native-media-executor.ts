@@ -918,9 +918,26 @@ export class NativeMediaExecutor {
 			// registered (the viewer changed selection) keeps its original failure.
 			const successor = this.retiredSuccessor(intent);
 			if (!successor || !isContentLifecycleError(error) || error.code !== 'stale-media-source'
-				|| intent.source === 'restore' || this.disposed) throw error;
-			return this.executeAttempt({ ...intent, target: successor });
+				|| intent.source === 'restore' || this.disposed) throw this.annotateStale(error);
+			try {
+				return await this.executeAttempt({ ...intent, target: successor });
+			} catch (retryError) {
+				throw this.annotateStale(retryError);
+			}
 		}
+	}
+
+	/**
+	 * A stale failure must state which identities were compared. Without that the
+	 * report is a symptom the viewer cannot act on and the cause cannot be traced
+	 * from a single repro (SP-22.3 §2).
+	 */
+	private annotateStale(error: unknown): unknown {
+		if (!isContentLifecycleError(error) || error.code !== 'stale-media-source') return error;
+		const diagnostic = this.registry.describeMedia?.();
+		if (!diagnostic) return error;
+		console.warn('[SPECTRA][stale-media-source]', diagnostic);
+		return new ContentLifecycleError('stale-media-source', `${error.message} | ${diagnostic}`);
 	}
 
 	private retiredSuccessor(intent: ControlIntent): import('@nexus/contracts').MediaTarget | null {

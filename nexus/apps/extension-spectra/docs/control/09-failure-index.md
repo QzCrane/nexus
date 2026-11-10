@@ -94,6 +94,9 @@ flowchart TD
   让后台 `activeMedia` 指向新 `mediaId`。
 - 已落地的交接：`compare` 先比较呈现类别（直播 / 有限视频），再比较交互证据，最后才是
   播放态与面积。旧播放器留在文档里且仍可播放时，历史点击不再压制正在播放的直播。
+- 已落地的"呈现退场"交接：当前选中暂停/结束/面积归零时，同一呈现作用域内**最近注册**的
+  可见视频直接接管，不要求它已在播放。抖音直播元素首帧前是 `readyState = 0` + `paused`，
+  要求播放证据会让控制权停在已退场的旧视频上，直到用户点一次直播画面。
 - 已落地的身份继任：`unregister` 先完成状态转移（`byId`/选中/PiP/全屏/显式与暂停 key，
   并把 mediaId 记入 `retiredControlIds`）再通知观察者；`recordForTarget` 对已退役控制身份
   返回当前选中目标。因此 Background 投影落后一个替换时，第一次快捷键仍直接控制直播。
@@ -103,6 +106,7 @@ flowchart TD
   "非当前目标"过滤。
 - 测试：`test/media-registry.spec.ts` 的
   "self-heals the selection when a live replacement registers before layout and the old target unregisters"、
+  "hands control to a paused live replacement once the old player stops"、
   "hands control to a live broadcast beside a pre-roll the viewer clicked"、
   "resolves a retired control identity to the selected successor"、
   "serves the first gesture after a player replacement from the retired identity"、

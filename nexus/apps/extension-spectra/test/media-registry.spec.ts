@@ -320,6 +320,44 @@ describe('event-driven media registry', () => {
 			expect(first.captureObservation().epoch).toBe(8); expect(second.captureObservation().epoch).toBe(10);
 		} finally { first.dispose(); second.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
+	test('hands control to a paused live replacement once the old player stops', () => {
+		// The reported Douyin path: the live element is mounted paused with
+		// readyState 0 until its first frame, so it was never admissible as a
+		// challenger and the old video kept control until the viewer clicked the
+		// broadcast. The old player's pause is the handoff boundary.
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const oldVideo = new FakeVideoElement(1);
+		const live = new FakeVideoElement(1);
+		oldVideo.paused = false;
+		oldVideo.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+		live.paused = true;
+		live.duration = Number.NaN;
+		live.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+		document.documentElement.descendants.push(oldVideo);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const selected: MediaTarget[] = [];
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:paused-live-handoff', frameId: 0 }),
+			(target, event) => { if (event === 'selected') selected.push(target); });
+		try {
+			for (const listener of oldVideo.listeners.get('pointerdown') ?? []) {
+				if (typeof listener === 'function') listener.call(oldVideo, { isTrusted: true } as Event);
+			}
+			expect(registry.resolve(null)?.element).toBe(oldVideo);
+			document.documentElement.descendants.push(live);
+			FakeMutationObserver.latest?.emit([live]);
+			// A readyState-0 live element cannot win while the old player still runs.
+			expect(registry.resolve(null)?.element).toBe(oldVideo);
+			oldVideo.paused = true;
+			oldVideo.dispatchEvent(new Event('pause'));
+			expect(registry.resolve(null)?.element).toBe(live);
+			expect(selected.at(-1)?.mediaId).toBe(registry.resolve(null)?.target.mediaId);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
 	test('hands control to a live broadcast beside a pre-roll the viewer clicked', () => {
 		// Video -> live is a presentation replacement, not a second player. The
 		// click that selected the finite pre-roll is historical evidence and must

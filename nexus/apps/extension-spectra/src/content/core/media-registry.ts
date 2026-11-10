@@ -498,6 +498,19 @@ export class MediaRegistry {
 		return this.retiredControlIds.has(`${target.documentId}:${target.frameId}:${target.mediaId}`);
 	}
 
+	/**
+	 * Compact control-state digest for a stale failure. A stale write must carry
+	 * the identities it compared, otherwise the report is only a symptom
+	 * (SP-22.3 §2).
+	 */
+	describeMedia(): string {
+		const records = [...this.byId.values()].map((record) => `${record.target.mediaId}@${record.target.sourceRevision}`
+			+ `(${record.target.kind},paused=${record.element.paused},ended=${record.element.ended}`
+			+ `,area=${Math.round(record.visibleArea)},hidden=${record.presentationHidden}`
+			+ `,connected=${record.element.isConnected})`);
+		return `selected=${this.activeMediaId ?? 'none'}; media=[${records.join(' ')}]`;
+	}
+
 	private successorFor(target: MediaTarget): MediaRecord | null {
 		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
 		if (!active || active.target.kind !== target.kind) return null;
@@ -649,15 +662,19 @@ export class MediaRegistry {
 		if (!active.element.ended && active.visibleArea > 0) {
 			if (!active.element.paused || this.pausedSelectionKey === this.targetKey(active.target)
 				|| this.explicitSelectionKey === this.targetKey(active.target)) return;
-			// A later foreground player may start before this feed pauses. Its
-			// first play lost to historical pointer evidence; the later pause is
-			// the handoff boundary. An older/tiny preview cannot take this path.
+			// The player the viewer owned is still registered but stopped
+			// presenting. A live element the page mounts is routinely paused with
+			// `readyState = 0` until its first frame, so requiring playback here is
+			// exactly what kept the retired video selected until the viewer clicked
+			// the broadcast. The newest visible video in the same presentation scope
+			// takes over. Requiring a later registration refuses an older pre-roll,
+			// and the area guard refuses an older/tiny preview (SP-22.3 §2).
 			const successor = this.bestRecord([...this.byElement.values()].filter((record) => (
-				record !== active && record.target.kind === 'video' && !record.element.paused
-				&& !record.element.ended && record.lastPlay > active.lastPlay
-				&& record.visibleArea >= active.visibleArea
+				record !== active && record.target.kind === 'video'
+				&& !record.element.ended && record.visibleArea >= active.visibleArea
+				&& record.registrationOrder > active.registrationOrder
 			)));
-			if (successor && this.compare(successor, active) > 0) this.selectRecord(successor, true);
+			if (successor) this.selectRecord(successor, true);
 			return;
 		}
 		const candidates = [...this.byElement.values()].filter((record) => (
