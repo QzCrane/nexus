@@ -908,6 +908,31 @@ export class NativeMediaExecutor {
 
 	async execute(intent: ControlIntent): Promise<ControlApplyAck> {
 		if (this.disposed) throw new Error('Native media executor is disposed');
+		try {
+			return await this.executeAttempt(intent);
+		} catch (error) {
+			// An SPA can replace the player between the message and this write. The
+			// request was captured against the element the viewer owned, so the
+			// same intent belongs to the successor the registry selected. Retry
+			// exactly once for a genuinely retired identity; a target that is still
+			// registered (the viewer changed selection) keeps its original failure.
+			const successor = this.retiredSuccessor(intent);
+			if (!successor || !isContentLifecycleError(error) || error.code !== 'stale-media-source'
+				|| intent.source === 'restore' || this.disposed) throw error;
+			return this.executeAttempt({ ...intent, target: successor });
+		}
+	}
+
+	private retiredSuccessor(intent: ControlIntent): import('@nexus/contracts').MediaTarget | null {
+		const requested = intent.target;
+		if (!requested || !this.registry.wasRetiredControl?.(requested)) return null;
+		const selected = this.registry.resolve(null);
+		if (!selected || selected.target.kind !== requested.kind
+			|| selected.target.mediaId === requested.mediaId) return null;
+		return selected.target;
+	}
+
+	private async executeAttempt(intent: ControlIntent): Promise<ControlApplyAck> {
 		this.tabId = intent.tabId;
 		const fields: ControlFieldStates = {};
 		const selectionRevision = this.selectionRevision;

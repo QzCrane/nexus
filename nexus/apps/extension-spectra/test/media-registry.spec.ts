@@ -320,6 +320,185 @@ describe('event-driven media registry', () => {
 			expect(first.captureObservation().epoch).toBe(8); expect(second.captureObservation().epoch).toBe(10);
 		} finally { first.dispose(); second.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
+	test('hands control to a live broadcast beside a pre-roll the viewer clicked', () => {
+		// Video -> live is a presentation replacement, not a second player. The
+		// click that selected the finite pre-roll is historical evidence and must
+		// not outrank the live broadcast the viewer is now watching, otherwise the
+		// first gesture after the swap keeps controlling the retired player.
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const preRoll = new FakeVideoElement(1);
+		const live = new FakeVideoElement(1);
+		preRoll.paused = false;
+		preRoll.duration = 8;
+		preRoll.rect = { left: 50, top: 60, right: 1_330, bottom: 640, width: 1_280, height: 580 };
+		live.paused = false;
+		live.duration = Number.POSITIVE_INFINITY;
+		live.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+		document.documentElement.descendants.push(preRoll);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const selected: MediaTarget[] = [];
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:pre-roll-to-live', frameId: 0 }),
+			(target, event) => { if (event === 'selected') selected.push(target); });
+		try {
+			for (const listener of preRoll.listeners.get('pointerdown') ?? []) {
+				if (typeof listener === 'function') listener.call(preRoll, { isTrusted: true } as Event);
+			}
+			expect(registry.resolve(null)?.element).toBe(preRoll);
+			document.documentElement.descendants.push(live);
+			FakeMutationObserver.latest?.emit([live]);
+			live.dispatchEvent(new Event('play'));
+			expect(registry.resolve(null)?.element).toBe(live);
+			expect(selected.at(-1)?.mediaId).toBe(registry.resolve(null)?.target.mediaId);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
+	test('resolves a retired control identity to the selected successor', async () => {
+		// The background projects the last announced target. When the page replaces
+		// the element, the first intent still carries the retired mediaId; the
+		// registry owns that document's presentation and must answer with the
+		// successor instead of making the viewer repeat the gesture (SP-22.3 §2).
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const oldVideo = new FakeVideoElement(1);
+		oldVideo.paused = false;
+		oldVideo.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(oldVideo);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:retired-identity', frameId: 0 }));
+		try {
+			const retired = requireValue(registry.resolve(null)?.target, 'Expected the old player to be selected');
+			const live = new FakeVideoElement(1);
+			live.paused = false;
+			live.duration = Number.POSITIVE_INFINITY;
+			live.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+			oldVideo.isConnected = false;
+			document.documentElement.descendants = [live];
+			document.media = [live];
+			FakeMutationObserver.latest?.emit([live], [oldVideo]);
+			await Promise.resolve();
+			const successor = requireValue(registry.resolve(null)?.target, 'Expected the live player to be selected');
+			expect(successor.mediaId).not.toBe(retired.mediaId);
+			expect(registry.wasRetiredControl(retired)).toBe(true);
+			expect(registry.resolve(retired)?.element).toBe(live);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
+	test('serves the first gesture after a player replacement from the retired identity', async () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver', 'requestAnimationFrame', 'cancelAnimationFrame']);
+		const document = new FakeDocument();
+		const oldVideo = new FakeVideoElement(1);
+		oldVideo.paused = false;
+		oldVideo.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(oldVideo);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		installGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0));
+		installGlobal('cancelAnimationFrame', (handle: ReturnType<typeof setTimeout>) => clearTimeout(handle));
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:first-gesture', frameId: 0 }));
+		const executor = new NativeMediaExecutor(registry, {
+			dispose() {},
+			release() {},
+			retireSource() {},
+		} as unknown as VideoEffectsController);
+		try {
+			const retired = requireValue(registry.resolve(null)?.target, 'Expected the old player to be selected');
+			const live = new FakeVideoElement(1);
+			live.paused = false;
+			live.duration = Number.POSITIVE_INFINITY;
+			live.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+			Object.defineProperty(live, 'pause', { configurable: true, value: () => {
+				live.paused = true;
+				queueMicrotask(() => live.dispatchEvent(new Event('pause')));
+			} });
+			oldVideo.isConnected = false;
+			document.documentElement.descendants = [live];
+			document.media = [live];
+			FakeMutationObserver.latest?.emit([live], [oldVideo]);
+			await Promise.resolve();
+			const successor = requireValue(registry.resolve(null)?.target, 'Expected the live player to be selected');
+			const ack = await executor.execute({
+				intentId: 'intent:first-gesture-after-replacement',
+				tabId: 7,
+				documentId: registry.documentId,
+				generation: 1,
+				baseRevision: 0,
+				source: 'hotkey',
+				requestedCoverage: 'active-target',
+				target: retired,
+				actualContext: {},
+				patch: { playing: false },
+			});
+			expect(ack.target?.mediaId).toBe(successor.mediaId);
+			expect(ack.fields.playing).toMatchObject({ phase: 'applied', actual: false });
+		} finally { executor.dispose(); registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
+	test('moves an in-flight gesture to the successor when the player is replaced mid-write', async () => {
+		// The message can arrive while the old element is still registered. The
+		// write then starts on the identity the intent named and the replacement
+		// lands inside its await window. One retry against the successor keeps the
+		// gesture effective; a target that merely lost the selection is not retried.
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver', 'requestAnimationFrame', 'cancelAnimationFrame']);
+		const document = new FakeDocument();
+		const oldVideo = new FakeVideoElement(1);
+		oldVideo.paused = false;
+		oldVideo.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(oldVideo);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		installGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => setTimeout(() => callback(performance.now()), 0));
+		installGlobal('cancelAnimationFrame', (handle: ReturnType<typeof setTimeout>) => clearTimeout(handle));
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:mid-write-replacement', frameId: 0 }));
+		const executor = new NativeMediaExecutor(registry, {
+			dispose() {},
+			release() {},
+			retireSource() {},
+		} as unknown as VideoEffectsController);
+		try {
+			const retired = requireValue(registry.resolve(null)?.target, 'Expected the old player to be selected');
+			const live = new FakeVideoElement(1);
+			live.paused = false;
+			live.duration = Number.POSITIVE_INFINITY;
+			live.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+			Object.defineProperty(live, 'pause', { configurable: true, value: () => {
+				live.paused = true;
+				queueMicrotask(() => live.dispatchEvent(new Event('pause')));
+			} });
+			const operation = executor.execute({
+				intentId: 'intent:mid-write-replacement',
+				tabId: 7,
+				documentId: registry.documentId,
+				generation: 1,
+				baseRevision: 0,
+				source: 'hotkey',
+				requestedCoverage: 'active-target',
+				target: retired,
+				actualContext: {},
+				patch: { playing: false },
+			});
+			oldVideo.isConnected = false;
+			document.documentElement.descendants = [live];
+			document.media = [live];
+			FakeMutationObserver.latest?.emit([live], [oldVideo]);
+			await Promise.resolve();
+			const successor = requireValue(registry.resolve(null)?.target, 'Expected the live player to be selected');
+			const ack = await operation;
+			expect(ack.target?.mediaId).toBe(successor.mediaId);
+			expect(ack.fields.playing).toMatchObject({ phase: 'applied', actual: false });
+		} finally { executor.dispose(); registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
 	test.each(['handoff', 'explicit-pause', 'resumed-pause', 'explicit-selection', 'preview'] as const)('reconciles a later player after the historical feed pauses (%s)', (mode) => {
 		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement', 'MutationObserver', 'IntersectionObserver']);
 		const document = new FakeDocument();

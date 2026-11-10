@@ -17,7 +17,11 @@ last_reviewed: 2026-11-10
 **状态：已实施。** `MediaRegistry.recordForTarget` 只比较 `documentId + frameId + mediaId`；
 `removed(source-change)` 不再取消在途控制操作，只有 `detached` 才取消。资源作用域仍按
 `targetKey`（含 revision）重建，`selected` 重放 desired。空选中时注册表按冷启动排序自愈。
-复验证据见 [故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 前两条（`guarded`）。
+元素替换是控制身份退役：`unregister` 先完成全部状态转移再通知观察者，并把 mediaId 记入
+`retiredControlIds`；`recordForTarget` 把已退役身份解析到当前选中目标，`execute` 只对这类
+身份做一次在途继任重试。`compare` 先比较呈现类别（直播 / 有限视频）再比较交互证据，
+所以留在文档里的旧播放器不能凭历史点击压制正在播放的直播。复验证据见
+[故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 前三条（`guarded`）。
 
 - **L1 会话**：`tabId + documentId + generation`。换页即整份作废。
 - **L2 控制**：`frameId + mediaId`。换人：取消在途、清恢复义务、重放 desired。
@@ -25,13 +29,19 @@ last_reviewed: 2026-11-10
 - **L4 证据**：`owner + epoch + selection + revision`。只排序，不作判决。
 
 **决定**：`sourceRevision` 不参与"还是不是同一个控制对象"的判定；`mediaId` 变化才算换人。
+`mediaId` 退役后，该文档的当前选中目标继任它的控制权——投影落后不能强迫用户重复手势。
 
 **理由**：直播页每次重建 `MediaSource`（开播、广告转正、码率切换、卡顿恢复）都会改变
 `src`/`srcObject`/`load()`，但元素没有换、用户的目标没有换。把资源变化当成控制变化，
-会让在途写入在下一个 `await` 点被判过期，并清掉尚未完成的恢复义务。
+会让在途写入在下一个 `await` 点被判过期，并清掉尚未完成的恢复义务。元素替换则相反：
+旧元素确实离开了文档，但用户手里的控制意图没有消失，它属于同一文档里新挂载的呈现。
 
 **被否决**：给 `targetKey` 保留 revision，但"重试到成功"。否决原因：播放器启动期可以连续
 换源，任何常数都会被超过；而且它把身份保护换成了运气。
+
+**被否决**：让已退役身份无条件回落到"任意当前选中"。否决原因：回落只对 `retiredControlIds`
+命中的身份、且 `kind` 相同的继任者成立；从未注册过的 `mediaId` 永远不能映射，否则后台投影
+损坏时会把控制写到无关媒体上。
 
 **反方条件**：如果某个站点在换流后复用同一个元素但语义上变成另一个播放器（真的换了内容），
 那么"重基"会把旧目标的值写进新内容。这需要 `isConnected` 之外的证据；目前的判定是

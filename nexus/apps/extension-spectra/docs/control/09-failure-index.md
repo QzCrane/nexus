@@ -58,10 +58,11 @@ flowchart TD
 | 症状（用户怎么说） | 根因（哪个判断错了） | 规则 | 状态 |
 | --- | --- | --- | --- |
 | `stale-media-source: The media source changed before the asynchronous native operation committed`，直播里尤其频繁 | 资源身份 `sourceRevision` 被当成控制身份用：同一个元素换流后，在途写入被判过期 | 045、054 | guarded |
-| 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中变空；空选中不可自愈，也不再发 `target.changed` | 056 | guarded |
+| 视频页切到直播后第一次快捷键必报 `stale-media-source`，再按一次才生效 | Background 投影落后于元素替换：请求携带已注销的 control identity，在途写入又跨过注销 | 045、054、056 | guarded |
+| 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中未交接；旧播放器的历史交互压过正在播放的直播，或空选中不自愈 | 056 | guarded |
 | 插件改了音量，站点自己的音量条不动，而且下次换流被站点覆盖回去 | 音量只写元素属性（`dom-native`），没有站点控制器适配；declared 行只有倍速 | 053、049 | open |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
-| 角标显示旧音量 / 不刷新 / 显示 `M` 但页面在响 | 角标被第二写者重绘，或用了过期的观察序 | 052、014 | guarded |
+| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 | 角标被第二写者重绘，或选中未迁移使原生 `volumechange` 被"非当前目标"过滤 | 052、014、056 | guarded |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
 | Popup 打开首帧空白、随后跳高，或先英文后中文 | 首帧等异步 actual；结构高度被历史值预留 | 050 | guarded |
 | PiP 打开后立刻被关掉 | 站点策略属性被提前归还，浏览器在同一任务跑了退出算法 | 051 | guarded |
@@ -84,15 +85,28 @@ flowchart TD
   [2026-11-09 文档质量审计](../../../../docs/research/2026-11-09-spectra-documentation-quality-audit.md)。
 - 取舍与被否决方案：[Control identity decisions](../../../../docs/decisions/control-identity.md)。
 
-**2. 视频 → 直播后自动失控（guarded）**
+**2. 视频 → 直播后自动失控 / 第一次手势失败（guarded）**
 
 - 元素替换的同一批 DOM 变更里，新元素先注册、旧元素后注销；注销时 `active = null`。
 - 已落地的补选：`reconcileRetiredSelection` 在 `!active` 时改用冷启动排序补选（只要求
   `isConnected`，不要求面积）；`admitBetterCandidate` 在空选中时退化为 `establishInitialSelection`。
   替换元素即使尚未布局，也会立刻成为选中并发 `selected`，随后 `spectra.content.target.changed`
   让后台 `activeMedia` 指向新 `mediaId`。
+- 已落地的交接：`compare` 先比较呈现类别（直播 / 有限视频），再比较交互证据，最后才是
+  播放态与面积。旧播放器留在文档里且仍可播放时，历史点击不再压制正在播放的直播。
+- 已落地的身份继任：`unregister` 先完成状态转移（`byId`/选中/PiP/全屏/显式与暂停 key，
+  并把 mediaId 记入 `retiredControlIds`）再通知观察者；`recordForTarget` 对已退役控制身份
+  返回当前选中目标。因此 Background 投影落后一个替换时，第一次快捷键仍直接控制直播。
+- 已落地的在途继任：写入已在旧元素开始、注销落在 `await` 窗口内时，`execute` 只对
+  `retiredControlIds` 命中的身份做一次继任重试；仍注册但只是失去选中的目标保持原失败。
+  这也是角标能随原生音量变化刷新的前提：选中一旦交接，`volumechange` 不再被
+  "非当前目标"过滤。
 - 测试：`test/media-registry.spec.ts` 的
-  "self-heals the selection when a live replacement registers before layout and the old target unregisters"。
+  "self-heals the selection when a live replacement registers before layout and the old target unregisters"、
+  "hands control to a live broadcast beside a pre-roll the viewer clicked"、
+  "resolves a retired control identity to the selected successor"、
+  "serves the first gesture after a player replacement from the retired identity"、
+  "moves an in-flight gesture to the successor when the player is replaced mid-write"。
 - 证据：[2026-11-01 直播音量修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
 
 **3. 站点原生 UI 不同步（open）**

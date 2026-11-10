@@ -177,6 +177,12 @@ export class MediaRegistry {
 	private readonly observationOwner: string;
 	private readonly observationEpoch: number;
 	private readonly pendingRemovals = new Set<HTMLMediaElement>();
+	// Control identities that left the document while a viewer still owned them.
+	// An SPA that swaps players keeps issuing intents against the element it had
+	// selected; resolving those to the successor is what makes the first gesture
+	// after a replacement work instead of failing `stale-media-source`
+	// (SP-22.3 §2).
+	private readonly retiredControlIds = new Map<string, 'video' | 'audio'>();
 	private removalFlushQueued = false;
 	private disposed = false;
 	private readonly fullscreenListener: EventListener;
@@ -453,7 +459,10 @@ export class MediaRegistry {
 	private unregister(element: HTMLMediaElement): void {
 		const record = this.byElement.get(element);
 		if (!record) return;
-		this.emit(record.target, 'removed', element, 'detached');
+		// Retire the identity before notifying observers. State transitions must not
+		// depend on a listener: an observer that throws would otherwise leave the
+		// registry half unregistered, and every later intent would miss both the
+		// retired identity and its successor.
 		record.dispose();
 		this.intersectionObserver.unobserve(element);
 		this.byElement.delete(element);
@@ -462,7 +471,38 @@ export class MediaRegistry {
 		if (this.activeVideoId === record.target.mediaId) this.activeVideoId = null;
 		if (this.fullscreenMediaId === record.target.mediaId) this.fullscreenMediaId = null;
 		if (this.selectedTargetKey === this.targetKey(record.target)) this.selectedTargetKey = null;
+		// A pin or an explicit pick belonged to the element that just left. Keeping
+		// the key would let a detached identity protect its successor's slot, which
+		// is exactly what blocked the live replacement after a video -> live swap.
+		if (this.explicitSelectionKey === this.targetKey(record.target)) this.explicitSelectionKey = null;
+		if (this.pausedSelectionKey === this.targetKey(record.target)) this.pausedSelectionKey = null;
+		this.retireControlIdentity(record.target);
 		this.rebuildMediaAttributeObservation();
+		this.emit(record.target, 'removed', element, 'detached');
+	}
+
+	private retireControlIdentity(target: MediaTarget): void {
+		const key = `${target.documentId}:${target.frameId}:${target.mediaId}`;
+		this.retiredControlIds.delete(key);
+		this.retiredControlIds.set(key, target.kind);
+		while (this.retiredControlIds.size > 256) {
+			const oldest = this.retiredControlIds.keys().next().value;
+			if (oldest === undefined) break;
+			this.retiredControlIds.delete(oldest);
+		}
+	}
+
+	/** True only for an identity this registry registered and then retired. */
+	wasRetiredControl(target: MediaTarget | null): boolean {
+		if (!target) return false;
+		return this.retiredControlIds.has(`${target.documentId}:${target.frameId}:${target.mediaId}`);
+	}
+
+	private successorFor(target: MediaTarget): MediaRecord | null {
+		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
+		if (!active || active.target.kind !== target.kind) return null;
+		const key = `${target.documentId}:${target.frameId}:${target.mediaId}`;
+		return this.retiredControlIds.get(key) === target.kind ? active : null;
 	}
 
 	private refreshSource(
@@ -545,14 +585,21 @@ export class MediaRegistry {
 	 * paused-target pin and anything the browser is presenting all outrank it.
 	 */
 	private isSelectionProtected(active: MediaRecord, candidate: MediaRecord): boolean {
-		if (this.explicitSelectionKey === this.targetKey(active.target)
-			|| this.pausedSelectionKey === this.targetKey(active.target)) return true;
+		// A presentation owner outranks geometry: a hidden fullscreen or PiP player
+		// is still the surface the viewer is controlling even when its layout box
+		// is empty.
 		const presented = document.fullscreenElement;
-		return document.pictureInPictureElement === active.element
+		if (document.pictureInPictureElement === active.element
 			|| presented === active.element
 			// A fullscreen player container can contain both a pre-roll and the
 			// broadcast. Protect its scope without pinning the pre-roll inside it.
-			|| presented instanceof Element && presented.contains(active.element) && !presented.contains(candidate.element);
+			|| presented instanceof Element && presented.contains(active.element) && !presented.contains(candidate.element)) return true;
+		if (this.explicitSelectionKey === this.targetKey(active.target)
+			|| this.pausedSelectionKey === this.targetKey(active.target)) return true;
+		// Nothing else pins a target. In particular a video whose layout box is
+		// empty is no longer a presentation, so an SPA that swaps players must be
+		// allowed to hand control to the successor it just mounted (SP-22.3 §2).
+		return false;
 	}
 
 	private admitBetterCandidate(notify: boolean): void {
@@ -645,11 +692,15 @@ export class MediaRegistry {
 		// match here is what failed every in-flight write on a source change with
 		// `stale-media-source` (SP-22.3 §1). Resource-scoped owners listen to
 		// `removed(source-change)` / `registered` instead.
-		return record
+		if (record
 			&& record.target.documentId === target.documentId
-			&& record.target.frameId === target.frameId
-			? record
-			: null;
+			&& record.target.frameId === target.frameId) return record;
+		// The element itself is gone. An intent captured against the retired
+		// identity still belongs to this document's presentation, so resolve it to
+		// the successor the registry already selected instead of rejecting the very
+		// first gesture after an SPA replaced its player (SP-22.3 §2). A target this
+		// registry never registered is never remapped.
+		return record ? null : this.successorFor(target);
 	}
 
 	private bestRecord(
@@ -749,19 +800,22 @@ export class MediaRegistry {
 		// A past click cannot pin a paused/retired/hidden feed above a newly opened
 		// modal. Audio-only media is intentionally independent of geometry.
 		const interaction = (record: MediaRecord): number => record.element.ended
-			|| record.target.kind === 'video' && (record.element.paused || record.visibleArea <= 0)
+			|| record.target.kind === 'video'
+				&& (record.element.paused || record.visibleArea <= 0 || record.presentationHidden)
 			? 0 : record.lastInteraction;
-		const interactionDifference = interaction(left) - interaction(right);
-		if (interactionDifference !== 0) return interactionDifference;
 		// Same tuple the cold admission uses, so a reconcile cannot land on a
-		// different target than the bootstrap that preceded it.
+		// different target than the bootstrap that preceded it. A live broadcast
+		// outranks a finite presentation regardless of which element the viewer
+		// clicked earlier: a video -> live swap replaces the presentation, it is not
+		// a second parallel player. Inside the same class the recent interaction
+		// still settles which player the viewer is actually on.
 		const leftRank = mediaRank(left.element, left.visibleArea);
 		const rightRank = mediaRank(right.element, right.visibleArea);
-		for (let index = 0; index < leftRank.length; index += 1) {
-			const leftValue = leftRank[index] ?? 0;
-			const rightValue = rightRank[index] ?? 0;
-			if (leftValue !== rightValue) return leftValue - rightValue;
-		}
+		if (leftRank[0] !== rightRank[0]) return leftRank[0] - rightRank[0];
+		const interactionDifference = interaction(left) - interaction(right);
+		if (interactionDifference !== 0) return interactionDifference;
+		if (leftRank[1] !== rightRank[1]) return leftRank[1] - rightRank[1];
+		if (leftRank[2] !== rightRank[2]) return leftRank[2] - rightRank[2];
 		if (left.lastPlay !== right.lastPlay) return left.lastPlay - right.lastPlay;
 		return right.registrationOrder - left.registrationOrder;
 	}

@@ -222,9 +222,16 @@ ACK、物理音量、角标与无错误 Toast，不能用第二次输入替第�
 同一元素换 `src`/`srcObject`/`load()` 时，注册表先按旧 revision 发
 `removed(source-change)` 释放资源态，再以新 revision 发 `registered` 并重新选取；
 在途写入不被取消，在下一个 `await` 点重校验。只有元素 `detached` 才取消在途操作。
-选中为空（旧目标已注销）时，补选退回冷态排序：只要求 `isConnected`，不要求面积，
-因此替换直播元素即使尚未布局也会立即成为目标并发布 `selected`。
-Executor 的 `replayDesired`
+元素替换等于控制身份退役：`unregister` 先完成全部状态转移（含把 mediaId 记入
+`retiredControlIds`）再通知观察者，观察者异常不能留下半注销状态；携带已退役
+`mediaId` 的请求（Background 投影落后于页面替换时必然发生）由 `recordForTarget`
+解析到当前选中目标，因此视频页→直播页后的第一次快捷键直接生效。写入已在旧元素
+开始、替换落在其 `await` 窗口内时，`execute` 对已退役身份做一次继任重试；
+仅失去选中的目标不重试。选中为空（旧目标已注销）时，补选退回冷态排序：只要求
+`isConnected`，不要求面积，因此替换直播元素即使尚未布局也会立即成为目标并发布 `selected`。
+`compare` 先比较呈现类别（直播 vs 有限视频），再比较交互证据，然后才是播放态与面积：
+页面换页后仍留在文档里的旧播放器不能凭历史点击压制正在播放的直播；同类呈现内
+交互证据仍然决定哪个播放器归用户。`replayDesired`
 只对当前选中的精确 source 发恢复请求，并经 Background actor 排序；隐藏预载
 的 `volumechange/ratechange` 不能切换目标。源相同且已失去扩展 ownership 时，
 自动成熟探测不能覆盖页面的新手势。
