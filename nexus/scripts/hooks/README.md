@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: contributor
 owner: ai-tool-hooks
-last_reviewed: 2026-11-02
+last_reviewed: 2026-11-10
 ---
 
 # AI-tool hooks
@@ -14,6 +14,11 @@ The hook layer gives supported coding tools early feedback before Git and CI run
 - agent entrypoint: [`../../../AGENTS.md`](../../../AGENTS.md)
 - process rule: [EPR-029](../../docs/principles/04-process-and-quality.md#epr-029-质量门硬化到-gitciai-钩子文档风格靠-lint-守)
 - Git gates: [`../../../lefthook.yml`](../../../lefthook.yml)
+- Git hook launchers: [`../../../.githooks/pre-commit`](../../../.githooks/pre-commit)
+
+Git hook launchers execute the same gates as `lefthook.yml`. On Windows they run the checked-in
+Bun runners directly: a nested MSYS shell can abort with `NtCreateDirectoryObject (0xC0000022)`
+and take the hook shell down before a Lefthook fallback line can run.
 
 ## Architecture
 
