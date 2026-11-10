@@ -102,9 +102,15 @@ flowchart TD
   返回当前选中目标。因此 Background 投影落后一个替换时，第一次快捷键仍直接控制直播。
 - 已落地的在途继任：写入已在旧元素开始、注销落在 `await` 窗口内时，`execute` 只做一次
   重试：已退役身份交给当前选中；`active-target` 意图跟随注册表的自动交接（SPA 换播放器、
-  直播接管），不因后台投影落后一条消息而失败；观众显式选择/暂停固定过的目标保持原失败。
+  直播接管），不因后台投影落后一条消息而失败；观众显式选择、PiP/fullscreen 或播放中的
+  目标保持原失败（暂停固定对运行中的直播可释放，见下条）。
   这也是角标能随原生音量变化刷新的前提：选中一旦交接，`volumechange` 不再被
   "非当前目标"过滤。
+- 已落地的无声交接：选中元素已暂停时，一个**正在播放的直播**可以直接接管，即使它的
+  布局框为 0 或 `visibleArea = 0`（抖音把运行中的直播挂在无布局元素上）。“暂停固定”
+  只保护一个无声目标，会随之释放；显式选择、PiP/fullscreen、隐藏预览和播放中的选中
+  仍不可被覆盖。若无此交接，写入会落到可见但无声的旧元素上：不报错，但观众听不到
+  任何变化，直到自己点一下直播画面。
 - 已落地的身份归一：`requestedCoverage = 'active-target'` 的意图一律应用到当前选中
   目标，不再信任投影携带的 `mediaId`。两种情况都曾让第一次写入报错：同一 document 内
   runtime 重建后计数器重新发号（注册表解析不到），以及播放器交接后旧 `mediaId` 仍注册
@@ -121,6 +127,7 @@ flowchart TD
   "self-heals the selection when a live replacement registers before layout and the old target unregisters"、
   "hands control to a paused live replacement once the old player stops"、
   "hands control to a live broadcast beside a pre-roll the viewer clicked"、
+  "hands a silent selection to a broadcast that is already running without a layout box"、
   "resolves a retired control identity to the selected successor"、
   "serves the first gesture after a player replacement from the retired identity"、
   "moves an in-flight gesture to the successor when the player is replaced mid-write"；

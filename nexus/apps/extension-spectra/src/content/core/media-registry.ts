@@ -633,8 +633,17 @@ export class MediaRegistry {
 	 *
 	 * Only an automatic selection can be replaced. A pick the viewer made, a
 	 * paused-target pin and anything the browser is presenting all outrank it.
+	 *
+	 * A pause pin is released for a broadcast that is already running: the pin
+	 * means "keep controlling the element I paused", and a paused element is
+	 * silent by definition. Keeping it after an SPA has mounted a live page is
+	 * what left the broadcast uncontrollable until the viewer clicked it.
 	 */
-	private isSelectionProtected(active: MediaRecord, candidate: MediaRecord): boolean {
+	private isSelectionProtected(
+		active: MediaRecord,
+		candidate: MediaRecord,
+		runningBroadcast = false,
+	): boolean {
 		// A presentation owner outranks geometry: a hidden fullscreen or PiP player
 		// is still the surface the viewer is controlling even when its layout box
 		// is empty.
@@ -644,8 +653,9 @@ export class MediaRegistry {
 			// A fullscreen player container can contain both a pre-roll and the
 			// broadcast. Protect its scope without pinning the pre-roll inside it.
 			|| presented instanceof Element && presented.contains(active.element) && !presented.contains(candidate.element)) return true;
-		if (this.explicitSelectionKey === this.targetKey(active.target)
-			|| this.pausedSelectionKey === this.targetKey(active.target)) return true;
+		if (this.explicitSelectionKey === this.targetKey(active.target)) return true;
+		if (this.pausedSelectionKey === this.targetKey(active.target)
+			&& !(runningBroadcast && (active.element.paused || active.element.ended))) return true;
 		// Nothing else pins a target. In particular a video whose layout box is
 		// empty is no longer a presentation, so an SPA that swaps players must be
 		// allowed to hand control to the successor it just mounted (SP-22.3 §2).
@@ -662,14 +672,26 @@ export class MediaRegistry {
 			this.establishInitialSelection(notify);
 			return;
 		}
-		const challenger = this.bestRecord([...this.byElement.values()].filter((record) => (
-			record !== active && !this.isSelectionProtected(active, record) && !record.element.ended
-			&& (!record.element.paused || isLiveMedia(record.element))
-			// A hidden or unlaid-out preview is not a presentation. Geometry is
-			// what proves the viewer can actually see this element; a live
-			// timeline does not.
-			&& record.visibleArea > 0
-		)));
+		// A paused selection cannot be what the viewer hears. A broadcast that is
+		// already running is proof of a live resource even when the page paints it
+		// through a canvas and its layout box stays empty; it may take over only a
+		// silent selection, so a playing owner is never churned and a viewer pause
+		// stays protected.
+		const silent = active.element.paused || active.element.ended;
+		const challenger = this.bestRecord([...this.byElement.values()].filter((record) => {
+			// A broadcast that is already running is what the viewer hears; it is
+			// the only challenger allowed to release a paused-target pin.
+			const runningBroadcast = silent && !record.element.paused && isLiveMedia(record.element);
+			return record !== active
+				&& !record.element.ended
+				&& !this.isSelectionProtected(active, record, runningBroadcast)
+				&& (!record.element.paused || isLiveMedia(record.element))
+				// A hidden or unlaid-out preview is not a presentation. Geometry is
+				// what proves the viewer can actually see this element; a live
+				// timeline does not. Playback is the exception: a running broadcast
+				// is audible, and a silent selection has nothing to protect.
+				&& (record.visibleArea > 0 || runningBroadcast);
+		}));
 		if (!challenger || this.compare(challenger, active) <= 0) return;
 		this.selectRecord(challenger, notify);
 	}

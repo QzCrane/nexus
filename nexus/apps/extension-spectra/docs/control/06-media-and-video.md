@@ -681,7 +681,10 @@ pause 后的普通继任路径也必须比较同一排序，不能把目标退�
 创建真实直播流后的零控制请求自动恢复、同元素换流重置音量和首次显式控制。
 `play` 和后续准入共用
 `isSelectionProtected`；隐藏预览、显式选择、暂停 pin、PiP/fullscreen
-和独立 audio/video scope 的保护继续有效。
+和独立 audio/video scope 的保护继续有效。唯一例外：选中元素已暂停（无声）且另有一个
+正在运行的直播时，准入释放**暂停 pin** 让直播接管——pin 保护的正是这个无声目标，
+保留它会让直播页在观众点击前一直不可控；播放中的选中、显式选择和浏览器呈现仍不可覆盖。
+接管经 `selected` 触发公告与 `replayDesired`，所以设定在观众下一次手势之前就落到直播上。
 精确 fullscreen video 保持选择；若 fullscreen 是同时包含广告和直播的容器，则允许
 容器内交接，容器外媒体不得抢占。未选中媒体的 metadata/data/duration 事件不能通过
 `publishPresentationKind` 把 Background activeMedia 改成另一个目标，也不能预占其公告缓存。

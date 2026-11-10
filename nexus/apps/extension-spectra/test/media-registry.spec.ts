@@ -867,6 +867,61 @@ describe('event-driven media registry', () => {
 		}
 	});
 
+	test('hands a silent selection to a broadcast that is already running without a layout box', () => {
+		// Douyin mounts the running broadcast before it has a layout box (the page
+		// paints frames elsewhere). The previous player is paused and still
+		// selected, so no gesture reaches the sound: playback is the remaining
+		// proof, and a silent selection has nothing to protect.
+		const descriptors = captureGlobalDescriptors([
+			'document',
+			'Node',
+			'Element',
+			'HTMLMediaElement',
+			'HTMLVideoElement',
+			'MutationObserver',
+			'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const previous = new FakeVideoElement(1);
+		const broadcast = new FakeVideoElement(0, true);
+		previous.paused = true;
+		previous.duration = 8;
+		previous.rect = { left: 0, top: 0, right: 960, bottom: 540, width: 960, height: 540 };
+		broadcast.paused = false;
+		broadcast.duration = Number.POSITIVE_INFINITY;
+		broadcast.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+		document.documentElement.descendants.push(previous);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:running-broadcast', frameId: 0 }),
+				() => undefined,
+			);
+			const previousTarget = registry.list().find(({ element }) => element === previous)?.target;
+			expect(registry.resolve(null)?.target).toEqual(previousTarget);
+
+			document.documentElement.descendants.push(broadcast);
+			FakeMutationObserver.latest?.emit([broadcast]);
+
+			const broadcastTarget = registry.list().find(({ element }) => element === broadcast)?.target;
+			expect(broadcastTarget).toBeDefined();
+			expect(registry.resolve(null)?.target).toEqual(broadcastTarget);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
 	test.each(['loadedmetadata', 'loadeddata', 'durationchange', 'live-paused', 'explicit', 'paused', 'pip', 'fullscreen', 'fullscreen-container', 'fullscreen-container-play'] as const)('admits live evidence without overriding a protected selection (%s)', (trigger) => {
 		// The finite pre-roll is not the requested broadcast. Its greater area
 		// must not keep volume/mute gestures on the ad after live metadata arrives.
