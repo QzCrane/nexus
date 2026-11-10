@@ -128,6 +128,20 @@ flowchart TD
   不执行时页面音量无人接管，看起来就像原生音量变化没有同步。自动 restore 的 stale
   仍以结构化错误回传后台用于有序重试，但不再 `console.warn`：它是后台义务，不是观众
   手势失败。
+- 已落地的配置传递：页面观测是资源事实，资源作用域合并只更新该资源的投影，不再从
+  origin-portable 行删除同名字段。此前站点自己改一次音量/静音/倍速就会撤销用户配置，
+  同站切到下一个视频时 `rebind` 的 portable patch 已空，只剩站点/全局预设——表现为
+  「同网站内切视频配置变回预设」。恢复顺序固定为：本 tab 保留投影（同文档、整资源重载）
+  → 同源 portable 补丁 → origin session → 站点预设 → 全局预设。
+- 已落地的角标点亮：恢复计划含 `volumeBase`、`mediaMuted`、`speed`、`preservePitch`、
+  `loop` 或扩展专属贡献时点亮 sticky usage。此前只有 Boost/DSP/视频样式会点亮，纯音量
+  配置的站点在首次打开 Popup 前没有角标，`observationOnly` 会拦掉所有原生音量观测，
+  表现为「插件没打开前原生音量不同步」。
+- 测试：`test/tab-session.spec.ts` 的
+  "carries explicit extension fields and never lets a page observation revoke them"、
+  "keeps a configured volume when the page reports a different one"；
+  `test/runtime-loader.spec.ts` 的
+  "lights badge usage when a restore authors a value the page itself displays"。
 - 测试：`test/media-registry.spec.ts` 的
   "keeps the selection visit stable when the resource revision advances"、
   "self-heals the selection when a live replacement registers before layout and the old target unregisters"、

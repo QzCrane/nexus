@@ -353,13 +353,11 @@ export async function mergeTabControlSession(
 		const merged = { ...resourceBase, ...clonePatch(patch) };
 		if (!isControlSessionPatch(merged)) throw new Error('Invalid merged tab control session');
 		const portablePatch = clonePatch(currentPortable);
-		if (scope === 'origin') {
-			Object.assign(portablePatch, clonePatch(patch));
-		} else {
-			for (const field of Object.keys(patch)) {
-				Reflect.deleteProperty(portablePatch, field);
-			}
-		}
+		// A resource-scoped patch is a page fact, not a desire. It updates this
+		// resource's projection and leaves the origin-portable intent untouched.
+		// Letting a native player gesture revoke a configured field is what reset a
+		// site's volume to the preset as soon as the next video started.
+		if (scope === 'origin') Object.assign(portablePatch, clonePatch(patch));
 		if (!isPortableControlSessionPatch(portablePatch)) {
 			throw new Error('Invalid portable tab control session patch');
 		}

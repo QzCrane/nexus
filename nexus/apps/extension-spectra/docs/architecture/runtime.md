@@ -127,13 +127,24 @@ The `volume`, `volumeBase`, and `boost` fields form one canonical value object. 
 
 | Patch source | Updates current-resource | Updates origin-portable |
 | --- | --- | --- |
-| Page observation | yes | removes those fields |
+| Page observation | yes | no change |
 | Popup / remote / shortcut ACK | yes | yes |
+
+A page observation is a fact about one resource. It updates that resource's
+projection and never revokes an origin-portable field: only an explicit
+extension ACK replaces the viewer's configured intent, so a site's own volume,
+mute or speed gesture cannot reset the next video in the same origin to the
+preset.
 
 Resource URL canonicalization:
 - Same URL, new `documentId`: complete patch
 - Same-origin, diff URL: origin-portable patch only
 - Cross-origin: both retired
+
+Restore precedence, in order: the retained tab projection (`rebind`, exact
+document or exact-resource reload, else its origin-portable patch), then the
+origin session, then the site preset, then the global preset. A lower layer
+never overrides a higher one.
 
 A separate monotonic per-tab record owns Action-badge stickiness, surviving worker replacements. The decision is recorded synchronously and painted by the newest decision, not by whichever asynchronous Action write happens to land first. Staged gesture inputs carry a monotonic stamp, so an input accepted while a projection is still resolving is newer than that projection regardless of the wall clock; the 600 ms bound only expires a stage whose acknowledgement never arrives. A staged tone changes the colour only — `isCapture` stays from the acknowledged lifecycle. The session-scoped global hotkey target is owned by `hotkey-target-repository.ts`; it is independent from media identity and never selects or activates an audio processor.
 

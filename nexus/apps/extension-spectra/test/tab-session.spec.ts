@@ -268,18 +268,33 @@ describe('document-bound acknowledged control sessions', () => {
 		expect(await getTabControlSession(7)).toBeNull();
 	});
 
-	test('carries explicit extension fields but drops page-owned fields on a new resource', async () => {
+	test('carries explicit extension fields and never lets a page observation revoke them', async () => {
 		await mergeTabControlSession(7, { boost: 2, speed: 1.5 }, firstDocument);
 		await mergeTabControlSession(7, {
 			mediaMuted: true,
 			speed: 1.25,
 		}, firstDocument, 'resource');
 
-		expect(await rebindTabControlSession(7, detailDocument)).toEqual({ boost: 2 });
+		// The resource row records the page's own speed; the origin-portable desire
+		// keeps 1.5, so another video on this origin starts from the configuration
+		// instead of from a page fact nobody configured.
+		expect(await rebindTabControlSession(7, detailDocument)).toEqual({ boost: 2, speed: 1.5 });
 		expect(values.tab_session_7).toMatchObject({
 			identity: detailDocument,
-			patch: { boost: 2 },
-			portablePatch: { boost: 2 },
+			patch: { boost: 2, speed: 1.5 },
+			portablePatch: { boost: 2, speed: 1.5 },
+		});
+	});
+
+	test('keeps a configured volume when the page reports a different one', async () => {
+		await mergeTabControlSession(7, { volumeBase: 62 }, firstDocument);
+		await mergeTabControlSession(7, { volumeBase: 30 }, firstDocument, 'resource');
+
+		expect(await rebindTabControlSession(7, detailDocument)).toEqual({ volumeBase: 62 });
+		expect(values.tab_session_7).toMatchObject({
+			identity: detailDocument,
+			patch: { volumeBase: 62 },
+			portablePatch: { volumeBase: 62 },
 		});
 	});
 

@@ -61,9 +61,9 @@ Effective-volume projects the complete acknowledged pair (`volumeBase + boost`).
 
 Projection durability: `merge` and `rebind` return only after `chrome.storage.session` confirms. Settings revisions broadcast only after `chrome.storage.local.set`. Memory/timers are cleanup aids, not durability.
 
-The record separates current-resource actual fields from origin-portable extension intent. Page observations are resource-scoped; explicit Popup/remote/shortcut ACKs are origin-scoped.
+The record separates current-resource actual fields from origin-portable extension intent. Page observations are resource-scoped and never revoke an origin-portable field; only an explicit Popup/remote/shortcut ACK replaces the configured intent.
 Full exact-resource replacement rebinds projection; same-origin different URL keeps portable fields; cross-origin retires all. Same-document SPA state remains valid.
-Initialization chooses retained projection, then site preset, then global preset.
+Initialization chooses the retained tab projection, then the origin session, then the site preset, then the global preset.
 
 Colour is a presentation of the route, not a second state source:
 

@@ -23,6 +23,7 @@ import {
 	hasRuntimeLease,
 	MEDIA_INTENT_RUNTIME_CAPABILITY,
 } from '../src/background/runtime-loader';
+import { restoreLightsBadgeUsage } from '../src/background/badge-usage';
 import { settingsRepository } from '../src/background/settings-repository';
 import { storage } from '../src/background/state';
 
@@ -330,6 +331,19 @@ describe('document-scoped content runtime loader', () => {
 		expect(runtimeLoaderTestApi.isContentDocumentUrl('about:blank')).toBe(false);
 		expect(runtimeLoaderTestApi.isContentDocumentUrl('not a url')).toBe(false);
 	});
+	test('lights badge usage when a restore authors a value the page itself displays', () => {
+		// A configured volume is written into the site's own player, so the badge has
+		// to exist before the viewer's first native adjustment; otherwise the
+		// observationOnly projection stays hidden until the Popup is opened.
+		expect(restoreLightsBadgeUsage({ volumeBase: 62 })).toBe(true);
+		expect(restoreLightsBadgeUsage({ mediaMuted: false })).toBe(true);
+		expect(restoreLightsBadgeUsage({ speed: 1.5 })).toBe(true);
+		expect(restoreLightsBadgeUsage({ boost: 1.5 })).toBe(true);
+		// A pass-through switch creates no visible output to follow.
+		expect(restoreLightsBadgeUsage({ audioEnabled: true })).toBe(false);
+		expect(restoreLightsBadgeUsage({})).toBe(false);
+	});
+
 	test('restores an exact-resource tab session before consulting site or global presets', async () => {
 		const sessionPatch = {
 			volumeBase: 100,

@@ -3,7 +3,6 @@
 import {
 	controlCapabilityUsesStrategy,
 	createBoundedSet,
-	hasExtensionOnlyContribution,
 	isDefaultAudioConfig,
 	resolveAudioVolume,
 	rpcFailure,
@@ -34,7 +33,6 @@ const PROTO_RUNTIME_IDENTITY = 'spectra.content.runtime.identity' as const;
 const PROTO_RUNTIME_READY = 'spectra.content.runtime.ready' as const;
 const PROTO_RUNTIME_RELEASE = 'spectra.content.runtime.release' as const;
 
-import { markBadgeUsedForTab } from './handlers/badge';
 import { ensureCaptureStatesReconciled } from './handlers/capture';
 import {
 	forgetDocumentSiteHotkeys,
@@ -636,13 +634,6 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 		identity.resourceUrl,
 	);
 	if (Object.keys(restore.patch).length === 0) return;
-	// Badge usage starts when any extension-only contribution is applied,
-	// regardless of whether it comes from a site/global preset or a replayed
-	// tab session. A patch that only touches native-owned fields (volume, mute,
-	// speed) does not constitute extension usage; only boost, audio DSP, or
-	// video CSS/overlay augmentation proves the extension is actively reshaping
-	// output. An earlier SPECTRA action is already sticky in badge-usage storage.
-	if (hasExtensionOnlyContribution(restore.patch)) await markBadgeUsedForTab(tabId);
 	const capability = MEDIA_INTENT_RUNTIME_CAPABILITY;
 	await ensureContentRuntime(tabId, documentId, 'restore', capability);
 	let retained = false;
