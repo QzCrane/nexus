@@ -170,6 +170,7 @@ export class MediaRegistry {
 	private activeVideoId: string | null = null;
 	private fullscreenMediaId: string | null = null;
 	private selectedTargetKey: string | null = null;
+	private selectedIdentityKey: string | null = null;
 	private pausedSelectionKey: string | null = null;
 	private explicitSelectionKey: string | null = null;
 	private selectionVisit = 0;
@@ -235,6 +236,7 @@ export class MediaRegistry {
 			this.admitBetterCandidate(true);
 			if (returning && this.activeMediaId === returning.target.mediaId) {
 				this.selectedTargetKey = null;
+				this.selectedIdentityKey = null;
 				this.selectRecord(returning, true);
 			}
 		});
@@ -470,7 +472,10 @@ export class MediaRegistry {
 		if (this.activeMediaId === record.target.mediaId) this.activeMediaId = null;
 		if (this.activeVideoId === record.target.mediaId) this.activeVideoId = null;
 		if (this.fullscreenMediaId === record.target.mediaId) this.fullscreenMediaId = null;
-		if (this.selectedTargetKey === this.targetKey(record.target)) this.selectedTargetKey = null;
+		if (this.selectedTargetKey === this.targetKey(record.target)) {
+			this.selectedTargetKey = null;
+			this.selectedIdentityKey = null;
+		}
 		// A pin or an explicit pick belonged to the element that just left. Keeping
 		// the key would let a detached identity protect its successor's slot, which
 		// is exactly what blocked the live replacement after a video -> live swap.
@@ -556,6 +561,13 @@ export class MediaRegistry {
 		return `${target.documentId}:${target.frameId}:${target.mediaId}:${target.sourceRevision}`;
 	}
 
+	/** Control identity is the element the viewer controls. `sourceRevision`
+	 * describes the resource loaded into it; a site that rewrites `src` on the
+	 * live player changes the resource without changing the selection. */
+	private controlKey(target: MediaTarget): string {
+		return `${target.documentId}:${target.frameId}:${target.mediaId}`;
+	}
+
 	private selectRecord(record: MediaRecord, notify: boolean): void {
 		if (this.activeMediaId !== record.target.mediaId) {
 			this.pausedSelectionKey = null;
@@ -566,7 +578,17 @@ export class MediaRegistry {
 		const key = this.targetKey(record.target);
 		if (key === this.selectedTargetKey) return;
 		this.selectedTargetKey = key;
-		this.selectionVisit += 1;
+		// A source change on the selected element is a new resource for the same
+		// control identity. Projection and replay still need the event, but the
+		// viewer's selection visit is unchanged: incrementing it here invalidated
+		// every in-flight write and every restore obligation on each `src` rewrite,
+		// which is what surfaced as `stale-media-source` on recurring live players
+		// (SP-22.3 §1/§2).
+		const identity = this.controlKey(record.target);
+		if (identity !== this.selectedIdentityKey) {
+			this.selectedIdentityKey = identity;
+			this.selectionVisit += 1;
+		}
 		if (notify) this.emit(record.target, 'selected', record.element);
 	}
 
@@ -853,5 +875,6 @@ export class MediaRegistry {
 		this.activeVideoId = null;
 		this.fullscreenMediaId = null;
 		this.selectedTargetKey = null;
+		this.selectedIdentityKey = null;
 	}
 }

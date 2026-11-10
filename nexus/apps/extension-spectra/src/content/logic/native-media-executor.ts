@@ -938,10 +938,14 @@ export class NativeMediaExecutor {
 	 */
 	private normalizeIntentTarget(intent: ControlIntent): ControlIntent {
 		const requested = intent.target;
-		if (!requested || intent.requestedCoverage !== 'active-target') return intent;
-		if (this.registry.resolve(requested)) return intent;
+		if (intent.requestedCoverage !== 'active-target') return intent;
+		if (requested && this.registry.resolve(requested)) return intent;
 		const selected = this.registry.resolve(null);
-		if (!selected || selected.target.kind !== requested.kind) return intent;
+		if (!selected) return intent;
+		if (requested && selected.target.kind !== requested.kind) return intent;
+		// Establishing the concrete target here (rather than resolving it inside
+		// the write) is what lets a failure name the identity it compared and lets
+		// the successor retry own a targetless intent.
 		return { ...intent, target: selected.target };
 	}
 

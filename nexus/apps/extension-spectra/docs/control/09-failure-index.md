@@ -108,7 +108,13 @@ flowchart TD
   携带的 `mediaId` 时（同一 document 内 runtime 重建后计数器重新发号，后台投影必然
   携带旧号），`normalizeIntentTarget` 直接改用当前选中目标，第一次写入不再报错。
   stale 诊断同时打印 requested 身份，可直接区分跨 document 与跨 runtime。
+- 已落地的访问计数：`selectionVisit` 只在控制身份变化时递增，同一元素的
+  `sourceRevision` 前进只发布新的资源 target，不再开始新的选中访问。抖音直播等
+  反复改写 `src` 的播放器此前每次换流都让在途写入与恢复义务失效，表现为第一次调节
+  必报 stale、之后才好；`requested=none` 的意图现在也会先固定到当前选中，
+  失败与继任重试因此都有一个可命名的身份。
 - 测试：`test/media-registry.spec.ts` 的
+  "keeps the selection visit stable when the resource revision advances"、
   "self-heals the selection when a live replacement registers before layout and the old target unregisters"、
   "hands control to a paused live replacement once the old player stops"、
   "hands control to a live broadcast beside a pre-roll the viewer clicked"、

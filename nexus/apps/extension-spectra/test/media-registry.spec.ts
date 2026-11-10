@@ -686,6 +686,45 @@ describe('event-driven media registry', () => {
 		}
 	});
 
+	test('keeps the selection visit stable when the resource revision advances', () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const player = new FakeVideoElement(1);
+		player.paused = false;
+		player.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+		document.documentElement.descendants.push(player);
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const selected: string[] = [];
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:source-churn', frameId: 0 }),
+				(target, event) => {
+					if (event === 'selected') selected.push(target.mediaId);
+				});
+			const visit = registry.selectionRevision;
+			const target = requireValue(registry.resolve(null)?.target, 'Expected the player target');
+			// A recurring player rewrites `src` while the viewer is already
+			// controlling it. The resource revision advances, the control identity
+			// does not: no new selection visit may invalidate the in-flight write.
+			player.src = 'https://example.com/next.mp4';
+			player.dispatchEvent(new Event('loadstart'));
+			expect(registry.resolve(null)?.target.sourceRevision).toBe(target.sourceRevision + 1);
+			expect(registry.selectionRevision).toBe(visit);
+			expect(selected).toEqual([target.mediaId]);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
 	test('seeds initial selection from visible geometry before IntersectionObserver delivery', () => {
 		const descriptors = captureGlobalDescriptors([
 			'document',
