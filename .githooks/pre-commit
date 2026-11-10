@@ -6,12 +6,20 @@ if ! command -v bun >/dev/null 2>&1 || ! command -v bunx >/dev/null 2>&1; then
   echo "NEXUS pre-commit blocked: Bun/bunx is unavailable, so repository gates cannot run." >&2
   exit 1
 fi
-# Attempt lefthook run "pre-commit"
+# Git for Windows cannot spawn a nested MSYS shell reliably: sh -> sh/lefthook
+# children die with NtCreateDirectoryObject (0xC0000022) and take this hook
+# shell down before any fallback line runs. The checked-in Bun runner owns the
+# same gates, so it is the primary path there. Detect the platform from the
+# environment only; spawning `uname` would be the failing MSYS child itself.
+case "${OS:-}${MSYSTEM:-}${COMSPEC:-}" in
+  *Windows_NT*|*MINGW*|*MSYS*|*cmd.exe*|*Cmd.exe*)
+    cd "$repository/nexus"
+    exec bun scripts/hooks/git-pre-commit.ts
+    ;;
+esac
 if bunx lefthook run "pre-commit" "$@"; then
   exit 0
 fi
-# On Windows, nested MSYS child sh.exe processes under Go/Bun can fail with
-# NtCreateDirectoryObject (0xC0000022). Fall back to executing the exact gates directly:
-echo "Executing pre-commit gates directly via Bun..." >&2
+echo "Executing pre-commit quality gates directly via Bun..." >&2
 cd "$repository/nexus"
-bun scripts/hooks/git-pre-commit.ts
+exec bun scripts/hooks/git-pre-commit.ts

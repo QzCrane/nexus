@@ -57,8 +57,8 @@ flowchart TD
 
 | 症状（用户怎么说） | 根因（哪个判断错了） | 规则 | 状态 |
 | --- | --- | --- | --- |
-| `stale-media-source: The media source changed before the asynchronous native operation committed`，直播里尤其频繁 | 资源身份 `sourceRevision` 被当成控制身份用：同一个元素换流后，在途写入被判过期 | 045、054 | open |
-| 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中变空；空选中不可自愈，也不再发 `target.changed` | 056 | open |
+| `stale-media-source: The media source changed before the asynchronous native operation committed`，直播里尤其频繁 | 资源身份 `sourceRevision` 被当成控制身份用：同一个元素换流后，在途写入被判过期 | 045、054 | guarded |
+| 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中变空；空选中不可自愈，也不再发 `target.changed` | 056 | guarded |
 | 插件改了音量，站点自己的音量条不动，而且下次换流被站点覆盖回去 | 音量只写元素属性（`dom-native`），没有站点控制器适配；declared 行只有倍速 | 053、049 | open |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
 | 角标显示旧音量 / 不刷新 / 显示 `M` 但页面在响 | 角标被第二写者重绘，或用了过期的观察序 | 052、014 | guarded |
@@ -68,27 +68,32 @@ flowchart TD
 
 ### §22.3 每行的证据与落点
 
-**1. `stale-media-source` 频繁出现（open）**
+**1. `stale-media-source` 频繁出现（guarded）**
 
 - 抛错的唯一来源：`src/content/logic/native-media-async.ts`，`isCurrent()` 为假即抛；文案全仓只有这一处。
-- 判当前性的链路：`native-media-executor.ts` 的 `isCurrentTarget` → `media-registry.ts` 的 `recordForTarget`，
-  后者要求 `sourceRevision` 完全相等。`refreshSource` 每次 `src`/`srcObject`/`load()` 变化都 +1。
-- 由此连带：`targetKey` 含 revision → 每次换流都让 `selectionVisit` +1 → executor 的 visit 栅栏、
-  恢复令牌、恢复重试门一起失效；`removed(source-change)` 还会清掉未完成的恢复义务。
+- 已落地的判定链：`media-registry.ts` 的 `recordForTarget` 只比较 `documentId + frameId + mediaId`；
+  `sourceRevision` 只描述元素当前装载的资源。`removed(source-change)` 不再取消在途控制操作，
+  写入在下一个 `await` 点对新资源重校验；只有 `detached` 才取消。
+- 资源作用域仍随换流重建：`refreshSource` 先发 `removed(source-change)`，让 CSS/overlay/图表路由与
+  恢复作用域按旧 `targetKey` 释放，再以新 revision 发 `registered` 并重新选取，`selected` 触发
+  desired 重放。这就是"重基 + 重校验"。
+- 测试：`test/native-media-executor.spec.ts` 的
+  "finishes an in-flight native seek when the same element swaps its source"；
+  `test/media-registry.spec.ts` 的 source-epoch 用例断言旧 revision 目标仍解析到同一元素。
 - 证据：[2026-11-05 直播音量回归审计](../../../../docs/research/2026-11-05-spectra-live-volume-regression-audit.md)、
   [2026-11-09 文档质量审计](../../../../docs/research/2026-11-09-spectra-documentation-quality-audit.md)。
-- 修复方向（未落）：控制身份与资源身份拆开——`isCurrent` 只比 element + mediaId，换流走"重基 + 重校验"。
 - 取舍与被否决方案：[Control identity decisions](../../../../docs/decisions/control-identity.md)。
 
-**2. 视频 → 直播后自动失控（open）**
+**2. 视频 → 直播后自动失控（guarded）**
 
-- 元素替换的同一批 DOM 变更里，新元素先注册、旧元素后注销；注销时 `active = null`，
-  而补选函数在 `!active` 时早退，候选过滤又要求 `visibleArea > 0`，刚插入未布局的元素不满足。
-- 结果：选中为空，`selected` 不再触发，`spectra.content.target.changed` 不再发送，后台 `activeMedia`
-  仍是已消失的旧 `mediaId`；之后每次 `resolve(intent.target)` 都拿到 null。
-- 只有新元素再发一次 `play`、或用户点一下，才能自救——这就是"点一下就好"。
-- 修复方向（未落）：`reconcileRetiredSelection` 在 `!active` 时改用与冷启动相同的排序补选（只要求
-  `isConnected`，不要求面积），并让 `admitBetterCandidate` 在空选中时退化为初始选中。
+- 元素替换的同一批 DOM 变更里，新元素先注册、旧元素后注销；注销时 `active = null`。
+- 已落地的补选：`reconcileRetiredSelection` 在 `!active` 时改用冷启动排序补选（只要求
+  `isConnected`，不要求面积）；`admitBetterCandidate` 在空选中时退化为 `establishInitialSelection`。
+  替换元素即使尚未布局，也会立刻成为选中并发 `selected`，随后 `spectra.content.target.changed`
+  让后台 `activeMedia` 指向新 `mediaId`。
+- 测试：`test/media-registry.spec.ts` 的
+  "self-heals the selection when a live replacement registers before layout and the old target unregisters"。
+- 证据：[2026-11-01 直播音量修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
 
 **3. 站点原生 UI 不同步（open）**
 

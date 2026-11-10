@@ -872,8 +872,10 @@ export class NativeMediaExecutor {
 
 	private isSelectedTarget(target: MediaTarget, element: HTMLMediaElement): boolean {
 		const selected = this.registry.resolve(null);
+		// Same control identity, not the same resource revision: a source swap
+		// rebases the selected target while the element stays selected.
 		return this.isCurrentTarget(target, element) && !!selected && selected.element === element
-			&& this.targetKey(selected.target) === this.targetKey(target);
+			&& selected.target.mediaId === target.mediaId;
 	}
 
 	private isCurrentTarget(target: MediaTarget, element?: HTMLMediaElement): boolean {
@@ -2306,10 +2308,12 @@ export class NativeMediaExecutor {
 		removalReason?: MediaRegistryRemovalReason,
 	): void {
 		if (event === 'removed') {
-			// Source retirement is the cancellation boundary.  It applies equally to
-			// DOM detach and SPA source reuse; the element object alone is not an
-			// ownership identity.
-			this.abortSourceOperations(target);
+			// Only the element leaving the document cancels in-flight control
+			// operations. A reused element that swaps `src`/`srcObject` is the same
+			// control target: Chrome keeps its native properties, so the write can
+			// finish and is revalidated against the new revision instead of failing
+			// with `stale-media-source` (SP-22.3 §1).
+			if (removalReason === 'detached') this.abortSourceOperations(target);
 			if (this.disposed) return;
 			const key = this.targetKey(target);
 			this.presentationFacts.delete(key);

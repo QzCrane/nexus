@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-control-identity-decisions
-last_reviewed: 2026-11-09
+last_reviewed: 2026-11-10
 ---
 
 # 控制语义决策：身份、证明与预测的边界
@@ -14,8 +14,10 @@ last_reviewed: 2026-11-09
 
 ## D1. 一个媒体对象有四种身份，不能压成一种
 
-**状态：部分实施。** L1/L4 已按此实现；L2/L3 的拆分尚未落地（见
-[故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 前两条，状态 `open`）。
+**状态：已实施。** `MediaRegistry.recordForTarget` 只比较 `documentId + frameId + mediaId`；
+`removed(source-change)` 不再取消在途控制操作，只有 `detached` 才取消。资源作用域仍按
+`targetKey`（含 revision）重建，`selected` 重放 desired。空选中时注册表按冷启动排序自愈。
+复验证据见 [故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 前两条（`guarded`）。
 
 - **L1 会话**：`tabId + documentId + generation`。换页即整份作废。
 - **L2 控制**：`frameId + mediaId`。换人：取消在途、清恢复义务、重放 desired。
@@ -95,5 +97,6 @@ last_reviewed: 2026-11-09
 ## 复验触发
 
 - 任何一条被否决方案重新出现时，先读本文件对应条目，再决定是否推翻。
-- D1 的 L2/L3 拆分落地后，把状态改为"已实施"，并在 09 的故障索引里把前两条改成 `guarded`。
+- D1 的 L2/L3 身份若再次被合并（例如给 `resolve`/`recordForTarget` 加回 revision），先回读本条并补回
+  `removed(source-change)` 重基语义。
 - 站点适配新增 declared 行时，复核 D3 的边界是否仍然成立。

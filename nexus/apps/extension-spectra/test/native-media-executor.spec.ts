@@ -32,6 +32,7 @@ type RegistryListener = (
 	target: MediaTarget,
 	event: MediaRegistryEvent,
 	element: HTMLMediaElement,
+	removalReason?: 'detached' | 'source-change',
 ) => void;
 
 class FakeMediaElement extends EventTarget {
@@ -125,12 +126,13 @@ class FakeRegistry {
 		return [this.resolve()];
 	}
 
-	emit(event: MediaRegistryEvent): void {
+	emit(event: MediaRegistryEvent, removalReason?: 'detached' | 'source-change'): void {
 		if (event === 'selected') this.selectionRevision += 1;
 		this.listener?.(
 			{ ...this.target },
 			event,
 			this.element as unknown as HTMLMediaElement,
+			removalReason,
 		);
 	}
 }
@@ -951,6 +953,46 @@ describe('native media single-writer correlation', () => {
 				strategy: 'dom-native',
 			});
 			expect(registry.element.currentTime).toBe(10);
+		} finally {
+			executor.dispose();
+		}
+	});
+
+	test('finishes an in-flight native seek when the same element swaps its source', async () => {
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		let committed = 4;
+		let seeking = false;
+		Object.defineProperty(registry.element, 'currentTime', {
+			configurable: true,
+			get: () => committed,
+			set: (value: number) => { committed = value; seeking = true; },
+		});
+		Object.defineProperty(registry.element, 'seeking', { configurable: true, get: () => seeking });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose: () => undefined } as unknown as VideoEffectsController);
+		try {
+			const writing = executor.execute({
+				intentId: 'intent:seek-across-source-swap',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { currentTime: 10 },
+			});
+			expect(seeking).toBe(true);
+			// The live player swaps its stream while the native seek is still in
+			// flight. The element is the same control target, so the write must
+			// finish and revalidate instead of failing `stale-media-source` (SP-22.3 §1).
+			registry.emit('removed', 'source-change');
+			committed = 10;
+			seeking = false;
+			registry.element.dispatchEvent(new Event('seeked'));
+			const result = await writing;
+			expect(result.fields.currentTime).toMatchObject({ actual: 10, phase: 'applied' });
 		} finally {
 			executor.dispose();
 		}

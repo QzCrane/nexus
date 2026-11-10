@@ -217,7 +217,14 @@ ACK、物理音量、角标与无错误 Toast，不能用第二次输入替第�
 | 明确 restore-page-settings | 只恢复仍由本写者持有且 actual 未被页面改动的 baseline；已被页面接管的字段不覆盖。清空 document desired 与各场景 speed；`1x` 只是数值设置，不等于释放 |
 
 选择变化由 `MediaRegistry::reconcileRetiredSelection/selectRecord` 唯一通知，
-`peek/resolve` 保持纯读，不在每次调速时扫描 DOM。Executor 的 `replayDesired`
+`peek/resolve` 保持纯读，不在每次调速时扫描 DOM。控制身份只由
+`documentId + frameId + mediaId` 决定；`sourceRevision` 只界定资源作用域。
+同一元素换 `src`/`srcObject`/`load()` 时，注册表先按旧 revision 发
+`removed(source-change)` 释放资源态，再以新 revision 发 `registered` 并重新选取；
+在途写入不被取消，在下一个 `await` 点重校验。只有元素 `detached` 才取消在途操作。
+选中为空（旧目标已注销）时，补选退回冷态排序：只要求 `isConnected`，不要求面积，
+因此替换直播元素即使尚未布局也会立即成为目标并发布 `selected`。
+Executor 的 `replayDesired`
 只对当前选中的精确 source 发恢复请求，并经 Background actor 排序；隐藏预载
 的 `volumechange/ratechange` 不能切换目标。源相同且已失去扩展 ownership 时，
 自动成熟探测不能覆盖页面的新手势。
@@ -644,7 +651,9 @@ a boot-time silence.
 词汇。直播初始 `muted` 或 `volume=0` 不是把控制转交广告的理由。正数音量手势经既有
 事务对直播同时应用音量与解除静音，不能只改变广告的声音就算通过。
 
-冷态选择与 `admitBetterCandidate` 共用此顺序。已播放后才注册的媒体、稍后到达的
+冷态选择与 `admitBetterCandidate` 共用此顺序。选中为空时 `admitBetterCandidate` 退化为
+`establishInitialSelection`，`reconcileRetiredSelection` 也用冷态排序补选，所以元素替换
+（新元素先注册、旧元素后注销）不会留下空选中。已播放后才注册的媒体、稍后到达的
 metadata/data/duration/geometry 都能建立正确选择；MSE 先提供无限时长、后提供首段数据
 时，`loadeddata` 重新准入，不等待第二次播放。候选不再把 paused 直播过滤掉；
 pause 后的普通继任路径也必须比较同一排序，不能把目标退回播放中的广告。

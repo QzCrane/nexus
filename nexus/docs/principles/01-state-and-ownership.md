@@ -19,7 +19,7 @@ last_reviewed: 2026-11-09
 - 请求值/storage 写入/setter 返回均非 ACK。必须经由事件/getter/处理器实际读回并完成 identity/generation/revision 校验才算 ACK。Optimistic UI 仅限发送窗口，收到 ACK 确认、失败回滚。
 
 ## EPR-003: ACK 必须绑定身份与代际
-可写操作绑定 `tabId + documentId + origin + generation`；媒体操作追加 `frameId + mediaId + sourceRevision`；控制事务绑定 `revision + intentId`。旧文档/媒体/processor generation 的迟到结果直接丢弃。
+可写操作绑定 `tabId + documentId + origin + generation`；媒体控制身份追加 `frameId + mediaId`，`sourceRevision` 只界定资源作用域（读回基线、恢复义务、呈现状态），同一元素换流走重基与重校验而不是丢弃在途写入；控制事务绑定 `revision + intentId`。旧文档/媒体/processor generation 的迟到结果直接丢弃。
 
 ## EPR-004: READY 是能力屏障
 完成身份绑定、消息监听、媒体发现、初始 actual 同步、配置恢复、首次策略应用及 WebAudio/Capture ACK 后方可发布 `ready`（否则为 `initializing`/`degraded`/`failed`）。Background READY 缓存仅为优化，健康探测/dispose/导航/热更新须使其失效。

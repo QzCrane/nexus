@@ -247,6 +247,37 @@ describe('event-driven media registry', () => {
 			expect(registry.selectionRevision).toBe(1); expect(selected).toHaveLength(1);
 		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
+	test('self-heals the selection when a live replacement registers before layout and the old target unregisters', async () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const oldVideo = new FakeVideoElement(1);
+		oldVideo.paused = false;
+		oldVideo.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(oldVideo);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const selected: MediaTarget[] = [];
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:video-to-live', frameId: 0 }),
+			(target, event) => { if (event === 'selected') selected.push(target); });
+		try {
+			const before = requireValue(registry.resolve(null)?.target, 'Expected the playing video to be selected');
+			const live = new FakeVideoElement(1);
+			// The live player is inserted before layout, and the old element is
+			// removed in the same observer batch. Geometry cannot admit it, and the
+			// retired selection must not stay empty (SP-22.3 §2).
+			oldVideo.isConnected = false;
+			document.documentElement.descendants = [live];
+			document.media = [live];
+			FakeMutationObserver.latest?.emit([live], [oldVideo]);
+			await Promise.resolve();
+			const after = requireValue(registry.resolve(null)?.target, 'Expected the replacement to be selected');
+			expect(after.mediaId).not.toBe(before.mediaId);
+			expect(registry.resolve(null)?.element).toBe(live);
+			expect(selected.at(-1)?.mediaId).toBe(after.mediaId);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
 	test.each(['audio', 'pip', 'fullscreen'] as const)('establishes independent initial media and video scopes (%s)', (presentation) => {
 		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
 			'MutationObserver', 'IntersectionObserver']);
@@ -927,7 +958,10 @@ describe('event-driven media registry', () => {
 				mediaId: audioTarget.mediaId,
 				sourceRevision: 3,
 			});
-			expect(registry.resolve(audioTarget)).toBeNull();
+			// A target captured before a stream change still addresses the same
+			// control target: only its resource revision is stale (SP-22.3 §1).
+			expect(registry.resolve(audioTarget)?.element).toBe(audio);
+			expect(registry.resolve(audioTarget)?.target.sourceRevision).toBe(3);
 
 			// A framework reparent commonly appears as remove+add in one observer
 			// batch. Deferring detach to a microtask preserves identity and revision.

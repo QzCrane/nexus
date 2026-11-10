@@ -311,12 +311,11 @@ export class MediaRegistry {
 		this.removalFlushQueued = true;
 		queueMicrotask(() => {
 			this.removalFlushQueued = false;
-			const previous = this.best('media');
 			for (const media of this.pendingRemovals) {
 				if (!media.isConnected) this.unregister(media);
 			}
 			this.pendingRemovals.clear();
-			this.reconcileRetiredSelection(!!previous && !this.byElement.has(previous.element));
+			this.reconcileRetiredSelection();
 		});
 	}
 
@@ -484,11 +483,13 @@ export class MediaRegistry {
 			record.sourceTransitionOpen = false;
 		}
 		if (!lifecycleBoundary && source === record.source) return;
-		// A reused <audio>/<video> element is a new control identity. Emit a
-		// logical removal before incrementing the revision so every source-scoped
+		// A reused <audio>/<video> element is a new *resource* identity, not a new
+		// control identity: the viewer still controls the same element. Emit a
+		// logical removal before incrementing the revision so every resource-scoped
 		// owner can dispose baselines, CSS/overlay state and graph routing without
 		// polling or command-time scans, then re-register the same element under
-		// its new identity.
+		// its new revision. Selection stays on the element, so the re-selection
+		// below rebases the published target instead of emptying it.
 		this.emit(record.target, 'removed', element, 'source-change');
 		record.source = source;
 		record.sourceTransitionOpen = true;
@@ -556,7 +557,14 @@ export class MediaRegistry {
 
 	private admitBetterCandidate(notify: boolean): void {
 		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
-		if (!active) return;
+		// An empty selection is a retired one. Late geometry may be the only new
+		// evidence, so it must run the cold admission instead of returning: a
+		// replacement element registered before layout would otherwise never own
+		// control until the page plays again (SP-22.3 §2).
+		if (!active) {
+			this.establishInitialSelection(notify);
+			return;
+		}
 		const challenger = this.bestRecord([...this.byElement.values()].filter((record) => (
 			record !== active && !this.isSelectionProtected(active, record) && !record.element.ended
 			&& (!record.element.paused || isLiveMedia(record.element))
@@ -569,36 +577,41 @@ export class MediaRegistry {
 		this.selectRecord(challenger, notify);
 	}
 
-	private reconcileRetiredSelection(replacingRemovedTarget = false): void {
+	private reconcileRetiredSelection(): void {
 		if (this.disposed) return;
 		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
-		// Initial visibility delivery is not a selection change. Publishing it
-		// during a cold restore would relabel acknowledged portable intent as a
-		// page observation before the restore has finished committing.
-		if (!active && !replacingRemovedTarget) return;
-		if (active) {
-			// Hiding a modal is not a source retirement. Reconcile the selection
-			// from lifecycle events, so an already-playing feed need not play again.
-			// Visible paused players and actual presentation owners stay controllable.
-			if (active.target.kind === 'audio') return;
-			const fullscreen = document.fullscreenElement;
-			if (document.pictureInPictureElement === active.element
-				|| fullscreen === active.element
-				|| fullscreen instanceof Element && fullscreen.contains(active.element)) return;
-			if (!active.element.ended && active.visibleArea > 0) {
-				if (!active.element.paused || this.pausedSelectionKey === this.targetKey(active.target)
-					|| this.explicitSelectionKey === this.targetKey(active.target)) return;
-				// A later foreground player may start before this feed pauses. Its
-				// first play lost to historical pointer evidence; the later pause is
-				// the handoff boundary. An older/tiny preview cannot take this path.
-				const successor = this.bestRecord([...this.byElement.values()].filter((record) => (
-					record !== active && record.target.kind === 'video' && !record.element.paused
-					&& !record.element.ended && record.lastPlay > active.lastPlay
-					&& record.visibleArea >= active.visibleArea
-				)));
-				if (successor && this.compare(successor, active) > 0) this.selectRecord(successor, true);
-				return;
-			}
+		if (!active) {
+			// The retired target is gone, so there is no viewer pick to protect.
+			// Admit the replacement exactly like a cold start: connection is enough
+			// because the element is usually registered before layout. Without this
+			// fallback the selection stays empty after a video -> live replacement,
+			// `selected` never fires again and every hotkey resolves nothing until
+			// the page plays or the viewer clicks (SP-22.3 §2).
+			const initial = this.best('media');
+			if (initial) this.selectRecord(initial, true);
+			return;
+		}
+		// Hiding a modal is not a source retirement. Reconcile the selection
+		// from lifecycle events, so an already-playing feed need not play again.
+		// Visible paused players and actual presentation owners stay controllable.
+		if (active.target.kind === 'audio') return;
+		const fullscreen = document.fullscreenElement;
+		if (document.pictureInPictureElement === active.element
+			|| fullscreen === active.element
+			|| fullscreen instanceof Element && fullscreen.contains(active.element)) return;
+		if (!active.element.ended && active.visibleArea > 0) {
+			if (!active.element.paused || this.pausedSelectionKey === this.targetKey(active.target)
+				|| this.explicitSelectionKey === this.targetKey(active.target)) return;
+			// A later foreground player may start before this feed pauses. Its
+			// first play lost to historical pointer evidence; the later pause is
+			// the handoff boundary. An older/tiny preview cannot take this path.
+			const successor = this.bestRecord([...this.byElement.values()].filter((record) => (
+				record !== active && record.target.kind === 'video' && !record.element.paused
+				&& !record.element.ended && record.lastPlay > active.lastPlay
+				&& record.visibleArea >= active.visibleArea
+			)));
+			if (successor && this.compare(successor, active) > 0) this.selectRecord(successor, true);
+			return;
 		}
 		const candidates = [...this.byElement.values()].filter((record) => (
 			!record.element.ended && (record.target.kind === 'audio'
@@ -619,15 +632,22 @@ export class MediaRegistry {
 
 	/** Explicit pause/selection ownership differs from a historical pointer. */
 	pinPaused(target: MediaTarget): void {
-		if (this.recordForTarget(target)) this.pausedSelectionKey = this.targetKey(target);
+		const record = this.recordForTarget(target);
+		if (record) this.pausedSelectionKey = this.targetKey(record.target);
 	}
 
 	private recordForTarget(target: MediaTarget): MediaRecord | null {
 		const record = this.byId.get(target.mediaId);
+		// Control identity is the element the viewer controls: document, frame and
+		// mediaId. `sourceRevision` describes the resource currently loaded into
+		// that element, so a target captured before a `src`/`srcObject`/`load()`
+		// change still addresses the same control target. Requiring the revision to
+		// match here is what failed every in-flight write on a source change with
+		// `stale-media-source` (SP-22.3 §1). Resource-scoped owners listen to
+		// `removed(source-change)` / `registered` instead.
 		return record
 			&& record.target.documentId === target.documentId
 			&& record.target.frameId === target.frameId
-			&& record.target.sourceRevision === target.sourceRevision
 			? record
 			: null;
 	}

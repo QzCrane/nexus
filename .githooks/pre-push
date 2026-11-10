@@ -6,19 +6,30 @@ if ! command -v bun >/dev/null 2>&1 || ! command -v bunx >/dev/null 2>&1; then
   echo "NEXUS pre-push blocked: Bun/bunx is unavailable, so repository gates cannot run." >&2
   exit 1
 fi
+run_direct_gates() {
+  bun run lint
+  bun run check:platform
+  bun --cwd nexus check:toolchain
+  bun --cwd nexus check:dependency-revalidation
+  bun run docs:check
+  bun run check:public-projections
+  bun --cwd nexus scripts/hooks/test.ts
+  bun run verify:q
+  bun --cwd nexus typecheck
+  bun run test:unit
+  bun --cwd nexus lint:ai-pitfalls
+  bun run sync:skills -- --check
+}
+# Git for Windows cannot spawn a nested MSYS shell reliably (see pre-commit),
+# so the checked-in direct gates run without lefthook there.
+case "${OS:-}${MSYSTEM:-}${COMSPEC:-}" in
+  *Windows_NT*|*MINGW*|*MSYS*|*cmd.exe*|*Cmd.exe*)
+    run_direct_gates
+    exit 0
+    ;;
+esac
 if bunx lefthook run "pre-push" "$@"; then
   exit 0
 fi
 echo "Executing pre-push quality gates directly via Bun..." >&2
-bun run lint
-bun run check:platform
-bun --cwd nexus check:toolchain
-bun --cwd nexus check:dependency-revalidation
-bun run docs:check
-bun run check:public-projections
-bun --cwd nexus scripts/hooks/test.ts
-bun run verify:q
-bun --cwd nexus typecheck
-bun run test:unit
-bun --cwd nexus lint:ai-pitfalls
-bun run sync:skills -- --check
+run_direct_gates

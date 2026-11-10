@@ -6,4 +6,10 @@ if ! command -v bun >/dev/null 2>&1 || ! command -v bunx >/dev/null 2>&1; then
   echo "NEXUS post-merge blocked: Bun/bunx is unavailable, so repository gates cannot run." >&2
   exit 1
 fi
+# Git for Windows cannot spawn a nested MSYS shell reliably (see pre-commit).
+case "${OS:-}${MSYSTEM:-}${COMSPEC:-}" in
+  *Windows_NT*|*MINGW*|*MSYS*|*cmd.exe*|*Cmd.exe*)
+    exec bun run sync:skills
+    ;;
+esac
 exec bunx lefthook run "post-merge" "$@"
