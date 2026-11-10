@@ -912,20 +912,45 @@ export class NativeMediaExecutor {
 		try {
 			return await this.executeAttempt(effective);
 		} catch (error) {
-			// An SPA can replace the player between the message and this write. The
-			// request was captured against the element the viewer owned, so the
-			// same intent belongs to the successor the registry selected. Retry
-			// exactly once for a genuinely retired identity; a target that is still
-			// registered (the viewer changed selection) keeps its original failure.
-			const successor = this.retiredSuccessor(effective);
-			if (!successor || !isContentLifecycleError(error) || error.code !== 'stale-media-source'
-				|| effective.source === 'restore' || this.disposed) throw this.annotateStale(error, effective.target);
+			// A failure here means the tab's player changed while this write was in
+			// flight. The registry already decided what the tab controls, so the
+			// same gesture is re-applied there exactly once.
+			const retryTarget = this.retryTarget(effective, error);
+			if (!retryTarget) throw this.annotateStale(error, effective.target);
 			try {
-				return await this.executeAttempt({ ...effective, target: successor });
+				return await this.executeAttempt({ ...effective, target: retryTarget });
 			} catch (retryError) {
-				throw this.annotateStale(retryError, successor);
+				throw this.annotateStale(retryError, retryTarget);
 			}
 		}
+	}
+
+	/**
+	 * Which identity owns a stale write, if any.
+	 *
+	 * A retired identity is replaced by the selection the registry made. An
+	 * `active-target` intent is addressed to the tab rather than to a particular
+	 * historical element, so it follows the selection even when the previous
+	 * player is still registered — the Background projection is one message
+	 * behind every SPA player swap, and that lag must not cost the first gesture.
+	 * A `restore` intent is bound to one source visit and never follows a change.
+	 * Returning `null` leaves the original failure intact.
+	 */
+	private retryTarget(intent: ControlIntent, error: unknown): MediaTarget | null {
+		if (this.disposed || !isContentLifecycleError(error) || error.code !== 'stale-media-source') return null;
+		if (intent.source === 'restore') return null;
+		const successor = this.retiredSuccessor(intent);
+		if (successor) return successor;
+		if (intent.requestedCoverage !== 'active-target' || this.registry.selectionPinnedByViewer) return null;
+		const selected = this.registry.resolve(null);
+		if (!selected) return null;
+		const requested = intent.target;
+		if (requested && (requested.documentId !== selected.target.documentId
+			|| requested.frameId !== selected.target.frameId
+			|| requested.kind !== selected.target.kind)) return null;
+		if (requested && requested.mediaId === selected.target.mediaId
+			&& requested.sourceRevision === selected.target.sourceRevision) return null;
+		return selected.target;
 	}
 
 	/**

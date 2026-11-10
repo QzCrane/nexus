@@ -279,6 +279,19 @@ export class MediaRegistry {
 
 	get selectionRevision(): number { return this.selectionVisit; }
 
+	/**
+	 * True when the viewer pinned the current selection by choosing or pausing
+	 * that element. Automatic admission (SPA swap, geometry, live handover) never
+	 * pins, so an in-flight `active-target` write may follow it; an explicit
+	 * choice must not be overwritten by a gesture the viewer made elsewhere.
+	 */
+	get selectionPinnedByViewer(): boolean {
+		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
+		if (!active) return false;
+		const key = this.targetKey(active.target);
+		return this.explicitSelectionKey === key || this.pausedSelectionKey === key;
+	}
+
 	captureObservation(): { owner: string; epoch: number; selection: number; revision: number } {
 		return { owner: this.observationOwner, epoch: this.observationEpoch, selection: this.selectionVisit,
 			revision: ++this.observationRevision };

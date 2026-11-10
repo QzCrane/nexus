@@ -385,7 +385,7 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
-	test('rejects an old active-media ACK after another source becomes selected while the original stays registered', async () => {
+	test('moves an active-target write to the new selection when another source becomes selected mid-write', async () => {
 		installFakeMediaGlobals(); const registry = new FakeRegistry();
 		const original = registry.resolve(); const next = { element: new FakeMediaElement() as unknown as HTMLMediaElement,
 			target: { ...original.target, mediaId: 'media:new-current' } };
@@ -399,9 +399,11 @@ describe('native media single-writer correlation', () => {
 			expect(original.element.playbackRate).toBe(2);
 			selected = next; registry.selectionRevision += 1;
 			expect(executor.read({ target: null, fields: ['playing'] }).target).toEqual(next.target);
-			await expect(writing).rejects.toMatchObject({ code: 'stale-media-source' });
-			expect(registry.resolve(null)?.target).toEqual(next.target);
-			expect(next.element.playbackRate).toBe(1);
+			// The gesture belongs to the tab, and the tab now plays the other source.
+			// Re-applying once is what stops the first adjustment after an SPA swap
+			// from failing until the viewer repeats it.
+			expect((await writing).target).toEqual(next.target);
+			expect(next.element.playbackRate).toBe(2);
 		} finally { executor.dispose(); }
 	});
 

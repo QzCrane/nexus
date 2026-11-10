@@ -226,8 +226,9 @@ ACK、物理音量、角标与无错误 Toast，不能用第二次输入替第�
 `retiredControlIds`）再通知观察者，观察者异常不能留下半注销状态；携带已退役
 `mediaId` 的请求（Background 投影落后于页面替换时必然发生）由 `recordForTarget`
 解析到当前选中目标，因此视频页→直播页后的第一次快捷键直接生效。写入已在旧元素
-开始、替换落在其 `await` 窗口内时，`execute` 对已退役身份做一次继任重试；
-仅失去选中的目标不重试。`requestedCoverage = 'active-target'` 的意图描述的是"这个
+开始、替换落在其 `await` 窗口内时，`execute` 只重试一次：已退役身份交给注册表的
+当前选中；`active-target` 意图跟随注册表的**自动**交接（SPA 换播放器、直播接管），
+因为投影永远落后一条消息；观众显式选择或暂停固定过的目标保持原失败，不被在途手势覆盖。`requestedCoverage = 'active-target'` 的意图描述的是"这个
 标签页当前的控制目标"而不是某个历史身份：无论它携带的 `mediaId` 在本 document 的注册表
 里根本不存在（同一 document 内 runtime 重建后计数器重新发号），还是仍然注册但已被新的
 选中替换（Background 投影落后一个播放器交接），`normalizeIntentTarget` 都直接把意图

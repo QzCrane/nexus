@@ -100,8 +100,9 @@ flowchart TD
 - 已落地的身份继任：`unregister` 先完成状态转移（`byId`/选中/PiP/全屏/显式与暂停 key，
   并把 mediaId 记入 `retiredControlIds`）再通知观察者；`recordForTarget` 对已退役控制身份
   返回当前选中目标。因此 Background 投影落后一个替换时，第一次快捷键仍直接控制直播。
-- 已落地的在途继任：写入已在旧元素开始、注销落在 `await` 窗口内时，`execute` 只对
-  `retiredControlIds` 命中的身份做一次继任重试；仍注册但只是失去选中的目标保持原失败。
+- 已落地的在途继任：写入已在旧元素开始、注销落在 `await` 窗口内时，`execute` 只做一次
+  重试：已退役身份交给当前选中；`active-target` 意图跟随注册表的自动交接（SPA 换播放器、
+  直播接管），不因后台投影落后一条消息而失败；观众显式选择/暂停固定过的目标保持原失败。
   这也是角标能随原生音量变化刷新的前提：选中一旦交接，`volumechange` 不再被
   "非当前目标"过滤。
 - 已落地的身份归一：`requestedCoverage = 'active-target'` 的意图一律应用到当前选中
@@ -124,6 +125,7 @@ flowchart TD
   "serves the first gesture after a player replacement from the retired identity"、
   "moves an in-flight gesture to the successor when the player is replaced mid-write"；
   `test/native-media-executor.spec.ts` 的
+  "moves an active-target write to the new selection when another source becomes selected mid-write"、
   "applies an active-target intent to the selection when it names an identity this document never registered"、
   "applies an active-target intent to the selection when the projection names a superseded player"。
 - 证据：[2026-11-01 直播音量修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
