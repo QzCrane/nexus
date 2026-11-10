@@ -12,6 +12,7 @@ import { readMediaTabInventory } from '../media-inventory-runtime';
 import { syncActiveActionPopups } from '../popup-frame';
 import { mediaFacts } from '../media-facts';
 import { currentTopDocumentId } from '../../shared/top-document';
+import { resumeDocumentInitialization } from '../runtime-loader';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 export type MediaReportOrdering =
@@ -50,6 +51,7 @@ export function recordMediaState(
 		},
 	);
 	if (!accepted) return { reported: true };
+	if (payload.hasMediaElement) resumeDocumentInitialization(tabId, documentId, undefined);
 	const state = getOrCreateTabAudioState(tabId, documentId);
 	state.hasMediaElement = payload.hasMediaElement;
 	state.reportRevision = ordering.revision;

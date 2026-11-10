@@ -135,6 +135,34 @@ describe('current audio session background boundary', () => {
 });
 
 describe('content session restore', () => {
+	test.each([0, 30, 100])('hydrates an active document-output owner at %s without replacing it with durable preferences', (volume) => {
+		const actualConfig = config({ documentOutput: true, volume, muted: true });
+		const restored = assembleInitialState({
+			handoff: null,
+			session: snapshot(42, { actualConfig }),
+			config: config({ volume: 90, muted: false }),
+		});
+		expect(restored.source).toBe('session');
+		expect(restored.state.config).toEqual(actualConfig);
+		expect(restored.state.appliedConfig).toEqual(actualConfig);
+		expect(restored.state.desiredMode).toBe('capture');
+		expect(shouldApplyInitialPolicy(restored.state, restored.source)).toBe(false);
+		expect(restored.state.config).not.toBe(actualConfig);
+	});
+
+	test.each(['idle', 'error'] as const)('does not revive an inactive output marker from a %s session', (phase) => {
+		const durable = config({ volume: 90, muted: false });
+		const restored = assembleInitialState({
+			handoff: null,
+			session: snapshot(42, { actualMode: 'bypass', phase,
+				actualConfig: config({ documentOutput: true, volume: 30, muted: true }) }),
+			config: durable,
+		});
+		expect(restored.state.config).toEqual(durable);
+		expect(restored.state.config.documentOutput).toBeUndefined();
+		expect(shouldApplyInitialPolicy(restored.state, restored.source)).toBe(true);
+	});
+
 	test('lets the exact background snapshot own generation and processing state', () => {
 		const handoff: Partial<PolicyExecutorState> = {
 			config: config({ volume: 180 }),

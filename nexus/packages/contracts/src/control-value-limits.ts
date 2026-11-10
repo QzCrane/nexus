@@ -64,6 +64,22 @@ export function splitEffectiveVolume(volume: number): { volumeBase: number; boos
 		};
 }
 
+// A volume delta moves freely from whatever level the user actually holds. The
+// native ceiling is the one exception: a step that would cross it changes which
+// writer owns the level, so that step lands exactly on 100 instead. Every other
+// target keeps the plain sum — a page at 73 must reach 83, not a synthetic grid
+// line. A caller that computes the next value itself must use this same function
+// or it will predict a number the coordinator never applies.
+export function stepEffectiveVolume(current: number, delta: number): number {
+	const ceiling = CONTROL_VALUE_LIMITS.volumeBase.max;
+	const start = clampControlValue(current, 'volume', ceiling);
+	const target = clampControlValue(start + delta, 'volume', start);
+	if ((start < ceiling && target > ceiling) || (start > ceiling && target < ceiling)) {
+		return ceiling;
+	}
+	return target;
+}
+
 // The ACK projection of an audio volume is one shape, read by the canonical
 // surface and by both narrow runtime entries (Content and UI). It is defined
 // here, below all three, so a surface can no longer validate a shape the others

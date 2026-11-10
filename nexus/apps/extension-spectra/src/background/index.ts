@@ -26,7 +26,7 @@ import { bindRuntimeObservationPort } from './runtime-observation';
 import { bindPopupControlPort } from './popup-control-port';
 import { initializeRuntimeRestartRecovery } from './runtime-restart-startup';
 import { initializeMainRuntimeManager } from './main-runtime-manager';
-import { initializeControlCoordinator, submitPopupControlBatch } from './control-coordinator';
+import { initializeControlCoordinator, submitPopupControlBatch, resolvePopupControlPresentationIdentity } from './control-coordinator';
 import { initializeBackgroundDiagnostics } from './diagnostics';
 import { initializeActionPopupFrames } from './popup-frame';
 
@@ -37,6 +37,7 @@ initializeContentRuntimeLoader();
 chrome.runtime.onConnect.addListener(bindRuntimeObservationPort);
 chrome.runtime.onConnect.addListener((port) => bindPopupControlPort(port, {
 	submit: submitPopupControlBatch,
+	resolveIdentity: resolvePopupControlPresentationIdentity,
 }));
 initializeControlCoordinator();
 initializeBackgroundDiagnostics();

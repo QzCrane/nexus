@@ -19,6 +19,7 @@ import {
 	runtimeLoaderTestApi,
 	retainMediaIntentRuntimeLease,
 	releaseMediaIntentRuntimeLease,
+	resumeDocumentInitialization,
 	hasRuntimeLease,
 	MEDIA_INTENT_RUNTIME_CAPABILITY,
 } from '../src/background/runtime-loader';
@@ -47,11 +48,25 @@ interface RuntimeHarness {
 	runtimeMessages: ChromeEvent;
 }
 
+// The negative form (`expected: 0`) is a semantic claim held for a fixed
+// `settleWindowMs`. The positive form is only "the release eventually lands",
+// so its poll window should not double as a timing assertion.
+//
+// This does NOT make the file safe under concurrent `test:unit`: three runs of
+// the 149-file concurrent suite failed on three DIFFERENT cases in this file
+// (each passes in isolation), which is the signature of cross-file state, not
+// of a slow timer - this harness installs `globalThis.chrome` by property
+// definition and bun shares one module instance across test files. The
+// supported entry for this file is `test:unit:isolated`, which runs every file
+// in its own process and passes 134/134.
+const RELEASE_POLL_ATTEMPTS = 400;
+const RELEASE_POLL_INTERVAL_MS = 5;
+
 async function expectRelease(harness: RuntimeHarness, expected: number, settleWindowMs = 0): Promise<void> {
 	if (settleWindowMs > 0) await Bun.sleep(settleWindowMs);
-	for (let attempt = 0; attempt < 100; attempt += 1) {
+	for (let attempt = 0; attempt < RELEASE_POLL_ATTEMPTS; attempt += 1) {
 		if (harness.releaseCount === expected) break;
-		await Bun.sleep(5);
+		await Bun.sleep(RELEASE_POLL_INTERVAL_MS);
 	}
 	expect(harness.releaseCount).toBe(expected);
 }
@@ -474,6 +489,54 @@ describe('document-scoped content runtime loader', () => {
 		});
 	});
 
+	test.each([false, true])('resumes failed cold initialization from DOM readiness without a user request (signal during restore: %s)', async (during) => {
+		const harness = installChromeHarness(true);
+		let calls = 0;
+		let rejectFirst!: (error: Error) => void;
+		runtimeLoaderTestApi.setDocumentRestore(async () => {
+			calls += 1;
+			if (calls === 1) await new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+		});
+		const first = awaitDocumentInitialization(7, 'document-7');
+		while (!rejectFirst) await Bun.sleep(1);
+		const signal = () => {
+			for (const listener of harness.navigationDOMContentLoaded.listeners) listener({
+				tabId: 7, frameId: 0, documentId: 'document-7', url: 'https://media.example/watch',
+			} as never);
+		};
+		if (during) signal();
+		rejectFirst(new Error('cold source changed before restore reached its executor'));
+		await first;
+		if (!during) signal();
+		for (let i = 0; i < 50 && calls < 2; i++) await Bun.sleep(1);
+		expect(calls).toBe(2);
+		signal();
+		await Bun.sleep(5);
+		expect(calls).toBe(2);
+	});
+
+	test.each(['navigation', 'release', 'resource'] as const)('fences a failed initialization continuation at %s', async (change) => {
+		const harness = installChromeHarness(true);
+		const urls: Array<string | undefined> = [];
+		let rejectFirst!: (error: Error) => void;
+		runtimeLoaderTestApi.setDocumentRestore(async (_tab, _document, url) => {
+			urls.push(url);
+			if (urls.length === 1) await new Promise<void>((_resolve, reject) => { rejectFirst = reject; });
+		});
+		const first = awaitDocumentInitialization(7, 'document-7');
+		while (!rejectFirst) await Bun.sleep(1);
+		if (change === 'navigation') {
+			harness.currentDocumentId = 'document-new';
+			for (const listener of harness.navigationCommitted.listeners) listener({ tabId: 7, frameId: 0 } as never);
+		} else if (change === 'release') releaseMediaIntentRuntimeLease(7, 'document-7');
+		resumeDocumentInitialization(7, 'document-7', 'https://media.example/new-resource');
+		rejectFirst(new Error('source startup interrupted'));
+		await first;
+		await Bun.sleep(10);
+		expect(urls).toEqual(change === 'resource'
+			? ['https://media.example/watch', 'https://media.example/new-resource'] : ['https://media.example/watch']);
+	});
+
 	test('coalesces concurrent ensure calls into one probe, injection and READY handshake', async () => {
 		const harness = installChromeHarness(false);
 		const [first, second] = await Promise.all([
@@ -567,6 +630,30 @@ describe('document-scoped content runtime loader', () => {
 		expect(hasRuntimeLease(7, 'document-7', 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY)).toBe(false);
 		expect(harness.executeCount).toBe(0);
 	});
+
+	test.each(['retained', 'unset', 'released', 'navigation', 'release', 'failed-probe'] as const)(
+		'keeps a failed initialization lease only for surviving authorized intent (%s)', async (state) => {
+			const harness = installChromeHarness(true);
+			await ensureContentRuntime(7, 'document-7', 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY);
+			const send = chrome.tabs.sendMessage;
+			chrome.tabs.sendMessage = (async (...args: Parameters<typeof send>) => {
+				if (args[1]?.type !== 'spectra.content.runtime.status') return send(...args);
+				if (state === 'failed-probe') throw new Error('Runtime gone');
+				const response = await send(...args);
+				if (state === 'navigation') {
+					harness.currentDocumentId = 'document-new';
+					for (const listener of harness.navigationCommitted.listeners) listener({ tabId: 7, frameId: 0 } as never);
+				}
+				if (state === 'release') releaseMediaIntentRuntimeLease(7, 'document-7');
+				return { ...response, data: { ...response.data,
+					mediaIntentState: state === 'unset' || state === 'released' ? state : 'retained' } };
+			}) as typeof send;
+			const retained = await runtimeLoaderTestApi.recoverFailedRestoreLease(7, 'document-7');
+			if (!retained) releaseContentRuntimeLease(7, 'document-7', 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY);
+			expect(retained).toBe(state === 'retained' || state === 'failed-probe');
+			expect(hasRuntimeLease(7, 'document-7', 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY)).toBe(state === 'retained' || state === 'failed-probe');
+		},
+	);
 
 	test('recovers an already-ready document after a service-worker restart without injection', async () => {
 		const harness = installChromeHarness(true);

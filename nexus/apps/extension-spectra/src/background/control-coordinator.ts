@@ -21,7 +21,9 @@ import {
 	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
 	splitEffectiveVolume,
+	stepEffectiveVolume,
 	type CaptureAdmission,
+	type AudioSessionSnapshot,
 	type ControlApplyAck,
 	type ControlCapability,
 	type ControlCoverage,
@@ -80,6 +82,7 @@ import { controlApplyAckMatches, controlOperationAckMatches } from './control-co
 import {
 	assertInvocationTargetCurrent,
 	assertPopupRequestDocument,
+	grantContentInvocation,
 	popupInvocation,
 	sameExtensionDocument,
 	type ExtensionInvocationContext,
@@ -102,6 +105,8 @@ import { readSpectraTabPassively, sendSpectraTabRequest } from './spectra-tab-cl
 import { settingsRepository } from './settings-repository';
 import { storage } from './state';
 import {
+	invalidatePaintedBadge,
+	isBadgeProjected,
 	markBadgeUsedForTab,
 	restoreBadgeUsageForTab,
 	updateBadgeFromControlProjection,
@@ -183,12 +188,50 @@ async function flushSessionProjections(): Promise<void> {
 	await Promise.all([...sessionProjectionTails.values()]).catch(() => undefined);
 	sessionProjectionTails.clear();
 }
+
+// One pending observation projection per tab. A page-native volume gesture emits a
+// burst of observations and every one of them is an admitted fact, but only the
+// newest can be the current projection: queueing one task per sample turned a
+// single drag into a serialized train of storage reads and Action paints.
+const pendingObservationSnapshots = createBoundedMap<number, {
+	snapshot: ControlSnapshot;
+	resourceFields: ControlFieldStates;
+	epoch: number;
+}>({
+	cap: 256,
+	ttlMs: 60_000,
+});
+
+function scheduleObservationProjection(snapshot: ControlSnapshot, resourceFields: ControlFieldStates, epoch: number): void {
+	const previous = pendingObservationSnapshots.get(snapshot.tabId);
+	const coalesced = previous !== undefined;
+	pendingObservationSnapshots.set(snapshot.tabId, { snapshot, epoch,
+		resourceFields: { ...(previous?.epoch === epoch && previous.snapshot.documentId === snapshot.documentId
+			? previous.resourceFields : {}), ...resourceFields } });
+	if (coalesced) return;
+	scheduleSessionProjection(snapshot.tabId, async () => {
+		const latest = pendingObservationSnapshots.get(snapshot.tabId);
+		pendingObservationSnapshots.delete(snapshot.tabId);
+		if (!latest) return;
+		if (Object.keys(latest.resourceFields).length > 0) {
+			// Page events retain exact-resource actual, never origin preferences.
+			// Passive RPC reads only refresh presentation. Both use this bounded
+			// tail so dragging does not enqueue a storage write for every sample.
+			const changed: ControlFieldStates = {};
+			for (const field of Object.keys(latest.resourceFields) as ControlField[]) {
+				Object.assign(changed, { [field]: latest.snapshot.fields[field] });
+			}
+			await persistControlProjection(latest.snapshot, changed, {}, 'resource', latest.epoch);
+		} else await projectBadgeFromSnapshot(latest.snapshot, undefined, { observationOnly: true });
+	});
+}
 // Navigation is fenced synchronously before its durable transition enters the
 // per-tab queue. A queued invalidation alone is insufficient: a control
 // transaction may be awaiting Content/storage while Chrome has already moved
 // the tab to another document. The epoch lets every in-flight transaction
 // reject before it can publish its old generation.
 interface NavigationFence {
+	route?: { documentId: string; url: string };
 	epoch: number;
 	generationFloor: number;
 	// A fence remains pending from the synchronous browser lifecycle callback
@@ -209,6 +252,7 @@ const stalePersistedSnapshots = new Set<number>();
 let initialized = false;
 
 type RoutedControlSubmitRequest = Omit<ControlSubmitRequest, 'tabId'> & {
+	releaseDocumentOutput?: true;
 	tabId: number;
 	captureAdmission?: CaptureAdmission;
 	observationDocumentId?: string;
@@ -286,8 +330,17 @@ function generationKey(tabId: number): string {
 }
 
 async function currentIdentity(tabId: number): Promise<TabControlSessionIdentity> {
+	const epoch = navigationEpoch(tabId);
 	const frame = await chrome.webNavigation.getFrame({ tabId, frameId: 0 });
 	if (!frame?.documentId) throw new Error('The tab has no current document');
+	const fence = navigationFences.get(tabId);
+	// Seed a restarted worker once. A late frame read must never overwrite a
+	// newer route already observed by a synchronous Chrome navigation callback.
+	if (navigationEpoch(tabId) === epoch && !fence?.route && !fence?.beforeNavigate) {
+		const route = { documentId: frame.documentId, url: frame.url };
+		if (fence) fence.route = route;
+		else navigationFences.set(tabId, { epoch: 0, generationFloor: 0, pending: false, beforeNavigate: false, settled: true, route });
+	}
 	return storage.tabSession.identity(tabId, frame.documentId, frame.url);
 }
 
@@ -363,6 +416,7 @@ function fenceNavigation(
 	const previous = navigationFences.get(tabId);
 	const knownGeneration = snapshots.get(tabId)?.generation ?? 0;
 	const fence: NavigationFence = {
+		...(preserveDocumentState && previous?.route ? { route: previous.route } : {}),
 		epoch: (previous?.epoch ?? 0) + 1,
 		generationFloor: Math.max(previous?.generationFloor ?? 0, knownGeneration + 1),
 		pending: true,
@@ -551,6 +605,7 @@ async function resolveSubmitRequest(
 	const patch: ControlPatch = { ...(request.patch ?? {}) };
 	const baselines: ControlPatch = {};
 	let resolvedTarget = request.target;
+	let requestedCoverage = request.requestedCoverage;
 	const missingFields = [...new Set((request.mutations ?? [])
 		.map((mutation) => mutation.field)
 		.filter((field) => patch[field] === undefined
@@ -567,6 +622,11 @@ async function resolveSubmitRequest(
 		}
 	}
 	const contentFields = missingFields.filter((field) => field !== 'tabMuted' && field !== 'tabPinned');
+	const implicitOutputControl = request.target === null && request.source !== 'page'
+		&& Object.keys(patch).every(field => field === 'volumeBase' || field === 'mediaMuted')
+		&& (patch.volumeBase !== undefined || patch.mediaMuted !== undefined
+			|| (request.mutations ?? []).some(({ field }) => field === 'volumeBase' || field === 'mediaMuted'));
+	if (implicitOutputControl && !contentFields.includes('volumeBase')) contentFields.push('volumeBase');
 	if (contentFields.length > 0) {
 		const response = await sendSpectraTabRequest(
 			request.tabId,
@@ -577,6 +637,18 @@ async function resolveSubmitRequest(
 		if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
 		Object.assign(baselines, response.data.patch);
 		resolvedTarget = response.data.target ?? resolvedTarget;
+		if (implicitOutputControl && (request.source !== 'restore' && response.data.nativeAudioAbsent && response.data.observedStrategies.volumeBase !== 'page-native'
+			|| response.data.observedStrategies.volumeBase === 'capture')) {
+			requestedCoverage = 'full';
+			if (response.data.observedStrategies.volumeBase !== 'capture') {
+				// The video has no audio track. Its mute/volume are not the current
+				// document output; before ownership the output attenuation is unity.
+				baselines.volumeBase = 100;
+				baselines.mediaMuted = false;
+				patch.volumeBase ??= 100;
+				patch.boost ??= typeof snapshot.fields.boost?.actual === 'number' ? snapshot.fields.boost.actual : 1;
+			}
+		}
 	}
 	for (const mutation of request.mutations ?? []) {
 		const pending = patch[mutation.field] as ControlValues[ControlField] | undefined;
@@ -593,7 +665,9 @@ async function resolveSubmitRequest(
 	return {
 		tabId: request.tabId,
 		source: request.source,
-		requestedCoverage: request.requestedCoverage,
+		requestedCoverage,
+		...(request.releaseDocumentOutput ? { releaseDocumentOutput: true as const } : {}),
+		...(request.mediaRestore ? { mediaRestore: request.mediaRestore } : {}),
 		target: resolvedTarget,
 		...(request.baseRevision === undefined ? {} : { baseRevision: request.baseRevision }),
 		patch,
@@ -654,6 +728,17 @@ interface PhysicalPublication {
 	mediaObservation?: MediaObservationStamp;
 	observation?: boolean;
 	acknowledgementTarget?: MediaTarget | null;
+	/** Present only when the sample actually proved the presentation's kind. */
+	live?: boolean;
+	/**
+	 * The element that proof describes. A read can choose an element of its own
+	 * (a targetless bootstrap read does), and a video-scoped read names the video
+	 * while the snapshot's `live` describes the media target. Without this the
+	 * fact was attributed to whatever happened to be active.
+	 */
+	liveTarget?: MediaTarget | null;
+	prospectiveBoostRoute?: ControlSnapshot['prospectiveBoostRoute'];
+	volumeBoostTarget?: MediaTarget;
 }
 
 function mediaSourceKey(tabId: number, target: MediaTarget): string {
@@ -707,6 +792,7 @@ async function admitPhysicalObservation(
 	result: ControlReadResult,
 	scope: 'media' | 'video' = 'media',
 	expectedEpoch = navigationEpoch(base.tabId),
+	resourceObservation = false,
 ): Promise<ControlSnapshot> {
 	if (result.target && result.target.documentId !== base.documentId) throw new Error('Physical sample belongs to a stale document');
 	if (base.mediaObservation && !result.mediaObservation) return snapshots.get(base.tabId) ?? base;
@@ -716,11 +802,91 @@ async function admitPhysicalObservation(
 		...base,
 		activeMedia: scope === 'media' ? result.target : base.activeMedia,
 		activeVideo: scope === 'video' ? result.target?.kind === 'video' ? result.target : null
-			: result.target?.kind === 'video' ? result.target : base.activeVideo,
+			: result.target?.kind === 'video' ? result.target
+				: result.target === null && result.mediaObservation ? null : base.activeVideo,
 		fields: { ...base.fields, ...fields },
 		...(result.mediaObservation ? { mediaObservation: result.mediaObservation } : {}),
 	};
-	return publishSnapshot(proposed, expectedEpoch, { fields, mediaObservation: result.mediaObservation, observation: true });
+	const published = await publishSnapshot(proposed, expectedEpoch, {
+		fields,
+		mediaObservation: result.mediaObservation,
+		observation: true,
+		// `live` is a fact about one element. A video-scoped read proves the video,
+		// not the media target, and a targetless bootstrap read names no element at
+		// all; both keep their proof but must not be written onto `activeMedia`.
+		...(scope === 'media' && typeof result.live === 'boolean' && result.target
+			? { live: result.live, liveTarget: result.target } : {}),
+		...(scope === 'media' && result.target && Object.hasOwn(result, 'prospectiveBoostRoute')
+			? { prospectiveBoostRoute: result.prospectiveBoostRoute, volumeBoostTarget: result.target } : {}),
+	});
+	// A native volume change is an admitted fact about this tab, so the badge —
+	// which is nothing but a projection of admitted facts — has to follow it.
+	// Passive reads write no session state. Page events also retain their
+	// exact-resource state through the existing projection owner (SCTRL-055),
+	// never origin preferences. Projection is off the fast path because a
+	// gesture produces many samples and the Action API is not on our critical
+	// path.
+	const changedResourceFields: ControlFieldStates = {};
+	if (resourceObservation) {
+		for (const field of Object.keys(fields) as ControlField[]) {
+			const accepted = published.fields[field];
+			if (!accepted || accepted.actual !== fields[field]?.actual || accepted.actual === base.fields[field]?.actual) continue;
+			if (ORDERED_MEDIA_FIELDS.has(field) && (!accepted.mediaObservation || !result.mediaObservation
+				|| compareMediaObservations(accepted.mediaObservation, result.mediaObservation) !== 0)) continue;
+			Object.assign(changedResourceFields, { [field]: accepted });
+		}
+	}
+	if (Object.keys(changedResourceFields).length > 0 || Object.keys(fields).some((field) => AUDIO_PROJECTION_FIELDS.has(field as ControlField))) {
+		scheduleObservationProjection(published, changedResourceFields, expectedEpoch);
+	}
+	return published;
+}
+
+/**
+ * The presentation kind a publication is allowed to carry.
+ *
+ * `live` is a fact about one element, so it may only be published for the media
+ * target the proof actually described. A proof about another element is not
+ * weaker evidence — it is evidence about something else; inheriting the old
+ * value across a target change made a finite advertisement report `live: true`
+ * after the viewer left a broadcast, which disabled speed on an ordinary video.
+ */
+function publishedLive(
+	current: ControlSnapshot | undefined,
+	physical: PhysicalPublication | undefined,
+	activeMedia: MediaTarget | null,
+): boolean | undefined {
+	if (typeof physical?.live === 'boolean' && physical.liveTarget) {
+		return sameMediaTarget(physical.liveTarget, activeMedia) ? physical.live : undefined;
+	}
+	if (!current || !sameMediaTarget(current.activeMedia, activeMedia)) return undefined;
+	return current.live;
+}
+
+function applyPublishedLive(snapshot: ControlSnapshot, live: boolean | undefined): ControlSnapshot {
+	if (live === undefined) delete snapshot.live;
+	else snapshot.live = live;
+	return snapshot;
+}
+
+function applyPublishedProspectiveBoostRoute(
+	current: ControlSnapshot | undefined, physical: PhysicalPublication | undefined, snapshot: ControlSnapshot,
+): ControlSnapshot {
+	let route: ControlSnapshot['prospectiveBoostRoute'];
+	if (current && sameMediaTarget(current.activeMedia, snapshot.activeMedia)
+		&& (!current.mediaObservation || !snapshot.mediaObservation
+			|| sameMediaObservationSelection(current.mediaObservation, snapshot.mediaObservation))) {
+		route = current.prospectiveBoostRoute;
+	}
+	if (physical && Object.hasOwn(physical, 'prospectiveBoostRoute') && physical.volumeBoostTarget
+		&& sameMediaTarget(physical.volumeBoostTarget, snapshot.activeMedia)
+		&& !isRetiredMediaSample(snapshot.tabId, physical.volumeBoostTarget, physical.mediaObservation)
+		&& (!current || mediaSampleCanReplace(current, physical.mediaObservation))) {
+		route = physical.prospectiveBoostRoute;
+	}
+	if (route === undefined) delete snapshot.prospectiveBoostRoute;
+	else snapshot.prospectiveBoostRoute = route;
+	return snapshot;
 }
 
 function mergeSnapshotPublication(
@@ -728,9 +894,13 @@ function mergeSnapshotPublication(
 	proposed: ControlSnapshot,
 	physical?: PhysicalPublication,
 ): ControlSnapshot {
-	if (!current || current.documentId !== proposed.documentId || current.generation !== proposed.generation) return {
-		...proposed, fields: mergeMediaObservedFields({}, proposed.fields, physical?.mediaObservation ?? proposed.mediaObservation, physical?.observation === true),
-	};
+	if (!current || current.documentId !== proposed.documentId || current.generation !== proposed.generation) {
+		return applyPublishedProspectiveBoostRoute(undefined, physical, applyPublishedLive({
+			...proposed,
+			fields: mergeMediaObservedFields({}, proposed.fields,
+				physical?.mediaObservation ?? proposed.mediaObservation, physical?.observation === true),
+		}, publishedLive(undefined, physical, proposed.activeMedia)));
+	}
 	const stamp = physical ? physical.mediaObservation : proposed.mediaObservation;
 	const retiredSample = isRetiredMediaSample(proposed.tabId, proposed.activeMedia, stamp);
 	const replacesSelection = mediaSampleCanReplace(current, stamp)
@@ -752,14 +922,14 @@ function mergeSnapshotPublication(
 	const retired = replacesSelection ? retireMediaActualFields(current.fields,
 		ownerChanged || !sameMediaTarget(current.activeMedia, activeMedia),
 		ownerChanged || !sameMediaTarget(current.activeVideo, activeVideo), proposed.revision) : {};
-	return {
+	return applyPublishedProspectiveBoostRoute(current, physical, applyPublishedLive({
 		...proposed,
 		activeMedia,
 		activeVideo,
 		fields: mergeMediaObservedFields({ ...current.fields, ...retired }, delta, stamp, physical?.observation === true),
 		...(replacesSelection && stamp ? { mediaObservation: stamp }
 			: current.mediaObservation ? { mediaObservation: current.mediaObservation } : {}),
-	};
+	}, publishedLive(current, physical, activeMedia)));
 }
 
 async function publishSnapshot(
@@ -782,6 +952,8 @@ async function publishSnapshot(
 		const unchanged = current && current.documentId === snapshot.documentId && current.origin === snapshot.origin
 			&& current.generation === snapshot.generation && current.revision === snapshot.revision
 			&& sameMediaTarget(current.activeMedia, snapshot.activeMedia) && sameMediaTarget(current.activeVideo, snapshot.activeVideo)
+			&& (current.live ?? null) === (snapshot.live ?? null)
+			&& current.prospectiveBoostRoute === snapshot.prospectiveBoostRoute
 			&& Object.keys(snapshot.fields).every((key) => {
 				const field = key as ControlField;
 				const before = current.fields[field];
@@ -860,6 +1032,48 @@ async function persistPublishedSnapshot(
 	}
 }
 
+/**
+ * The only composer that turns admitted control facts into an Action badge.
+ *
+ * Two very different routes reach the badge — an extension ACK that also writes
+ * the durable per-origin session, and a page-native observation that must never
+ * write it (SCTRL-017) — and both must paint from the same rules. Keeping the
+ * composition here is what stops the second route from being forgotten: it was,
+ * and every native volume change left the badge on the last extension intent.
+ */
+async function projectBadgeFromSnapshot(
+	snapshot: ControlSnapshot,
+	projection?: ControlSessionPatch,
+	options: { observationOnly?: boolean; identity?: TabControlSessionIdentity } = {},
+): Promise<void> {
+	// A page observation refines a visible badge; it never creates one. The
+	// "untouched page stays hidden" rule is enforced here as well as in the
+	// handler so a passive gesture costs no Action IPC at all.
+	if (options.observationOnly && !await isBadgeProjected(snapshot.tabId)) return;
+	const identity = options.identity
+		?? await currentIdentity(snapshot.tabId).catch(() => null);
+	if (!identity || identity.documentId !== snapshot.documentId
+		|| identity.origin !== snapshot.origin) return;
+	// A page observation carries the fields the page itself touched, and the
+	// volume it reports is the page's own 0-100 level. The acknowledged
+	// multiplier that makes that level audible lives in the durable row, not in
+	// the sample: reading the sample alone painted the unamplified number and
+	// the badge jumped between the base volume and the effective one.
+	const durable = options.observationOnly && !projection
+		? await storage.tabSession.get(snapshot.tabId, identity).catch(() => null)
+		: null;
+	const session = await getAudioSession(snapshot.tabId).catch(() => null);
+	// Session persistence may finish after a newer page observation. Preferences
+	// only fill unknown fields; the current accepted snapshot owns actual values.
+	const latest = snapshots.get(snapshot.tabId) ?? snapshot;
+	if (latest.documentId !== snapshot.documentId || latest.generation !== snapshot.generation
+		|| latest.origin !== snapshot.origin) return;
+	const resolved = { ...(projection ?? durable ?? {}), ...projectControlSessionPatch(latest.fields) };
+	const isCaptureActive = audioSessionMatchesControlDocument(session, latest)
+		&& isActiveCaptureLifecycle(session);
+	await updateBadgeFromControlProjection(latest, resolved, isCaptureActive, false, latest.revision);
+}
+
 async function persistControlProjection(
 	snapshot: ControlSnapshot,
 	changedFields: ControlFieldStates,
@@ -867,7 +1081,15 @@ async function persistControlProjection(
 	scope: TabControlSessionScope | 'none' = 'none',
 	expectedEpoch = navigationEpoch(snapshot.tabId),
 ): Promise<void> {
-	if (scope === 'none') return;
+	if (scope === 'none') {
+		// Automatic restoration changes physical actuals without creating a new
+		// preference. Persistence scope must not suppress the existing badge's
+		// projection of the accepted snapshot.
+		if (Object.keys(changedFields).some((field) => AUDIO_PROJECTION_FIELDS.has(field as ControlField))) {
+			await projectBadgeFromSnapshot(snapshot, undefined, { observationOnly: true });
+		}
+		return;
+	}
 	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 	const sessionPatch = {
 		...projectControlSessionPatch(changedFields),
@@ -879,7 +1101,16 @@ async function persistControlProjection(
 	if (identity.documentId !== snapshot.documentId || identity.origin !== snapshot.origin) {
 		throw new Error('Control projection belongs to a stale document resource');
 	}
+	// The resource row describes this document completely — including values the
+	// page itself set — because that is what an exact-resource reload replays.
+	// What it must never do is turn a page's boot-time silence into a preference:
+	// `rebindTabControlSession` drops an orphan `mediaMuted: true` or
+	// `volumeBase: 0` that no extension gesture promoted to the portable row.
+	const retainedResource = scope === 'resource'
+		? await storage.tabSession.get(snapshot.tabId, identity).catch(() => null) : null;
+	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 	const currentResourcePatch = {
+		...retainedResource,
 		...projectControlSessionPatch(snapshot.fields),
 		...structuredClone(acknowledgedSessionPatch),
 	};
@@ -894,16 +1125,7 @@ async function persistControlProjection(
 	if (!Object.keys(sessionPatch).some((field) => AUDIO_PROJECTION_FIELDS.has(field as ControlField))) return;
 	const completeSession = await storage.tabSession.get(snapshot.tabId, identity)
 		.catch(() => null) ?? sessionPatch;
-	const session = await getAudioSession(snapshot.tabId).catch(() => null);
-	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
-	const isCaptureActive = audioSessionMatchesControlDocument(session, snapshot)
-		&& isActiveCaptureLifecycle(session);
-	await updateBadgeFromControlProjection(
-		snapshot,
-		completeSession,
-		isCaptureActive,
-		false,
-	);
+	await projectBadgeFromSnapshot(snapshot, completeSession, { identity, observationOnly: scope === 'resource' });
 	assertNavigationFence(snapshot.tabId, expectedEpoch, snapshot);
 }
 
@@ -911,6 +1133,9 @@ async function persistControlProjection(
 // it only after the document initialization barrier has restored the current
 // acknowledged session; the badge remains a projection, never another owner.
 async function reprojectBadgeForCurrentDocument(tabId: number): Promise<void> {
+	// Chrome owns the visible projection and has just cleared it; nothing cached
+	// from before this call describes the screen any more.
+	invalidatePaintedBadge(tabId);
 	const snapshot = await getSnapshot(tabId);
 	if (!snapshot) {
 		await restoreBadgeUsageForTab(tabId);
@@ -925,15 +1150,7 @@ async function reprojectBadgeForCurrentDocument(tabId: number): Promise<void> {
 	}
 	const completeSession = await storage.tabSession.get(tabId, identity)
 		.catch(() => null) ?? projectControlSessionPatch(snapshot.fields);
-	const session = await getAudioSession(tabId).catch(() => null);
-	const isCaptureActive = audioSessionMatchesControlDocument(session, snapshot)
-		&& isActiveCaptureLifecycle(session);
-	await updateBadgeFromControlProjection(
-		snapshot,
-		completeSession,
-		isCaptureActive,
-		false,
-	);
+	await projectBadgeFromSnapshot(snapshot, completeSession, { identity });
 }
 
 interface PreparedControlIntent {
@@ -947,7 +1164,8 @@ interface PreparedControlIntent {
 	mediaObservation?: MediaObservationStamp;
 }
 
-interface CommitControlProjection {
+interface CommitControlProjection extends Pick<PhysicalPublication, 'live' | 'liveTarget'> {
+	observation?: boolean;
 	acknowledgementTarget?: MediaTarget | null;
 	activeVideo?: ControlSnapshot['activeVideo'];
 	acknowledgedSessionPatch?: ControlSessionPatch;
@@ -965,6 +1183,13 @@ export class StaleControlRevisionError extends Error {
 		super(`Stale control revision: expected ${expectedRevision}`);
 		this.name = 'StaleControlRevisionError';
 		this.expectedRevision = expectedRevision;
+	}
+}
+
+class NativeControlExecutionError extends Error {
+	constructor(readonly code: string, message: string) {
+		super(`${code}: ${message}`);
+		this.name = 'NativeControlExecutionError';
 	}
 }
 
@@ -1006,7 +1231,7 @@ async function prepareIntent(
 			intent.target,
 		));
 	}
-	if (pageObservation && typeof intent.patch.volumeBase === 'number'
+	if (pageObservation && snapshot.fields.volumeBase?.strategy !== 'capture' && typeof intent.patch.volumeBase === 'number'
 		&& volumeObservationCanNormalize(snapshot, request.mediaObservation)) {
 		const knownBoost = snapshot.fields.boost?.actual;
 		const session = typeof knownBoost === 'number'
@@ -1087,7 +1312,7 @@ async function prepareIntent(
 			routedIntent,
 			{ documentId: intent.documentId, generation: intent.generation },
 		);
-		if (!response.ok) throw new Error(`${response.error.code}: ${response.error.message}`);
+		if (!response.ok) throw new NativeControlExecutionError(response.error.code, response.error.message);
 		if (!controlApplyAckMatches(response.data, intent)) {
 			throw new Error('Content runtime returned a stale control ACK');
 		}
@@ -1144,7 +1369,8 @@ async function commitControlFields(
 		activeVideo,
 		fields: { ...current.fields, ...fields },
 	};
-	committed = await publishSnapshot(committed, expectedEpoch, { fields, mediaObservation: projection.mediaObservation,
+	committed = await publishSnapshot(committed, expectedEpoch, { fields, observation: projection.observation, mediaObservation: projection.mediaObservation,
+		live: projection.live, liveTarget: projection.liveTarget,
 		...(Object.hasOwn(projection, 'acknowledgementTarget') ? { acknowledgementTarget: projection.acknowledgementTarget } : {}) });
 	assertNavigationFence(baseline.tabId, expectedEpoch, committed);
 	if (Object.entries(fields).some(([field, state]) => RUNTIME_RESIDENT_NATIVE_FIELDS.has(field as ControlField)
@@ -1204,10 +1430,34 @@ function observeChromeTabState(
 	return serialized(tabId, () => applyChromeTabObservation(tabId, patch));
 }
 
+// An externally stopped processor invalidates its physical facts. Session
+// publication is asynchronous to control execution, so join the same tab lane
+// without making Content's publication ACK wait on its own in-flight command.
+export function observeStoppedAudioOutput(session: AudioSessionSnapshot): void {
+	if (session.actualMode !== 'bypass' || session.phase !== 'error') return;
+	void serialized(session.tabId, async () => {
+		const current = await getSnapshot(session.tabId);
+		if (!current || current.documentId !== session.documentId || current.origin !== session.origin) return;
+		const actualSession = await getAudioSession(session.tabId);
+		if (!actualSession || actualSession.documentId !== session.documentId || actualSession.origin !== session.origin
+			|| actualSession.generation !== session.generation
+			|| actualSession.actualMode !== 'bypass' || actualSession.phase !== 'error') return;
+		const fields: ControlFieldStates = {};
+		for (const [field, state] of Object.entries(current.fields)) {
+			if (state?.strategy !== 'capture' || !state.controlled) continue;
+			Object.assign(fields, { [field]: { ...state, actual: null, controlled: false, phase: 'error',
+				revision: current.revision + 1,
+				lastError: { code: 'capability-unavailable', message: 'The document audio processor stopped', retryable: true } } });
+		}
+		if (Object.keys(fields).length) await commitControlFields(current, fields, current.activeMedia);
+	}).catch(error => swLog.warn('Stopped audio output publication failed', error));
+}
+
 async function executeIntent(
 	request: RoutedControlSubmitRequest,
 	contextSnapshot?: ControlSnapshot,
 	intentId?: string,
+	presentation: Pick<PhysicalPublication, 'live' | 'liveTarget'> = {},
 ): Promise<ControlApplyAck> {
 	const current = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
 	const prepared = await prepareIntent(request, current, intentId);
@@ -1217,7 +1467,9 @@ async function executeIntent(
 		fields,
 		activeMedia,
 		{
+			...presentation,
 			activeVideo,
+			observation: intent.source === 'page',
 			acknowledgementTarget: ackTarget,
 			mediaObservation,
 			sessionScope: controlSessionScopeForSource(intent.source),
@@ -1302,9 +1554,18 @@ async function compensateControlPatch(
 	const fields: ControlFieldStates = {};
 	const failures: string[] = [];
 	const isolatedTargetPatch: ControlPatch = { ...targetPatch };
+	const isolatedProcessorPatch: ControlPatch = { ...processorPatch };
+	if (baseline.fields.volumeBase?.strategy === 'capture') {
+		for (const field of ['volumeBase', 'mediaMuted'] as const) {
+			if (isolatedTargetPatch[field] !== undefined) {
+				Object.assign(isolatedProcessorPatch, { [field]: isolatedTargetPatch[field] });
+				delete isolatedTargetPatch[field];
+			}
+		}
+	}
 	const stages = {
 		target: [isolatedTargetPatch, CONTROL_COVERAGE_TARGET],
-		processor: [processorPatch, 'full'],
+		processor: [isolatedProcessorPatch, 'full'],
 	} as const;
 	for (const stage of order) {
 		const [patch, requestedCoverage] = stages[stage];
@@ -1619,7 +1880,7 @@ function normalizeHttpUrl(value: string): string {
 function createFieldOperationAck<
 	O extends Extract<
 		ControlOperationRequest['operation'],
-		'playback-toggle' | 'seek-relative' | 'video-effects-toggle' | 'video-effects-reset'
+		'playback-toggle' | 'seek-relative' | 'video-effects-toggle' | 'video-effects-reset' | 'effective-volume'
 	>,
 	F extends ControlDirectField,
 >(
@@ -1643,13 +1904,29 @@ function createFieldOperationAck<
 		strategy: strategy ?? state?.strategy ?? 'unsupported',
 		coverage: coverage ?? state?.coverage ?? 'partial',
 		fields: fieldAck.fields,
+		...(fieldAck.audioVolume ? { audioVolume: fieldAck.audioVolume } : {}),
 		result,
 	} as ControlOperationAck<O>;
 }
 
+// A starting player can retire more than one source before settling. Keep the
+// original scalar gesture in this queue slot across a finite number of distinct
+// source identities; never require another user gesture to consume the next one.
+const MAX_NATIVE_VOLUME_SOURCE_RECOVERIES = 3;
+const NATIVE_VOLUME_SOURCE_SETTLE_DELAYS_MS = [25, 75, 150] as const;
+const NATIVE_VOLUME_SOURCE_RECOVERY_BUDGET_MS = 1_000;
+
+// Internal presentation observer, never a wire input or another volume planner.
+// The serialized operation owns the physical baseline and the absolute goal.
+export type ControlVolumePlanObserver = (plan: {
+	snapshot: ControlSnapshot; volume: number; muted: boolean;
+}) => Promise<void>;
+
 async function executeFieldOperation(
 	request: RoutedControlOperationRequest,
 	operationId: string,
+	volumeRecovery?: { baseline: ControlSnapshot; target: MediaTarget | null; error: NativeControlExecutionError; attempts: number; deadline: number },
+	onVolumePlan?: ControlVolumePlanObserver,
 ): Promise<ControlOperationAck> {
 	const common = {
 		tabId: request.tabId,
@@ -1661,6 +1938,15 @@ async function executeFieldOperation(
 	} as const;
 	if (request.operation === 'effective-volume') {
 		const baseline = await getOrCreateSnapshot(request.tabId);
+		if (volumeRecovery) {
+			if (performance.now() >= volumeRecovery.deadline) throw volumeRecovery.error;
+			assertNavigationFence(request.tabId, snapshotFenceEpochs.get(volumeRecovery.baseline)
+				?? navigationEpoch(request.tabId), volumeRecovery.baseline);
+			const identity = await currentIdentity(request.tabId);
+			if (identity.documentId !== volumeRecovery.baseline.documentId
+				|| baseline.documentId !== volumeRecovery.baseline.documentId
+				|| baseline.generation !== volumeRecovery.baseline.generation) throw volumeRecovery.error;
+		}
 		const snapshotActual = (field: 'volumeBase' | 'boost'): number | null => {
 			const actual = baseline.fields[field]?.actual;
 			return typeof actual === 'number' ? actual : null;
@@ -1668,22 +1954,66 @@ async function executeFieldOperation(
 		const knownVolumeBase = snapshotActual('volumeBase');
 		const knownBoost = snapshotActual('boost');
 		const knownMuted = baseline.fields.mediaMuted?.actual;
-		const missingActualFields = [
-			...(knownVolumeBase === null ? ['volumeBase' as const] : []),
-			...(knownBoost === null ? ['boost' as const] : []),
-			...(typeof knownMuted === 'boolean' ? [] : ['mediaMuted' as const]),
+		const readFields = [
+			'volumeBase' as const,
+			'mediaMuted' as const,
+			...(knownBoost === null || volumeRecovery ? ['boost' as const] : []),
 		];
-		// ControlSnapshot is the actual-value owner. Only a cold snapshot needs one
-		// Content readback for its unknown fields; established fields never regress
-		// to an unrelated getter sample merely because mute still needs observation.
-		const readback = missingActualFields.length > 0
-			? await sendSpectraTabRequest(
+		// The snapshot may outlive its Content registry. Resolve an implicit
+		// target in the current runtime and read its native pair atomically before
+		// planning: reusing a previous media ID can write a hidden replacement or
+		// strand every gesture on a target that no longer exists. Processor ACKs
+		// remain owned by their existing lifecycle, not a native getter sample.
+		const readVolume = () => sendSpectraTabRequest(
 				request.tabId,
 				PROTO_ACTUAL_READ,
-				{ fields: missingActualFields, target: request.target },
+				{ fields: readFields, target: request.target },
 				{ documentId: baseline.documentId, generation: baseline.generation },
-			).catch(() => null)
-			: null;
+			).catch(() => null);
+		let readback = await readVolume();
+		// Only a newly resolved source proves that this gesture can continue.
+		// Retirement and insertion need not share a browser task. A read in that
+		// gap is not a terminal user failure: allow bounded, read-only settlement
+		// before deciding, with no writer until a distinct complete target exists.
+		if (volumeRecovery) {
+			const replacementReady = () => readback?.ok && readback.data.target
+				&& readback.data.target.documentId === baseline.documentId
+				&& typeof readback.data.patch.volumeBase === 'number'
+				&& typeof readback.data.patch.mediaMuted === 'boolean'
+				&& typeof readback.data.patch.boost === 'number'
+				&& !sameMediaTarget(readback.data.target, volumeRecovery.target);
+			for (const delay of NATIVE_VOLUME_SOURCE_SETTLE_DELAYS_MS) {
+				if (replacementReady()) break;
+				if (performance.now() + delay >= volumeRecovery.deadline) throw volumeRecovery.error;
+				// A completed read can witness a mounting gap. A failed transport
+				// cannot: repeating its full RPC deadline would strand the gesture.
+				if (!readback?.ok || readback.data.target && readback.data.target.documentId !== baseline.documentId) {
+					throw volumeRecovery.error;
+				}
+				await new Promise<void>((resolve) => setTimeout(resolve, delay));
+				assertNavigationFence(request.tabId, snapshotFenceEpochs.get(volumeRecovery.baseline)
+					?? navigationEpoch(request.tabId), volumeRecovery.baseline);
+				const identity = await currentIdentity(request.tabId);
+				if (identity.documentId !== volumeRecovery.baseline.documentId) throw volumeRecovery.error;
+				readback = await readVolume();
+			}
+			if (performance.now() >= volumeRecovery.deadline || !replacementReady()) throw volumeRecovery.error;
+			if (!readback?.ok || readback.data.patch.boost !== 1
+				|| readback.data.observedStrategies.volumeBase === 'capture'
+				|| readback.data.nativeAudioAbsent && readback.data.observedStrategies.volumeBase !== 'page-native') {
+				throw volumeRecovery.error;
+			}
+		}
+		const knownTarget = request.target ?? baseline.activeMedia;
+		// Refresh improves target selection, but main did not make a warm volume
+		// control depend on this extra read. Retain the current-document writer
+		// when its complete baseline exists; its own target fencing and physical
+		// ACK still decide success. Cold/other-target requests cannot borrow it.
+		if (!readback?.ok && (knownVolumeBase === null || knownBoost === null
+			|| typeof knownMuted !== 'boolean' || !knownTarget
+			|| !sameMediaTarget(knownTarget, baseline.activeMedia))) {
+			throw new Error(readback ? readback.error.message : 'Current volume could not be read');
+		}
 		const actualField = <K extends 'volumeBase' | 'boost'>(field: K): number | null => {
 			const direct = readback?.ok ? readback.data.patch[field] : undefined;
 			if (typeof direct === 'number') return direct;
@@ -1691,8 +2021,13 @@ async function executeFieldOperation(
 			return known;
 		};
 		const currentVolumeBase = actualField('volumeBase') ?? CONTROL_VALUE_LIMITS.volumeBase.max;
+		const observedVolumeStrategy = readback?.ok
+			? readback.data.observedStrategies.volumeBase : baseline.fields.volumeBase?.strategy;
+		const documentOutput = readback?.ok && readback.data.nativeAudioAbsent === true && observedVolumeStrategy !== 'page-native'
+			|| observedVolumeStrategy === 'capture';
+		const unownedDocumentOutput = documentOutput && observedVolumeStrategy !== 'capture';
 		const current = {
-			volumeBase: currentVolumeBase,
+			volumeBase: unownedDocumentOutput ? 100 : currentVolumeBase,
 			boost: actualField('boost') ?? 1,
 		};
 		// The processor owns the amplified scale while its boost field is
@@ -1704,28 +2039,63 @@ async function executeFieldOperation(
 		const processorOwnsScale = baseline.fields.boost?.phase === 'applied'
 			&& baseline.fields.boost?.controlled === true;
 		const observedMuted = readback?.ok ? readback.data.patch.mediaMuted : undefined;
-		const currentMuted = typeof observedMuted === 'boolean'
+		const currentMuted = unownedDocumentOutput ? false : typeof observedMuted === 'boolean'
 			? observedMuted
 			: typeof knownMuted === 'boolean'
 				? knownMuted
 				: null;
 		const currentEffective = compileEffectiveVolume(current.volumeBase, current.boost);
-		const desiredEffective = clampControlValue(
-			request.payload.operation === 'delta'
-				? currentEffective + request.payload.value
-				: request.payload.value,
-			'volume',
-			currentEffective,
-		);
+		const desiredEffective = request.payload.operation === 'delta'
+			? stepEffectiveVolume(currentEffective, request.payload.value)
+			: clampControlValue(request.payload.value, 'volume', currentEffective);
 		let desired = desiredEffective > CONTROL_VALUE_LIMITS.volumeBase.max
 			&& current.boost === 1
 			&& current.volumeBase > CONTROL_VALUE_LIMITS.volumeBase.max
 			? { volumeBase: desiredEffective, boost: 1 }
 			: splitEffectiveVolume(desiredEffective);
 		let target = readback?.ok ? readback.data.target : request.target ?? baseline.activeMedia;
-		const targetPatch: ControlPatch = current.volumeBase === desired.volumeBase
+		// The read proves this kind only for its exact source. Publication still
+		// checks it against the target physically acknowledged by the writer.
+		const presentation = readback?.ok && typeof readback.data.live === 'boolean'
+			? { live: readback.data.live, liveTarget: readback.data.target } : {};
+		// A warm writer may proceed without this optional read, but presentation
+		// cannot borrow the previous source's prospective route as fresh proof.
+		await onVolumePlan?.({ snapshot: { ...baseline, activeMedia: target,
+			prospectiveBoostRoute: readback?.ok ? readback.data.prospectiveBoostRoute : null }, volume: desiredEffective,
+			muted: desiredEffective > 0 ? false : currentMuted ?? false });
+		if (documentOutput && request.target === null) {
+			const fieldAck = await executeIntent({
+				...common, target, requestedCoverage: 'full',
+				patch: { ...desired, mediaMuted: desiredEffective > 0 ? false : currentMuted ?? false },
+			}, baseline, undefined, presentation);
+			assertAppliedFields(fieldAck.fields, ['volumeBase', 'boost', 'mediaMuted'], 'Document output volume');
+			const volumeBase = fieldAck.fields.volumeBase?.actual;
+			const boost = fieldAck.fields.boost?.actual;
+			if (typeof volumeBase !== 'number' || typeof boost !== 'number') throw new Error('Missing output volume readback');
+			return createFieldOperationAck(operationId, request.operation, fieldAck, 'volumeBase', {
+				effectiveVolume: compileEffectiveVolume(volumeBase, boost), volumeBase, boost,
+			}, CONTROL_STRATEGY_EXTENSION, 'opaque');
+		}
+		// Without a fresh read, even an equal requested value needs a writer ACK;
+		// the cached value is a planning baseline, never evidence of completion.
+		const volumeStagePatch: ControlPatch = !volumeRecovery && readback?.ok && current.volumeBase === desired.volumeBase
 			? {}
 			: { volumeBase: desired.volumeBase };
+		// The public control is the level the viewer hears, not a muted element's
+		// hidden property. A page that starts muted — autoplay policy, a player
+		// parked at zero, a pre-roll that muted the broadcast — turns every volume
+		// gesture into a number that moves while nothing becomes audible, which is
+		// indistinguishable from a broken control. Raising the level is therefore
+		// also a request to hear it: the same transaction releases the mute.
+		//
+		// This is not a preference replay. It only runs while a gesture is being
+		// served, never on restore, and a document that has never been interacted
+		// with still refuses the unmute (the browser owns that admission); the
+		// mute then stays a page fact instead of a failure of the volume write.
+		const releaseMute = desiredEffective > 0 && currentMuted === true;
+		const targetPatch: ControlPatch = releaseMute
+			? { ...volumeStagePatch, mediaMuted: false }
+			: volumeStagePatch;
 		// A cold processor read proves the scalar value but not the processor
 		// lifecycle strategy required by ControlSnapshot. Route one exact no-op
 		// intent through the processor owner so later volume/mute ACKs can project
@@ -1740,8 +2110,8 @@ async function executeFieldOperation(
 			? ['processor', 'target']
 			: ['target', 'processor'];
 
-		// A repeated slider sample at the already acknowledged value is a true
-		// no-op: no content IPC, no storage write and no synthetic revision.
+		// Equal current physical values need no setter or synthetic revision.
+		// A historical snapshot alone cannot certify this no-op across a reload.
 		if (Object.keys(targetPatch).length === 0 && Object.keys(processorPatch).length === 0) {
 			return {
 				operationId,
@@ -1783,6 +2153,7 @@ async function executeFieldOperation(
 			: {};
 		let fields: ControlFieldStates = { ...observedFields };
 		let mediaObservation = readback?.ok ? readback.data.mediaObservation : undefined;
+		let processorStageStarted = false;
 		try {
 			let staged = baseline;
 			let physicalVolumeBase = current.volumeBase;
@@ -1791,7 +2162,9 @@ async function executeFieldOperation(
 				stage: 'target' | 'processor',
 				patch: ControlPatch,
 				assertion: 'apply' | 'release' | 'probe',
+				required: ControlPatch = patch,
 			): Promise<PreparedControlIntent> => {
+				if (stage === 'processor') processorStageStarted = true;
 				const prepared = await prepareIntent({
 					...common,
 					target,
@@ -1804,7 +2177,7 @@ async function executeFieldOperation(
 				if (assertion === 'apply') {
 					assertAppliedPatch(
 						prepared.fields,
-						patch,
+						required,
 						stage === 'target'
 							? 'Effective volume native stage'
 							: 'Effective volume processor stage',
@@ -1860,9 +2233,11 @@ async function executeFieldOperation(
 				}
 				let pageNativeApplied = false;
 				if (scaleSupported !== false) {
-					const nativePrepared = physicalVolumeBase === desiredEffective
+					const nativePrepared = readback?.ok && physicalVolumeBase === desiredEffective
 						? null
-						: await runStage('target', { volumeBase: desiredEffective }, 'probe');
+						: await runStage('target', releaseMute
+							? { volumeBase: desiredEffective, mediaMuted: false }
+							: { volumeBase: desiredEffective }, 'probe');
 					const nativeState = nativePrepared?.fields.volumeBase;
 					pageNativeApplied = nativePrepared === null
 						? physicalVolumeBase === desiredEffective
@@ -1890,8 +2265,10 @@ async function executeFieldOperation(
 					else Reflect.deleteProperty(fields, 'volumeBase');
 					staged = stageSnapshot(baseline, fields, target);
 					desired = splitEffectiveVolume(desiredEffective);
-					if (physicalVolumeBase !== desired.volumeBase) {
-						await runStage('target', { volumeBase: desired.volumeBase }, 'apply');
+					if (!readback?.ok || physicalVolumeBase !== desired.volumeBase || releaseMute) {
+						await runStage('target', releaseMute
+							? { volumeBase: desired.volumeBase, mediaMuted: false }
+							: { volumeBase: desired.volumeBase }, 'apply', { volumeBase: desired.volumeBase });
 						physicalVolumeBase = desired.volumeBase;
 					}
 					if (physicalBoost !== desired.boost || knownBoost === null) {
@@ -1910,6 +2287,7 @@ async function executeFieldOperation(
 						stage,
 						patch,
 						isProcessorRelease ? 'release' : 'apply',
+						stage === 'target' ? volumeStagePatch : patch,
 					);
 				}
 			}
@@ -1926,6 +2304,7 @@ async function executeFieldOperation(
 				{
 					mediaObservation,
 					acknowledgementTarget: target,
+					...presentation,
 					// Effective volume is one public value backed by two actual
 					// fields. Persist the complete read-back pair even when one
 					// component was already correct and needed no writer stage.
@@ -1939,12 +2318,19 @@ async function executeFieldOperation(
 			const committedVolumeBase = typeof committed.fields.volumeBase?.actual === 'number' ? committed.fields.volumeBase.actual : actualVolumeBase;
 			const committedBoost = typeof committed.fields.boost?.actual === 'number' ? committed.fields.boost.actual : actualBoost;
 			const committedEffectiveVolume = compileEffectiveVolume(committedVolumeBase, committedBoost);
-			const audioVolume = currentMuted === null ? null : {
+			// A released mute is part of what this gesture changed. Reporting the
+			// pre-write mute here would acknowledge "silent" for a tab that just
+			// became audible, and every surface painting from that answer would
+			// disagree with the viewer's ears.
+			const committedMuted = typeof committed.fields.mediaMuted?.actual === 'boolean'
+				? committed.fields.mediaMuted.actual
+				: currentMuted;
+			const audioVolume = committedMuted === null ? null : {
 				effectiveVolume: committedEffectiveVolume,
 				volumeState: resolveAcknowledgedAudioVolumeState(
 					committed.fields,
 					committedEffectiveVolume,
-					currentMuted,
+					committedMuted,
 				),
 			};
 			return {
@@ -1963,6 +2349,21 @@ async function executeFieldOperation(
 				result: { effectiveVolume: committedEffectiveVolume, volumeBase: committedVolumeBase, boost: committedBoost },
 			};
 		} catch (error) {
+			if (error instanceof NativeControlExecutionError && error.code === 'stale-media-source'
+				&& !processorStageStarted
+				&& current.boost === 1 && desired.boost === 1
+				&& desiredEffective <= CONTROL_VALUE_LIMITS.volumeBase.max) {
+				const attempts = (volumeRecovery?.attempts ?? 0) + 1;
+				const deadline = volumeRecovery?.deadline ?? performance.now() + NATIVE_VOLUME_SOURCE_RECOVERY_BUDGET_MS;
+				if (request.target !== null || attempts > MAX_NATIVE_VOLUME_SOURCE_RECOVERIES || performance.now() >= deadline) throw error;
+				// No processor stage/admission has run. Retire this native attempt
+				// without writing its baseline back into the old source. Continue
+				// inside the same bounded queue slot, with the original absolute goal:
+				// a delta must not be recalculated from the replacement's defaults.
+				return executeFieldOperation({ ...request,
+					payload: { operation: 'set', value: desiredEffective },
+				}, operationId, { baseline: volumeRecovery?.baseline ?? baseline, target, error, attempts, deadline }, onVolumePlan);
+			}
 			const compensation = await compensateControlPatch(
 				baseline,
 				target,
@@ -1995,6 +2396,7 @@ async function executeFieldOperation(
 		}
 	if (request.operation === 'audio-reset') {
 		const baseline = await getOrCreateSnapshot(request.tabId);
+		const targetResetPatch = baseline.live ? { volumeBase: 100, mediaMuted: false } : RESET_AUDIO_TARGET_PATCH;
 		let target = request.target ?? baseline.activeMedia;
 		if (!target) {
 			// Snapshot state may legitimately be empty before the first Popup action.
@@ -2012,13 +2414,15 @@ async function executeFieldOperation(
 			baseline,
 			target,
 			[
-				...Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[],
+				...Object.keys(targetResetPatch) as ControlDirectField[],
 				'preservePitch',
 			],
 		);
 		const targetActual = targetCapture.patch;
+		const outputOwned = targetCapture.observation.observedStrategies.volumeBase === 'capture';
+		const nativeResetPatch: ControlPatch = outputOwned ? { speed: 1 } : targetResetPatch;
 		const targetRollback: ControlPatch = {};
-		for (const field of Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[]) {
+		for (const field of Object.keys(targetResetPatch) as ControlDirectField[]) {
 			const value = targetActual[field];
 			if (value !== undefined) (targetRollback as Record<string, unknown>)[field] = value;
 		}
@@ -2034,17 +2438,17 @@ async function executeFieldOperation(
 				...common,
 				target,
 				requestedCoverage: CONTROL_COVERAGE_TARGET,
-				patch: RESET_AUDIO_TARGET_PATCH,
+				patch: nativeResetPatch,
 			}, staged);
 			const targetUnavailable = target === null
-				&& (Object.keys(RESET_AUDIO_TARGET_PATCH) as ControlDirectField[]).every((field) => {
+				&& (Object.keys(nativeResetPatch) as ControlDirectField[]).every((field) => {
 					const failure = targetPrepared.fields[field]?.lastError;
 					return Boolean(failure
 						&& (failure.code === 'capability-unavailable' || failure.code === 'strategy-runtime-failed')
 						&& failure.message.includes('No active media target'));
 				});
 			if (!targetUnavailable) {
-				assertAppliedPatch(targetPrepared.fields, RESET_AUDIO_TARGET_PATCH, 'Audio target reset');
+				assertAppliedPatch(targetPrepared.fields, nativeResetPatch, 'Audio target reset');
 				target = targetPrepared.ackTarget ?? targetPrepared.activeMedia ?? target;
 				fields = { ...fields, ...targetPrepared.fields };
 				// Reset explicitly normalizes playback speed. Pitch preservation is
@@ -2058,7 +2462,8 @@ async function executeFieldOperation(
 				...common,
 				target,
 				requestedCoverage: 'full',
-				patch: RESET_AUDIO_PROCESSOR_PATCH,
+				patch: outputOwned ? { ...RESET_AUDIO_PROCESSOR_PATCH, volumeBase: 100, mediaMuted: false } : RESET_AUDIO_PROCESSOR_PATCH,
+				releaseDocumentOutput: true,
 			}, staged);
 			fields = { ...fields, ...processorPrepared.fields };
 			assertReleasedPatch(
@@ -2141,6 +2546,7 @@ async function executeControlOperation(
 	request: RoutedControlOperationRequest,
 	operationId = crypto.randomUUID(),
 	contextSnapshot?: ControlSnapshot,
+	onVolumePlan?: ControlVolumePlanObserver,
 ): Promise<ControlOperationAck> {
 	const snapshot = contextSnapshot ?? await getOrCreateSnapshot(request.tabId);
 	if (request.baseRevision !== undefined && request.baseRevision !== snapshot.revision) {
@@ -2154,7 +2560,7 @@ async function executeControlOperation(
 		|| request.operation === 'audio-reset'
 		|| request.operation === 'video-effects-toggle'
 		|| request.operation === 'video-effects-reset') {
-		return executeFieldOperation(request, operationId);
+		return executeFieldOperation(request, operationId, undefined, onVolumePlan);
 	}
 	if (request.operation === 'open-popup') {
 		const tab = await currentOperationTab(request.tabId, snapshot.documentId);
@@ -2215,6 +2621,7 @@ async function executeControlOperation(
 				requestedCoverage: 'full',
 				target: released.target,
 				patch: RESET_AUDIO_PROCESSOR_PATCH,
+				releaseDocumentOutput: true,
 				...(request.captureAdmission
 					? { captureAdmission: request.captureAdmission }
 					: {}),
@@ -2275,6 +2682,9 @@ async function captureAdmissionForInvocation(
 	snapshot: ControlSnapshot,
 	operationId: string,
 ): Promise<CaptureAdmission | undefined> {
+	// A validated page shortcut may use a grant from an earlier extension
+	// invocation in this document. The browser checks that grant at acquisition;
+	// the request's origin alone cannot prove it absent.
 	// Eligibility is frozen at physical invocation time. An alternate target
 	// cannot gain Capture merely because focus moves while its writer is queued.
 	if (!sameExtensionDocument(invocation.foreground, invocation.target)) return undefined;
@@ -2369,6 +2779,7 @@ function submitSerialized(
 
 async function submitOrderedPageObservation(request: RoutedControlSubmitRequest): Promise<ControlApplyAck> {
 	const baseline = await getOrCreateSnapshot(request.tabId);
+	const expectedEpoch = navigationEpoch(request.tabId);
 	if (request.target && request.target.documentId !== baseline.documentId
 		|| request.target === null && request.observationDocumentId !== baseline.documentId) {
 		throw new Error('Physical page observation belongs to a stale document');
@@ -2397,7 +2808,8 @@ async function submitOrderedPageObservation(request: RoutedControlSubmitRequest)
 		if (boost !== 1) return serialized(request.tabId, () => executeIntent(request));
 	}
 	const current = await admitPhysicalObservation(baseline, { target: request.target, patch: request.patch ?? {},
-		observedStrategies: request.observedStrategies ?? {}, mediaObservation: request.mediaObservation });
+		observedStrategies: request.observedStrategies ?? {}, mediaObservation: request.mediaObservation,
+		...(typeof request.live === 'boolean' ? { live: request.live } : {}) }, 'media', expectedEpoch, true);
 	return { intentId: intent.intentId, tabId: current.tabId, documentId: current.documentId,
 		generation: current.generation, revision: current.revision, target: current.activeMedia,
 		fields: Object.fromEntries(Object.keys(fields).map((field) => [field, current.fields[field as ControlField]])) as ControlFieldStates,
@@ -2407,6 +2819,7 @@ async function submitOrderedPageObservation(request: RoutedControlSubmitRequest)
 function submitOperationSerialized(
 	request: RoutedControlOperationRequest,
 	invocation?: ExtensionInvocationContext,
+	onVolumePlan?: ControlVolumePlanObserver,
 ): Promise<ControlOperationAck> {
 	const initialize = request.source === 'restore'
 		? Promise.resolve()
@@ -2424,7 +2837,7 @@ function submitOperationSerialized(
 			const acknowledgement = await executeControlOperation({
 				...unadmittedRequest,
 				...(captureAdmission ? { captureAdmission } : {}),
-			}, operationId, snapshot);
+			}, operationId, snapshot, onVolumePlan);
 			if (!isControlOperationAck(acknowledgement)) {
 				throw new Error('Control operation returned a strategy outside the capability policy');
 			}
@@ -2456,8 +2869,9 @@ export function submitExtensionInvokedControlRequest(
 export function submitExtensionInvokedControlOperation(
 	request: RoutedControlOperationRequest & { source: 'popup' | 'hotkey' },
 	invocation: ExtensionInvocationContext,
+	onVolumePlan?: ControlVolumePlanObserver,
 ): Promise<ControlOperationAck> {
-	return submitOperationSerialized(request, invocation);
+	return submitOperationSerialized(request, invocation, onVolumePlan);
 }
 
 export function isExtensionPopupSender(sender: chrome.runtime.MessageSender): boolean {
@@ -2480,6 +2894,27 @@ function trustedContentHotkeyInvocation(
 		foreground: document,
 		target: document,
 	};
+}
+
+export async function resolvePopupControlPresentationIdentity(
+	tabId: number,
+	documentId: string,
+): Promise<Pick<ControlSnapshot, 'tabId' | 'documentId' | 'origin' | 'generation'>> {
+	const expectedEpoch = navigationEpoch(tabId);
+	const invocation = await popupInvocation(tabId);
+	assertPopupRequestDocument(invocation, documentId);
+	// Opening the action Popup invoked the extension for this document. Record
+	// that document-lifetime fact before any control is submitted: the hotkey
+	// gate must keep Alt+Up on the content path after the Popup closes.
+	grantContentInvocation(invocation.target.tabId, invocation.target.documentId);
+	const snapshot = await getOrCreateSnapshot(tabId);
+	assertNavigationFence(tabId, expectedEpoch, snapshot);
+	if (snapshot.documentId !== documentId) throw new Error('Popup presentation belongs to a stale document');
+	return { tabId, documentId, origin: snapshot.origin, generation: snapshot.generation };
+}
+
+export async function flushControlPresentation(tabId: number): Promise<void> {
+	await sessionProjectionTails.get(tabId)?.catch(() => undefined);
 }
 
 export async function submitPopupControlBatch(
@@ -2512,6 +2947,8 @@ export async function submitPopupControlBatch(
 				operation: 'effective-volume',
 				payload: { operation: 'set', value: batch.effectiveVolume },
 			}, invocation) as ControlOperationAck<'effective-volume'>;
+			batchError ??= Object.values(volumeAck.fields)
+				.find((field) => field?.phase === 'error' && field.lastError)?.lastError ?? null;
 		} catch (error) {
 			recordFailure(error);
 		}
@@ -2529,7 +2966,12 @@ export async function submitPopupControlBatch(
 			recordFailure(error);
 		}
 	}
-	return { volumeAck, fieldAcks, error: batchError };
+	await flushControlPresentation(batch.tabId);
+	const audioSession = await getAudioSession(batch.tabId).catch(() => null);
+	return {
+		volumeAck, fieldAcks, error: batchError,
+		...(audioSession?.documentId === batch.documentId ? { audioSession } : {}),
+	};
 }
 
 const popupVisualizerSource = createPopupVisualizerSource({
@@ -2602,6 +3044,10 @@ function queueNavigationInvalidation(
 					state ? { ...state, revision } : state,
 				])) as ControlFieldStates,
 			};
+			// The presentation kind is a measured fact about one element in one
+			// document. A new generation has not measured anything yet, so carrying
+			// it would let the previous document's stream disable speed here.
+			delete carried.live;
 			await persistGeneration(tabId, generation);
 			await publishSnapshot(carried, expectedEpoch);
 			await reconcileRuntimeOwnership(carried);
@@ -2783,6 +3229,8 @@ export function initializeControlCoordinator(): void {
 			(error) => sendResponse(rpcFailure(
 				error instanceof StaleControlRevisionError
 					? 'control_stale_revision'
+					: error instanceof NativeControlExecutionError
+						? error.code
 					: message.type === PROTO_OPERATION_SUBMIT
 						? 'control_operation_failed'
 						: 'control_apply_failed',
@@ -2818,22 +3266,22 @@ export function initializeControlCoordinator(): void {
 			void invalidateNavigation(details.tabId, false, true).catch((error: unknown) => {
 				/* @__PURE__ */ swLog.debug(`[Control] Navigation invalidation settled at browser boundary: ${String(error)}`);
 			});
+			const fence = navigationFences.get(details.tabId);
+			if (fence && details.documentId) fence.route = { documentId: details.documentId, url: details.url };
 		}
 	});
-	chrome.webNavigation.onHistoryStateUpdated.addListener((details) => {
-		if (details.frameId === 0) {
-			void invalidateNavigation(details.tabId, true).catch((error: unknown) => {
-				/* @__PURE__ */ swLog.debug(`[Control] History projection settled at browser boundary: ${String(error)}`);
-			});
-		}
-	});
-	chrome.webNavigation.onReferenceFragmentUpdated.addListener((details) => {
-		if (details.frameId === 0) {
-			void invalidateNavigation(details.tabId, true).catch((error: unknown) => {
-				/* @__PURE__ */ swLog.debug(`[Control] Fragment projection settled at browser boundary: ${String(error)}`);
-			});
-		}
-	});
+	const onSameDocumentNavigation = (details: { tabId: number; frameId: number; documentId: string; url: string }): void => {
+		if (details.frameId !== 0) return;
+		const previous = navigationFences.get(details.tabId)?.route;
+		if (previous?.documentId === details.documentId && previous.url === details.url) return;
+		void invalidateNavigation(details.tabId, true).catch((error: unknown) => {
+			/* @__PURE__ */ swLog.debug(`[Control] Route projection settled at browser boundary: ${String(error)}`);
+		});
+		const fence = navigationFences.get(details.tabId);
+		if (fence) fence.route = { documentId: details.documentId, url: details.url };
+	};
+	chrome.webNavigation.onHistoryStateUpdated.addListener(onSameDocumentNavigation);
+	chrome.webNavigation.onReferenceFragmentUpdated.addListener(onSameDocumentNavigation);
 }
 
 // Direct test surface for module-scoped MV3 state. These exports are not used

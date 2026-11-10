@@ -61,6 +61,8 @@ import {
 } from './media-route.contracts.js';
 import {
 	HOTKEY_ACTIONS,
+	isSpectraHotkeyPresentation,
+	type SpectraHotkeyPresentation,
 	type HotkeyAction,
 	type HotkeySettings,
 	type SpectraHotkeyActualFeedback,
@@ -657,6 +659,7 @@ export interface SpectraEventMap {
 		targetHostname: string;
 		gesture?: string;
 		feedback?: SpectraHotkeyActualFeedback;
+		presentation?: SpectraHotkeyPresentation;
 	};
 	'spectra.navigation.changed': NavigationChangedEvent;
 	'spectra.remote.session.changed': RemoteSessionChangedEvent;
@@ -747,7 +750,7 @@ const OSD_MESSAGES_KEYS = new Set([
 ]);
 const HOTKEY_TRIGGER_PAYLOAD_KEYS = new Set(['action']);
 const HOTKEY_TARGET_FEEDBACK_KEYS = new Set([
-	'action', 'targetTabId', 'targetTitle', 'targetHostname', 'gesture', 'feedback',
+	'action', 'targetTabId', 'targetTitle', 'targetHostname', 'gesture', 'feedback', 'presentation',
 ]);
 const HOTKEY_VOLUME_FEEDBACK_KEYS = new Set(['kind', 'value', 'volumeState']);
 const HOTKEY_SPEED_FEEDBACK_KEYS = new Set(['kind', 'value']);
@@ -865,6 +868,7 @@ function isHotkeyTargetFeedback(
 			|| typeof value.gesture === 'string'
 				&& value.gesture.length > 0
 				&& value.gesture.length <= 128)
+		&& (value.presentation === undefined || isSpectraHotkeyPresentation(value.presentation))
 		&& (value.feedback === undefined || (
 			isRecord(value.feedback)
 			&& (value.feedback.kind === 'volume'

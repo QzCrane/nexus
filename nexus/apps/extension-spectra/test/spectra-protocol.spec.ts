@@ -8,11 +8,13 @@ import {
 	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
 	SPECTRA_PROTOCOL_VERSION,
 	SPECTRA_SETTINGS_SCHEMA_VERSION,
+	createSpectraContentInvocationGrantedMessage,
 	isAudioConfig,
 	isAudioRuntimeStatus,
 	isAudioSessionSnapshot,
 	isSettingsPatchRequest,
 	isSettingsSnapshot,
+	isSpectraContentInvocationGrantedMessage,
 	isSpectraEventEnvelope,
 	isSpectraRequestEnvelope,
 	isSpectraResponse,
@@ -1257,6 +1259,25 @@ describe('SPECTRA mapped v2 envelopes', () => {
 		expect(isSpectraResponse('spectra.settings.patch', {
 			ok: false,
 			error: { code: 'invalid', message: '', retryable: false },
+		})).toBe(false);
+	});
+});
+
+describe('SPECTRA document invocation grant', () => {
+	test('accepts only the canonical grant envelope', () => {
+		const grant = createSpectraContentInvocationGrantedMessage();
+		expect(isSpectraContentInvocationGrantedMessage(grant)).toBe(true);
+		expect(isSpectraContentInvocationGrantedMessage({
+			...grant,
+			protocolVersion: SPECTRA_PROTOCOL_VERSION - 1,
+		})).toBe(false);
+		expect(isSpectraContentInvocationGrantedMessage({
+			...grant,
+			payload: { documentId: 'forged' },
+		})).toBe(false);
+		expect(isSpectraContentInvocationGrantedMessage({
+			...grant,
+			type: 'spectra.content.invocation.denied',
 		})).toBe(false);
 	});
 });

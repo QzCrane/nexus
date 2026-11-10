@@ -1,7 +1,11 @@
 // goal: keep the published checkout from silently drifting away from this repository
 //
 // The public repository is what users read and what store review sees. Nothing
-// ties it to this one, so the only way it stays honest is a gate that runs here.
+// ties it to this one, so the only way it stays honest is a gate that runs where
+// a public snapshot is recorded: the release owner and the explicit
+// `bun run check:public-parity` command. It is deliberately not part of
+// `verify`/prebuild, because a build must stay a function of this repository
+// alone instead of the release state of a sibling checkout.
 //
 // A hard "must be identical" rule cannot work: the published tree is a release
 // snapshot, and a release is a deliberate act rather than a side effect of a

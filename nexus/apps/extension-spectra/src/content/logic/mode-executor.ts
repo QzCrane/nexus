@@ -13,7 +13,15 @@ import type { PolicyExecutorDeps, PolicyExecutorState } from '../types';
 import { logger } from '../../shared/logger';
 
 const log = logger.content;
-const CAPTURE_ADMISSION_REQUIRED = 'Capture requires a current-tab extension invocation';
+/**
+ * The one failure this runtime can explain better than a readback can.
+ *
+ * Full-tab Capture can only start from an extension invocation on the tab the
+ * user is looking at, so a background tab asking for an amplified volume has no
+ * route at all. That is a missing capability, not a value that disagreed with a
+ * readback, and the caller has to be able to tell the two apart.
+ */
+export const CAPTURE_ADMISSION_REQUIRED = 'Enhanced volume needs this tab in the foreground';
 
 interface ModeExecutionOwner {
 	run: number;
@@ -135,6 +143,15 @@ async function enterCapture(
 	captureAdmission?: CaptureAdmission,
 ): Promise<void> {
 	const { captureManager } = deps;
+	if (state.config.documentOutput && state.mediaRoute === 'direct') {
+		await enterBypass(deps, state, owner, run, generation);
+		if (stale(deps, owner, run)) return;
+		if (state.phase !== 'error') {
+			state.phase = 'error';
+			state.lastError = 'Document-output volume requires Capture, but the direct processing route is selected';
+		}
+		return;
+	}
 	if (!state.config.enabled || !requiresAudioProcessor(state.config)) {
 		throw new Error('Capture policy was selected without an enabled processor contribution');
 	}
@@ -393,6 +410,9 @@ function actualConfigFromGraphSnapshot(
 		throw new Error('Media WebAudio graph signature does not match its actual configuration');
 	}
 	const actual = snapshot.normalizedActualConfig;
+	if (requested.documentOutput || actual.outputLevel) {
+		throw new Error('A page media graph cannot acknowledge document-output ownership');
+	}
 	const volumeBase = resolveAudioVolume(requested).volumeBase;
 	return {
 		...requested,
@@ -422,8 +442,10 @@ function errorMessage(error: unknown): string {
 
 export function toDomAppliedConfig(config: AudioConfig): AudioConfig {
 	const volume = resolveAudioVolume(config);
+	const nativeConfig = { ...config };
+	delete nativeConfig.documentOutput;
 	return {
-		...config,
+		...nativeConfig,
 		volume: volume.volumeBase,
 		volumeBase: volume.volumeBase,
 		boost: 1,

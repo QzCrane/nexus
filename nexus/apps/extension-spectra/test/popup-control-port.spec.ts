@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import type { ControlOperationAck } from '@nexus/contracts';
+import { DEFAULT_AUDIO_CONFIG, type ControlOperationAck } from '@nexus/contracts';
 import {
 	appendBoundedSample,
 	bindPopupControlPort,
@@ -13,21 +13,97 @@ import {
 	POPUP_CONTROL_PORT,
 } from '../src/shared/popup-control-port';
 import { openPopupControlTransport } from '../src/popup/card/control-port';
+import { BADGE_COLORS, badgeState } from '../src/background/state';
+import { hasBadgeUsage, resetBadgeUsageForTests } from '../src/background/badge-usage';
 
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 
 afterEach(() => {
+	badgeState.clear();
+	resetBadgeUsageForTests();
 	if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 	else Reflect.deleteProperty(globalThis, 'chrome');
 });
 
 describe('Popup Background control port', () => {
+
+	test.each([false, true])('buffers the first pending frame and flush until identity resolves (disconnect: %s)', async (disconnect) => {
+		installChrome();
+		let text = '';
+		let color = '';
+		Object.assign(chrome, {
+			storage: { session: { get: async () => ({}) } },
+			action: {
+				setBadgeText: async (value: { text: string }) => { text = value.text; },
+				setBadgeBackgroundColor: async (value: { color: string }) => { color = value.color; },
+				setBadgeTextColor: async () => undefined,
+			},
+		});
+		let resolveIdentity!: (identity: { tabId: number; documentId: string; origin: string; generation: number }) => void;
+		const verification = new Promise<{ tabId: number; documentId: string; origin: string; generation: number }>((resolve) => {
+			resolveIdentity = resolve;
+		});
+		let complete!: (result: PopupControlBatchResult) => void;
+		const submissions: PopupControlBatch[] = [];
+		const port = new FakePort();
+		bindPopupControlPort(port.value, {
+			resolveIdentity: () => verification,
+			submit: (batch) => {
+				submissions.push(batch);
+				return new Promise((resolve) => { complete = resolve; });
+			},
+		});
+		port.message(openMessage());
+		port.message({ ...stageMessage(1, 110), presentationVolume: 110, tone: 'capture' });
+		port.message({ type: 'flush', sessionId: 'session', throughRevision: 1 });
+		if (disconnect) port.disconnectFromBrowser();
+		expect(text).toBe('');
+		expect(submissions).toHaveLength(0);
+		resolveIdentity({ tabId: 7, documentId: 'document', origin: 'https://media.example', generation: 1 });
+		await waitFor(() => submissions.length === 1);
+		expect(text).toBe('110');
+		expect(color).toBe(BADGE_COLORS.CAPTURE);
+		expect(badgeState.has(7)).toBe(false);
+		expect(await hasBadgeUsage(7)).toBe(false);
+		complete(success());
+		await waitFor(() => text === '');
+		expect(submissions).toHaveLength(1);
+	});
+	test('a failed staged request never paints or records successful badge usage', async () => {
+		installChrome();
+		let paints = 0;
+		Object.assign(chrome, {
+			storage: { session: { get: async () => ({}), set: async () => undefined } },
+			action: {
+				setBadgeText: async () => { paints += 1; },
+				setBadgeBackgroundColor: async () => { paints += 1; },
+				setBadgeTextColor: async () => { paints += 1; },
+			},
+		});
+		const port = new FakePort();
+		bindPopupControlPort(port.value, {
+			resolveIdentity: async () => ({ tabId: 7, documentId: 'document', origin: 'https://media.example', generation: 1 }),
+			submit: async () => { throw new Error('Control belongs to a stale document'); },
+		});
+		port.message(openMessage());
+		port.message(stageMessage(1, 350));
+		expect(paints).toBe(0);
+		expect(badgeState.has(7)).toBe(false);
+		port.message({ type: 'flush', sessionId: 'session', throughRevision: 1 });
+		await waitFor(() => port.posts.length === 2);
+		expect(port.posts[1]).toMatchObject({ error: { code: 'popup_control_failed' } });
+		expect(paints).toBe(0);
+		expect(badgeState.has(7)).toBe(false);
+		expect(await hasBadgeUsage(7)).toBe(false);
+	});
+
 	test('continues the accepted latest value once after the Popup disconnects', async () => {
 		installChrome();
 		const port = new FakePort();
 		const submissions: PopupControlBatch[] = [];
 		const completions: Array<(result: PopupControlBatchResult) => void> = [];
 		bindPopupControlPort(port.value, {
+			resolveIdentity: async () => ({ tabId: 7, documentId: 'document', origin: 'https://media.example', generation: 1 }),
 			submit: (batch) => {
 				submissions.push(batch);
 				return new Promise((resolve) => completions.push(resolve));
@@ -52,6 +128,7 @@ describe('Popup Background control port', () => {
 		const port = new FakePort();
 		const volumeAck = { operation: 'effective-volume' } as ControlOperationAck<'effective-volume'>;
 		bindPopupControlPort(port.value, {
+			resolveIdentity: async () => ({ tabId: 7, documentId: 'document', origin: 'https://media.example', generation: 1 }),
 			submit: async () => ({
 				volumeAck,
 				fieldAcks: [],
@@ -73,7 +150,10 @@ describe('Popup Background control port', () => {
 	test('rejects a popup-looking Port that belongs to a tab', () => {
 		installChrome();
 		const port = new FakePort({ id: 'extension-id', url: 'chrome-extension://extension-id/popup.html', tab: {} });
-		bindPopupControlPort(port.value, { submit: async () => success() });
+		bindPopupControlPort(port.value, {
+			resolveIdentity: async () => ({ tabId: 7, documentId: 'document', origin: 'https://media.example', generation: 1 }),
+			submit: async () => success(),
+		});
 		expect(port.disconnected).toBe(true);
 	});
 });
@@ -83,6 +163,8 @@ describe('Popup control Port contract', () => {
 		expect(isPopupControlPortRequest(null)).toBe(false);
 		expect(isPopupControlPortRequest({ ...openMessage(), unknown: true })).toBe(false);
 		expect(isPopupControlPortRequest(stageMessage(1, Number.POSITIVE_INFINITY))).toBe(false);
+		expect(isPopupControlPortRequest({ ...stageMessage(1, 350), tone: 'capture' })).toBe(false);
+		expect(isPopupControlPortRequest({ ...stageMessage(1, 350), tone: 'capture', presentationVolume: 350 })).toBe(true);
 		expect(isPopupControlPortRequest({
 			type: 'stage', sessionId: 'session', inputRevision: 1,
 			groups: [
@@ -98,6 +180,29 @@ describe('Popup control Port contract', () => {
 });
 
 describe('Popup control Port client', () => {
+
+	test.each(['tabId', 'documentId'] as const)('rejects a fresh audio lifecycle for another %s', async (field) => {
+		const port = new FakePort();
+		installChrome(port.value);
+		const transport = openPopupControlTransport(7, 'document');
+		const { sessionId } = port.posts[0] as { sessionId: string };
+		port.message({ type: 'ready', sessionId });
+		transport.stage({ inputRevision: 1, effectiveVolume: 110, groups: [] });
+		const failed = transport.flush(1).catch((error: unknown) => error);
+		const audioSession = {
+			tabId: 7, documentId: 'document', origin: 'https://media.example', generation: 1,
+			configRevision: 1, desiredMode: 'capture', actualMode: 'capture', phase: 'active',
+			actualConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] }, lastError: null,
+			...(field === 'tabId' ? { tabId: 8 } : { documentId: 'another-document' }),
+		};
+		const response = { type: 'settled', sessionId, throughRevision: 1, volumeAck: null,
+			fieldAcks: [], audioSession, error: { code: 'unavailable', message: 'Control failed', retryable: true } };
+		expect(isPopupControlPortResponse(response)).toBe(true);
+		port.message(response);
+		expect(await failed).toBeInstanceOf(Error);
+		expect(port.disconnected).toBe(true);
+	});
+
 	test('accepts session ready and settles a staged input', async () => {
 		const port = new FakePort();
 		installChrome(port.value);

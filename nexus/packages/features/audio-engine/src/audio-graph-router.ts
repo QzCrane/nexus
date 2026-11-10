@@ -2,6 +2,7 @@
 
 import {
 	clampControlValue,
+	CONTROL_VALUE_LIMITS,
 	type AudioProcessorConfig,
 } from '@nexus/contracts';
 import {
@@ -71,7 +72,11 @@ export const DEFAULT_AUDIO_GRAPH_CONFIG: Readonly<AudioGraphConfig> = {
 
 export function normalizeAudioGraphConfig(config: AudioGraphConfig): AudioGraphConfig {
 	return {
-		boostGain: clampControlValue(config.boostGain, 'boost', 1),
+		boostGain: config.outputLevel ? 1 : clampControlValue(config.boostGain, 'boost', 1),
+		...(config.outputLevel ? { outputLevel: {
+			gain: clampControlValue(config.outputLevel.gain * 100, 'volume', 100) / 100,
+			muted: config.outputLevel.muted === true,
+		} } : {}),
 		bass: config.bass === true,
 		eqValues: EQ_FREQUENCIES.map((_, index) =>
 			clampControlValue(config.eqValues[index] ?? 0, 'eqBand', 0)),
@@ -110,12 +115,25 @@ function setParam(
 	time: number,
 	durationMs = AUDIO_PARAM_RAMP_MS,
 ): void {
-	param.cancelScheduledValues(time);
-	if (durationMs === 0) param.setValueAtTime(value, time);
-	else {
-		param.setValueAtTime(param.value, time);
-		param.linearRampToValueAtTime(value, time + durationMs / 1_000);
+	if (durationMs === 0) {
+		param.cancelScheduledValues(time);
+		param.setValueAtTime(value, time);
+		return;
 	}
+	// A pending ramp is replaced, not truncated. `cancelScheduledValues` drops
+	// the in-flight ramp's end event, so the parameter can fall back to the
+	// value of the last surviving event while the readback no longer describes
+	// what is audible. Holding the computed value at `time` is the primitive
+	// that starts the replacement ramp exactly where the previous one reached.
+	if (typeof param.cancelAndHoldAtTime === 'function') {
+		param.cancelAndHoldAtTime(time);
+		param.linearRampToValueAtTime(value, time + durationMs / 1_000);
+		return;
+	}
+	// Older engines without the hold primitive keep the historical path.
+	param.cancelScheduledValues(time);
+	param.setValueAtTime(param.value, time);
+	param.linearRampToValueAtTime(value, time + durationMs / 1_000);
 }
 
 function disconnect(node: AudioNode): void {
@@ -289,12 +307,7 @@ export class AudioGraphRouter {
 		const time = this.context.currentTime;
 
 		if (this.activeLane?.signature === signature) {
-			setParam(
-				this.master.gain,
-				normalized.boostGain,
-				time,
-				AUDIO_PARAM_RAMP_MS,
-			);
+			const levelBoundary = this.applyLevel(normalized, time);
 			this.updateLane(this.activeLane, normalized);
 			// A parameter-only apply (boost, EQ gain, pan, delay) is acknowledged as
 			// soon as the ramps are scheduled. The AudioParam automation starts
@@ -303,6 +316,9 @@ export class AudioGraphRouter {
 			// while adding no readback fidelity (the ACK snapshot is nominal). The
 			// next apply cancels the pending ramp and re-ramps from the live value,
 			// so rapid slider updates still converge on their final targets.
+			// Document-output acquisition/update/release instead awaits its two
+			// physical gain parameters, because it owns audible level and mute.
+			if (levelBoundary) await levelBoundary;
 			this.actualConfig = normalized;
 			return this.snapshot(signature, normalized);
 		}
@@ -311,19 +327,14 @@ export class AudioGraphRouter {
 		// Build the candidate before mutating the live master gain. A node
 		// construction failure must leave the previously acknowledged lane and
 		// output gain untouched for transaction rollback.
-		setParam(
-			this.master.gain,
-			normalized.boostGain,
-			time,
-			AUDIO_PARAM_RAMP_MS,
-		);
+		const levelBoundary = this.applyLevel(normalized, time);
 		// A newly connected GainNode defaults to 1. Set its gate before it can
 		// reach the live output, otherwise one render quantum can carry both the
 		// old and candidate lanes at full gain.
 		setParam(candidate.fade.gain, this.activeLane ? 0 : 1, time, 0);
 		this.master.connect(candidate.fade);
 		if (!this.activeLane) {
-			await new Promise<void>((resolve) => setTimeout(resolve, AUDIO_PARAM_RAMP_MS));
+			await Promise.all([levelBoundary, new Promise<void>((resolve) => setTimeout(resolve, AUDIO_PARAM_RAMP_MS))]);
 			this.activeLane = candidate;
 			this.actualConfig = normalized;
 			return this.snapshot(signature, normalized);
@@ -338,12 +349,37 @@ export class AudioGraphRouter {
 			const end = time + this.crossfadeMs / 1_000;
 			candidate.fade.gain.linearRampToValueAtTime(1, end);
 			previous.fade.gain.linearRampToValueAtTime(0, end);
-			await new Promise<void>((resolve) => setTimeout(resolve, this.crossfadeMs));
+			await Promise.all([levelBoundary, new Promise<void>((resolve) => setTimeout(resolve, this.crossfadeMs))]);
 		}
 		this.destroyLane(previous);
 		this.activeLane = candidate;
+		if (levelBoundary) await levelBoundary;
 		this.actualConfig = normalized;
 		return this.snapshot(signature, normalized);
+	}
+
+	private applyLevel(config: AudioGraphConfig, time: number): Promise<void> | undefined {
+		const outputOwned = config.outputLevel !== undefined || this.actualConfig?.outputLevel !== undefined;
+		if (outputOwned) setParam(this.input.gain, config.outputLevel?.gain ?? 1, time);
+		setParam(this.master.gain, config.outputLevel ? config.outputLevel.muted ? 0 : 1 : config.boostGain, time);
+		if (!outputOwned) return undefined;
+		return this.confirmOutputLevel(config, time + AUDIO_PARAM_RAMP_MS / 1_000);
+	}
+
+	private async confirmOutputLevel(config: AudioGraphConfig, rampEnd: number): Promise<void> {
+		const deadline = performance.now() + 500;
+		const quantum = 128 / this.context.sampleRate;
+		const input = config.outputLevel?.gain ?? 1;
+		const master = config.outputLevel ? config.outputLevel.muted ? 0 : 1 : config.boostGain;
+		while (performance.now() < deadline) {
+			this.assertUsable();
+			if (this.context.state !== 'running') throw new Error('Document-output level requires a running AudioContext');
+			if (this.context.currentTime >= rampEnd + quantum * 2
+				&& Math.abs(this.input.gain.value - input) < 0.000_01
+				&& Math.abs(this.master.gain.value - master) < 0.000_01) return;
+			await new Promise<void>((resolve) => setTimeout(resolve, 4));
+		}
+		throw new Error('Document-output level did not reach its physical gain boundary');
 	}
 
 	private buildLane(config: AudioGraphConfig, signature: string): GraphLane {
@@ -437,11 +473,20 @@ export class AudioGraphRouter {
 	}
 
 	private snapshot(signature: string, config: AudioGraphConfig): AudioGraphSnapshot {
+		const outputLevel = config.outputLevel ? {
+			gain: this.input.gain.value,
+			muted: this.master.gain.value < 0.000_01,
+		} : undefined;
+		if (outputLevel && (!Number.isFinite(outputLevel.gain)
+			|| outputLevel.gain < 0 || outputLevel.gain > CONTROL_VALUE_LIMITS.boost.max
+			|| Math.abs(this.master.gain.value - (outputLevel.muted ? 0 : 1)) > 0.000_01)) {
+			throw new Error('Document-output level readback is not settled');
+		}
 		return {
 			phase: 'active',
 			contextState: this.context.state,
 			graphSignature: signature,
-			normalizedActualConfig: { ...config, eqValues: [...config.eqValues] },
+			normalizedActualConfig: { ...config, eqValues: [...config.eqValues], ...(outputLevel ? { outputLevel } : {}) },
 			outputChannels: config.mono || config.pan !== 0 ? 2 : Math.max(1, this.context.destination.channelCount || 2),
 			sourceCount: this.sources.size,
 		};

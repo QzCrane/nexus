@@ -26,6 +26,8 @@ import {
 	isContentCommandType,
 } from './spectra-command-handler';
 import { shouldAcceptAudioSessionPhase } from '../../shared/audio-session-phase';
+import { toDomAppliedConfig } from './mode-executor';
+import { refreshHotkeyVolumeTone } from '../input/hotkey-listener';
 import { SPECTRA_SAME_DOCUMENT_NAVIGATION_EVENT } from '../core/lifecycle/navigation-observer';
 import type { DocumentRuntimeContext } from '../core/content-runtime-context';
 
@@ -92,16 +94,31 @@ function applyCaptureEvent(
 		deps.state.phase = snapshot.phase;
 		deps.state.actualMode = snapshot.actualMode;
 		deps.state.lastError = snapshot.lastError?.message;
+		const outputOwnerRetired = !runtimeOwnsTransition && snapshot.actualMode === 'bypass'
+			&& deps.state.appliedConfig.documentOutput === true;
+		if (outputOwnerRetired) {
+			// A stopped output graph no longer owns attenuation or mute. Keep the
+			// requested policy for a later explicit, re-admitted control, but retire
+			// its actual proof and publish the lost owner through the session owner.
+			deps.state.appliedConfig = toDomAppliedConfig({
+				...deps.state.appliedConfig, volume: 100, volumeBase: 100, boost: 1, muted: false,
+			});
+		}
 		if (!runtimeOwnsTransition
 			&& snapshot.phase === 'idle'
 			&& snapshot.actualMode === 'bypass'
 			&& deps.state.desiredMode === 'capture') {
 			// An externally stopped processor leaves desired policy unapplied. Do not
 			// restart without a fresh one-shot admission; retain an explicit error.
-			deps.state.phase = 'error';
-			deps.state.lastError = 'Capture stopped before the requested processor policy was released';
+		deps.state.phase = 'error';
+		deps.state.lastError = 'Capture stopped before the requested processor policy was released';
 		}
+		if (outputOwnerRetired) deps.policyExecutor?.updateBadge();
 	}
+	// The gesture only predicted the route; this event is the settlement of it.
+	// Repainting here is what keeps the pill, the Popup bar and the badge on one
+	// answer when the processor finishes starting or stopping after the ACK.
+	refreshHotkeyVolumeTone();
 	return true;
 }
 

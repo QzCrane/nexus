@@ -5,12 +5,14 @@ import {
 	requiresAudioProcessor as canonicalRequiresAudioProcessor,
 	resolveDesiredAudioMode as canonicalResolveDesiredAudioMode,
 	splitEffectiveVolume as canonicalSplitEffectiveVolume,
+	stepEffectiveVolume as canonicalStepEffectiveVolume,
 } from '../../../packages/contracts/src/index.ts';
 import {
 	compileEffectiveVolume,
 	requiresAudioProcessor,
 	resolveDesiredAudioMode,
 	splitEffectiveVolume,
+	stepEffectiveVolume,
 } from '../../../packages/contracts/src/spectra.content-runtime.ts';
 
 const CONTENT_RUNTIME_VALUE_EXPORTS = [
@@ -21,6 +23,10 @@ const CONTENT_RUNTIME_VALUE_EXPORTS = [
 	'SPECTRA_CONTENT_RUNTIME_REVISION',
 	'SPECTRA_PROTOCOL_VERSION',
 	'audioConfigToProcessorConfig',
+	// One tone vocabulary: the wire state and the palette tone are the same
+	// trichotomy, so Content must be able to translate between them locally
+	// instead of restating the rule for its own surface.
+	'audioVolumeStateToVolumeTone',
 	'clampControlValue',
 	'compileEffectiveVolume',
 	'createSpectraEvent',
@@ -42,14 +48,17 @@ const CONTENT_RUNTIME_VALUE_EXPORTS = [
 	'requiresAudioProcessor',
 	'resolveAudioVolume',
 	'resolveAudioVolumeState',
+	'resolveBoostRoute',
 	'resolveDesiredAudioMode',
 	'resolveSpectraDefaultHotkeyAction',
 	'resolveSpectraHotkeyActualFeedback',
+	'resolveVolumeTone',
 	'rpcFailure',
 	'rpcSuccess',
 	'selectHotkeyFeedbackOwner',
 	'selectHotkeyRepeatPolicy',
 	'splitEffectiveVolume',
+	'stepEffectiveVolume',
 ] as const;
 
 describe('Content contracts facade boundary', () => {
@@ -58,6 +67,7 @@ describe('Content contracts facade boundary', () => {
 		expect(resolveDesiredAudioMode).toBe(canonicalResolveDesiredAudioMode);
 		expect(compileEffectiveVolume).toBe(canonicalCompileEffectiveVolume);
 		expect(splitEffectiveVolume).toBe(canonicalSplitEffectiveVolume);
+		expect(stepEffectiveVolume).toBe(canonicalStepEffectiveVolume);
 	});
 
 	test('keeps the facade closed and prevents forbidden canonical-surface leakage', async () => {

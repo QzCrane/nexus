@@ -74,11 +74,9 @@ export {
 } from './control-value-limits.js';
 
 export {
-	crossesVolumeRoute,
 	resolveBoostRoute,
 	resolveNativeRoute,
 	resolveVolumeTone,
-	shouldHoldVolumeTone,
 } from './volume-presentation.contracts.js';
 
 export type {
@@ -87,7 +85,6 @@ export type {
 	VolumeTone,
 	VolumeToneInput,
 } from './volume-presentation.contracts.js';
-export type { VolumeRouteHoldInput } from './volume-presentation.contracts.js';
 
 export type {
 	CaptureAdmission,
@@ -145,6 +142,8 @@ export {
   audioSessionMatchesControlDocument,
   isActiveCaptureLifecycle,
   resolveAudioVolumeState,
+  volumeToneToAudioVolumeState,
+  audioVolumeStateToVolumeTone,
 } from './audio.contracts.js';
 
 // Per-field SPECTRA control contracts
@@ -236,6 +235,7 @@ export {
 	selectControlStrategyRule,
 	compileEffectiveVolume,
 	splitEffectiveVolume,
+	stepEffectiveVolume,
 	resolveAcknowledgedProcessorLifecycle,
 	resolveAcknowledgedAudioVolumeState,
 	resolveControlAudioVolume,
@@ -396,10 +396,13 @@ export {
 } from './visualizer.contracts.js';
 export {
 	SPECTRA_CONTENT_RUNTIME_REVISION,
+	SPECTRA_CONTENT_INVOCATION_GRANTED,
+	createSpectraContentInvocationGrantedMessage,
 	createSpectraLeanSiteHotkeyConfiguration,
 	SPECTRA_DEFAULT_HOTKEY_ACTION_BY_CODE,
 	SPECTRA_DEFAULT_HOTKEY_ACTIONS,
 	SPECTRA_REPEATABLE_DEFAULT_HOTKEY_ACTIONS,
+	isSpectraContentInvocationGrantedMessage,
 	isSpectraDefaultHotkeyTriggerPayload,
 	isSpectraRepeatableDefaultHotkeyAction,
 	isSpectraLeanSiteHotkeyConfiguration,
@@ -407,6 +410,7 @@ export {
 	resolveSpectraDefaultHotkeyAction,
 } from './spectra.bootstrap.js';
 export type {
+	SpectraContentInvocationGrantedMessage,
 	SpectraDefaultHotkeyAction,
 	SpectraDefaultHotkeyChord,
 	SpectraDefaultHotkeyPhase,
@@ -508,6 +512,8 @@ export type {
 	HotkeyParameterKind,
 	HotkeyActionDescriptor,
 	SpectraHotkeyActualFeedback,
+	SpectraHotkeyPresentationToken,
+	SpectraHotkeyPresentation,
   KeyModifiers,
   KeyCombo,
   HotkeyBinding,
@@ -523,6 +529,7 @@ export {
 	HOTKEY_ACTION_DESCRIPTORS,
 	hotkeyActionRequiresUserActivation,
 	isHotkeyAction,
+	isSpectraHotkeyPresentation,
 	isHotkeyParamsForAction,
 	isSpectraDefaultHotkeyKeyCombo,
 	isSlotHotkeyAction,

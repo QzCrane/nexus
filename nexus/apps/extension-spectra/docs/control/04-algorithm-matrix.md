@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-07-30
+last_reviewed: 2026-11-09
 ---
 
 # 04. Algorithm Matrix (index)
@@ -23,10 +23,13 @@ last_reviewed: 2026-07-30
 
 ## 数字
 
-- **51 contract capabilities** = 17 native-only + 6 hybrid-extension-native + 26 augmentation-only + 2 observation-only
+- **51 contract capabilities** = 15 native-only + 8 hybrid-extension-native + 26 augmentation-only + 2 observation-only
 - **28 persistent snapshot fields + 23 momentary operations**
 - **50 source algorithms** (`ALG-001..ALG-050`)
-- **44 static invariants** (`SCTRL-001..SCTRL-044`,见 [08-invariants-and-gates.md](08-invariants-and-gates.md))
+- **静态不变量**: 编号从 `SCTRL-001` 起连续，总数与终点编号由
+  [08-invariants-and-gates.md](08-invariants-and-gates.md) 与
+  `scripts/verify/check-spectra-control.ts` 共同定义。本文不手写数字——手写的数字
+  曾经三次落后于真实条目（44 / 50 / 58），因此这里只保留引用。
 
 ## 上下游
 
@@ -36,5 +39,6 @@ last_reviewed: 2026-07-30
   - [`03-ui-and-boundaries.md`](03-ui-and-boundaries.md) — UI / surface action normalization
   - [`05-control-state.md`](05-control-state.md) — FieldState, echo correlation, volume/mute
   - [`07-runtime-and-performance.md`](07-runtime-and-performance.md) — Implementation status ledger
-- **下级实现**: `packages/contracts/src/control.contracts.ts` · `src/background/control-coordinator.ts` · `src/background/control-coordinator-values.ts` · `src/content/logic/native-media-async.ts` · `src/content/logic/native-media-executor.ts`
-- **静态校验**: `scripts/verify/check-spectra-control.ts` (强制 44 invariants + 51 capabilities + 50 algorithms 全部存在)
+- **下级实现（契约）**: `packages/contracts/src/control.contracts.ts`
+- **下级实现（运行时）**: `src/background/control-coordinator.ts` · `src/background/control-coordinator-values.ts` · `src/content/logic/native-media-async.ts` · `src/content/logic/native-media-executor.ts`
+- **静态校验**: `scripts/verify/check-spectra-control.ts`（强制全部 `SCTRL` 编号、51 capabilities 与 50 algorithms 存在；数量以校验器常量为唯一来源）

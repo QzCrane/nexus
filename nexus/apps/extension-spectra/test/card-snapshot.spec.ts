@@ -94,18 +94,24 @@ describe('field-level card snapshot coverage', () => {
 			actualMode: 'capture' as const,
 			desiredMode: 'capture' as const,
 			phase: 'active' as const,
-			generation: 4,
 		};
 		// 运行时与会话都没读到：卡片仍必须从控制快照自己的处理器 ACK 得到 capture。
 		expect(resolveInitialProcessorLifecycle(null, null, acknowledged)).toBe(acknowledged);
-		// 更旧的会话不能把已确认的路由改回 bypass。
-		const staleSession = {
+		// The current processor observation has its own clock, independent of control.
+		const currentSession = {
 			actualMode: 'bypass' as const, desiredMode: 'bypass' as const, phase: 'idle' as const, generation: 3,
 		};
-		expect(resolveInitialProcessorLifecycle(null, staleSession, acknowledged)).toBe(acknowledged);
-		// 更新的会话描述的是快照还没看到的交接，它优先。
-		const newerSession = { ...staleSession, generation: 5 };
-		expect(resolveInitialProcessorLifecycle(null, newerSession, acknowledged)).toBe(newerSession);
+		expect(resolveInitialProcessorLifecycle(null, currentSession, acknowledged)).toBe(currentSession);
+	});
+
+	test.each([1, 100])('keeps processor generation %s independent of the control generation', (generation) => {
+		const acknowledged = acknowledgedProcessorLifecycle({
+			generation: 42,
+			fields: { boost: { actual: 1, revision: 4, phase: 'applied', strategy: 'observe', controlled: false } },
+		} as never);
+		const runtime = { actualMode: 'capture' as const, desiredMode: 'capture' as const, phase: 'active' as const, generation };
+		expect(resolveInitialProcessorLifecycle(runtime, null, acknowledged)).toBe(runtime);
+		expect(resolveInitialProcessorLifecycle(null, runtime, acknowledged)).toBe(runtime);
 	});
 
 	test('reads the acknowledged route from a control snapshot processor ACK', () => {
@@ -127,8 +133,8 @@ describe('field-level card snapshot coverage', () => {
 		expect(acknowledgedProcessorLifecycle(control as never)).toMatchObject({
 			actualMode: 'capture',
 			phase: 'active',
-			generation: 7,
 		});
+		expect(acknowledgedProcessorLifecycle(control as never)).not.toHaveProperty('generation');
 		// 只有页面字段的快照没有处理器 ACK，不能凭它编造路由。
 		expect(acknowledgedProcessorLifecycle({
 			generation: 7,

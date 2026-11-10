@@ -335,6 +335,39 @@ describe('content audio v2 boundary', () => {
 		expect(state.lastError).toContain('Capture stopped');
 	});
 
+	test('retires stopped document-output actuals and publishes their loss without replaying the desired policy', () => {
+		const desired = { ...CONFIG, documentOutput: true as const, volume: 30, volumeBase: 30, muted: true };
+		const state = {
+			config: { ...desired }, appliedConfig: { ...desired }, activeMode: 'capture', desiredMode: 'capture',
+			actualMode: 'capture', phase: 'active', generation: 4, userHasInteracted: true, isPopupOpen: false,
+		} as MessageHandlerDeps['state'];
+		const applyState = mock(async () => undefined);
+		const published: Array<{ phase: string; actualMode: string; config: typeof state.appliedConfig }> = [];
+		const updateBadge = mock(() => published.push({ phase: state.phase, actualMode: state.actualMode,
+			config: { ...state.appliedConfig } }));
+		const handler = createMessageHandler({
+			state,
+			runtimeContext: new DocumentRuntimeContext({ documentId: 'document-42', frameId: 0 }),
+			policyExecutor: { applyState, updateBadge } as unknown as MessageHandlerDeps['policyExecutor'],
+			captureManager: { handleMessage: () => true, hasLocalRequest: () => false } as unknown as MessageHandlerDeps['captureManager'],
+			settingsManager: {} as MessageHandlerDeps['settingsManager'],
+		});
+		const stopped = { protocolVersion: 2, type: 'spectra.audio.capture.changed', tabId: 42,
+			documentId: 'document-42', generation: 5, payload: { tabId: 42, generation: 5,
+				phase: 'idle', active: false, actualMode: 'bypass', lastError: null } };
+		// A different document cannot revoke the current output proof.
+		handler({ ...stopped, documentId: 'document-old' }, {}, () => undefined);
+		expect(state.appliedConfig.documentOutput).toBe(true);
+		expect(updateBadge).not.toHaveBeenCalled();
+		handler(stopped, {}, () => undefined);
+		expect(state.config).toEqual(desired);
+		expect(state.appliedConfig).toMatchObject({ volume: 100, volumeBase: 100, boost: 1, muted: false });
+		expect(state.appliedConfig.documentOutput).toBeUndefined();
+		expect(applyState).not.toHaveBeenCalled();
+		expect(published).toEqual([{ phase: 'error', actualMode: 'bypass', config: state.appliedConfig }]);
+		expect(state.lastError).toContain('Capture stopped');
+	});
+
 	test('applies presentation settings without re-running audio policy', () => {
 		const applyState = mock(async () => undefined);
 		const handleMessage = mock(() => true);

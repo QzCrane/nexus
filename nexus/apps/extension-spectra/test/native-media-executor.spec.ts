@@ -38,6 +38,10 @@ class FakeMediaElement extends EventTarget {
 	currentTime = 4;
 	duration = 120;
 	seeking = false;
+	// A real element that reports metadata reports ranges with it, and
+	// `isLiveMedia` reads them as the evidence that separates a broadcast from a
+	// resource that simply delivered nothing.
+	buffered = { length: 1 } as TimeRanges;
 	paused = true;
 	ended = false;
 	private nativeVolume = 1;
@@ -243,6 +247,112 @@ afterEach(() => {
 });
 
 describe('native media single-writer correlation', () => {
+	test.each(['timer', 'loadeddata', 'durationchange', 'page', 'release', 'unrelated-field', 'unrelated-inflight', 'terminal', 'dispose', 'bounded'] as const)(
+		'automatically resumes an unfinished source restore without a popup (%s)', async (wake) => {
+			installFakeMediaGlobals();
+			const registry = new FakeRegistry();
+			const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+			let restores = 0;
+			let finishFirst!: () => void;
+			const firstPending = new Promise<void>((resolve) => { finishFirst = resolve; });
+			Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+				id: 'spectra-test', sendMessage: async (message: { type: string; payload: Partial<ControlIntent> }) => {
+					if (message.type !== 'spectra.control.intent.submit' || message.payload.source !== 'restore') return { ok: true, data: { recorded: true } };
+					restores += 1;
+					if (restores === 1 && wake === 'unrelated-inflight') await firstPending;
+					if (wake === 'terminal') return { ok: false, error: { code: 'permission-denied', message: 'Permission denied', retryable: false } };
+					if (restores === 1 || wake === 'bounded') return { ok: false, error: { code: 'stale-media-source', message: 'Source changed before commit', retryable: true } };
+					return { ok: true, data: await executor.execute({ intentId: 'automatic:retry', tabId: 7,
+						documentId: registry.documentId, generation: 1, baseRevision: 0, actualContext: {}, ...message.payload } as ControlIntent) };
+				},
+			} } });
+			try {
+				await executor.execute({ intentId: 'automatic:seed', tabId: 7, documentId: registry.documentId,
+					generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+					target: registry.target, actualContext: {}, patch: { volumeBase: 40 } });
+				registry.emit('removed');
+				registry.target.sourceRevision += 1;
+				registry.element.forceVolume(1);
+				registry.emit('registered');
+				registry.emit('selected');
+				await new Promise((resolve) => setTimeout(resolve, 0));
+				expect(restores).toBe(1);
+				if (wake === 'loadeddata' || wake === 'durationchange') registry.emit(wake);
+				if (wake === 'terminal') { registry.emit('loadeddata'); registry.emit('play'); }
+				if (wake === 'dispose') executor.dispose();
+				if (wake === 'page') { registry.element.forceVolume(0.7); registry.emit('volumechange'); }
+				if (wake === 'unrelated-field' || wake === 'unrelated-inflight') await executor.execute({ intentId: 'automatic:other-field', tabId: 7,
+					documentId: registry.documentId, generation: 1, baseRevision: 0, source: 'popup',
+					requestedCoverage: 'active-target', target: registry.target, actualContext: {}, patch: { speed: 2 } });
+				finishFirst();
+				if (wake === 'release') await executor.releasePageSettings({ operationId: 'automatic:release', tabId: 7,
+					documentId: registry.documentId, generation: 1, baseRevision: 0, source: 'popup',
+					target: registry.target, operation: 'restore-page-settings', payload: {} });
+				await new Promise((resolve) => setTimeout(resolve, wake === 'loadeddata' || wake === 'durationchange' ? 30 : wake === 'bounded' ? 1700 : 400));
+				const stopped = wake === 'release' || wake === 'terminal' || wake === 'dispose' || wake === 'bounded';
+				expect(registry.element.volume).toBe(wake === 'page' ? 0.7 : stopped ? 1 : 0.4);
+				expect(restores).toBe(wake === 'bounded' ? 4 : wake === 'page' || stopped ? 1 : 2);
+			} finally { finishFirst(); executor.dispose(); }
+		},
+	);
+	test('a first document restore follows a source replaced during the native write without a prior gesture', async () => {
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		let automatic: Promise<unknown> | undefined;
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: { type: string; payload: Partial<ControlIntent> }) => {
+				if (message.type !== 'spectra.control.intent.submit' || message.payload.source !== 'restore') return { ok: true, data: { recorded: true } };
+				automatic = executor.execute({ intentId: 'initial:automatic', tabId: 7, documentId: registry.documentId,
+					generation: 1, baseRevision: 0, actualContext: {}, ...message.payload } as ControlIntent);
+				return { ok: true, data: await automatic };
+			},
+		} } });
+		registry.element.volumeWriteHook = () => {
+			registry.element.volumeWriteHook = undefined;
+			registry.emit('removed'); registry.target.sourceRevision += 1;
+			registry.element.forceVolume(1); registry.emit('registered'); registry.emit('selected');
+		};
+		try {
+			await expect(executor.execute({ intentId: 'initial:configured', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'restore', requestedCoverage: 'active-target',
+				target: null, actualContext: {}, patch: { volumeBase: 40 } })).rejects.toMatchObject({ code: 'stale-media-source' });
+			expect(automatic).toBeDefined();
+			await automatic;
+			expect(executor.mediaIntentState()).toBe('retained');
+			expect(registry.element.volume).toBe(0.4);
+		} finally { executor.dispose(); }
+	});
+
+	test('a queued automatic restore cannot overwrite a subsequent page volume gesture', async () => {
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		let queued: Partial<ControlIntent> | undefined;
+		let finish!: () => void;
+		const held = new Promise<void>((resolve) => { finish = resolve; });
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: { type: string; payload: Partial<ControlIntent> }) => {
+				if (message.type !== 'spectra.control.intent.submit' || message.payload.source !== 'restore') return { ok: true, data: { recorded: true } };
+				queued = message.payload;
+				await held;
+				return { ok: false, error: { code: 'policy-denied', message: 'Page took ownership', retryable: false } };
+			},
+		} } });
+		try {
+			await executor.execute({ intentId: 'queued:seed', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target',
+				target: registry.target, actualContext: {}, patch: { volumeBase: 40 } });
+			registry.emit('removed'); registry.target.sourceRevision += 1;
+			registry.element.forceVolume(1); registry.emit('registered'); registry.emit('selected');
+			expect(queued).toBeDefined();
+			registry.element.forceVolume(0.7); registry.emit('volumechange');
+			const ack = await executor.execute({ intentId: 'queued:late', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, actualContext: {}, ...queued } as ControlIntent);
+			expect(ack.fields.volumeBase?.lastError?.code).toBe('policy-denied');
+			expect(registry.element.volume).toBe(0.7);
+		} finally { finish(); executor.dispose(); }
+	});
 	test.each([false, true])('re-publishes settled route playback before effects even without a template (%s)', async (withTemplate) => {
 		installFakeMediaGlobals(); const registry = new FakeRegistry(); registry.element.paused = false;
 		let revision = 0;
@@ -348,6 +458,79 @@ describe('native media single-writer correlation', () => {
 			expect((await change('https://www.douyin.com/video/a')).speed).toBe(1.5);
 		} finally { executor.dispose(); restore('window', oldWindow); restore('location', oldLocation); }
 	});
+	test.each(['return', 'page-override', 'same-url', 'stale-token'] as const)(
+		'keeps route-only scene restoration fenced on the same media source (%s)', async (scenario) => {
+			installFakeMediaGlobals();
+			const oldWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+			const oldLocation = Object.getOwnPropertyDescriptor(globalThis, 'location');
+			let url = new URL('https://www.douyin.com/video/a');
+			const media = new BridgedMediaElement();
+			const registry = new FakeRegistry(media);
+			const root = { querySelectorAll: (selector: string) => selector.includes('video') ? [media] : [] };
+			Object.defineProperty(media, 'closest', { configurable: true, value: () => root });
+			Object.defineProperty(globalThis, 'window', { configurable: true, value: { get location() { return url; } } });
+			Object.defineProperty(globalThis, 'location', { configurable: true, get: () => url });
+			const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+			Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+				id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+			} } });
+			const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+			media.addEventListener('ratechange', () => registry.emit('ratechange'));
+			const intent = (speed: number, source: ControlIntent['source'] = 'popup'): ControlIntent => ({
+				intentId: `route-only:${source}:${speed}`, tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source, requestedCoverage: 'active-target',
+				target: { ...registry.target }, actualContext: {}, patch: { speed },
+			});
+			const restoreRequest = (): ControlIntent | null => {
+				const message = messages.find(value => value.type === 'spectra.control.intent.submit'
+					&& value.payload.source === 'restore');
+				return message ? { ...intent(0, 'restore'), ...message.payload } as ControlIntent : null;
+			};
+			const settle = async (route: string): Promise<ControlIntent | null> => {
+				url = new URL(route);
+				messages.length = 0;
+				executor.reconcileRoute(route);
+				await new Promise(resolve => setTimeout(resolve, 0));
+				return restoreRequest();
+			};
+			try {
+				const initialTarget = { ...registry.target };
+				const initialVisit = registry.selectionRevision;
+				await executor.execute(intent(2));
+				if (scenario === 'same-url') {
+					media.playbackRate = 1;
+					await new Promise(resolve => setTimeout(resolve, 0));
+					expect(await settle(url.href)).toBeNull();
+					expect(media.playbackRate).toBe(1);
+				} else if (scenario === 'stale-token') {
+					messages.length = 0;
+					registry.emit('selected');
+					await new Promise(resolve => setTimeout(resolve, 0));
+					const oldRestore = restoreRequest();
+					if (!oldRestore) throw new Error('The previous scene restore token is missing');
+					url = new URL('https://www.douyin.com/live/b');
+					media.playbackRate = 1;
+					await new Promise(resolve => setTimeout(resolve, 0));
+					await expect(executor.execute(oldRestore)).rejects.toMatchObject({ code: 'stale-media-source' });
+					expect(media.playbackRate).toBe(1);
+				} else {
+					url = new URL('https://www.douyin.com/live/b');
+					await executor.execute(intent(1.5));
+					if (scenario === 'page-override') {
+						media.playbackRate = 1;
+						await new Promise(resolve => setTimeout(resolve, 0));
+					}
+					const returning = await settle('https://www.douyin.com/video/a');
+					if (!returning) throw new Error('The returning scene restore is missing');
+					expect(returning.patch.speed).toBe(2);
+					expect((await executor.execute(returning)).fields.speed?.actual).toBe(2);
+					expect(registry.selectionRevision).toBe(initialVisit);
+				}
+				expect(registry.target).toEqual(initialTarget);
+			} finally { executor.dispose(); restore('window', oldWindow); restore('location', oldLocation); }
+		},
+	);
+
 	test('keeps exact-scene speeds independent and rejects an older automatic restore before writing', async () => {
 		installFakeMediaGlobals();
 		const registry = new FakeRegistry(); registry.target.mediaId = 'media:a';
@@ -419,6 +602,10 @@ describe('native media single-writer correlation', () => {
 			if (scenario === 'selection-changed') await expect(operation).rejects.toMatchObject({ code: 'stale-media-source' });
 			else {
 				const ack = await operation;
+				// A page that swallows the event still has to be seen by the readback,
+				// and one that restarts playback is a failed pause — not a value to
+				// dissolve into a later drift. The viewer pressed pause and the video
+				// is still playing, so the transaction must say so (SCTRL-005).
 				expect(ack.fields.playing).toMatchObject(scenario === 'intercepted'
 					? { phase: 'applied', actual: false }
 					: { phase: 'error', actual: null, lastError: { code: 'readback-mismatch' } });
@@ -506,6 +693,30 @@ describe('native media single-writer correlation', () => {
 			expect((await executor.execute(intent(false))).fields.playing).toMatchObject({ phase: 'applied', actual: false });
 		} finally { executor.dispose(); }
 	}, 500);
+
+	test('retains a native restore on a live MediaStream before its audio track arrives', async () => {
+		installFakeMediaGlobals();
+		const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'MediaStream');
+		class StartingStream {
+			audio = false;
+			getVideoTracks() { return [{}]; }
+			getAudioTracks() { return this.audio ? [{}] : []; }
+		}
+		Object.defineProperty(globalThis, 'MediaStream', { configurable: true, value: StartingStream });
+		const stream = new StartingStream();
+		const registry = new FakeRegistry();
+		Object.assign(registry.element, { srcObject: stream });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			const ack = await executor.execute({ intentId: 'cold:native-before-audio', tabId: 7, documentId: registry.documentId,
+				generation: 1, baseRevision: 0, source: 'restore', requestedCoverage: 'active-target',
+				target: registry.target, actualContext: {}, patch: { volumeBase: 40 } });
+			expect(ack.fields.volumeBase).toMatchObject({ phase: 'applied', actual: 40, strategy: 'dom-native' });
+			expect(executor.mediaIntentState()).toBe('retained');
+			stream.audio = true;
+			expect(registry.element.volume).toBe(0.4);
+		} finally { executor.dispose(); restore('MediaStream', descriptor); }
+	});
 
 	test('keeps the standard default and current playback rates coherent', () => {
 		const media = new FakeMediaElement();
@@ -1107,6 +1318,8 @@ describe('native media single-writer correlation', () => {
 				target: ownerTarget,
 				patch: { pip: true },
 				observedStrategies: { pip: 'dom-native' },
+				// The read also states the presentation kind it saw.
+				live: false,
 			});
 			const result = await executor.toggleTrustedActivation('pip');
 			expect(result).toEqual({ target: ownerTarget, actual: false });
@@ -1168,6 +1381,80 @@ describe('native media single-writer correlation', () => {
 			expect(pipExitCount).toBe(1);
 			expect(documentState.pictureInPictureElement).toBe(registry.element);
 			expect(result.fields.pip).toMatchObject({ phase: 'applied', actual: true });
+		} finally {
+			executor.dispose();
+		}
+	});
+
+	test('holds the lifted disablePictureInPicture until the PiP session ends', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		const registry = new FakeRegistry();
+		registry.target.kind = 'video';
+		const video = registry.element as FakeMediaElement & {
+			disablePictureInPicture: boolean;
+			requestPictureInPicture(): Promise<Record<string, never>>;
+		};
+		let disabled = true;
+		const documentState = {
+			pictureInPictureEnabled: true,
+			pictureInPictureElement: null as unknown,
+			fullscreenElement: null,
+			exitPictureInPicture: async () => {
+				const previous = documentState.pictureInPictureElement;
+				documentState.pictureInPictureElement = null;
+				if (previous instanceof EventTarget) {
+					queueMicrotask(() => previous.dispatchEvent(new Event('leavepictureinpicture')));
+				}
+			},
+		};
+		Object.defineProperty(globalThis, 'document', { configurable: true, value: documentState });
+		Object.defineProperty(video, 'disablePictureInPicture', {
+			configurable: true,
+			get: () => disabled,
+			set: (value: boolean) => {
+				disabled = value === true;
+				// Chrome runs the exit-PiP algorithm when the attribute is re-added to
+				// the element that already owns the session.
+				if (disabled && documentState.pictureInPictureElement === video) {
+					void documentState.exitPictureInPicture();
+				}
+			},
+		});
+		video.requestPictureInPicture = async () => {
+			documentState.pictureInPictureElement = video;
+			queueMicrotask(() => video.dispatchEvent(new Event('enterpictureinpicture')));
+			return {};
+		};
+		const effects = { dispose: () => undefined } as unknown as VideoEffectsController;
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, effects);
+		try {
+			const result = await executor.execute({
+				intentId: 'intent:pip-attribute-ownership',
+				tabId: 7,
+				documentId: registry.target.documentId,
+				generation: 1,
+				baseRevision: 2,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { pip: true },
+			});
+			expect(result.fields.pip).toMatchObject({ phase: 'applied', actual: true });
+			expect(documentState.pictureInPictureElement).toBe(video);
+			// The site's preference stays lifted for as long as the session lives.
+			expect(disabled).toBe(false);
+
+			documentState.pictureInPictureElement = null;
+			video.dispatchEvent(new Event('leavepictureinpicture'));
+			expect(disabled).toBe(true);
 		} finally {
 			executor.dispose();
 		}
@@ -1243,6 +1530,302 @@ describe('native media single-writer correlation', () => {
 			executor.dispose();
 		}
 	});
+
+	test('answers a PiP request as written and proves the session afterwards', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		resetNativeWriteTelemetry();
+		const video = new FakeMediaElement();
+		const target: MediaTarget = {
+			frameId: 0,
+			documentId: 'document-pip-split-ack',
+			mediaId: 'media:pip-split-ack',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+		const documentState = {
+			pictureInPictureEnabled: true,
+			pictureInPictureElement: null as unknown,
+			fullscreenElement: null,
+			exitPictureInPicture: async () => {
+				const previous = documentState.pictureInPictureElement;
+				documentState.pictureInPictureElement = null;
+				if (previous instanceof EventTarget) {
+					queueMicrotask(() => previous.dispatchEvent(new Event('leavepictureinpicture')));
+				}
+			},
+		};
+		Object.defineProperty(globalThis, 'document', { configurable: true, value: documentState });
+		(video as FakeMediaElement & {
+			requestPictureInPicture(): Promise<Record<string, never>>;
+		}).requestPictureInPicture = async () => {
+			documentState.pictureInPictureElement = video;
+			queueMicrotask(() => video.dispatchEvent(new Event('enterpictureinpicture')));
+			return {};
+		};
+		const registry = {
+			subscribe: () => () => undefined,
+			documentId: target.documentId,
+			resolve: () => ({ element: video as unknown as HTMLMediaElement, target }),
+			resolveVideo: (requested: MediaTarget | null) => requested?.mediaId === target.mediaId
+				? { element: video as unknown as HTMLVideoElement, target }
+				: null,
+			list: () => [{ element: video as unknown as HTMLMediaElement, target }],
+		} as unknown as MediaRegistry;
+		const executor = new NativeMediaExecutor(registry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			const result = await executor.execute({
+				intentId: 'pip:split-ack',
+				tabId: 7,
+				documentId: target.documentId,
+				generation: 1,
+				baseRevision: 0,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target,
+				actualContext: {},
+				patch: { pip: true },
+			});
+			// The session owner is the acknowledgement; the stabilization window is
+			// a separate fact (SCTRL-045) that must not delay the answer.
+			expect(result.fields.pip).toMatchObject({ phase: 'applied', actual: true, writeState: 'written' });
+			expect(snapshotNativeWriteTelemetry().pending).toBe(1);
+			await new Promise((resolve) => { setTimeout(resolve, 250); });
+			expect(snapshotNativeWriteTelemetry().pending).toBe(0);
+			expect(snapshotNativeWriteTelemetry().byState.drifted).toBe(0);
+		} finally {
+			executor.dispose();
+			resetNativeWriteTelemetry();
+		}
+	}, 2_000);
+
+	test('answers a fullscreen request as written and proves ownership afterwards', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		resetNativeWriteTelemetry();
+		const media = new FakeMediaElement();
+		const documentState = {
+			pictureInPictureEnabled: false,
+			pictureInPictureElement: null,
+			fullscreenElement: null as unknown,
+			exitFullscreen: async () => {
+				const previous = documentState.fullscreenElement;
+				documentState.fullscreenElement = null;
+				if (previous instanceof EventTarget) {
+					queueMicrotask(() => previous.dispatchEvent(new Event('fullscreenchange')));
+				}
+			},
+		};
+		Object.defineProperty(globalThis, 'document', { configurable: true, value: documentState });
+		(media as FakeMediaElement & { requestFullscreen(): Promise<void> }).requestFullscreen = async () => {
+			documentState.fullscreenElement = media;
+			queueMicrotask(() => media.dispatchEvent(new Event('fullscreenchange')));
+		};
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			const result = await executor.execute({
+				intentId: 'fullscreen:split-ack',
+				tabId: 7,
+				documentId: registry.documentId,
+				generation: 1,
+				baseRevision: 0,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { fullscreen: true },
+			});
+			expect(result.fields.fullscreen).toMatchObject({ phase: 'applied', actual: true, writeState: 'written' });
+			expect(snapshotNativeWriteTelemetry().pending).toBe(1);
+			await new Promise((resolve) => { setTimeout(resolve, 250); });
+			expect(snapshotNativeWriteTelemetry().pending).toBe(0);
+			expect(snapshotNativeWriteTelemetry().byState.drifted).toBe(0);
+		} finally {
+			executor.dispose();
+			resetNativeWriteTelemetry();
+		}
+	}, 2_000);
+
+	test('settles a standard-DOM speed write before answering so a page source swap cannot erase it', async () => {
+		installFakeMediaGlobals();
+		resetNativeWriteTelemetry();
+		const registry = new FakeRegistry();
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			const result = await executor.execute({
+				intentId: 'speed:awaited-ack',
+				tabId: 7,
+				documentId: registry.documentId,
+				generation: 1,
+				baseRevision: 0,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 1.75 },
+			});
+			expect(result.fields.speed).toMatchObject({ phase: 'applied', actual: 1.75 });
+			expect(registry.element.playbackRate).toBe(1.75);
+			// The answer already includes the settle window: nothing is left in
+			// flight to book a later drift against a value the viewer never saw.
+			expect(snapshotNativeWriteTelemetry().pending).toBe(0);
+			expect(snapshotNativeWriteTelemetry().byState.drifted).toBe(0);
+		} finally {
+			executor.dispose();
+			resetNativeWriteTelemetry();
+		}
+	}, 2_000);
+
+	test('refuses a speed write on a live presentation before touching the element', async () => {
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			// A live MSE presentation reports an unbounded duration. Writing the rate
+			// anyway is what used to answer `readback-mismatch` seconds later, after
+			// the player had already reverted it.
+			registry.element.duration = Number.POSITIVE_INFINITY;
+			const result = await executor.execute({
+				intentId: 'speed:live',
+				tabId: 7,
+				documentId: registry.documentId,
+				generation: 1,
+				baseRevision: 0,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target: registry.target,
+				actualContext: {},
+				patch: { speed: 2 },
+			});
+			expect(result.fields.speed).toMatchObject({
+				phase: 'error',
+				actual: null,
+				strategy: 'unsupported',
+				lastError: { code: 'capability-unavailable', retryable: false },
+			});
+			expect(registry.element.playbackRate).toBe(1);
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
+
+	test.each(['loadedmetadata', 'loadeddata', 'durationchange'] as const)('announces only the selected live presentation when %s makes it a fact', async (event) => {
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test',
+			sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		const liveMessages = () => messages.filter((message) => message.type === 'spectra.control.intent.submit'
+			&& message.payload.live === true && Object.keys(message.payload.patch as object).length === 0);
+		try {
+			// An on-demand element says nothing: it is the default, and announcing it
+			// would send one message per element per document.
+			registry.emit('loadedmetadata');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(liveMessages()).toHaveLength(0);
+
+			registry.element.duration = Number.POSITIVE_INFINITY;
+			const other = new FakeMediaElement();
+			other.duration = Number.POSITIVE_INFINITY;
+			const otherTarget: MediaTarget = { ...registry.target, mediaId: 'media:inactive-live', kind: 'video' };
+			registry.listener?.(otherTarget, event, other as unknown as HTMLMediaElement);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(liveMessages()).toHaveLength(0);
+			// The previously ignored source must still publish when it is selected.
+			Object.assign(registry.target, otherTarget);
+			registry.emit(event);
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(liveMessages()).toHaveLength(1);
+			expect(liveMessages()[0]?.payload).toMatchObject({
+				source: 'page', requestedCoverage: 'active-target', target: registry.target, patch: {}, live: true,
+			});
+
+			// The same fact on the next event is not news.
+			registry.emit('play');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(liveMessages()).toHaveLength(1);
+		} finally {
+			executor.dispose();
+		}
+	});
+
+	test('reports a session the page terminated in the same task as a policy denial', async () => {
+		Object.defineProperty(globalThis, 'HTMLMediaElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		Object.defineProperty(globalThis, 'HTMLVideoElement', {
+			configurable: true,
+			value: FakeMediaElement,
+		});
+		const video = new FakeMediaElement();
+		const target: MediaTarget = {
+			frameId: 0,
+			documentId: 'document-pip-veto',
+			mediaId: 'media:pip-veto',
+			sourceRevision: 1,
+			kind: 'video',
+		};
+		const documentState = {
+			pictureInPictureEnabled: true,
+			pictureInPictureElement: null as unknown,
+			fullscreenElement: null,
+			exitPictureInPicture: async () => { documentState.pictureInPictureElement = null; },
+		};
+		Object.defineProperty(globalThis, 'document', { configurable: true, value: documentState });
+		(video as FakeMediaElement & {
+			requestPictureInPicture(): Promise<Record<string, never>>;
+		}).requestPictureInPicture = async () => {
+			documentState.pictureInPictureElement = video;
+			// The page accepts the request and closes the window before the request
+			// promise resolves. That is a site veto, not a readback mismatch.
+			queueMicrotask(() => { documentState.pictureInPictureElement = null; });
+			return {};
+		};
+		const registry = {
+			subscribe: () => () => undefined,
+			documentId: target.documentId,
+			resolve: () => ({ element: video as unknown as HTMLMediaElement, target }),
+			resolveVideo: (requested: MediaTarget | null) => requested?.mediaId === target.mediaId
+				? { element: video as unknown as HTMLVideoElement, target }
+				: null,
+			list: () => [{ element: video as unknown as HTMLMediaElement, target }],
+		} as unknown as MediaRegistry;
+		const executor = new NativeMediaExecutor(registry, { dispose() {} } as unknown as VideoEffectsController);
+		try {
+			const result = await executor.execute({
+				intentId: 'pip:vetoed',
+				tabId: 7,
+				documentId: target.documentId,
+				generation: 1,
+				baseRevision: 0,
+				source: 'popup',
+				requestedCoverage: 'active-target',
+				target,
+				actualContext: {},
+				patch: { pip: true },
+			});
+			expect(result.fields.pip).toMatchObject({
+				phase: 'error',
+				actual: null,
+				lastError: { code: 'policy-denied', retryable: false },
+			});
+		} finally {
+			executor.dispose();
+		}
+	}, 2_000);
 
 	test('explicit Popup PiP exits an unregistered active owner without entering the selected video', async () => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
@@ -1679,6 +2262,38 @@ describe('native media single-writer correlation', () => {
 			expect(media.playbackRate).toBe(1.3);
 		} finally { executor.dispose(); }
 	});
+
+	test.each([false, true])('explicit unmute follows browser policy without document activation (page: %s)', async (pageSide) => {
+		installFakeMediaGlobals();
+		Object.defineProperty(globalThis, 'navigator', { configurable: true, value: { userActivation: { hasBeenActive: false } } });
+		for (const source of ['popup', 'hotkey', 'remote'] as const) {
+			for (const stopsPlayback of [false, true]) {
+				const media = new BridgedMediaElement();
+				media.muted = true;
+				media.paused = false;
+				let playCalls = 0;
+				media.play = () => { playCalls += 1; return Promise.resolve(); };
+				media.mutedWriteHook = value => { if (!value && stopsPlayback) queueMicrotask(() => { media.paused = true; }); };
+				const state: PageMediaState = { volumeBase: 100, mediaMuted: true, speed: 1, supported: pageSide };
+				installPageMediaBridgeStub(media, state);
+				const registry = new FakeRegistry(media);
+				const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+				try {
+					const result = await executor.execute({
+						intentId: `unmute:${source}:${stopsPlayback}`, tabId: 7, documentId: registry.documentId,
+						generation: 1, baseRevision: 1, source, requestedCoverage: 'active-target',
+						target: registry.target, actualContext: {}, patch: { mediaMuted: false },
+					});
+					expect(result.fields.mediaMuted).toMatchObject(stopsPlayback
+						? { phase: 'error', lastError: { code: 'policy-denied', retryable: false } }
+						: { phase: 'applied', actual: false, writeState: 'confirmed' });
+					expect(media.muted).toBe(stopsPlayback);
+					expect(media.paused).toBe(stopsPlayback);
+					expect(playCalls).toBe(0);
+				} finally { executor.dispose(); }
+			}
+		}
+	}, 10_000);
 
 	test.each([false, true])('blocks unactivated unmute before any writer while restoring speed (page: %s)', async (pageSide) => {
 		installFakeMediaGlobals();

@@ -125,7 +125,7 @@ function isPresetName(value: unknown): value is string {
 }
 
 function isAudioPresetValue(value: unknown, name: string): value is AudioPresetValue {
-	if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_PRESET_VALUE_KEYS) || !isAudioConfigPatch(value.config)) {
+	if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_PRESET_VALUE_KEYS) || !isPortableAudioConfigPatch(value.config)) {
 		return false;
 	}
 	const meta = value.meta;
@@ -139,10 +139,14 @@ function isAudioPresetValue(value: unknown, name: string): value is AudioPresetV
 		&& (meta.isDefault === undefined || typeof meta.isDefault === 'boolean');
 }
 
+function isPortableAudioConfigPatch(value: unknown): value is Partial<AudioConfig> {
+	return isAudioConfigPatch(value) && value.documentOutput === undefined;
+}
+
 function isAudioSites(value: unknown): value is Record<string, Partial<AudioConfig>> {
 	if (!isRecord(value) || Object.keys(value).length > MAX_SETTINGS_SNAPSHOT_ENTRIES) return false;
 	return Object.entries(value).every(([domain, config]) => (
-		normalizeHostname(domain) === domain && isAudioConfigPatch(config)
+		normalizeHostname(domain) === domain && isPortableAudioConfigPatch(config)
 	));
 }
 
@@ -157,6 +161,7 @@ export function isAudioSitePolicy(value: unknown): value is AudioSitePolicy {
 	return isRecord(value)
 		&& hasOnlyKeys(value, AUDIO_SITE_POLICY_KEYS)
 		&& isAudioConfig(value.config)
+		&& value.config.documentOutput === undefined
 		&& (value.mediaRoute === 'auto' || isMediaProcessingRoute(value.mediaRoute));
 }
 
@@ -190,7 +195,7 @@ export function isSettingsPatchRequest(value: unknown): value is SettingsPatchRe
 			&& typeof patch.domain === 'string'
 			&& normalizeHostname(patch.domain) !== null
 			&& (patch.mode === undefined || patch.mode === 'merge' || patch.mode === 'replace')
-			&& (patch.value === null || isAudioConfigPatch(patch.value));
+			&& (patch.value === null || isPortableAudioConfigPatch(patch.value));
 	}
 	if (patch.scope === 'audio-preset') {
 		return hasOnlyKeys(patch, AUDIO_PRESET_PATCH_KEYS)

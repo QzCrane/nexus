@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { isTopLevelDocumentNavigation, setupLifecycleListeners } from '../src/background/lifecycle';
 import { mediaFacts } from '../src/background/media-facts';
+import { badgeState } from '../src/background/state';
+import { resetPaintedBadgesForTests, updateBadgeFromControlProjection } from '../src/background/handlers/badge';
+import { resetBadgeUsageForTests } from '../src/background/badge-usage';
 
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 
@@ -15,10 +18,11 @@ function testEvent<Args extends unknown[]>() {
 function lifecycleFixture() {
 	const updated = testEvent<[number, chrome.tabs.TabChangeInfo, chrome.tabs.Tab]>();
 	const activated = testEvent<[{ tabId: number; windowId: number }]>();
+	const removed = testEvent<[number]>();
 	const values: Record<string, unknown> = {};
 	Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
 		runtime: { onSuspend: testEvent<[]>(), sendMessage: async () => undefined },
-		tabs: { onActivated: activated, onUpdated: updated, onRemoved: testEvent<[number]>(),
+		tabs: { onActivated: activated, onUpdated: updated, onRemoved: removed,
 			query: async () => [], get: async (id: number) => ({ id, active: false }) },
 		webNavigation: { onBeforeNavigate: testEvent<[]>(), onCommitted: testEvent<[]>(),
 			onHistoryStateUpdated: testEvent<[]>(), onReferenceFragmentUpdated: testEvent<[]>() },
@@ -27,7 +31,7 @@ function lifecycleFixture() {
 			local: { remove: async () => undefined },
 		},
 	} });
-	return { updated, activated };
+	return { updated, activated, removed };
 }
 
 let fixture: ReturnType<typeof lifecycleFixture>;
@@ -37,6 +41,9 @@ beforeEach(async () => {
 	setupLifecycleListeners();
 });
 afterEach(async () => {
+	badgeState.clear();
+	resetPaintedBadgesForTests();
+	resetBadgeUsageForTests();
 	mediaFacts.forgetMediaFact(9001);
 	mediaFacts.forgetMediaFact(9002);
 	await mediaFacts.flushMediaFacts();
@@ -50,6 +57,23 @@ async function settleLifecycle(): Promise<void> {
 }
 
 describe('background document lifecycle', () => {
+	test('tab closure clears the badge decision and its paint cache before cleanup awaits', async () => {
+		const texts: string[] = [];
+		Object.assign(chrome, { action: {
+			setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+			setBadgeBackgroundColor: async () => undefined,
+			setBadgeTextColor: async () => undefined,
+		} });
+		const identity = { tabId: 9001, documentId: 'document-known', origin: 'https://media.example', generation: 4 };
+		const projection = { volumeBase: 80, boost: 1, mediaMuted: false };
+		await updateBadgeFromControlProjection(identity, projection, false, true, 9);
+		fixture.removed.emit(9001);
+		expect(badgeState.has(9001)).toBe(false);
+		await settleLifecycle();
+		await updateBadgeFromControlProjection(identity, projection, false, true, 1);
+		expect(texts).toEqual(['80', '80']);
+	});
+
 	test('records activation of known media without creating a fact for an unknown tab', async () => {
 		mediaFacts.rememberMediaFact(9001, 'document-known', 'found', 'report', 100, 4, { playing: true, usedAt: 1 });
 		fixture.activated.emit({ tabId: 9001, windowId: 1 });

@@ -9,7 +9,6 @@ import {
   isActiveCaptureLifecycle,
   resolveAudioVolume,
   resolveBoostRoute,
-  resolveNativeRoute,
   resolveVolumeTone,
   type VolumeTone,
 } from '@nexus/contracts';
@@ -56,7 +55,8 @@ export function createRenderFn(params: RenderParams): () => void {
     const disabled = !config.enabled;
 		const controlUnknown = state.controlSnapshotKnown === false;
 		const controlUnavailable = state.controlSyncExpired === true;
-    const muted = state.pendingVolumePresentation?.muted ?? config.muted;
+    const muted = state.pendingVolumePresentation?.muted
+      ?? (state.hotkeyVolumePresentation ? state.hotkeyVolumePresentation.tone === 'muted' : config.muted);
 
     ui.card.classList.toggle('disabled', disabled);
     ui.card.classList.toggle('muted', muted);
@@ -82,16 +82,15 @@ export function createRenderFn(params: RenderParams): () => void {
     // route color commit together, never a new number with the previous route.
     // Dragging is tracked in card state; reading the slider back here would make
     // the DOM a second authority for the same value.
-    const newSliderValue = resolveAudioVolume(config).effectiveVolume;
+    const newSliderValue = state.pendingVolumePresentation ? resolveAudioVolume(config).effectiveVolume
+      : state.hotkeyVolumePresentation?.volume ?? resolveAudioVolume(config).effectiveVolume;
     ui.mute.classList.toggle('active', muted);
 		ui.mute.setAttribute('aria-pressed', String(muted));
 
     // Every write to the fill, the readout and the thumb goes through the
     // card's single volume projection writer, so the frame-coalesced
     // reconciliation and the synchronous pointer path cannot disagree.
-    const inVolumeGesture = state.draggingField === 'volume'
-      || state.pendingVolumePresentation !== undefined;
-    const liveTone = inVolumeGesture
+    const liveTone = state.draggingField === 'volume' && !state.pendingVolumePresentation
       ? gestureVolumeColor(muted, volumePresentation.effectiveVolume, state.actualMode, state.phase, config, state.controlSnapshot)
       : volumePresentation.color;
 
@@ -118,6 +117,18 @@ export function createRenderFn(params: RenderParams): () => void {
       if (document.activeElement !== ui.speedInput) {
         ui.speedInput.value = (config.speed || 1.0).toFixed(2);
       }
+    }
+
+    // A live stream has no timeline to transform, so a rate control here would
+    // be a promise the page cannot keep: the executor refuses the write, and
+    // offering the control would only buy one failure toast per attempt.
+    const livePresentation = state.controlSnapshot?.live === true;
+    if (ui.speedInput) {
+      ui.speedInput.disabled = livePresentation;
+      ui.speedInput.setAttribute('aria-disabled', String(livePresentation));
+    }
+    for (const button of ui.speedBtns ?? []) {
+      (button as HTMLButtonElement).disabled = livePresentation;
     }
 
 		const playing = state.controlSnapshot?.fields.playing?.actual;
@@ -164,14 +175,15 @@ export function resolveVolumePresentation(
   state: CardInternalState,
 ): { effectiveVolume: number; color: string } {
   const presentation = state.pendingVolumePresentation;
-  const effectiveVolume = resolveAudioVolume(state.config).effectiveVolume;
-  const tone = resolveVolumeTone({
+  const effectiveVolume = presentation ? resolveAudioVolume(state.config).effectiveVolume
+    : state.hotkeyVolumePresentation?.volume ?? resolveAudioVolume(state.config).effectiveVolume;
+  const tone = presentation?.tone ?? state.hotkeyVolumePresentation?.tone ?? resolveVolumeTone({
     volume: effectiveVolume,
     muted: presentation?.muted ?? state.config.muted,
     enabled: state.config.enabled,
     captureActive: isActiveCaptureLifecycle({
-      actualMode: presentation?.actualMode ?? state.actualMode,
-      phase: presentation?.phase ?? state.phase,
+      actualMode: state.actualMode,
+      phase: state.phase,
     }),
   });
   return { effectiveVolume, color: toneColor(tone) };
@@ -191,19 +203,24 @@ export function actualVolumeColor(
   }));
 }
 
-function toneColor(tone: VolumeTone): string {
+/** The one palette used by the card, the OSD pill's stage and the badge. */
+export function volumeToneColor(tone: VolumeTone): string {
   if (tone === 'muted') return COLORS.MUTED;
   return tone === 'capture' ? COLORS.CAPTURE : popupPrimaryColor();
 }
+const toneColor = volumeToneColor;
 
 /**
  * The live-gesture tone, and the only place a route change may run ahead of the
  * acknowledgement that settles it.
  *
- * Rule: violet means "this document is being hijacked", not "the number passed
- * 100". The decision itself lives in `resolveVolumeTone`, which the Action badge
- * reads too - the two surfaces can no longer disagree about the same page, at
- * the same volume, in the same frame.
+ * Rule: violet needs both facts - a value above the native ceiling and a
+ * Capture route. The ceiling half is symmetric: entering it predicts violet on
+ * the gesture frame, and leaving it for 100 reads native in that same frame
+ * instead of holding violet until the processor releases. The decision itself
+ * lives in `resolveVolumeTone`, which the Action badge reads too - the two
+ * surfaces can no longer disagree about the same page, at the same volume, in
+ * the same frame.
  */
 export function gestureVolumeColor(
   muted: boolean,
@@ -226,6 +243,9 @@ export function gestureVolumeColor(
 /**
  * The tone a staged gesture publishes to the Background, so the Action badge
  * paints the same colour in the same turn instead of waiting for the route ACK.
+ *
+ * The current source's policy candidate and acknowledged lifecycle are shared
+ * with the shortcut pill. Rendering does not choose a processor route.
  */
 export function gestureVolumeTone(input: {
   muted: boolean;
@@ -244,7 +264,7 @@ export function gestureVolumeTone(input: {
       phase: input.phase,
     }),
     predict: true,
-    nativeRoute: resolveNativeRoute(input.controlSnapshot?.fields.volumeBase?.strategy),
     boostRoute: resolveBoostRoute(input.controlSnapshot?.fields.boost?.strategy),
+    prospectiveBoostRoute: input.controlSnapshot?.prospectiveBoostRoute,
   });
 }

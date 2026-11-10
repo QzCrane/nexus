@@ -14,6 +14,24 @@ This document owns source evidence for SPECTRA's three physical audio states. It
 
 The canonical order is `bypass -> webaudio -> capture`:
 
+```mermaid
+flowchart TD
+  Demand["DSP 或可见 Visualizer 需求"] --> Neutral{"配置为中性?"}
+  Neutral -->|是| Bypass["bypass<br/>0 AudioContext / 0 offscreen / 0 tab stream"]
+  Neutral -->|否| Set["listProcessingSources(): 当前处理源集合"]
+  Set --> Empty{"集合为空?"}
+  Empty -->|是| Bypass
+  Empty -->|否| Safe{"每个源都先证明安全?"}
+  Safe -->|"同源 URL / 同源 blob / 文档 data / 显式 crossOrigin"| WebAudio["webaudio<br/>每元素一个页面生命周期 node"]
+  Safe -->|"非空 srcObject / 跨源无证据 / DRM"| NeedCap["页面图不可用"]
+  NeedCap --> Adm{"存在当前一次性 admission?"}
+  Adm -->|是| Capture["capture<br/>整个 tab mix"]
+  Adm -->|否| Report["报告错误<br/>actual 保持 bypass 或现有 owner"]
+```
+
+图中的两个"否"分支都不允许猜测：集合为空就是不需要处理器，admission 缺失就是
+不可用。没有任何一条边可以从音量阈值直接走到 `capture`。
+
 1. `bypass`: native page/DOM writers own neutral audio; no `AudioContext`, analyser, offscreen document, or tab stream exists.
 2. `webaudio`: one isolated-world, page-lifetime `MediaElementAudioSourceNode` per element feeds the shared sparse graph. It is allowed only when every current processing source is proven safe before the first irreversible binding. `MediaRegistry.listProcessingSources()` owns this set: selected URL or non-null `srcObject`. An empty placeholder is not an output source. Playback, visibility, and mute do not exclude a selected source.
 3. `capture`: one-shot extension-invocation admission acquires the complete tab mix when page coverage is incomplete, unsafe, protected, or binding/readback fails.
@@ -97,7 +115,23 @@ leftover `src` URL or URL-specific CORS evidence; it requires the Capture path.
 
 Capture is an explicit tab/document-scoped fallback:
 
-1. The manifest declares `tabCapture` and `activeTab`; `getMediaStreamId({targetTabId})` requires the temporary invocation grant for that exact tab.
+```mermaid
+sequenceDiagram
+  participant U as Popup 或当前文档快捷键
+  participant BG as Background
+  participant C as Content
+  participant O as Offscreen host
+  U->>BG: 扩展调用意图 (exact tab + document)
+  BG->>BG: mint CaptureAdmission: oneShot + expiry + epochs
+  BG-->>C: 一次性凭据
+  C->>C: 消费一次; 导航/关闭/过期/错身份/重放即 fail-closed
+  C->>O: capture intent
+  O->>O: tab stream + AudioContext + 稀疏图, 一个 generation
+  O-->>BG: active ACK: running + graphSignature + normalizedActualConfig
+  BG-->>U: 仅匹配才发布 active; 否则保持上一 owner
+```
+
+1. The manifest declares `tabCapture` and `activeTab`; `getMediaStreamId({targetTabId})` requires the temporary invocation grant for that exact tab. A cold page reaches it through the manifest `volume_up` command: the bootstrap leaves an `Alt+Up` press to the browser only while the page media is already at its native ceiling and the document has no known invocation grant. Chrome invokes the command, and the same press may start Capture. The grant is latched for the document's lifetime once a Popup opens, a command is delivered, or a Capture session has started, so a session that ended at 100% does not send the next `Alt+Up` back to the command. Page-origin shortcuts and configured site bindings never grant it.
 2. Background mints one `CaptureAdmission` bound to `tabId`, top frame, `documentId`, document/worker epochs, operation, expiry, and `oneShot: true`.
 3. Content consumes the grant once. Navigation, close, expiry, wrong identity, malformed data, and replay fail before acquisition.
 4. Offscreen creates the tab stream, `AudioContext`, stream source, commit gate, and `AudioGraphRouter` for one generation.

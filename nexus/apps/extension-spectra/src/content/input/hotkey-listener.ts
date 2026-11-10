@@ -5,6 +5,7 @@ import type {
 	HotkeySettings,
 	HotkeyBinding,
 	SiteHotkeyConfig,
+	VolumeTone,
 } from '@nexus/contracts';
 import {
 	createBoundedSet,
@@ -20,6 +21,7 @@ import {
 	selectHotkeyRepeatPolicy,
 } from '@nexus/contracts';
 import { createLogger } from '../../shared/logger';
+import { SPECTRA_AUDIO_ROUTE_SETTLED_EVENT } from '../../shared/content-presentation-events';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import { createEventListener, createCleanupManager } from '../utils/timing';
 import { executeHotkeyAction } from './hotkey-actions';
@@ -48,9 +50,14 @@ import {
 	freezeHotkeyTargetOSD,
 	hideOSD,
 	admitsHotkeyActualOSDGesture,
+	repaintHotkeyVolumeTone,
 	releaseHotkeyTargetOSD,
 	showHotkeyActualOSD,
+	stageHotkeyVolumePresentation,
+	settleHotkeyVolumePresentation,
 } from '../ui/osd';
+import { resolveHotkeyVolumeTone, resolveSettledVolumeTone } from '../ui/hotkey-volume-tone';
+import { getActiveNativeMediaExecutor } from '../logic/native-media-executor';
 import type { SettingsManager } from '../core/settings-manager';
 import type { PolicyExecutorState } from '../types';
 
@@ -82,7 +89,11 @@ let keydownDisposer: (() => void) | null = null;
 let contentSettings: Pick<SettingsManager, 'get'> | undefined;
 type FeedbackState = Pick<
 	PolicyExecutorState,
-	'appliedConfig' | 'actualMode' | 'phase'
+	| 'appliedConfig'
+	| 'actualMode'
+	| 'phase'
+	| 'boostRoute'
+	| 'mediaWebAudio'
 >;
 let feedbackState: FeedbackState | undefined;
 
@@ -135,7 +146,7 @@ function synchronizeKeydownListener(): void {
 
 export async function initHotkeyListener(
 	settingsManager?: Pick<SettingsManager, 'get'>,
-	state?: Pick<PolicyExecutorState, 'appliedConfig' | 'actualMode' | 'phase'>,
+	state?: FeedbackState,
 ): Promise<() => void> {
 	contentSettings = settingsManager;
 	feedbackState = state;
@@ -150,6 +161,10 @@ export async function initHotkeyListener(
 	}));
 	cleanup.add(createEventListener(window, 'blur', cancelActiveBindings));
 	cleanup.add(createEventListener(window, 'pagehide', cancelActiveBindings));
+	// The pill predicts a route; the policy is what makes it real. Repainting on
+	// its settlement keeps the pill, the Popup bar and the badge on one answer
+	// even though only this surface had to guess.
+	cleanup.add(createEventListener(window, SPECTRA_AUDIO_ROUTE_SETTLED_EVENT, refreshHotkeyVolumeTone));
 	cleanup.add(createEventListener(document, 'visibilitychange', () => {
 		if (document.hidden) cancelActiveBindings();
 	}));
@@ -186,6 +201,18 @@ function handleHotkeyActualFeedback(message: unknown): void {
 				targetTitle: message.payload.targetTitle,
 				targetHostname: message.payload.targetHostname,
 		};
+		if (message.payload.presentation && contentSettings) {
+			const presentation = message.payload.presentation;
+			if (presentation.phase === 'pending') {
+				stageHotkeyVolumePresentation(presentation, contentSettings.get(), options, message.payload.gesture);
+				return;
+			}
+			if (!settleHotkeyVolumePresentation(presentation.token)) return;
+			if (!message.payload.feedback) {
+				refreshHotkeyVolumeTone();
+				return;
+			}
+		}
 		if (message.payload.feedback && contentSettings) {
 			showHotkeyActualOSD(
 				message.payload.feedback,
@@ -280,6 +307,76 @@ function nextFeedbackGesture(): string {
 	return nextScalarGestureId('site');
 }
 
+/**
+ * The palette decision for a value this document is about to hold.
+ *
+ * A shortcut step changes the number in the input task; it must change the
+ * colour in the same task, or the pill describes the previous route for the rest
+ * of its life. This is the one shared decision (`resolveVolumeTone`) on the same
+ * facts the Popup and the badge read - the only difference is `predict`, which
+ * exists precisely for a live gesture.
+ */
+function hotkeyVolumeTone(value: number): VolumeTone {
+	const current = feedbackState;
+	if (!current) return 'native';
+	const facts = hotkeyToneFacts(current);
+	const tone = resolveHotkeyVolumeTone({
+		...facts,
+		volume: value,
+		// A positive volume gesture is also the request to hear it: Background
+		// releases a page mute in the same transaction. Painting the gesture
+		// as muted first and violet/blue one frame later was the "toast flashes
+		// MUTE" the user saw on a room that started autoplay-muted.
+		muted: value > 0
+			? false
+			: facts.muted,
+	});
+	return tone;
+}
+
+function readProspectiveHotkeyBoostRoute() {
+	try {
+		return getActiveNativeMediaExecutor()?.read({ fields: ['volumeBase'], target: null }).prospectiveBoostRoute ?? null;
+	} catch {
+		// A source can retire between keydown and the read. Unknown is not Capture.
+		return null;
+	}
+}
+
+function hotkeyToneFacts(current: FeedbackState) {
+	// Actual lifecycle and current-source policy feed the same palette as Popup.
+	return {
+		muted: current.appliedConfig.muted,
+		enabled: current.appliedConfig.enabled,
+		actualMode: current.actualMode,
+		phase: current.phase,
+		boostRoute: current.boostRoute,
+		prospectiveBoostRoute: readProspectiveHotkeyBoostRoute(),
+	};
+}
+
+/**
+ * Re-decide the visible tone after the runtime settled a fact this gesture
+ * could only predict: a processor that finished starting or stopping behind the
+ * acknowledgement, or a page that changed its own route.
+ *
+ * The repaint uses the settled decision, so it can only ever move the pill onto a
+ * fact - never onto a second guess.
+ */
+export function refreshHotkeyVolumeTone(): void {
+	const current = feedbackState;
+	if (!current) return;
+	const facts = hotkeyToneFacts(current);
+	const previousVolume = resolveAudioVolume(current.appliedConfig).effectiveVolume;
+	repaintHotkeyVolumeTone((value) => resolveSettledVolumeTone({
+		...facts,
+		volume: value,
+		// A still-pending positive value uses the gesture's unmute intent;
+		// the settled value keeps the actual mute fact.
+		muted: value > 0 && value !== previousVolume ? false : facts.muted,
+	}));
+}
+
 function volumeFeedback(value: number, current: FeedbackState) {
 	return {
 		kind: 'volume' as const,
@@ -307,6 +404,7 @@ function advanceScalarFeedbackTarget(
 		delta,
 		contentSettings.get(),
 		gesture,
+		hotkeyVolumeTone,
 	);
 }
 

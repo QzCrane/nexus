@@ -9,10 +9,19 @@ import type {
 	HotkeyAction,
 	SpectraDefaultHotkeyAction,
 	SpectraHotkeyActualFeedback,
+	SpectraHotkeyPresentation,
+	ControlSnapshot,
+	AudioSessionSnapshot,
 } from '@nexus/contracts';
 import {
 	createSpectraEvent,
+	audioSessionMatchesControlDocument,
+	compileEffectiveVolume,
+	isActiveCaptureLifecycle,
+	resolveBoostRoute,
+	resolveVolumeTone,
 	DEFAULT_HOTKEY_SETTINGS,
+	DEFAULT_AUDIO_CONFIG,
 	isSlotHotkeyAction,
 	resolveSpectraHotkeyActualFeedback,
 	rpcFailure,
@@ -25,7 +34,18 @@ import { hotkeyTargetRepository } from './hotkey-target-repository';
 import {
 	submitExtensionInvokedControlOperation,
 	submitExtensionInvokedControlRequest,
+	getControlViewSnapshot,
+	flushControlPresentation,
+	type ControlVolumePlanObserver,
 } from './control-coordinator';
+import { getAudioSession } from './audio-session-store';
+import { defaultControlValue } from './control-coordinator-values';
+import {
+	assertInvocationTargetCurrent,
+	grantContentInvocation,
+	sameExtensionDocument,
+} from './extension-invocation';
+import { stageBadgeVolumePresentation, settleBadgeVolumePresentation } from './handlers/badge';
 import type { ExtensionInvocationContext } from './extension-invocation';
 import { ensureContentRuntime, releaseContentRuntimeLease } from './runtime-loader';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from './background-rpc';
@@ -33,6 +53,27 @@ import { RPC_DEADLINE_MS, withDeadline } from '../shared/timeout';
 const HOTKEY_SEEK_RELATIVE = 'seek-relative' as const;
 const HOTKEY_EFFECTIVE_VOLUME = 'effective-volume' as const;
 const PROTO_DEFAULT_HOTKEY_TRIGGER = 'spectra.content.default-hotkey.trigger' as const;
+let presentationRevision = 0;
+
+function shortcutVolumeDelta(repeatPulses: number): number {
+	return Math.min(800, 10 * repeatPulses);
+}
+
+function resolveShortcutVolumePresentation(
+	snapshot: ControlSnapshot,
+	session: AudioSessionSnapshot | null,
+	{ volume, muted }: { volume: number; muted: boolean },
+): { volume: number; tone: import('@nexus/contracts').VolumeTone } | null {
+	const boost = snapshot.fields.boost;
+	const matchingSession = audioSessionMatchesControlDocument(session, snapshot) ? session : null;
+	const enabled = snapshot.fields.audioEnabled?.actual ?? matchingSession?.actualConfig.enabled ?? DEFAULT_AUDIO_CONFIG.enabled;
+	if (typeof enabled !== 'boolean') return null;
+	return { volume, tone: resolveVolumeTone({ volume, muted, enabled,
+		captureActive: matchingSession !== null && isActiveCaptureLifecycle(matchingSession),
+		predict: true, boostRoute: resolveBoostRoute(boost?.strategy),
+		prospectiveBoostRoute: snapshot.prospectiveBoostRoute,
+	}) };
+}
 
 let slotMapping: Record<string, HotkeyAction> = { ...DEFAULT_HOTKEY_SETTINGS.slots };
 const BUILTIN_CHROME_COMMAND_ACTIONS = {
@@ -188,6 +229,12 @@ export function setupShortcutListeners(): void {
 			/* @__PURE__ */ swLog.debug(`Shortcut command: ${command}`);
 			const route = await resolveShortcutTarget();
 			if (!route) return;
+			// A delivered manifest command is itself an invocation. Record it for
+			// the target document so its next Alt+Up stays on the content path;
+			// only the foreground document receives Chrome's activeTab grant.
+			if (sameExtensionDocument(route.invocation.foreground, route.invocation.target)) {
+				grantContentInvocation(route.invocation.target.tabId, route.invocation.target.documentId);
+			}
 			try {
 				await executeShortcutRoute(action, route, 1);
 			} catch (error) {
@@ -404,12 +451,62 @@ async function executeShortcutRoute(
 	} catch {
 		return;
 	}
+	let presentationProjected = false;
 	const feedback = await runWithShortcutRuntime(
 		tabId,
 		route.invocation.target.documentId,
-		() => executeAction(action, tabId, route.invocation, repeatPulses),
+		async () => {
+			const token = { owner: `hotkey:${feedbackGesture ?? crypto.randomUUID()}`, revision: ++presentationRevision };
+			let staged: { snapshot: ControlSnapshot; volume: number; tone: import('@nexus/contracts').VolumeTone } | null = null;
+			let actualFeedback: SpectraHotkeyActualFeedback | undefined;
+			const publishPlan = async () => {
+				if (!staged) return;
+				await assertInvocationTargetCurrent(tabId, route.invocation);
+				await stageBadgeVolumePresentation(staged.snapshot, token, staged.volume, staged.tone);
+				const presentation: SpectraHotkeyPresentation = { phase: 'pending', token, volume: staged.volume, tone: staged.tone };
+				await publishShortcutPresentation(action, route, domain, presentation, feedbackGesture);
+			};
+			const onVolumePlan: ControlVolumePlanObserver = async ({ snapshot, volume, muted }) => {
+				const session = await getAudioSession(tabId).catch(() => null);
+				const plan = resolveShortcutVolumePresentation(snapshot, session, { volume, muted });
+				if (!plan) return;
+				staged = { snapshot, ...plan };
+				await publishPlan();
+			};
+			try {
+				if (action === 'volume_mute') {
+					const [snapshot, session] = await Promise.all([getControlViewSnapshot(tabId), getAudioSession(tabId).catch(() => null)]);
+					if (snapshot?.documentId === route.invocation.target.documentId) {
+						const base = snapshot.fields.volumeBase;
+						const mute = snapshot.fields.mediaMuted;
+						const boost = snapshot.fields.boost;
+						if (base?.phase === 'applied' && typeof base.actual === 'number'
+							&& mute?.phase === 'applied' && typeof mute.actual === 'boolean') {
+							const volume = compileEffectiveVolume(base.actual, boost?.phase === 'applied'
+								&& typeof boost.actual === 'number' ? boost.actual : defaultControlValue('boost') as number);
+							const plan = resolveShortcutVolumePresentation(snapshot, session, { volume, muted: !mute.actual });
+							if (plan) staged = { snapshot, ...plan };
+						}
+					}
+				}
+				await publishPlan();
+				actualFeedback = await executeAction(action, tabId, route.invocation, repeatPulses, onVolumePlan);
+				return actualFeedback;
+			} finally {
+				if (staged) {
+					await flushControlPresentation(tabId).catch(error => {
+						swLog.debug(`Shortcut presentation flush failed: ${String(error)}`);
+					});
+					presentationProjected = true;
+					await Promise.allSettled([
+						settleBadgeVolumePresentation(staged.snapshot, token),
+						publishShortcutPresentation(action, route, domain, { phase: 'settled', token }, feedbackGesture, actualFeedback),
+					]);
+				}
+			}
+		},
 	);
-	if (route.active?.id !== undefined) {
+	if (route.active?.id !== undefined && !presentationProjected) {
 		await notifyShortcutFeedback(
 			route.active,
 			tab,
@@ -422,6 +519,28 @@ async function executeShortcutRoute(
 	}
 }
 
+async function publishShortcutPresentation(
+	action: HotkeyAction,
+	route: ShortcutRoute,
+	domain: string,
+	presentation: SpectraHotkeyPresentation,
+	gesture?: string,
+	feedback?: SpectraHotkeyActualFeedback,
+): Promise<void> {
+	const target = route.target;
+	if (target.id === undefined) return;
+	const event = createSpectraEvent('spectra.hotkey.target.feedback', {
+		action, targetTabId: target.id, targetTitle: target.title?.trim() || domain, targetHostname: domain,
+		...(gesture ? { gesture } : {}), presentation,
+	}, { tabId: target.id, documentId: route.invocation.target.documentId });
+	// The same typed payload reaches the existing target-card event hub and the
+	// already selected foreground feedback document. No new transport owner.
+	const deliveries: Promise<unknown>[] = [chrome.runtime.sendMessage(event)];
+	if (route.active?.id !== undefined) deliveries.push(notifyShortcutFeedback(route.active, target, action, domain,
+		feedback, gesture, route.invocation.foreground?.documentId, undefined, presentation));
+	await Promise.allSettled(deliveries);
+}
+
 async function notifyShortcutFeedback(
 	active: chrome.tabs.Tab,
 	target: chrome.tabs.Tab,
@@ -431,6 +550,7 @@ async function notifyShortcutFeedback(
 	gesture?: string,
 	expectedDocumentId?: string,
 	runtimePort: ShortcutRuntimePort = shortcutRuntimePort,
+	presentation?: SpectraHotkeyPresentation,
 ): Promise<void> {
 	if (active.id === undefined || target.id === undefined) return;
 	const capability = `feedback:${crypto.randomUUID()}`;
@@ -454,6 +574,7 @@ async function notifyShortcutFeedback(
 			targetHostname,
 			...(gesture ? { gesture } : {}),
 			...(feedback ? { feedback } : {}),
+			...(presentation ? { presentation } : {}),
 		}, {
 			tabId: active.id,
 			documentId: ready.documentId,
@@ -507,9 +628,10 @@ async function executeAction(
 	tabId: number,
 	invocation: ExtensionInvocationContext,
 	repeatPulses = 1,
+	onVolumePlan?: ControlVolumePlanObserver,
 ): Promise<SpectraHotkeyActualFeedback | undefined> {
 	const speedDelta = Math.round(0.1 * repeatPulses * 100) / 100;
-	const volumeDelta = Math.min(800, 10 * repeatPulses);
+	const volumeDelta = shortcutVolumeDelta(repeatPulses);
 	const operation = async (
 			type: Parameters<typeof submitExtensionInvokedControlOperation>[0]['operation'],
 			payload: Parameters<typeof submitExtensionInvokedControlOperation>[0]['payload'] = {},
@@ -522,6 +644,7 @@ async function executeAction(
 				payload,
 			} as Parameters<typeof submitExtensionInvokedControlOperation>[0],
 			invocation,
+			onVolumePlan,
 		);
 	let acknowledgement: ControlApplyAck | ControlOperationAck | undefined;
 	switch (action) {
@@ -586,6 +709,7 @@ async function executeAction(
 }
 
 export const shortcutTestApi = {
+	resolveShortcutVolumePresentation,
 	defaultHotkeySenderIdentity,
 	runDefaultPageHotkey,
 	runSitePageHotkey,

@@ -51,9 +51,12 @@
 				video.loop = true;
 				video.src = '/tone.wav';
 			}
-			requestAnimationFrame(() => {
+			// Initial projection is owned by DOM ready. A parser-time animation
+			// frame can run before that event and permanently sample an early label.
+			document.addEventListener('DOMContentLoaded', () => requestAnimationFrame(() => {
+				window.firstFrameReadyState = document.readyState;
 				window.firstFrameLabel = document.querySelector('.xgplayer-setting-playbackRatio')?.textContent;
-			});
+			}), { once: true });
 		</script>
 	</body>
 </html>

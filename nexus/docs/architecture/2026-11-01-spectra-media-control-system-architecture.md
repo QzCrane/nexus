@@ -100,7 +100,7 @@ OBSERVE → CAPABILITY-SPECIFIC NATIVE (PAGE_NATIVE / DOM_NATIVE / CHROME_NATIVE
 ## 5. 双世界模型与 Page-Media V2 桥
 
 控制写入存在两个世界，由 page-media V2 桥跨世界同步。当前准入、物理读回、
-ownership 与失败交接由 [媒体 owner](../../apps/extension-spectra/docs/control/06-media-and-video.md#speed-decision-and-failure) 规定。
+ownership 与失败交接由 [媒体 owner](../../apps/extension-spectra/docs/control/06-media-and-video.md#143-speed-decision-and-failure) 规定。
 
 1. **ISOLATED 世界**（`native-media-executor.ts`）：唯一物理写入调度 owner。先按精确 source 与请求值准入，再选择 page 或 DOM writer；不能把默认策略顺序误读为每个自由值都必须先试 page setter。
 2. **MAIN 世界**（`injector/page-media-bridge.ts`）：负责"精确元素 + 能力发现"——遍历合成祖先、扫描自有属性，寻找与媒体元素显式关联的 controller，要求其具备成对 getter/setter 且 readback 稳定。
@@ -135,7 +135,7 @@ ownership 与失败交接由 [媒体 owner](../../apps/extension-spectra/docs/co
 入口为 `readRestorableMediaFieldForWrite`。speed 的数值准入可以在任何 page probe
 之前直接选择现有 DOM writer；已准入 page writer 仍须 controller 与物理速率
 双证。完整分支、失败值 memo、baseline 与原 ownership 交接见
-[speed 决策图](../../apps/extension-spectra/docs/control/06-media-and-video.md#speed-decision-and-failure)。
+[speed 决策图](../../apps/extension-spectra/docs/control/06-media-and-video.md#143-speed-decision-and-failure)。
 
 ### 6.2 写入与确认分离（SCTRL-045..048，§11.1）
 
@@ -157,7 +157,7 @@ ownership 与失败交接由 [媒体 owner](../../apps/extension-spectra/docs/co
 speed actual 来自精确媒体的 playbackRate；控制器 getter 不能替代物理证明。
 独立菜单 projection audit 与 bootstrap actual 标签承担不同职责，不能循环自证。
 速率属性稳定也不证明实时流持续按墙钟倍速推进；MediaStream 限制与在线流证据边界
-见 [Live transport limits](../../apps/extension-spectra/docs/control/06-media-and-video.md#live-transport-limits)。
+见 [Live transport limits](../../apps/extension-spectra/docs/control/06-media-and-video.md#144-live-transport-limits)。
 
 ---
 
@@ -262,9 +262,9 @@ speed actual 来自精确媒体的 playbackRate；控制器 getter 不能替代�
 旧 controller-only ACK 和仅靠菜单驱动标签的总结已被后续物理读回、自由值准入
 与 bootstrap 标签投影取代，不再作为当前结论。直接使用以下 owner：
 
-- [实际标签与写入时序](../../apps/extension-spectra/docs/control/06-media-and-video.md#actual-speed-label)。
-- [关闭直播、隐藏/移除、无目标和倍速继承](../../apps/extension-spectra/docs/control/06-media-and-video.md#closing-live-players-and-speed-inheritance)。
-- [同文档 URL 与媒体 source 独立生命线](../../apps/extension-spectra/docs/control/06-media-and-video.md#spa-identity-and-source-lifecycle)。
+- [实际标签与写入时序](../../apps/extension-spectra/docs/control/06-media-and-video.md#145-actual-speed-label)。
+- [关闭直播、隐藏/移除、无目标和倍速继承](../../apps/extension-spectra/docs/control/06-media-and-video.md#134-closing-live-players-and-speed-inheritance)。
+- [同文档 URL 与媒体 source 独立生命线](../../apps/extension-spectra/docs/control/06-media-and-video.md#133-spa-identity-and-source-lifecycle)。
 - [本轮修复与验证记录](../research/2026-11-01-spectra-live-volume-popup-repair.md)。
 
 2026-11-01 的探测 JSON、根因报告与适配器提案保留为当时的证据和设计历史；
@@ -314,7 +314,7 @@ speed actual 来自精确媒体的 playbackRate；控制器 getter 不能替代�
 ## 14. 完整性和证据边界
 
 本文是跨 owner 的索引，不是“全部业务已完成”的证明。媒体范围的规则、图和
-可执行规格由 [coverage 表](../../apps/extension-spectra/docs/control/06-media-and-video.md#executable-coverage-and-limits) 对应；
+可执行规格由 [coverage 表](../../apps/extension-spectra/docs/control/06-media-and-video.md#147-regression-coverage-map) 对应；
 架构、产品路线、实机与公开交付状态分别查各自 owner，避免把过时失败或旧提案
 的未完成项投影成当前实现状态。用户真实在线直播的持续速率和公开投影门禁
 仍须独立验证，不能从夹具、静态规则或本机 build 推导完成。

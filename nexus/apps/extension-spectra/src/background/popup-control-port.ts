@@ -1,6 +1,6 @@
 // goal: own latest-value Popup controls beyond the Action Popup realm lifetime
 
-import type { ControlApplyAck, ControlOperationAck, ControlPatch, RpcError } from '@nexus/contracts';
+import type { AudioSessionSnapshot, ControlApplyAck, ControlOperationAck, ControlPatch, RpcError } from '@nexus/contracts';
 import {
 	isPopupControlPortRequest,
 	POPUP_CONTROL_PORT,
@@ -8,9 +8,12 @@ import {
 	type PopupControlPortResponse,
 	type PopupControlReady,
 } from '../shared/popup-control-port';
-import { updateBadgeStagedVolume } from './handlers/badge';
 import { isActionPopupSender } from './popup-document-sender';
-import { badgeState } from './state';
+import {
+	stageBadgeVolumePresentation, settleBadgeVolumePresentation,
+	type BadgePresentationIdentity,
+} from './handlers/badge';
+import type { VolumeTone } from '@nexus/contracts';
 
 const COALESCE_MS = 50;
 let receivedInputs = 0;
@@ -69,10 +72,12 @@ export interface PopupControlBatch {
 export interface PopupControlBatchResult {
 	volumeAck: ControlOperationAck<'effective-volume'> | null;
 	fieldAcks: ControlApplyAck[];
+	audioSession?: AudioSessionSnapshot;
 	error: RpcError | null;
 }
 
 export interface PopupControlRunner {
+	resolveIdentity(tabId: number, documentId: string): Promise<BadgePresentationIdentity>;
 	submit(batch: PopupControlBatch): Promise<PopupControlBatchResult>;
 }
 
@@ -88,6 +93,16 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 		return;
 	}
 	let identity: { sessionId: string; tabId: number; documentId: string } | null = null;
+	let presentationIdentity: BadgePresentationIdentity | null = null;
+	let presentation: { revision: number; volume: number; tone: VolumeTone } | null = null;
+	const projectPendingPresentation = (): void => {
+		if (!identity || !presentationIdentity || !presentation) return;
+		void stageBadgeVolumePresentation(presentationIdentity,
+			{ owner: identity.sessionId, revision: presentation.revision },
+			presentation.volume, presentation.tone).catch((error: unknown) => {
+			console.debug('[SPECTRA Background] Pending badge presentation was unavailable', error);
+		});
+	};
 	let closed = false;
 	let lastAcceptedRevision = 0;
 	let volume: StagedValue<number> | null = null;
@@ -109,6 +124,7 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 			throughRevision,
 			volumeAck: result.volumeAck,
 			fieldAcks: result.fieldAcks,
+			...(result.audioSession ? { audioSession: result.audioSession } : {}),
 			error: result.error,
 		};
 		try { port.postMessage(response); }
@@ -140,12 +156,14 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 	};
 
 	const run = (): void => {
-		if (inFlight) return;
+		if (inFlight || !presentationIdentity) return;
 		if (timer) { clearTimeout(timer); timer = null; }
 		const batch = takeBatch();
 		if (!batch) return;
 		pendingBatches++;
 		const settleStartedAt = performance.now();
+		const batchIdentity = presentationIdentity;
+		const batchToken = { owner: identity?.sessionId ?? '', revision: batch.inputRevision };
 		const recordSettle = (): void => {
 			settleSamples = appendBoundedSample(
 				settleSamples,
@@ -172,7 +190,8 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 				},
 				});
 			},
-		).finally(() => {
+		).finally(async () => {
+			await settleBadgeVolumePresentation(batchIdentity, batchToken);
 			pendingBatches--;
 			inFlight = null;
 			if (volume || fields.size > 0) run();
@@ -180,7 +199,7 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 	};
 
 	const schedule = (): void => {
-		if (inFlight || timer) return;
+		if (inFlight || timer || !presentationIdentity) return;
 		timer = setTimeout(run, flushThroughRevision >= lastAcceptedRevision ? 0 : COALESCE_MS);
 	};
 
@@ -207,8 +226,24 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 		if (raw.type === 'open') {
 			if (identity) { rejectPort(); return; }
 			identity = { sessionId: raw.sessionId, tabId: raw.tabId, documentId: raw.documentId };
-			try { port.postMessage({ type: 'ready', sessionId: raw.sessionId } satisfies PopupControlReady); }
-			catch { close(); }
+			void runner.resolveIdentity(raw.tabId, raw.documentId).then((resolved) => {
+				if (resolved.tabId !== raw.tabId || resolved.documentId !== raw.documentId) {
+					throw new Error('Popup presentation belongs to a stale document');
+				}
+				presentationIdentity = resolved;
+				if (!closed) {
+					try { port.postMessage({ type: 'ready', sessionId: raw.sessionId } satisfies PopupControlReady); }
+					catch { close(); }
+				}
+				projectPendingPresentation();
+				if (closed || flushThroughRevision >= lastAcceptedRevision) run();
+				else schedule();
+			}).catch(() => {
+				volume = null;
+				fields.clear();
+				presentation = null;
+				rejectPort();
+			});
 			return;
 		}
 		if (!identity || raw.sessionId !== identity.sessionId) { rejectPort(); return; }
@@ -221,22 +256,12 @@ export function bindPopupControlPort(port: chrome.runtime.Port, runner: PopupCon
 		if (raw.inputRevision <= lastAcceptedRevision) { rejectPort(); return; }
 		receivedInputs = Math.min(Number.MAX_SAFE_INTEGER, receivedInputs + 1);
 		lastAcceptedRevision = raw.inputRevision;
-		if (raw.effectiveVolume !== undefined || raw.tone !== undefined) {
-			if (raw.effectiveVolume !== undefined) {
-				volume = { revision: raw.inputRevision, value: raw.effectiveVolume };
-			}
-			if (identity) {
-				// The tone rides along with the number, or alone when only the mute
-				// state moved, so the badge repaints in the card's own turn.
-				const stagedVolume = volume?.value ?? badgeState.get(identity.tabId)?.volume;
-				if (stagedVolume !== undefined) {
-					updateBadgeStagedVolume(identity.tabId, stagedVolume, raw.tone, {
-						documentId: identity.documentId,
-						origin: '',
-						generation: 0,
-					});
-				}
-			}
+		if (raw.tone !== undefined && raw.presentationVolume !== undefined) {
+			presentation = { revision: raw.inputRevision, volume: raw.presentationVolume, tone: raw.tone };
+			projectPendingPresentation();
+		}
+		if (raw.effectiveVolume !== undefined) {
+			volume = { revision: raw.inputRevision, value: raw.effectiveVolume };
 		}
 		for (const group of raw.groups) {
 			for (const [rawField, value] of Object.entries(group.patch)) {

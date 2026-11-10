@@ -12,6 +12,23 @@ This document is the sole owner of remote pairing, HMAC authentication, PeerJS/o
 
 ## Trust boundaries
 
+```mermaid
+flowchart LR
+  subgraph Ext["扩展内: 可被校验的调用面"]
+    Popup["Popup / Options"]
+    BG["Background<br/>remote-sender-gate + coordinator"]
+    OFF["Offscreen host<br/>pairing + HMAC + 连接独占"]
+  end
+  Remote["Remote 控制器页<br/>Cloudflare Pages 静态托管"]
+  Popup -->|"只接受精确扩展 UI 文档路径"| BG
+  BG -->|"随机 128-bit capability 绑定 tabId/sessionId"| OFF
+  OFF <-->|"JSON DataConnection only, ≤16 KiB"| Remote
+```
+
+图的三个箭头各有一条拒绝规则：`origin` 前缀匹配被拒绝（会放进任何同源文档）、
+缺失 `sender.url` 被当成拒绝而不是准入、非 `offscreen.html` 或错 capability 的
+命令事件一律丢弃。
+
 - Popup creates, inspects, or closes a session only for an explicit `tabId`; closing also requires the matching `sessionId`.
 - `spectra.remote.session.*` is admitted only from an exact extension-UI document. `remote-sender-gate.ts` requires this extension's id, no owning tab, a `chrome-extension:` URL, and a pathname in exactly `{ popup.html, options.html }`. An origin-prefix match is forbidden because it would admit every same-origin document added later for unrelated reasons, and a missing `sender.url` is a rejection rather than an admission.
 - Background binds a random internal capability to `{tabId, sessionId}` and accepts command/sync events only from `offscreen.html` with that capability.
@@ -22,6 +39,28 @@ This document is the sole owner of remote pairing, HMAC authentication, PeerJS/o
 ## Pairing and authentication
 
 Each session has independent Web Crypto values: 128-bit session ID, 128-bit PeerJS ID component, 128-bit secret, and 128-bit Background capability. An unused pairing expires after five minutes.
+
+```mermaid
+sequenceDiagram
+  participant R as Remote 控制器页
+  participant O as Offscreen host
+  participant BG as Background
+  R->>R: URL fragment 里的 secret 立刻转入 tab-scoped sessionStorage
+  R->>O: PeerJS DataConnection (尚未发送任何 tab 状态)
+  O-->>R: spectra.remote.challenge (新 256-bit nonce)
+  R->>R: HMAC-SHA-256 over contract-owned payload
+  R->>O: proof
+  O->>O: 验证失败即断开, 不发送 state
+  O-->>R: spectra.remote.auth-result
+  O->>BG: sessionEpoch 前进
+  R->>O: spectra.remote.command: sessionId + epoch + commandId + seq + audioGeneration
+  O->>BG: capability-bound execute
+  BG->>BG: sender gate + serialized coordinator
+  BG-->>R: 只回已应用 actual, 不含 favicon/页面内容/音视频
+```
+
+图中的顺序是唯一顺序：challenge 之前的任何 tab 状态发送都是泄漏，auth-result
+之前的任何 command 都是未授权数据，验证失败之后不存在"降级为只读"的分支。
 
 1. Host accepts a PeerJS data connection but sends no tab state.
 2. Host sends `spectra.remote.challenge` with a fresh 256-bit nonce.

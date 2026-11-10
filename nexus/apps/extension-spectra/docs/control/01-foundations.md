@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-02
+last_reviewed: 2026-11-09
 ---
 
 # 01. Foundations (Product semantics & Control flow)
@@ -16,7 +16,12 @@ last_reviewed: 2026-11-02
 - Control fields are planned independently. No page-wide mode silently determines unrelated controls.
 - UI never asks users to choose native internals, MAIN-world bridges, or Capture.
 - `100%` volume and `1x` speed are literal values, not "release control". (Releasing uses restore-page-settings).
-- UI exposes one effective-volume (`0–800%`). The coordinator first offers the exact value to an exact page controller. A controller-confirmed value keeps `boost=1` and needs no Capture; the portable fallback uses DOM `volumeBase 0–100` plus hidden `boost 1–8` only when the page cannot acknowledge the requested value. Once that fallback is acknowledged for the document, later above-100 adjustments stay on the existing Capture owner instead of stopping it to repeat a probe that already failed.
+- UI exposes one effective-volume (`0–800%`).
+- The coordinator offers the exact value to an exact page controller first.
+- A controller-confirmed value keeps `boost=1` and needs no Capture.
+- Only when the page cannot acknowledge the value does the portable fallback use DOM `volumeBase 0–100` plus hidden `boost 1–8`.
+- Once that fallback is acknowledged for the document, later above-100 adjustments stay on the existing Capture owner.
+- They must not stop that owner to repeat a probe that already failed.
 - Successful responses describe read-back actual state, not storage acceptance or echoed intent.
 
 ## §2 Control flow and state ownership
@@ -45,7 +50,7 @@ flowchart LR
 
 The [field/proof state machines](05-control-state.md#field-transaction-state)
 distinguish transaction state from detached write proof. The
-[speed decision owner](06-media-and-video.md#speed-decision-and-failure) defines
+[speed decision owner](06-media-and-video.md#143-speed-decision-and-failure) defines
 value admission, page/DOM handoff and terminal errors; the overview does not
 imply a DOM-first or controller-only ACK policy.
 
@@ -66,40 +71,24 @@ Colour is a presentation of the route, not a second state source:
 - Blue = the non-Capture path: native, page-native, or MediaElement WebAudio; also
   a Capture that is starting, stopping or in error.
 - Purple = an acknowledged active Capture (`actualMode:'capture'`,
-  `phase:'active'`) for the same tab/document/origin. It owns the tone at every
-  volume, so a step from 100 to 110 changes nothing.
+  `phase:'active'`) for the same tab/document/origin **and** a value above the
+  native ceiling. At or below the ceiling every split is Boost 1, so a processor
+  that has not released yet is passthrough: the colour follows the ceiling in
+  both directions, and 110 -> 100 turns blue on the same gesture frame.
 
 One narrow exception may run ahead of the acknowledgement: while a volume gesture
 is live, on a document whose own scale cannot absorb a value above the native
 ceiling (`dom-native`), a value above 100 shows purple immediately. A settled
 frame never predicts, and `page-native`, an acknowledged `media-webaudio` Boost
-route, or an unanswered route never predict. Purple therefore never means "the
-number passed 100".
+route, or an unanswered route never predict. Purple still requires a Capture
+route, so the number alone never makes a frame violet.
 
 `resolveVolumeTone` is the single predicate behind both the Popup slider and the
 Action badge. `resolveAudioVolumeState` remains the acknowledged
 silent/capture/native truth table used by OSD, hotkey feedback and the Remote
 projection; it never predicts.
 
-Concrete projection points:
-
-| Location | Ownership and purpose |
-| --- | --- |
-| `control-coordinator.ts` | serialize lifecycle and intents; persist, publish, compensate, and commit actual snapshots |
-| `control-coordinator-values.ts` | pure intent/default/mutation, target-scope, ACK, reset, and session projection values; no Chrome or storage authority |
-| `extension-invocation.ts` | extension invocation origin, foreground/target document identity, and stale-document rejection |
-| `popup-visualizer-source.ts` | document-scoped Popup observation lease; borrows the coordinator queue and snapshot, never writes revisions or admits Capture |
-| `native-media-async.ts` | sole physical standard-media async setter/readback primitives, source-scoped cancellation, and frame-cadence cache |
-| `native-media-executor.ts` | registry/target orchestration, native ownership, page fallback, rollback, and page observation |
-| `media-registry.ts` | pure active-media/video selection, source revision |
-| `popup/card/types.ts` | initialize fields from neutral defaults + `ControlSnapshot` |
-| `popup/ui-event-hub.ts` | one Popup runtime listener; tab routing, subscriber isolation, and final-listener teardown |
-| `popup/control-snapshot-order.ts` | generation-before-identity and revision-monotonic UI admission |
-| `popup/card/messaging.ts` | sole card audio/config projection; apply control revisions independently from audio generations |
-| `audio.contracts.ts::resolveAudioVolumeState` | acknowledged silent/capture/native truth table; consumes an ACK, never predicts |
-| `volume-presentation.contracts.ts::resolveVolumeTone` | the one presentation tone for Popup slider and Action badge, including the single live-gesture prediction case |
-| `audio.contracts.ts::isActiveCaptureLifecycle` | the acknowledged `capture + active` predicate both layers share |
-| `side-panel/video-controls.ts` | route every video/filter intent to `activeVideo` through one per-tab transport tail |
-| `settings-value-normalization.ts` / `settings-repository.ts` | pure canonical values followed by one revisioned durable storage transaction |
-| `remote/operation-queue.ts` | bounded keyed serialization without session or protocol authority |
-| `remote-commands.ts` / `remote-service.ts` | call coordinator inside Background, cache projection, push only after Remote V3 authority validation |
+Concrete projection points are not restated here. The single ownership table is
+[07 §17.1 File owners](07-runtime-and-performance.md#171-file-owners); this file used to keep a
+partial copy that disagreed with it about `native-media-async.ts` and omitted several
+files outright. One owner, one table.

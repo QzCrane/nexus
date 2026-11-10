@@ -8,22 +8,47 @@ import {
 	updateBadgeFromControlProjection,
 	updateBadgeFromSession,
 	markBadgeUsedForTab,
-	updateBadgeStagedVolume,
+	resetPaintedBadgesForTests,
+	forgetBadgePresentation,
+	stageBadgeVolumePresentation,
+	settleBadgeVolumePresentation,
 } from '../src/background/handlers/badge';
 import { BADGE_COLORS, badgeState } from '../src/background/state';
 import { resetBadgeUsageForTests } from '../src/background/badge-usage';
+import { fenceAudioSession, flushAudioSessions, forgetAudioSession, updateAudioSession } from '../src/background/audio-session-store';
 
 const TAB_ID = 7_701;
 const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+let hasAudioSession = false;
 
-afterEach(() => {
+afterEach(async () => {
+	if (hasAudioSession) {
+		await flushAudioSessions(TAB_ID);
+		await forgetAudioSession(TAB_ID);
+		hasAudioSession = false;
+	}
 	badgeState.clear();
 	resetBadgeUsageForTests();
+	resetPaintedBadgesForTests();
 	if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 	else Reflect.deleteProperty(globalThis, 'chrome');
 });
 
 describe('actual volume badge state', () => {
+	test('a newer admitted actual immediately replaces the previous volume', async () => {
+		let text = '';
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { get: async () => ({ id: TAB_ID }) },
+			action: { setBadgeText: async (value: { text: string }) => { text = value.text; },
+				setBadgeBackgroundColor: async () => undefined, setBadgeTextColor: async () => undefined },
+		} });
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 60 }), false, true, 1);
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 40 }), false, true, 1);
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 80 }), false, true, 2);
+		expect(text).toBe('80');
+		expect(badgeState.get(TAB_ID)?.volume).toBe(80);
+	});
+
 	test('uses control ACK volume and turns purple only for active Capture', async () => {
 		const colors: string[] = [];
 		Object.defineProperty(globalThis, 'chrome', {
@@ -45,16 +70,18 @@ describe('actual volume badge state', () => {
 		expect(badgeState.get(TAB_ID)?.volume).toBe(350);
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 
-		await updateBadgeFromSession(session('starting'), true);
+		await publishBadgeSession(session('starting'), true);
 		expect(badgeState.get(TAB_ID)?.volume).toBe(350);
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 
-		await updateBadgeFromSession({ ...session('active'), generation: 5 }, true);
+		await publishBadgeSession({ ...session('active'), generation: 5 }, true);
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 350, isCapture: true });
+		expect(badgeState.get(TAB_ID)?.generation).toBe(4);
 		expect(colors.at(-1)).toBe(BADGE_COLORS.CAPTURE);
 
-		await updateBadgeFromSession({ ...session('error'), generation: 6 }, true);
+		await publishBadgeSession({ ...session('error'), generation: 6 }, true);
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 350, isCapture: false });
+		expect(badgeState.get(TAB_ID)?.generation).toBe(4);
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 	});
 
@@ -77,6 +104,37 @@ describe('actual volume badge state', () => {
 			boost: 1,
 		}), true, true);
 		expect(colors.at(-1)).toBe(BADGE_COLORS.MUTED);
+	});
+
+	test('an acknowledged mute immediately replaces the previous volume display', async () => {
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				action: {
+					setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+					setBadgeBackgroundColor: async () => undefined,
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		await updateBadgeFromControlProjection(identity(), projection({
+			volumeBase: 100,
+			boost: 1,
+			mediaMuted: false,
+		}), false, true);
+		expect(texts.at(-1)).toBe('100');
+
+		await updateBadgeFromControlProjection(identity(), projection({
+			volumeBase: 100,
+			boost: 1,
+			mediaMuted: true,
+		}), false, true, 2);
+
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 100, muted: true, tone: 'muted' });
+		expect(texts.at(-1)).toBe('M');
 	});
 
 	test('clears the previous document projection instead of keeping a stale mute', async () => {
@@ -104,7 +162,7 @@ describe('actual volume badge state', () => {
 		// The replacement document is unmuted and has no control ACK yet. Keeping
 		// the old M would claim this page is muted, which is exactly the reported
 		// "badge shows mute" symptom.
-		await updateBadgeFromSession({
+		await publishBadgeSession({
 			...session('active'),
 			documentId: 'document-new',
 			generation: 5,
@@ -137,7 +195,7 @@ describe('actual volume badge state', () => {
 		// A restarted worker has no badgeState, so it cannot prove the visible
 		// projection belongs to another document. Preserving it is the only
 		// non-inventing option; a document we *can* compare is cleared below.
-		await updateBadgeFromSession(session('active'), true);
+		await publishBadgeSession(session('active'), true);
 
 		expect(badgeState.has(TAB_ID)).toBe(false);
 		expect(texts).toHaveLength(0);
@@ -239,6 +297,88 @@ describe('actual volume badge state', () => {
 		expect(texts.at(-1) ?? '').toBe('');
 	});
 
+	test('treats an absent boost as the neutral multiplier for a page-native volume', async () => {
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				storage: { session: {
+					get: async () => ({}),
+					set: async () => undefined,
+					remove: async () => undefined,
+				} },
+				action: {
+					setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+					setBadgeBackgroundColor: async () => undefined,
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		// A page-native observation reports the element's own 0-100 level and
+		// states nothing about Boost. That is the neutral multiplier, not an
+		// absent volume: treating it as absent cleared the badge on every gesture.
+		await updateBadgeFromControlProjection(identity(), {
+			volumeBase: 60,
+			mediaMuted: false,
+		}, false, true);
+
+		expect(texts.at(-1)).toBe('60');
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 60, muted: false });
+	});
+
+	test('paints one repeated projection once and repaints when it changes', async () => {
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				storage: { session: {
+					get: async () => ({}),
+					set: async () => undefined,
+					remove: async () => undefined,
+				} },
+				action: {
+					setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+					setBadgeBackgroundColor: async () => undefined,
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		// A page volume drag emits a sample per frame. The Action API is not a
+		// per-frame channel, so an unchanged decision must not reach it again.
+		for (let index = 0; index < 4; index += 1) {
+			await updateBadgeFromControlProjection(identity(), projection({
+				volumeBase: 40,
+			}), false, true);
+		}
+		expect(texts).toEqual(['40']);
+
+		await updateBadgeFromControlProjection(identity(), projection({
+			volumeBase: 41,
+		}), false, true);
+		expect(texts).toEqual(['40', '41']);
+	});
+
+	test('forgetting a document retires its paint cache and projection order', async () => {
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { get: async () => ({ id: TAB_ID }) },
+			action: {
+				setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+				setBadgeBackgroundColor: async () => undefined,
+				setBadgeTextColor: async () => undefined,
+			},
+		} });
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 80 }), false, true, 9);
+		forgetBadgePresentation(TAB_ID);
+		expect(badgeState.has(TAB_ID)).toBe(false);
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 80 }), false, true, 1);
+		expect(texts).toEqual(['80', '80']);
+	});
+
 	test('paints the newest decision when a session report is already in flight', async () => {
 		const values: Record<string, unknown> = {};
 		const texts: string[] = [];
@@ -285,7 +425,7 @@ describe('actual volume badge state', () => {
 		// ACK and the badge stayed M for the rest of the tab's life - the reported
 		// symptom. The decision is now recorded synchronously and the paint reads
 		// the newest decision, so the stale report can only repaint the ACK.
-		const inFlight = updateBadgeFromSession(session('active'), true);
+		const inFlight = publishBadgeSession(session('active'), true);
 		for (let tick = 0; tick < 50 && !releaseTabs; tick += 1) {
 			await new Promise((next) => setTimeout(next, 0));
 		}
@@ -305,43 +445,103 @@ describe('actual volume badge state', () => {
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 63, muted: false });
 	});
 
-	test('updateBadgeStagedVolume updates badge text synchronously on 100 <-> 110 volume gestures', async () => {
-		const texts: string[] = [];
-		const colors: string[] = [];
+
+
+
+	test('drops a projection older than the one already decided', async () => {
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
 			value: {
 				tabs: { get: async () => ({ id: TAB_ID }) },
 				action: {
-					setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
-					setBadgeBackgroundColor: async ({ color }: { color: string }) => { colors.push(color); },
+					setBadgeText: async () => undefined,
+					setBadgeBackgroundColor: async () => undefined,
 					setBadgeTextColor: async () => undefined,
 				},
 			},
 		});
 
-		// First touch in popup: sliding from 100 to 110 on a cold tab
-		updateBadgeStagedVolume(TAB_ID, 110, undefined, { documentId: 'doc-1', origin: 'https://video.example', generation: 1 });
-		// Synchronous memory decision recorded immediately
-		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 110, userInteracted: true, isCapture: false });
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 120 }), false, true, 9);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 120 });
 
-		// Allow paint promise microtasks to settle
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(texts.at(-1)).toBe('110');
-		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
+		// A projection resolved after a newer one must not paint its stale facts
+		// back over the badge: revision is the only order the two routes share.
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 60 }), false, true, 8);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 120 });
 
-		// Sliding back to 100
-		updateBadgeStagedVolume(TAB_ID, 100);
-		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 100, userInteracted: true, isCapture: false });
+		// A page observation keeps the snapshot revision, so two admitted samples
+		// can share one. Equal is the newest fact and must never be dropped.
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 130 }), false, true, 9);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 130 });
+	});
 
-		await Promise.resolve();
-		await Promise.resolve();
-		expect(texts.at(-1)).toBe('100');
+
+	test.each([
+		['documentId', 'document-replaced'],
+		['origin', 'https://other.example'],
+	] as const)('rejects a control projection whose %s differs from the current audio owner', async (field, value) => {
+		let paints = 0;
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { get: async () => ({ id: TAB_ID }) },
+			action: {
+				setBadgeText: async () => { paints += 1; },
+				setBadgeBackgroundColor: async () => undefined,
+				setBadgeTextColor: async () => undefined,
+			},
+		} });
+		const current = await commitBadgeSession({ ...session('active'), [field]: value });
+		await updateBadgeFromControlProjection(identity(), projection(), true, false, 1);
+		expect(paints).toBe(0);
+		expect(badgeState.has(TAB_ID)).toBe(false);
+		await updateBadgeFromControlProjection({
+			...identity(), documentId: current.documentId, origin: current.origin,
+		}, projection(), false, true, 1);
+		expect(badgeState.get(TAB_ID)).toMatchObject({
+			documentId: current.documentId, origin: current.origin, isCapture: true,
+		});
+	});
+
+	test('a control projection cannot revive an audio identity retired by navigation', async () => {
+		let paints = 0;
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { get: async () => ({ id: TAB_ID }) },
+			action: {
+				setBadgeText: async () => { paints += 1; },
+				setBadgeBackgroundColor: async () => undefined,
+				setBadgeTextColor: async () => undefined,
+			},
+		} });
+		await commitBadgeSession(session('active'));
+		await updateBadgeFromControlProjection(identity(), projection(), true, true, 1);
+		expect(paints).toBe(1);
+		fenceAudioSession(TAB_ID);
+		forgetBadgePresentation(TAB_ID);
+		await updateBadgeFromControlProjection(identity(), projection(), true, false, 2);
+		expect(paints).toBe(1);
+		expect(badgeState.has(TAB_ID)).toBe(false);
+	});
+
+	test('refreshes a stale Capture hint before repainting the acknowledged volume', async () => {
+		const colors: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { get: async () => ({ id: TAB_ID }) },
+			action: {
+				setBadgeText: async () => undefined,
+				setBadgeBackgroundColor: async ({ color }: { color: string }) => { colors.push(color); },
+				setBadgeTextColor: async () => undefined,
+			},
+		} });
+		await commitBadgeSession({ ...session('active'), generation: 1 });
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 110 }), false, true, 1);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ isCapture: true, tone: 'capture', generation: 4 });
+		expect(colors.at(-1)).toBe(BADGE_COLORS.CAPTURE);
+		await commitBadgeSession({ ...session('error'), generation: 2 });
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 110 }), true, false, 1);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ isCapture: false, tone: 'native', generation: 4 });
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 	});
 
-	test('paints the tone the card staged, in the same turn, without waiting for a route ACK', async () => {
+	test('uses the audio lifecycle clock independently while retaining the control generation', async () => {
 		const colors: string[] = [];
 		Object.defineProperty(globalThis, 'chrome', {
 			configurable: true,
@@ -355,68 +555,121 @@ describe('actual volume badge state', () => {
 			},
 		});
 
-		// 100 -> 110 on a page that cannot amplify natively. The card already
-		// paints violet; the badge must not wait for the Capture handshake.
-		updateBadgeStagedVolume(TAB_ID, 110, 'capture', { documentId: 'doc-1', origin: '', generation: 0 });
-		await Promise.resolve();
-		await Promise.resolve();
+		await updateBadgeFromControlProjection(
+			{ ...identity(), generation: 42 },
+			projection({ volumeBase: 95, boost: 2 }),
+			false,
+			true,
+			12,
+		);
+		const active = await commitBadgeSession({ ...session('active'), generation: 1 });
+		await updateBadgeFromSession(active, false);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 190, generation: 42, isCapture: true });
 		expect(colors.at(-1)).toBe(BADGE_COLORS.CAPTURE);
-		// A predicted violet is a tone, not a Capture fact.
-		expect(badgeState.get(TAB_ID)?.isCapture).toBe(false);
 
-		// Back below the ceiling: the card is blue again, so the badge is too.
-		updateBadgeStagedVolume(TAB_ID, 100, 'native');
-		await Promise.resolve();
-		await Promise.resolve();
+		await commitBadgeSession({ ...session('error'), generation: 2 });
+		// A late event resolves the store's current lifecycle and cannot revive Capture.
+		await updateBadgeFromSession(active, false);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 190, generation: 42, isCapture: false });
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 
-		// A page that amplifies on its own never turns violet at any volume.
-		updateBadgeStagedVolume(TAB_ID, 350, 'native');
-		await Promise.resolve();
-		await Promise.resolve();
+		const newerActive = await commitBadgeSession({ ...session('active'), generation: 3 });
+		await updateBadgeFromSession(newerActive, false);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ generation: 42, isCapture: true });
+		await commitBadgeSession({ ...session('error'), generation: 3, actualConfig: {
+			...DEFAULT_AUDIO_CONFIG, volume: 50, volumeBase: 50, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+		} });
+		await updateBadgeFromSession(newerActive, false);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 190, generation: 42, isCapture: false });
+		await updateBadgeFromSession({ ...newerActive, documentId: 'retired-document', generation: 100 }, false);
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 190, generation: 42, isCapture: false });
+	});
+});
+
+async function commitBadgeSession(snapshot: AudioSessionSnapshot): Promise<AudioSessionSnapshot> {
+	if (!hasAudioSession) {
+		const values: Record<string, unknown> = {};
+		Object.assign(chrome, {
+			storage: { ...chrome.storage, local: {
+				get: async (key: string) => ({ [key]: values[key] }),
+				set: async (items: Record<string, unknown>) => { Object.assign(values, items); },
+				remove: async (key: string) => { delete values[key]; },
+			} },
+			runtime: { ...chrome.runtime, sendMessage: async () => undefined },
+		});
+		hasAudioSession = true;
+	}
+	return updateAudioSession({ tabId: snapshot.tabId, documentId: snapshot.documentId, origin: snapshot.origin }, {
+		config: snapshot.actualConfig,
+		generation: snapshot.generation,
+		desiredMode: snapshot.desiredMode,
+		actualMode: snapshot.actualMode,
+		phase: snapshot.phase,
+		error: snapshot.lastError?.message ?? null,
+	});
+}
+
+async function publishBadgeSession(snapshot: AudioSessionSnapshot, userInteracted: boolean): Promise<void> {
+	await updateBadgeFromSession(await commitBadgeSession(snapshot), userInteracted);
+}
+
+
+describe('token-bound pending badge presentation', () => {
+	test('the first Capture presentation is purple immediately without inventing actual state or usage', async () => {
+		const writes: string[] = [];
+		const colors: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			storage: { session: { get: async () => ({}) } },
+			action: {
+				setBadgeText: async ({ text }: { text: string }) => { writes.push(text); },
+				setBadgeBackgroundColor: async ({ color }: { color: string }) => { colors.push(color); },
+				setBadgeTextColor: async () => undefined,
+			},
+		} });
+		const pending = stageBadgeVolumePresentation(identity(), { owner: 'popup-session', revision: 1 }, 110, 'capture');
+		expect(writes.at(-1)).toBe('110');
+		expect(colors.at(-1)).toBe(BADGE_COLORS.CAPTURE);
+		expect(badgeState.has(TAB_ID)).toBe(false);
+		await pending;
+		await settleBadgeVolumePresentation(identity(), { owner: 'popup-session', revision: 1 });
+		expect(writes.at(-1)).toBe('');
+		expect(badgeState.has(TAB_ID)).toBe(false);
+	});
+
+	test('an older settlement preserves the newer pending gesture and failure returns to actual', async () => {
+		const writes: string[] = [];
+		const colors: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { get: async () => ({ id: TAB_ID }) },
+			action: {
+				setBadgeText: async ({ text }: { text: string }) => { writes.push(text); },
+				setBadgeBackgroundColor: async ({ color }: { color: string }) => { colors.push(color); },
+				setBadgeTextColor: async () => undefined,
+			},
+		} });
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 80 }), false, true, 1);
+		await stageBadgeVolumePresentation(identity(), { owner: 'popup-session', revision: 1 }, 110, 'capture');
+		await stageBadgeVolumePresentation(identity(), { owner: 'popup-session', revision: 2 }, 120, 'capture');
+		await settleBadgeVolumePresentation(identity(), { owner: 'popup-session', revision: 1 });
+		expect(writes.at(-1)).toBe('120');
+		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 80, isCapture: false, tone: 'native' });
+		await settleBadgeVolumePresentation(identity(), { owner: 'popup-session', revision: 2 });
+		expect(writes.at(-1)).toBe('80');
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 	});
 
-	test('a gesture staged while a projection is in flight is not overwritten by it', async () => {
-		const colors: string[] = [];
-		let releaseSet: (() => void) | undefined;
-		let setCalls = 0;
-		Object.defineProperty(globalThis, 'chrome', {
-			configurable: true,
-			value: {
-				tabs: { get: async () => ({ id: TAB_ID }) },
-				storage: { session: {
-					get: async () => ({}),
-					set: async () => {
-						setCalls += 1;
-						// Park the projection inside the usage await it starts with,
-						// which is exactly where a live gesture lands in production.
-						if (setCalls === 1) await new Promise<void>((release) => { releaseSet = release; });
-					},
-					remove: async () => undefined,
-				} },
-				action: {
-					setBadgeText: async () => undefined,
-					setBadgeBackgroundColor: async ({ color }: { color: string }) => { colors.push(color); },
-					setBadgeTextColor: async () => undefined,
-				},
-			},
-		});
-
-		const inFlight = updateBadgeFromControlProjection(identity(), projection({
-			volumeBase: 100,
-			boost: 1,
-		}), false, true);
-		for (let tick = 0; tick < 50 && !releaseSet; tick += 1) {
-			await new Promise((next) => setTimeout(next, 0));
-		}
-		// The gesture is newer than the projection's facts, so its tone survives.
-		updateBadgeStagedVolume(TAB_ID, 120, 'capture', identity());
-		releaseSet?.();
-		await inFlight;
-
-		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 120, tone: 'capture' });
-		expect(colors.at(-1)).toBe(BADGE_COLORS.CAPTURE);
+	test('navigation clears a pending-only badge and a late settlement cannot revive it', async () => {
+		const writes: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { action: {
+			setBadgeText: async ({ text }: { text: string }) => { writes.push(text); },
+			setBadgeBackgroundColor: async () => undefined, setBadgeTextColor: async () => undefined,
+		} } });
+		await stageBadgeVolumePresentation(identity(), { owner: 'popup-session', revision: 1 }, 110, 'capture');
+		forgetBadgePresentation(TAB_ID);
+		expect(writes.at(-1)).toBe('');
+		await settleBadgeVolumePresentation(identity(), { owner: 'popup-session', revision: 1 });
+		expect(writes.at(-1)).toBe('');
+		expect(badgeState.has(TAB_ID)).toBe(false);
 	});
 });
 

@@ -855,6 +855,7 @@ describe('release gate orchestration', () => {
 			'repository governance contracts',
 			'closeout evidence contracts',
 			'public projection contract',
+			'public snapshot parity',
 			'frozen dependency install',
 			'toolchain verify',
 			'Biome lint',

@@ -4,7 +4,6 @@ import type { AudioConfig, GlobalSettings } from '@nexus/kernel';
 import {
 	isActiveCaptureLifecycle,
 	resolveAudioVolume,
-	shouldHoldVolumeTone,
 	type ControlField,
 	type ControlFieldStates,
 	type ControlPatch,
@@ -13,9 +12,9 @@ import { resolveAcknowledgedProcessorLifecycle } from '@nexus/contracts/ui-runti
 import type { PopupControlPortResponse } from '../../shared/popup-control-port';
 import { isReportedControlFailure, PopupControlChannelError, type PopupControlTransport } from './control-port';
 import { mergeAudioConfig, mergeControlFields, type CardInternalState } from './types';
-import { updateCachedControlSnapshot } from './snapshot';
-import { classifyControlSnapshot, isControlClockStale } from '../control-snapshot-order';
+import { sessionBelongsToCard, updateCachedControlSnapshot } from './snapshot';
 import { gestureVolumeTone } from './render';
+import { classifyControlSnapshot, isControlClockStale, reconcileControlMedia } from '../control-snapshot-order';
 
 export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 	flush: () => Promise<void>;
@@ -26,13 +25,53 @@ export type ConfigUpdateFn = ((changes: Partial<AudioConfig>) => void) & {
 
 export type ConfigErrorHandler = (error: unknown, state: CardInternalState) => void;
 
+// post: applies one session snapshot. Only processor lifecycle may come from
+// here; every field-level actual stays owned by the control projection.
+export function applyAudioSessionSnapshot(
+	tabId: number,
+	state: CardInternalState,
+	snapshot: import('@nexus/contracts').AudioSessionSnapshot,
+	render: () => void,
+	documentId?: string,
+): boolean {
+	if (snapshot.tabId !== tabId) return false;
+	// A session for another document would describe a page this card is not
+	// showing. The card's own document id is the fence when the control
+	// projection has not answered yet.
+	if (!sessionBelongsToCard(snapshot, state.controlSnapshot, documentId ?? '')) return false;
+	const newer = snapshot.generation > state.audioGeneration
+		|| (snapshot.generation === state.audioGeneration
+			&& snapshot.configRevision >= state.audioConfigRevision);
+	if (!newer) return false;
+	state.actualMode = snapshot.actualMode;
+	state.desiredMode = snapshot.desiredMode;
+	state.phase = snapshot.phase;
+	state.audioDocumentId = snapshot.documentId;
+	state.audioOrigin = snapshot.origin;
+	state.audioGeneration = snapshot.generation;
+	state.audioConfigRevision = snapshot.configRevision;
+	state.lastError = snapshot.lastError;
+	state.lifecycleSnapshotKnown = true;
+	state.isCaptureActive = isActiveCaptureLifecycle({
+		actualMode: snapshot.actualMode,
+		phase: snapshot.phase,
+	});
+	render();
+	return true;
+}
+
 export function projectAcknowledgedProcessorLifecycle(
 	state: CardInternalState,
 	fields: ControlFieldStates,
 	previousFields: ControlFieldStates = {},
 ): void {
-	// Snapshots carry unchanged field ACKs. Only newly acknowledged processor
-	// fields may supersede the lifecycle already observed for this document.
+	const control = state.controlSnapshot;
+	const hasAudioLifecycle = state.lifecycleSnapshotKnown === true && state.audioGeneration >= 0
+		&& state.audioDocumentId !== null && state.audioOrigin !== null
+		&& (!control || state.audioDocumentId === control.documentId && state.audioOrigin === control.origin);
+	if (hasAudioLifecycle) return;
+	// A control field ACK supplies a fallback when no processor observation
+	// answered. Its field revision cannot order the independent audio clock.
 	const advanced = Object.fromEntries(Object.entries(fields).filter(([field, value]) => (
 		value !== undefined
 		&& value.revision > (previousFields[field as ControlField]?.revision ?? -1)
@@ -102,8 +141,14 @@ export function createUpdateFn(
 
 	const applySettlement = (response: PopupControlPortResponse): void => {
 		const optimisticBeforeSettlement = state.config;
+		if (response.audioSession) {
+			applyAudioSessionSnapshot(tabId, state, response.audioSession, () => undefined,
+				state.controlSnapshot?.documentId ?? response.volumeAck?.documentId
+					?? response.fieldAcks[0]?.documentId ?? state.audioDocumentId ?? undefined);
+		}
 		const acknowledgements = [response.volumeAck, ...response.fieldAcks];
 		let acceptedVolume = false;
+		let volumeFieldsKnown = false;
 		let acceptedAcknowledgement = false;
 		for (const acknowledgement of acknowledgements) {
 			if (!acknowledgement) continue;
@@ -114,6 +159,7 @@ export function createUpdateFn(
 				acknowledgement.revision,
 			)) continue;
 			const current = state.controlSnapshot;
+			let actualFields = acknowledgement.fields;
 			if (current) {
 				const projected = {
 					...current,
@@ -122,14 +168,23 @@ export function createUpdateFn(
 					generation: acknowledgement.generation,
 					revision: acknowledgement.revision,
 					fields: { ...current.fields, ...acknowledgement.fields },
+					mediaObservation: acknowledgement.mediaObservation,
 				};
 				if (classifyControlSnapshot(current, projected) !== 'accepted') continue;
-				state.controlSnapshot = projected;
+				const reconciled = reconcileControlMedia(current, projected);
+				state.controlSnapshot = reconciled;
+				actualFields = reconciled.fields;
+			}
+			if (acknowledgement === response.volumeAck) {
+				// A no-op ACK may carry no fields. Its cached result cannot replace
+				// a newer physical sample retained by the field reconciliation.
+				volumeFieldsKnown = typeof actualFields.volumeBase?.actual === 'number'
+					&& typeof actualFields.boost?.actual === 'number';
 			}
 			state.controlRevision = Math.max(state.controlRevision, acknowledgement.revision);
 			state.controlGeneration = Math.max(state.controlGeneration, acknowledgement.generation);
-			state.stableConfig = mergeControlFields(state.stableConfig, acknowledgement.fields);
-			projectAcknowledgedProcessorLifecycle(state, acknowledgement.fields, current?.fields);
+			state.stableConfig = mergeControlFields(state.stableConfig, actualFields);
+			projectAcknowledgedProcessorLifecycle(state, actualFields, current?.fields);
 			acceptedAcknowledgement = true;
 			if (acknowledgement === response.volumeAck) acceptedVolume = true;
 		}
@@ -140,7 +195,7 @@ export function createUpdateFn(
 		for (const [field, revision] of pendingFields) {
 			if (revision <= response.throughRevision) pendingFields.delete(field);
 		}
-		if (response.volumeAck && acceptedVolume) {
+		if (response.volumeAck && acceptedVolume && !volumeFieldsKnown) {
 			state.stableConfig = mergeAudioConfig(state.stableConfig, {
 				volume: response.volumeAck.result.effectiveVolume,
 				volumeBase: response.volumeAck.result.volumeBase,
@@ -163,7 +218,7 @@ export function createUpdateFn(
 		for (const field of pendingFields.keys()) {
 			projected[field] = optimistic[field];
 		}
-		if (!['volume', 'volumeBase', 'boost'].some((field) => pendingFields.has(field as keyof AudioConfig))) {
+		if (!['volume', 'volumeBase', 'boost', 'muted'].some((field) => pendingFields.has(field as keyof AudioConfig))) {
 			delete state.pendingVolumePresentation;
 		}
 		render();
@@ -211,30 +266,25 @@ export function createUpdateFn(
 		const previousVolume = resolveAudioVolume(previous).effectiveVolume;
 		const nextVolume = resolveAudioVolume(next).effectiveVolume;
 		const volumeChanged = hasVolumeChange && previousVolume !== nextVolume;
+		const implicitUnmute = volumeChanged && nextVolume > 0 && changes.muted === undefined;
+		if (implicitUnmute) next.muted = false;
 		const patch = toControlPatch(changes, next);
 		if (!volumeChanged && Object.keys(patch).length === 0) return;
 
 		const inputRevision = localRevision + 1;
-		// The Action badge and the slider must change colour in the same turn. The
-		// Background cannot derive this from `effectiveVolume` alone (a threshold
-		// is not a route), so the card publishes the exact tone it is about to
-		// paint, computed by the one shared predicate in `@nexus/contracts`.
-		const toneChanged = volumeChanged || changes.muted !== undefined;
-		const tone = toneChanged
-			? gestureVolumeTone({
-				muted: next.muted,
-				volume: nextVolume,
-				actualMode: state.actualMode,
-				phase: state.phase,
-				enabled: next.enabled,
-				controlSnapshot: state.controlSnapshot,
-			})
-			: null;
+		const presentation = volumeChanged || changes.muted !== undefined ? {
+			effectiveVolume: nextVolume,
+			muted: next.muted,
+			tone: gestureVolumeTone({
+				volume: nextVolume, muted: next.muted, enabled: next.enabled,
+				actualMode: state.actualMode, phase: state.phase, controlSnapshot: state.controlSnapshot,
+			}),
+		} : undefined;
 		try {
 			transport.stage({
 				inputRevision,
 				...(volumeChanged ? { effectiveVolume: nextVolume } : {}),
-				...(tone === null ? {} : { tone }),
+				...(presentation ? { tone: presentation.tone, presentationVolume: nextVolume } : {}),
 				groups: splitByCoverage(patch),
 			});
 		} catch (error) {
@@ -245,24 +295,15 @@ export function createUpdateFn(
 		for (const rawField of Object.keys(changes)) {
 			pendingFields.set(rawField as keyof AudioConfig, inputRevision);
 		}
+		if (presentation) state.pendingVolumePresentation = presentation;
+		if (implicitUnmute) pendingFields.set('muted', inputRevision);
 		if (volumeChanged) {
-			if (shouldHoldVolumeTone({
-				previousEffectiveVolume: previousVolume,
-				nextEffectiveVolume: nextVolume,
-				mutedChanged: changes.muted !== undefined,
-			})) {
-				state.pendingVolumePresentation ??= {
-					effectiveVolume: previousVolume,
-					muted: previous.muted,
-					actualMode: state.actualMode,
-					phase: state.phase,
-				};
-			}
 			pendingFields.set('volume', inputRevision);
 			pendingFields.set('volumeBase', inputRevision);
 			pendingFields.set('boost', inputRevision);
 		}
 		state.userInteracted = true;
+		delete state.hotkeyVolumePresentation;
 		state.config = next;
 		render();
 	}) as ConfigUpdateFn;

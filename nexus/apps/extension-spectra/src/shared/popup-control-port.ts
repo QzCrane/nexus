@@ -7,6 +7,8 @@ import {
 	isRpcError,
 	isControlPatch,
 	isFiniteControlValue,
+	isAudioSessionSnapshot,
+	type AudioSessionSnapshot,
 	type ControlApplyAck,
 	type ControlOperationAck,
 	type ControlPatch,
@@ -37,12 +39,7 @@ export type PopupControlPortRequest =
 		sessionId: string;
 		inputRevision: number;
 		effectiveVolume?: number;
-		/**
-		 * The tone the card is painting right now. A volume threshold cannot be
-		 * turned into a route by the receiver, so the sender states it: the badge
-		 * and the slider then change colour in the same turn, and neither can
-		 * disagree about a page the other one is looking at.
-		 */
+		presentationVolume?: number;
 		tone?: VolumeTone;
 		groups: PopupControlPatchGroup[];
 	}
@@ -58,6 +55,7 @@ export type PopupControlPortResponse = {
 	throughRevision: number;
 	volumeAck: ControlOperationAck<'effective-volume'> | null;
 	fieldAcks: ControlApplyAck[];
+	audioSession?: AudioSessionSnapshot;
 	error: RpcError | null;
 };
 
@@ -109,28 +107,30 @@ export function isPopupControlPortRequest(value: unknown): value is PopupControl
 	if (value.type !== 'stage') return false;
 	const allowed = ['type', 'sessionId', 'inputRevision'];
 	if (value.effectiveVolume !== undefined) allowed.push('effectiveVolume');
+	if (value.presentationVolume !== undefined) allowed.push('presentationVolume');
 	if (value.tone !== undefined) allowed.push('tone');
 	allowed.push('groups');
 	return hasExactKeys(value, allowed)
 		&& isRevision(value.inputRevision)
 		&& (value.effectiveVolume === undefined || isFiniteControlValue(value.effectiveVolume, 'volume'))
-		&& (value.tone === undefined || isVolumeTone(value.tone))
+		&& (value.presentationVolume === undefined && value.tone === undefined
+			|| isFiniteControlValue(value.presentationVolume, 'volume')
+				&& (value.tone === 'native' || value.tone === 'capture' || value.tone === 'muted'))
 		&& Array.isArray(value.groups)
 		&& value.groups.length <= POPUP_CONTROL_MAX_GROUPS
 		&& value.groups.every(isPatchGroup)
 		&& new Set(value.groups.map((group) => group.requestedCoverage)).size === value.groups.length
 		&& new Set(value.groups.flatMap((group) => Object.keys(group.patch))).size
 			=== value.groups.reduce((count, group) => count + Object.keys(group.patch).length, 0)
-		&& (value.effectiveVolume !== undefined || value.tone !== undefined || value.groups.length > 0);
-}
-
-function isVolumeTone(value: unknown): value is VolumeTone {
-	return value === 'muted' || value === 'native' || value === 'capture';
+		&& (value.effectiveVolume !== undefined || value.groups.length > 0);
 }
 
 export function isPopupControlPortResponse(value: unknown): value is PopupControlPortResponse {
 	if (!isRecord(value)
-		|| !hasExactKeys(value, ['type', 'sessionId', 'throughRevision', 'volumeAck', 'fieldAcks', 'error'])
+		|| !hasExactKeys(value, [
+			'type', 'sessionId', 'throughRevision', 'volumeAck', 'fieldAcks', 'error',
+			...(value.audioSession === undefined ? [] : ['audioSession']),
+		])
 		|| value.type !== 'settled' || !isSessionId(value.sessionId)
 		|| !isRevision(value.throughRevision) || !Array.isArray(value.fieldAcks)) return false;
 	return (value.volumeAck === null || (
@@ -139,6 +139,7 @@ export function isPopupControlPortResponse(value: unknown): value is PopupContro
 	))
 		&& value.fieldAcks.length <= POPUP_CONTROL_MAX_GROUPS
 		&& value.fieldAcks.every(isControlApplyAck)
+		&& (value.audioSession === undefined || isAudioSessionSnapshot(value.audioSession))
 		&& (value.error === null || isRpcError(value.error))
 		&& (value.volumeAck !== null || value.fieldAcks.length > 0 || value.error !== null);
 }

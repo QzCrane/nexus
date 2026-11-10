@@ -1,15 +1,18 @@
 // goal: exact runtime contract for the admitted SPECTRA Capture processor graph
 
-import { isFiniteControlValue } from './control-value-limits.js';
+import { CONTROL_VALUE_LIMITS, isFiniteControlValue } from './control-value-limits.js';
 import { keySetOf } from './key-set.js';
 
-// Playback speed, native page volume/mute and the product enable switch are
-// intentionally outside this physical processor boundary.
+// Playback speed, native page volume/mute and the product enable switch remain
+// outside this boundary. An explicitly admitted document-output owner has its
+// own level; it never interprets an element's native properties as output gain.
 export interface AudioProcessorConfig {
-	// Processor gain is Boost only. Page volume and media mute remain owned by
-	// the standard DOM/allowlisted official-player writers and cannot be encoded
-	// as a second DSP writer at this boundary.
+	// The legacy processor owns Boost only. The document-output owner explicitly
+	// replaces that contribution; native element volume/mute are never copied in.
 	boostGain: number;
+	// Presence names a separately admitted full-document output owner. Mute has
+	// its own physical gate, so muting never destroys the retained numeric gain.
+	outputLevel?: { gain: number; muted: boolean };
 	compressor: boolean;
 	mono: boolean;
 	bass: boolean;
@@ -20,6 +23,7 @@ export interface AudioProcessorConfig {
 
 const AUDIO_PROCESSOR_CONFIG_KEYS = keySetOf<AudioProcessorConfig>()([
 	'boostGain',
+	'outputLevel',
 	'compressor',
 	'mono',
 	'bass',
@@ -27,6 +31,7 @@ const AUDIO_PROCESSOR_CONFIG_KEYS = keySetOf<AudioProcessorConfig>()([
 	'pan',
 	'delay',
 ]);
+const OUTPUT_LEVEL_KEYS = keySetOf<NonNullable<AudioProcessorConfig['outputLevel']>>()(['gain', 'muted']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -39,6 +44,13 @@ function hasOnlyKeys(value: Record<string, unknown>, allowed: ReadonlySet<string
 export function isAudioProcessorConfig(value: unknown): value is AudioProcessorConfig {
 	if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_PROCESSOR_CONFIG_KEYS)) return false;
 	return isFiniteControlValue(value.boostGain, 'boost')
+		&& (value.outputLevel === undefined || isRecord(value.outputLevel)
+			&& hasOnlyKeys(value.outputLevel, OUTPUT_LEVEL_KEYS)
+			&& typeof value.outputLevel.gain === 'number'
+			&& Number.isFinite(value.outputLevel.gain)
+			&& value.outputLevel.gain >= 0
+			&& value.outputLevel.gain <= CONTROL_VALUE_LIMITS.boost.max
+			&& typeof value.outputLevel.muted === 'boolean')
 		&& typeof value.compressor === 'boolean'
 		&& typeof value.mono === 'boolean'
 		&& typeof value.bass === 'boolean'

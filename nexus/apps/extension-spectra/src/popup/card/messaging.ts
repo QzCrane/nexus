@@ -1,15 +1,14 @@
 // goal: defines messaging listeners for the tab card to handle state synchronization between the popup, background, and content scripts
 
-import { isActiveCaptureLifecycle } from '@nexus/contracts';
 import type { CardInternalState } from './types';
 import type { AudioConfig } from '@nexus/kernel';
 import { mergeAudioConfig, mergeControlSnapshot } from './types';
-import { projectAcknowledgedProcessorLifecycle } from './state';
+import { applyAudioSessionSnapshot, projectAcknowledgedProcessorLifecycle } from './state';
 import { classifyControlSnapshot, isControlClockStale, reconcileControlMedia } from '../control-snapshot-order';
 import { subscribePopupTabUiEvents, type PopupUiEvent } from '../ui-event-hub';
 import { currentTopDocumentId } from '../../shared/top-document';
 import { sendSpectraRequest } from '../../shared/ui-spectra-client';
-import { sessionBelongsToCard, updateCachedControlSnapshot } from './snapshot';
+import { updateCachedControlSnapshot } from './snapshot';
 
 // The card probes its own control snapshot until the content host answers. The
 // budget is short because the alternative - a status line that stays on screen
@@ -61,6 +60,7 @@ export function applyControlSnapshot(
 	if (current) {
 		if (snapshot.documentId !== current.documentId || snapshot.origin !== current.origin) {
 			delete state.pendingVolumePresentation;
+			delete state.hotkeyVolumePresentation;
 			// A document transition replaces the complete projection.  Do not carry
 			// purple Capture state or any optimistic values across navigation.
 			state.actualMode = 'bypass';
@@ -128,40 +128,6 @@ export function applyControlSnapshot(
 	return true;
 }
 
-// post: applies one session snapshot. Only processor lifecycle may come from
-// here; every field-level actual stays owned by the control projection.
-export function applyAudioSessionSnapshot(
-	tabId: number,
-	state: CardInternalState,
-	snapshot: import('@nexus/contracts').AudioSessionSnapshot,
-	render: () => void,
-	documentId?: string,
-): boolean {
-	if (snapshot.tabId !== tabId) return false;
-	// A session for another document would describe a page this card is not
-	// showing. The card's own document id is the fence when the control
-	// projection has not answered yet.
-	if (!sessionBelongsToCard(snapshot, state.controlSnapshot, documentId ?? '')) return false;
-	const newer = snapshot.generation > state.audioGeneration
-		|| (snapshot.generation === state.audioGeneration
-			&& snapshot.configRevision >= state.audioConfigRevision);
-	if (!newer) return false;
-	state.actualMode = snapshot.actualMode;
-	state.desiredMode = snapshot.desiredMode;
-	state.phase = snapshot.phase;
-	state.audioDocumentId = snapshot.documentId;
-	state.audioOrigin = snapshot.origin;
-	state.audioGeneration = snapshot.generation;
-	state.audioConfigRevision = snapshot.configRevision;
-	state.lastError = snapshot.lastError;
-	state.lifecycleSnapshotKnown = true;
-	state.isCaptureActive = isActiveCaptureLifecycle({
-		actualMode: snapshot.actualMode,
-		phase: snapshot.phase,
-	});
-	render();
-	return true;
-}
 
 // post: returns a cleanup function that removes the chrome.runtime.onMessage listener
 export function setupCardMessaging(params: MessagingParams): () => void {
@@ -195,6 +161,22 @@ export function setupCardMessaging(params: MessagingParams): () => void {
 
 	const onMessage = (rawMessage: PopupUiEvent, sender: chrome.runtime.MessageSender): void => {
   if (disposed || retired) return;
+	if (rawMessage.type === 'spectra.hotkey.target.feedback') {
+		if (sender.tab || rawMessage.tabId !== tabId || rawMessage.documentId !== documentId) return;
+		const presentation = rawMessage.payload.presentation;
+		if (!presentation) return;
+		const pending = state.hotkeyVolumePresentation;
+		if (presentation.phase === 'pending') {
+			if (state.draggingField === 'volume' || params.hasPendingVolume?.()) return;
+			if (pending?.token.owner === presentation.token.owner && pending.token.revision > presentation.token.revision) return;
+			state.hotkeyVolumePresentation = { token: presentation.token, volume: presentation.volume, tone: presentation.tone };
+		} else {
+			if (!pending || pending.token.owner !== presentation.token.owner || pending.token.revision > presentation.token.revision) return;
+			delete state.hotkeyVolumePresentation;
+		}
+		render();
+		return;
+	}
   if (rawMessage.type === 'spectra.navigation.changed') {
     if (!sender.tab && documentId && rawMessage.documentId !== documentId) verifyReplacement();
     return;

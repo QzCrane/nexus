@@ -26,10 +26,12 @@ import {
 	isControlSnapshot,
 	isControlSubmitRequest,
 	isSpectraRequestEnvelope,
+	isSpectraResponse,
 	resolveAcknowledgedProcessorLifecycle,
 	resolveControlAudioVolume,
 	shouldTryNextControlStrategy,
 	splitEffectiveVolume,
+	stepEffectiveVolume,
 	type ControlField,
 	type ControlFieldStates,
 	type ControlFieldState,
@@ -107,6 +109,22 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(splitEffectiveVolume(250)).toEqual({ volumeBase: 100, boost: 2.5 });
 	});
 
+	test('keeps volume steps free except at the native ceiling crossing', () => {
+		expect(stepEffectiveVolume(100, 10)).toBe(110);
+		expect(stepEffectiveVolume(100, -10)).toBe(90);
+		// A step that would cross the ceiling stops on it instead of skipping it.
+		expect(stepEffectiveVolume(95, 10)).toBe(100);
+		expect(stepEffectiveVolume(105, -10)).toBe(100);
+		// Off-grid levels move by the plain delta; they are not snapped to a grid.
+		expect(stepEffectiveVolume(87, 10)).toBe(97);
+		expect(stepEffectiveVolume(87, -10)).toBe(77);
+		expect(stepEffectiveVolume(63, 10)).toBe(73);
+		expect(stepEffectiveVolume(105, 10)).toBe(115);
+		expect(stepEffectiveVolume(95, -10)).toBe(85);
+		expect(stepEffectiveVolume(800, 10)).toBe(800);
+		expect(stepEffectiveVolume(0, -10)).toBe(0);
+	});
+
 	test('owns numeric ranges and strict one-shot Capture grant shape in contracts', () => {
 		expect(CONTROL_VALUE_LIMITS.speed).toEqual({ min: 0.1, max: 16 });
 		expect(isControlPatch({ speed: CONTROL_VALUE_LIMITS.speed.min })).toBe(true);
@@ -166,6 +184,74 @@ describe('per-field SPECTRA control contracts', () => {
 		expect(isControlIntent({ ...intent, patch: { volumeBase: 801 } })).toBe(false);
 		expect(isControlIntent({ ...intent, generation: -1 })).toBe(false);
 		expect(isControlIntent({ ...intent, requestedCoverage: 'opaque' })).toBe(false);
+	});
+
+	test('admits only an internal full-output release with canonical and Content envelope parity', () => {
+		const intent = { intentId: 'release-output', tabId: 42, documentId: 'document-42', generation: 3,
+			baseRevision: 9, source: 'popup', requestedCoverage: 'full', target: null, actualContext: {},
+			patch: { boost: 1 }, releaseDocumentOutput: true } as const;
+		const envelope = { protocolVersion: 2, requestId: 'release-output', type: 'spectra.control.intent.execute',
+			tabId: 42, documentId: intent.documentId, generation: 3, payload: intent };
+		expect(isControlIntent(intent)).toBe(true);
+		expect(isSpectraRequestEnvelope(envelope)).toBe(true);
+		expect(isContentSpectraRequestEnvelope(envelope)).toBe(true);
+		for (const payload of [
+			{ ...intent, requestedCoverage: 'active-target' },
+			{ ...intent, releaseDocumentOutput: false },
+			{ ...intent, releaseDocumentOutput: 'true' },
+		]) {
+			expect(isControlIntent(payload)).toBe(false);
+			expect(isSpectraRequestEnvelope({ ...envelope, payload })).toBe(false);
+			expect(isContentSpectraRequestEnvelope({ ...envelope, payload })).toBe(false);
+		}
+		const publicRequest = { tabId: 42, source: 'popup', requestedCoverage: 'full', target: null, patch: { boost: 1 } };
+		expect(isControlSubmitRequest(publicRequest)).toBe(true);
+		for (const releaseDocumentOutput of [true, false]) {
+			const forged = { ...publicRequest, releaseDocumentOutput };
+			expect(isControlSubmitRequest(forged)).toBe(false);
+			expect(isSpectraRequestEnvelope({ protocolVersion: 2, requestId: 'forged-release',
+				type: 'spectra.control.intent.submit', payload: forged })).toBe(false);
+		}
+	});
+
+	test('binds native-audio absence to a real media target in canonical and Content read guards', () => {
+		const target = { frameId: 0, documentId: 'document-42', mediaId: 'video-only', sourceRevision: 2, kind: 'video' };
+		const read = { target, patch: { volumeBase: 0, mediaMuted: true },
+			observedStrategies: { volumeBase: 'dom-native', mediaMuted: 'dom-native' }, nativeAudioAbsent: true };
+		for (const result of [read, { ...read, nativeAudioAbsent: false }]) {
+			expect(isControlReadResult(result)).toBe(true);
+			expect(isSpectraResponse('spectra.control.actual.read', { ok: true, data: result })).toBe(true);
+			expect(isContentSpectraResponse('spectra.control.actual.read', { ok: true, data: result })).toBe(true);
+		}
+		for (const result of [
+			{ ...read, target: null }, { ...read, target: undefined },
+			{ ...read, target: { ...target, sourceRevision: -1 } },
+			{ ...read, nativeAudioAbsent: 'true' },
+		]) {
+			expect(isControlReadResult(result)).toBe(false);
+			expect(isSpectraResponse('spectra.control.actual.read', { ok: true, data: result })).toBe(false);
+			expect(isContentSpectraResponse('spectra.control.actual.read', { ok: true, data: result })).toBe(false);
+		}
+	});
+
+	test.each(['volumeBase', 'mediaMuted'] as const)('admits %s Capture only at full-output coverage with canonical and Content ACK parity', (name) => {
+		const state = field(name === 'volumeBase' ? 100 : false);
+		const ack = { intentId: 'output-field', tabId: 42, documentId: 'document-42', generation: 3,
+			revision: 4, target: null, fields: {} };
+		for (const coverage of ['full', 'opaque'] as const) {
+			const data = { ...ack, fields: { [name]: { ...state, strategy: 'capture', coverage } } };
+			expect(isControlApplyAck(data)).toBe(true);
+			expect(isContentSpectraResponse('spectra.control.intent.execute', { ok: true, data })).toBe(true);
+		}
+		for (const invalid of [
+			{ ...state, strategy: 'capture', coverage: 'active-target' },
+			{ ...state, strategy: 'capture', coverage: 'partial' },
+			{ ...state, strategy: 'media-webaudio', coverage: 'full' },
+		]) {
+			const data = { ...ack, fields: { [name]: invalid } };
+			expect(isControlApplyAck(data)).toBe(false);
+			expect(isContentSpectraResponse('spectra.control.intent.execute', { ok: true, data })).toBe(false);
+		}
 	});
 
 	test('requires exact native strategy provenance for page observations and semantic reads', () => {
@@ -307,7 +393,7 @@ describe('per-field SPECTRA control contracts', () => {
 					coverage: 'opaque',
 				},
 			},
-		})).toBe(false);
+		})).toBe(true);
 		expect(isControlSnapshot({
 			...snapshot,
 			fields: {
@@ -507,7 +593,11 @@ describe('per-field SPECTRA control contracts', () => {
 					break;
 				case 'hybrid-extension-native':
 					expect(hasNative).toBe(true);
-					expect(['state-then-native', 'compound']).toContain(policy.kind);
+					if (capability === 'volumeBase' || capability === 'mediaMuted') {
+						expect(policy.kind).toBe('field');
+						expect(hasAugmentation).toBe(true);
+						expect(adjudication.augmentationAdmission).toBe('explicit-full-output-only');
+					} else expect(['state-then-native', 'compound']).toContain(policy.kind);
 					expect(adjudication.augmentationAdmission).not.toBe('none');
 					break;
 				case 'augmentation-only':
@@ -519,8 +609,8 @@ describe('per-field SPECTRA control contracts', () => {
 		}
 		expect(Object.fromEntries(totals)).toEqual({
 			'augmentation-only': 26,
-			'hybrid-extension-native': 6,
-			'native-only': 17,
+			'hybrid-extension-native': 8,
+			'native-only': 15,
 			'observation-only': 2,
 		});
 	});
@@ -543,7 +633,9 @@ describe('per-field SPECTRA control contracts', () => {
 			.filter(([, policy]) => policy.recurringWork !== 'none')
 			.map(([capability, policy]) => [capability, policy.recurringWork]);
 		expect(recurring).toEqual([
+			['volumeBase', 'while-owned'],
 			['boost', 'while-owned'],
+			['mediaMuted', 'while-owned'],
 			['dimEnabled', 'while-owned'],
 			['dimOpacity', 'while-owned'],
 			['abLoop', 'while-owned'],
@@ -565,7 +657,7 @@ describe('per-field SPECTRA control contracts', () => {
 				));
 
 		expect(capabilitiesFor('capture')).toEqual([
-			'boost', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay', 'effective-volume',
+			'volumeBase', 'boost', 'mediaMuted', 'eqValues', 'bass', 'compressor', 'mono', 'pan', 'delay', 'effective-volume',
 		]);
 		expect(capabilitiesFor('extension-css')).toEqual([
 			'rotation', 'mirrored', 'fill', 'filterEnabled', 'filter',
@@ -605,7 +697,9 @@ describe('per-field SPECTRA control contracts', () => {
 		const pageNativeFields = new Set<ControlField>(CONTENT_PAGE_NATIVE_FIELDS);
 		for (const field of CONTENT_DOM_NATIVE_FIELDS) {
 			expect(CONTROL_ALGORITHM_POLICIES[field].orderedStrategies).toEqual(
-				pageNativeFields.has(field)
+				field === 'volumeBase' || field === 'mediaMuted'
+					? ['page-native', 'dom-native', 'capture']
+					: pageNativeFields.has(field)
 					? ['page-native', 'dom-native']
 					: ['dom-native'],
 			);

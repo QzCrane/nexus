@@ -126,6 +126,7 @@ async function readDurableCardFacts(
 }
 
 type ProcessorLifecycle = Pick<AudioRuntimeStatus, 'actualMode' | 'desiredMode' | 'phase' | 'generation'>;
+type AcknowledgedProcessorLifecycle = Omit<ProcessorLifecycle, 'generation'>;
 
 /**
  * The processor lifecycle the control snapshot itself acknowledges.
@@ -138,39 +139,35 @@ type ProcessorLifecycle = Pick<AudioRuntimeStatus, 'actualMode' | 'desiredMode' 
  * observations can only make that answer fresher, never make it exist.
  */
 export function acknowledgedProcessorLifecycle(
-	control: Pick<ControlSnapshot, 'fields' | 'generation'> | null,
-): ProcessorLifecycle | null {
+	control: Pick<ControlSnapshot, 'fields'> | null,
+): AcknowledgedProcessorLifecycle | null {
 	if (!control) return null;
 	const acknowledged = resolveAcknowledgedProcessorLifecycle(control.fields);
 	return acknowledged
-		? { ...acknowledged, desiredMode: acknowledged.actualMode, generation: control.generation }
+		? { ...acknowledged, desiredMode: acknowledged.actualMode }
 		: null;
 }
 
 /**
  * Picks the lifecycle the first paint and every later render must use.
  *
- * All three sources describe the same thing at different times, so the newest
- * generation wins; on a tie the more authoritative source wins, and the order of
- * the candidates is that authority: an acknowledged control field, then the
- * settled content runtime, then the session snapshot. A runtime read that is
- * still mid-transition is never presented as a final colour (its phase is not
- * settled yet), while a session newer than the acknowledgment still wins,
- * because it describes a hand-off the snapshot has not published yet.
+ * Runtime and session share the processor generation clock. Control field ACKs
+ * have an independent document-control clock and supply a fallback when neither
+ * processor observation answers. Never seed the audio watermark from control.
  */
 export function resolveInitialProcessorLifecycle(
 	runtime: ProcessorLifecycle | null,
 	session: ProcessorLifecycle | null,
-	acknowledged: ProcessorLifecycle | null = null,
-): ProcessorLifecycle | null {
+	acknowledged: AcknowledgedProcessorLifecycle | null = null,
+): ProcessorLifecycle | AcknowledgedProcessorLifecycle | null {
 	const settledRuntime = runtime && (
 		runtime.actualMode === 'bypass' && runtime.phase === 'idle'
 		|| runtime.actualMode !== 'bypass' && runtime.phase === 'active'
 	) ? runtime : null;
-	const candidates = [acknowledged, settledRuntime, session].filter(
+	const candidates = [settledRuntime, session].filter(
 		(candidate): candidate is ProcessorLifecycle => candidate !== null,
 	);
-	if (candidates.length === 0) return null;
+	if (candidates.length === 0) return acknowledged;
 	return candidates.reduce((best, candidate) => (
 		candidate.generation > best.generation ? candidate : best
 	));

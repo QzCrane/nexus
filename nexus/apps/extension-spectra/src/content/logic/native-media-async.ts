@@ -76,11 +76,55 @@ export function consumeOwnedSeek(element: HTMLMediaElement, actual: number): boo
 	return true;
 }
 
+/**
+ * A site may set `disablePictureInPicture` as a UI preference. An explicit
+ * extension request lifts it for the native call, but it must not be restored
+ * while the session is live: W3C Picture-in-Picture §3.4 lets the user agent
+ * run the exit-Picture-in-Picture algorithm when the attribute is *added* to
+ * the element that is already the `pictureInPictureElement`, and Chrome does
+ * exactly that. Restoring it in a `finally` therefore closes the window the
+ * request just opened, and the stable readback then reports a mismatch that
+ * looks like a page failure. Ownership transfers to the session instead: the
+ * attribute returns to the site when the session ends.
+ */
+const liftedPictureInPictureDisable = new WeakMap<HTMLVideoElement, () => void>();
+
+export function holdPictureInPictureDisable(element: HTMLVideoElement): void {
+	releasePictureInPictureDisable(element);
+	const release = (): void => {
+		element.removeEventListener('leavepictureinpicture', release);
+		if (liftedPictureInPictureDisable.get(element) !== release) return;
+		liftedPictureInPictureDisable.delete(element);
+		// The element is no longer the PiP owner here, so re-adding the attribute
+		// cannot run the exit algorithm.
+		element.disablePictureInPicture = true;
+	};
+	liftedPictureInPictureDisable.set(element, release);
+	element.addEventListener('leavepictureinpicture', release, { once: true });
+}
+
+/** Retire the lift without closing a session the viewer owns. */
+export function releasePictureInPictureDisable(element: HTMLVideoElement): void {
+	const release = liftedPictureInPictureDisable.get(element);
+	if (!release) return;
+	element.removeEventListener('leavepictureinpicture', release);
+	liftedPictureInPictureDisable.delete(element);
+	if (document.pictureInPictureElement === element) {
+		// Teardown must never close a live session. Keep the ownership so the
+		// attribute still returns to the site at the session's real end.
+		liftedPictureInPictureDisable.set(element, release);
+		element.addEventListener('leavepictureinpicture', release, { once: true });
+		return;
+	}
+	element.disablePictureInPicture = true;
+}
+
 /** Retire all async state when an element's media source identity ends. */
 export function clearNativeMediaAsyncState(element: HTMLMediaElement): void {
 	ownedSeeks.delete(element);
 	if (typeof HTMLVideoElement !== 'undefined' && element instanceof HTMLVideoElement) {
 		videoCadence.delete(element);
+		releasePictureInPictureDisable(element);
 	}
 }
 
@@ -325,13 +369,18 @@ export async function writeSpeedWithSettleAck<T>(
  * acknowledging a value and restoring its own in a timer — so the deferred
  * proof would be strictly weaker than the one it replaced.
  *
+ * `type` accepts every event that can announce the field's change, because one
+ * event is not always enough to prove a session: `playing` settles on either
+ * `play` or `pause`, and PiP settles in both directions. Registering only one
+ * would turn the other half of the same truth into a 750ms timeout.
+ *
  * Resolving `matched` (rather than throwing) is deliberate: the caller is no
  * longer in a position to fail the transaction, so a rollback becomes a
  * reportable observation instead of an error.
  */
 export async function confirmStableNativeEvent<T>(
 	target: EventTarget,
-	type: string,
+	type: string | readonly string[],
 	read: () => T,
 	expected: T,
 	tolerance: number,
@@ -339,6 +388,8 @@ export async function confirmStableNativeEvent<T>(
 	options: NativeMediaOperationOptions = {},
 ): Promise<{ actual: T; matched: boolean }> {
 	assertNativeOperationCurrent(options);
+	const types = typeof type === 'string' ? [type] : [...type];
+	if (types.length === 0) throw new Error('A native confirmation needs at least one event to observe');
 	let finish!: (matched: boolean) => void;
 	let quietTimer: ReturnType<typeof setTimeout> | null = null;
 	let timeoutId: ReturnType<typeof setTimeout> | null = null;
@@ -357,7 +408,7 @@ export async function confirmStableNativeEvent<T>(
 			NATIVE_EVENT_QUIET_MS,
 		);
 	};
-	target.addEventListener(type, onEvent);
+	for (const each of types) target.addEventListener(each, onEvent);
 	if (options.signal) {
 		abortListener = () => {
 			cancellation = abortError(options.signal);
@@ -365,6 +416,13 @@ export async function confirmStableNativeEvent<T>(
 		};
 		options.signal.addEventListener('abort', abortListener, { once: true });
 	}
+	// A caller proving its own write is looking at a value that is already in
+	// place. Waiting for the next event would then cost the full timeout: PiP and
+	// playback both settle their event *before* their Promise resolves, so the
+	// proof is always attached after the announcement it would be waiting for.
+	// When the value is not there yet (a page controller that applies later),
+	// nothing starts and the event — or the deadline read — decides.
+	if (nativeValuesMatch(expected, read(), tolerance)) onEvent();
 	timeoutId = setTimeout(
 		() => finish(nativeValuesMatch(expected, read(), tolerance)),
 		timeoutMs,
@@ -375,7 +433,7 @@ export async function confirmStableNativeEvent<T>(
 		if (cancellation) throw cancellation;
 		return { actual: read(), matched };
 	} finally {
-		target.removeEventListener(type, onEvent);
+		for (const each of types) target.removeEventListener(each, onEvent);
 		if (quietTimer !== null) clearTimeout(quietTimer);
 		if (timeoutId !== null) clearTimeout(timeoutId);
 		if (options.signal && abortListener) options.signal.removeEventListener('abort', abortListener);

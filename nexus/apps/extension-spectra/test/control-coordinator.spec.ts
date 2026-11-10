@@ -10,6 +10,7 @@ import type {
 	ControlReadRequest,
 	ControlStrategy,
 	ControlSubmitRequest,
+	AudioSessionSnapshot,
 	MediaObservationStamp,
 	MediaTarget,
 } from '@nexus/contracts';
@@ -17,24 +18,35 @@ import {
 	SPECTRA_CONTENT_BOOTSTRAP_REVISION,
 	SPECTRA_CONTENT_RUNTIME_REVISION,
 	isCaptureAdmission,
+	createSpectraRequest,
+	DEFAULT_AUDIO_CONFIG,
 } from '@nexus/contracts';
 import {
 	acquirePopupVisualizerSource,
 	controlCoordinatorTestApi,
 	getControlViewSnapshot,
+	initializeControlCoordinator,
+	observeStoppedAudioOutput,
+	submitPopupControlBatch,
 } from '../src/background/control-coordinator';
 import { readSpectraTabPassively } from '../src/background/spectra-tab-client';
 import { hasRuntimeLease, MEDIA_INTENT_RUNTIME_CAPABILITY, retainMediaIntentRuntimeLease } from '../src/background/runtime-loader';
 import type { ExtensionInvocationContext } from '../src/background/extension-invocation';
 import { resetBadgeUsageForTests } from '../src/background/badge-usage';
+import { resetPaintedBadgesForTests, markBadgeUsedForTab } from '../src/background/handlers/badge';
 import { badgeState } from '../src/background/state';
 import {
 	consumeCaptureAdmission,
 	revokeCaptureAdmission,
 } from '../src/background/capture-admission';
 import { createCaptureAdmission } from './helpers/capture-admission';
+import { forgetAudioSession, getAudioSession } from '../src/background/audio-session-store';
 
 interface Harness {
+	historyListener?: (details: { tabId: number; frameId: number; documentId: string; url: string }) => void;
+	fragmentListener?: Harness['historyListener'];
+	committedListener?: Harness['historyListener'];
+	controlListener?: (message: unknown, sender: chrome.runtime.MessageSender, respond: (value: unknown) => void) => unknown;
 	documentId: string;
 	url: string;
 	activeTabId: number;
@@ -103,6 +115,7 @@ function installHarness(): Harness {
 			},
 		},
 		runtime: {
+			onMessage: { addListener: (listener: NonNullable<Harness['controlListener']>) => { harness.controlListener = listener; } },
 			id: 'spectra-test',
 			getURL: (path: string) => `chrome-extension://spectra-test/${path}`,
 			openOptionsPage: async () => undefined,
@@ -112,6 +125,9 @@ function installHarness(): Harness {
 			},
 		},
 		webNavigation: {
+			onCommitted: { addListener: (listener: Harness['committedListener']) => { harness.committedListener = listener; } },
+			onHistoryStateUpdated: { addListener: (listener: Harness['historyListener']) => { harness.historyListener = listener; } },
+			onReferenceFragmentUpdated: { addListener: (listener: Harness['fragmentListener']) => { harness.fragmentListener = listener; } },
 			getFrame: async () => ({ documentId: harness.documentId, url: harness.url }),
 		},
 		scripting: {
@@ -154,6 +170,8 @@ function installHarness(): Harness {
 			},
 		},
 		tabs: {
+			onRemoved: { addListener: () => undefined },
+			onUpdated: { addListener: () => undefined },
 			query: async () => [{ id: harness.activeTabId, active: true }],
 			create: async (properties: chrome.tabs.CreateProperties) => {
 				harness.createdTabs.push(properties);
@@ -167,6 +185,7 @@ function installHarness(): Harness {
 			get: async () => ({ id: 7, windowId: 3, index: 4, pinned, mutedInfo: { muted } }),
 			sendMessage: async (_tabId: number, message: { type: string; payload: unknown }) => {
 				harness.contentMessages.push(message);
+				if (message.type === 'spectra.navigation.changed') return undefined;
 				if (message.type === 'spectra.content.runtime.status') {
 					return {
 						ok: true,
@@ -293,7 +312,7 @@ function releasedPatchAck(intent: ControlIntent): ControlApplyAck {
 	return acknowledgement;
 }
 
-function actualReadAck(payload: ControlReadRequest, target: ControlApplyAck['target'], overrides: Partial<Record<ControlField, unknown>> = {}): unknown {
+function actualReadAck(payload: ControlReadRequest, target: ControlApplyAck['target'], overrides: Partial<Record<ControlField, unknown>> = {}) {
 	const defaults: Record<ControlField, unknown> = {
 		audioEnabled: false,
 		volumeBase: 72,
@@ -408,8 +427,10 @@ function speedErrorAck(intent: ControlIntent, code: string): ControlApplyAck {
 
 afterEach(async () => {
 	await controlCoordinatorTestApi.reset();
+	await forgetAudioSession(7);
 	badgeState.clear();
 	resetBadgeUsageForTests();
+	resetPaintedBadgesForTests();
 	Reflect.deleteProperty(globalThis, 'chrome');
 });
 
@@ -417,9 +438,11 @@ describe('authoritative control coordinator', () => {
 	const sample = (revision: number, selection = 1, epoch = 1): MediaObservationStamp => ({ owner: `media-owner:${epoch}`, epoch, selection, revision });
 	const media = (harness: Harness, id = 'current'): MediaTarget => ({ frameId: 0, documentId: harness.documentId,
 		mediaId: `media:${id}`, sourceRevision: 0, kind: 'video' });
-	const observe = (target: MediaTarget, patch: ControlSubmitRequest['patch'], mediaObservation: MediaObservationStamp) => controlCoordinatorTestApi.submit({
+	const observe = (target: MediaTarget, patch: ControlSubmitRequest['patch'], mediaObservation: MediaObservationStamp,
+		live?: boolean) => controlCoordinatorTestApi.submit({
 		tabId: 7, source: 'page', requestedCoverage: 'active-target', target, patch, mediaObservation,
 		observedStrategies: Object.fromEntries(Object.keys(patch ?? {}).map((field) => [field, 'dom-native'])),
+		...(typeof live === 'boolean' ? { live } : {}),
 	});
 
 	test('admits fresh playback while speed waits without advancing the control revision or losing its ACK', async () => {
@@ -443,6 +466,58 @@ describe('authoritative control coordinator', () => {
 		expect(current).toMatchObject({ revision: 1, mediaObservation: sample(3), fields: { playing: { actual: false }, speed: { actual: 2 } } });
 		await observe(target, { playing: true }, sample(1));
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.playing?.actual).toBe(false);
+	});
+
+	test('orders prospective routes with physical reads and publishes an explicit null without changing volume', async () => {
+		const harness = installHarness();
+		const target = media(harness);
+		const read = async (stamp: MediaObservationStamp, route: 'capture' | 'media-webaudio' | null) => {
+			harness.contentResponder = ({ payload }) => {
+				const request = payload as ControlReadRequest;
+				const response = actualReadAck(request, target, { volumeBase: 72, playing: true }) as { ok: true; data: object };
+				return { ...response, data: { ...response.data, mediaObservation: stamp,
+					...(request.fields.includes('volumeBase') ? { prospectiveBoostRoute: route } : {}) } };
+			};
+			return getControlViewSnapshot(7);
+		};
+		expect((await read(sample(10), 'capture'))?.prospectiveBoostRoute).toBe('capture');
+		const events = harness.snapshotEvents;
+		expect((await read(sample(11), null))?.prospectiveBoostRoute).toBeNull();
+		expect(harness.snapshotEvents).toBeGreaterThan(events);
+		expect([...harness.storage.values()].some((value) => typeof value === 'object' && value !== null
+			&& 'prospectiveBoostRoute' in value && value.prospectiveBoostRoute === null)).toBe(true);
+		// Late same-source reads and an unknown owner in the current epoch must
+		// not resurrect the previous policy candidate, even at a larger revision.
+		expect((await read(sample(10), 'capture'))?.prospectiveBoostRoute).toBeNull();
+		expect((await read({ ...sample(99), owner: 'unknown-owner' }, 'capture'))?.prospectiveBoostRoute).toBeNull();
+		expect((await read(sample(12), 'media-webaudio'))?.prospectiveBoostRoute).toBe('media-webaudio');
+	});
+
+	test('clears a prospective route on source or owner replacement before a new route is proved', async () => {
+		const harness = installHarness();
+		const target = media(harness);
+		harness.contentResponder = ({ payload }) => {
+			const request = payload as ControlReadRequest;
+			const response = actualReadAck(request, target, { playing: true }) as { ok: true; data: object };
+			return { ...response, data: { ...response.data, mediaObservation: sample(10),
+				...(request.fields.includes('volumeBase') ? { prospectiveBoostRoute: 'capture' } : {}) } };
+		};
+		expect((await getControlViewSnapshot(7))?.prospectiveBoostRoute).toBe('capture');
+		const next = { ...target, sourceRevision: target.sourceRevision + 1 };
+		await observe(next, { playing: true }, sample(11, 2));
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.prospectiveBoostRoute).toBeUndefined();
+		// A late passive response cannot reselect the retired source or its route.
+		expect((await getControlViewSnapshot(7))?.activeMedia).toEqual(next);
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.prospectiveBoostRoute).toBeUndefined();
+		harness.contentResponder = ({ payload }) => {
+			const request = payload as ControlReadRequest;
+			const response = actualReadAck(request, next, { playing: true }) as { ok: true; data: object };
+			return { ...response, data: { ...response.data, mediaObservation: sample(12, 2),
+				...(request.fields.includes('volumeBase') ? { prospectiveBoostRoute: 'capture' } : {}) } };
+		};
+		expect((await getControlViewSnapshot(7))?.prospectiveBoostRoute).toBe('capture');
+		await observe(next, { playing: true }, sample(1, 0, 2));
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.prospectiveBoostRoute).toBeUndefined();
 	});
 
 	test('admits an in-flight partial page sample after a newer playback sample without regressing either field clock', async () => {
@@ -494,8 +569,14 @@ describe('authoritative control coordinator', () => {
 		const target = media(harness);
 		await observe(target, { volumeBase: 100, mediaMuted: false }, sample(1));
 		let revision = 1;
-		harness.contentResponder = ({ payload }) => {
+		let physicalVolume = 100;
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				const response = actualReadAck(payload as ControlReadRequest, target, { volumeBase: physicalVolume });
+				return { ...response, data: { ...response.data, mediaObservation: sample(++revision) } };
+			}
 			const intent = payload as ControlIntent;
+			if (typeof intent.patch.volumeBase === 'number') physicalVolume = intent.patch.volumeBase;
 			return { ok: true, data: { ...releasedPatchAck(intent), target, mediaObservation: sample(++revision),
 				fields: appliedFields(intent, (field) => field === 'volumeBase' ? 'dom-native' : 'observe') } };
 		};
@@ -617,6 +698,69 @@ describe('authoritative control coordinator', () => {
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.playing?.actual).toBe(false);
 	});
 
+	test('hands ordered observation to bootstrap and back without reviving retired targets or requiring Popup', async () => {
+		const harness = installHarness();
+		let badge = '';
+		Object.assign(chrome.action, {
+			setBadgeText: async ({ text }: { text: string }) => { badge = text; },
+			setBadgeBackgroundColor: async () => undefined, setBadgeTextColor: async () => undefined,
+		});
+		await markBadgeUsedForTab(7);
+		const original = media(harness, 'first-runtime');
+		await observe(original, { volumeBase: 80, mediaMuted: false, playing: true }, sample(100), true);
+		const passive = (volumeBase: number, revision: number) => controlCoordinatorTestApi.submit({
+			tabId: 7, observationDocumentId: harness.documentId, source: 'page', target: null,
+			requestedCoverage: 'active-target', patch: { volumeBase, mediaMuted: false, speed: 1.5, preservePitch: true },
+			observedStrategies: { volumeBase: 'dom-native', mediaMuted: 'dom-native', speed: 'dom-native', preservePitch: 'dom-native' },
+			mediaObservation: { owner: 'bootstrap', epoch: 2, selection: revision, revision },
+		});
+		await passive(55, 1);
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badge).toBe('55');
+		const handedOff = await controlCoordinatorTestApi.getSnapshot(7);
+		expect(handedOff).toMatchObject({ activeMedia: null, activeVideo: null,
+			fields: { volumeBase: { actual: 55, controlled: false }, speed: { actual: 1.5, controlled: false } } });
+		expect(handedOff?.live).toBeUndefined();
+		expect(handedOff?.prospectiveBoostRoute).toBeUndefined();
+		await observe(original, { volumeBase: 90, mediaMuted: false }, sample(999));
+		await passive(33, 2);
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badge).toBe('33');
+		const replacement = media(harness, 'next-runtime');
+		await observe(replacement, { volumeBase: 60, mediaMuted: false }, sample(1, 1, 3));
+		await passive(10, 100);
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badge).toBe('60');
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.activeMedia).toEqual(replacement);
+		expect(harness.contentMessages).toHaveLength(0);
+		expect(harness.storage.get('tab_session_7')).toMatchObject({ patch: { volumeBase: 60 }, portablePatch: {} });
+	});
+
+	test('does not persist a page observation if resource lookup outlives same-document navigation', async () => {
+		const harness = installHarness();
+		const target = media(harness);
+		await observe(target, { volumeBase: 80, mediaMuted: false }, sample(1));
+		await controlCoordinatorTestApi.flushSessionProjections();
+		const entered = deferred<void>(); const release = deferred<void>();
+		const originalGet = chrome.storage.session.get;
+		let held = false;
+		chrome.storage.session.get = (async (...args: Parameters<typeof originalGet>) => {
+			const result = await Reflect.apply(originalGet, chrome.storage.session, args);
+			if (!held && args[0] === 'tab_session_7') {
+				held = true; entered.resolve(); await release.promise;
+			}
+			return result;
+		}) as typeof originalGet;
+		await observe(target, { volumeBase: 55, mediaMuted: false }, sample(2));
+		await entered.promise;
+		harness.url = 'https://media.example/next-resource';
+		const navigation = controlCoordinatorTestApi.invalidateNavigation(7, true);
+		release.resolve();
+		await navigation;
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(harness.storage.get('tab_session_7')).toMatchObject({ patch: { volumeBase: 80 }, portablePatch: {} });
+	});
+
 	test('wakes only the current same-document Content after the navigation fence is settled', async () => {
 		const harness = installHarness();
 		harness.contentResponder = ({ payload }) => ({ ok: true, data: appliedPatchAck(payload as ControlIntent, () => 'dom-native') });
@@ -733,7 +877,9 @@ describe('authoritative control coordinator', () => {
 
 	test('keeps playback unknown when a current passive read cannot confirm an old play ACK', async () => {
 		const harness = installHarness();
-		harness.contentResponder = ({ payload }) => ({ ok: true, data: appliedPatchAck(payload as ControlIntent, () => 'dom-native') });
+		harness.contentResponder = ({ type, payload }) => type === 'spectra.control.actual.read'
+			? actualReadAck(payload as ControlReadRequest, null, { playing: false, volumeBase: 72 })
+			: { ok: true, data: appliedPatchAck(payload as ControlIntent, () => 'dom-native') };
 		await controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', requestedCoverage: 'active-target',
 			target: null, patch: { playing: true, volumeBase: 80 } }, invocation(harness, 'popup'));
 		harness.contentResponder = () => ({ ok: false, error: { code: 'capability-unavailable', message: 'No media', retryable: true } });
@@ -825,35 +971,69 @@ describe('authoritative control coordinator', () => {
 			fullRequest('popup', 2),
 			invocation(harness, 'popup'),
 		);
+		// A chrome.commands shortcut is a real invocation, so Chrome has already
+		// granted this tab to the extension by the time the capture starts.
 		await controlCoordinatorTestApi.submitInvoked(
 			fullRequest('hotkey', 3),
+			invocation(harness, 'chrome-command'),
+		);
+		// A validated page shortcut can use an earlier extension invocation grant.
+		// Actual tabCapture acquisition still checks Chrome's permission.
+		await controlCoordinatorTestApi.submitInvoked(
+			fullRequest('hotkey', 4),
 			invocation(harness, 'site-page'),
 		);
 		const untrustedAdmission = createCaptureAdmission();
 		try {
 			await controlCoordinatorTestApi.submit({
-				...fullRequest('hotkey', 4),
+				...fullRequest('hotkey', 5),
 				captureAdmission: untrustedAdmission,
 			});
 		} finally {
 			revokeCaptureAdmission(untrustedAdmission);
 		}
-		await controlCoordinatorTestApi.submit(fullRequest('remote', 5));
-		await controlCoordinatorTestApi.submit(fullRequest('restore', 6));
+		await controlCoordinatorTestApi.submit(fullRequest('remote', 6));
+		await controlCoordinatorTestApi.submit(fullRequest('restore', 7));
 		const alternateTarget = invocation(harness, 'chrome-command', 8);
 		harness.activeTabId = 7;
 		await controlCoordinatorTestApi.submitInvoked(
-			fullRequest('hotkey', 7),
+			fullRequest('hotkey', 8),
 			alternateTarget,
 		);
 
 		const admissions = intents.map(({ captureAdmission }) => captureAdmission);
-		expect(admissions.slice(0, 2).every((admission) => (
+		expect(admissions.slice(0, 3).every((admission) => (
 			isCaptureAdmission(admission)
 			&& admission.kind === 'capture-start'
 			&& admission.document.documentId === harness.documentId
 		))).toBe(true);
-		expect(admissions.slice(2)).toEqual([undefined, undefined, undefined, undefined]);
+		expect(admissions.slice(3)).toEqual([undefined, undefined, undefined, undefined]);
+	});
+
+	test('retains validated page shortcut admission through the runtime handler and rejects a child frame', async () => {
+		const harness = installHarness();
+		initializeControlCoordinator();
+		const listener = requireValue(harness.controlListener);
+		const intents: ControlIntent[] = [];
+		harness.contentResponder = ({ payload }) => {
+			const intent = payload as ControlIntent;
+			intents.push(intent);
+			return { ok: true, data: captureProcessorAck(harness, intent) };
+		};
+		const request = createSpectraRequest('spectra.control.intent.submit', {
+			tabId: 7, source: 'hotkey', requestedCoverage: 'full', target: null, patch: { boost: 1.1 },
+		});
+		const sender: chrome.runtime.MessageSender = {
+			id: 'spectra-test', frameId: 0, documentId: harness.documentId,
+			url: harness.url, tab: { id: 7, active: true, url: harness.url } as chrome.tabs.Tab,
+		};
+		const rejected = await new Promise<unknown>((resolve) => listener(request, { ...sender, frameId: 1 }, resolve));
+		expect(rejected).toMatchObject({ ok: false, error: { code: 'forbidden' } });
+		expect(intents).toHaveLength(0);
+		const accepted = await new Promise<unknown>((resolve) => listener(request, sender, resolve));
+		expect(accepted).toMatchObject({ ok: true, data: { fields: { boost: { actual: 1.1, phase: 'applied', strategy: 'capture' } } } });
+		expect(intents).toHaveLength(1);
+		expect(isCaptureAdmission(intents[0]?.captureAdmission)).toBe(true);
 	});
 
 	test('recognizes only the extension Popup document as a Popup invocation sender', () => {
@@ -917,15 +1097,17 @@ describe('authoritative control coordinator', () => {
 	test('carries the same admission through an invoked effective-volume transaction only', async () => {
 		const harness = installHarness();
 		const intents: ControlIntent[] = [];
+		const physical: Partial<Record<ControlField, unknown>> = {};
 		harness.contentResponder = ({ type, payload }) => {
 			if (type === 'spectra.control.page.scale.probe') {
 				return { ok: true, data: { supported: false } };
 			}
 			if (type === 'spectra.control.actual.read') {
-				return actualReadAck(payload as ControlReadRequest, null);
+				return actualReadAck(payload as ControlReadRequest, null, physical);
 			}
 			const intent = payload as ControlIntent;
 			intents.push(intent);
+			Object.assign(physical, intent.patch);
 			return {
 				ok: true,
 				data: intent.requestedCoverage === 'full'
@@ -1070,9 +1252,8 @@ describe('authoritative control coordinator', () => {
 		while (!harness.contentIntent || !harness.resolveContent) await Promise.resolve();
 		const staleIntent = harness.contentIntent;
 
-		// History/hash navigation keeps the URL and documentId stable. The
-		// synchronous fence must still invalidate an ACK that is awaiting the
-		// serialized lifecycle transition.
+		// The primitive represents an already confirmed route change. Its
+		// synchronous fence invalidates an ACK before queued publication.
 		const invalidation = controlCoordinatorTestApi.invalidateNavigation(7, true);
 		harness.resolveContent({ ok: true, data: appliedSpeedAck(staleIntent) });
 
@@ -1088,6 +1269,64 @@ describe('authoritative control coordinator', () => {
 		});
 		expect(carried?.fields.tabPinned).toMatchObject({ actual: true, phase: 'applied' });
 		expect(carried?.fields.speed).toBeUndefined();
+	});
+
+	test.each(['same-history', 'same-fragment', 'path', 'query', 'hash', 'new-document', 'subframe'] as const)('fences real navigation but preserves a same-URL announcement (%s)', async (mode) => {
+		const harness = installHarness();
+		initializeControlCoordinator();
+		const first = await controlCoordinatorTestApi.submit(request({ tabPinned: true }));
+		const pending = controlCoordinatorTestApi.submit(request({ speed: 1.5 }));
+		while (!harness.contentIntent || !harness.resolveContent) await Promise.resolve();
+		if (mode === 'path') harness.url = 'https://media.example/two';
+		if (mode === 'query') harness.url += '?next=1';
+		if (mode === 'hash') harness.url += '#next';
+		if (mode === 'new-document') harness.documentId = 'document-2';
+		const listener = mode === 'new-document' ? harness.committedListener
+			: mode === 'same-fragment' || mode === 'hash' ? harness.fragmentListener : harness.historyListener;
+		requireValue(listener)({ tabId: 7, frameId: mode === 'subframe' ? 2 : 0, documentId: harness.documentId, url: harness.url });
+		harness.resolveContent({ ok: true, data: appliedSpeedAck(harness.contentIntent) });
+		if (mode.startsWith('same-') || mode === 'subframe') {
+			const ack = await pending;
+			expect(ack.generation).toBe(first.generation);
+			expect(ack.fields.speed?.actual).toBe(1.5);
+		} else await expect(pending).rejects.toThrow(/navigation|document or revision/u);
+	});
+
+	test('does not mistake a rapid A to B to A route return for an unchanged document', async () => {
+		const harness = installHarness();
+		initializeControlCoordinator();
+		await controlCoordinatorTestApi.submit(request({ tabPinned: true }));
+		const pending = controlCoordinatorTestApi.submit(request({ speed: 1.5 }));
+		while (!harness.contentIntent || !harness.resolveContent) await Promise.resolve();
+		const firstUrl = harness.url;
+		for (const url of ['https://media.example/two', 'https://media.example/two', firstUrl]) {
+			harness.url = url;
+			requireValue(harness.historyListener)({ tabId: 7, frameId: 0, documentId: harness.documentId, url });
+		}
+		harness.resolveContent({ ok: true, data: appliedSpeedAck(harness.contentIntent) });
+		await expect(pending).rejects.toThrow(/navigation|document or revision/u);
+	});
+
+	test('a late frame read cannot roll the observed route back before a duplicate history event', async () => {
+		const harness = installHarness();
+		initializeControlCoordinator();
+		await controlCoordinatorTestApi.submit(request({ tabPinned: true }));
+		const original = chrome.webNavigation.getFrame;
+		const oldFrame = { documentId: harness.documentId, url: harness.url };
+		let release!: (frame: typeof oldFrame) => void;
+		chrome.webNavigation.getFrame = (() => new Promise(resolve => { release = resolve; })) as typeof original;
+		const oldRead = controlCoordinatorTestApi.getSnapshot(7);
+		while (!release) await Promise.resolve();
+		harness.url = 'https://media.example/two';
+		requireValue(harness.historyListener)({ tabId: 7, frameId: 0, documentId: harness.documentId, url: harness.url });
+		chrome.webNavigation.getFrame = original;
+		release(oldFrame);
+		await oldRead;
+		const pending = controlCoordinatorTestApi.submit(request({ speed: 1.5 }));
+		while (!harness.contentIntent || !harness.resolveContent) await Promise.resolve();
+		requireValue(harness.historyListener)({ tabId: 7, frameId: 0, documentId: harness.documentId, url: harness.url });
+		harness.resolveContent({ ok: true, data: appliedSpeedAck(harness.contentIntent) });
+		expect((await pending).fields.speed?.actual).toBe(1.5);
 	});
 
 	test('rolls back a snapshot that becomes fenced during persistence', async () => {
@@ -1192,10 +1431,142 @@ describe('authoritative control coordinator', () => {
 		});
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.mediaMuted?.actual).toBe(false);
 		await controlCoordinatorTestApi.flushSessionProjections();
+		// The row records what this resource actually does, including the page's
+		// own mute; the portable row stays empty. Replaying that mute into a later
+		// document is what turns an observation into a preference, and that is
+		// decided when the row is rebound, not when it is written.
 		expect(harness.storage.get('tab_session_7')).toMatchObject({
 			patch: { volumeBase: 40, mediaMuted: false },
 			portablePatch: {},
 		});
+	});
+
+	test('keeps a page-observed mute out of the portable row when a volume gesture is acknowledged', async () => {
+		// Measured on huya: the page mutes its broadcast element at volume zero
+		// while the pre-roll runs. The resource row may record that fact, but the
+		// gesture must not promote it: only the field the extension acknowledged
+		// becomes origin-portable, so the next exact-resource reload cannot replay
+		// a mute nobody asked for.
+		const harness = installHarness();
+		harness.contentResponder = ({ payload }) => ({
+			ok: true,
+			data: {
+				...appliedPatchAck(payload as ControlIntent, () => 'dom-native'),
+				mediaObservation: sample(2),
+			},
+		});
+		const target = media(harness);
+		await observe(target, { volumeBase: 0, mediaMuted: true }, sample(1));
+
+		await controlCoordinatorTestApi.submitInvoked({
+			tabId: 7,
+			source: 'popup',
+			requestedCoverage: 'active-target',
+			target,
+			patch: { volumeBase: 37 },
+		}, invocation(harness));
+		await controlCoordinatorTestApi.flushSessionProjections();
+		const row = harness.storage.get('tab_session_7') as {
+			patch?: Record<string, unknown>;
+			portablePatch?: Record<string, unknown>;
+		};
+		expect(row.patch).toMatchObject({ volumeBase: 37, mediaMuted: true });
+		expect(row.portablePatch).toMatchObject({ volumeBase: 37 });
+		expect(row.portablePatch).not.toHaveProperty('mediaMuted');
+	});
+
+	test('releases a page-observed mute as part of the volume gesture that follows it', async () => {
+		// A tab that starts muted — autoplay policy on a fresh profile, a player
+		// parked at zero under a pre-roll — answers a volume gesture with a number
+		// nobody can hear. The level the viewer asks for is a level they want to
+		// hear, so the same transaction has to release the mute.
+		const harness = installHarness();
+		const target = media(harness);
+		const intents: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') return actualReadAck(payload as ControlReadRequest, target,
+				{ volumeBase: 10, mediaMuted: true });
+			const intent = payload as ControlIntent;
+			intents.push(intent);
+			return {
+				ok: true,
+				data: {
+					...releasedPatchAck(intent),
+					target,
+					mediaObservation: sample(2),
+					fields: appliedFields(intent, (field) => (
+						field === 'volumeBase' || field === 'mediaMuted' ? 'dom-native' : 'observe'
+					)),
+				},
+			};
+		};
+		await observe(target, { volumeBase: 10, mediaMuted: true }, sample(1));
+
+		const ack = await controlCoordinatorTestApi.submitOperation({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 45 },
+		});
+
+		expect(intents.some((intent) => intent.patch?.volumeBase === 45
+			&& intent.patch.mediaMuted === false)).toBe(true);
+		expect(ack.fields.mediaMuted).toMatchObject({ actual: false });
+		expect(ack.audioVolume).toMatchObject({ effectiveVolume: 45, volumeState: 'native' });
+	});
+
+	test.each(['operation', 'batch'])('keeps refused mute and successful volume with failure feedback (%s)', async (surface) => {
+		// The browser owns the unmute admission. Content refuses only that field;
+		// failing the whole
+		// gesture would throw away the volume write that did land, and claiming
+		// the unmute would acknowledge a sound nobody hears.
+		const harness = installHarness();
+		const target = media(harness);
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') return actualReadAck(payload as ControlReadRequest, target,
+				{ volumeBase: 10, mediaMuted: true });
+			const intent = payload as ControlIntent;
+			const ack = releasedPatchAck(intent);
+			const fields = appliedFields(intent, (field) => (
+				field === 'volumeBase' || field === 'mediaMuted' ? 'dom-native' : 'observe'
+			));
+			if (intent.patch.mediaMuted === false) {
+				fields.mediaMuted = {
+					desired: false,
+					actual: null,
+					revision: intent.baseRevision + 1,
+					phase: 'error',
+					strategy: 'dom-native',
+					coverage: 'active-target',
+					controlled: false,
+					intentId: intent.intentId,
+					lastError: {
+						code: 'user-activation-required',
+						message: 'Interact with the document before unmuting its media',
+						retryable: false,
+					},
+				};
+			}
+			return { ok: true, data: { ...ack, target, fields, mediaObservation: sample(2) } };
+		};
+		await observe(target, { volumeBase: 10, mediaMuted: true }, sample(1));
+
+		const batch = surface === 'batch' ? await submitPopupControlBatch({
+			tabId: 7, documentId: harness.documentId, effectiveVolume: 45, groups: [],
+		}) : null;
+		const ack = batch ? requireValue(batch.volumeAck, 'Volume ACK is required') : await controlCoordinatorTestApi.submitOperation({
+			tabId: 7,
+			source: 'popup',
+			target,
+			operation: 'effective-volume',
+			payload: { operation: 'set', value: 45 },
+		});
+
+		expect(ack.fields.volumeBase).toMatchObject({ actual: 45, phase: 'applied' });
+		expect(ack.fields.mediaMuted?.actual).not.toBe(false);
+		expect(ack.audioVolume?.volumeState).toBe('silent');
+		if (batch) expect(batch.error).toMatchObject({ code: 'user-activation-required', retryable: false });
 	});
 
 	test('binds a targetless bootstrap observation to its sending document', async () => {
@@ -1453,13 +1824,11 @@ describe('authoritative control coordinator', () => {
 				return { ok: true, data: { supported: false } };
 			}
 			if (type === 'spectra.control.actual.read') {
-				const acknowledgement = actualReadAck(
+				return actualReadAck(
 					payload as ControlReadRequest,
 					target,
-				) as { ok: true; data: { patch: Record<string, unknown> } };
-				acknowledgement.data.patch.volumeBase = 100;
-				acknowledgement.data.patch.boost = 1;
-				return acknowledgement;
+					{ volumeBase: 100, boost: 1 },
+				);
 			}
 			const intent = payload as ControlIntent;
 			if (intent.requestedCoverage === 'active-target') {
@@ -1495,6 +1864,10 @@ describe('authoritative control coordinator', () => {
 
 	test('answers commits before their durable session projections and preserves per-tab write order', async () => {
 		const harness = installHarness();
+		harness.contentResponder = ({ payload }) => ({
+			ok: true,
+			data: appliedPatchAck(payload as ControlIntent, () => 'dom-native'),
+		});
 		// Gate the first tab_session projection write (session storage) so both
 		// commits can be acknowledged while the first projection is still pending.
 		const gate = deferred<void>();
@@ -1510,29 +1883,16 @@ describe('authoritative control coordinator', () => {
 			}
 			await originalSessionSet(values);
 		};
-		const target = {
-			frameId: 0,
-			documentId: harness.documentId,
-			mediaId: 'media:order',
-			sourceRevision: 0,
-			kind: 'video' as const,
-		};
-		const first = controlCoordinatorTestApi.submit({
+		const target = media(harness);
+		const submit = (volumeBase: number) => controlCoordinatorTestApi.submitInvoked({
 			tabId: 7,
-			source: 'page',
+			source: 'popup',
 			requestedCoverage: 'active-target',
 			target,
-			patch: { volumeBase: 60 },
-			observedStrategies: { volumeBase: 'page-native' },
-		});
-		const second = controlCoordinatorTestApi.submit({
-			tabId: 7,
-			source: 'page',
-			requestedCoverage: 'active-target',
-			target,
-			patch: { volumeBase: 80 },
-			observedStrategies: { volumeBase: 'page-native' },
-		});
+			patch: { volumeBase },
+		}, invocation(harness));
+		const first = submit(60);
+		const second = submit(80);
 		const [firstAck, secondAck] = await Promise.all([first, second]);
 		// Both ACKs resolved without waiting for the detached session writes.
 		expect(firstAck.fields.volumeBase.actual).toBe(60);
@@ -1565,13 +1925,11 @@ describe('authoritative control coordinator', () => {
 				return { ok: true, data: { supported: false } };
 			}
 			if (type === 'spectra.control.actual.read') {
-				const acknowledgement = actualReadAck(
+				return actualReadAck(
 					payload as ControlReadRequest,
 					target,
-				) as { ok: true; data: { patch: Record<string, unknown> } };
-				acknowledgement.data.patch.volumeBase = 100;
-				acknowledgement.data.patch.boost = 1;
-				return acknowledgement;
+					{ volumeBase: 100, boost: 1 },
+				);
 			}
 			const intent = payload as ControlIntent;
 			if (intent.requestedCoverage === 'active-target') {
@@ -1723,12 +2081,14 @@ describe('authoritative control coordinator', () => {
 			kind: 'audio' as const,
 		};
 		const intents: ControlIntent[] = [];
+		const physical: Partial<Record<ControlField, unknown>> = {};
 		harness.contentResponder = ({ type, payload }) => {
 			if (type === 'spectra.control.actual.read') {
-				return actualReadAck(payload as ControlReadRequest, target);
+				return actualReadAck(payload as ControlReadRequest, target, physical);
 			}
 			const intent = payload as ControlIntent;
 			intents.push(intent);
+			Object.assign(physical, intent.patch);
 			return {
 				ok: true,
 				data: intent.requestedCoverage === 'full'
@@ -1869,6 +2229,177 @@ describe('authoritative control coordinator', () => {
 		expect(badgeText).toBe('63');
 	});
 
+	test('projects an admitted page volume observation onto an already-lit badge', async () => {
+		const harness = installHarness();
+		let badgeText = '';
+		Object.assign(chrome.action, {
+			setBadgeText: async ({ text }: { text: string }) => { badgeText = text; },
+			setBadgeBackgroundColor: async () => undefined,
+			setBadgeTextColor: async () => undefined,
+		});
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, null);
+			}
+			if (type !== 'spectra.control.intent.execute') throw new Error(`Unexpected ${type}`);
+			const intent = payload as ControlIntent;
+			return {
+				ok: true,
+				data: appliedPatchAck(intent, (field) => field === 'boost' ? 'observe' : 'dom-native'),
+			};
+		};
+		const target = media(harness);
+
+		// One extension gesture lights the badge and makes it sticky.
+		await controlCoordinatorTestApi.submit(request({ volumeBase: 80 }));
+		await controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'popup',
+			requestedCoverage: 'full',
+			target: null,
+			patch: { boost: 1 },
+		});
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeText).toBe('80');
+
+		// A native page gesture is an admitted fact about the same tab. The badge is
+		// the projection of that fact, not of the last extension intent.
+		await observe(target, { volumeBase: 55, mediaMuted: false }, sample(2));
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeText).toBe('55');
+		// Repainting after a browser reset must use current actual, even though
+		// the durable user preference still describes the earlier 80 gesture.
+		await controlCoordinatorTestApi.reprojectBadgeForCurrentDocument(7);
+		expect(badgeText).toBe('55');
+	});
+
+	test('projects automatic restore onto an existing badge without promoting it to a preference', async () => {
+		const harness = installHarness();
+		let badgeText = '';
+		Object.assign(chrome.action, {
+			setBadgeText: async ({ text }: { text: string }) => { badgeText = text; },
+			setBadgeBackgroundColor: async () => undefined,
+			setBadgeTextColor: async () => undefined,
+		});
+		harness.contentResponder = ({ type, payload }) => type === 'spectra.control.actual.read'
+			? actualReadAck(payload as ControlReadRequest, null)
+			: { ok: true, data: appliedPatchAck(payload as ControlIntent, field => field === 'boost' ? 'observe' : 'dom-native') };
+		await controlCoordinatorTestApi.submit(request({ volumeBase: 80, mediaMuted: false, boost: 1 }));
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeText).toBe('80');
+		const preferences = [...harness.storage].filter(([key]) => key.includes('tab_session'));
+		expect(preferences.length).toBeGreaterThan(0);
+		await controlCoordinatorTestApi.submit({ ...request({ volumeBase: 40 }), source: 'restore' });
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeText).toBe('40');
+		expect([...harness.storage].filter(([key]) => key.includes('tab_session'))).toEqual(preferences);
+	});
+
+	test('follows a page-native volume after a worker restart forgot its in-memory badge', async () => {
+		const harness = installHarness();
+		let badgeText = '';
+		Object.assign(chrome.action, {
+			setBadgeText: async ({ text }: { text: string }) => { badgeText = text; },
+			setBadgeBackgroundColor: async () => undefined,
+			setBadgeTextColor: async () => undefined,
+		});
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, null);
+			}
+			if (type !== 'spectra.control.intent.execute') throw new Error(`Unexpected ${type}`);
+			const intent = payload as ControlIntent;
+			return {
+				ok: true,
+				data: appliedPatchAck(intent, (field) => field === 'boost' ? 'observe' : 'dom-native'),
+			};
+		};
+		const target = media(harness);
+
+		await controlCoordinatorTestApi.submit(request({ volumeBase: 80 }));
+		await controlCoordinatorTestApi.submit({
+			tabId: 7,
+			source: 'popup',
+			requestedCoverage: 'full',
+			target: null,
+			patch: { boost: 1 },
+		});
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeText).toBe('80');
+
+		// A service-worker restart loses every in-memory fact. Chrome keeps the
+		// tab-scoped Action projection and storage.session keeps the usage fact,
+		// so the badge is still on screen — only our memory of painting it is gone.
+		badgeState.clear();
+		resetPaintedBadgesForTests();
+		resetBadgeUsageForTests();
+
+		await observe(target, { volumeBase: 55, mediaMuted: false }, sample(2));
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeText).toBe('55');
+	});
+
+	test('multiplies a page-native volume by the multiplier this resource already acknowledged', async () => {
+		const harness = installHarness();
+		let badgeText = '';
+		Object.assign(chrome.action, {
+			setBadgeText: async ({ text }: { text: string }) => { badgeText = text; },
+			setBadgeBackgroundColor: async () => undefined,
+			setBadgeTextColor: async () => undefined,
+		});
+		harness.contentResponder = ({ type, payload }) => {
+			if (type !== 'spectra.control.intent.execute') throw new Error(`Unexpected ${type}`);
+			return { ok: true, data: appliedPatchAck(payload as ControlIntent, () => 'dom-native') };
+		};
+		const target = media(harness);
+		// The durable row is the only surviving witness of the acknowledged
+		// multiplier. This document's snapshot has no boost yet, so a projection
+		// built from the sample alone would paint the page's 0-100 level as if it
+		// were already the effective volume.
+		harness.storage.set('tab_session_7', {
+			version: 3,
+			identity: {
+				tabId: 7,
+				documentId: harness.documentId,
+				origin: 'https://media.example',
+				resourceUrl: harness.url,
+			},
+			patch: { volumeBase: 40, boost: 1.5 },
+			portablePatch: { volumeBase: 40, boost: 1.5 },
+			updatedAt: 1,
+		});
+		await markBadgeUsedForTab(7);
+
+		await observe(target, { volumeBase: 20 }, sample(2));
+		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeText).toBe('30');
+	});
+
+	test('leaves the badge of an untouched tab empty when the page changes its own volume', async () => {
+		const harness = installHarness();
+		let paints = 0;
+		Object.assign(chrome.action, {
+			setBadgeText: async () => { paints += 1; },
+			setBadgeBackgroundColor: async () => undefined,
+			setBadgeTextColor: async () => undefined,
+		});
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, null);
+			}
+			throw new Error(`Unexpected ${type}`);
+		};
+		const target = media(harness);
+
+		// No extension gesture has ever touched this tab, so there is nothing to
+		// refine: the "untouched page stays hidden" rule survives the new route.
+		await observe(target, { volumeBase: 42, mediaMuted: false }, sample(1));
+		await controlCoordinatorTestApi.flushSessionProjections();
+
+		expect(paints).toBe(0);
+		expect(badgeState.has(7)).toBe(false);
+	});
+
 	test.each([
 		['speed', { speed: 1.1 }, '42'],
 		['mute', { mediaMuted: true }, 'M'],
@@ -1934,7 +2465,7 @@ describe('authoritative control coordinator', () => {
 		expect(badgeText).toBe('');
 	});
 
-	test('turns an acknowledged repeated effective volume into zero Content IPC and zero storage writes', async () => {
+	test('confirms repeated effective volume with one physical read and no setters or storage writes', async () => {
 		const harness = installHarness();
 		const target = {
 			frameId: 0,
@@ -1949,6 +2480,7 @@ describe('authoritative control coordinator', () => {
 		};
 		await controlCoordinatorTestApi.targetChanged(7, target);
 		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') return actualReadAck(payload as ControlReadRequest, target);
 			if (type !== 'spectra.control.intent.execute') throw new Error(`Unexpected ${type}`);
 			return { ok: true, data: releasedPatchAck(payload as ControlIntent) };
 		};
@@ -1973,9 +2505,271 @@ describe('authoritative control coordinator', () => {
 
 		expect(ack.result).toEqual({ effectiveVolume: 72, volumeBase: 72, boost: 1 });
 		expect(ack.fields).toEqual({});
-		expect(harness.contentMessages).toHaveLength(0);
+		expect(harness.contentMessages).toHaveLength(1);
+		expect(harness.contentMessages[0]).toMatchObject({ type: 'spectra.control.actual.read', payload: {
+			fields: ['volumeBase', 'mediaMuted'], target,
+		} });
 		expect(harness.storageWrites).toBe(writes);
 		expect(harness.snapshotEvents).toBe(events);
+	});
+
+	test.each([['throw', 30], ['error', 30], ['error', 70]] as const)(
+		'a failed optional volume refresh still reaches the existing native writer (%s, volume %s)', async (failure, value) => {
+		const harness = installHarness();
+		const target = media(harness);
+		await observe(target, { volumeBase: 70, mediaMuted: false }, sample(1));
+		harness.contentResponder = ({ type, payload }) => type === 'spectra.control.actual.read'
+			? actualReadAck(payload as ControlReadRequest, target, { volumeBase: 70 })
+			: { ok: true, data: releasedPatchAck(payload as ControlIntent) };
+		await controlCoordinatorTestApi.submit({ tabId: 7, source: 'system', requestedCoverage: 'full',
+			target, patch: { boost: 1 } });
+		const writes: ControlIntent[] = [];
+		let physicalVolume = 42;
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				if (failure === 'throw') throw new Error('Optional live observation is unavailable');
+				return { ok: false, error: { code: 'read-unavailable', message: 'Optional live observation is unavailable', retryable: true } };
+			}
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			if (intent.patch.volumeBase !== undefined) physicalVolume = intent.patch.volumeBase;
+			return { ok: true, data: { ...appliedPatchAck(intent, () => 'dom-native'), mediaObservation: sample(2) } };
+		};
+		const ack = await controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value } });
+		expect(writes).toHaveLength(1);
+		expect(writes[0]).toMatchObject({ target, patch: { volumeBase: value } });
+		expect(physicalVolume).toBe(value);
+		expect(ack.fields.volumeBase).toMatchObject({ actual: value, phase: 'applied', strategy: 'dom-native' });
+	});
+
+	test.each([[20, 1], [50, 1], [20, 2], [50, 3]] as const)('continues one native volume gesture at %s through %s replacements without applying its delta twice', async (replacementVolume, replacements) => {
+		const harness = installHarness();
+		const original = media(harness);
+		const replacement = { ...original, sourceRevision: original.sourceRevision + replacements };
+		let selected = original;
+		let physicalVolume = 40;
+		const writes: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				return actualReadAck(payload as ControlReadRequest, selected, { volumeBase: physicalVolume });
+			}
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			if (writes.length <= replacements) {
+				selected = { ...original, sourceRevision: original.sourceRevision + writes.length };
+				physicalVolume = replacementVolume;
+				return { ok: false, error: { code: 'stale-media-source', message: 'Media source was retired', retryable: false } };
+			}
+			if (intent.patch.volumeBase !== undefined) physicalVolume = intent.patch.volumeBase;
+			return { ok: true, data: appliedPatchAck(intent, field => field === 'boost' ? 'media-webaudio' : 'dom-native') };
+		};
+		const ack = await controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'delta', value: 10 } });
+		expect(physicalVolume).toBe(50);
+		expect(ack.target).toEqual(replacement);
+		expect(ack.result).toMatchObject({ effectiveVolume: 50 });
+		expect(writes.filter(intent => intent.target?.sourceRevision === original.sourceRevision)).toHaveLength(1);
+		expect(writes[replacements]).toMatchObject({ target: replacement, patch: { volumeBase: 50 } });
+		expect(writes.filter(intent => intent.patch.volumeBase !== undefined).every(intent => intent.patch.volumeBase === 50)).toBe(true);
+		expect(await controlCoordinatorTestApi.getSnapshot(7)).toMatchObject({ activeMedia: replacement,
+			fields: { volumeBase: { actual: 50, controlled: true, phase: 'applied' } } });
+	});
+
+	test.each(['explicit', 'unchanged', 'repeated', 'document', 'generation', 'read-failed', 'replacement-capture', 'replacement-no-audio', 'replacement-boost'] as const)(
+		'native source recovery stays bounded and respects identity (%s)', async scenario => {
+		const harness = installHarness();
+		const original = media(harness);
+		let selected = original;
+		let reads = 0;
+		let navigation: Promise<void> | undefined;
+		const writes: ControlIntent[] = [];
+		harness.contentResponder = async ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				reads += 1;
+				if (scenario === 'read-failed' && reads > 1) throw new Error('Read unavailable');
+				const ack = actualReadAck(payload as ControlReadRequest, selected, { volumeBase: 40 });
+				if (reads > 1) {
+					if (scenario === 'replacement-capture') ack.data.observedStrategies.volumeBase = 'capture';
+					if (scenario === 'replacement-no-audio') ack.data.nativeAudioAbsent = true;
+					if (scenario === 'replacement-boost') ack.data.patch.boost = 2;
+				}
+				return ack;
+			}
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			if (scenario !== 'unchanged') selected = { ...selected, sourceRevision: selected.sourceRevision + 1 };
+			if (scenario === 'document') harness.documentId = 'document-next';
+			if (scenario === 'generation') navigation = controlCoordinatorTestApi.beginDocumentNavigation(7);
+			return { ok: false, error: { code: 'stale-media-source', message: 'Media source was retired', retryable: false } };
+		};
+		await expect(controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'popup',
+			target: scenario === 'explicit' ? original : null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 50 },
+		})).rejects.toThrow();
+		expect(writes).toHaveLength(scenario === 'repeated' ? 4 : 1);
+		expect(writes.every(intent => intent.patch.volumeBase === 50)).toBe(true);
+		// No stale-source compensation may write the original 40 into either player.
+		expect(reads).toBeLessThanOrEqual(scenario === 'unchanged' ? 5 : scenario === 'repeated' ? 4 : 2);
+		await navigation;
+	});
+
+	test.each(['mounted', 'navigation', 'slow-read'] as const)('settles a native source gap within the original gesture (%s)', async scenario => {
+		const harness = installHarness();
+		const original = media(harness);
+		const replacement = { ...original, sourceRevision: original.sourceRevision + 1 };
+		let reads = 0;
+		const writes: ControlIntent[] = [];
+		harness.contentResponder = async ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				reads++;
+				if (reads === 2) {
+					if (scenario === 'navigation') harness.documentId = 'document-new';
+					if (scenario === 'slow-read') {
+						await Bun.sleep(1_050);
+						return actualReadAck(payload as ControlReadRequest, replacement, { volumeBase: 20 });
+					}
+					return actualReadAck(payload as ControlReadRequest, null);
+				}
+				return actualReadAck(payload as ControlReadRequest, reads === 1 ? original : replacement,
+					{ volumeBase: reads === 1 ? 40 : 20 });
+			}
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			if (writes.length === 1) return { ok: false, error: { code: 'stale-media-source', message: 'Source retired', retryable: false } };
+			return { ok: true, data: appliedPatchAck(intent, field => field === 'boost' ? 'observe' : 'dom-native') };
+		};
+		const operation = controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'delta', value: 10 } });
+		if (scenario === 'mounted') {
+			const ack = await operation;
+			expect(ack.target).toEqual(replacement);
+			expect(ack.result).toMatchObject({ effectiveVolume: 50 });
+			expect(writes[1]).toMatchObject({ target: replacement, patch: { volumeBase: 50 } });
+		} else {
+			await expect(operation).rejects.toThrow();
+			expect(writes).toHaveLength(1);
+			expect(reads).toBe(2);
+		}
+	});
+
+	test.each(['cold', 'other-target'] as const)('a failed volume refresh cannot borrow an unrelated baseline (%s)', async scenario => {
+		const harness = installHarness();
+		const target = media(harness);
+		if (scenario === 'other-target') {
+			await observe(target, { volumeBase: 70, mediaMuted: false }, sample(1));
+			harness.contentResponder = ({ payload }) => ({ ok: true, data: releasedPatchAck(payload as ControlIntent) });
+			await controlCoordinatorTestApi.submit({ tabId: 7, source: 'system', requestedCoverage: 'full',
+				target, patch: { boost: 1 } });
+		}
+		harness.contentMessages.length = 0;
+		harness.contentResponder = () => ({ ok: false, error: {
+			code: 'read-unavailable', message: 'Actual volume unavailable', retryable: true,
+		} });
+		await expect(controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'popup',
+			target: scenario === 'other-target' ? media(harness, 'another-media') : null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 30 } })).rejects.toThrow('Actual volume unavailable');
+		expect(harness.contentMessages.some(message => message.type === 'spectra.control.intent.execute')).toBe(false);
+	});
+
+	test.each([100, 200])('a failed volume refresh cannot acknowledge amplification on a missing native target (base %s)', async base => {
+		const harness = installHarness();
+		const target = media(harness);
+		harness.storage.set('siteVolumeScales', { 'media.example': { supported: false, updatedAt: Date.now() } });
+		await observe(target, { volumeBase: base, mediaMuted: false }, sample(1));
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') return actualReadAck(payload as ControlReadRequest, target, { volumeBase: base });
+			const intent = payload as ControlIntent;
+			return { ok: true, data: intent.patch.volumeBase === undefined ? releasedPatchAck(intent)
+				: { ...appliedPatchAck(intent, () => base === 200 ? 'page-native' : 'dom-native'), mediaObservation: sample(2) } };
+		};
+		await controlCoordinatorTestApi.submit({ ...request({ volumeBase: base }), target });
+		await controlCoordinatorTestApi.submit({ tabId: 7, source: 'system', requestedCoverage: 'full', target, patch: { boost: 1 } });
+		const writes: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') return { ok: false, error: {
+				code: 'read-unavailable', message: 'Actual volume unavailable', retryable: true,
+			} };
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			throw new Error('Native media target has disappeared');
+		};
+		await expect(controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 200 } })).rejects.toThrow();
+		expect(writes.some(intent => intent.patch.volumeBase === base)).toBe(true);
+		expect(writes.some(intent => intent.patch.boost === 2)).toBe(false);
+	});
+
+	test('an equal volume gesture releases a new physical mute instead of trusting the old unmuted snapshot', async () => {
+		const harness = installHarness();
+		const target = media(harness);
+		await observe(target, { volumeBase: 70, mediaMuted: false }, sample(1));
+		let revision = 1;
+		let physicalMuted = false;
+		const writes: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				const response = actualReadAck(payload as ControlReadRequest, target,
+					{ volumeBase: 70, mediaMuted: physicalMuted });
+				return { ...response, data: { ...response.data, mediaObservation: sample(++revision) } };
+			}
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			if (intent.patch.mediaMuted !== undefined) physicalMuted = intent.patch.mediaMuted;
+			return { ok: true, data: { ...releasedPatchAck(intent), target, mediaObservation: sample(++revision),
+				fields: appliedFields(intent, field => field === 'mediaMuted' ? 'dom-native' : 'observe') } };
+		};
+		await controlCoordinatorTestApi.submit({ tabId: 7, source: 'system', requestedCoverage: 'full',
+			target, patch: { boost: 1 } });
+		writes.length = 0;
+		// The site muted the element without a page observation reaching Background.
+		physicalMuted = true;
+		const ack = await controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 70 } });
+		expect(writes.map(intent => intent.patch)).toEqual([{ mediaMuted: false }]);
+		expect(physicalMuted).toBe(false);
+		expect(ack.audioVolume).toEqual({ effectiveVolume: 70, volumeState: 'native' });
+	});
+
+	test('keeps the acknowledged Capture boost when a new runtime resolves an implicit volume target', async () => {
+		const harness = installHarness();
+		const oldTarget = media(harness, 'epoch-1');
+		const newTarget = media(harness, 'epoch-2');
+		await observe(oldTarget, { volumeBase: 100, mediaMuted: false }, sample(1));
+		let target = oldTarget;
+		let epoch = 1;
+		let revision = 1;
+		let physicalVolume = 100;
+		const writes: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				expect((payload as ControlReadRequest).target).toBeNull();
+				const response = actualReadAck(payload as ControlReadRequest, target, { volumeBase: physicalVolume });
+				return { ...response, data: { ...response.data, mediaObservation: sample(++revision, 1, epoch) } };
+			}
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			if (intent.patch.volumeBase !== undefined) physicalVolume = intent.patch.volumeBase;
+			const ack = intent.requestedCoverage === 'full'
+				? captureProcessorAck(harness, intent)
+				: appliedPatchAck(intent, () => 'dom-native');
+			return { ok: true, data: { ...ack, target, mediaObservation: sample(++revision, 1, epoch) } };
+		};
+		await controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', requestedCoverage: 'full',
+			target: oldTarget, patch: { boost: 2 } }, invocation(harness));
+		target = newTarget;
+		epoch = 2;
+		revision = 0;
+		physicalVolume = 90;
+		writes.length = 0;
+		const ack = await controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'remote', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 200 } });
+		expect(writes.map(intent => ({ patch: intent.patch, target: intent.target })))
+			.toEqual([{ patch: { volumeBase: 100 }, target: newTarget }]);
+		expect(harness.offscreenProcessorActive).toBe(true);
+		expect(ack.audioVolume).toEqual({ effectiveVolume: 200, volumeState: 'capture' });
+		expect(await controlCoordinatorTestApi.getSnapshot(7)).toMatchObject({ activeMedia: newTarget,
+			fields: { boost: { actual: 2, phase: 'applied', controlled: true, strategy: 'capture' } } });
 	});
 
 	test('never invokes MAIN after a successful DOM readback', async () => {
@@ -2711,5 +3505,289 @@ describe('authoritative control coordinator', () => {
 			lastError: { code: 'transaction-rollback-failed' },
 		});
 		expect(harness.snapshotEvents).toBe(1);
+	});
+
+	test('keeps the presentation kind only for the media target that proved it', async () => {
+		const harness = installHarness();
+		const target = media(harness);
+		await observe(target, { volumeBase: 40 }, sample(1), true);
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.live).toBe(true);
+
+		// Another publication about the same target carries no proof: the admitted
+		// fact still describes this element, so it is retained.
+		await observe(target, { playing: true }, sample(2), undefined);
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.live).toBe(true);
+
+		// A different target is a different element. Inheriting `true` here is what
+		// disabled speed on a finite advertisement after leaving a broadcast.
+		await observe(media(harness, 'next'), { volumeBase: 60 }, sample(3, 2));
+		const switched = await controlCoordinatorTestApi.getSnapshot(7);
+		expect(switched?.activeMedia?.mediaId).toBe('media:next');
+		expect(switched?.live).toBeUndefined();
+	});
+
+	test('never lets a video-scoped proof describe the media target', async () => {
+		const harness = installHarness();
+		const target = media(harness);
+		harness.contentResponder = ({ type, payload }) => {
+			if (type !== 'spectra.control.actual.read') return { ok: true, data: appliedPatchAck(payload as ControlIntent, () => 'dom-native') };
+			const videoScoped = (payload as ControlReadRequest).fields.includes('pip');
+			const ack = actualReadAck(payload as ControlReadRequest, target) as { ok: true; data: Record<string, unknown> };
+			return { ok: true, data: {
+				...ack.data,
+				target,
+				mediaObservation: sample(1),
+				live: !videoScoped,
+			} };
+		};
+		const snapshot = await getControlViewSnapshot(harness.activeTabId);
+		expect(snapshot?.live).toBe(true);
+	});
+});
+
+describe('document output coordinator routing', () => {
+	test('keeps an exact page controller ahead of Capture even when the video stream has no audio track', async () => {
+		const harness = installHarness();
+		const target: MediaTarget = { frameId: 0, documentId: harness.documentId,
+			mediaId: 'media:video-only', sourceRevision: 0, kind: 'video' };
+		const writes: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				const response = actualReadAck(payload as ControlReadRequest, target, { volumeBase: 50, boost: 1, mediaMuted: false });
+				response.data.observedStrategies.volumeBase = 'page-native';
+				response.data.observedStrategies.mediaMuted = 'page-native';
+				return { ...response, data: { ...response.data, nativeAudioAbsent: true } };
+			}
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			return { ok: true, data: appliedPatchAck(intent, field => field === 'boost' ? 'observe' : 'page-native') };
+		};
+		const result = await controlCoordinatorTestApi.submitOperation({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 30 } });
+		expect(result.fields.volumeBase).toMatchObject({ actual: 30, strategy: 'page-native' });
+		expect(writes.find(intent => intent.patch.volumeBase !== undefined)?.requestedCoverage).toBe('active-target');
+	});
+
+	function installOutputHarness(phantomMuted = false) {
+		const harness = installHarness();
+		const target: MediaTarget = { frameId: 0, documentId: harness.documentId, mediaId: 'media:video-only', sourceRevision: 0, kind: 'video' };
+		const output = { volumeBase: 100, boost: 1, mediaMuted: false };
+		const capabilities = { nativeAudioAbsent: true };
+		const writes: ControlIntent[] = [];
+		harness.contentResponder = ({ type, payload }) => {
+			if (type === 'spectra.control.actual.read') {
+				const response = actualReadAck(payload as ControlReadRequest, target,
+					harness.offscreenProcessorActive ? output : { volumeBase: 0, boost: 1, mediaMuted: phantomMuted });
+				if (harness.offscreenProcessorActive) {
+					for (const field of ['volumeBase', 'boost', 'mediaMuted']) {
+						if (Object.hasOwn(response.data.patch, field)) response.data.observedStrategies[field] = 'capture';
+					}
+				}
+				return { ...response, data: { ...response.data, ...capabilities } };
+			}
+			if (type !== 'spectra.control.intent.execute') throw new Error(`Unexpected output request ${type}`);
+			const intent = payload as ControlIntent;
+			writes.push(intent);
+			const ownsOutput = intent.requestedCoverage === 'full'
+				&& (intent.patch.volumeBase !== undefined || intent.patch.mediaMuted !== undefined);
+			if (!ownsOutput) return { ok: true, data: intent.requestedCoverage === 'full'
+				? releasedPatchAck(intent) : appliedPatchAck(intent, () => 'dom-native') };
+			const ack = captureProcessorAck(harness, intent);
+			for (const [field, value] of Object.entries(intent.patch)) {
+				if (field === 'volumeBase' || field === 'boost' || field === 'mediaMuted') Object.assign(output, { [field]: value });
+			}
+			for (const state of Object.values(ack.fields)) if (state) state.coverage = 'opaque';
+			return { ok: true, data: ack };
+		};
+		return { harness, target, output, writes, capabilities };
+	}
+
+	function stoppedSession(harness: Harness): AudioSessionSnapshot {
+		return {
+			tabId: 7, documentId: harness.documentId, origin: new URL(harness.url).origin,
+			generation: 9, desiredMode: 'capture', actualMode: 'bypass', phase: 'error', configRevision: 1,
+			actualConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
+			lastError: { code: 'processor-stopped', message: 'The external capture track ended', retryable: true },
+		};
+	}
+
+	test('carries the source restore obligation through the real coordinator boundary', async () => {
+		const { writes, target } = installOutputHarness();
+		const mediaRestore = { revision: 8, scene: 'retired-scene', visit: 3 };
+		await controlCoordinatorTestApi.submit({ tabId: 7, source: 'restore', target,
+			requestedCoverage: 'active-target', patch: { volumeBase: 40 }, mediaRestore });
+		expect(writes[0]?.mediaRestore).toEqual(mediaRestore);
+	});
+
+	test('keeps cold native restoration native when a starting stream has no audio track yet', async () => {
+		const { harness, writes } = installOutputHarness();
+		const ack = await controlCoordinatorTestApi.submit({ tabId: 7, source: 'restore', target: null,
+			requestedCoverage: 'active-target', patch: { volumeBase: 40 } });
+		expect(writes).toHaveLength(1);
+		expect(writes[0]).toMatchObject({ source: 'restore', requestedCoverage: 'active-target', patch: { volumeBase: 40 } });
+		expect(ack.fields.volumeBase).toMatchObject({ strategy: 'dom-native', actual: 40 });
+		expect(harness.offscreenProcessorActive).toBe(false);
+	});
+
+	test('restores through an already acknowledged output owner without starting another Capture', async () => {
+		const { harness, writes } = installOutputHarness();
+		await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 30 } }, invocation(harness));
+		writes.length = 0;
+		const ack = await controlCoordinatorTestApi.submit({ tabId: 7, source: 'restore', target: null,
+			requestedCoverage: 'active-target', patch: { volumeBase: 40 } });
+		expect(writes).toHaveLength(1);
+		expect(ack.fields.volumeBase).toMatchObject({ strategy: 'capture', actual: 40 });
+		expect(harness.offscreenProcessorActive).toBe(true);
+	});
+
+	test.each([true, false])('commits the freshly read presentation kind with its output target (%s)', async (live) => {
+		const { harness, target, capabilities } = installOutputHarness();
+		Object.assign(capabilities, { live });
+		await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 30 } }, invocation(harness));
+		expect(await controlCoordinatorTestApi.getSnapshot(7)).toMatchObject({ activeMedia: target, live });
+	});
+
+	test.each([30, 0, 100, 200])('uses one full-output transaction at %s even when the silent video already exposes that value', async (volume) => {
+		const { harness, writes } = installOutputHarness();
+		const ack = await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: volume } }, invocation(harness));
+		const volumeBase = Math.min(volume, 100);
+		const boost = volume > 100 ? volume / 100 : 1;
+		expect(writes).toHaveLength(1);
+		expect(writes[0]).toMatchObject({ requestedCoverage: 'full', patch: { volumeBase, boost, mediaMuted: false } });
+		expect(harness.offscreenProcessorActive).toBe(true);
+		expect(ack.result).toEqual({ effectiveVolume: volume, volumeBase, boost });
+		for (const field of ['volumeBase', 'boost', 'mediaMuted'] as const) expect(ack.fields[field]).toMatchObject({
+			phase: 'applied', strategy: 'capture', controlled: true, coverage: 'opaque',
+		});
+	});
+
+	test('toggles a cold document output mute from its audible default instead of the video-only element mute', async () => {
+		const { harness, writes, output } = installOutputHarness(true);
+		const ack = await controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', target: null,
+			requestedCoverage: 'active-target', mutations: [{ field: 'mediaMuted', operation: 'toggle' }] }, invocation(harness));
+		expect(writes).toHaveLength(1);
+		expect(writes[0]).toMatchObject({ requestedCoverage: 'full', patch: { mediaMuted: true } });
+		expect(output.mediaMuted).toBe(true);
+		expect(ack.fields.mediaMuted).toMatchObject({ actual: true, phase: 'applied', strategy: 'capture' });
+	});
+
+	test('keeps the acknowledged Capture output owner when a later read has no native-audio-absence flag', async () => {
+		const { harness, writes, capabilities } = installOutputHarness();
+		await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 30 } }, invocation(harness));
+		capabilities.nativeAudioAbsent = false;
+		writes.length = 0;
+		const ack = await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 100 } }, invocation(harness));
+		expect(writes).toHaveLength(1);
+		expect(writes[0]).toMatchObject({ requestedCoverage: 'full', patch: { volumeBase: 100, boost: 1, mediaMuted: false } });
+		expect(ack.fields.volumeBase).toMatchObject({ actual: 100, strategy: 'capture', phase: 'applied', controlled: true });
+		expect(harness.offscreenProcessorActive).toBe(true);
+	});
+
+	test('retains the acknowledged output level and mute across native video observations', async () => {
+		const { harness, target, output, writes } = installOutputHarness();
+		await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 200 } }, invocation(harness));
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.volumeBase).toMatchObject({ actual: 100, controlled: true, strategy: 'capture' });
+		await controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', target: null,
+			requestedCoverage: 'active-target', mutations: [{ field: 'mediaMuted', operation: 'toggle' }] }, invocation(harness));
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.volumeBase).toMatchObject({ actual: 100, controlled: true, strategy: 'capture' });
+		const beforeWrites = writes.length;
+		await controlCoordinatorTestApi.submit({ tabId: 7, source: 'page', target,
+			requestedCoverage: 'active-target', patch: { volumeBase: 0, mediaMuted: false },
+			observedStrategies: { volumeBase: 'dom-native', mediaMuted: 'dom-native' } });
+		expect(writes).toHaveLength(beforeWrites);
+		expect(output).toEqual({ volumeBase: 100, boost: 2, mediaMuted: true });
+		const snapshot = await controlCoordinatorTestApi.getSnapshot(7);
+		expect(snapshot?.fields.volumeBase).toMatchObject({ actual: 100, controlled: true, strategy: 'capture' });
+		expect(snapshot?.fields.boost).toMatchObject({ actual: 2, controlled: true, strategy: 'capture' });
+		expect(snapshot?.fields.mediaMuted).toMatchObject({ actual: true, controlled: true, strategy: 'capture' });
+	});
+
+	test('keeps an explicit media target on its native scope even when document audio is absent from that video', async () => {
+		const { harness, target, writes } = installOutputHarness();
+		const ack = await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target,
+			operation: 'effective-volume', payload: { operation: 'set', value: 30 } }, invocation(harness));
+		expect(writes.filter(({ patch }) => patch.volumeBase !== undefined)).toHaveLength(1);
+		expect(writes.find(({ patch }) => patch.volumeBase !== undefined)).toMatchObject({
+			target, requestedCoverage: 'active-target', patch: { volumeBase: 30 },
+		});
+		expect(harness.offscreenProcessorActive).toBe(false);
+		expect(ack.fields.volumeBase).toMatchObject({ phase: 'applied', strategy: 'dom-native' });
+	});
+
+	test('does not return a successful output ACK when capture cannot start at the default level', async () => {
+		const { harness, writes } = installOutputHarness();
+		const readResponder = requireValue(harness.contentResponder);
+		harness.contentResponder = (message) => {
+			if (message.type !== 'spectra.control.intent.execute') return readResponder(message);
+			const intent = message.payload as ControlIntent;
+			writes.push(intent);
+			const failed = unsupportedPatchAck(intent);
+			for (const state of Object.values(failed.fields)) if (state) state.actual = state.desired;
+			return { ok: true, data: failed };
+		};
+		await expect(controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 100 } }, invocation(harness)))
+			.rejects.toThrow('Capture processor requires a current extension invocation');
+		expect(writes).toHaveLength(1);
+		expect(harness.offscreenProcessorActive).toBe(false);
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.volumeBase).toMatchObject({ phase: 'error', controlled: false });
+	});
+
+	test('joins an in-flight control lane without waiting on its own external-stop publication and retires Capture facts', async () => {
+		const { harness } = installOutputHarness();
+		const response = requireValue(harness.contentResponder);
+		const session = stoppedSession(harness);
+		await forgetAudioSession(7);
+		harness.storage.set('spectra_audio_session_7', session);
+		harness.contentResponder = async (message) => {
+			const ack = await response(message);
+			if (message.type === 'spectra.control.intent.execute') observeStoppedAudioOutput(session);
+			return ack;
+		};
+		try {
+			const ack = await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+				operation: 'effective-volume', payload: { operation: 'set', value: 30 } }, invocation(harness));
+			expect(ack.result.effectiveVolume).toBe(30);
+			// An empty browser observation is a no-write barrier in the same tab
+			// queue, after the stop event queued while Content was answering above.
+			await controlCoordinatorTestApi.observeChromeTabState(7, {});
+			const snapshot = await controlCoordinatorTestApi.getSnapshot(7);
+			for (const field of ['volumeBase', 'boost', 'mediaMuted'] as const) expect(snapshot?.fields[field]).toMatchObject({
+				actual: null, controlled: false, phase: 'error',
+				lastError: { code: 'capability-unavailable', message: 'The document audio processor stopped' },
+			});
+		} finally { await forgetAudioSession(7); }
+	}, 2_000);
+
+	test.each(['event-document', 'old-generation', 'current-session-document', 'current-session-active'] as const)('ignores stopped-output events that no longer match the physical session (%s)', async (mismatch) => {
+		const { harness } = installOutputHarness();
+		await controlCoordinatorTestApi.submitOperationInvoked({ tabId: 7, source: 'popup', target: null,
+			operation: 'effective-volume', payload: { operation: 'set', value: 30 } }, invocation(harness));
+		const session = stoppedSession(harness);
+		const current: AudioSessionSnapshot = { ...session };
+		if (mismatch === 'event-document') session.documentId = 'document:retired';
+		if (mismatch === 'old-generation') session.generation -= 1;
+		if (mismatch === 'current-session-document') current.documentId = 'document:replacement';
+		if (mismatch === 'current-session-active') { current.actualMode = 'capture'; current.phase = 'active'; }
+		await forgetAudioSession(7);
+		harness.storage.set('spectra_audio_session_7', current);
+		try {
+			expect(await getAudioSession(7)).toMatchObject({ documentId: current.documentId, generation: current.generation,
+				actualMode: current.actualMode, phase: current.phase });
+			const before = await controlCoordinatorTestApi.getSnapshot(7);
+			observeStoppedAudioOutput(session);
+			await controlCoordinatorTestApi.observeChromeTabState(7, {});
+			const after = await controlCoordinatorTestApi.getSnapshot(7);
+			expect(after?.revision).toBe(before?.revision);
+			for (const field of ['volumeBase', 'boost', 'mediaMuted'] as const) expect(after?.fields[field]).toMatchObject({
+				phase: 'applied', strategy: 'capture', controlled: true,
+			});
+		} finally { await forgetAudioSession(7); }
 	});
 });

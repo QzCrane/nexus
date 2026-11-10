@@ -7,6 +7,7 @@ import {
 	setActiveMediaRegistry,
 } from '../src/content/core/media-registry';
 import { DocumentRuntimeContext } from '../src/content/core/content-runtime-context';
+import { claimMediaObservationEpoch } from '../src/shared/content-runtime';
 import { NativeMediaExecutor } from '../src/content/logic/native-media-executor';
 import type { VideoEffectsController } from '../src/content/video/video-effects-controller';
 import { isAnyMediaPlaying } from '../src/content/audio/media-detection';
@@ -56,6 +57,9 @@ class FakeMediaElement extends FakeElement {
 	duration = 120;
 	seeking = false;
 	seekable = { length: 0 } as TimeRanges;
+	// Metadata and ranges arrive together on a real element; `isLiveMedia` treats
+	// an unbounded duration without them as a resource that delivered nothing.
+	buffered = { length: 1 } as TimeRanges;
 	paused = true;
 	ended = false;
 	volume: number;
@@ -162,6 +166,7 @@ class FakeIntersectionObserver {
 			target,
 			isIntersecting: target.rect.width > 0 && target.rect.height > 0,
 			intersectionRect: target.rect,
+			boundingClientRect: target.rect,
 		})) as unknown as IntersectionObserverEntry[], this as unknown as IntersectionObserver);
 	}
 }
@@ -205,6 +210,9 @@ describe('event-driven media registry', () => {
 			if (mode === 'selection-changed') {
 				const next = requireValue(registry.list().find(({ element }) => element === second)?.target, 'Expected second target');
 				registry.select(next);
+				// A cold play() awaits its proof, so the switch has a window in which
+				// it must win: acknowledging the old target after the viewer selected
+				// another one is exactly the stale write the fence exists for.
 				await expect(operation).rejects.toMatchObject({ code: 'stale-media-source' });
 				expect(registry.resolve(null)?.target).toEqual(next);
 			} else {
@@ -271,11 +279,14 @@ describe('event-driven media registry', () => {
 		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
 		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
 		const context = new DocumentRuntimeContext({ documentId: 'document:owner-replacement', frameId: 0 });
-		const first = new MediaRegistry(context); const second = new MediaRegistry(context);
+		const first = new MediaRegistry(context);
+		const passiveEpoch = claimMediaObservationEpoch();
+		const second = new MediaRegistry(context);
 		try {
 			expect(first.captureObservation().owner).toBe('document:owner-replacement:8');
-			expect(second.captureObservation().owner).toBe('document:owner-replacement:9');
-			expect(first.captureObservation().epoch).toBe(8); expect(second.captureObservation().epoch).toBe(9);
+			expect(passiveEpoch).toBe(9);
+			expect(second.captureObservation().owner).toBe('document:owner-replacement:10');
+			expect(first.captureObservation().epoch).toBe(8); expect(second.captureObservation().epoch).toBe(10);
 		} finally { first.dispose(); second.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
 	test.each(['handoff', 'explicit-pause', 'resumed-pause', 'explicit-selection', 'preview'] as const)('reconciles a later player after the historical feed pauses (%s)', (mode) => {
@@ -305,6 +316,34 @@ describe('event-driven media registry', () => {
 			expect(registry.resolve(null)?.element).toBe(feed);
 			feed.paused = true; feed.dispatchEvent(new Event('pause'));
 			expect(registry.resolve(null)?.element).toBe(mode === 'handoff' || mode === 'resumed-pause' ? live : feed);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
+	test('keeps the same selection visit when a playing source scrolls outside the viewport and back', () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement', 'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const media = new FakeVideoElement(0.8);
+		media.paused = false;
+		media.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		document.documentElement.descendants.push(media);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:scroll-visit', frameId: 0 }));
+		try {
+			const before = registry.captureObservation();
+			const selected: MediaTarget[] = [];
+			registry.subscribe((target, event) => { if (event === 'selected') selected.push(target); });
+			media.rect = { ...media.rect, top: -400, bottom: -220 };
+			const observer = requireValue(FakeIntersectionObserver.latest, 'Missing intersection observer');
+			observer.callback([{ target: media, isIntersecting: false, boundingClientRect: media.rect,
+				intersectionRect: { width: 0, height: 0 } } as unknown as IntersectionObserverEntry],
+				observer as unknown as IntersectionObserver);
+			media.rect = { ...media.rect, top: 0, bottom: 180 };
+			observer.emit([media]);
+			expect(registry.captureObservation().selection).toBe(before.selection);
+			expect(selected).toEqual([]);
+			expect(registry.resolve(null)?.element).toBe(media);
 		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
 
@@ -471,6 +510,222 @@ describe('event-driven media registry', () => {
 			registry?.dispose();
 			restoreGlobalDescriptors(descriptors);
 			FakeMutationObserver.latest = null;
+		}
+	});
+
+	test('admits an already-playing player once geometry proves it is the presentation', () => {
+		// A player inserted already playing never fires `play` after its listeners
+		// exist, so no lifecycle event can hand it the selection. Geometry is the
+		// remaining proof: once it is laid out and genuinely outranks the owner, it
+		// takes the visit. A live timeline alone is not that proof.
+		const descriptors = captureGlobalDescriptors([
+			'document',
+			'Node',
+			'Element',
+			'HTMLMediaElement',
+			'HTMLVideoElement',
+			'MutationObserver',
+			'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const cover = new FakeVideoElement(1, true);
+		const live = new FakeVideoElement(0, true);
+		cover.paused = false;
+		cover.duration = 8;
+		cover.rect = { left: 50, top: 60, right: 1_330, bottom: 640, width: 1_280, height: 580 };
+		live.paused = false;
+		live.duration = Number.POSITIVE_INFINITY;
+		// Unlaid-out at registration: no geometry to be admitted on yet.
+		live.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+		document.documentElement.descendants.push(cover);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		const events: Array<{ target: MediaTarget; event: string }> = [];
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:late-live', frameId: 0 }),
+				(target, event) => events.push({ target, event }),
+			);
+			const coverTarget = registry.list().find(({ element }) => element === cover)?.target;
+			expect(coverTarget).toBeDefined();
+			expect(registry.resolve(null)?.target).toEqual(coverTarget);
+
+			document.documentElement.descendants.push(live);
+			FakeMutationObserver.latest?.emit([live]);
+
+			const liveTarget = registry.list().find(({ element }) => element === live)?.target;
+			expect(liveTarget).toBeDefined();
+			// No geometry yet: the unseen player must not steal the visit.
+			expect(registry.resolve(null)?.target).toEqual(coverTarget);
+
+			// Geometry arrives and this player is now the larger presentation.
+			cover.rect = { left: 50, top: 60, right: 250, bottom: 200, width: 200, height: 140 };
+			live.rect = { left: 50, top: 60, right: 1_330, bottom: 700, width: 1_280, height: 640 };
+			FakeIntersectionObserver.latest?.emit([live, cover]);
+			expect(registry.resolve(null)?.target).toEqual(liveTarget);
+			expect(events.at(-1)?.target).toEqual(liveTarget);
+			expect(events.at(-1)?.event).toBe('selected');
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
+	test.each(['loadedmetadata', 'loadeddata', 'durationchange', 'live-paused', 'explicit', 'paused', 'pip', 'fullscreen', 'fullscreen-container', 'fullscreen-container-play'] as const)('admits live evidence without overriding a protected selection (%s)', (trigger) => {
+		// The finite pre-roll is not the requested broadcast. Its greater area
+		// must not keep volume/mute gestures on the ad after live metadata arrives.
+		const descriptors = captureGlobalDescriptors([
+			'document',
+			'Node',
+			'Element',
+			'HTMLMediaElement',
+			'HTMLVideoElement',
+			'MutationObserver',
+			'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const cover = new FakeVideoElement(1, true);
+		const live = new FakeVideoElement(1, true);
+		cover.paused = false;
+		cover.duration = 8;
+		cover.rect = { left: 50, top: 60, right: 1_330, bottom: 640, width: 1_280, height: 580 };
+		live.paused = false;
+		live.duration = Number.NaN;
+		live.rect = { left: 541, top: 927, right: 821, bottom: 1_085, width: 280, height: 158 };
+		document.documentElement.descendants.push(cover, live);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:live-metadata', frameId: 0 }),
+				() => undefined,
+			);
+			const coverTarget = registry.list().find(({ element }) => element === cover)?.target;
+			expect(coverTarget).toBeDefined();
+			expect(registry.resolve(null)?.target).toEqual(coverTarget);
+
+			if (trigger === 'explicit') registry.select(requireValue(coverTarget));
+			if (trigger === 'paused') registry.pinPaused(requireValue(coverTarget));
+			if (trigger === 'pip') document.pictureInPictureElement = cover;
+			if (trigger === 'fullscreen') document.fullscreenElement = cover;
+			if (trigger.startsWith('fullscreen-container')) document.fullscreenElement = document.documentElement;
+			if (trigger === 'loadeddata') {
+				live.duration = Number.POSITIVE_INFINITY;
+				live.buffered = { length: 0 } as TimeRanges;
+				live.dispatchEvent(new Event('loadedmetadata'));
+				expect(registry.resolve(null)?.target).toEqual(coverTarget);
+				live.buffered = { length: 1 } as TimeRanges;
+			}
+			live.duration = Number.POSITIVE_INFINITY;
+			if (trigger === 'live-paused') live.paused = true;
+			const protectedSelection = ['explicit', 'paused', 'pip', 'fullscreen'].includes(trigger);
+			live.dispatchEvent(new Event(protectedSelection || trigger === 'fullscreen-container-play' ? 'play'
+				: trigger === 'fullscreen-container' || trigger === 'live-paused' ? 'loadedmetadata' : trigger));
+
+			const liveTarget = registry.list().find(({ element }) => element === live)?.target;
+			expect(liveTarget).toBeDefined();
+			expect(registry.resolve(null)?.target).toEqual(protectedSelection ? coverTarget : liveTarget);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
+	test('keeps a hidden preview from taking the visit when it starts playing later', () => {
+		// A clip that is playing with no geometry is still a preview, live or not,
+		// and the visible owner keeps the control target.
+		const descriptors = captureGlobalDescriptors([
+			'document',
+			'Node',
+			'Element',
+			'HTMLMediaElement',
+			'HTMLVideoElement',
+			'MutationObserver',
+			'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const owner = new FakeVideoElement(1);
+		const preview = new FakeVideoElement(1);
+		owner.paused = false;
+		owner.rect = { left: 0, top: 0, right: 960, bottom: 540, width: 960, height: 540 };
+		preview.paused = false;
+		preview.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+		document.documentElement.descendants.push(owner);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:hidden-preview', frameId: 0 }),
+				() => undefined,
+			);
+			const ownerTarget = registry.list().find(({ element }) => element === owner)?.target;
+			expect(registry.resolve(null)?.target).toEqual(ownerTarget);
+
+			document.documentElement.descendants.push(preview);
+			FakeMutationObserver.latest?.emit([preview]);
+			expect(registry.resolve(null)?.target).toEqual(ownerTarget);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
+	test('selects the live broadcast instead of the larger audible advertisement', () => {
+		// A pre-roll's loudness and area do not make it the broadcast control
+		// target. A positive volume gesture must reach and unmute the live target.
+		const descriptors = captureGlobalDescriptors(['document', 'Element']);
+		const document = new FakeDocument();
+		installGlobal('document', document);
+		installGlobal('Element', FakeElement);
+		const area = (element: HTMLMediaElement): number => {
+			const rect = (element as unknown as FakeVideoElement).rect;
+			return rect.width * rect.height;
+		};
+		try {
+			const ad = new FakeVideoElement(1);
+			const stream = new FakeVideoElement(0);
+			ad.paused = false;
+			stream.paused = false;
+			ad.muted = false;
+			stream.muted = true;
+			ad.rect = { left: 90, top: 628, right: 940, bottom: 1_106, width: 850, height: 478 };
+			stream.rect = { left: 703, top: 931, right: 927, bottom: 1_057, width: 224, height: 126 };
+			stream.duration = Number.POSITIVE_INFINITY;
+			expect(chooseInitialMedia([stream, ad] as unknown as HTMLMediaElement[], 'media', area))
+				.toBe(stream);
+			// It remains selected when the pre-roll ends and the layout expands.
+			stream.rect = { left: 90, top: 628, right: 940, bottom: 1_106, width: 850, height: 478 };
+			expect(chooseInitialMedia([stream, ad] as unknown as HTMLMediaElement[], 'media', area))
+				.toBe(stream);
+		} finally {
+			restoreGlobalDescriptors(descriptors);
 		}
 	});
 

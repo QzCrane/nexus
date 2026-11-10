@@ -2,21 +2,56 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-02
+last_reviewed: 2026-11-09
 ---
 
 # 03. UI & Boundaries (Visualizer, favicon, remote, UX)
 
-> 主题 owner 段: §7 UI, visualizer, favicon and remote boundaries · §19 User experience
+> 主题 owner 段: §7 UI, visualizer, favicon and remote boundaries · §7.5 User experience
 > 完整目录: [README.md](README.md)
 
+**本篇符号**（只解释名字之间的关系，不改变任何规则）：
+
+| 符号 | 一句话职责 | 谁用它 |
+| --- | --- | --- |
+| `resolveVolumeTone` | 唯一的色调判决；三个调色板面都消费它 | Popup 卡片、角标、OSD |
+| `projectBadgeFromSnapshot` | 角标的唯一投影入口，不是第二 owner | `background/handlers/badge.ts` |
+| `requestOptionalPermission` | 可选权限的唯一请求入口，必须是手势里的首个异步调用 | 点击与保存处理器 |
+| `hasOptionalPermission` | 运行时只读检查，从不发起请求 | 截图、用户脚本等消费者 |
+
 ## §7 UI, visualizer, favicon and remote boundaries
+
+本节所有表面都是投影，不是第二份状态。图示的箭头方向就是依赖方向：表面读快照，
+快照不读表面；色调只有一个判定函数。
+
+```mermaid
+flowchart LR
+  Coord["ControlCoordinator<br/>唯一 commit / persist / publish"] --> Snap["ControlSnapshot"]
+  Snap --> Popup["Popup 主卡与后台卡"]
+  Snap --> Badge["Action badge<br/>唯一写者 background/handlers/badge.ts"]
+  Snap --> Osd["OSD / Toast<br/>全屏挂 Popover top-layer"]
+  Snap --> Remote["Remote 已认证视图"]
+  Tone["resolveVolumeTone<br/>唯一色调判定"] --> Popup
+  Tone --> Badge
+  Tone --> Osd
+  Facts["chrome.storage.session<br/>per-tab 使用事实"] --> Badge
+  Popup -.->|"手势 intent"| Coord
+  Remote -.->|"已认证 command"| Coord
+```
 
 - 所有 UI 文本/Tooltip/状态/Reset 行为统一使用 canonical locale key 映射（缺失走可观测英文 fallback）。
 - Reset 写入字面 `volume=1` 与 `rate=1`；恢复网页原始值为单独的 restore 操作。
 - **Visualizer 订阅**: 仅可见、启用、未静音的前台主卡可声明精确活动标签页的分析 demand。Background 重新确认可信 Popup、当前活动标签页与精确顶层文档；完整安全的媒体覆盖可使用已 ACK 的 MediaElement WebAudio analyser，也可观察非中性 DSP 已经需要的 Capture。订阅不能创建 Capture admission 或保留中性 Capture；不安全的中性页面稳定为 bypass、返回空帧，不重试获取 Capture。后台卡片只能消费已有处理器；采样必须等待 `actualMode: webaudio | capture` 且 `phase: active` 的精确 ACK，最高 15 Hz。隐藏、失焦、关闭、导航、断连、超时或最终 subscriber 释放都会退役临时 demand；独立 DSP demand 不受影响。
 
-Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠正。首次卡片读取是并发观察：精确文档的已稳定 runtime 状态在 generation 不落后于 session 时优先，双向覆盖 Capture 启动与停止；pending/error 不能冒充稳定结果。后续 ControlSnapshot 只允许 revision 前进的处理器字段改变生命周期，未变化的旧字段和重复回执不能覆盖较新的 session。首份控制快照缺少处理器字段时，不得清除已由精确 runtime 证明的颜色；只有真正文档替换或不匹配的非空音频身份才重置。颜色仍表示路由：已确认 active Capture 在任何音量都是紫色；只有手势进行中且文档为 `dom-native`、数值越过原生上限时才允许提前一个 ACK 预测紫色；原生支持的超过 100% 音量仍不得凭阈值变紫。这种手势前瞻不是“投影旧状态”：它描述本次手势将进入的路由，只影响 tone，且只在那一个条件下生效。
+Popup 的处理器颜色不得先投影已知旧状态、再由下一条消息纠正。
+
+- 首次卡片读取是并发观察：精确文档的已稳定 runtime 状态在 generation 不落后于 session 时优先，双向覆盖 Capture 启动与停止。
+- pending/error 不能冒充稳定结果。
+- 后续 `ControlSnapshot` 只允许 revision 前进的处理器字段改变生命周期；未变化的旧字段和重复回执不能覆盖较新的 session。
+- 首份控制快照缺少处理器字段时，不得清除已由精确 runtime 证明的颜色；只有真正的文档替换或不匹配的非空音频身份才重置。
+- 颜色表示"越界 + 路由"：只有已确认 active Capture 且数值高于原生上限才是紫色；100 及以下每次拆分都是 Boost 1，处理器尚未释放也按 passthrough 显示蓝色，所以 110→100 的手势当帧就变蓝。
+- 只有手势进行中、文档为 `dom-native` 且数值越过原生上限时，才允许提前一个 ACK 预测紫色；原生支持的超过 100% 音量仍不得凭阈值变紫。
+- 这种手势前瞻不是“投影旧状态”：它描述本次手势将进入的路由，只影响 tone，且只在那一个条件下生效。
 调节中的手柄位置、音量数字与填充条立即跟随当前请求，任何路由边界（含 100%）都不得冻结它们。存在未结算的路由事务时，**已结算投影**保留上一次已确认路由，不得把新路由的色调与旧路由证据拼接；**手势路径**允许 `resolveVolumeTone` 对唯一情形前瞻（`dom-native` 越界），且只影响 tone、不产生 Capture 事实。数值不得回退或冻结，也不能让较早的 session/ACK 把新数值改色。路由结算后一次提交新色调；通道失败或文档替换清除等待投影。该显示快照不拥有音频状态、不参与 Capture 准入，也不增加计时器或等待时长；等待仅来自既有控制事务的真实执行确认。
 
 - **Popup 高度**: 全部已知可见 slot 在解析期建立，由真实结构的固有 CSS 高度决定首帧；不读取同卡片数、最近一次或 legacy 高度预测，不钉住旧窗口尺寸，也不等新检测或 actual ready 才显示后台卡。只有 Settings 导航模式为容器施加 600px 滚动视口。布局由 CSS 拥有，导航只切换模式类，禁止读取 `offsetHeight` 后写 inline `min-height` 或调用 `resizeTo`。`popup/frame-height.ts` 唯一拥有 live frame 几何、600px 上限和整文档单一滚动面，observer 失效只合并到一次 rAF。
@@ -42,6 +77,39 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 
 ### §7.2 Production loading topology and bundle ownership
 
+```mermaid
+flowchart TB
+  M["manifest.json"] --> F
+  M --> P
+  M --> B
+  subgraph MW["MAIN world: 页面上下文"]
+    F["content-fullscreen-bridge.js<br/>V1 全屏入口包装"]
+    P["content-page-media-bridge.js<br/>V2 精确元素三属性"]
+  end
+  subgraph IW["ISOLATED world: 内容脚本"]
+    B["content-bootstrap.js<br/>常驻轻量，基于 bootstrap 合同"]
+    R["content-runtime.js<br/>READY 事务后惰性加载"]
+  end
+  subgraph BG["Background Service Worker"]
+    C["ControlCoordinator<br/>串行 actor"]
+    L["runtime-loader.ts<br/>Runtime Lease 引用计数"]
+  end
+  subgraph OFF["Offscreen document"]
+    H["audio-host.ts<br/>稀疏图与真实停止 ACK"]
+  end
+  B -->|"HELLO / 观察 / 快捷键"| C
+  B -->|"READY 申请"| L
+  L -->|"按需注入"| R
+  R -->|"intent"| C
+  C -->|"capture intent"| H
+  H -->|"running + graphSignature"| C
+  P <-->|"同步 DOM 事件 + 读回"| R
+  F <-->|"全屏手势交接"| R
+```
+
+图示的常驻集合只有三个 `document_start` 入口：一个轻量 bootstrap 与两个闭合 MAIN
+bridge。`content-runtime.js` 不在常驻集合内，它必须由 READY 事务拉起。
+
 - Manifest 仅注入 `content-bootstrap.js`（基于轻量 `@nexus/contracts/bootstrap`）。
 - 完整 `content-runtime.js` 通过 READY 事务惰性加载。
 - `sideEffects: false` 在 `@nexus/contracts`、`audio-engine` 与 `kernel` 启用，确保构建 Tree-Shaking。
@@ -56,6 +124,21 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 | capability gap | `capability-unavailable`, `write-unsupported`, `readback-mismatch`, `coverage-incomplete`, `source-binding-ineligible`, `strategy-runtime-failed` | 释放/绕过失败候选，尝试下一个可用策略 |
 | browser/security boundary | `user-activation-required`, `permission-denied`, `cors-or-drm-protected`, `protected-content`, `closed-shadow-inaccessible`, `stale-document`, `stale-media-source`, `policy-denied` | 终止。返回结构化错误并保持稳定路径（严禁用 MAIN/Capture 伪装） |
 
+```mermaid
+flowchart TD
+  Fail["候选策略失败"] --> Class{"失败码类别"}
+  Class -->|"capability gap"| Release["释放失败候选<br/>保留已确认 owner"]
+  Class -->|"browser / security boundary"| Terminal["终止"]
+  Release --> More{"存在更低侵入候选?"}
+  More -->|是| Next["准入下一个策略"]
+  More -->|否| Unsupported["unsupported<br/>保持页面原状"]
+  Terminal --> Visible["结构化错误回到 UI"]
+  Visible --> Stable["稳定路径不变<br/>不得以 MAIN 或 Capture 伪装成功"]
+```
+
+两条分支的区别是"这是能力不够，还是浏览器不许"：前者换路，后者不许换路。
+把 `stale-media-source` 归到后者，所以它绝不会触发一次盲重试。
+
 ### §7.4 Optional permission admission
 
 `public/manifest.json` 只把 `downloads` 与 `userScripts` 声明为 `optional_permissions`。两者在安装时都未授予，因此任何使用点都必须先证明已授予，不得把缺失当成默认开启。
@@ -65,13 +148,15 @@ Popup 的处理器颜色不得先投影已知旧状态再由下一条消息纠�
 - `userScripts` 的授予只由 Options 用户脚本界面的显式按钮发起；Chrome 138+ 还需要扩展详情页上的 “Allow User Scripts” 开关，所以授予成功后 UI 打开该页面，并在窗口重新获得焦点时重读真实徽标，而不是轮询。拒绝则显示明确失败，不留下“已启用”的假状态。
 - 权限续体只在同一意图仍然拥有该按钮时才恢复：文档销毁、DOM 退役或匹配被丢弃都会让续体失效。没有第二次点击就不得重放请求，也不得在拒绝后重放被拒绝的操作；未决匹配永不绕过准入。
 
-## §19 User experience
+## §7.5 User experience
+
+> 本节原编号为 §19，是拆分遗留；按顺序阅读时它会落在 §8 之前。归入 §7 后编号连续。
 
 - 主面板展示音量/静音/倍速/播放与目标媒体。Boost 与 DSP 为高级控制。
 - 播放按钮随结构首帧出现，actual 未确认时明确未知；当前 document 的实际暂停状态
   异步确认后投影播放/暂停动作，缓存不签发播放事实。未知播放字段使用既有有界恢复，
   不把持久 ACK 当作当前状态。切换基线、旧 ACK
-  入场与缓冲等待由 [媒体 owner](06-media-and-video.md#playback-button-and-buffered-play) 定义。
+  入场与缓冲等待由 [媒体 owner](06-media-and-video.md#141-playback-button-and-buffered-play) 定义。
 - 颜色由一个判定产出：`resolveVolumeTone`。`gray` 表示静音/0，`blue` 表示非 Capture 路径（原生或 MediaElement WebAudio），`purple` 表示已确认 active Capture（任意音量），并允许唯一的手势前瞻——文档为 `dom-native` 且数值越过原生上限时，可在 ACK 前一个手势帧显示紫色。`page-native`、已确认的 `media-webaudio` Boost 路由和未知路由不得预测。Popup 音量条与 Action 角标消费同一结果；角标不得用阈值反推，表面不得把 `blue` 解释成物理处理器类型。
 - 连续数值控制在输入任务中显示最新请求值；音量跨过 100% 不冻结数字、滑块或 OSD。已结算颜色消费已确认生命周期；手势前瞻只影响 tone，且必须由同一 `resolveVolumeTone` 产出。旧 ACK 不覆盖新目标，当前请求失败则回到已确认值并显示错误。Popup、快捷键和滚轮遵守同一规则。
 - 快捷键手势在按住和松键冻结阶段都保留最新同手势 actual ACK；按住时不回退预测数字，松键并结算后只纠正到最后实际值。最后 ACK 先于 keyup 到达时也必须完成纠正，不能等待一个不会再来的 ACK；新手势始终隔离旧手势结果。

@@ -190,9 +190,61 @@ describe('document-bound acknowledged control sessions', () => {
 
 	test('rebinds every durable acknowledged field across an exact-resource reload', async () => {
 		await mergeTabControlSession(7, completeSession, firstDocument, 'resource');
-		expect(await rebindTabControlSession(7, secondDocument)).toEqual(completeSession);
+		// Every field written at resource scope describes this resource and is
+		// replayed here — except the mute, which no extension gesture ever made
+		// portable and therefore never claimed (see the next case).
+		const durable: ControlSessionPatch = structuredClone(completeSession);
+		Reflect.deleteProperty(durable, 'mediaMuted');
+		expect(await rebindTabControlSession(7, secondDocument)).toEqual(durable);
 		expect(await getTabControlSession(7, firstDocument)).toBeNull();
-		expect(await getTabControlSession(7, secondDocument)).toEqual(completeSession);
+		expect(await getTabControlSession(7, secondDocument)).toEqual(durable);
+	});
+
+	test('drops a stored mute that no extension gesture ever made portable', async () => {
+		// A page that mutes itself — autoplay policy, an advertisement — writes a
+		// resource-scoped mute. Replaying it here is what made a reload start
+		// silent, so the orphan is dropped and physically removed instead.
+		await mergeTabControlSession(7, {
+			volumeBase: 64,
+			speed: 1.5,
+			mediaMuted: true,
+		}, firstDocument, 'resource');
+		expect(values.tab_session_7).toMatchObject({ patch: { mediaMuted: true } });
+
+		expect(await rebindTabControlSession(7, secondDocument)).toEqual({
+			volumeBase: 64,
+			speed: 1.5,
+		});
+		await flushTabControlSession(7);
+		expect(values.tab_session_7).toMatchObject({ patch: { volumeBase: 64, speed: 1.5 } });
+	});
+
+	test('keeps a mute the extension made portable', async () => {
+		await mergeTabControlSession(7, { volumeBase: 60, mediaMuted: true }, firstDocument);
+		expect(await rebindTabControlSession(7, secondDocument))
+			.toEqual({ volumeBase: 60, mediaMuted: true });
+	});
+
+	test('drops a stored zero volume that no extension gesture ever made portable', async () => {
+		// The other half of the same boot-time silence: a live player under a
+		// pre-roll starts at volume zero without setting `muted`. A resource-scoped
+		// zero is a page observation, not a preference; replaying it made the next
+		// visit silent before the page could speak.
+		await mergeTabControlSession(7, {
+			volumeBase: 0,
+			speed: 1.5,
+		}, firstDocument, 'resource');
+		expect(values.tab_session_7).toMatchObject({ patch: { volumeBase: 0 } });
+
+		expect(await rebindTabControlSession(7, secondDocument)).toEqual({ speed: 1.5 });
+		await flushTabControlSession(7);
+		expect(values.tab_session_7).toMatchObject({ patch: { speed: 1.5 } });
+	});
+
+	test('keeps a zero volume the extension itself acknowledged', async () => {
+		await mergeTabControlSession(7, { volumeBase: 0, speed: 1.5 }, firstDocument);
+		expect(await rebindTabControlSession(7, secondDocument))
+			.toEqual({ volumeBase: 0, speed: 1.5 });
 	});
 
 	test('keeps the same document across a History API resource change', async () => {

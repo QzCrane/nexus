@@ -2,6 +2,7 @@
 
 import type { AudioVolumeState } from './audio.contracts.js';
 import { isFiniteControlValue } from './control-value-limits.js';
+import type { VolumeTone } from './volume-presentation.contracts.js';
 import type {
 	ControlApplyAck,
 	ControlCapability,
@@ -177,6 +178,27 @@ export function selectHotkeyActionDescriptor(action: HotkeyAction): HotkeyAction
 export type SpectraHotkeyActualFeedback =
 	| { kind: 'volume'; value: number; volumeState: AudioVolumeState }
 	| { kind: 'speed'; value: number };
+
+export interface SpectraHotkeyPresentationToken {
+	owner: string;
+	revision: number;
+}
+
+export type SpectraHotkeyPresentation =
+	| { phase: 'pending'; token: SpectraHotkeyPresentationToken; volume: number; tone: VolumeTone }
+	| { phase: 'settled'; token: SpectraHotkeyPresentationToken };
+
+export function isSpectraHotkeyPresentation(value: unknown): value is SpectraHotkeyPresentation {
+	if (!isRecord(value) || !isRecord(value.token)
+		|| Object.keys(value.token).some(key => key !== 'owner' && key !== 'revision')
+		|| typeof value.token.owner !== 'string' || value.token.owner.length === 0 || value.token.owner.length > 256
+		|| !Number.isSafeInteger(value.token.revision) || Number(value.token.revision) <= 0) return false;
+	if (value.phase === 'settled') return Object.keys(value).every(key => key === 'phase' || key === 'token');
+	return value.phase === 'pending'
+		&& Object.keys(value).every(key => key === 'phase' || key === 'token' || key === 'volume' || key === 'tone')
+		&& isFiniteControlValue(value.volume, 'volume')
+		&& (value.tone === 'muted' || value.tone === 'native' || value.tone === 'capture');
+}
 
 export function resolveSpectraHotkeyActualFeedback(
 	action: HotkeyAction,

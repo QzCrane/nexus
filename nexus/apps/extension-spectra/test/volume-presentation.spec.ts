@@ -1,97 +1,15 @@
-// goal: lock the contract that decides when a volume gesture holds the tone
-// inv: the predicate never describes the displayed number, only the tone
+// goal: lock actual and prospective volume-tone boundaries
 
 import { describe, expect, test } from 'bun:test';
 import {
 	CONTROL_VALUE_LIMITS,
-	crossesVolumeRoute,
+	audioVolumeStateToVolumeTone,
+	isActiveCaptureLifecycle,
+	resolveAudioVolumeState,
 	resolveVolumeTone,
-	shouldHoldVolumeTone,
+	volumeToneToAudioVolumeState,
 } from '@nexus/contracts';
 
-const BOUNDARY = CONTROL_VALUE_LIMITS.volumeBase.max;
-
-describe('volume route boundary', () => {
-	test('is the native volume ceiling, not a repeated literal', () => {
-		expect(BOUNDARY).toBe(100);
-		expect(crossesVolumeRoute(BOUNDARY - 1, BOUNDARY)).toBe(false);
-		expect(crossesVolumeRoute(BOUNDARY, BOUNDARY + 1)).toBe(true);
-	});
-
-	test('treats movement inside one route as no crossing', () => {
-		expect(crossesVolumeRoute(40, 99)).toBe(false);
-		expect(crossesVolumeRoute(200, 800)).toBe(false);
-		expect(crossesVolumeRoute(0, BOUNDARY)).toBe(false);
-	});
-
-	test('detects crossing in both directions', () => {
-		expect(crossesVolumeRoute(100, 110)).toBe(true);
-		expect(crossesVolumeRoute(110, 100)).toBe(true);
-		expect(crossesVolumeRoute(800, 1)).toBe(true);
-	});
-});
-
-describe('shouldHoldVolumeTone', () => {
-	test('never holds when the effective volume did not change', () => {
-		expect(shouldHoldVolumeTone({
-			previousEffectiveVolume: 120,
-			nextEffectiveVolume: 120,
-			mutedChanged: true,
-		})).toBe(false);
-	});
-
-	test('does not hold an ordinary same-route drag', () => {
-		// The slider spans 0..800, so these are consecutive pointer samples of a
-		// normal gesture. Holding any of them is what froze the bar before.
-		for (const [previous, next] of [[40, 55], [55, 80], [80, 99], [200, 480]] as const) {
-			expect(shouldHoldVolumeTone({
-				previousEffectiveVolume: previous,
-				nextEffectiveVolume: next,
-				mutedChanged: false,
-			})).toBe(false);
-		}
-	});
-
-	test('holds the tone across the native/boost boundary in either direction', () => {
-		expect(shouldHoldVolumeTone({
-			previousEffectiveVolume: 100,
-			nextEffectiveVolume: 110,
-			mutedChanged: false,
-		})).toBe(true);
-		expect(shouldHoldVolumeTone({
-			previousEffectiveVolume: 110,
-			nextEffectiveVolume: 100,
-			mutedChanged: false,
-		})).toBe(true);
-	});
-
-	test('holds the tone when the same patch also flips mute', () => {
-		expect(shouldHoldVolumeTone({
-			previousEffectiveVolume: 40,
-			nextEffectiveVolume: 80,
-			mutedChanged: true,
-		})).toBe(true);
-	});
-
-	test('refuses to hold on values nothing can explain', () => {
-		expect(shouldHoldVolumeTone({
-			previousEffectiveVolume: Number.NaN,
-			nextEffectiveVolume: 110,
-			mutedChanged: false,
-		})).toBe(false);
-		expect(shouldHoldVolumeTone({
-			previousEffectiveVolume: 100,
-			nextEffectiveVolume: Number.POSITIVE_INFINITY,
-			mutedChanged: true,
-		})).toBe(false);
-	});
-});
-
-// The Popup slider and the Action badge used to decide violet independently: the
-// slider from the gesture, the badge from an `isCapture` boolean that ignored
-// the volume. Below 100 that painted a violet badge next to a blue bar; right
-// after a crossing it painted a blue badge next to a violet bar. One predicate,
-// two consumers, and neither can drift again.
 describe('resolveVolumeTone', () => {
 	const base = {
 		volume: 100,
@@ -100,9 +18,15 @@ describe('resolveVolumeTone', () => {
 		captureActive: false,
 	} as const;
 
-	test('an active Capture owns the tone at every volume', () => {
-		for (const volume of [1, 50, 99, 100, 101, 350, 800]) {
+	test('an active Capture owns the tone only above the native ceiling', () => {
+		for (const volume of [101, 350, 800]) {
 			expect(resolveVolumeTone({ ...base, volume, captureActive: true })).toBe('capture');
+		}
+		// At or below the ceiling the split is Boost 1, so a processor that has not
+		// released yet is passthrough: the leaving gesture must read blue at once
+		// instead of holding violet until the release acknowledgement lands.
+		for (const volume of [1, 50, 99, 100]) {
+			expect(resolveVolumeTone({ ...base, volume, captureActive: true })).toBe('native');
 		}
 	});
 
@@ -112,24 +36,28 @@ describe('resolveVolumeTone', () => {
 		}
 	});
 
-	test('a live gesture predicts the hijack only where the page cannot amplify', () => {
-		const gesture = { ...base, volume: 350, predict: true } as const;
-		expect(resolveVolumeTone({ ...gesture, nativeRoute: 'dom-native' })).toBe('capture');
-		expect(resolveVolumeTone({ ...gesture, nativeRoute: 'page-native' })).toBe('native');
-		expect(resolveVolumeTone({ ...gesture, nativeRoute: null })).toBe('native');
-		// An acknowledged route outranks the page-level guess in both directions.
-		expect(resolveVolumeTone({
-			...gesture, nativeRoute: 'dom-native', boostRoute: 'media-webaudio',
-		})).toBe('native');
-		expect(resolveVolumeTone({
-			...gesture, nativeRoute: 'page-native', boostRoute: 'capture',
-		})).toBe('capture');
+	test('a gesture uses the current source policy candidate without claiming physical Capture', () => {
+		const boundary = CONTROL_VALUE_LIMITS.volumeBase.max;
+		for (const volume of [boundary + 1, 350, 800]) {
+			expect(resolveVolumeTone({ ...base, volume, predict: true, prospectiveBoostRoute: 'capture' })).toBe('capture');
+			expect(resolveVolumeTone({ ...base, volume, predict: true, prospectiveBoostRoute: 'media-webaudio' })).toBe('native');
+			expect(resolveVolumeTone({ ...base, volume, predict: true, prospectiveBoostRoute: null })).toBe('native');
+			expect(resolveVolumeTone({ ...base, volume, prospectiveBoostRoute: 'capture' })).toBe('native');
+		}
+		for (const volume of [1, 50, boundary]) {
+			expect(resolveVolumeTone({ ...base, volume, predict: true, prospectiveBoostRoute: 'capture' })).toBe('native');
+		}
+		expect(resolveVolumeTone({ ...base, volume: 350, predict: true, boostRoute: 'capture', prospectiveBoostRoute: 'media-webaudio' })).toBe('native');
+		expect(resolveVolumeTone({ ...base, volume: 350, predict: true, boostRoute: 'capture', prospectiveBoostRoute: null })).toBe('native');
+		expect(resolveVolumeTone({ ...base, volume: 350, predict: true, boostRoute: 'capture' })).toBe('capture');
+		expect(resolveVolumeTone({ ...base, volume: 350, captureActive: true, prospectiveBoostRoute: 'media-webaudio' })).toBe('capture');
+		expect(base.captureActive).toBe(false);
 	});
 
 	test('never predicts below the native ceiling or on a settled frame', () => {
-		expect(resolveVolumeTone({ ...base, volume: 100, predict: true, nativeRoute: 'dom-native' }))
+		expect(resolveVolumeTone({ ...base, volume: 100, predict: true, boostRoute: 'capture' }))
 			.toBe('native');
-		expect(resolveVolumeTone({ ...base, volume: 350, nativeRoute: 'dom-native' }))
+		expect(resolveVolumeTone({ ...base, volume: 350, boostRoute: 'capture' }))
 			.toBe('native');
 	});
 
@@ -137,5 +65,38 @@ describe('resolveVolumeTone', () => {
 		expect(resolveVolumeTone({ ...base, volume: 0, captureActive: true })).toBe('muted');
 		expect(resolveVolumeTone({ ...base, muted: true })).toBe('muted');
 		expect(resolveVolumeTone({ ...base, volume: 350, enabled: false, predict: true })).toBe('native');
+	});
+
+	// The wire vocabulary (`AudioVolumeState`) and the palette vocabulary
+	// (`VolumeTone`) are one decision in two spellings. A surface that reads the
+	// acknowledgement and a surface that predicts a gesture therefore cannot
+	// describe the same document differently: both are this function.
+	test('the acknowledged state is the settled tone in wire spelling', () => {
+		for (const actualMode of ['bypass', 'webaudio', 'capture'] as const) {
+			for (const phase of ['idle', 'starting', 'active', 'stopping', 'error'] as const) {
+				for (const volume of [0, 1, 100, 350]) {
+					for (const muted of [false, true]) {
+						const tone = resolveVolumeTone({
+							volume,
+							muted,
+							enabled: true,
+							captureActive: isActiveCaptureLifecycle({ actualMode, phase }),
+						});
+						expect(resolveAudioVolumeState({ volume, muted, actualMode, phase }))
+							.toBe(volumeToneToAudioVolumeState(tone));
+					}
+				}
+			}
+		}
+	});
+
+	test('the two vocabularies map round-trip and never invent a fourth case', () => {
+		for (const tone of ['muted', 'native', 'capture'] as const) {
+			expect(audioVolumeStateToVolumeTone(volumeToneToAudioVolumeState(tone))).toBe(tone);
+		}
+		for (const state of ['silent', 'native', 'capture'] as const) {
+			expect(volumeToneToAudioVolumeState(audioVolumeStateToVolumeTone(state))).toBe(state);
+		}
+		expect(volumeToneToAudioVolumeState('muted')).toBe('silent');
 	});
 });

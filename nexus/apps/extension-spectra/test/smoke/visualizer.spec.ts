@@ -178,6 +178,15 @@ describe('SPECTRA built extension smoke: visualizer', () => {
 			);
 			expect(boosted.config).toMatchObject({ volume: 110, volumeBase: 100, boost: 1.1 });
 			expect(await hasOffscreenAudioTab(visualizerTabId)).toBe(false);
+			// Restore the portable user intent through its owner as well as the
+			// runtime below; otherwise the next same-origin tab inherits Boost 1.1.
+			await popup.$eval('.vol-slider', element => {
+				(element as HTMLInputElement).value = '100';
+				element.dispatchEvent(new Event('input', { bubbles: true }));
+				element.dispatchEvent(new Event('change', { bubbles: true }));
+			});
+			await eventually(() => readContentStatus(visualizerUrl), status => status.config?.volume === 100,
+				'portable neutral volume restoration');
 			await configureRuntime(visualizerUrl, {
 				...DEFAULT_AUDIO_CONFIG,
 				eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
@@ -265,7 +274,16 @@ describe('SPECTRA built extension smoke: visualizer', () => {
 				canvas.width = 64;
 				canvas.height = 64;
 				canvas.getContext('2d')?.fillRect(0, 0, 64, 64);
-				video.srcObject = canvas.captureStream(1);
+				const stream = canvas.captureStream(1);
+				// This case is unsafe for MediaElement WebAudio but still has native
+				// audio. A video-only stream belongs to the separate document-output
+				// tests and legitimately needs Capture for explicit volume changes.
+				const context = new AudioContext();
+				const destination = context.createMediaStreamDestination();
+				const oscillator = context.createOscillator();
+				oscillator.connect(destination); oscillator.start();
+				for (const track of destination.stream.getAudioTracks()) stream.addTrack(track);
+				video.srcObject = stream;
 				await video.play();
 			});
 			await waitForContentBootstrapStatus(unsafeUrl);

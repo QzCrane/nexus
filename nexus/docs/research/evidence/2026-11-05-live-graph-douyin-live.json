@@ -1,0 +1,129 @@
+{
+ "url": "https://live.douyin.com/447584845941",
+ "at": "2026-11-05T05:57:44.800Z",
+ "chrome": "Chrome/157.0.8103.39",
+ "dump": {
+  "sinks": [
+   {
+    "at": 6017,
+    "ctor": "DynamicsCompressorNode",
+    "inputs": 1,
+    "outputs": 1,
+    "channelCount": 2,
+    "channelCountMode": "clamped-max",
+    "hasPort": false,
+    "params": []
+   },
+   {
+    "at": 6803,
+    "ctor": "DynamicsCompressorNode",
+    "inputs": 1,
+    "outputs": 1,
+    "channelCount": 2,
+    "channelCountMode": "clamped-max",
+    "hasPort": false,
+    "params": []
+   },
+   {
+    "at": 13315,
+    "ctor": "DynamicsCompressorNode",
+    "inputs": 1,
+    "outputs": 1,
+    "channelCount": 2,
+    "channelCountMode": "clamped-max",
+    "hasPort": false,
+    "params": []
+   },
+   {
+    "at": 15784,
+    "ctor": "AudioWorkletNode",
+    "inputs": 1,
+    "outputs": 1,
+    "channelCount": 2,
+    "channelCountMode": "max",
+    "hasPort": true,
+    "params": []
+   },
+   {
+    "at": 21810,
+    "ctor": "DynamicsCompressorNode",
+    "inputs": 1,
+    "outputs": 1,
+    "channelCount": 2,
+    "channelCountMode": "clamped-max",
+    "hasPort": false,
+    "params": []
+   }
+  ],
+  "ports": [
+   {
+    "at": 15784,
+    "preview": "{\"type\":\"ENABLE\"}"
+   }
+  ],
+  "volumeish": [
+   {
+    "tag": "DIV",
+    "className": "douyin-player-icon douyin-player-volume ",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 0,
+    "h": 0,
+    "visible": false
+   },
+   {
+    "tag": "DIV",
+    "className": "douyin-player-volume-slider  douyin-player-volume-slider-show-number",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 0,
+    "h": 0,
+    "visible": false
+   },
+   {
+    "tag": "DIV",
+    "className": "douyin-player-volume-slider-track",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 0,
+    "h": 0,
+    "visible": false
+   },
+   {
+    "tag": "DIV",
+    "className": "douyin-player-volume-slider-thumb",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 0,
+    "h": 0,
+    "visible": false
+   },
+   {
+    "tag": "SPAN",
+    "className": "douyin-player-volume-number",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 0,
+    "h": 0,
+    "visible": false
+   }
+  ],
+  "ranges": [],
+  "errors": []
+ }
+}

@@ -9,6 +9,7 @@ import {
 import type { AudioProcessorConfig } from './audio-processor.contracts.js';
 import { isRejection, type Rejection } from './fact.js';
 import { keySetOf } from './key-set.js';
+import { resolveVolumeTone, type VolumeTone } from './volume-presentation.contracts.js';
 
 export interface AudioConfig {
   enabled: boolean;
@@ -18,6 +19,8 @@ export interface AudioConfig {
   volumeBase: number;
   boost: number;
   muted: boolean;
+  // Runtime ownership of the current document's captured output, never a site preference.
+  documentOutput?: true;
   compressor: boolean;
   mono: boolean;
   bass: boolean;
@@ -39,7 +42,7 @@ export interface AudioConfig {
  * satisfy the current product invariant. This type is only for bounded
  * storage migration and must never cross a current runtime boundary.
  */
-export type LegacyAudioConfig = Omit<AudioConfig, 'volumeBase' | 'boost'>
+export type LegacyAudioConfig = Omit<AudioConfig, 'volumeBase' | 'boost' | 'documentOutput'>
   & Partial<Pick<AudioConfig, 'volumeBase' | 'boost'>>;
 
 export const DEFAULT_AUDIO_CONFIG: Readonly<AudioConfig> = {
@@ -64,6 +67,7 @@ const AUDIO_CONFIG_KEYS = keySetOf<AudioConfig>()([
   'volumeBase',
   'boost',
   'muted',
+  'documentOutput',
   'compressor',
   'mono',
   'bass',
@@ -141,12 +145,13 @@ export function resolveAudioVolume(config: Pick<AudioConfig, 'volumeBase' | 'boo
 
 /**
  * Projects the complete, validated product configuration onto the physical
- * WebAudio/Capture processor boundary. Native media fields are deliberately omitted;
- * `boostGain` is the only volume-related value owned by the graph.
+ * WebAudio/Capture processor boundary. Native media fields stay outside it;
+ * the explicitly acquired document-output owner has an independent output level.
  */
 export function audioConfigToProcessorConfig(config: AudioConfig): AudioProcessorConfig {
   return {
-    boostGain: config.boost,
+    boostGain: config.documentOutput ? 1 : config.boost,
+    ...(config.documentOutput ? { outputLevel: { gain: config.volume / 100, muted: config.muted } } : {}),
     compressor: config.compressor,
     mono: config.mono,
     bass: config.bass,
@@ -165,9 +170,9 @@ export function audioConfigToProcessorConfig(config: AudioConfig): AudioProcesso
  */
 export function requiresAudioProcessor(config: Pick<
 	AudioConfig,
-	'volume' | 'volumeBase' | 'boost' | 'eqValues' | 'compressor' | 'bass' | 'mono' | 'pan' | 'delay'
+	'volume' | 'volumeBase' | 'boost' | 'eqValues' | 'compressor' | 'bass' | 'mono' | 'pan' | 'delay' | 'documentOutput'
 >): boolean {
-	return resolveAudioVolume(config).boost > 1
+	return config.documentOutput === true || resolveAudioVolume(config).boost > 1
 		|| config.eqValues.some((value) => value !== 0)
 		|| config.compressor
 		|| config.bass
@@ -199,6 +204,7 @@ export function resolveDesiredAudioMode(
 	demand: Readonly<AudioProcessorDemand> = NO_AUDIO_PROCESSOR_DEMAND,
 ): SpectraAudioMode {
 	if (!config.enabled) return 'bypass';
+	if (config.documentOutput) return 'capture';
 	if (!requiresAudioProcessor(config)) {
 		return demand.visualizer && demand.mediaWebAudio && demand.mediaRoute !== 'capture'
 			? 'webaudio' : 'bypass';
@@ -242,6 +248,7 @@ export function isAudioConfig(value: unknown): value is AudioConfig {
     && isFiniteControlValue(value.boost, 'boost')
     && value.volume === compileEffectiveVolume(value.volumeBase, value.boost)
     && typeof value.muted === 'boolean'
+    && (value.documentOutput === undefined || value.documentOutput === true)
     && typeof value.compressor === 'boolean'
     && typeof value.mono === 'boolean'
     && typeof value.bass === 'boolean'
@@ -261,6 +268,7 @@ export function isAudioConfig(value: unknown): value is AudioConfig {
  */
 export function isLegacyAudioConfig(value: unknown): value is LegacyAudioConfig {
   if (!isRecord(value) || !hasOnlyKeys(value, AUDIO_CONFIG_KEYS)) return false;
+  if (Object.hasOwn(value, 'documentOutput')) return false;
   return typeof value.enabled === 'boolean'
     && isFiniteControlValue(value.volume, 'volume')
     && (value.volumeBase === undefined || isFiniteControlValue(value.volumeBase, 'volumeBase'))
@@ -327,6 +335,7 @@ export function isAudioConfigPatch(value: unknown): value is Partial<AudioConfig
     && (value.volumeBase === undefined || isFiniteControlValue(value.volumeBase, 'volumeBase'))
     && (value.boost === undefined || isFiniteControlValue(value.boost, 'boost'))
     && (value.muted === undefined || typeof value.muted === 'boolean')
+    && (value.documentOutput === undefined || value.documentOutput === true)
     && (value.compressor === undefined || typeof value.compressor === 'boolean')
     && (value.mono === undefined || typeof value.mono === 'boolean')
     && (value.bass === undefined || typeof value.bass === 'boolean')
@@ -344,7 +353,7 @@ export function isAudioConfigPatch(value: unknown): value is Partial<AudioConfig
 // post: identifies the transparent, never-activated site configuration
 export function isDefaultAudioConfig(config: AudioConfig): boolean {
 	const volume = resolveAudioVolume(config);
-	return config.enabled === DEFAULT_AUDIO_CONFIG.enabled
+	return config.documentOutput !== true && config.enabled === DEFAULT_AUDIO_CONFIG.enabled
 		&& volume.volumeBase === DEFAULT_AUDIO_CONFIG.volumeBase
 		&& volume.boost === DEFAULT_AUDIO_CONFIG.boost
 		&& config.muted === DEFAULT_AUDIO_CONFIG.muted
@@ -434,19 +443,44 @@ export function isActiveCaptureLifecycle(value: {
 	return value.actualMode === 'capture' && value.phase === 'active';
 }
 
+/**
+ * The two published vocabularies, in one place.
+ *
+ * `AudioVolumeState` is what a settled acknowledgement says on the wire;
+ * `VolumeTone` is what the palette says on screen. They are the same trichotomy
+ * with one label renamed, so the map is total in both directions and neither
+ * side may grow a fourth case on its own.
+ */
+export function volumeToneToAudioVolumeState(tone: VolumeTone): AudioVolumeState {
+	return tone === 'muted' ? 'silent' : tone;
+}
+
+export function audioVolumeStateToVolumeTone(state: AudioVolumeState): VolumeTone {
+	return state === 'silent' ? 'muted' : state;
+}
+
 // post: the single semantic state behind Popup, badge and authenticated remote
-// colors. Volume thresholds never imply Capture; only an acknowledged active
-// Capture lifecycle can do so.
+// colors. A threshold never implies Capture, and Capture cannot describe a split
+// that has no Boost: the acknowledged lifecycle owns the tone only above the
+// native ceiling (<= 100 always splits to Boost 1, so a not-yet-released
+// processor there is passthrough and reads as native).
+//
+// This is a *settled* answer, so it is the tone decision with `predict` off and
+// the wire label applied. Keeping the composition here instead of restating the
+// rule is what stops the acknowledged state and the palette from describing the
+// same document differently.
 export function resolveAudioVolumeState(value: {
 	volume: number;
 	muted: boolean;
 	actualMode: SpectraAudioMode | null | undefined;
 	phase: AudioSessionPhase;
 }): AudioVolumeState {
-	if (value.muted || value.volume <= 0) return 'silent';
-	return isActiveCaptureLifecycle(value)
-		? 'capture'
-		: 'native';
+	return volumeToneToAudioVolumeState(resolveVolumeTone({
+		volume: value.volume,
+		muted: value.muted,
+		enabled: true,
+		captureActive: isActiveCaptureLifecycle(value),
+	}));
 }
 
 // goal: complete, side-effect-free status returned by the current document runtime

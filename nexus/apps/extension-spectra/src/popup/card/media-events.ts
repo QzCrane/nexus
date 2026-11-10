@@ -245,6 +245,38 @@ async function submitMutation(tabId: number, state: CardInternalState, render: (
 	return response.data;
 }
 
+/**
+ * The video target a click acts on.
+ *
+ * The first paint is a forecast assembled from durable facts before Content has
+ * answered, so it can legitimately lack a target on a tab that plainly has one.
+ * Trusting that forecast made the first PiP click report "No active video
+ * target" and only the second one work. Ask the live snapshot once before
+ * declaring absence: one message round trip still fits inside the click's
+ * transient activation, and a forecast that already has a target pays nothing.
+ */
+async function resolveVideoTarget(
+	tabId: number,
+	state: CardInternalState,
+	render: () => void,
+): Promise<{ documentId: string; target: MediaTarget } | null> {
+	const pick = (): { documentId: string; target: MediaTarget } | null => {
+		const snapshot = state.controlSnapshot;
+		const target = snapshot?.activeVideo
+			?? (snapshot?.activeMedia?.kind === 'video' ? snapshot.activeMedia : null);
+		return snapshot?.documentId && target ? { documentId: snapshot.documentId, target } : null;
+	};
+	const forecast = pick();
+	if (forecast) return forecast;
+	try {
+		const response = await sendSpectraRequest('spectra.control.snapshot.get', { tabId });
+		if (response.ok && response.data) applyControlSnapshot(state, response.data, render);
+	} catch {
+		return null;
+	}
+	return pick();
+}
+
 // eff: attaches click and input handlers to playback buttons, speed controls, and tab-focus utilities
 export function bindMediaControls(
 	ui: CardUIElements,
@@ -286,28 +318,31 @@ export function bindMediaControls(
 
 	if (ui.btnPip) {
 		ui.btnPip.onclick = () => {
-			const snapshot = state.controlSnapshot;
-			const target = snapshot?.activeVideo
-				?? (snapshot?.activeMedia?.kind === 'video' ? snapshot.activeMedia : null);
-			if (!snapshot?.documentId || !target) {
-				void reportControlFailure(new Error('No active video target'), state, onError);
-				return;
-			}
-			ui.btnPip?.setAttribute('aria-busy', 'true');
-			pipToggleByTab.set(tabId, { documentId: snapshot.documentId, target });
-			// The first call in the click stack is a one-shot isolated-world injection.
-			// It reaches the sole native writer without a Background/message await.
-			void togglePictureInPicture(tabId)
-				.then((result) => {
+			// Kept as a detached task rather than runControl: that queue awaits the
+			// volume flush first, and PiP has to reach the native call while the
+			// click's transient activation is still live.
+			void (async () => {
+				const resolved = await resolveVideoTarget(tabId, state, render);
+				if (!resolved) {
+					await reportControlFailure(new Error('No active video target'), state, onError);
+					return;
+				}
+				ui.btnPip?.setAttribute('aria-busy', 'true');
+				pipToggleByTab.set(tabId, { documentId: resolved.documentId, target: resolved.target });
+				// The first call in the click stack is a one-shot isolated-world injection.
+				// It reaches the sole native writer without a Background/message await.
+				try {
+					const result = await togglePictureInPicture(tabId);
 					if (!ui.btnPip) return;
 					ui.btnPip.classList.toggle('active', result.active);
 					ui.btnPip.setAttribute('aria-pressed', String(result.active));
-				})
-				.catch((error: unknown) => reportControlFailure(error, state, onError))
-				.finally(() => {
+				} catch (error) {
+					await reportControlFailure(error, state, onError);
+				} finally {
 					pipToggleByTab.delete(tabId);
 					ui.btnPip?.removeAttribute('aria-busy');
-				});
+				}
+			})();
 		};
 	}
 

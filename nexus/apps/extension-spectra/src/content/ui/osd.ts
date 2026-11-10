@@ -2,9 +2,12 @@
 
 import { UI_COLORS } from '../../shared/ui-colors';
 import type {
-	AudioVolumeState,
 	SpectraHotkeyActualFeedback,
+	VolumeTone,
+	SpectraHotkeyPresentation,
+	SpectraHotkeyPresentationToken,
 } from '@nexus/contracts';
+import { audioVolumeStateToVolumeTone, stepEffectiveVolume } from '@nexus/contracts';
 import type { ContentGlobalSettings } from '../core/settings-manager';
 import { activateFeedbackSurface, createFeedbackSurface } from './feedback-surface';
 import {
@@ -17,9 +20,19 @@ import {
 } from './scalar-feedback';
 
 export type OSDPayload =
-	| { type: 'volume'; value: number; volumeState: AudioVolumeState }
+	| { type: 'volume'; value: number; tone: VolumeTone }
 	| { type: 'speed'; value: number };
 type VolumeOSDPayload = Extract<OSDPayload, { type: 'volume' }>;
+
+/**
+ * The palette decision for one predicted volume value.
+ *
+ * The OSD does not own it: a shortcut gesture must paint the same tone the
+ * Popup slider and the Action badge paint for the same document at the same
+ * moment, so the caller supplies the one shared decision (`resolveVolumeTone`
+ * with a live-gesture prediction) and the OSD only renders its result.
+ */
+export type VolumeToneResolver = (volume: number) => VolumeTone;
 
 type HotkeyOSDPhase = 'active' | 'frozen' | 'settled';
 
@@ -28,7 +41,7 @@ interface HotkeyOSDTransaction {
 	phase: HotkeyOSDPhase;
 	alternate: boolean;
 	target: OSDPayload;
-	volumeState: AudioVolumeState;
+	tone: VolumeTone;
 	settlement: {
 		actual: OSDPayload;
 		settings: ContentGlobalSettings;
@@ -47,6 +60,7 @@ interface OSDState {
 	claimedGesture: string | null;
 	lastTargetAt: number | null;
 	lastType: 'volume' | 'speed' | null;
+	pendingVolume: Extract<SpectraHotkeyPresentation, { phase: 'pending' }> | null;
 	disposed: boolean;
 }
 const state: OSDState = {
@@ -60,6 +74,7 @@ const state: OSDState = {
 	claimedGesture: null,
 	lastTargetAt: null,
 	lastType: null,
+	pendingVolume: null,
 	disposed: false,
 };
 
@@ -102,6 +117,7 @@ export function advanceHotkeyTargetOSD(
 	delta: number,
 	s: ContentGlobalSettings,
 	gesture: string,
+	resolveTone?: VolumeToneResolver,
 ): void {
 	if (state.disposed || !s.osdEnabled) return;
 	state.claimedGesture = gesture;
@@ -115,10 +131,13 @@ export function advanceHotkeyTargetOSD(
 				&& Math.abs(previousTarget - baseline.value) <= step + 0.001)
 		? previousTarget
 		: baseline.value;
-	const value = clampScalarFeedbackValue(
-		baseline.kind,
-		Math.round((base + delta) * 100) / 100,
-	);
+	// The prediction is the coordinator's own step rule, not local arithmetic:
+	// a volume step near the native ceiling has to show the value that will
+	// actually be written, or the pill settles onto a different number.
+	const next = baseline.kind === 'volume'
+		? stepEffectiveVolume(base, delta)
+		: Math.round((base + delta) * 100) / 100;
+	const value = clampScalarFeedbackValue(baseline.kind, next);
 	const feedback = { ...baseline, value };
 	const started = priorHotkey?.gesture !== gesture;
 	const visibleVolume = state.presentation?.type === 'volume'
@@ -132,7 +151,7 @@ export function advanceHotkeyTargetOSD(
 		baselineVolume,
 		started ? priorHotkey?.phase : 'active',
 	);
-	const predictedState = feedback.kind === 'volume' ? feedback.volumeState : 'native';
+	const predictedTone = feedback.kind === 'volume' ? feedbackPayload(feedback) : null;
 	const hotkey: HotkeyOSDTransaction = !started && priorHotkey
 		? priorHotkey
 		: {
@@ -140,9 +159,13 @@ export function advanceHotkeyTargetOSD(
 			phase: 'active',
 			alternate: false,
 			target: feedbackPayload(feedback),
-			volumeState: previous !== null && previous.value > 0
-				? previous.volumeState
-				: predictedState,
+			// A continuing gesture keeps the tone the user already sees. A new one
+			// starts from the acknowledged tone of the value it is leaving, and its
+			// first target is predicted forward - predicting from step one is what
+			// removes the "colour arrives with the acknowledgement" lag.
+			tone: previous !== null && previous.value > 0
+				? previous.tone
+				: predictedTone?.type === 'volume' ? predictedTone.tone : 'native',
 			settlement: null,
 		};
 	state.hotkey = hotkey;
@@ -152,11 +175,9 @@ export function advanceHotkeyTargetOSD(
 		renderOSD(hotkey.target, s, {});
 		return;
 	}
-	const target: VolumeOSDPayload = {
-		type: 'volume',
-		value,
-		volumeState: value <= 0 ? 'silent' : hotkey.volumeState,
-	};
+	const tone = value <= 0 ? 'muted' : resolveTone?.(value) ?? hotkey.tone;
+	const target: VolumeOSDPayload = { type: 'volume', value, tone };
+	hotkey.tone = tone;
 	hotkey.target = target;
 	renderOSD(target, s, {});
 }
@@ -201,27 +222,82 @@ export function admitsHotkeyActualOSDGesture(
 
 function feedbackPayload(feedback: SpectraHotkeyActualFeedback): OSDPayload {
 	return feedback.kind === 'volume'
-		? { type: 'volume', value: feedback.value, volumeState: feedback.volumeState }
+		? {
+			type: 'volume',
+			value: feedback.value,
+			tone: audioVolumeStateToVolumeTone(feedback.volumeState),
+		}
 		: { type: 'speed', value: feedback.value };
 }
 
-function updateAcknowledgedVolumeState(
+function updateAcknowledgedTone(
 	hotkey: HotkeyOSDTransaction,
 	actual: VolumeOSDPayload,
 ): void {
 	// A zero value hides processor tone but does not prove that the processor
-	// changed. A positive ACK is complete: silent then means media mute.
-	if (actual.value > 0) hotkey.volumeState = actual.volumeState;
+	// changed. A positive ACK is complete: muted then means media mute.
+	if (actual.value > 0) hotkey.tone = actual.tone;
+}
+
+export function stageHotkeyVolumePresentation(
+	presentation: Extract<SpectraHotkeyPresentation, { phase: 'pending' }>,
+	s: ContentGlobalSettings,
+	options: OSDOptions,
+	gesture?: string,
+): void {
+	if (state.disposed || !s.osdEnabled) return;
+	const current = state.pendingVolume;
+	if (current?.token.owner === presentation.token.owner && current.token.revision > presentation.token.revision) return;
+	if (gesture && !admitsHotkeyActualOSDGesture(gesture, state.claimedGesture === null)) return;
+	// A pending plan may refine an existing gesture, but never resurrect its
+	// retired pill after key release or the existing hide timer.
+	if (gesture && isGesturePresentationRetired(gesture)) return;
+	if (gesture) state.claimedGesture = gesture;
+	state.pendingVolume = presentation;
+	if (gesture && state.hotkey?.gesture === gesture && state.hotkey.target.type === 'volume') {
+		if (options.variant === 'alternate-target') {
+			state.hotkey.alternate = true;
+			state.hotkey.tone = presentation.tone;
+			state.hotkey.target = { type: 'volume', value: presentation.volume, tone: presentation.tone };
+			renderOSD(state.hotkey.target, s, options);
+			return;
+		}
+		// The token still owns settlement, but its older value must not lend
+		// its colour to a newer locally predicted target in the same gesture.
+		if (state.hotkey.alternate || state.hotkey.target.value !== presentation.volume) return;
+		state.hotkey.tone = presentation.tone;
+		state.hotkey.target = { ...state.hotkey.target, tone: presentation.tone };
+		if (state.root && state.presentation?.type === 'volume' && state.presentation.value === presentation.volume) {
+			state.presentation = { ...state.presentation, tone: presentation.tone };
+			paintOSDColor(state.root, state.presentation);
+		}
+		return;
+	}
+	renderOSD({ type: 'volume', value: presentation.volume, tone: presentation.tone }, s, options);
+}
+
+function isGesturePresentationRetired(gesture: string): boolean {
+	return state.hotkey?.gesture === gesture && state.hotkey.phase === 'settled' && state.presentation === null;
+}
+
+export function settleHotkeyVolumePresentation(token: SpectraHotkeyPresentationToken): boolean {
+	const pending = state.pendingVolume;
+	if (!pending || pending.token.owner !== token.owner || pending.token.revision > token.revision) return false;
+	state.pendingVolume = null;
+	return true;
 }
 
 function paintOSDColor(root: ShadowRoot, payload: OSDPayload): void {
 	const fill = root.getElementById('f');
 	if (!fill) return;
+	// Render one admitted value/tone pair. Pending work is not another colour
+	// owner: it may describe a previous input while this payload is newer.
+	const tone = payload.type === 'volume' ? payload.tone : 'native';
 	fill.style.backgroundColor = payload.type === 'speed'
 		? UI_COLORS.SUCCESS
-		: payload.volumeState === 'capture'
+		: tone === 'capture'
 			? UI_COLORS.CAPTURE
-			: payload.volumeState === 'silent'
+			: tone === 'muted'
 				? UI_COLORS.MUTED
 				: UI_COLORS.NATIVE;
 }
@@ -253,7 +329,7 @@ export function showHotkeyActualOSD(
 			phase: 'active',
 			alternate,
 			target: actual,
-			volumeState: actual.type === 'volume' ? actual.volumeState : 'native',
+			tone: actual.type === 'volume' ? actual.tone : 'native',
 			settlement: null,
 		};
 		state.hotkey = hotkey;
@@ -267,19 +343,23 @@ export function showHotkeyActualOSD(
 		const targetMatches = hotkey.target.type === actual.type
 			&& hotkey.target.value === actual.value
 			&& (hotkey.target.type !== 'volume'
-				|| actual.type === 'volume' && hotkey.target.volumeState === actual.volumeState);
+				|| actual.type === 'volume' && hotkey.target.tone === actual.tone);
 		if (targetMatches) return;
 		// Reconcile the finished gesture with its actual result without executing
 		// another action. An active newer gesture is fenced above.
-		if (actual.type === 'volume') updateAcknowledgedVolumeState(hotkey, actual);
+		if (actual.type === 'volume') updateAcknowledgedTone(hotkey, actual);
 		hotkey.target = actual;
+		// A retired pill keeps its place in history: this ACK only corrects the
+		// state the next gesture starts from. Re-rendering here would resurrect a
+		// presentation the user already watched disappear.
+		if (state.presentation?.type !== actual.type) return;
 		renderOSD(actual, s, options, false, true);
 		return;
 	}
 	if (alternate) {
 		hotkey.alternate = alternate;
 		hotkey.target = actual;
-		if (actual.type === 'volume') updateAcknowledgedVolumeState(hotkey, actual);
+		if (actual.type === 'volume') updateAcknowledgedTone(hotkey, actual);
 		renderOSD(
 			actual,
 			s,
@@ -293,22 +373,66 @@ export function showHotkeyActualOSD(
 	// throughout the gesture so release does not wait for a nonexistent later ACK.
 	// Prediction remains visible until release; only the latest actual is kept.
 	hotkey.settlement = { actual, settings: s, options };
-	if (hotkey.phase === 'frozen') {
-		if (actual.type === 'volume') updateAcknowledgedVolumeState(hotkey, actual);
+	if (hotkey.phase === 'frozen') return;
+	// A partial gesture ACK can settle 100 while the held key already predicts
+	// 110. Keep the complete ACK for release, never splice its tone into 110.
+	if (actual.type !== hotkey.target.type || actual.value !== hotkey.target.value) return;
+	if (state.presentation?.type !== feedback.kind) {
+		// The pill is already off screen. The acknowledgement still owns the
+		// transaction (the next gesture starts from it), so record the tone and
+		// leave the retired presentation alone.
+		if (feedback.kind !== 'volume' || hotkey.target.type !== 'volume') return;
+		updateAcknowledgedTone(hotkey, actual as VolumeOSDPayload);
+		hotkey.target = { ...hotkey.target, tone: hotkey.tone };
 		return;
 	}
-	if (state.presentation?.type !== feedback.kind) return;
 	if (feedback.kind !== 'volume' || hotkey.target.type !== 'volume') return;
-	updateAcknowledgedVolumeState(hotkey, actual as VolumeOSDPayload);
+	updateAcknowledgedTone(hotkey, actual as VolumeOSDPayload);
 	const target = {
 		...hotkey.target,
-		volumeState: hotkey.target.value <= 0 ? 'silent' : hotkey.volumeState,
+		tone: hotkey.target.value <= 0 ? 'muted' : hotkey.tone,
 	} satisfies VolumeOSDPayload;
 	hotkey.target = target;
 	// ACKs correct only the acknowledged tone. They must not rewind
 	// the transient target, cancel its fill interpolation, or restart its timer.
 	state.presentation = target;
 	if (state.root) paintOSDColor(state.root, target);
+}
+
+/**
+ * Repaint the visible tone from a fresh palette decision.
+ *
+ * The acknowledgement of a gesture settles its *fields*; the processor it handed
+ * the document to settles later, as a lifecycle of its own. Without this entry
+ * point the pill kept the predicted colour for its whole display window while
+ * the Popup and the badge had already followed the session, which is the exact
+ * disagreement one tone decision is supposed to make impossible.
+ */
+export function repaintHotkeyVolumeTone(resolveTone: VolumeToneResolver): void {
+	if (state.disposed || !state.root || !state.hotkey) return;
+	// This resolver describes the foreground document. Another tab's feedback
+	// can only be updated by that target's own staged/acknowledged projection.
+	if (state.hotkey.alternate) return;
+	if (state.pendingVolume) return;
+	const hotkey = state.hotkey;
+	// A live gesture owns its frame. An acknowledgement that lands mid-gesture
+	// may name a different route owner (a boost that boots or releases between
+	// two key presses), and repainting on it made the pill flash violet then
+	// blue on the SAME 110% value, once per press. The transaction's decision
+	// stands until the gesture settles; the next gesture reads the new fact.
+	if (hotkey.phase === 'active') return;
+	const target = hotkey.target;
+	if (target.type !== 'volume' || target.value <= 0) return;
+	const tone = resolveTone(target.value);
+	if (tone === target.tone) return;
+	hotkey.tone = tone;
+	const next: VolumeOSDPayload = { ...target, tone };
+	hotkey.target = next;
+	if (hotkey.settlement?.actual.type === 'volume') {
+		hotkey.settlement.actual = { ...hotkey.settlement.actual, tone };
+	}
+	if (state.presentation?.type === 'volume') state.presentation = next;
+	paintOSDColor(state.root, next);
 }
 
 function formatSpeed(speed: number): string {
@@ -361,11 +485,11 @@ function paintScalarValue(
 		icon.textContent = target > 1 ? '⚡' : (target < 1 ? '🐢' : '⏱️');
 		return;
 	}
-	const silent = payload.volumeState === 'silent';
-	text.textContent = silent
+	const muted = payload.tone === 'muted';
+	text.textContent = muted
 		? s.osdMessages.muted
 		: `${Number.isInteger(target) ? target : target.toFixed(1)}%`;
-	icon.textContent = silent ? '🔇' : (target > 100 ? '🚀' : '🔊');
+	icon.textContent = muted ? '🔇' : (target > 100 ? '🚀' : '🔊');
 }
 
 function animateScalarValue(
@@ -385,7 +509,7 @@ function animateScalarValue(
 		? state.displayedValue
 		: payload.value;
 	const to = payload.value;
-	if (payload.type === 'volume' && payload.volumeState === 'silent'
+	if (payload.type === 'volume' && payload.tone === 'muted'
 		|| from === to) {
 		state.displayedValue = to;
 		paintScalarValue(root, payload, to, s);
@@ -549,6 +673,7 @@ function renderOSD(
 
 // eff: removes feedback immediately only at a real lifecycle boundary.
 export function hideOSD(preserveShortcutTarget = false): void {
+	state.pendingVolume = null;
 	if (state.timer) clearTimeout(state.timer);
 	concealOSD();
 	if (!preserveShortcutTarget) {
@@ -559,6 +684,7 @@ export function hideOSD(preserveShortcutTarget = false): void {
 
 // eff: cancels all retained presentation work and rejects late generation ACKs.
 export function disposeOSD(): void {
+	state.pendingVolume = null;
 	state.disposed = true;
 	if (state.timer) clearTimeout(state.timer);
 	state.timer = null;

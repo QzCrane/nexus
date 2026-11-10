@@ -1,0 +1,166 @@
+{
+ "url": "https://www.huya.com/668",
+ "at": "2026-11-05T06:11:10.431Z",
+ "chrome": "Chrome/157.0.8103.39",
+ "settleMs": 70000,
+ "structure": [
+  {
+   "path": "top",
+   "href": "https://www.huya.com/668",
+   "media": []
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://f38fbccbe9d6e02b-7q5dta52.ext.huya.com/ext-web-sub-frame/0.2.12/index.html",
+   "media": "cross-origin"
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://y2261a742d6a43b3-s63rm70r.ext.huya.com/ext-web-sub-frame/0.2.12/index.html",
+   "media": "cross-origin"
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://open.weixin.qq.com/pcopensdk/frame",
+   "media": "cross-origin"
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://game.weixin.qq.com/cgi-bin/minigame/static/pc-gamesdk-alpha/wxgamesdkframe.html",
+   "media": "cross-origin"
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://udblgn.huya.com/web/middle/2.4/50984214/https/cded94713f524f81aef1c3f1f7a189fd",
+   "media": "cross-origin"
+  }
+ ],
+ "structureAfter": [
+  {
+   "path": "top",
+   "href": "https://www.huya.com/668",
+   "media": []
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://f38fbccbe9d6e02b-7q5dta52.ext.huya.com/ext-web-sub-frame/0.2.12/index.html",
+   "media": "cross-origin"
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://y2261a742d6a43b3-s63rm70r.ext.huya.com/ext-web-sub-frame/0.2.12/index.html",
+   "media": "cross-origin"
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://open.weixin.qq.com/pcopensdk/frame",
+   "media": "cross-origin"
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://game.weixin.qq.com/cgi-bin/minigame/static/pc-gamesdk-alpha/wxgamesdkframe.html",
+   "media": "cross-origin"
+  },
+  {
+   "path": "top > iframe",
+   "href": "https://udblgn.huya.com/web/middle/2.4/50984214/https/cded94713f524f81aef1c3f1f7a189fd",
+   "media": "cross-origin"
+  }
+ ],
+ "tapAttached": {
+  "ok": true,
+  "ratio": 1,
+  "ctor": "GainNode"
+ },
+ "tapByRatio": {
+  "1": {
+   "gain": [
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1,
+    1
+   ],
+   "rms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "0.25": {
+   "gain": [
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25,
+    0.25
+   ],
+   "rms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  },
+  "0.6": {
+   "gain": [
+    0.6,
+    0.6,
+    0.6,
+    0.6,
+    0.6,
+    0.6,
+    0.6,
+    0.6
+   ],
+   "rms": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ]
+  }
+ },
+ "volumeLog": [],
+ "summary": {
+  "baseline": {},
+  "afterDown": {},
+  "afterUp": {}
+ },
+ "samples": []
+}

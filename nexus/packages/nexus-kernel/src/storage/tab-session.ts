@@ -405,15 +405,38 @@ export async function rebindTabControlSession(
 			await clearStoredSession(tabId);
 			return null;
 		}
-		const patch = sameDocument || exactResourceReload
+		let patch = sameDocument || exactResourceReload
 			? normalized.patch
 			: normalized.portablePatch;
+		// Legacy repair: a stored mute is only a preference when it also reached the
+		// origin-portable row. A resource-scoped mute, or one copied in by an
+		// unrelated gesture from the whole snapshot, never did — the portable row
+		// is written from the acknowledged fields of extension gestures only. Such
+		// an orphan is dropped on rebind instead of replaying it as the viewer's
+		// choice, which is what made a site start silent.
+		let cleaned = false;
+		if (patch.mediaMuted === true && normalized.portablePatch.mediaMuted !== true) {
+			patch = clonePatch(patch);
+			Reflect.deleteProperty(patch, 'mediaMuted');
+			cleaned = true;
+		}
+		// The same repair for the value that made a rebind silent without ever
+		// setting `muted`: a page that starts its player at volume zero (a live
+		// element under a pre-roll, an advertisement fading in) used to be recorded
+		// as a preference. Zero is only a preference when an extension gesture
+		// acknowledged it and promoted it to the portable row.
+		if (patch.volumeBase === 0 && normalized.portablePatch.volumeBase !== 0) {
+			patch = clonePatch(patch);
+			Reflect.deleteProperty(patch, 'volumeBase');
+			cleaned = true;
+		}
 		if (Object.keys(patch).length === 0) {
 			await clearStoredSession(tabId);
 			return null;
 		}
 
-		if (normalized.migration !== 'none'
+		if (cleaned
+			|| normalized.migration !== 'none'
 			|| !identitiesMatch(normalized.identity, identity)
 			|| normalized.resourceUrl !== identity.resourceUrl
 			|| patch !== normalized.patch) {

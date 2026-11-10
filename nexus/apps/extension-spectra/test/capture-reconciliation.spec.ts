@@ -36,6 +36,51 @@ function captureStartAdmission(tabId: number, documentId = `document-${tabId}`) 
 }
 
 describe('capture restart reconciliation barrier', () => {
+	test('projects the captured output gain and mute instead of echoing requested native values', async () => {
+		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const timerHarness = installFastTimerHarness();
+		const listeners: RuntimeMessageListener[] = [];
+		const requested = { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
+			volume: 250, volumeBase: 100, boost: 2.5, documentOutput: true as const };
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: createChromeHarness({
+				queryTabs: [{ id: 78 }], listeners,
+				getStreamId: callback => callback('stream-78'),
+				sendOffscreen: async message => {
+					if (message.type === 'OFFSCREEN_HOST_HELLO') return { audioTabs: [], remoteTabs: [] };
+					if (message.type === 'OFFSCREEN_AUDIO_START') return {
+						...activeAck(78, message.generation, message.controlRevision, undefined, message),
+						normalizedActualConfig: { ...audioConfigToProcessorConfig(DEFAULT_AUDIO_CONFIG),
+							outputLevel: { gain: 0.30000001192092896, muted: true } },
+					};
+					if (message.type === 'OFFSCREEN_AUDIO_UPDATE') return {
+						...activeAck(78, message.generation, message.controlRevision), normalizedActualConfig: message.config,
+					};
+					if (message.type === 'OFFSCREEN_AUDIO_STOP') return idleAck(78, message.generation);
+					return undefined;
+				},
+			}),
+		});
+		try {
+			registerCaptureHandlers();
+			const response = await invokeRuntimeRequest(listeners, {
+				protocolVersion: SPECTRA_PROTOCOL_VERSION, requestId: 'capture-document-output',
+				type: 'spectra.audio.capture.set', tabId: 78, generation: 1,
+				payload: { enabled: true, config: requested, admission: captureStartAdmission(78) },
+			}, contentSender(78)) as { ok: boolean };
+			expect(response.ok).toBe(true);
+			expect(await getAudioSession(78)).toMatchObject({ actualMode: 'capture', phase: 'active',
+				actualConfig: { volume: 30, volumeBase: 30, boost: 1, muted: true, documentOutput: true } });
+			expect(await teardownCaptureState(78)).toBe(true);
+		} finally {
+			await drainAudioSessionWork();
+			cleanupCaptureState(78);
+			timerHarness.restore();
+			restore('chrome', chromeDescriptor);
+		}
+	});
+
 	test('waits for the host generation before an immediate tab teardown', async () => {
 		const chromeDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
 		const setTimeoutDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'setTimeout');

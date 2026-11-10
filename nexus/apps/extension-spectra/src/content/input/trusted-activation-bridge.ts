@@ -53,9 +53,10 @@ export function registerTrustedActivationBridge(): () => void {
 		}
 		inFlight = true;
 		// rule: the canonical PiP entry is submitTrustedActivationControl('pip').
-		// The bridge passes the document identity and target only as contextual
-		// hints; the ISOLATED world executor resolves the actual writer.
-		void submitTrustedActivationControl('pip')
+		// The requested target is the video the viewer actually selected; dropping
+		// it makes a multi-video page (Douyin's feed) toggle whichever element the
+		// registry ranks first instead.
+		void submitTrustedActivationControl('pip', request.documentId, request.target)
 			.then(
 				(result) => dispatchOutcome({
 					...request,

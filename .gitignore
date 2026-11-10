@@ -12,6 +12,7 @@ venv
 .aider*
 # AI tool session memory is environment state, never repository content.
 .workbuddy/
+.workbuddy-ai/
 chatgpt-conversation-timeline
 reference
 .graph-it

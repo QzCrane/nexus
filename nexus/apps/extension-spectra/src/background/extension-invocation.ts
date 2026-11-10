@@ -1,5 +1,7 @@
 // goal: the single definition of extension invocation identity and its document binding
 
+import { createSpectraContentInvocationGrantedMessage } from '@nexus/contracts';
+
 export interface ExtensionDocumentIdentity {
 	tabId: number;
 	documentId: string;
@@ -29,6 +31,20 @@ export async function assertInvocationTargetCurrent(
 	if (frame?.documentId !== invocation.target.documentId) {
 		throw new Error('Extension invocation belongs to a stale target document');
 	}
+}
+
+/**
+ * Publish an invocation grant to exactly the invoked document. Chrome's
+ * `activeTab` survives until that document navigates, so the document-start
+ * hotkey gate must stop treating Alt+Up as needing a fresh manifest command
+ * even after the Capture session it started has ended.
+ */
+export function grantContentInvocation(tabId: number, documentId: string): void {
+	void chrome.tabs.sendMessage(
+		tabId,
+		createSpectraContentInvocationGrantedMessage(),
+		{ documentId },
+	).catch(() => undefined);
 }
 
 export async function popupInvocation(tabId: number): Promise<ExtensionInvocationContext> {

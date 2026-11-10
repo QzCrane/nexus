@@ -16,6 +16,15 @@ export interface ContentBootstrapState {
 	mediaReportRevision?: number;
 	/** Shared across the bootstrap and full-runtime bundles for pause recency. */
 	mediaPausedAt?: number | null;
+	/**
+	 * Document-lifetime latch: Chrome granted this document's `activeTab`
+	 * invocation (action Popup, manifest command, or a Capture session that
+	 * only could have started after one). The document-start hotkey gate reads
+	 * it synchronously to keep Alt+Up on the content path. A stopped Capture
+	 * session does not revoke the grant, so this never resets inside the
+	 * document.
+	 */
+	extensionInvoked?: boolean;
 	/** Never reset when the full runtime is replaced inside the same document. */
 	mediaOwnerEpoch?: number;
 	disposeRuntime?: () => Promise<void>;
@@ -66,6 +75,15 @@ export function getContentBootstrapState(): ContentBootstrapState | undefined {
 	return (window as ContentBootstrapWindow).__SPECTRA_CONTENT_BOOTSTRAP__;
 }
 
+/** One document clock for full-registry and passive-bootstrap ownership. */
+export function claimMediaObservationEpoch(fallback = 0): number {
+	const state = getContentBootstrapState();
+	if (!state) return fallback;
+	const epoch = (state.mediaOwnerEpoch ?? 0) + 1;
+	state.mediaOwnerEpoch = epoch;
+	return epoch;
+}
+
 export function setContentBootstrapState(state: ContentBootstrapState | undefined): void {
 	const host = window as ContentBootstrapWindow;
 	if (state) host.__SPECTRA_CONTENT_BOOTSTRAP__ = state;
@@ -77,6 +95,25 @@ export function setContentRuntimeReady(runtimeRevision: string | null): void {
 	if (!state) return;
 	state.runtimeRevision = runtimeRevision;
 	state.ready = runtimeRevision !== null;
+}
+
+/** Latch the document's invocation grant for the document-start hotkey gate. */
+export function markContentExtensionInvoked(): void {
+	const state = getContentBootstrapState();
+	if (state) state.extensionInvoked = true;
+}
+
+/**
+ * Alt+Up only needs the manifest command when the document has never been
+ * invoked *and* the press would leave the native range. An invoked document
+ * keeps its `activeTab` grant until navigation, even after Capture stops, so
+ * 100 -> 110 stays on the content path.
+ */
+export function needsManifestVolumeCommand(
+	extensionInvoked: boolean,
+	mediaVolume: number | null,
+): boolean {
+	return !extensionInvoked && mediaVolume !== null && mediaVolume >= 0.999;
 }
 
 export function setContentRuntimeDisposer(disposer: (() => Promise<void>) | null): void {

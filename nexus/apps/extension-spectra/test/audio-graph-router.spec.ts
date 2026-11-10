@@ -119,6 +119,30 @@ describe('shared sparse audio graph router', () => {
 		expect(delay.delayTime.ramps).toContainEqual({ value: 0.125, endTime: 1.015 });
 	});
 
+	test('replaces an in-flight ramp from its held value', async () => {
+		const context = new FakeAudioContext();
+		const router = new AudioGraphRouter(context as unknown as AudioContext, undefined, {
+			crossfadeMs: 0,
+		});
+		await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, boostGain: 2 });
+		const master = requireValue(
+			context.nodes.filter((node) => node.kind === 'gain')[1],
+			'Expected the processor graph to contain a master gain node',
+		);
+		const holdsBefore = master.gain.holds.length;
+		const cancelsBefore = master.gain.cancels;
+		await router.apply({ ...DEFAULT_AUDIO_GRAPH_CONFIG, boostGain: 4 });
+		// The replacement holds the computed value at the same boundary and ramps
+		// from it; truncating the old ramp would restart from an older event.
+		expect(master.gain.holds).toHaveLength(holdsBefore + 1);
+		expect(master.gain.holds.at(-1)).toBe(context.currentTime);
+		expect(master.gain.cancels).toBe(cancelsBefore);
+		expect(master.gain.ramps.at(-1)).toEqual({
+			value: 4,
+			endTime: context.currentTime + 0.015,
+		});
+	});
+
 	test('ramps delay values in one topology and creates analyser only while subscribed', async () => {
 		const context = new FakeAudioContext();
 		const router = new AudioGraphRouter(context as unknown as AudioContext, undefined, {
@@ -182,7 +206,10 @@ describe('shared sparse audio graph router', () => {
 class FakeAudioParam {
 	value = 0;
 	readonly ramps: Array<{ value: number; endTime: number }> = [];
-	cancelScheduledValues(): void { }
+	readonly holds: number[] = [];
+	cancels = 0;
+	cancelScheduledValues(): void { this.cancels += 1; }
+	cancelAndHoldAtTime(cancelTime: number): void { this.holds.push(cancelTime); }
 	setValueAtTime(value: number): void { this.value = value; }
 	linearRampToValueAtTime(value: number, endTime: number): void {
 		this.value = value;

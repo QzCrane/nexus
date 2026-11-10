@@ -6,18 +6,58 @@ import { isTabExists } from '../helpers';
 import {
 	audioSessionMatchesControlDocument,
 	compileEffectiveVolume,
+	createBoundedMap,
 	isActiveCaptureLifecycle,
 	resolveVolumeTone,
 	type AudioSessionSnapshot,
 	type ControlSessionPatch,
 	type ControlSnapshot,
 	type VolumeTone,
+	type SpectraHotkeyPresentationToken,
 } from '@nexus/contracts';
 import { hasBadgeUsage, markBadgeUsed } from '../badge-usage';
+import { getAudioSession, isAudioSessionIdentityInvalidated } from '../audio-session-store';
 
 type BadgeAuthority = 'control' | 'session';
 type BadgeIdentity = Pick<ControlSnapshot, 'documentId' | 'origin' | 'generation'>;
 type BadgeFacts = Pick<BadgeInfo, 'volume' | 'muted' | 'enabled' | 'isCapture' | 'tone' | 'userInteracted'>;
+
+export type BadgePresentationIdentity = Pick<ControlSnapshot, 'tabId' | 'documentId' | 'origin' | 'generation'>;
+interface PendingBadgePresentation {
+	identity: BadgePresentationIdentity;
+	token: SpectraHotkeyPresentationToken;
+	volume: number;
+	tone: VolumeTone;
+}
+const pendingPresentations = createBoundedMap<number, PendingBadgePresentation>({ cap: 512, ttlMs: 300_000 });
+
+export async function stageBadgeVolumePresentation(
+	identity: BadgePresentationIdentity,
+	token: SpectraHotkeyPresentationToken,
+	volume: number,
+	tone: VolumeTone,
+): Promise<void> {
+	if (isAudioSessionIdentityInvalidated(identity)) return;
+	const actual = badgeState.get(identity.tabId);
+	if (actual?.documentId === identity.documentId && actual.origin === identity.origin
+		&& actual.generation !== null && actual.generation > identity.generation) return;
+	const current = pendingPresentations.get(identity.tabId);
+	if (current?.token.owner === token.owner && current.token.revision >= token.revision) return;
+	pendingPresentations.set(identity.tabId, { identity, token, volume, tone });
+	await paintBadge(identity.tabId, true);
+}
+
+export async function settleBadgeVolumePresentation(
+	identity: BadgePresentationIdentity,
+	token: SpectraHotkeyPresentationToken,
+): Promise<void> {
+	const current = pendingPresentations.get(identity.tabId);
+	if (!current || current.identity.documentId !== identity.documentId
+		|| current.identity.origin !== identity.origin || current.identity.generation !== identity.generation
+		|| current.token.owner !== token.owner || current.token.revision > token.revision) return;
+	pendingPresentations.delete(identity.tabId);
+	await paintBadge(identity.tabId, true);
+}
 
 // A decision and its paint are two different things. The decision is recorded
 // synchronously; the paint is queued behind whatever the Action API is doing.
@@ -41,6 +81,11 @@ function recordBadgeDecision(
 	authority: BadgeAuthority,
 	identity: BadgeIdentity | null = null,
 ): void {
+	const pending = pendingPresentations.get(tabId);
+	if (pending && identity && (pending.identity.documentId !== identity.documentId
+		|| pending.identity.origin !== identity.origin || pending.identity.generation !== identity.generation)) {
+		pendingPresentations.delete(tabId);
+	}
 	if (!facts.userInteracted) {
 		badgeState.delete(tabId);
 		return;
@@ -60,66 +105,130 @@ function recordBadgeDecision(
 	});
 }
 
-// eff: paints the decision that is current when the Action API is reached
-interface StagedVolumeEntry {
-	volume: number;
-	tone: VolumeTone;
-	/** Monotonic order of the staged inputs, so "newer than" needs no clock. */
-	stamp: number;
-	at: number;
+interface PaintedBadge {
+	text: string;
+	color: string;
+	documentId: string | null;
+	generation: number | null;
 }
-const stagedVolumes = new Map<number, StagedVolumeEntry>();
-let stagedStamp = 0;
-// A gesture stage is authoritative until the projection that settles it lands.
-// The wall clock only bounds a stage whose acknowledgement never arrives.
-const STAGED_GRACE_MS = 600;
+// What the Action API was last asked to show, so a burst of identical
+// projections costs one paint instead of one per sample. Keyed by the same
+// identity the decision carries: Chrome clears a tab-scoped projection on full
+// navigation, and a decision from another document must repaint even when the
+// text and colour happen to match.
+const paintedBadges = createBoundedMap<number, PaintedBadge>({ cap: 512, ttlMs: 300_000 });
 
-export function resetStagedVolumesForTests(): void {
-	stagedVolumes.clear();
-	stagedStamp = 0;
+/**
+ * Forget what this tab is believed to show.
+ *
+ * Chrome owns the visible per-tab projection and clears it on its own schedule,
+ * so anything that repaints after a browser-side reset has to declare that the
+ * cache no longer describes the screen.
+ */
+export function invalidatePaintedBadge(tabId: number): void {
+	paintedBadges.delete(tabId);
 }
 
-/** The stage counter a caller observed before it started awaiting. */
-function observeStage(): number {
-	return stagedStamp;
+export function forgetBadgePresentation(tabId: number): void {
+	const hadPendingPresentation = pendingPresentations.has(tabId);
+	pendingPresentations.delete(tabId);
+	badgeState.delete(tabId);
+	paintedBadges.delete(tabId);
+	appliedBadgeProjections.delete(tabId);
+	if (hadPendingPresentation) void paintBadge(tabId, true);
 }
 
-function stagedOverrides(
+/** Simulates a worker that never painted anything; tests only. */
+export function resetPaintedBadgesForTests(): void {
+	pendingPresentations.clear();
+	paintedBadges.clear();
+	appliedBadgeProjections.clear();
+}
+
+interface BadgeProjectionOrder {
+	documentId: string | null;
+	generation: number | null;
+	revision: number;
+}
+
+/**
+ * The newest projection this tab has already decided on.
+ *
+ * Two routes feed the badge — a control acknowledgement and a page-native
+ * observation — and each one awaits storage before it decides. Their resolutions
+ * therefore interleave out of order: an observation sampled before a speed ACK
+ * could land after it and paint the old volume back. Revision is the only total
+ * order the coordinator provides, so the badge remembers the last one it decided
+ * on and drops anything strictly older. Audio-session reports change lifecycle
+ * only, while the coordinator supplies current acknowledged volume facts.
+ */
+const appliedBadgeProjections = createBoundedMap<number, BadgeProjectionOrder>({
+	cap: 512,
+	ttlMs: 300_000,
+});
+
+function admitBadgeProjection(
 	tabId: number,
-	observedStamp: number,
-	projectedVolume: number,
-): StagedVolumeEntry | null {
-	const staged = stagedVolumes.get(tabId);
-	if (!staged) return null;
-	// A gesture that arrived while this projection was being resolved is newer
-	// than the facts it was built from, whatever the projection says.
-	if (staged.stamp > observedStamp) return staged;
-	const settling = staged.volume !== projectedVolume
-		&& Date.now() - staged.at < STAGED_GRACE_MS;
-	return settling ? staged : null;
+	identity: BadgeIdentity,
+	revision: number | undefined,
+): boolean {
+	if (revision === undefined) return true;
+	const previous = appliedBadgeProjections.get(tabId);
+	if (previous
+		&& previous.documentId === identity.documentId
+		&& previous.generation === identity.generation
+		&& revision < previous.revision) return false;
+	appliedBadgeProjections.set(tabId, {
+		documentId: identity.documentId,
+		generation: identity.generation,
+		revision,
+	});
+	return true;
 }
 
-async function paintBadge(tabId: number): Promise<void> {
-	if (!await isTabExists(tabId)) {
+async function paintBadge(tabId: number, admittedPresentation = false): Promise<void> {
+	if (!admittedPresentation && !await isTabExists(tabId)) {
 		badgeState.delete(tabId);
+		invalidatePaintedBadge(tabId);
 		return;
 	}
-	const decision = badgeState.get(tabId);
+	const actual = badgeState.get(tabId);
+	const pending = pendingPresentations.get(tabId);
+	const decision = pending ? {
+		volume: pending.volume, tone: pending.tone, enabled: actual?.enabled ?? true,
+		muted: pending.tone === 'muted', isCapture: actual?.isCapture ?? false, userInteracted: false,
+		documentId: pending.identity.documentId, generation: pending.identity.generation,
+	} : actual;
 	const action = chrome.action;
 	if (!decision) {
+		invalidatePaintedBadge(tabId);
 		await action?.setBadgeText?.({ tabId, text: '' })?.catch(() => undefined);
 		return;
 	}
 	const { text, color } = presentBadge(decision);
+	const painted = paintedBadges.get(tabId);
+	if (painted && painted.text === text && painted.color === color
+		&& painted.documentId === decision.documentId
+		&& painted.generation === decision.generation) {
+		return;
+	}
 	try {
 		await Promise.all([
 			action.setBadgeText({ tabId, text }),
 			action.setBadgeBackgroundColor({ tabId, color }),
 			action.setBadgeTextColor({ tabId, color: BADGE_COLORS.WHITE }),
 		]);
+		if (badgeState.get(tabId) !== actual || pendingPresentations.get(tabId) !== pending) return;
+		paintedBadges.set(tabId, {
+			text,
+			color,
+			documentId: decision.documentId,
+			generation: decision.generation,
+		});
 	} catch {
 		// Chrome Action rejects when the tab no longer exists or window is retiring
-		if (badgeState.get(tabId) === decision) badgeState.delete(tabId);
+		invalidatePaintedBadge(tabId);
+		if (badgeState.get(tabId) === actual) badgeState.delete(tabId);
 	}
 }
 
@@ -137,7 +246,27 @@ export async function markBadgeUsedForTab(tabId: number): Promise<void> {
 // though the monotonic usage fact remains valid. Restore only an existing fact;
 // this function never turns a passive page observation into extension usage.
 export async function restoreBadgeUsageForTab(tabId: number): Promise<void> {
+	// Whatever Chrome is showing now is not what this map recorded.
+	invalidatePaintedBadge(tabId);
 	if (await hasBadgeUsage(tabId)) await markBadgeUsedForTab(tabId);
+}
+
+/**
+ * True when this tab already shows an extension-authored projection.
+ *
+ * A page-native observation may refine a badge that is already visible, but it
+ * may never be the reason one appears: an untouched tab keeps an empty badge no
+ * matter what the page does with its own volume slider.
+ *
+ * "Already visible" is not the same fact as "this worker remembers painting
+ * it". The tab-scoped Action projection and the persisted usage fact both
+ * outlive a service-worker restart, so asking only the in-memory decision map
+ * made every native volume gesture after a restart a silent no-op: the badge
+ * stayed on whatever the dead worker had painted. Usage is the durable
+ * evidence that this tab was ever touched, which is exactly the rule above.
+ */
+export async function isBadgeProjected(tabId: number): Promise<boolean> {
+	return badgeState.has(tabId) || await hasBadgeUsage(tabId);
 }
 
 export async function updateBadgeFromControlProjection(
@@ -145,13 +274,21 @@ export async function updateBadgeFromControlProjection(
 	projection: ControlSessionPatch,
 	isCaptureActive: boolean,
 	userInteracted: boolean,
+	revision?: number,
 ): Promise<void> {
-	// Read the stage order before the first await: a gesture that lands while
-	// this projection is still resolving is newer than every fact below it.
-	const observedStage = observeStage();
 	const used = await resolveStickyUsage(snapshot.tabId, userInteracted);
+	// Usage lookup may outlive a processor transition. Resolve its current
+	// lifecycle after that await instead of replaying the caller's old boolean.
+	const currentSession = await getAudioSession(snapshot.tabId).catch(() => null);
+	if (isAudioSessionIdentityInvalidated(snapshot)
+		|| currentSession && !audioSessionMatchesControlDocument(currentSession, snapshot)) return;
+	const captureActive = audioSessionMatchesControlDocument(currentSession, snapshot)
+		? isActiveCaptureLifecycle(currentSession)
+		: isCaptureActive;
+	if (!admitBadgeProjection(snapshot.tabId, snapshot, revision)) return;
 	const stickyInteraction = used || badgeState.get(snapshot.tabId)?.userInteracted === true;
-	if (typeof projection.volumeBase !== 'number' || typeof projection.boost !== 'number') {
+	const volumeBase = projection.volumeBase;
+	if (typeof volumeBase !== 'number') {
 		if (stickyInteraction) {
 			await markBadgeUsedForTab(snapshot.tabId);
 			return;
@@ -167,36 +304,40 @@ export async function updateBadgeFromControlProjection(
 		return paintBadge(snapshot.tabId);
 	}
 
-	const projectedVolume = compileEffectiveVolume(projection.volumeBase, projection.boost);
-	const staged = stagedOverrides(snapshot.tabId, observedStage, projectedVolume);
+	// A missing boost is the neutral multiplier, not an absent volume: the page
+	// reported a native 0-100 level and nothing acknowledged in this document has
+	// amplified it. Requiring both made every page-native volume gesture look like
+	// a projection with no volume at all, which is how the badge stopped
+	// following the page.
+	const boost = typeof projection.boost === 'number' ? projection.boost : 1;
+	const volume = compileEffectiveVolume(volumeBase, boost);
 	const muted = projection.mediaMuted === true;
 	const enabled = projection.audioEnabled ?? true;
-	const volume = staged?.volume ?? projectedVolume;
 	const tone = resolveVolumeTone({
 		volume,
 		muted,
 		enabled,
-		captureActive: isCaptureActive,
+		captureActive,
 	});
-
 	recordBadgeDecision(snapshot.tabId, {
 		volume,
 		muted,
 		enabled,
-		isCapture: isCaptureActive,
-		// The gesture already published this tone; keeping it means the badge only
-		// changes when the *route* changes, never one acknowledgement later.
-		tone: staged?.tone ?? tone,
+		isCapture: captureActive,
+		tone,
 		userInteracted: stickyInteraction,
 	}, 'control', snapshot);
 	return paintBadge(snapshot.tabId);
 }
-
 export async function updateBadgeFromSession(
 	snapshot: AudioSessionSnapshot,
 	userInteracted: boolean,
 ): Promise<void> {
 	const used = await resolveStickyUsage(snapshot.tabId, userInteracted);
+	// Audio and control generations have independent owners. Read the current
+	// audio lifecycle from its store and retain the badge's control identity.
+	const currentSession = await getAudioSession(snapshot.tabId).catch(() => null);
+	if (!audioSessionMatchesControlDocument(currentSession, snapshot)) return;
 	// Read the current decision *after* that await. A control ACK may have landed
 	// while this session report was still being resolved, and its facts are newer
 	// than any `previous` captured before it: reusing the captured mute here is
@@ -204,7 +345,7 @@ export async function updateBadgeFromSession(
 	const previous = badgeState.get(snapshot.tabId);
 	const stickyInteraction = previous?.userInteracted === true || used;
 	const keepControlActual = previous?.authority === 'control'
-		&& audioSessionMatchesControlDocument(snapshot, {
+		&& audioSessionMatchesControlDocument(currentSession, {
 			tabId: snapshot.tabId,
 			documentId: previous.documentId ?? '',
 			origin: previous.origin ?? '',
@@ -225,76 +366,25 @@ export async function updateBadgeFromSession(
 		if (stickyInteraction && !documentChanged) return;
 		return paintBadge(snapshot.tabId);
 	}
-	const captureActive = isActiveCaptureLifecycle(snapshot);
+	const captureActive = isActiveCaptureLifecycle(currentSession);
+	const volume = previous.volume;
+	const tone = resolveVolumeTone({
+		volume,
+		muted: previous.muted,
+		enabled: previous.enabled,
+		captureActive,
+	});
 	recordBadgeDecision(snapshot.tabId, {
-		volume: previous.volume,
+		volume,
 		muted: previous.muted,
 		enabled: previous.enabled,
 		isCapture: captureActive,
-		tone: resolveVolumeTone({
-			volume: previous.volume,
-			muted: previous.muted,
-			enabled: previous.enabled,
-			captureActive,
-		}),
+		tone,
 		userInteracted: true,
-	}, 'control', snapshot);
+	}, 'control', {
+		documentId: previous.documentId ?? '',
+		origin: previous.origin ?? '',
+		generation: previous.generation ?? 0,
+	});
 	return paintBadge(snapshot.tabId);
-}
-
-/**
- * Instant synchronous feedback for live gestures, before full pipeline
- * settlement.
- *
- * The card publishes the tone it is painting in the same message, so the badge
- * never has to infer a route from a number: at 100 and at 110, on a hijacked
- * page and a page that amplifies natively, the badge and the slider are the same
- * colour in the same frame.
- */
-export function updateBadgeStagedVolume(
-	tabId: number,
-	effectiveVolume: number,
-	tone?: VolumeTone,
-	identity?: Pick<ControlSnapshot, 'documentId' | 'origin' | 'generation'> | null,
-): void {
-	if (!Number.isFinite(effectiveVolume) || effectiveVolume < 0) return;
-	const current = badgeState.get(tabId);
-	const stagedTone = tone ?? current?.tone ?? resolveVolumeTone({
-		volume: effectiveVolume,
-		muted: current?.muted ?? false,
-		enabled: current?.enabled ?? true,
-		captureActive: current?.isCapture ?? false,
-	});
-	stagedStamp += 1;
-	stagedVolumes.set(tabId, {
-		volume: effectiveVolume,
-		tone: stagedTone,
-		stamp: stagedStamp,
-		at: Date.now(),
-	});
-	// The mute fact has to agree with the tone the card just published, or the
-	// next session report would recompute `native` from a stale `muted: false`
-	// and paint the number back over the M the user is looking at. A zero volume
-	// is silence, not a mute, and a disabled processor states nothing at all, so
-	// those two keep whatever the projection last acknowledged.
-	const enabled = current?.enabled ?? true;
-	const muted = enabled
-		? stagedTone === 'muted' && effectiveVolume > 0
-		: current?.muted ?? false;
-	recordBadgeDecision(tabId, {
-		volume: effectiveVolume,
-		muted,
-		enabled,
-		// A predicted violet is a *tone*, not a Capture fact: only the ACK may
-		// claim the processor is running.
-		isCapture: current?.isCapture ?? false,
-		tone: stagedTone,
-		userInteracted: true,
-	}, current?.authority ?? 'control', {
-		documentId: identity?.documentId ?? current?.documentId ?? '',
-		origin: identity?.origin ?? current?.origin ?? '',
-		generation: identity?.generation ?? current?.generation ?? 0,
-	});
-	void markBadgeUsed(tabId);
-	void paintBadge(tabId);
 }

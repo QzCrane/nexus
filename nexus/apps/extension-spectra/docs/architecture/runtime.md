@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-11-02
+last_reviewed: 2026-11-09
 ---
 
 # SPECTRA runtime architecture
@@ -103,7 +103,7 @@ No generic MAIN runtime or domain tables. Two version-guarded bridges own cross-
 2. **Page-media V2**: Synchronously reads/writes `volumeBase`, `mediaMuted`, `speed` for exact target.
 
 Page-media discovery walks composed-ancestors and declared bounded paths. Matches
-require paired getter/setter. The [media-control owner](../control/06-media-and-video.md#speed-decision-and-failure)
+require paired getter/setter. The [media-control owner](../control/06-media-and-video.md#143-speed-decision-and-failure)
 defines speed value admission, physical ACK and proven baseline handoff, including
 an already-owned speed field. The bridge retains no controller or polling loop;
 declared data is owned by the registry, not by a second MAIN runtime.
@@ -146,12 +146,12 @@ PiP/fullscreen preference, playing state, visible area and stable registration
 order establish the same initial choice before explicit selection becomes sticky.
 Desired native settings replay only onto the current selected source, through
 registration/play/selection events and the same Background coordinator; the
-registry never binds an audio graph. The [media lifecycle owner](../control/06-media-and-video.md#closing-live-players-and-speed-inheritance)
+registry never binds an audio graph. The [media lifecycle owner](../control/06-media-and-video.md#134-closing-live-players-and-speed-inheritance)
 defines hidden/detached live-player handoff, source retirement, Popup closure
 and the distinction between route, document and media identity.
 The document replay template has its own single restore lease, separate from a
 source's physical field ownership. Initial restore, explicit control, worker
-recovery and page-settings release follow the [template lifetime owner](../control/06-media-and-video.md#document-replay-intent-lifetime).
+recovery and page-settings release follow the [template lifetime owner](../control/06-media-and-video.md#135-document-replay-intent-lifetime).
 Status probes cannot recreate leases after navigation or an explicit release.
 
 ### Browser, document and media lifecycle axes
@@ -185,7 +185,7 @@ Passive bootstrap may do a bounded top-level getter. It observes `volumechange`/
 
 The bootstrap also owns the declared site's actual-speed toolbar projection for
 its entire lifetime, including while the heavy runtime is resident. The
-[media-control owner](../control/06-media-and-video.md#actual-speed-label) defines
+[media-control owner](../control/06-media-and-video.md#145-actual-speed-label) defines
 the exact media/root binding and the independent menu witness. Initial DOM
 ready/warm injection/pageshow reads do not wait for a rate event. Native media
 signals discover player roots; only those roots receive a label-specific
@@ -429,7 +429,7 @@ document initialization decision. The aggregate counters exported by the
 influence it.
 Offscreen events keep Chrome message channel open until Background settles, preventing suspension mid-event.
 
-Built-in chords (`Alt+Arrow*/Alt+M`) are reserved, claimed at `document_start` before page handlers. Configured-site bindings yield to website claims. Keyup clears unconsumed repeat pulses but cannot revoke an admitted press. `chrome.commands` admits only non-coalescing actions.
+Built-in chords (`Alt+Arrow*/Alt+M`) are reserved, claimed at `document_start` before page handlers. `Alt+Up` is left to the browser only while the page media already sits at its native ceiling and the document has no known extension invocation: Chrome runs the manifest `volume_up` command only for keys the renderer leaves unhandled, and only that command invocation grants the tab's `activeTab` for the Capture that same press needs above 100%. The bootstrap still stops propagation there so page handlers cannot cancel the chord, without preventing the default that lets the command run. Invocation is a document-lifetime fact, not a Capture-session fact: a Popup open, a delivered command, or any successful Capture start latches the grant until the document navigates. Below the ceiling, and in any invoked document (the content path needs no new grant even after Capture stopped), the press stays claimed, so the key keeps working when the command is unavailable or the page consumes it. Configured-site bindings yield to website claims. Keyup clears unconsumed repeat pulses but cannot revoke an admitted press. `chrome.commands` admits only non-coalescing actions.
 
 ### Load-time package integrity
 
@@ -642,34 +642,11 @@ Release and cross-platform lanes build the production SPECTRA candidate exactly 
 
 ## Current implementation ownership
 
-| Concern | Owner | Invariant |
-| --- | --- | --- |
-| Tab control order | `control-coordinator.ts` + pure `control-coordinator-values.ts` helpers | One serialized actor per tab; synchronous navigation fence; post-await identity/epoch/revision validation |
-| Hotkey target persistence | `hotkey-target-repository.ts` | One serialized session-scoped tab target; stale tabs are cleared |
-| Audio mode classification | `@nexus/contracts/audio.contracts.ts` + current registry evidence | `bypass`, proven `webaudio`, or admitted `capture`; neutral hidden work never acquires a processor |
-| Capture admission | `capture-admission.ts` | One-shot document/worker fence expires or is consumed before acquisition |
-| Processor lifecycle | `offscreen/audio-host.ts` + Capture handler | Only exact host ACK drives status |
-| Cold native refresh | bootstrap/coordinator | Targetless 4-field obs; no badge-use fact |
-| Built-in shortcut readiness | shared keyboard arbiter + transient READY lease | Exclusive ownership of 5 defaults; no document-lifetime default-hotkey lease |
-| Configured-site lean ownership | `site-hotkey-owner.ts` + exact lean host + heavy projection adapter | Empty lean barrier; heavy exact suspend; revision-2 physical fence; sender-document execution |
-| Worker-restart heavy recovery | `runtime-restart-startup.ts` + runtime-loader leases | Rebuild durable owners before orphan disposal; bounded retry; no direct RELEASE guess |
-| Toast/OSD | Content feedback modules | One feedback owner on Popover; lean reuses existing gesture/feedback path |
-| Page media semantics | page-media bridge/native executor | Exact-element readback, DOM fallback, no polling |
-| PiP/fullscreen | fullscreen bridge/native executor | Actual native lifecycle preservation |
-| Visualizer | Popup scheduler + subscriber registry + `popup-visualizer-source.ts`/Content demand lease | Only visible foreground card owns safe page analyser demand; observes Capture only while non-neutral DSP requires it; unsafe neutral sources settle on bypass without Capture admission or acquisition retry; background cards are passive; bounded heartbeat/tombstone/release retry |
-| Media inventory truth | `shared/media-card-policy.ts` + `media-inventory.ts` + session `media-facts.ts` | One policy decides dynamic membership and `nextExpiryAt` from Chrome evidence and ordered current-document reports; expiry hides without deletion; unknown pages create no probe, placeholder or folded count; navigation retirement, report high-water and hydration tombstones protect identity |
-| Popup card lifecycle | `popup/card/snapshot.ts` + `sessionBelongsToCard` + `acknowledgedProcessorLifecycle` + `messaging.ts` bounded probe | The route colour comes from the control snapshot's own processor ACK; a newer session/runtime observation may only make it fresher, never make it exist; a durable session that names this card's own document is retained even when the control read is slow or missing; a snapshot restored from the Popup's cache is a forecast confirmed once, silently, by the control projection, and may not override the durable control/session record; both the control projection and the processor lifecycle are retried on one bounded budget and settle into an explicit state instead of an endless "syncing" line |
-| Card view reads | `control-coordinator.ts` `getControlViewSnapshot` + `spectra-tab-client.ts` `readSpectraTabPassively` | A view read is one-way: it asks the document's lean bootstrap what it already observes (`PASSIVE_FIELDS`) and never acquires the Content runtime, so painting a card for a tab the user is not looking at cannot wake that tab; a passive observation may not overwrite a field the extension is currently controlling, because for such a field the DOM value is the processor's input, not the effective output |
-| Popup view geometry | `popup.css` + `views/navigation.ts` | The main view follows intrinsic card content and only `settings-view-active` owns the 600 px settings scroll viewport; navigation switches a mode class and never reads `offsetHeight`, writes inline height or calls `resizeTo`; `#empty-state` is an inventory result, never an initial view; the blank under the last card has one owner (`#view-main`'s asymmetric bottom padding, with the last card's own margin zeroed), so it is the same 24 px in every state; above Chrome's ceiling the whole document scrolls as one surface, never a nested list, so that 24 px is on screen when the content fits and exactly one scroll away when it does not |
-| Action Popup frame | `shared/popup-bootstrap.ts` + `popup-first-paint.ts` + `popup/frame-height.ts` | All announced slots determine intrinsic first-frame CSS size; frame-height is the sole live frame/600 px cap/single-scroll owner and coalesces observer writes; no historical-height reservation or actual-RPC barrier |
-| Action Popup first frame | `public/frame-reserve.js` + `popup-first-paint.ts` + `shared/popup-bootstrap.ts` | Announced appearance and packaged Popup dictionary establish structure/text before async actual confirmation; same-node binding; theme/height remain with their existing owners |
-| Popup inventory forecast | `popup/media-inventory-from-storage.ts` + shared membership policy + session `media-facts.ts` | The first card list uses the same policy as Background without a worker round trip; `spectra.tab.visible.list` reconciles new facts, identity or expiry; no card-layer retention decision or second media authority |
-| Favicon/QR | Popup/remote renderers | Validated payload, no undeclared capability |
-| Remote transport/session | `vendor/peerjs/peerjs.min.js` + `offscreen-remote/peerjs-loader.ts` + `remote-host.ts` | One extension-owned JSON/DataChannel-only transport source projected to the static page, one lazy extension output, one Offscreen session/Peer owner, 16 KiB wire cap; epoch/command receipt/recovery remain bounded |
-| UI event projection | `popup/ui-event-hub.ts` + surface/session stores | One Chrome runtime listener; subscriber isolation; identity/revision/session-token monotonicity |
-| Locale assets | surface catalogs + `shared/i18n/locale-sections.ts` | Popup/Options/Actions fetch only their surface; settled loads clear; two-locale LRU bound |
-| Local diagnostics | `@nexus/kernel/diagnostics.ts` + `background/diagnostics.ts` + `options/diagnostics.ts` | Pull-only collection behind an authenticated private port; scalar-only facts, `null` for an unreadable owner, no page/tab/document/request identity and no diagnostic storage owner |
-| Artifact evidence | `scripts/check-production-artifacts.ts` | Typed reachability, exact set-union closures, one physical file count, measured attribution when metafiles exist, absolute hard ceilings plus non-blocking 15% planning advisories |
+Ownership is registered in exactly one table:
+[control 07 §17](../control/07-runtime-and-performance.md#17-implementation-ownership-and-migration-map).
+It has two views — `§17.1` by file, `§17.2` by concern for the responsibilities that span
+files. This page used to carry a third partial copy; three copies meant a new file had no
+obvious home and a deleted file could leave a ghost in two of them.
 
 ## Actual browser launch evidence
 

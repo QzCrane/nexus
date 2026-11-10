@@ -1,9 +1,9 @@
 {
-  "capturedAt": "2026-11-01T09:22:35.586Z",
-  "url": "https://www.douyin.com/video/7702414329227889929",
+  "capturedAt": "2026-11-05T05:25:23.227Z",
+  "url": "https://www.douyin.com/video/7693844311170993417",
   "surface": "anonymous douyin.com video page; the speed list only renders behind login, so the run calls the site plugin's own updateConfig({loginBlock:false}) in memory to observe the logged-in branch, then restores it",
   "probe": {
-    "requestId": "630282f5-84d5-483d-adf1-87c52d1c8939",
+    "requestId": "7c676ecf-8b06-47c1-9c34-40193568dd48",
     "field": "speed",
     "supported": true,
     "actual": null,
@@ -25,7 +25,7 @@
       "hasList": true
     },
     "written": {
-      "requestId": "594c6e3d-febd-48cb-92f2-a6d9ca2062fc",
+      "requestId": "a74869ed-e5a7-4e84-be8f-fd98afddabf4",
       "field": "speed",
       "supported": true,
       "actual": 1.5,
@@ -51,7 +51,7 @@
     {
       "name": "the shipped bridge answers the live page",
       "ok": true,
-      "detail": "{\"requestId\":\"630282f5-84d5-483d-adf1-87c52d1c8939\",\"field\":\"speed\",\"supported\":true,\"actual\":null,\"adapterId\":\"douyin-speed\"}"
+      "detail": "{\"requestId\":\"7c676ecf-8b06-47c1-9c34-40193568dd48\",\"field\":\"speed\",\"supported\":true,\"actual\":null,\"adapterId\":\"douyin-speed\"}"
     },
     {
       "name": "the answer is attributed to the declared row",
@@ -81,7 +81,7 @@
     {
       "name": "the bridge accepts the write",
       "ok": true,
-      "detail": "{\"requestId\":\"594c6e3d-febd-48cb-92f2-a6d9ca2062fc\",\"field\":\"speed\",\"supported\":true,\"actual\":1.5,\"adapterId\":\"douyin-speed\",\"projection\":1}"
+      "detail": "{\"requestId\":\"a74869ed-e5a7-4e84-be8f-fd98afddabf4\",\"field\":\"speed\",\"supported\":true,\"actual\":1.5,\"adapterId\":\"douyin-speed\",\"projection\":1}"
     },
     {
       "name": "the bridge reports the rate it moved",
@@ -101,7 +101,7 @@
     {
       "name": "the projection becomes readable once React has rendered",
       "ok": true,
-      "detail": "{\"requestId\":\"33fad09d-b556-491d-ada7-97c78047a46d\",\"field\":\"speed\",\"supported\":true,\"actual\":1.5,\"adapterId\":\"douyin-speed\",\"projection\":1.5}"
+      "detail": "{\"requestId\":\"b9b9ea93-d8f8-4fc1-b916-b6fd835097cb\",\"field\":\"speed\",\"supported\":true,\"actual\":1.5,\"adapterId\":\"douyin-speed\",\"projection\":1.5}"
     },
     {
       "name": "the bridge restores the baseline",

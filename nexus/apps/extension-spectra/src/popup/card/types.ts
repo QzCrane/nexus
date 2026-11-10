@@ -46,8 +46,12 @@ export interface CardInternalState {
   pendingVolumePresentation?: {
     effectiveVolume: number;
     muted: boolean;
-    actualMode: SpectraAudioMode;
-    phase: AudioSessionPhase;
+    tone: import('@nexus/contracts').VolumeTone;
+  };
+  hotkeyVolumePresentation?: {
+    token: import('@nexus/contracts').SpectraHotkeyPresentationToken;
+    volume: number;
+    tone: import('@nexus/contracts').VolumeTone;
   };
 }
 

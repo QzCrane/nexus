@@ -5,16 +5,17 @@ import {
 	scalarHotkeyGestureSequence,
 } from '../src/content/ui/osd';
 import {
+	clampScalarFeedbackValue,
 	scalarFeedbackAnimationDuration,
 	scalarFeedbackMaxFrameDelta,
 	scalarFeedbackMarkers,
 	scalarFeedbackProgress,
 } from '../src/content/ui/scalar-feedback';
 
-const volume = (value: number, volumeState: 'native' | 'capture') => ({
+const volume = (value: number, tone: 'native' | 'capture') => ({
 	type: 'volume' as const,
 	value,
-	volumeState,
+	tone,
 });
 
 describe('scalar feedback bars', () => {
@@ -56,6 +57,12 @@ describe('scalar feedback bars', () => {
 	test('caps delayed frames by the same fraction of one semantic step', () => {
 		expect(scalarFeedbackMaxFrameDelta('volume') / 10).toBeCloseTo(0.6);
 		expect(scalarFeedbackMaxFrameDelta('speed') / 0.1).toBeCloseTo(0.6);
+	});
+
+	test('preserves amplification intent within the contract scale', () => {
+		expect(clampScalarFeedbackValue('volume', 110)).toBe(110);
+		expect(clampScalarFeedbackValue('volume', 900)).toBe(800);
+		expect(clampScalarFeedbackValue('volume', -10)).toBe(0);
 	});
 
 	test('starts a new gesture from the lifecycle-correct complete pair', () => {

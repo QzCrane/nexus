@@ -2,13 +2,24 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-02
+last_reviewed: 2026-11-09
 ---
 
 # 06. Media & Video (Active media, media controls, video effects)
 
 > 主题 owner 段: §13 Active media · §14 Media controls · §15 Video effects and screenshot
 > 完整目录: [README.md](README.md)
+
+**本篇符号**（只解释名字之间的关系，不改变任何规则）：
+
+| 符号 | 一句话职责 | 谁用它 |
+| --- | --- | --- |
+| `mediaId` | 元素实例身份；元素被替换就换新 id，永不复用 | 注册表与目标选择 |
+| `sourceRevision` | 资源身份；同一元素换 `src`/`srcObject`/load 才 +1 | 源安全证明与写入栅栏 |
+| `MediaTarget` | 精确目标三元组：frame + mediaId + 资源版本 | 执行器与快照 |
+| `MediaObservationStamp` | 证据身份四元组：owner + epoch + selection + revision | 观察准入 |
+| `MediaRestoreToken` | 自动重放三元组：scene + visit + revision | 自动恢复 |
+| `selectionVisit` | 选中访问计数；用来拒绝"旧选中下发出的在途工作" | 执行器栅栏 |
 
 ## §13 Active media
 
@@ -24,7 +35,7 @@ interface MediaTarget {
 }
 ```
 
-- **目标选择**: 显式媒体选择保持粘性；新 `play` 事件按 `有效用户指针交互 -> 当前播放中 -> 可见面积 -> 最近播放 -> 注册顺序` 比较自动候选，不能因隐藏预览最后触发 `play` 就覆盖主播放器。已结束媒体、暂停或不可见视频的历史指针交互不阻止新播放器接管；纯音频不受可见面积限制。实际选择变化通过唯一 `selected` 通知同步 Background。
+- **目标选择**: 显式媒体选择保持粘性；新 `play` 事件按 `有效用户指针交互 -> 可见、未结束且已确认的直播 -> 当前播放中 -> 可见面积 -> 最近播放 -> 注册顺序` 比较自动候选。直播因启动或广告过场暂时 paused，仍应在证据成立时获得控制，不能等第二次播放才找到它。有限时长广告不能因正在播放或面积更大抢走该直播，隐藏预览也不能因最后触发 `play` 就覆盖主播放器。已结束媒体、暂停或不可见视频的历史指针交互不阻止新播放器接管；纯音频不受可见面积限制。实际选择变化通过唯一 `selected` 通知同步 Background。
 - **观察与恢复边界**: `volumechange`、`ratechange`、`seeked` 即使由浏览器标记为 trusted，也可能来自网页脚本，不能据此切换控制目标。恢复已确认的音量/速度只作用于当前选中媒体；后台预加载元素的恢复 ACK 不得夺取当前目标。
 - `activeMedia` 与 `activeVideo` 独立关联，音频元素选择不清除视频目标。控制写入作用域限定为 top-level document only (`frameId: 0`)；媒体列表读取自然报告与 Chrome 事实，不为打开 Popup 注入 frame census。
 
@@ -90,12 +101,27 @@ flowchart TD
 | `active-video` | 保持原状 | 替换为实际视频 ACK 目标 |
 | `tab`, `document`, `extension-ui`, `sandbox` | 保持原状 | 保持原状 |
 
-### SPA identity and source lifecycle
+### §13.3 SPA identity and source lifecycle
+
+在讨论任何"变化"之前，先把"身份"分成四层。绝大多数误判都来自拿一层的编号去回答
+另一层的问题，例如用资源版本证明控制目标还活着。
+
+```mermaid
+flowchart TD
+  L1["L1 会话身份<br/>tabId + documentId + generation"] --> L1x["document 换了: 下面三层全部退休"]
+  L2["L2 控制身份<br/>frameId + mediaId"] --> L2x["元素被替换: 新 mediaId, 原选中必然失效"]
+  L3["L3 资源身份<br/>sourceRevision"] --> L3x["同一元素换流: revision +1, 在途写入重基或取消"]
+  L4["L4 证据身份<br/>owner + epoch + selection + revision"] --> L4x["迟到样本: 按四元组排序, 不合格丢弃"]
+```
+
+四层的存活条件不同，所以它们的编号也不能互相替代：`sourceRevision` 变化不代表
+控制目标变了，`mediaId` 变化也不代表用户换了页面。为什么这样分层、以及被否决的
+替代方案，见 [Control identity decisions](../../../../docs/decisions/control-identity.md)。
 
 浏览器 document、页面 route、媒体 source 是三条独立生命线。SPA 可以用
 `history.pushState/replaceState` 更新地址栏，再由页面框架新增、隐藏或复用播放器，
 无需重新载入 document；后退/前进也可能仍在同一 document。机制参见
-[History API](https://developer.mozilla.org/en-US/docs/Web/API/History_API/Working_with_the_History_API)。
+[History API](https://developer.mozilla.org/en-US/docs/Web/API/History_API/Working_with_the_History_API)（MDN，2026-11-09 访问；页面随浏览器版本更新，引用的是当时描述的 `pushState`/`replaceState` 语义）。
 这解释这种交互方式，不证明某个在线抖音版本的内部路由或流类型。
 
 | 变化 | 身份和控制后果 |
@@ -131,14 +157,52 @@ stateDiagram-v2
 pending、observed、replay/maturation 状态及失败数值 memo。复用同一元素时直接丢弃
 旧 ownership，不能把旧 source 的 baseline 写进已经切换的新 source。
 
-### Closing live players and speed inheritance
+三种身份事件必须分开处理，因为它们的"该做什么"完全不同：
+
+```mermaid
+flowchart TD
+  Change["一次 DOM 或媒体变化"] --> Which{"属于哪一种?"}
+  Which -->|"节点真的离开文档<br/>微任务末 isConnected=false"| Detached["detached<br/>注销 mediaId<br/>释放 ownership 与 restore 义务<br/>不重试旧写入"]
+  Which -->|"同一节点换 src / srcObject / load"| SourceChange["source-change<br/>sourceRevision +1<br/>在途写入重基到新流或取消<br/>元素与选中都还在"]
+  Which -->|"旧节点被新节点替换"| Rebound["rebound<br/>新 mediaId<br/>旧选中作废, 必须重新选中<br/>否则控制面板永久指向已消失的元素"]
+  Detached --> Silent["后续: 若仍有媒体, 由补选决定新目标"]
+  SourceChange --> Rebase["后续: 同一元素继续可用"]
+  Rebound --> Silent
+```
+
+`detached` 与 `rebound` 的区别是"页面还有没有另一个能播的东西"：前者只注销一个
+目标，后者意味着控制面板必须重新选人。把 `rebound` 当成 `detached` 处理，就会出现
+"视频切到直播后自动控制不了"——面板守着一个已经不存在的 mediaId，而页面在放新的
+流。把 `source-change` 当成 `detached` 处理，就会出现
+`stale-media-source`：元素明明还连着，写入却因为资源版本变了被判过期。
+
+### §13.4 Closing live players and speed inheritance
 
 document 内 successful desired、媒体场景 speed 与精确 source ownership 分离。
 成功显式调速同时更新 document fallback 和当前场景 speed；返回已有场景优先使用
 该场景 speed，新场景才继承 document fallback。失败的新请求
 不会替换此前成功的 desired。页面自己调整的 actual 只属于该 source，不变成
 后继视频的 document-wide 模板。写入中 source 被替换的 `stale-media-source`
-是生命周期竞态，保留这次用户意图供新选中 source 重放，与能力失败区分。
+是生命周期竞态；未成功的显式字段不能因此写成模板。合法恢复模板由 Content 接续，
+显式原生音量操作由下述 Background 事务接续，与能力失败区分。
+
+原生有效音量请求若在物理 ACK 前遇到 `stale-media-source`，Background 保留错误码，
+不能先向退休 source 补偿旧音量。仅当请求未指定固定 target、请求值在 0–100 范围、
+Boost 中性且 processor stage 尚未开始时，可在同一串行操作内最多接续三次：每次核对原 document、
+generation 和导航 fence，重新读取 volume/mute/Boost，必须证实当前 target 已替换。
+旧播放器销毁与新播放器插入不必同一任务完成；遇到短暂无目标/旧目标读回，当前操作
+只允许 25/75/150 ms 三次有界重新采样，每次再次校验原文档 fence。这段等待不写媒体，
+只在获得完整且不同的当前目标后续写；正常读回没有额外延迟，不安装常驻轮询。
+全部接续共用首次失败时起算的 1 秒准入预算，递归不能重置；失败/超时 RPC 不重复等待。
+已发出的物理操作仍须结算，预算只限制下一次读取/写入的准入，不用超时竞速遗留后台写入。
+新目标若已是 Capture、Boost 非中性或无原生音频且无页面控制器，不在此路径升级处理器。
+首次计算的绝对音量是本次请求的目标，快捷键 delta 不因新播放器默认值而重复计算。
+即使新源已是目标音量，也必须取得新源 ACK 并提交目标/actual/ownership，不能走空确认。
+相同 target、读回缺失、显式 target、跨 document 或超过接续预算均报告失败；能力错误
+不进入这条恢复路径。Capture 与已开始的 processor 事务沿用原有授权和结算规则。
+规格见 `control-coordinator.spec.ts` 与 `smoke/live-target-restart.spec.ts`；浏览器规格
+在页面控制器写入期间连续替换 video；同时覆盖首次真实 Popup 滑条输入，核对最终目标
+ACK、物理音量、角标与无错误 Toast，不能用第二次输入替第一次完成接续。
 
 | “关闭”实际做了什么 | 当前目标与倍速处理 |
 | --- | --- |
@@ -158,7 +222,7 @@ document 内 successful desired、媒体场景 speed 与精确 source ownership 
 的 `volumechange/ratechange` 不能切换目标。源相同且已失去扩展 ownership 时，
 自动成熟探测不能覆盖页面的新手势。
 
-### Document replay intent lifetime
+### §13.5 Document replay intent lifetime
 
 `NativeMediaExecutor` 是 document desired 的唯一值 owner；运行时状态协议只报告
 `mediaIntentState`，不复制 desired 值。当前 source 的 `controlled=false` 或直播
@@ -181,6 +245,26 @@ revision 的缓存证明失效，返回已被页面重置的原 video 也必须�
 revision }`，执行前重新检查当前场景、选择访问和 desired revision。选择、source、
 route 或释放使旧恢复失效；同文档 route settled 通知唤醒最新恢复义务，不复活旧
 token，也不把 URL 变化当作新媒体。协议见 [restore tokens](../reference/protocols.md#ordered-media-observations-and-restore-tokens)。
+
+该 token 必须完整穿过 Background `resolveSubmitRequest` 与 `createIntent`，
+不能在字段路由时降成无 token 的首次恢复。coordinator 的转发规格与执行器的
+过期 scene/visit/revision 拒绝规格共同保护此边界；只把 Content 发送直接接回
+执行器的测试不能证明真实跨上下文链已接通。
+
+target 缓存命中仍须复核 root、完整 route 与适用的 source 身份。页面复用同一个
+video 和 source 从 A 切到 B，不代表同一个场景：A 的 speed 不能被 B 的显式值覆盖。
+真实场景重绑清除该 target 的 applied desired 和自动成熟证明；保留已排队的最新
+恢复提示，供旧请求结算后接续。重复通知同一 URL 不清证明，不夺回页面已接管的值。
+原生同页复用的五字段为 volumeBase、mediaMuted、speed、preservePitch、loop；
+只有 speed 保存场景值，其余字段继续使用最新 document desired。DSP 仍属于文档
+音频 owner，不能从此规则推导每个视频具有独立 DSP 或自动继承所有 CSS 效果。
+
+Background 同文档导航 fence 比较完整 URL 和 documentId；同一 document 重复
+replaceState 到相同 URL 不撤销正在提交的控制。路径、query、hash 的真实变化、
+跨 document 和 A→B→A 仍撤销旧事务。异步 getFrame 读回不能覆盖较新的导航身份。
+冷启动自动 restore 遇到暂时只有 video track 的 MediaStream，保留原生恢复目标，
+不因此新启 Capture；已确认的 Capture owner 按既有生命周期恢复。显式手势与
+已具备严格能力事实的文档输出准入不变。
 
 <!-- mermaid:id=media-scene-speed-return -->
 ```mermaid
@@ -217,9 +301,14 @@ runtime status probe 是纯读。只有仍持有 loading/initialization 身份�
 旧源，再完成身份更新或删除。排队的 page observation 在微任务发送前重新核对当前完整目标身份，
 旧但仍注册的隐藏播放器不能用迟到观察把 Background 的目标改回去。
 
+IntersectionObserver 的视口相交面积和元素布局尺寸是不同事实：普通滚动出视口
+只改变 `intersectionRect`，不能创建新 visit 或重放旧音量/倍速。仅确实失去
+`boundingClientRect` 布局框后恢复，才触发同元素再次呈现；切换到另一播放器再
+返回仍由正常目标选择处理。回归同时保护普通滚动不覆盖页面设置和 SPA 隐藏返回恢复。
+
 ## §14 Media controls
 
-### Playback button and buffered play
+### §14.1 Playback button and buffered play
 
 `playing` 的实际布尔定义为 `!HTMLMediaElement.paused`。Popup 打开时必须通过
 当前 document 的 passive getter 异步确认；所有可见 slot 结构和当前语言不等待这个读取，
@@ -244,7 +333,7 @@ play rejection 被消费。稳定等待、executor 续体和最终 ACK 都核对
 及当前选择；旧媒体仍注册不能代替“仍是当前目标”。后续真实状态仍由事件同步，
 此 ACK 不宣称视频已解码出首帧。
 
-### Physical readback and autoplay admission
+### §14.2 Physical readback and autoplay admission
 
 倍速 actual 始终来自精确媒体的 `playbackRate`；页面控制器 getter 是写入证人，
 不能单独签发成功。page speed 写入在有界稳定窗内同时验证 controller 与 DOM；
@@ -268,7 +357,7 @@ play rejection 被消费。稳定等待、executor 续体和最终 ACK 都核对
 不计入失败 memo；不同数值仍按准入规则探测，源退休时清除。音量/静音不因该
 speed 交接扩大降级权限。
 
-### Speed decision and failure
+### §14.3 Speed decision and failure
 
 ```mermaid
 flowchart TD
@@ -303,12 +392,12 @@ flowchart TD
 才决定调速是否成功；一次 patch 可以有独立成功和失败字段。speed 不通过 Capture
 或 WebAudio 伪装成可用能力，也不以缩短稳定窗、夹取最近菜单值或乐观标签隐藏失败。
 
-### Live transport limits
+### §14.4 Live transport limits
 
 | 媒体机制 | 能证明什么 / 当前处理 |
 | --- | --- |
 | 普通文件或可调速的缓冲媒体 | 允许走既有 page/DOM 路径，以物理 playbackRate 稳定读回为字段 ACK；菜单不存在不等于没有 DOM 能力 |
-| `srcObject` 为 MediaStream 的实时流 | [W3C Media Capture and Streams](https://www.w3.org/TR/mediacapture-streams/#mediastreams-in-media-elements) 规定播放速率恒为 1，写入被忽略且不产生 ratechange；当前写入在有界读回失败后返回错误，不伪造 2x，不把失败值重放给下一媒体 |
+| `srcObject` 为 MediaStream 的实时流 | [W3C Media Capture and Streams](https://www.w3.org/TR/mediacapture-streams/#mediastreams-in-media-elements)（2026-11-09 核对 §MediaStreams in media elements）规定播放速率恒为 1，写入被忽略且不产生 ratechange；当前写入在有界读回失败后返回错误，不伪造 2x，不把失败值重放给下一媒体 |
 | 直播边缘缺少可加速的积压 | 即使速率属性可设置，也不能播放尚未到达的数据。高于 1 的速度只能消费已有积压；持续的播放表现还取决于数据到达、buffer、解码与页面追帧策略 |
 | 网页随后主动恢复另一速率 | ratechange 观察真实 actual 并释放被页面接管的字段；标签跟随 actual，不以循环强写和页面对抗 |
 
@@ -318,13 +407,18 @@ flowchart TD
 必须观察当时精确源的 `srcObject`、可用时间范围、速率变化及实际时间推进，才能
 判定是能力限制、页面回写还是实现缺陷；夹具测试不能替代该实机证据。
 
-取消静音必须在公共原生写入入口、page/DOM 分支之前检查文档激活。尚未真实交互
-的文档不得把媒体从 muted 改为 unmuted；返回 `user-activation-required`，保留真实
-静音与播放状态，不调用 `play()` 补偿。mute、已取消静音的幂等读回、以及其它音量
-或倍速恢复独立处理。自动重放跳过仍被该边界拒绝的 unmute；后续显式操作重新
-检查激活，退出和回滚同样经过唯一入口。
+取消静音区分显式请求和自动恢复。Popup、快捷键、Remote 的显式请求通过唯一
+page/DOM writer 交给浏览器执行；`userActivation.hasBeenActive` 不是完整的浏览器
+自动播放许可，不能据此提前拒绝显式调音量。取消静音必须等待稳定读回，不能使用
+optimistic ACK；若原本正在播放的同一 source 在稳定窗口内暂停且未结束，则返回
+`policy-denied` 并尽力恢复静音 baseline，不调用 `play()` 补偿。浏览器实际抛出的
+`NotAllowedError` 仍映射 `user-activation-required`。
 
-### Actual speed label
+自动恢复、退出与回滚默认保留文档激活检查，避免无交互恢复打断 muted autoplay；
+自动重放跳过仍受限的 unmute。mute、已取消静音的幂等读回，以及其它音量或倍速
+恢复独立处理。显式准入只属于本次请求，不改变浏览器权限或自动恢复策略。
+
+### §14.5 Actual speed label
 
 声明站点的工具栏倍速文字由 isolated bootstrap 的
 `createSiteSpeedLabelProjection` 唯一投影，事实源是同一声明播放器根内唯一媒体的
@@ -340,7 +434,7 @@ bootstrap dispose 断开观察并仅恢复仍由本写者持有的文本。菜�
 
 修复证据与验证进度见 [toolbar 同步记录](../../../../docs/research/2026-11-01-spectra-speed-toolbar-sync.md)。
 
-### Speed intent and projection sequence
+### §14.6 Speed intent and projection sequence
 
 ```mermaid
 sequenceDiagram
@@ -370,7 +464,21 @@ sequenceDiagram
 图中只画一次最终 writer；page 能力失败后的有条件补偿/交接见决策图。
 首次标签同步也可由 DOM ready、暖注入和 pageshow 直接读回，无需先有用户 intent。
 
-### Executable coverage and limits
+### §14.7 Regression coverage map
+
+这张表回答"哪条业务分支由哪个规格盯着"，**不是覆盖率**，也不回答"哪条 `SCTRL` 有测试"。
+按主题列的映射必然漏项，所以它只作为入口：要判断某条不变量有没有测试，读 08 里那一条
+自己的 Anchor 与测试引用。
+
+证据层只有三种，混用会让结论失效：
+
+| 层 | 位置 | 能证明什么 | 不能证明什么 |
+| --- | --- | --- | --- |
+| 静态 | `scripts/verify/*` | 符号存在、结构未漂移、被禁写法没有出现 | 运行时行为 |
+| 单测/夹具 | `test/*.spec.ts` | 纯值与状态机在合成事件下的行为 | 真实站点的 DOM 与播放器 |
+| 真实 Chrome | `test/smoke/*`、`*-chrome.spec.ts` | 扩展在浏览器里的实际装配与几何 | 具体站点的私有控制器 |
+
+业务分支 → 规格：
 
 | 业务边界 | 可执行规格 |
 | --- | --- |
@@ -386,9 +494,9 @@ sequenceDiagram
 | 首次 actual 标签、React 文本替换、多根/歧义根、真实 Action Popup 自由值 | [speed-toolbar.spec.ts](../../test/smoke/speed-toolbar.spec.ts) |
 | 跨 document 的 exact-resource / same-origin portable / cross-origin 退休 | [tab-session.spec.ts](../../test/tab-session.spec.ts) |
 
-本节固化媒体控制范围内的业务分支，不宣称全扩展所有逻辑已穷尽验证。静态规则、
-单测、构建 Chrome 夹具、用户在线直播与公开发布是独立证据层；具体运行结果记录
-在 [本轮修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
+真实站点的在线直播与公开发布是第四层证据，不在本表内。它们的结果按
+[Evidence contract](../../../../docs/research/README.md#evidence-contract) 单独记录；
+日期化报告见 [2026-11-01 修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
 
 | Field | Preferred implementation | Escalation |
 | --- | --- | --- |
@@ -400,12 +508,247 @@ sequenceDiagram
 | loop | `media.loop` | unsupported |
 | PiP / Fullscreen | 原生 PiP / Fullscreen API | 失败报错，需真实 user activation |
 
+### §14.8 PiP policy attributes are held for the session, not restored eagerly
+
+`disablePictureInPicture` is a **site policy attribute**, not a transient switch. Per
+[W3C Picture-in-Picture §3.4](https://w3c.github.io/picture-in-picture/#dom-htmlvideoelement-disablepictureinpicture)（2026-11-09 核对；该草案仍会改动，以当时的 `disablePictureInPicture` 算法为准），
+adding it to a video that is already the `pictureInPictureElement` lets the user
+agent run its own *exit* algorithm. The old implementation lifted the attribute,
+awaited `requestPictureInPicture()`, and restored it in `finally` — so the window
+appeared and the browser closed it again in the same task, which then read back as
+`Picture-in-Picture readback mismatch after the stable boundary`.
+
+The contract now (`SCTRL-051`):
+
+- `holdPictureInPictureDisable` takes ownership of the lifted attribute and hands it
+  back only when the session ends (`leavepictureinpicture`) or the element's async
+  state is cleared. `releasePictureInPictureDisable` is idempotent and refuses to
+  restore while this element still owns the session.
+- A failed `requestPictureInPicture()` restores the site's preference immediately:
+  no session exists, so there is nothing to protect.
+- A session the page terminates is reported as `policy-denied` (`PictureInPictureVetoedError`),
+  never as a readback mismatch, and it is terminal (`retryable: false`): retrying
+  would only reopen and re-close a window.
+- The explicit extension click passes the Popup's own `target` all the way into the
+  executor, so a feed with several videos cannot open the wrong one.
+- The Popup resolves that target from the **live** snapshot, not from its first-paint
+  forecast. The forecast is assembled from durable facts before Content answers and
+  can legitimately have no `activeVideo` on a tab that plainly has one; trusting it
+  made the first PiP click report `No active video target` and only the second one
+  work. `resolveVideoTarget` asks once when the forecast is empty — one message round
+  trip still fits inside the click's transient activation — and pays nothing when the
+  forecast already carries a target.
+
+### §14.9 Write, acknowledgement and proof are three different facts
+
+`SCTRL-045` separates them. Eligible native writes can acknowledge before proof;
+speed keeps awaited stabilization so a source swap cannot erase its ownership:
+
+| Field | Acknowledgement | Proof (deferred) |
+| --- | --- | --- |
+| volume / mute | DOM setter + immediate read | `volumechange` + 64 ms quiet window |
+| speed (DOM writer) | awaited stable `playbackRate` readback | — |
+| speed (page controller) | awaited dual witness (controller **and** `playbackRate`) | — |
+| play / pause | `play()`/`pause()` (both settle `paused` synchronously) | `play`/`pause` + quiet window |
+| PiP | `request/exitPictureInPicture()` resolved = session owner changed | both PiP events + quiet window |
+| fullscreen | `request/exitFullscreen()` resolved = `fullscreenElement` changed | `fullscreenchange` + quiet window |
+| preserve pitch / loop | two-frame readback (no native event to defer to) | — |
+
+A **page-controller speed write stays awaited** even though it is the slowest
+field: a controller that claims a rate the media never plays looks exactly like one
+that applies it 150 ms later, and only the awaited settle window can tell them
+apart and fall through to the DOM writer. Deferring it would have silently removed
+that fallback (`test/native-media-executor.spec.ts`, "falls back for a free speed the
+controller claims but never plays").
+
+The detached proof never fails the transaction. A rollback is published as the
+page's real value through the same observation path the native event uses, and it
+feeds the per-site ledger (`SCTRL-046`).
+
 A/B State 与 Marker 均以 `mediaId + sourceRevision` 为 Key。禁用后清理所有 Timer/rAF/Listener。
+
+### §14.10 Live streams: withhold the field, publish the fact
+
+`isLiveMedia` decides "this element is a broadcast" from the element alone, and the
+answer is a fact rather than a per-site list: an unbounded `duration` means there is
+no timeline, so a rate change has nothing to act on. Writing it anyway produced a
+`Native volumechange event readback did not acknowledge the requested value`-style
+mismatch that described the symptom and hid the cause — the player accepted the value
+and reverted it, and the slider looked broken.
+
+The executor therefore refuses `speed` on a live element **before touching it**
+(`isLiveUnsupportedField`), reported as `capability-unavailable` with
+`retryable: false`, because retrying the same write can never succeed. Volume is
+untouched by this rule: a live stream has a volume.
+
+The fact travels: `live` is part of the control snapshot, the page observation and the
+submit request. It describes **`activeMedia` only** — never "the page", never the
+video target. A read can pick an element of its own (a targetless bootstrap read names
+none at all), so the proof is stored with the target that produced it (`liveTarget`)
+and is reused only while `activeMedia` still is that same target. When the target
+changes, the new publication omits `live` instead of inheriting the old value: a finite
+advertisement that follows a broadcast must not arrive already reported as live.
+Merging reads the proof, never a default — `mergeSnapshotPublication` has no fallback
+that copies `proposed.live` over a target change, `publishSnapshot`'s unchanged test
+compares `live` too, and a new document generation starts with no measurement at all.
+The popup disables the speed control from it, so the control disappears instead of
+failing.
+
+`publishPresentationKind` sends the fact when metadata, selection or playback makes it
+one, and only when it is `true`: "on demand" is the default and costs no message.
+
+**Evidence `[E-anecdotal]`** — one ad-hoc observation on `live.douyin.com`, recorded without
+the fields the [Evidence contract](../../../../docs/research/README.md#evidence-contract)
+requires: no observation date, no build identity, no sampling method beyond "after a real
+gesture", no competing explanation. It stays because it is the only real-site observation of
+this refusal path, and because a claim with no date cannot be upgraded by editing it later.
+
+What it showed, once: `speed` → `{"phase":"error","error":"capability-unavailable","message":"A live stream has no playback rate to change"}`
+with `playbackRate` still `1`; `volume 40` → `applied`, page `volume 0.4, muted false`; the
+same tab's VOD fixture still reports `live: false` and applies `1.5x`.
+
+To upgrade it to `[E-current]`: repeat on a named build with a recorded script (CDP
+`Extensions.loadUnpacked` with an explicit `chrome.exe`, MutationObserver timeline plus
+`paused`/`readyState`/`documentId`), then record date, scope, method and the competing
+explanation. Until then this paragraph is a reason to test the rule, not proof that it holds.
+
+### §14.11 A mute the page set is not a preference
+
+Autoplay policy silences most media at load, and a live player under a pre-roll is
+muted at volume zero. That observation is true and has to be published — the surfaces
+must show the element is silent — and the resource row records it, because that row
+describes what this resource does.
+
+What must never happen is replaying it: the row is what an exact-resource reload and a
+same-document route change restore from, so restoring an observed mute made the next
+visit start silent. The proof that a mute is a choice is the origin-portable row, which
+only an extension gesture writes (`hotkey`, `popup`, `remote`); a page observation is
+resource-scoped and never reaches it. `rebindTabControlSession` drops a
+resource-scoped `mediaMuted: true` **and** a resource-scoped `volumeBase: 0` that the
+portable row does not corroborate, and rewrites the row without them, before any
+restore plan can read it. Zero is the second half of the same silence: a player parked
+at volume zero without setting `muted` (a live element under a pre-roll) is just as
+inaudible, and it needs the same proof before it becomes a preference.
+
+So the row stays informative and the replay stays honest: explicit extension value →
+both rows → survives a reload; page-set mute or zero volume → resource row only → gone
+at the next document boundary. A page-set volume above zero and a page-set speed keep
+their existing exact-resource restore, because those are ordinary playback facts, not
+a boot-time silence.
+
+### §14.12 Which element the controls belong to
+
+直播和有限时长广告同时存在时，控制属于可见、未结束且已确认的直播，即使它因启动
+或广告过场暂时 paused。`mediaRank` 在播放状态和面积之前采用唯一 `isLiveMedia`
+判定；不依赖虎牙域名、元素 ID、构造器或广告
+词汇。直播初始 `muted` 或 `volume=0` 不是把控制转交广告的理由。正数音量手势经既有
+事务对直播同时应用音量与解除静音，不能只改变广告的声音就算通过。
+
+冷态选择与 `admitBetterCandidate` 共用此顺序。已播放后才注册的媒体、稍后到达的
+metadata/data/duration/geometry 都能建立正确选择；MSE 先提供无限时长、后提供首段数据
+时，`loadeddata` 重新准入，不等待第二次播放。候选不再把 paused 直播过滤掉；
+pause 后的普通继任路径也必须比较同一排序，不能把目标退回播放中的广告。
+`smoke/live-target-restart.spec.ts` 覆盖暂停直播与播放广告的首次音量、页面自行
+创建真实直播流后的零控制请求自动恢复、同元素换流重置音量和首次显式控制。
+`play` 和后续准入共用
+`isSelectionProtected`；隐藏预览、显式选择、暂停 pin、PiP/fullscreen
+和独立 audio/video scope 的保护继续有效。
+精确 fullscreen video 保持选择；若 fullscreen 是同时包含广告和直播的容器，则允许
+容器内交接，容器外媒体不得抢占。未选中媒体的 metadata/data/duration 事件不能通过
+`publishPresentationKind` 把 Background activeMedia 改成另一个目标，也不能预占其公告缓存。
+
+音量事务的 fresh read 所证明的 `live/liveTarget` 随物理 ACK 一起提交到唯一快照，
+由 `publishedLive` 检查其与最终 activeMedia 的完整 source identity 一致。不能只
+提交音量而丢掉首次选择的直播状态，也不能把旧目标的直播标签带给新目标。
+
+广告的页面静音/零音量只是该 source 的实际值，不是直播偏好。页面 observation 不写
+document desired；跨 document 恢复继续丢弃未经显式用户选择证实的静音/零音量，
+同时保留用户明确选择的 mute/zero。默认设置不主动静音其他媒体，也不盲目强制所有
+媒体播放或解除浏览器 autoplay 限制。
+
+`smoke/live-target-restart.spec.ts` 使用真实有限广告和较小的带音轨直播，验证正数音量
+解除直播静音而保留广告属性，随后广告归零/静音不改变直播的增量基线或角标。
+分离音频的公开直播还必须验证实际声音；仅确认 video 属性或广告音量不是声音证据。
+
+### §14.13 Unfinished automatic source restoration
+
+`NativeMediaExecutor` owns the unfinished fields of an authorized document template,
+bound to the exact source, desired revision and selection visit. `selected`, `play`,
+`loadedmetadata`, `loadeddata` and `durationchange` advance that obligation without a
+Popup read or user retry. A rejected old-source operation remains rejected; recovery
+issues a new fenced request for the current source. Structured `stale-media-source`
+and revision conflicts receive at most three timer retries (100/300/1000 ms) when no
+further maturity event arrives. There is no idle polling or site-specific route.
+
+Successful fields and terminal failures leave the pending patch independently.
+An automatic ACK updates the same snapshot and existing badge as an explicit ACK;
+its non-persistent session scope must not suppress presentation or create a new preference.
+A website gesture withdraws the corresponding field for this visit, including a
+restore already queued but not yet executed. A successful explicit change to another
+field preserves unfinished work. Failed explicit fields never create a document
+template. Source retirement, release and disposal cancel pending timers; future
+source visits can still consume the retained document template after page takeover.
+
+`native-media-executor.spec.ts` checks no-click continuation, maturity events,
+bounded retries, terminal failure, page takeover, queued-message cancellation,
+unrelated-field changes and release/disposal. `smoke/live-target-restart.spec.ts`
+uses consecutive physical player replacements and reads media volume and badge
+without any post-switch control/snapshot request.
 
 ## §15 Video effects and screenshot
 
-- **Rotate / Mirror**: 使用扩展属性控制独立 CSS `rotate`/`scale`（不覆盖站点 `transform`）。
-- **Fill**: 扩展 `object-fit:cover` 规则（禁用移除属性）。
-- **Filter**: 捕获 computed baseline 组合扩展 Filter（禁用恢复原始 Cascade）。
-- **Dim**: 闭合 Shadow Host 内 4 个固定 Overlay（不改变视频 `position`/`z-index`）。
-- **Screenshot**: 校验视频可见性与帧，调用 `captureVisibleTab` 在 Background 裁剪，等待 Chrome 下载 `complete` ACK 后返回元数据（禁止通过 IPC 传输图像字节）。
+视频效果只拥有"这一帧怎么被画出来"，不拥有站点的播放器。所有写入必须满足两条：
+站点下次重绘后仍然只作用于目标元素；撤销时不猜原值，只移除自己加的东西。
+
+### §15.1 所有权形式：属性 + 自定义属性
+
+- 每个控制器实例持有一个一次性 owner token：`data-spectra-video-effects-owner="<uuid>"`。
+- 生效规则只由一段扩展样式表发出，选择器同时匹配 owner token 与效果属性，四条：
+  `rotate:var(--spectra-rotate)`、`scale:var(--spectra-scale-x) var(--spectra-scale-y)`、
+  `object-fit:cover`、`filter:var(--spectra-filter)`，全部带 `!important` 但**只对带该 token 的元素**生效。
+- 撤销是移除属性：站点的 `transform`、`filter`、`object-fit` 从未被覆盖，因此不需要"恢复原值"。
+- 不得写元素 `transform`、不得改 `position`/`z-index`、不得插入包裹节点。站点自身动画常写 `transform`，
+  任何接管都会在两个方向上互相覆盖。
+
+### §15.2 Rotate / Mirror
+
+- 旋转只接受 `0 | 90 | 180 | 270`。90/270 时容器宽度小于高度，直接旋转会裁掉画面，
+  因此同时写 `scale-x/scale-y`，fit = `min(w/h, h/w)`，`w`/`h` 取 `max(1, clientWidth|clientHeight)`。
+- Mirror 只翻转 X：`scale-x = -fit`，`scale-y = fit`；与旋转叠加时共用同一个 fit。
+- 0° 且未镜像时两条自定义属性都必须移除。留下 `scale:1 1` 同样会让读回把它判成"仍被拥有"，
+  于是"关闭镜像"变成一个永远关不掉的拥有状态。
+
+### §15.3 Fill 与 Filter
+
+- Fill 只发 `object-fit:cover !important`，由 `data-spectra-fill` 门控；关闭即移除属性。
+- Filter 启用时先捕获 computed `filter` 作为基线，再组合扩展值（brightness/contrast/saturate 百分比，
+  grayscale/invert 开关）；关闭时移除属性并丢弃基线。
+- "是否等于默认值"必须逐字段比较，不得用 `JSON.stringify`：键顺序不同的等价对象会被判成"已启用"，
+  让一个没人开过的效果长期持有 DOM（SP-74）。
+
+### §15.4 Dim
+
+- Dim 使用一个闭合 Shadow Host，内含**固定 4 个**区域 `div`，`position:fixed; pointer-events:none`。
+- 四块区域由视频 `getBoundingClientRect` 相对视口钳制后得出（每边 `max(0, min(size, …))`），
+  拼成"视频以外"的四块；不改视频布局，也不用 `clip-path`。
+- 跟随 `resize`/`scroll` 与 `ResizeObserver`。关闭时必须同时移除 host、4 个区域并停止两个 observer：
+  只隐藏 host 会让它继续跟随布局并持有所有权。
+
+### §15.5 效果读回
+
+- 每次 apply 都在 `deadlineMs`（默认 250ms）内读回：效果属性是否存在、`--spectra-*` 的值、
+  `object-fit`、4 个区域的 `left/top/width/height`、`opacity`（±0.001）、以及区域数量仍为 4。
+- 不一致抛 `Video … readback failed`，按能力失败处理。写过不等于成功。
+- `isCurrent()` 返回假、`AbortSignal` 取消、超过 deadline，分别抛 `cancelled` / `deadline-exceeded`，
+  与媒体控制共用同一套生命周期语义，不另立错误码。
+
+### §15.6 Screenshot
+
+- 捕获前置条件（全部成立才允许）：元素是当前 `resolve(target)` 的元素；无 `mediaKeys`（受保护媒体）；
+  `videoWidth/Height > 0`；`readyState >= HAVE_CURRENT_DATA`；完整矩形在 `visualViewport` 内（含 `offsetLeft/Top`）。
+- 令牌：扩展侧生成 `captureToken`，存证 `{video, target, rect}`，TTL 10s。Background 侧用同一令牌回验：
+  元素仍解析为同一 target、矩形与存证相差 ≤0.5px、帧与 DRM 条件仍成立。
+- 几何在两侧各自计算一次并比对，不接受"页面说过了就裁"。
+- `captureVisibleTab` 后由 Background 裁剪，等 `chrome.downloads` 的 `complete` ACK 才返回元数据；
+  图像字节不得经 IPC 传输。
+- 条件不成立时的错误必须可操作（"完整视频必须可见"、"受保护媒体不能截图"），不得返回空成功。

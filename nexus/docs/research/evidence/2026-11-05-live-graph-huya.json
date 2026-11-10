@@ -1,0 +1,84 @@
+{
+ "url": "https://www.huya.com/668",
+ "at": "2026-11-05T06:05:01.884Z",
+ "chrome": "Chrome/157.0.8103.39",
+ "dump": {
+  "sinks": [
+   {
+    "at": 3143,
+    "ctor": "DynamicsCompressorNode",
+    "inputs": 1,
+    "outputs": 1,
+    "channelCount": 2,
+    "channelCountMode": "clamped-max",
+    "hasPort": false,
+    "params": []
+   }
+  ],
+  "ports": [],
+  "volumeish": [
+   {
+    "tag": "DIV",
+    "className": "player-sound-on",
+    "id": "player-sound-btn",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 24,
+    "h": 24,
+    "visible": true
+   },
+   {
+    "tag": "DIV",
+    "className": "sound-progress",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 90,
+    "h": 12,
+    "visible": true
+   },
+   {
+    "tag": "SPAN",
+    "className": "sound-bg",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 90,
+    "h": 4,
+    "visible": true
+   },
+   {
+    "tag": "SPAN",
+    "className": "sound-bar",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 44,
+    "h": 4,
+    "visible": true
+   },
+   {
+    "tag": "SPAN",
+    "className": "sound-btn",
+    "id": "",
+    "ariaLabel": "",
+    "ariaValueNow": null,
+    "type": null,
+    "value": null,
+    "w": 10,
+    "h": 10,
+    "visible": true
+   }
+  ],
+  "ranges": [],
+  "errors": []
+ }
+}

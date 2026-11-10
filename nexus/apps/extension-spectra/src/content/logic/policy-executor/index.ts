@@ -3,6 +3,8 @@
 import { resolveDesiredAudioMode } from '@nexus/contracts';
 import { assessMediaSourceCoverage } from '@nexus/audio-engine';
 import { logger } from '../../../shared/logger';
+import { SPECTRA_AUDIO_ROUTE_SETTLED_EVENT } from '../../../shared/content-presentation-events';
+import { markContentExtensionInvoked } from '../../../shared/content-runtime';
 import type { PolicyExecutorDeps, PolicyExecutorState } from '../../types';
 import { createModeExecutor } from '../mode-executor';
 import type { PolicyApplicationOptions, PolicyExecutor, InternalState } from './types';
@@ -14,6 +16,7 @@ import {
 } from './eligibility-cache';
 
 const log = logger.content;
+
 
 export async function createPolicyExecutor(
 	deps: PolicyExecutorDeps,
@@ -50,13 +53,17 @@ export async function createPolicyExecutor(
 		// candidate can still fail its first binding and require admitted Capture.
 		state.mediaRoute = eligibilityCache.getUserRoute();
 		const media = deps.mediaRegistry.listProcessingSources().map(({ element }) => element);
+		// Publish the coverage input, not a second copy of the decision: the tone
+		// prediction needs the same fact this call decides the mode from.
+		const mediaWebAudio = deps.audioController.canAttachAll(
+			media,
+			(element) => deps.mediaRegistry.getEligibilityEvidence(element),
+		);
+		state.mediaWebAudio = mediaWebAudio;
 		const mode = resolveDesiredAudioMode(state.config, {
 			visualizer: state.visualizerSubscribers.size > 0,
 			mediaRoute: state.mediaRoute,
-			mediaWebAudio: deps.audioController.canAttachAll(
-				media,
-				(element) => deps.mediaRegistry.getEligibilityEvidence(element),
-			),
+			mediaWebAudio,
 		});
 		state.desiredMode = mode;
 		const modeChanged = mode !== state.activeMode;
@@ -69,11 +76,20 @@ export async function createPolicyExecutor(
 			modeChanged || options.navigation === true || options.modeIntent === true,
 			options.captureAdmission,
 		);
+		// A live Capture session proves Chrome already granted this document's
+		// invocation. Latch it for the document-start hotkey gate: the grant
+		// outlives the session, so 100 -> 110 must not wait for a new command.
+		if (state.actualMode === 'capture' && state.phase === 'active') markContentExtensionInvoked();
 		if (!isCurrent() || !routeIsCurrent()) return;
 		await eligibilityCache.recordActual(state.actualMode, state.phase);
 		if (!isCurrent() || !routeIsCurrent()) return;
 		updateBadge(deps, state, internalState);
 		broadcastUI(deps, state, internalState);
+		// This document's palette surfaces predicted the route before the runtime
+		// had decided it. Now it has: tell them to repaint from the settled state,
+		// which is exactly the fact the Popup and the badge receive over the
+		// session channel.
+		globalThis.dispatchEvent?.(new Event(SPECTRA_AUDIO_ROUTE_SETTLED_EVENT));
 	};
 
 	// A single document owns one physical audio graph. Serialize every policy

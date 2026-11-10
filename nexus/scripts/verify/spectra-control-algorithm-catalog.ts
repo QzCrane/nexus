@@ -29,7 +29,7 @@ export const SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS = Object.freeze([
 		decision: 'pure-computation',
 		augmentationAdmission: 'not-applicable',
 		interceptionPolicy: 'forbidden',
-		successProof: 'returns true only for non-neutral DSP configuration; native media-element fields remain outside the processor predicate',
+		successProof: 'returns true for non-neutral DSP or an explicitly owned document output; native media-element fields remain outside the processor predicate',
 		recurringWork: 'none',
 		performanceBoundary: 'one bounded configuration scan; it never acquires Capture or an audio runtime',
 	},

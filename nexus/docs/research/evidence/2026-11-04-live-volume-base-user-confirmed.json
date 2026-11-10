@@ -1,0 +1,49 @@
+{
+  "rowId": "live-volume-base",
+  "capturedAt": "2026-11-04T19:08:00+08:00",
+  "verdict": "verified on Douyin; the row is now universal and also covers the huya WebAudio-output case",
+  "source": {
+    "kind": "extension chrome.storage.local LevelDB, user's live Edge profile",
+    "directory": "C:/Users/QzCrane/AppData/Local/Microsoft/Edge/User Data/Default/Local Extension Settings/apfaijeiioiioccdknfcjjckkohjkpno",
+    "log": "001277.log",
+    "logWrittenAt": "2026-11-04T19:09:26+08:00",
+    "parser": "brace-matched JSON scan over the literal {\"activeMedia\" prefix",
+    "snapshotsParsed": 140
+  },
+  "observation": {
+    "douyin_www_volumeBase": {
+      "page_native_applied": 22,
+      "dom_native_applied": 11,
+      "note": "page-native means the declared page-media bridge admitted the controller; the executor no longer used the dom-native fallback for those writes."
+    },
+    "huya_www_live_volumeBase": {
+      "dom_native_applied": 68,
+      "page_native_applied": 0,
+      "errors": 0,
+      "note": "All 68 writes stayed dom-native across the full 0..100 slider range; the live-volume-base row never admitted a huya controller."
+    },
+    "live_douyin_live_volumeBase": {
+      "dom_native_applied": 17,
+      "page_native_applied": 0,
+      "note": "The standalone live.douyin.com origin also did not admit window.player in this session. Not part of the user's confirmation."
+    }
+  },
+  "userReport": {
+    "at": "2026-11-04T19:08:00+08:00",
+    "text": "dy可以控制了，虎牙还是不行",
+    "interpretation": "The user confirmed audible Douyin volume control after loading the production build, and reported huya still inaudible."
+  },
+  "scope": {
+    "confirmed": ["www.douyin.com live volume, 0..100, no tabCapture"],
+    "notConfirmed": [
+      "audible confirmation on the huya real room (headless Chrome has no audio device; its WebAudio gain was verified to move to 0.30)",
+      "live.douyin.com standalone origin",
+      "amplified volume above 100, which remains the offscreen processor's job"
+    ]
+  },
+  "mechanism": "Universal three-tier resolution: (1) a page controller that proves ownership of the exact element and exposes a 0..1 volume accessor or volume method pair, discovered by a bounded structural scan of globals rather than a site-specific path; (2) otherwise a transparent gain inserted at every WebAudio destination connection, driven in the SPECTRA 0..100 protocol; (3) otherwise the native DOM writer. Tier 2 is not tabCapture.",
+  "relatedEvidence": [
+    "2026-11-04-live-volume-control-snapshot.json",
+    "2026-11-04-huya-volume-shape.json"
+  ]
+}

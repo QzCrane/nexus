@@ -144,7 +144,14 @@ export function retireMediaActualFields(
 		if (!state) continue;
 		const field = rawField as ControlField;
 		const scope = selectControlCapabilityScope(field);
-		if (!(media && (scope === 'active-media' || scope === 'media-source' || scope === 'requested-audio-scope')
+		if ((field === 'volumeBase' || field === 'mediaMuted')
+			&& state.strategy === 'capture' && state.coverage === 'opaque') continue;
+		// Full-output DSP belongs to the document's acknowledged processor, not
+		// the selected media registry. A selection/registry replacement must not
+		// erase an active Capture gain or its neutral readback; its own lifecycle
+		// reports retirement. Target-scoped audio facts still retire normally.
+		if (!(media && (scope === 'active-media' || scope === 'media-source'
+			|| scope === 'requested-audio-scope' && state.coverage !== 'full' && state.coverage !== 'opaque')
 			|| video && scope === 'active-video')) continue;
 		Object.assign(retired, { [field]: { ...state, desired: null, actual: null, revision,
 			phase: 'idle', controlled: false, lastError: null } });
@@ -164,6 +171,9 @@ export function mergeMediaObservedFields(
 		if (!state) continue;
 		const field = rawField as ControlField;
 		const previous = current[field];
+		if (observation && (field === 'volumeBase' || field === 'mediaMuted')
+			&& previous?.strategy === 'capture' && previous.controlled
+			&& state.strategy !== 'capture') continue;
 		const sample = ORDERED_MEDIA_FIELDS.has(field) ? state.mediaObservation ?? stamp : undefined;
 		if (previous?.mediaObservation && ORDERED_MEDIA_FIELDS.has(field)) {
 			if (!sample && !observation && state.desired === null && !state.controlled && state.lastError === null) {
@@ -208,7 +218,7 @@ export function nativeObservationFields(
 			revision,
 			phase: 'applied',
 			strategy,
-			coverage: 'active-target',
+			coverage: strategy === 'capture' ? 'opaque' : 'active-target',
 			controlled: false,
 			lastError: null,
 		};
@@ -234,6 +244,7 @@ export function neutralBoostObservation(
 }
 
 export interface ResolvedControlIntentRequest {
+	releaseDocumentOutput?: true;
 	tabId: number;
 	source: ControlIntent['source'];
 	requestedCoverage: ControlIntent['requestedCoverage'];
@@ -272,6 +283,7 @@ export function createIntent(
 		target: request.target,
 		actualContext,
 		patch: request.patch,
+		...(request.releaseDocumentOutput ? { releaseDocumentOutput: true as const } : {}),
 		...(request.mediaRestore ? { mediaRestore: request.mediaRestore } : {}),
 		...(request.captureAdmission
 			? { captureAdmission: request.captureAdmission }
@@ -548,6 +560,10 @@ export function assertAppliedFields(
 	for (const field of requiredFields) {
 		const state = fields[field];
 		if (state?.phase === 'applied') continue;
+		// A capability gap already carries the sentence the user has to act on
+		// ("this needs the tab in the foreground"). Prefixing it with the internal
+		// stage name and the failure code only buries that sentence.
+		if (state?.lastError?.code === 'capability-unavailable') throw new Error(state.lastError.message);
 		const detail = state?.lastError
 			? `${state.lastError.code}: ${state.lastError.message}`
 			: 'missing actual field acknowledgement';

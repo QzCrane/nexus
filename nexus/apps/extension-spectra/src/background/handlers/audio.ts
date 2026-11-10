@@ -44,6 +44,7 @@ import {
 	abandonPopupVisualizerSource,
 	acquirePopupVisualizerSource,
 	isExtensionPopupSender,
+	observeStoppedAudioOutput,
 	releasePopupVisualizerSource,
 } from '../control-coordinator';
 const PROTO_AUDIO_SESSION_CURRENT = 'spectra.audio.session.current' as const;
@@ -539,6 +540,7 @@ export function registerAudioV2Listener(): void {
 					generation: message.generation,
 					error: message.payload.lastError,
 				});
+				observeStoppedAudioOutput(snapshot);
 				await updateBadgeFromSession(snapshot, message.payload.userInteracted);
 				return snapshot;
 			}

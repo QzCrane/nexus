@@ -8,12 +8,15 @@ import {
 	bootstrapRpcSuccess,
 	isBootstrapHelloResponse,
 	isBootstrapInboundRequest,
+	isSpectraContentInvocationGrantedMessage,
 	resolveSpectraDefaultHotkeyAction,
 	type BootstrapInboundRequest,
 	type SpectraDefaultHotkeyAction,
 } from '@nexus/contracts/bootstrap';
 import {
 	getContentBootstrapState,
+	claimMediaObservationEpoch,
+	needsManifestVolumeCommand,
 	setContentBootstrapState,
 	type ContentBootstrapState,
 } from '../../shared/content-runtime';
@@ -23,6 +26,7 @@ import {
 } from './extension-context';
 import { createSiteSpeedLabelProjection, readPageMediaField } from '../logic/page-media-bridge';
 import { hasPlayableMedia } from '../../shared/media-presence';
+import { isLiveMedia } from '../../shared/media-live';
 import { getPausedAt, updatePausedAt } from '../utils/pause-tracker';
 import { chooseInitialMedia } from './media-registry';
 import {
@@ -74,11 +78,10 @@ if (!getContentBootstrapState()) {
 		gesture: string;
 		repeated: boolean;
 	}>();
-	type BootstrapNativeObservation = {
-		patch: import('@nexus/contracts').ControlPatch;
-		observedStrategies: import('@nexus/contracts').ControlObservationStrategies;
-	};
-	let pendingObservation: BootstrapNativeObservation | null = null;
+	let pendingObservation = false;
+	const observationOwner = crypto.randomUUID();
+	let observationEpoch = 0;
+	let observationRevision = 0;
 	let lastReportedMediaPresence: boolean | null = null;
 	let lastReportedPlayback: boolean | null = null;
 	// Page-entry solidification: the bootstrap is the only owner present before
@@ -171,9 +174,35 @@ if (!getContentBootstrapState()) {
 		releaseDefaultScalarKeys();
 	};
 
+	// Only the press that leaves the native range needs a fresh invocation: at
+	// the ceiling, +10 becomes a Capture step, and a cold document needs the
+	// `activeTab` grant Chrome attaches to the manifest `volume_up` command.
+	// Once this document has been invoked (Popup, a delivered command, or an
+	// earlier Capture session), the grant lasts until navigation, so the press
+	// stays on the content path even after Capture stops. Below the ceiling the
+	// press is always page-owned, which keeps the key working when the command
+	// is unavailable or the page consumes it.
+	const volumeUpNeedsCommand = (): boolean => {
+		try {
+			const media = chooseInitialMedia(
+				Array.from(document.querySelectorAll<HTMLMediaElement>('video,audio')),
+			);
+			return needsManifestVolumeCommand(state.extensionInvoked === true, media?.volume ?? null);
+		} catch {
+			return false;
+		}
+	};
+
 	const onDefaultHotkeyKeydown = (event: KeyboardEvent): void => {
 		const action = defaultHotkeyAction(event);
-		if (action !== null) acceptDefaultHotkeyKeydown(event, action);
+		if (action === null) return;
+		if (action === 'volume_up' && volumeUpNeedsCommand()) {
+			// Leave the default action to the browser so the manifest command can
+			// run, but stop page handlers from cancelling the chord first.
+			event.stopImmediatePropagation();
+			return;
+		}
+		acceptDefaultHotkeyKeydown(event, action);
 	};
 
 	const onDefaultHotkeyKeyup = (event: KeyboardEvent): void => {
@@ -185,39 +214,6 @@ if (!getContentBootstrapState()) {
 
 	const onVisibilityChange = (): void => {
 		if (document.hidden) releaseDefaultScalarKeys();
-	};
-
-	const readBootstrapObservation = (
-		element: HTMLMediaElement,
-		eventType: 'volumechange' | 'ratechange',
-	): BootstrapNativeObservation | null => {
-		if (eventType === 'volumechange') {
-			const pageVolume = readPageActual(element, 'volumeBase');
-			const pageMuted = readPageActual(element, 'mediaMuted');
-			return {
-				patch: {
-					volumeBase: typeof pageVolume === 'number'
-						? pageVolume
-						: Math.round(element.volume * 10_000) / 100,
-					mediaMuted: typeof pageMuted === 'boolean' ? pageMuted : element.muted,
-				},
-				observedStrategies: {
-					volumeBase: pageVolume === null ? 'dom-native' : 'page-native',
-					mediaMuted: pageMuted === null ? 'dom-native' : 'page-native',
-				},
-			};
-		}
-		if (!('preservesPitch' in element)) return null;
-		return {
-			patch: {
-				speed: element.playbackRate,
-				preservePitch: element.preservesPitch,
-			},
-			observedStrategies: {
-				speed: 'dom-native',
-				preservePitch: 'dom-native',
-			},
-		};
 	};
 
 	const readNativeActual = (
@@ -269,7 +265,9 @@ if (!getContentBootstrapState()) {
 			}
 			if (actual !== undefined) (patch as Record<string, unknown>)[field] = actual;
 		}
-		return Object.keys(patch).length > 0 ? { target: null, patch, observedStrategies } : null;
+		return Object.keys(patch).length > 0
+			? { target: null, patch, observedStrategies, live: isLiveMedia(element) }
+			: null;
 	};
 
 	// Media presence reporting turns a plain document into a durable background
@@ -344,13 +342,14 @@ if (!getContentBootstrapState()) {
 		ready: false,
 		mediaReportRevision: previous?.mediaReportRevision ?? 0,
 		mediaPausedAt: previous?.mediaPausedAt ?? null,
+		extensionInvoked: previous?.extensionInvoked ?? false,
 		mediaOwnerEpoch: previous?.mediaOwnerEpoch ?? 0,
 		dispose() {
 			if (disposed) return;
 			disposed = true;
 			speedLabels.dispose();
 			releaseDefaultScalarKeys();
-			pendingObservation = null;
+			pendingObservation = false;
 			document.removeEventListener('DOMContentLoaded', onMediaDomReady);
 			window.removeEventListener('pageshow', onMediaPageShow);
 			for (const type of MEDIA_PRESENCE_EVENTS) {
@@ -380,11 +379,21 @@ if (!getContentBootstrapState()) {
 	const drainObservation = (): void => {
 		if (disposed || observationInFlight || !pendingObservation) return;
 		if (!observationsReady || state.ready || state.disposeRuntime) {
-			if (state.ready || state.disposeRuntime) pendingObservation = null;
+			if (state.ready || state.disposeRuntime) pendingObservation = false;
 			return;
 		}
-		const observation = pendingObservation;
-		pendingObservation = null;
+		pendingObservation = false;
+		// The queue retains a sampling obligation, never old values. Read both
+		// complete bootstrap groups from the canonical selected media together.
+		// No registry target is claimed: each stateless sample is a new selection.
+		const observation = readNativeActual({ target: null,
+			fields: ['volumeBase', 'mediaMuted', 'speed', 'preservePitch'] });
+		if (!observation) return;
+		if (observationEpoch === 0 || observationEpoch !== state.mediaOwnerEpoch) {
+			observationEpoch = claimMediaObservationEpoch();
+			observationRevision = 0;
+		}
+		const revision = ++observationRevision;
 		observationInFlight = true;
 		void sendBootstrapRequest('spectra.control.intent.submit', {
 			source: 'page',
@@ -392,6 +401,7 @@ if (!getContentBootstrapState()) {
 			target: null,
 			patch: observation.patch,
 			observedStrategies: observation.observedStrategies,
+			mediaObservation: { owner: observationOwner, epoch: observationEpoch, selection: revision, revision },
 		}, state.dispose).catch(() => undefined).finally(() => {
 			observationInFlight = false;
 			drainObservation();
@@ -413,20 +423,7 @@ if (!getContentBootstrapState()) {
 		// solidify the amplified-controller verdict before the runtime loads.
 		if (event.type === 'volumechange') reportPageScale(element);
 		if (state.ready) return;
-		const observation = readBootstrapObservation(
-			element,
-			event.type as 'volumechange' | 'ratechange',
-		);
-		if (!observation) return;
-		pendingObservation = pendingObservation
-			? {
-				patch: { ...pendingObservation.patch, ...observation.patch },
-				observedStrategies: {
-					...pendingObservation.observedStrategies,
-					...observation.observedStrategies,
-				},
-			}
-			: observation;
+		pendingObservation = true;
 		drainObservation();
 	};
 
@@ -444,6 +441,11 @@ if (!getContentBootstrapState()) {
 		if (!message || typeof message !== 'object') return false;
 		const candidate = message as { protocolVersion?: unknown; type?: unknown };
 		if (candidate.protocolVersion !== SPECTRA_PROTOCOL_VERSION || typeof candidate.type !== 'string') {
+			return false;
+		}
+		if (isSpectraContentInvocationGrantedMessage(message)) {
+			state.extensionInvoked = true;
+			sendResponse(bootstrapRpcSuccess({ accepted: true as const }));
 			return false;
 		}
 		if (candidate.type === 'spectra.hotkey.target.feedback') {
@@ -542,9 +544,18 @@ if (!getContentBootstrapState()) {
 		(event) => publishPhysicalHotkeyRelease({ code: event.code }),
 	);
 	// The five shipped chords are reserved extension commands. Claiming them at
-	// document_start keeps the first physical press out of page handlers that
-	// would otherwise clamp volume to their native 0-100 range. Configured site
-	// bindings remain website-first in the heavy hotkey listener.
+	// document_start keeps physical presses out of page handlers that would
+	// otherwise clamp volume to their native 0-100 range. Alt+Up is the single
+	// exception: at the native ceiling, when the document has no known extension
+	// invocation, the press is left to the browser so Chrome can execute the
+	// manifest `volume_up` command - the only invocation that grants the
+	// `activeTab` the same press needs above 100%. Popup, a delivered command, or
+	// a successful Capture start latches that grant for the document's lifetime,
+	// so a session that ended at 100% keeps the next press on the content path.
+	// Page handlers are still silenced so they cannot cancel that chord. Every
+	// other press is claimed here, so the key remains usable when the command is
+	// unavailable or the page consumes it. Configured site bindings remain
+	// website-first in the heavy hotkey listener.
 	window.addEventListener('keydown', onDefaultHotkeyKeydown, true);
 	window.addEventListener('keyup', onDefaultHotkeyKeyup, true);
 	document.addEventListener('visibilitychange', onVisibilityChange);

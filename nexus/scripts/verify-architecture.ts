@@ -23,7 +23,6 @@ import { checkRemoteProjection } from './verify/check-remote-projection.ts';
 import { checkSpectraControlArchitecture } from './verify/check-spectra-control.ts';
 import { checkAiHygiene } from './verify/check-ai-hygiene.ts';
 import { checkSourcePurity } from './verify/check-source-purity.ts';
-import { checkPublicParity } from './verify/check-public-parity.ts';
 import { checkSenderVerification } from './verify/check-sender-verification.ts';
 import { checkShapeDuplication } from './verify/check-shape-duplication.ts';
 import { checkUiAuthority } from './verify/check-ui-authority.ts';
@@ -56,7 +55,6 @@ const CHECKS: ReadonlyArray<readonly [string, (root: string) => void]> = [
 	['chinese-comments', checkChineseComments],
 	['ai-hygiene', checkAiHygiene],
 	['source-purity', checkSourcePurity],
-	['public-parity', checkPublicParity],
 	['sender-verification', checkSenderVerification],
 	['shape-duplication', checkShapeDuplication],
 	['ui-authority', checkUiAuthority],

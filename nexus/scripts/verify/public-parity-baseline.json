@@ -1,7 +1,11 @@
 {
-	"reason": "The public checkout was regenerated with the canonical sync owner from this task's committed source after explicit authorization to overwrite its prior uncommitted changes. Every shipped application source now matches, so no missing or differing source is accepted. Remote delivery readback is recorded separately from this local-checkout parity gate.",
+	"reason": "The public checkout still matches the 1.4.2 release. This branch carries two unreleased batches over it. Batch one, the PiP readback, deferred-proof and badge-projection fixes, touched ten shipped sources (background/control-coordinator, background/handlers/badge, content/injector/page-media-bridge, content/input/hotkey-helpers, content/input/trusted-activation-bridge, content/logic/native-media-async, content/logic/native-media-executor, content/logic/native-write-confirmation, popup/card/media-events, popup/control-snapshot-order); the popup entry joined when the PiP button stopped trusting the first-paint forecast, because a tab that plainly has a video target reported 'No active video target' on the first click, and the snapshot-order entry joined so a media observation cannot erase the presentation kind of the target it kept. Batch two, the live-stream and mute-preference corrections, added src/shared/media-live.ts (not yet published, hence knownMissing) and changed six more sources: background/control-coordinator-values and content/logic/mode-executor for the foreground-Capture error sentence, content/core/bootstrap and content/logic/native-media-executor for the live flag and the withheld playback rate, content/logic/audio-runtime-control-delegate and popup/card/render for the capability classification and the disabled speed control, plus content/core/media-registry for the live-first target ranking and the late-candidate admission. Content drift is accepted for exactly those files and may not grow. Batch three, the shortcut-toast tone correction, added src/content/ui/hotkey-volume-tone.ts and src/shared/content-presentation-events.ts (both not yet published, hence knownMissing) and touched content/ui/osd, content/input/hotkey-listener, content/logic/message-handler, content/logic/policy-executor/index and content/types/index so the OSD predicts its fill colour from the same decision the Popup bar and the Action badge use, repaints it when the audio policy settles the route, and no longer keeps the old colour for the whole presentation. The next `bun scripts/sync-public.ts spectra` release run publishes them and returns this baseline to zero. Remote delivery readback is recorded separately from this local-checkout parity gate.",
 	"version": "1.4.2",
-	"maxDiffering": 0,
-	"knownMissing": [],
+	"maxDiffering": 22,
+	"knownMissing": [
+		"src/shared/media-live.ts",
+		"src/content/ui/hotkey-volume-tone.ts",
+		"src/shared/content-presentation-events.ts"
+	],
 	"publishedVersion": "1.4.2"
 }

@@ -373,6 +373,13 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	registry.track(disposeMarkers);
 	const nativeExecutor = new NativeMediaExecutor(mediaRegistry);
 	registry.track(nativeExecutor);
+	// The writer publishes the route it actually used; the palette decision reads
+	// it from the one state every content surface already shares, so a hotkey can
+	// predict a route change in the same frame as its number.
+	nativeExecutor.setVolumeRouteReporter((route) => {
+		state.volumeRoute = route;
+	});
+	registry.track(() => nativeExecutor.setVolumeRouteReporter(null));
 	registry.track(registerNativeMediaExecutor(nativeExecutor));
 	registry.track(registerControlOperationExecutor(nativeExecutor));
 	registry.track(registerTrustedActivationBridge());

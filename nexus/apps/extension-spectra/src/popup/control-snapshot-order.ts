@@ -20,10 +20,21 @@ export function reconcileControlMedia(current: ControlSnapshot | null, incoming:
 			else delete fields[field];
 		}
 	}
-	return { ...incoming, fields,
-		...(physicalOrder === null || physicalOrder < 0
+	const keepingCurrentMedia = physicalOrder === null || physicalOrder < 0;
+	const reconciled: ControlSnapshot = { ...incoming, fields,
+		...(keepingCurrentMedia
 			? { activeMedia: current.activeMedia, activeVideo: current.activeVideo, mediaObservation: current.mediaObservation } : {}),
 	};
+	// `live` describes the media target, not the tab. When this projection keeps
+	// the older target, it must keep that target's proof too: taking the incoming
+	// flag would describe the media this projection just refused.
+	if (keepingCurrentMedia) {
+		if (current.live === undefined) delete reconciled.live;
+		else reconciled.live = current.live;
+		if (current.prospectiveBoostRoute === undefined) delete reconciled.prospectiveBoostRoute;
+		else reconciled.prospectiveBoostRoute = current.prospectiveBoostRoute;
+	}
+	return reconciled;
 }
 
 export type ControlSnapshotAdmission =

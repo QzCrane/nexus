@@ -83,6 +83,18 @@ export interface SpectraLeanSiteHotkeyConfigureMessage {
 	payload: SpectraLeanSiteHotkeyConfiguration;
 }
 
+/**
+ * Background-to-document notice that Chrome granted this document's `activeTab`
+ * invocation (action Popup or manifest command). The document-start hotkey gate
+ * reads the resulting latch synchronously, so an invoked document keeps Alt+Up
+ * on the content path instead of yielding it to the manifest command.
+ */
+export const SPECTRA_CONTENT_INVOCATION_GRANTED = 'spectra.content.invocation.granted' as const;
+export interface SpectraContentInvocationGrantedMessage {
+	protocolVersion: typeof SPECTRA_PROTOCOL_VERSION;
+	type: typeof SPECTRA_CONTENT_INVOCATION_GRANTED;
+}
+
 const REQUEST_KEYS = new Set([
 	'protocolVersion',
 	'requestId',
@@ -104,6 +116,7 @@ const LEAN_SITE_HOTKEY_CONFIG_KEYS = new Set(['epoch', 'generation', 'bindings']
 const LEAN_SITE_HOTKEY_BINDING_KEYS = new Set(['code', 'modifiers', 'action']);
 const LEAN_SITE_HOTKEY_MODIFIER_KEYS = new Set(['ctrl', 'alt', 'shift', 'meta']);
 const DEFAULT_HOTKEY_TRIGGER_KEYS = new Set(['action', 'phase', 'gesture', 'repeated', 'disposition']);
+const INVOCATION_GRANTED_MESSAGE_KEYS = new Set(['protocolVersion', 'type']);
 
 type BootstrapRequestType =
 	| 'spectra.content.runtime.status'
@@ -188,6 +201,23 @@ export function isSpectraLeanSiteHotkeyConfigureMessage(
 		&& value.protocolVersion === SPECTRA_PROTOCOL_VERSION
 		&& value.type === 'spectra.content.site-hotkeys.configure'
 		&& isSpectraLeanSiteHotkeyConfiguration(value.payload);
+}
+
+/** Builds the invocation grant sent only to the invoked document. */
+export function createSpectraContentInvocationGrantedMessage(): SpectraContentInvocationGrantedMessage {
+	return {
+		protocolVersion: SPECTRA_PROTOCOL_VERSION,
+		type: SPECTRA_CONTENT_INVOCATION_GRANTED,
+	};
+}
+
+export function isSpectraContentInvocationGrantedMessage(
+	value: unknown,
+): value is SpectraContentInvocationGrantedMessage {
+	return isRecord(value)
+		&& hasOnlyKeys(value, INVOCATION_GRANTED_MESSAGE_KEYS)
+		&& value.protocolVersion === SPECTRA_PROTOCOL_VERSION
+		&& value.type === SPECTRA_CONTENT_INVOCATION_GRANTED;
 }
 
 export function isSpectraDefaultHotkeyTriggerPayload(

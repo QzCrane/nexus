@@ -3,7 +3,8 @@
 import type { MediaTarget } from '@nexus/contracts';
 import type { MediaSourceEligibilityEvidence } from '@nexus/audio-engine';
 import type { DocumentRuntimeContext } from './content-runtime-context';
-import { getContentBootstrapState } from '../../shared/content-runtime';
+import { claimMediaObservationEpoch } from '../../shared/content-runtime';
+import { isLiveMedia } from '../../shared/media-live';
 
 export type MediaRegistryEvent =
 	| 'registered'
@@ -14,6 +15,8 @@ export type MediaRegistryEvent =
 	| 'pause'
 	| 'ended'
 	| 'loadedmetadata'
+	| 'loadeddata'
+	| 'durationchange'
 	| 'emptied'
 	| 'volumechange'
 	| 'ratechange'
@@ -35,6 +38,7 @@ interface MediaRecord {
 	lastInteraction: number;
 	lastPlay: number;
 	visibleArea: number;
+	presentationHidden: boolean;
 	dispose(): void;
 }
 
@@ -84,6 +88,35 @@ function initialVisibleArea(element: HTMLMediaElement): number {
 	return Math.max(0, right - left) * Math.max(0, bottom - top);
 }
 
+/** Lexicographic comparison of two ranking tuples: first difference decides. */
+function outranks(left: readonly number[], right: readonly number[]): boolean {
+	for (let index = 0; index < left.length; index += 1) {
+		const leftValue = left[index] ?? 0;
+		const rightValue = right[index] ?? 0;
+		if (leftValue !== rightValue) return leftValue > rightValue;
+	}
+	return false;
+}
+
+/**
+ * An available live broadcast remains the control target beside a finite
+ * pre-roll, even when the ad is larger or the page initially muted the stream.
+ * Playback is not a prerequisite: startup/pre-roll can park the broadcast at
+ * paused after its stream is known, and volume must already belong to it.
+ * A hidden live preview has no presentation evidence and cannot take the visit.
+ * Explicit selection, playback pins and browser presentation retain their guards.
+ */
+function mediaRank(
+	element: HTMLMediaElement,
+	visibleArea: number,
+): [number, number, number] {
+	return [
+		visibleArea > 0 && !element.ended && isLiveMedia(element) ? 1 : 0,
+		!element.paused && !element.ended ? 1 : 0,
+		visibleArea,
+	];
+}
+
 /** One stateless admission for cold bootstrap and a registry with no selection.
  * Supplying retained geometry keeps registry reads free of layout sampling. */
 export function chooseInitialMedia(
@@ -101,13 +134,11 @@ export function chooseInitialMedia(
 		|| fullscreen instanceof Element && fullscreen.contains(element)) : [];
 	const pool = presented.length > 0 ? presented : candidates;
 	let best: HTMLMediaElement | null = null;
-	let bestPlaying = -1;
-	let bestArea = -1;
+	let bestRank: [number, number, number] = [-1, -1, -1];
 	for (const candidate of pool) {
-		const playing = !candidate.paused && !candidate.ended ? 1 : 0;
-		const area = visibleArea(candidate);
-		if (!best || playing > bestPlaying || playing === bestPlaying && area > bestArea) {
-			best = candidate; bestPlaying = playing; bestArea = area;
+		const rank = mediaRank(candidate, visibleArea(candidate));
+		if (!best || outranks(rank, bestRank)) {
+			best = candidate; bestRank = rank;
 		}
 	}
 	return best;
@@ -154,9 +185,7 @@ export class MediaRegistry {
 	constructor(runtimeContext: DocumentRuntimeContext, onEvent?: MediaRegistryListener) {
 		this.runtimeContext = runtimeContext;
 		this.runtimeContext.assertOpen();
-		const bootstrap = typeof window === 'undefined' ? undefined : getContentBootstrapState();
-		const ownerEpoch = bootstrap ? (bootstrap.mediaOwnerEpoch ?? 0) + 1 : runtimeContext.runtimeEpoch;
-		if (bootstrap) bootstrap.mediaOwnerEpoch = ownerEpoch;
+		const ownerEpoch = claimMediaObservationEpoch(runtimeContext.runtimeEpoch);
 		this.observationOwner = `${runtimeContext.identity.documentId}:${ownerEpoch}`;
 		this.observationEpoch = ownerEpoch;
 		if (onEvent) this.listeners.add(onEvent);
@@ -182,13 +211,22 @@ export class MediaRegistry {
 				if (!(media instanceof HTMLMediaElement)) continue;
 				const record = this.byElement.get(media);
 				if (!record) continue;
-				const wasVisible = record.visibleArea > 0;
+				const wasHidden = record.presentationHidden;
+				// A non-intersecting player may simply have scrolled off screen.
+				// Only losing its layout box proves a hidden presentation whose
+				// return can start a new visit and replay retained media settings.
+				record.presentationHidden = entry.boundingClientRect.width <= 0 || entry.boundingClientRect.height <= 0;
 				record.visibleArea = entry.isIntersecting
 					? entry.intersectionRect.width * entry.intersectionRect.height
 					: 0;
-				if (!wasVisible && record.visibleArea > 0 && this.activeMediaId === record.target.mediaId) returning = record;
+				if (wasHidden && record.visibleArea > 0 && this.activeMediaId === record.target.mediaId) returning = record;
 			}
 			this.reconcileRetiredSelection();
+			// Geometry is the last fact to arrive. An element registered while it
+			// was still unlaid-out had no area to be admitted on, and the reconcile
+			// above keeps an already-playing visible owner, so the admission has to
+			// be retried here once the measurement exists.
+			this.admitBetterCandidate(true);
 			if (returning && this.activeMediaId === returning.target.mediaId) {
 				this.selectedTargetKey = null;
 				this.selectRecord(returning, true);
@@ -316,7 +354,9 @@ export class MediaRegistry {
 
 	private register(element: HTMLMediaElement): void {
 		if (this.disposed || this.byElement.has(element)) return;
-		const mediaId = `media:${this.nextMediaId++}`;
+		// A released runtime can be rebuilt in the same document with a different
+		// DOM order. IDs from the retired registry must never alias new elements.
+		const mediaId = `media:${this.observationEpoch}:${this.nextMediaId++}`;
 		const record: MediaRecord = {
 			element,
 			target: {
@@ -337,6 +377,7 @@ export class MediaRegistry {
 			// acquisition cannot choose an earlier hidden/preloaded SPA source
 			// before the observer delivers its initial entries.
 			visibleArea: initialVisibleArea(element),
+			presentationHidden: false,
 			dispose: () => undefined,
 		};
 		const listeners: Array<[MediaRegistryEvent, EventListener]> = [];
@@ -346,6 +387,8 @@ export class MediaRegistry {
 			'pause',
 			'ended',
 			'loadedmetadata',
+			'loadeddata',
+			'durationchange',
 			'emptied',
 			'volumechange',
 			'ratechange',
@@ -362,7 +405,9 @@ export class MediaRegistry {
 					record.visibleArea = initialVisibleArea(element);
 					const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
 					if (active && active !== record) active.visibleArea = initialVisibleArea(active.element);
-					const candidate = this.bestRecord(this.byElement.values());
+					const candidate = this.bestRecord([...this.byElement.values()].filter(candidate => (
+						!active || !this.isSelectionProtected(active, candidate)
+					)));
 					if (candidate) this.selectRecord(candidate, true);
 				}
 				if (type === 'pause' || type === 'ended' || type === 'leavepictureinpicture') {
@@ -375,10 +420,15 @@ export class MediaRegistry {
 					record.sourceTransitionOpen = false;
 					record.eligibilityEvidence = preloadCorsEvidence(element);
 				}
-			// A script-written media property also produces a trusted browser
-			// event. It is observation, not evidence of user target selection;
-			// inactive previews must not steal the volume/speed control owner.
-			this.emit(record.target, type, element);
+				if (type === 'loadedmetadata' || type === 'loadeddata' || type === 'durationchange') {
+					// MSE may publish its unbounded timeline before the first data.
+					// Admit the live presentation when either piece of evidence arrives.
+					this.admitBetterCandidate(true);
+				}
+				// A script-written media property also produces a trusted browser
+				// event. It is observation, not evidence of user target selection;
+				// inactive previews must not steal the volume/speed control owner.
+				this.emit(record.target, type, element);
 			};
 			element.addEventListener(type, listener);
 			listeners.push([type, listener]);
@@ -473,13 +523,50 @@ export class MediaRegistry {
 		if (this.activeMediaId === null) {
 			const initial = this.best('media');
 			if (initial) this.selectRecord(initial, notify);
-		}
+		} else this.admitBetterCandidate(notify);
 		// Audio may own activeMedia while an independent video remains the video
 		// scope. Establishing that scope must not replace the media selection.
 		if (this.activeVideoId === null) {
 			const initialVideo = this.best('video');
 			if (initialVideo) this.activeVideoId = initialVideo.target.mediaId;
 		}
+	}
+
+	/**
+	 * Admission for a playing candidate or a visible, confirmed live stream.
+	 *
+	 * A pre-playing element need not fire `play` again; a parked broadcast must
+	 * not wait for playback to take volume ownership. Geometry is also required:
+	 * once the element is laid out and genuinely outranks the current owner, it
+	 * is the better presentation.
+	 *
+	 * Only an automatic selection can be replaced. A pick the viewer made, a
+	 * paused-target pin and anything the browser is presenting all outrank it.
+	 */
+	private isSelectionProtected(active: MediaRecord, candidate: MediaRecord): boolean {
+		if (this.explicitSelectionKey === this.targetKey(active.target)
+			|| this.pausedSelectionKey === this.targetKey(active.target)) return true;
+		const presented = document.fullscreenElement;
+		return document.pictureInPictureElement === active.element
+			|| presented === active.element
+			// A fullscreen player container can contain both a pre-roll and the
+			// broadcast. Protect its scope without pinning the pre-roll inside it.
+			|| presented instanceof Element && presented.contains(active.element) && !presented.contains(candidate.element);
+	}
+
+	private admitBetterCandidate(notify: boolean): void {
+		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
+		if (!active) return;
+		const challenger = this.bestRecord([...this.byElement.values()].filter((record) => (
+			record !== active && !this.isSelectionProtected(active, record) && !record.element.ended
+			&& (!record.element.paused || isLiveMedia(record.element))
+			// A hidden or unlaid-out preview is not a presentation. Geometry is
+			// what proves the viewer can actually see this element; a live
+			// timeline does not.
+			&& record.visibleArea > 0
+		)));
+		if (!challenger || this.compare(challenger, active) <= 0) return;
+		this.selectRecord(challenger, notify);
 	}
 
 	private reconcileRetiredSelection(replacingRemovedTarget = false): void {
@@ -509,7 +596,7 @@ export class MediaRegistry {
 					&& !record.element.ended && record.lastPlay > active.lastPlay
 					&& record.visibleArea >= active.visibleArea
 				)));
-				if (successor) this.selectRecord(successor, true);
+				if (successor && this.compare(successor, active) > 0) this.selectRecord(successor, true);
 				return;
 			}
 		}
@@ -646,10 +733,15 @@ export class MediaRegistry {
 			? 0 : record.lastInteraction;
 		const interactionDifference = interaction(left) - interaction(right);
 		if (interactionDifference !== 0) return interactionDifference;
-		const leftPlaying = !left.element.paused && !left.element.ended ? 1 : 0;
-		const rightPlaying = !right.element.paused && !right.element.ended ? 1 : 0;
-		if (leftPlaying !== rightPlaying) return leftPlaying - rightPlaying;
-		if (left.visibleArea !== right.visibleArea) return left.visibleArea - right.visibleArea;
+		// Same tuple the cold admission uses, so a reconcile cannot land on a
+		// different target than the bootstrap that preceded it.
+		const leftRank = mediaRank(left.element, left.visibleArea);
+		const rightRank = mediaRank(right.element, right.visibleArea);
+		for (let index = 0; index < leftRank.length; index += 1) {
+			const leftValue = leftRank[index] ?? 0;
+			const rightValue = rightRank[index] ?? 0;
+			if (leftValue !== rightValue) return leftValue - rightValue;
+		}
 		if (left.lastPlay !== right.lastPlay) return left.lastPlay - right.lastPlay;
 		return right.registrationOrder - left.registrationOrder;
 	}

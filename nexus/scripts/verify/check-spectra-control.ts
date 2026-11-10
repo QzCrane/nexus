@@ -32,10 +32,14 @@ import {
 } from '../../packages/contracts/src/hotkeys.contracts.ts';
 import { SPECTRA_CONTROL_ALGORITHM_ADJUDICATIONS } from './spectra-control-algorithm-catalog.ts';
 import { loadSpectraVerificationProgram, missingSourceEvidence } from './source-evidence.ts';
-import { error, ok, scanDir, section, warn } from './utils.ts';
+import { error, ok, scanDir, section } from './utils.ts';
 
 const APP_PATH = 'apps/extension-spectra';
 const SOURCE_PATH = `${APP_PATH}/src`;
+// SCTRL-001..024 state ownership and product boundaries in prose. From this
+// ordinal on, every invariant must cite a symbol that ships, so the gate can
+// fail when the document describes a system that no longer exists.
+const ANCHORED_INVARIANT_FLOOR = 25;
 
 const LEGACY_WRITERS = Object.freeze({
 	volume: new Set(),
@@ -1168,43 +1172,63 @@ function checkPolicyOwner(root) {
 			}
 			return parts.join('\n');
 		})();
-		for (const invariant of [
-			'SCTRL-025',
-			'SCTRL-026',
-			'SCTRL-027',
-			'SCTRL-028',
-			'SCTRL-029',
-			'SCTRL-030',
-			'SCTRL-031',
-			'SCTRL-032',
-			'SCTRL-033',
-			'SCTRL-034',
-			'SCTRL-035',
-			'SCTRL-036',
-			'SCTRL-037',
-			'SCTRL-038',
-			'SCTRL-039',
-			'SCTRL-040',
-			'SCTRL-041',
-			'SCTRL-042',
-			'SCTRL-043',
-			'SCTRL-044',
-			'SCTRL-049',
-			'SCTRL-050',
+		// The invariant inventory is parsed from its owner. A hand-written list here
+		// drifted: it silently skipped SCTRL-046/047/048/057/058 while the README
+		// claimed coverage of `001..056`. The document is the list; this block only
+		// proves the list is contiguous, complete, and still describes shipped code.
+		const invariantDocPath = path.join(root, APP_PATH, 'docs/control/08-invariants-and-gates.md');
+		const invariantDoc = fs.existsSync(invariantDocPath)
+			? fs.readFileSync(invariantDocPath, 'utf8')
+			: '';
+		const documentedInvariants = [...invariantDoc.matchAll(/^- `SCTRL-(\d{3})`/gmu)]
+			.map((match) => ({ id: `SCTRL-${match[1]}`, ordinal: Number(match[1]) }));
+		if (documentedInvariants.length === 0) {
+			error('SCTRL-016: the invariant owner declares no `SCTRL-*` entries');
+		}
+		documentedInvariants.forEach((entry, index) => {
+			const expected = index + 1;
+			if (entry.ordinal !== expected) {
+				error(`SCTRL-016: invariant numbering must run 001..N without gaps (expected SCTRL-${String(expected).padStart(3, '0')}, found ${entry.id})`);
+			}
+		});
+		if (documentedInvariants.length < 58) {
+			error(`SCTRL-016: invariant coverage shrank to ${documentedInvariants.length}; the audited floor is 58`);
+		}
+		const invariantRange = documentedInvariants.length > 0
+			? `${documentedInvariants[0].id}..${documentedInvariants[documentedInvariants.length - 1].id}`
+			: 'SCTRL-001..SCTRL-000';
+		const invariantRangeSuffix = invariantRange.replaceAll('SCTRL-', '');
+		// Every number printed about invariants must be this parsed range, never a
+		// copy that a person remembered to update.
+		for (const readmePath of [
+			`${APP_PATH}/docs/control/README.md`,
+			`${APP_PATH}/docs/README.md`,
 		]) {
+			const readme = fs.readFileSync(path.join(root, readmePath), 'utf8');
+			if (!readme.includes(`\`${invariantRange}\``)) {
+				error(`SCTRL-016: ${readmePath} must print the parsed invariant range \`${invariantRange}\`; a stale count is a release-gate claim`);
+			}
+		}
+		if (!invariantDoc.includes(`SCTRL-${invariantRangeSuffix} and migration gate`)) {
+			error(`SCTRL-016: the invariant owner's own title must print \`SCTRL-${invariantRangeSuffix}\``);
+		}
+		for (const { id: invariant, ordinal } of documentedInvariants) {
+			// 001..024 are prose-level rules: they describe ownership and product
+			// boundaries with no single symbol to follow (`AudioContext` is the
+			// platform, not ours). From 025 on, an invariant without a live anchor
+			// is a rule nobody can check.
+			if (ordinal < ANCHORED_INVARIANT_FLOOR) continue;
 			const marker = `- \`${invariant}\``;
-			if (!architecture.includes(marker)) {
+			if (!invariantDoc.includes(marker)) {
 				error(`SCTRL-016: control owner is missing ${invariant}`);
 				continue;
 			}
-			const line = architecture.slice(architecture.indexOf(marker)).split('\n')[0] ?? '';
+			const line = invariantDoc.slice(invariantDoc.indexOf(marker)).split('\n')[0] ?? '';
 			const cited = [...line.matchAll(/`([A-Za-z_$][\w$]{2,})`/gu)]
 				.map((match) => match[1])
 				.filter((symbol) => symbol !== invariant);
 			if (cited.length === 0) {
-				// Not an error yet: the invariant is real, it just has no anchor a
-				// machine can follow. Reported so the count can only go down.
-				warn(`SCTRL-016: ${invariant} cites no source symbol, so nothing can check it`, true);
+				error(`SCTRL-016: ${invariant} cites no source symbol, so nothing can check it`);
 				continue;
 			}
 			for (const symbol of cited) {
@@ -1248,8 +1272,8 @@ function checkPolicyOwner(root) {
 			);
 		}
 		for (const [preference, expected] of Object.entries({
-			'native-only': 17,
-			'hybrid-extension-native': 6,
+			'native-only': 15,
+			'hybrid-extension-native': 8,
 			'augmentation-only': 26,
 			'observation-only': 2,
 		})) {
@@ -1615,6 +1639,50 @@ function checkWriterBoundaries(root) {
 	}
 }
 
+function checkDeferredWriteProofs(root) {
+	const executorPath = path.join(root, SOURCE_PATH, 'content/logic/native-media-executor.ts');
+	const bridgePath = path.join(root, SOURCE_PATH, 'content/injector/page-media-bridge.ts');
+	const executor = fs.readFileSync(executorPath, 'utf8');
+	const bridge = fs.readFileSync(bridgePath, 'utf8');
+
+	// SCTRL-045: a field whose write can answer before it is proven must schedule
+	// its proof, not await it. These are the three fields where the awaited path
+	// cost the viewer a visible stall on every click.
+	for (const branch of ["case 'playing': {", "case 'pip': {", "case 'fullscreen': {"]) {
+		const start = executor.indexOf(branch);
+		if (start < 0) {
+			error(`SCTRL-045: applyField has no ${branch} branch to check`);
+			continue;
+		}
+		const end = executor.indexOf('this.putError(', start);
+		const body = executor.slice(start, end < 0 ? undefined : end);
+		if (!body.includes('this.writeConfirmations.schedule(')) {
+			error(`SCTRL-045: ${branch} must schedule its stabilization proof instead of awaiting it`);
+		}
+	}
+
+	// SCTRL-051: re-adding the site's policy attribute after the session started
+	// is what made the user agent run its own exit algorithm. The failure path may
+	// restore it — no session exists there — so the check is about order: every
+	// restore must happen before the attribute is handed to its session owner.
+	const pipStart = executor.indexOf("case 'pip': {");
+	const pipBody = pipStart < 0 ? '' : executor.slice(pipStart, executor.indexOf("case 'fullscreen': {", pipStart));
+	const lastRestore = pipBody.lastIndexOf('.disablePictureInPicture = true');
+	const handOff = pipBody.indexOf('holdPictureInPictureDisable(');
+	if (handOff < 0) {
+		error('SCTRL-051: the PiP branch must hand the lifted policy attribute to its session owner');
+	} else if (lastRestore > handOff) {
+		error('SCTRL-051: the PiP branch must not restore disablePictureInPicture once the session started');
+	}
+
+	// SCTRL-053: exact-element requests must not acquire a second audio owner
+	// or drive site UI by synthetic gestures. Browser smoke also verifies the
+	// native connect/disconnect contract against the built MAIN entrypoint.
+	for (const forbidden of ['AudioNode', 'AudioContext', 'GainNode', 'PointerEvent', 'MouseEvent']) {
+		if (bridge.includes(forbidden)) error(`SCTRL-053: page-media bridge must not intercept audio graphs or drive site controls (${forbidden})`);
+	}
+}
+
 function checkForbiddenMainPatches(root) {
 	const source = path.join(root, SOURCE_PATH);
 	const allowedMainFile = `${SOURCE_PATH}/background/main-runtime-manager.ts`;
@@ -1687,16 +1755,19 @@ function checkRetiredPaths(root) {
 		/export interface AudioProcessorConfig \{(.*?)\n\}/su,
 	)?.[1] ?? '';
 	if (!processorContract.includes('boostGain: number')
-		|| processorContract.includes('muted:')
+		|| /^\s*muted\??:/mu.test(processorContract)
+		|| !processorContract.includes('outputLevel?: { gain: number; muted: boolean }')
 		|| /^\s*volume(?:Base)?\??:/mu.test(processorContract)
 		|| !processorContracts.includes("isFiniteControlValue(value.boostGain, 'boost')")
 		|| !contractsIndex.includes("export { isAudioProcessorConfig } from './audio-processor.contracts.js';")
 		|| !audioContracts.includes('export function audioConfigToProcessorConfig(')
-		|| !audioContracts.includes('boostGain: config.boost')
-		|| !router.includes("boostGain: clampControlValue(config.boostGain, 'boost', 1)")
+		|| !audioContracts.includes('boostGain: config.documentOutput ? 1 : config.boost')
+		|| !router.includes("boostGain: config.outputLevel ? 1 : clampControlValue(config.boostGain, 'boost', 1)")
+		|| !router.includes('private async confirmOutputLevel(')
+		|| !router.includes('this.context.currentTime >= rampEnd + quantum * 2')
 		|| router.includes('normalized.muted')
 		|| router.includes('config.muted')) {
-		error('SCTRL-003/SCTRL-032: processor contracts cannot become page-volume or media-mute writers');
+		error('SCTRL-003/SCTRL-032: processor output level requires explicit ownership and physical readback; native media fields cannot become graph writers');
 	}
 
 	const nativeExecutor = fs.readFileSync(
@@ -2054,8 +2125,11 @@ function checkRetiredPaths(root) {
 		error('SCTRL-002/SCTRL-005: every coordinator result must pass capability-specific ACK validation before publication');
 	}
 	if (!coordinator.includes('invalidateNavigation(details.tabId, true)')
-		|| (coordinator.match(/invalidateNavigation\(details\.tabId, true\)/gu) ?? []).length !== 2) {
-		error('SCTRL-006/SCTRL-014: history and fragment navigation must advance generation while preserving same-document state');
+		|| !coordinator.includes('onHistoryStateUpdated.addListener(onSameDocumentNavigation)')
+		|| !coordinator.includes('onReferenceFragmentUpdated.addListener(onSameDocumentNavigation)')
+		|| !coordinatorTest.includes('fences real navigation but preserves a same-URL announcement')
+		|| !coordinatorTest.includes('does not mistake a rapid A to B to A route return for an unchanged document')) {
+		error('SCTRL-006/SCTRL-014: history and fragment events share identity-aware fencing; real route changes retire old transactions and duplicate URLs preserve them');
 	}
 
 	const runtimeLoader = fs.readFileSync(
@@ -2442,7 +2516,8 @@ function checkRetiredPaths(root) {
 		|| !scalarFeedback.includes("{ value: 100, label: '100%', lane: 'lower' }")
 		|| !scalarFeedback.includes("{ value: 1, label: '1×', lane: 'lower' }")
 		|| !scalarFeedback.includes("{ value: 2, label: '2×', lane: 'upper' }")
-		|| !osd.includes('volumeState: feedback.volumeState')
+		|| !osd.includes('audioVolumeStateToVolumeTone(feedback.volumeState)')
+		|| !osd.includes('export type VolumeToneResolver')
 		|| !osd.includes('advanceHotkeyTargetOSD(')
 		|| !osd.includes('resolveHotkeyVolumeBaseline(')
 		|| !osd.includes('renderOSD(target, s, {})')
@@ -2590,9 +2665,13 @@ function checkRetiredPaths(root) {
 		|| popupMessaging.includes('state.desiredMode = state.actualMode')) {
 		error('SCTRL-014/SCTRL-020: Popup fields must initialize from ControlSnapshot only');
 	}
+	const popupState = fs.readFileSync(path.join(root, SOURCE_PATH, 'popup/card/state.ts'), 'utf8');
 	if (!popupMessaging.includes("rawMessage.type === 'spectra.audio.session.changed'")
-		|| !popupMessaging.includes('state.actualMode = snapshot.actualMode')
-		|| !popupMessaging.includes('state.phase = snapshot.phase')) {
+		|| !popupMessaging.includes("import { applyAudioSessionSnapshot, projectAcknowledgedProcessorLifecycle } from './state'")
+		|| !popupState.includes('export function applyAudioSessionSnapshot(')
+		|| !popupState.includes('state.actualMode = snapshot.actualMode')
+		|| !popupState.includes('state.phase = snapshot.phase')
+		|| !popupState.includes('if (hasAudioLifecycle) return;')) {
 		error('SCTRL-014/SCTRL-020: Popup processor lifecycle must be owned only by AudioSessionSnapshot');
 	}
 	const videoControls = fs.readFileSync(
@@ -2627,8 +2706,8 @@ function checkRetiredPaths(root) {
 		|| !popupMediaControls.includes('togglePictureInPicture(tabId)')
 		|| !popupMediaControls.includes("world: 'ISOLATED'")
 		|| !popupPipBridge.includes('navigator.userActivation.isActive')
-		|| !popupPipBridge.includes("submitTrustedActivationControl('pip')")
-		|| !hotkeyHelpers.includes('executor.toggleTrustedActivation(field)')
+		|| !popupPipBridge.includes("submitTrustedActivationControl('pip', request.documentId, request.target)")
+		|| !hotkeyHelpers.includes('executor.toggleTrustedActivation(field, target)')
 		|| !nativeExecutor.includes('this.registry.resolveVideo(intent.target)')) {
 		error('SCTRL-005/SCTRL-014/SCTRL-025: video controls must target the independent active-video identity');
 	}
@@ -2751,7 +2830,7 @@ function checkRetiredPaths(root) {
 		'utf8',
 	);
 	if (!contentCore.includes("intent.requestedCoverage !== 'full'")
-		|| !contentCore.includes("code: 'coverage-incomplete'")) {
+		|| !contentCore.includes("code: targetOnly ? 'coverage-incomplete' : 'capability-unavailable'")) {
 		error('SCTRL-002/SCTRL-011: shared audio processors must reject target-only requests before activation');
 	}
 	if (!contentCore.includes('for (const field of AUDIO_RUNTIME_CONTROL_FIELDS) acknowledgedFields.add(field)')
@@ -2768,6 +2847,7 @@ export function checkSpectraControlArchitecture(root) {
 	checkPolicyOwner(root);
 	checkProductionLoadingTopology(root);
 	checkWriterBoundaries(root);
+	checkDeferredWriteProofs(root);
 	checkForbiddenMainPatches(root);
 	checkRetiredPaths(root);
 	ok('SPECTRA 新控制算法均受原生优先与 writer 边界约束');

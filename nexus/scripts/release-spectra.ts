@@ -115,6 +115,7 @@ export const RELEASE_STEPS = Object.freeze([
 	{ label: 'repository governance contracts', args: ['run', 'check:governance'] },
 	{ label: 'closeout evidence contracts', args: ['run', 'check:closeout-evidence'] },
 	{ label: 'public projection contract', args: ['run', 'check:public-projections'] },
+	{ label: 'public snapshot parity', args: ['run', 'check:public-parity'] },
 	{ label: 'frozen dependency install', args: ['install', '--frozen-lockfile'] },
 	{ label: 'toolchain verify', args: ['run', 'check:toolchain'] },
 	{ label: 'Biome lint', args: ['run', 'lint'] },

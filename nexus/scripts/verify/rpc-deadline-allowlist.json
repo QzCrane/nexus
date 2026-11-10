@@ -11,6 +11,7 @@
     "apps/extension-spectra/src/background/site-hotkey-loader-adapter.ts": "heavy host settings wrapped in withDeadline; a deadline is classified as a missing receiver",
     "apps/extension-spectra/src/shared/registry-client.ts": "route editor request wrapped in withDeadline",
     "apps/extension-spectra/src/background/control-coordinator.ts": "fire-and-forget snapshot event",
+    "apps/extension-spectra/src/background/extension-invocation.ts": "one-way invocation grant notification pinned to the invoked document; navigation makes the documentId target fail closed and no response is awaited",
     "apps/extension-spectra/src/background/remote-service.ts": "fire-and-forget remote lifecycle events",
     "apps/extension-spectra/src/background/lifecycle.ts": "fire-and-forget navigation and lease events",
     "apps/extension-spectra/src/background/handlers/capture.ts": "fire-and-forget capture events",

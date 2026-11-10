@@ -8,6 +8,8 @@ import {
 	isAudioSessionSnapshot,
 } from './audio.contracts.js';
 import { isRemotePublicSession, isRemoteSessionView } from './remote.contracts.js';
+import { isHotkeyAction, isSpectraHotkeyPresentation } from './hotkeys.contracts.js';
+import { isFiniteControlValue } from './control-value-limits.js';
 import { SPECTRA_PROTOCOL_VERSION } from './spectra.bootstrap.js';
 import {
 	isUiControlApplyAck,
@@ -75,6 +77,7 @@ export const SPECTRA_UI_EVENT_TYPES = [
 	'spectra.remote.session.closed',
 	'spectra.audio.session.changed',
 	'spectra.audio.capture.changed',
+	'spectra.hotkey.target.feedback',
 ] as const satisfies readonly SpectraEventType[];
 
 export type SpectraUiEventType = (typeof SPECTRA_UI_EVENT_TYPES)[number];
@@ -232,6 +235,27 @@ export function isSpectraUiEventEnvelope(
 			&& value.generation === value.payload.generation;
 	}
 	if (value.type === 'spectra.settings.ui.changed') return isSpectraSettingsUiEventEnvelope(value);
+	if (value.type === 'spectra.hotkey.target.feedback') {
+		// The Background projects pending presentation onto the target card.
+		return isInteger(value.tabId, true) && isBoundedString(value.documentId, 256)
+			&& isRecord(value.payload)
+			&& hasOnly(value.payload, new Set(['action', 'targetTabId', 'targetTitle', 'targetHostname', 'gesture', 'feedback', 'presentation']))
+			&& isHotkeyAction(value.payload.action) && isInteger(value.payload.targetTabId, true)
+			&& isBoundedString(value.payload.targetTitle, 512) && isBoundedString(value.payload.targetHostname, 253)
+			&& (value.payload.gesture === undefined || isBoundedString(value.payload.gesture, 128))
+			&& (value.payload.presentation === undefined || isSpectraHotkeyPresentation(value.payload.presentation))
+			&& (value.payload.feedback === undefined || (
+				isRecord(value.payload.feedback)
+				&& (value.payload.feedback.kind === 'volume'
+					? hasOnly(value.payload.feedback, new Set(['kind', 'value', 'volumeState']))
+						&& isFiniteControlValue(value.payload.feedback.value, 'volume')
+						&& (value.payload.feedback.volumeState === 'silent' || value.payload.feedback.volumeState === 'native'
+							|| value.payload.feedback.volumeState === 'capture')
+					: value.payload.feedback.kind === 'speed'
+						&& hasOnly(value.payload.feedback, new Set(['kind', 'value']))
+						&& isFiniteControlValue(value.payload.feedback.value, 'speed'))
+			));
+	}
 	if (value.type === 'spectra.remote.session.changed') {
 		return isRemoteSessionChanged(value.payload) && value.tabId === value.payload.tabId;
 	}

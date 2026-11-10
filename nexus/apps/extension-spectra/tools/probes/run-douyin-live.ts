@@ -58,10 +58,15 @@ interface WriteReport {
 const target = process.argv.find((a) => a.startsWith("--url="))?.slice(6) ?? "";
 const writeArg = process.argv.find((a) => a.startsWith("--write="))?.slice(8);
 const desired = writeArg === undefined ? null : Number(writeArg);
+// Puppeteer's pinned download is not installed here; use the browser the user
+// actually runs, like the other live probes do.
+const CHROME_PATH = process.env.PUPPETEER_EXECUTABLE_PATH
+	|| "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
 const browser = await puppeteer.launch({
 	headless: false,
 	enableExtensions: true,
+	executablePath: CHROME_PATH,
 	args: [
 		"--no-sandbox",
 		"--disable-dev-shm-usage",
@@ -69,11 +74,17 @@ const browser = await puppeteer.launch({
 		"--disable-blink-features=AutomationControlled",
 		"--autoplay-policy=no-user-gesture-required",
 		"--lang=zh-CN",
-		`--disable-extensions-except=${extensionDir}`,
-		`--load-extension=${extensionDir}`,
 	],
 	defaultViewport: { width: 1440, height: 900 },
 });
+// Chrome no longer honours --load-extension; install the packed directory
+// through the debugging protocol so the bridge under test is really there.
+{
+	const session = await browser.target().createCDPSession();
+	await session.send("Extensions.loadUnpacked", { path: extensionDir }).catch((error: unknown) => {
+		throw new Error(`could not load ${extensionDir}: ${String(error)}`);
+	});
+}
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

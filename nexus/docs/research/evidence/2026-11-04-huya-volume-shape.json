@@ -1,0 +1,1348 @@
+{
+  "capturedAt": "2026-11-04T11:39:58.814Z",
+  "status": 200,
+  "url": "https://www.huya.com/791185",
+  "title": "4AM小海xx官方直播间-天天吃鸡-虎牙直播",
+  "media": [
+    {
+      "index": 0,
+      "muted": false,
+      "volume": 0.5,
+      "paused": false,
+      "readyState": 4,
+      "src": "",
+      "hasSrcObject": true,
+      "width": 960,
+      "height": 540,
+      "ancestors": [
+        {
+          "depth": 1,
+          "tag": "DIV",
+          "id": "player-video",
+          "className": "player-video"
+        },
+        {
+          "depth": 2,
+          "tag": "DIV",
+          "id": "player-wrap",
+          "className": "player-wrap"
+        },
+        {
+          "depth": 3,
+          "tag": "DIV",
+          "id": "videoContainer",
+          "className": ""
+        },
+        {
+          "depth": 4,
+          "tag": "DIV",
+          "id": "liveRoomObj",
+          "className": "room-player"
+        },
+        {
+          "depth": 5,
+          "tag": "DIV",
+          "id": "J_playerMain",
+          "className": "room-player-main"
+        },
+        {
+          "depth": 6,
+          "tag": "DIV",
+          "id": "",
+          "className": "room-player-wrap"
+        },
+        {
+          "depth": 7,
+          "tag": "DIV",
+          "id": "",
+          "className": "room-core-l"
+        },
+        {
+          "depth": 8,
+          "tag": "DIV",
+          "id": "",
+          "className": "room-core"
+        }
+      ]
+    },
+    {
+      "index": 1,
+      "muted": false,
+      "volume": 0,
+      "paused": false,
+      "readyState": 4,
+      "src": "https://adsmind.gdtimg.com/ads_svp_video__0bc33mahyaaa7yabr7dq5jvbvwyeptnqa7ca.f140010.mp4?dis_k=34ebc8d937cd7def06a5d83",
+      "hasSrcObject": false,
+      "width": 108,
+      "height": 191,
+      "ancestors": [
+        {
+          "depth": 1,
+          "tag": "DIV",
+          "id": "",
+          "className": "ab-content"
+        },
+        {
+          "depth": 2,
+          "tag": "DIV",
+          "id": "",
+          "className": "ab-main vertical-video-mode"
+        },
+        {
+          "depth": 3,
+          "tag": "DIV",
+          "id": "public-screen-ab",
+          "className": ""
+        },
+        {
+          "depth": 4,
+          "tag": "DIV",
+          "id": "J_roomSideTop",
+          "className": "room-sidebar-top"
+        },
+        {
+          "depth": 5,
+          "tag": "DIV",
+          "id": "",
+          "className": "room-sidebar"
+        },
+        {
+          "depth": 6,
+          "tag": "DIV",
+          "id": "",
+          "className": "room-core-r"
+        },
+        {
+          "depth": 7,
+          "tag": "DIV",
+          "id": "",
+          "className": "room-core"
+        },
+        {
+          "depth": 8,
+          "tag": "DIV",
+          "id": "",
+          "className": "room-wrap"
+        }
+      ]
+    }
+  ],
+  "candidates": [],
+  "globals": [
+    {
+      "key": "Audio",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": [
+        {
+          "key": "prototype",
+          "volume": "get:true,set:true,depth:1",
+          "keys": [
+            "constructor"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "RTCEncodedAudioFrame",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "OfflineAudioContext",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "OfflineAudioCompletionEvent",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "MediaStreamTrackAudioStats",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "MediaStreamAudioSourceNode",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "MediaStreamAudioDestinationNode",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "MediaElementAudioSourceNode",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "HTMLAudioElement",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": [
+        {
+          "key": "prototype",
+          "volume": "get:true,set:true,depth:1",
+          "keys": [
+            "constructor"
+          ]
+        }
+      ]
+    },
+    {
+      "key": "EncodedAudioChunk",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "BaseAudioContext",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioWorkletNode",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioSinkInfo",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioScheduledSourceNode",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioProcessingEvent",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioParamMap",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioParam",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioNode",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioListener",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioDestinationNode",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioData",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioContext",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioBufferSourceNode",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioBuffer",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioDecoder",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype",
+        "isConfigSupported"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioEncoder",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype",
+        "isConfigSupported"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioWorklet",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "AudioPlaybackStats",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "H5Player",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype",
+        "setLogFlag",
+        "setAudioCtx",
+        "isSupported",
+        "isMseSupportedHevc",
+        "Events",
+        "isSupportedHevc",
+        "isWebCodecsSupported",
+        "FLV",
+        "P2P",
+        "HLS",
+        "HUYA",
+        "STREAM",
+        "OBS",
+        "VR",
+        "HUYAWEBRTC",
+        "PLAYBACK",
+        "P2PFLV",
+        "MP4",
+        "MP4GX"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "TT_PLAYER_CFG",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "flashAdvanceVersion",
+        "advanceChannel",
+        "flashDomain",
+        "h5Advance",
+        "h5domain",
+        "delOriginalRate",
+        "homePageH5Domain",
+        "h5PlayerP2PVersion",
+        "h5ShareEntry",
+        "replayUseH5",
+        "yqkPlayerVer",
+        "homePagePlayerIncludeSDK",
+        "defaultFlashPlayer",
+        "h5sdk",
+        "h5outstationVer",
+        "h5homeSdk",
+        "h5AdvanceVersion",
+        "playerConfig",
+        "h5sdkver",
+        "h5ver",
+        "flashAdvance",
+        "h5gopChannel",
+        "h5hlssdkver",
+        "h5PlayerP2PChannel",
+        "h5outstationDomain",
+        "homePageH5Ver",
+        "flashVersion",
+        "useflash",
+        "playerdata",
+        "yqkPlayerDomain",
+        "homePageH5",
+        "h5PlayerAndHuyaSDKChannel",
+        "deleteOriginalPainting",
+        "h5PlayerAndHuyaSDKVersion",
+        "homepage"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "TT_PLAYER_CONF",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "app",
+        "grayGameIdVersion",
+        "grayPidVersion",
+        "h5playerDomian",
+        "h5playerVersion",
+        "h5playerBackUpVersion",
+        "module",
+        "playerConfig",
+        "playerdata",
+        "pushMsgControl",
+        "tafSignal",
+        "version",
+        "homePageH5Domain",
+        "homePagePlayerIncludeSDK",
+        "homePagePlayerConfig"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "hyPlayerConfig",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "html5",
+        "WEBYYSWF",
+        "vappid",
+        "stream"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "TT_LIVE_TIMING",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "playerLoadStart",
+        "playerLoadEnd",
+        "playerInitBefore",
+        "playerInitAfter",
+        "videoLoadStart",
+        "videoLoadEnd"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "HYVodPlayer",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype",
+        "isSupported",
+        "FLV",
+        "HLS",
+        "MP4",
+        "VR",
+        "StreamType",
+        "Event"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "HYPlayer",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype",
+        "setLogFlag",
+        "setAudioCtx",
+        "isSupported",
+        "isMseSupportedHevc",
+        "Events",
+        "isSupportedHevc",
+        "isWebCodecsSupported",
+        "FLV",
+        "P2P",
+        "HLS",
+        "HUYA",
+        "STREAM",
+        "OBS",
+        "VR",
+        "HUYAWEBRTC",
+        "PLAYBACK",
+        "P2PFLV",
+        "MP4",
+        "MP4GX"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "VPlayer",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "TT_ROOM_PLAYER",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "n"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "initComplete",
+        "register",
+        "ready",
+        "videoOnLoad",
+        "load",
+        "timing"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "HUYA_HEAD_liveNotice",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "hyPerformanceReport",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "e"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "config"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "__hySetupNativeModules__",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "VPlayerUI",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "vplayerTaf",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "INT8",
+        "INT16",
+        "INT32",
+        "INT64",
+        "UINT8",
+        "UInt16",
+        "UInt32",
+        "Float",
+        "Double",
+        "STRING",
+        "BOOLEAN",
+        "ENUM",
+        "Vector",
+        "Map",
+        "DataHelp",
+        "TypeHelp",
+        "BinBuffer",
+        "JceOutputStream",
+        "JceInputStream",
+        "Wup",
+        "Util"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "testMatchLiveRoomRecMsg",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "webpackChunkHyExtComp",
+      "shape": {
+        "tag": "[object Array]",
+        "name": "Array"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "0",
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "length",
+        "push"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "HyExtComp",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype",
+        "getSharedInstance"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "wxgamesdk",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "ready",
+        "getGameSession"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "hyTafNetWork",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "t"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "version",
+        "excludeTafCodeLog",
+        "_kiwiSdk",
+        "_kiwiSdkPromise",
+        "_isManualInit",
+        "_isInitialized",
+        "_lastSignalSdkParams",
+        "autoCheckPlatform",
+        "requestIdMap",
+        "matcher",
+        "urisMock",
+        "onRequestComplete",
+        "showLog",
+        "isDebug",
+        "noConnect",
+        "useMock",
+        "mockTime",
+        "uid",
+        "pid",
+        "extraGroups",
+        "appId",
+        "enableTrace",
+        "customHeaders",
+        "mockPlugin",
+        "verifyToken",
+        "tryTime",
+        "extraMap",
+        "needGetActivityMsg",
+        "getActivityMsgMockData",
+        "serialConnect",
+        "hasListen",
+        "uris",
+        "uriKeys",
+        "actId",
+        "actUris"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "hyTaf",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "Wup",
+        "DataHelp",
+        "TypeHelp",
+        "BinBuffer",
+        "JceOutputStream",
+        "JceInputStream",
+        "Util",
+        "INT8",
+        "INT16",
+        "INT32",
+        "INT64",
+        "UINT8",
+        "UInt16",
+        "UInt32",
+        "Float",
+        "Double",
+        "STRING",
+        "BOOLEAN",
+        "ENUM",
+        "Vector",
+        "Map"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "hyOuterJssdkReady",
+      "shape": {
+        "tag": "[object Promise]",
+        "name": "Promise"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "hymitt",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "has",
+        "singleOn",
+        "on",
+        "off",
+        "clear",
+        "emit",
+        "clearReplayMessage"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "HyLogin",
+      "shape": {
+        "tag": "[object Function]",
+        "name": "Function"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "length",
+        "name",
+        "prototype",
+        "notice"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "HyUDBWebSDK",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "HyUDBWebSDK"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [
+        "Login",
+        "Register",
+        "Code",
+        "Password",
+        "Strategy",
+        "Security",
+        "Item",
+        "Util",
+        "UserAction",
+        "Html",
+        "Cookie",
+        "Message",
+        "PC",
+        "Mobile",
+        "Report",
+        "Callback",
+        "JSSDK"
+      ],
+      "nestedVolumeHolders": []
+    },
+    {
+      "key": "_audioLinks",
+      "shape": {
+        "tag": "[object Object]",
+        "name": "Object"
+      },
+      "volume": null,
+      "currentVolume": null,
+      "association": [],
+      "keys": [],
+      "nestedVolumeHolders": []
+    }
+  ],
+  "instances": [
+    {
+      "index": 0,
+      "volume": 0.5,
+      "association": "player.video",
+      "keys": [
+        "_type",
+        "backdropFilter",
+        "decoderDecodeP2pErrCnt",
+        "decoderDecodeFlvErrCnt",
+        "config",
+        "uuid",
+        "on",
+        "off",
+        "trigger",
+        "stat",
+        "statVod",
+        "metrics"
+      ]
+    },
+    {
+      "index": 1,
+      "volume": 5.204170427930421e-18,
+      "association": null,
+      "keys": [
+        "_type",
+        "backdropFilter",
+        "decoderDecodeP2pErrCnt",
+        "decoderDecodeFlvErrCnt",
+        "config",
+        "uuid",
+        "on",
+        "off",
+        "trigger",
+        "stat",
+        "statVod",
+        "metrics"
+      ]
+    },
+    {
+      "index": 2,
+      "volume": 0,
+      "association": "player.videoElement",
+      "keys": [
+        "_type",
+        "backdropFilter",
+        "decoderDecodeP2pErrCnt",
+        "decoderDecodeFlvErrCnt",
+        "config",
+        "uuid",
+        "on",
+        "off",
+        "trigger",
+        "stat",
+        "statVod",
+        "metrics"
+      ]
+    }
+  ],
+  "audioGraph": {
+    "audioContextCount": 3,
+    "gainNodeCount": 0,
+    "streamSourceCount": 0,
+    "elementSourceCount": 0,
+    "workletNodes": [
+      {
+        "processor": "bypass-processor",
+        "params": []
+      }
+    ],
+    "connects": [
+      {
+        "from": "AudioWorkletNode",
+        "to": "AnalyserNode",
+        "stack": "    at AudioWorkletNode.value [as connect] (<anonymous>:81:22) |     at https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:999976"
+      },
+      {
+        "from": "AnalyserNode",
+        "to": "AudioDestinationNode",
+        "stack": "    at AnalyserNode.value [as connect] (<anonymous>:81:22) |     at https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1000019"
+      },
+      {
+        "from": "OscillatorNode",
+        "to": "DynamicsCompressorNode",
+        "stack": "    at OscillatorNode.value [as connect] (<anonymous>:81:22) |     at https://hd.huya.com/hyfe/hydevice/hydevice-prod-1.2.60-min.js:1:426137 |     at y (https://hd.huya.com/hyfe/hydevice/hydevice-prod-1.2.60-min.js:1:390"
+      },
+      {
+        "from": "DynamicsCompressorNode",
+        "to": "AudioDestinationNode",
+        "stack": "    at DynamicsCompressorNode.value [as connect] (<anonymous>:81:22) |     at https://hd.huya.com/hyfe/hydevice/hydevice-prod-1.2.60-min.js:1:426158 |     at y (https://hd.huya.com/hyfe/hydevice/hydevice-prod-1.2.60-min."
+      }
+    ],
+    "portMessages": [
+      {
+        "message": "{\"type\":\"ctrl\",\"index\":29,\"value\":5909736}",
+        "stack": "    at MessagePort.value [as postMessage] (<anonymous>:92:91) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:997340) |     at i.value (https://a.msstatic.com/huya/h5player/room/261102"
+      },
+      {
+        "message": "{\"type\":\"ctrl\",\"index\":18,\"value\":0}",
+        "stack": "    at MessagePort.value [as postMessage] (<anonymous>:92:91) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:997340) |     at i.value (https://a.msstatic.com/huya/h5player/room/261102"
+      },
+      {
+        "message": "{\"type\":\"ctrl\",\"index\":29,\"value\":5909770}",
+        "stack": "    at MessagePort.value [as postMessage] (<anonymous>:92:91) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:997340) |     at i.value (https://a.msstatic.com/huya/h5player/room/261102"
+      },
+      {
+        "message": "{\"type\":\"ctrl\",\"index\":18,\"value\":0}",
+        "stack": "    at MessagePort.value [as postMessage] (<anonymous>:92:91) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:997340) |     at i.value (https://a.msstatic.com/huya/h5player/room/261102"
+      },
+      {
+        "message": "{\"type\":\"ctrl\",\"index\":29,\"value\":5909820}",
+        "stack": "    at MessagePort.value [as postMessage] (<anonymous>:92:91) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:997340) |     at i.value (https://a.msstatic.com/huya/h5player/room/261102"
+      },
+      {
+        "message": "{\"type\":\"ctrl\",\"index\":18,\"value\":0}",
+        "stack": "    at MessagePort.value [as postMessage] (<anonymous>:92:91) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:997340) |     at i.value (https://a.msstatic.com/huya/h5player/room/261102"
+      },
+      {
+        "message": "{\"type\":\"ctrl\",\"index\":29,\"value\":5909853}",
+        "stack": "    at MessagePort.value [as postMessage] (<anonymous>:92:91) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:997340) |     at i.value (https://a.msstatic.com/huya/h5player/room/261102"
+      },
+      {
+        "message": "{\"type\":\"ctrl\",\"index\":18,\"value\":0}",
+        "stack": "    at MessagePort.value [as postMessage] (<anonymous>:92:91) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:997340) |     at i.value (https://a.msstatic.com/huya/h5player/room/261102"
+      }
+    ],
+    "gainWrites": [],
+    "mediaVolumeWrites": [
+      {
+        "value": 0,
+        "tag": "AUDIO",
+        "stack": "    at HTMLAudioElement.set [as volume] (<anonymous>:116:76) |     at t.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1200408) |     at t.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1201429) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1493940)"
+      },
+      {
+        "value": 0.25,
+        "tag": "VIDEO",
+        "stack": "    at HTMLVideoElement.set [as volume] (<anonymous>:116:76) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1047122) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:863590) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:537521)"
+      },
+      {
+        "value": 0.3,
+        "tag": "VIDEO",
+        "stack": "    at HTMLVideoElement.set [as volume] (<anonymous>:116:76) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1047122) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:863590) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:537521)"
+      },
+      {
+        "value": 0,
+        "tag": "VIDEO",
+        "stack": "    at HTMLVideoElement.set [as volume] (<anonymous>:116:76) |     at e.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1378708) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1465343) |     at o.emit (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:257034)"
+      },
+      {
+        "value": 0.35000000000000003,
+        "tag": "VIDEO",
+        "stack": "    at HTMLVideoElement.set [as volume] (<anonymous>:116:76) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1047122) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:863590) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:537521)"
+      },
+      {
+        "value": 0.4,
+        "tag": "VIDEO",
+        "stack": "    at HTMLVideoElement.set [as volume] (<anonymous>:116:76) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1047122) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:863590) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:537521)"
+      },
+      {
+        "value": 0.45,
+        "tag": "VIDEO",
+        "stack": "    at HTMLVideoElement.set [as volume] (<anonymous>:116:76) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1047122) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:863590) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:537521)"
+      },
+      {
+        "value": 0.5,
+        "tag": "VIDEO",
+        "stack": "    at HTMLVideoElement.set [as volume] (<anonymous>:116:76) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:1047122) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:863590) |     at i.value (https://a.msstatic.com/huya/h5player/room/2611021517/vplayer.js:3:537521)"
+      }
+    ]
+  }
+}

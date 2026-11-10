@@ -20,6 +20,7 @@ import {
 } from '@nexus/contracts';
 import { HOTKEY_ACTION_HANDLERS } from '../src/content/input/hotkey-actions';
 import { isTrustedHotkeyEvent } from '../src/content/input/hotkey-event';
+import { needsManifestVolumeCommand } from '../src/shared/content-runtime';
 import {
 	EDITABLE_HOTKEY_ACTIONS,
 	LEGACY_UNSUPPORTED_ACTIONS,
@@ -158,5 +159,19 @@ describe('page hotkey trust boundary', () => {
 	test('rejects synthetic KeyboardEvents before matching privileged actions', () => {
 		expect(isTrustedHotkeyEvent({ isTrusted: false })).toBe(false);
 		expect(isTrustedHotkeyEvent({ isTrusted: true })).toBe(true);
+	});
+});
+
+describe('Alt+Up invocation gate', () => {
+	test('yields only a cold document at the native ceiling to the manifest command', () => {
+		expect(needsManifestVolumeCommand(false, 1)).toBe(true);
+		expect(needsManifestVolumeCommand(false, 0.999)).toBe(true);
+		expect(needsManifestVolumeCommand(false, 0.99)).toBe(false);
+		expect(needsManifestVolumeCommand(false, null)).toBe(false);
+	});
+
+	test('keeps an invoked document on the content path even after Capture stops', () => {
+		expect(needsManifestVolumeCommand(true, 1)).toBe(false);
+		expect(needsManifestVolumeCommand(true, 0.5)).toBe(false);
 	});
 });

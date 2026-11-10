@@ -4,10 +4,12 @@ import {
 	DEFAULT_GLOBAL_SETTINGS,
 	type ControlApplyAck,
 	type ControlSnapshot,
+	type AudioSessionSnapshot,
 } from '@nexus/contracts';
 import type { PopupControlPortResponse } from '../src/shared/popup-control-port';
 import { isReportedControlFailure, PopupControlChannelError, type PopupControlTransport } from '../src/popup/card/control-port';
 import { applyControlSnapshot } from '../src/popup/card/messaging';
+import { applyAudioSessionSnapshot } from '../src/popup/card/state';
 import { resolveVolumePresentation } from '../src/popup/card/render';
 import { createUpdateFn } from '../src/popup/card/state';
 import type { CardInternalState } from '../src/popup/card/types';
@@ -130,6 +132,31 @@ describe('Popup Background-owned control transport projection', () => {
 		expect(state.controlRevision).toBe(2);
 	});
 
+	test.each([false, true])('a late volume settlement cannot replace a newer page sample at the same control revision (empty ACK: %s)', (emptyAck) => {
+		const harness = installHarness();
+		const state = createState();
+		const stamp = (revision: number) => ({ epoch: 1, owner: 'document-popup:1', selection: 1, revision });
+		state.controlSnapshot = { ...controlSnapshot(1, 1, 1), mediaObservation: stamp(1) };
+		state.controlGeneration = 1;
+		state.controlRevision = 1;
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 40 });
+		applyControlSnapshot(state, { ...controlSnapshot(1, 1, 1), mediaObservation: stamp(3), fields: {
+			volumeBase: { ...controlField(80, 1, 'dom-native', 'active-target'), mediaObservation: stamp(3) },
+			boost: controlField(1, 1, 'observe', 'full'),
+		} }, () => undefined, update.hasPendingVolume(), update.pendingConfigFields());
+		const response = settlement(1, { volume: 40, ackGeneration: 1, ackRevision: 1 });
+		if (!response.volumeAck) throw new Error('Missing volume ACK');
+		response.volumeAck.mediaObservation = stamp(2);
+		response.volumeAck.fields.volumeBase = { ...controlField(40, 1, 'dom-native', 'active-target'), mediaObservation: stamp(2) };
+		if (emptyAck) response.volumeAck.fields = {};
+		harness.emit(response);
+		expect(update.hasPendingVolume()).toBe(false);
+		expect(state.stableConfig.volume).toBe(80);
+		expect(state.config.volume).toBe(80);
+		expect(state.controlSnapshot?.fields.volumeBase?.actual).toBe(80);
+	});
+
 	test('keeps pending DSP optimistic when an accepted Background snapshot carries an older value', () => {
 		const harness = installHarness();
 		const state = createState();
@@ -250,6 +277,52 @@ describe('Popup Background-owned control transport projection', () => {
 		expect(secondRan).toBe(true);
 	});
 
+
+	test('a late Capture ACK cannot replace a current stopped audio lifecycle without a prior broadcast', () => {
+		const harness = installHarness();
+		const state = createState();
+		state.controlSnapshot = controlSnapshot(0, 1, 0);
+		applyAudioSessionSnapshot(5, state, audioSession(2, 'bypass'), () => undefined);
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 110 });
+		harness.emit(settlement(1, { volume: 110, processor: 'capture' }));
+		expect(state).toMatchObject({ actualMode: 'bypass', phase: 'idle', audioGeneration: 2, isCaptureActive: false });
+		expect(resolveVolumePresentation(state).color).toBe(COLORS.NATIVE);
+	});
+
+	test.each(['generation', 'configRevision'] as const)('a newer stop beats a late settlement by audio %s', (clock) => {
+		const harness = installHarness();
+		const state = createState();
+		state.controlSnapshot = controlSnapshot(0, 1, 0);
+		applyAudioSessionSnapshot(5, state, audioSession(3, 'bypass', 3), () => undefined);
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 110 });
+		harness.emit({
+			...settlement(1, { volume: 110, processor: 'capture' }),
+			audioSession: audioSession(clock === 'generation' ? 2 : 3, 'capture', 2),
+		});
+		expect(state).toMatchObject({ actualMode: 'bypass', phase: 'idle', audioGeneration: 3, isCaptureActive: false });
+	});
+
+	test('fresh first-Capture lifecycle is applied before pending presentation is removed', () => {
+		const harness = installHarness();
+		const state = createState();
+		state.controlSnapshot = controlSnapshot(0, 1, 0);
+		applyAudioSessionSnapshot(5, state, audioSession(0, 'bypass'), () => undefined);
+		const frames: string[] = [];
+		const update = createUpdate(harness.transport, state, () => undefined,
+			() => { frames.push(resolveVolumePresentation(state).color); });
+		update({ volume: 110 });
+		frames.length = 0;
+		harness.emit({
+			...settlement(1, { volume: 110, processor: 'capture' }),
+			audioSession: audioSession(1, 'capture'),
+		});
+		expect(frames).toEqual([COLORS.CAPTURE]);
+		expect(state).toMatchObject({ actualMode: 'capture', phase: 'active', audioGeneration: 1, isCaptureActive: true });
+		expect(state.pendingVolumePresentation).toBeUndefined();
+	});
+
 	test('does not replay a broadcast Capture field when its settlement arrives after a session stop', () => {
 		const harness = installHarness();
 		const state = createState();
@@ -273,9 +346,10 @@ describe('Popup Background-owned control transport projection', () => {
 		expect(resolveVolumePresentation(state).color).toBe(COLORS.NATIVE);
 	});
 
-	test('commits each new volume and its actual route color in the same render', () => {
+	test('paints planned Capture on the first gesture frame and publishes the identical badge tone', () => {
 		const harness = installHarness();
 		const state = createState();
+		state.controlSnapshot = { ...controlSnapshot(1, 1, 1), prospectiveBoostRoute: 'capture' };
 		const frames: Array<{ effectiveVolume: number; color: string }> = [];
 		const update = createUpdate(harness.transport, state, () => undefined, () => {
 			frames.push(resolveVolumePresentation(state));
@@ -283,15 +357,16 @@ describe('Popup Background-owned control transport projection', () => {
 
 		update({ volume: 110 });
 		expect(state.config.volume).toBe(110);
-		// The number tracks the gesture; the tone is still the pre-transaction
-		// route's, so a boost/capture hand-off cannot flash the wrong color.
-		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.NATIVE });
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.CAPTURE });
+		expect(harness.stages.at(-1)?.tone).toBe('capture');
 		harness.emit(settlement(1, { volume: 110, processor: 'capture' }));
 		expect(frames.at(-1)).toEqual({ effectiveVolume: 110, color: COLORS.CAPTURE });
 
 		update({ volume: 100 });
 		expect(state.config.volume).toBe(100);
-		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.CAPTURE });
+		// Leaving the Boost range predicts a passthrough split, so the same gesture
+		// frame that shows 100 is already blue; it must not wait for the release.
+		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
 		harness.emit(settlement(2, { volume: 100, processor: 'observe' }));
 		expect(frames.at(-1)).toEqual({ effectiveVolume: 100, color: COLORS.NATIVE });
 	});
@@ -325,14 +400,32 @@ describe('Popup Background-owned control transport projection', () => {
 		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 130, color: COLORS.NATIVE });
 	});
 
+	test('a positive volume gesture presents its implicit unmute in the same planned Capture frame', () => {
+		const harness = installHarness();
+		const state = createState();
+		state.config.muted = true;
+		state.stableConfig.muted = true;
+		state.controlSnapshot = { ...controlSnapshot(1, 1, 1), prospectiveBoostRoute: 'capture' };
+		const update = createUpdate(harness.transport, state);
+		update({ volume: 110 });
+		expect(state.config.muted).toBe(false);
+		expect(state.pendingVolumePresentation?.muted).toBe(false);
+		expect(harness.stages.at(-1)).toMatchObject({ effectiveVolume: 110, presentationVolume: 110, tone: 'capture' });
+		expect(resolveVolumePresentation(state).color).toBe(COLORS.CAPTURE);
+		harness.fail(new Error('writer unavailable'));
+		expect(state.config.muted).toBe(true);
+		expect(resolveVolumePresentation(state).color).toBe(COLORS.MUTED);
+	});
+
 	test('keeps preset volume and mute presentation together until their batch settles', () => {
 		const harness = installHarness();
 		const state = createState();
 		const update = createUpdate(harness.transport, state);
 		update({ volume: 110, muted: true });
 		expect(state.config.muted).toBe(true);
-		expect(state.pendingVolumePresentation?.muted).toBe(false);
-		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 110, color: COLORS.NATIVE });
+		expect(state.pendingVolumePresentation?.muted).toBe(true);
+		expect(harness.stages.at(-1)?.tone).toBe('muted');
+		expect(resolveVolumePresentation(state)).toEqual({ effectiveVolume: 110, color: COLORS.MUTED });
 		harness.emit(settlement(1, {
 			volume: 110,
 			processor: 'capture',
@@ -350,20 +443,17 @@ describe('Popup Background-owned control transport projection', () => {
 			frames.push(resolveVolumePresentation(state).effectiveVolume);
 		});
 
-		// A drag that stays inside the native range cannot change the processor
-		// route, so there is no (value, colour) pair to keep coherent and the
-		// readout must track the gesture instead of holding the previous value.
+		// Both the numeric value and its planned tone follow the current input.
 		update({ volume: 40 });
 		harness.emit(settlement(1, { volume: 40, processor: 'observe' }));
 		expect(state.pendingVolumePresentation).toBeUndefined();
 
 		update({ volume: 70 });
-		expect(state.pendingVolumePresentation).toBeUndefined();
+		expect(state.pendingVolumePresentation?.tone).toBe('native');
 		expect(frames.at(-1)).toBe(70);
 		expect(resolveVolumePresentation(state).effectiveVolume).toBe(70);
 
-		// The hold still applies the moment the drag would cross the boundary —
-		// it now governs the tone only, so the number keeps tracking.
+		// Crossing does not freeze the number or retain an unrelated old tone.
 		update({ volume: 110 });
 		expect(state.pendingVolumePresentation).toBeDefined();
 		expect(resolveVolumePresentation(state).effectiveVolume).toBe(110);
@@ -377,11 +467,7 @@ describe('Popup Background-owned control transport projection', () => {
 		update({ volume: 40 });
 		harness.emit(settlement(1, { volume: 40, processor: 'observe' }));
 
-		// Regression lock. The slider spans 0..800, so an ordinary drag crosses
-		// 100 constantly. Holding the *number* on the pre-crossing presentation
-		// froze the bar and the readout at the gesture's starting value for the
-		// whole remaining drag — the long-standing "bar does not follow the
-		// thumb" report. The hold now governs the tone only.
+		// A boundary crossing must not freeze the bar or readout at drag start.
 		for (const volume of [90, 110, 240, 480, 700]) {
 			update({ volume });
 			expect(resolveVolumePresentation(state).effectiveVolume).toBe(volume);
@@ -542,6 +628,16 @@ function controlField<T>(
 		strategy,
 		coverage,
 		controlled: strategy !== 'observe',
+		lastError: null,
+	};
+}
+
+function audioSession(generation: number, actualMode: 'capture' | 'bypass', configRevision = 1): AudioSessionSnapshot {
+	return {
+		tabId: 5, documentId: 'document-popup', origin: 'https://media.example',
+		generation, configRevision, desiredMode: actualMode, actualMode,
+		phase: actualMode === 'capture' ? 'active' : 'idle',
+		actualConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] },
 		lastError: null,
 	};
 }

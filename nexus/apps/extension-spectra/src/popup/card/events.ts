@@ -4,7 +4,7 @@ import type { CardUIElements } from '../types';
 import type { CardInternalState } from './types';
 import type { ConfigErrorHandler, ConfigUpdateFn } from './state';
 import type { ControlOperationAck } from '@nexus/contracts';
-import { resolveAudioVolume } from '@nexus/contracts';
+import { resolveAudioVolume, stepEffectiveVolume } from '@nexus/contracts';
 import { AUDIO_UI, TIMING } from '../constants';
 import { getDomain } from '../utils/dom';
 import { bindMediaControls } from './media-events';
@@ -165,9 +165,10 @@ export function bindCardEvents(params: EventsParams): void {
     // not the DOM slider. Reading `ui.slider.value` here made the DOM a second
     // source of truth whenever a render had not caught up yet.
     const currentVolume = resolveAudioVolume(state.config).effectiveVolume;
-    const nextVolume = e.deltaY < 0
-      ? Math.min(currentVolume + AUDIO_UI.VOLUME_STEP, AUDIO_UI.MAX_VOLUME)
-      : Math.max(currentVolume - AUDIO_UI.VOLUME_STEP, 0);
+    const nextVolume = stepEffectiveVolume(
+      currentVolume,
+      e.deltaY < 0 ? AUDIO_UI.VOLUME_STEP : -AUDIO_UI.VOLUME_STEP,
+    );
     handleVolume(nextVolume);
     // The thumb is DOM presentation, so writing it after the state update is the
     // one direction allowed: state -> DOM, never DOM -> state. Wheel steps are

@@ -12,6 +12,7 @@ import type {
 import {
 	REMOTE_COMMAND_DESCRIPTORS,
 	audioSessionMatchesControlDocument,
+	compareMediaObservations,
 	resolveAudioVolume,
 	resolveAudioVolumeState,
 } from '@nexus/contracts';
@@ -23,6 +24,8 @@ import {
 } from './control-coordinator';
 import { getAudioSession } from './audio-session-store';
 import { isBackgroundEventEnvelope } from './background-rpc';
+import { mergeMediaObservedFields } from './control-coordinator-values';
+import { shouldAcceptAudioSessionPhase } from '../shared/audio-session-phase';
 
 type StateCallback = (tabId: number, state: RemoteState) => void | Promise<void>;
 
@@ -36,6 +39,7 @@ interface StableRemoteProjection {
 	revision: number;
 	snapshot: ControlSnapshot;
 	state: RemoteState;
+	session: AudioSessionSnapshot | null;
 }
 
 const stableRemoteStates = new Map<number, StableRemoteProjection>();
@@ -118,8 +122,7 @@ export function setStateCallback(callback: StateCallback | null): void {
 		} else if (message.type === 'spectra.audio.session.changed') {
 			const stable = stableRemoteStates.get(message.payload.tabId);
 			if (stable?.documentId === message.payload.documentId
-				&& stable.origin === message.payload.origin
-				&& stable.generation === message.payload.generation) {
+				&& stable.origin === message.payload.origin) {
 				void publishRemoteState(stable.snapshot, message.payload).catch(() => undefined);
 			}
 		}
@@ -224,7 +227,7 @@ function isOlderRemoteProjection(
 	));
 }
 
-function isRemoteSnapshotAtOrAfter(
+function isRemoteSnapshotNewer(
 	previous: ControlSnapshot | undefined,
 	snapshot: ControlSnapshot,
 ): boolean {
@@ -233,7 +236,7 @@ function isRemoteSnapshotAtOrAfter(
 		|| (previous.generation === snapshot.generation
 			&& previous.documentId === snapshot.documentId
 			&& previous.origin === snapshot.origin
-			&& previous.revision >= snapshot.revision)
+			&& previous.revision > snapshot.revision)
 	));
 }
 
@@ -242,7 +245,7 @@ function publishRemoteState(
 	knownSession?: AudioSessionSnapshot | null,
 	publicationToken = remotePublicationToken(snapshot.tabId),
 ): Promise<void> {
-	if (isRemoteSnapshotAtOrAfter(stableRemoteStates.get(snapshot.tabId)?.snapshot, snapshot)) {
+	if (isRemoteSnapshotNewer(stableRemoteStates.get(snapshot.tabId)?.snapshot, snapshot)) {
 		return Promise.resolve();
 	}
 	let resolveRequest!: () => void;
@@ -270,13 +273,14 @@ function publishRemoteState(
 		void drainRemotePublication(snapshot.tabId, queue);
 		return result;
 	}
-	if (queue.pending && isRemoteSnapshotAtOrAfter(queue.pending.snapshot, snapshot)) {
+	if (queue.pending && isRemoteSnapshotNewer(queue.pending.snapshot, snapshot)) {
 		// A newer pending snapshot already supersedes this request. Its caller is
 		// told that no additional delivery is required rather than growing a
 		// waiter list behind the in-flight publication.
 		resolveRequest();
 		return result;
 	}
+	if (queue.pending) request.snapshot = reconcileRemoteSnapshot(queue.pending.snapshot, request.snapshot);
 	if (queue.pending) queue.pending.resolve();
 	queue.pending = request;
 	return result;
@@ -304,11 +308,26 @@ async function drainRemotePublication(tabId: number, queue: RemotePublicationQue
 	if (remotePublicationQueues.get(tabId) === queue) remotePublicationQueues.delete(tabId);
 }
 
+function reconcileRemoteSnapshot(current: ControlSnapshot, incoming: ControlSnapshot): ControlSnapshot {
+	if (current.documentId !== incoming.documentId || current.origin !== incoming.origin
+		|| current.generation !== incoming.generation) return incoming;
+	const previousStamp = current.mediaObservation;
+	const physicalOrder = incoming.mediaObservation && previousStamp
+		? compareMediaObservations(incoming.mediaObservation, previousStamp) : null;
+	const keepSelection = previousStamp && (physicalOrder === null || physicalOrder < 0);
+	return { ...incoming,
+		fields: mergeMediaObservedFields(current.fields, incoming.fields, incoming.mediaObservation, false),
+		...(keepSelection ? { activeMedia: current.activeMedia, activeVideo: current.activeVideo,
+			mediaObservation: previousStamp } : {}),
+	};
+}
+
 async function publishRemoteStateNow(
-	snapshot: ControlSnapshot,
+	incomingSnapshot: ControlSnapshot,
 	knownSession?: AudioSessionSnapshot | null,
-	publicationToken = remotePublicationToken(snapshot.tabId),
+	publicationToken = remotePublicationToken(incomingSnapshot.tabId),
 ): Promise<void> {
+	let snapshot = incomingSnapshot;
 	const callback = stateCallback;
 	if (!callback || remotePublicationTokens.get(snapshot.tabId) !== publicationToken) return;
 	const previous = stableRemoteStates.get(snapshot.tabId);
@@ -316,6 +335,7 @@ async function publishRemoteStateNow(
 	const sameDocument = previous?.documentId === snapshot.documentId
 		&& previous.origin === snapshot.origin
 		&& previous.generation === snapshot.generation;
+	if (sameDocument) snapshot = reconcileRemoteSnapshot(previous.snapshot, snapshot);
 	const needsTabMetadata = !sameDocument || !previous?.state.tabTitle;
 	const tab = needsTabMetadata
 		? await chrome.tabs.get(snapshot.tabId).catch(() => undefined)
@@ -352,7 +372,7 @@ async function publishRemoteStateNow(
 	const volumeBase = actual('volumeBase', baseline.volumeBase ?? baseline.volume);
 	const boost = actual('boost', baseline.boost ?? 1);
 	const volume = resolveAudioVolume({ volumeBase, boost });
-	const session = knownSession === undefined
+	const observedSession = knownSession === undefined
 		? await getAudioSession(snapshot.tabId).catch(() => null)
 		: knownSession;
 	// Every potentially suspended read is inside the per-tab publication tail.
@@ -360,6 +380,13 @@ async function publishRemoteStateNow(
 	if (stateCallback !== callback
 		|| remotePublicationTokens.get(snapshot.tabId) !== publicationToken
 		|| isOlderRemoteProjection(stableRemoteStates.get(snapshot.tabId), snapshot)) return;
+	const priorSession = sameDocument ? previous.session : null;
+	let session = audioSessionMatchesControlDocument(observedSession, snapshot) ? observedSession : priorSession;
+	if (session && priorSession && (session.generation === priorSession.generation
+		&& session.configRevision < priorSession.configRevision
+		|| !shouldAcceptAudioSessionPhase(priorSession.generation, priorSession.phase, session.generation, session.phase))) {
+		session = priorSession;
+	}
 	const sessionMatches = audioSessionMatchesControlDocument(session, snapshot);
 	const actualMode = sessionMatches && session ? session.actualMode : baseline.actualMode;
 	const phase = sessionMatches && session ? session.phase : baseline.phase;
@@ -392,7 +419,14 @@ async function publishRemoteStateNow(
 		revision: snapshot.revision,
 		snapshot,
 		state,
+		session,
 	};
+	// Observation and processor clocks can advance without a control revision.
+	// Coalesce identical presentation only after those independent facts merge.
+	if (sameDocument && JSON.stringify(previous.state) === JSON.stringify(state)) {
+		stableRemoteStates.set(snapshot.tabId, projection);
+		return;
+	}
 	await callback(snapshot.tabId, state);
 	if (stateCallback !== callback
 		|| remotePublicationTokens.get(snapshot.tabId) !== publicationToken

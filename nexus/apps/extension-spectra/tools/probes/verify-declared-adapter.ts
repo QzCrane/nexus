@@ -115,6 +115,10 @@ async function probeState(page: Page): Promise<{
 
 const browser = await puppeteer.launch({
 	headless: true,
+	// Puppeteer's pinned download is not installed here; run the browser this
+	// machine actually has, like the live probes do.
+	executablePath: process.env.PUPPETEER_EXECUTABLE_PATH
+		|| "C:/Program Files/Google/Chrome/Application/chrome.exe",
 	args: ["--no-sandbox", "--disable-dev-shm-usage", "--mute-audio"],
 });
 

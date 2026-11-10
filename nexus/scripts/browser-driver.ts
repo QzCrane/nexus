@@ -64,7 +64,7 @@ export interface BrowserLaunchIdentity {
 
 type PuppeteerReplayOptions = Pick<
 	PuppeteerLaunchOptions,
-	'executablePath' | 'headless' | 'userDataDir' | 'defaultViewport' | 'args'
+	'executablePath' | 'headless' | 'userDataDir' | 'defaultViewport' | 'args' | 'enableExtensions'
 >;
 
 export interface BrowserLaunchOwner {

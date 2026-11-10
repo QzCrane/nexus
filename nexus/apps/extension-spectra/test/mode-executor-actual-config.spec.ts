@@ -196,6 +196,45 @@ function installRouteRpc(initial: {
 }
 
 describe('three-owner audio mode executor', () => {
+	test('refuses denied document-output acquisition without publishing a document owner in native bypass', async () => {
+		const runtimeState = state();
+		runtimeState.config = clone({ ...DEFAULT_AUDIO_CONFIG, volume: 30, volumeBase: 30, documentOutput: true });
+		const runtimeDeps = deps();
+		bindCallbacks(runtimeDeps, runtimeState);
+		await executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+		expect(runtimeState.actualMode).toBe('bypass');
+		expect(runtimeState.phase).toBe('error');
+		expect(runtimeState.appliedConfig).not.toHaveProperty('documentOutput');
+	});
+
+	test('does not widen a manually fixed direct route to document-output Capture', async () => {
+		const runtimeState = state();
+		runtimeState.mediaRoute = 'direct';
+		runtimeState.config = clone({ ...DEFAULT_AUDIO_CONFIG, documentOutput: true });
+		const runtimeDeps = deps();
+		bindCallbacks(runtimeDeps, runtimeState);
+		await executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+		expect(runtimeDeps.captureManager.request).not.toHaveBeenCalled();
+		expect(runtimeState.actualMode).toBe('bypass');
+		expect(runtimeState.phase).toBe('error');
+		expect(runtimeState.lastError).toContain('direct processing route');
+		expect(runtimeState.appliedConfig).not.toHaveProperty('documentOutput');
+	});
+
+	test('keeps an admitted document-output owner at 100 percent', async () => {
+		const runtimeState = state();
+		const actual = clone({ ...DEFAULT_AUDIO_CONFIG, documentOutput: true });
+		runtimeState.config = actual;
+		const request = mock(async () => ({ status: 'processing' as const, phase: 'active' as const,
+			active: true, generation: 6, actualConfig: actual }));
+		const runtimeDeps = deps({ request, getActualConfig: () => actual });
+		bindCallbacks(runtimeDeps, runtimeState);
+		await executeMode(runtimeDeps, runtimeState, false, ADMISSION);
+		expect(runtimeState.actualMode).toBe('capture');
+		expect(runtimeState.appliedConfig).toMatchObject({ documentOutput: true, volume: 100 });
+		expect(request).toHaveBeenCalledWith(true, actual, 5, { admission: ADMISSION });
+	});
+
 	test('refreshes a same-document route in the policy queue and retires a neutral Capture owner', async () => {
 		const routeRpc = installRouteRpc({ mediaRoute: 'capture', source: 'user' });
 		const runtimeState = state('capture');
@@ -272,7 +311,7 @@ describe('three-owner audio mode executor', () => {
 			mediaRoute: 'capture',
 			actualMode: 'bypass',
 			phase: 'error',
-			lastError: 'Capture requires a current-tab extension invocation',
+			lastError: 'Enhanced volume needs this tab in the foreground',
 		});
 		executor.dispose();
 	});
@@ -541,7 +580,7 @@ describe('three-owner audio mode executor', () => {
 			actualMode: 'bypass',
 			phase: 'error',
 		});
-		expect(runtimeState.lastError).toBe('Capture requires a current-tab extension invocation');
+		expect(runtimeState.lastError).toBe('Enhanced volume needs this tab in the foreground');
 
 		await executor.applyState({ captureAdmission: ADMISSION });
 		expect(bypass).toHaveBeenCalledTimes(2);
@@ -856,7 +895,7 @@ describe('three-owner audio mode executor', () => {
 		expect(request).not.toHaveBeenCalled();
 		expect(runtimeState.actualMode).toBe('bypass');
 		expect(runtimeState.phase).toBe('error');
-		expect(runtimeState.lastError).toBe('Capture requires a current-tab extension invocation');
+		expect(runtimeState.lastError).toBe('Enhanced volume needs this tab in the foreground');
 		expect(runtimeState.appliedConfig.boost).toBe(1);
 	});
 

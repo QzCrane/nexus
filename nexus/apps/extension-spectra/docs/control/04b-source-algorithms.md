@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-01
+last_reviewed: 2026-11-09
 ---
 
 # 04b. Source Algorithms (§9 Audited source algorithms and dispositions)
@@ -10,11 +10,39 @@ last_reviewed: 2026-11-01
 > 主题 owner 段: §9 Audited source algorithms and dispositions
 > 完整目录: [04-algorithm-matrix.md](04-algorithm-matrix.md)
 
+**本篇符号**（只解释名字之间的关系，不改变任何规则）：
+
+| 符号 | 一句话职责 | 谁用它 |
+| --- | --- | --- |
+| `SITE_ADAPTER_REGISTRY` | 已声明的站点适配行；目前只有 `douyin-speed` | 桥接发现与审计 |
+| `DEFAULT_SITE_ADAPTER_DISCOVERY` | 通用发现的默认预算：12 层祖先、96 个属性 | `page-media-bridge` |
+| `GENERIC_PAGE_MEDIA_VOCABULARY` | 通用发现已经认识的 setter/getter 名；声明行只能新增，不能重复 | 声明行校验 |
+
 ## §9 Audited source algorithms and dispositions
 
-`CONTROL_ALGORITHM_POLICIES` (`packages/contracts/src/control.contracts.ts`) executable `Record<ControlCapability, ControlAlgorithmPolicy>` owns scope, kind, strategies, ACK source, MAIN policy, and work rules. Processor fields share one ordered strategy: proven `media-webaudio`, then admitted `capture`. Missing policies cause compile errors.
+`CONTROL_ALGORITHM_POLICIES` in `packages/contracts/src/control.contracts.ts` is the executable policy map. Its `Record<ControlCapability, ControlAlgorithmPolicy>` owns scope, kind, strategies, ACK source, MAIN policy, and work rules. Processor fields share one ordered strategy: proven `media-webaudio`, then admitted `capture`. Missing policies cause compile errors.
 
 This audit records legacy source dispositions. Retired locations are historical evidence; current ownership uses implementation anchors.
+
+下表每一条审计结论都必须回答同一组问题；任何一列答不出来，结论只能是 retired。
+
+```mermaid
+flowchart TD
+  Row["一条源算法"] --> Q1{"Decision:<br/>它现在是什么角色?"}
+  Q1 -->|"第二个 writer / 平台替换"| Retired["retired 或 forbidden<br/>移除并保留负向证据"]
+  Q1 -->|"精确元素单次执行"| Q2{"Augmentation admission:<br/>需要额外授权吗?"}
+  Q1 -->|"只读"| Obs["observe<br/>不得激活重型 owner"]
+  Q2 -->|"native-control: 不需要"| Q3{"Interception policy:<br/>是否改写平台?"}
+  Q2 -->|"需要一次性凭据"| Q4{"Recurring work:<br/>是否周期工作?"}
+  Q3 -->|"forbidden"| Retired
+  Q3 -->|"允许的窄包装"| Q4
+  Q4 -->|"none / 中性为 0 Hz"| Kept["保留并登记 owner"]
+  Q4 -->|"无界轮询或每帧 IPC"| Retired
+```
+
+`Interception policy` 与 `Recurring work` 两列不是备注，它们是删除依据：一个算法只要
+需要长期拦截平台对象，或者需要无界周期工作才能成立，结论就不是"优化一下"，而是
+"它不该存在于这个产品里"。
 
 ### §9.0 Retired/forbidden processor and route inventory
 

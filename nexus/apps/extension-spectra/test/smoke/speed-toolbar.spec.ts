@@ -15,6 +15,7 @@ import {
 	openExtensionClient,
 	patchExtensionSettings,
 	readContentBootstrapStatus,
+	readBadgeText,
 	reinjectContentBootstrap,
 	releaseSmokeRuntimes,
 	startSmokeSession,
@@ -71,14 +72,15 @@ describe('SPECTRA built extension smoke: actual speed toolbar', () => {
 		await teardownSmokeSession();
 	});
 
-	test.each([1, 1.3])('shows actual %sx on first open without a controller, menu action, or heavy runtime', async (rate) => {
+	test.each([1, 1.3])('shows actual %sx on the first frame after DOM ready without a controller, menu action, or heavy runtime', async (rate) => {
 		const page = await openPlayer(`?rate=${rate}`);
 		try {
 			await eventually(
 				() => page.evaluate(() => (window as Window & { firstFrameLabel?: string }).firstFrameLabel),
 				(text) => text === `${rate}x`,
-				'actual rate on the first rendered frame',
+				'actual rate on the first rendered frame after DOM ready',
 			);
+			expect(await page.evaluate(() => (window as Window & { firstFrameReadyState?: string }).firstFrameReadyState)).not.toBe('loading');
 			expect(await page.$eval(labelSelector, (label) => label.textContent)).toBe(`${rate}x`);
 			expect(await readContentBootstrapStatus(page.url())).toMatchObject({ ready: false, runtimeRevision: null });
 			if (rate === 1) {
@@ -301,7 +303,7 @@ describe('SPECTRA built extension smoke: actual speed toolbar', () => {
 		}
 	}, 20_000);
 
-	test('preserves muted autoplay while restoring a speed preset and admits unmute only after page interaction', async () => {
+	test('preserves muted autoplay during preset restore and reports browser-denied unmute', async () => {
 		const client = await openExtensionClient('options.html');
 		await patchExtensionSettings(client, { scope: 'audio-site', domain: 'www.douyin.com', value: { speed: 1.3 } });
 		const page = await openPlayer('?autoplay=1');
@@ -316,14 +318,24 @@ describe('SPECTRA built extension smoke: actual speed toolbar', () => {
 			return result.result.value as { muted: boolean; paused: boolean; speed: number; activated: boolean };
 		};
 		try {
+			// Acquire the test transport before sampling autoplay. Creating its
+			// extension client during the write would background and pause the page.
+			await acquireSmokeRuntime(page.url(), 'speed-toolbar-physical');
+			await page.bringToFront();
+			await passiveClient.send('Runtime.evaluate', { expression: `document.querySelector('video').play()`, awaitPromise: true, userGesture: false });
 			await eventually(sample,
 				(state) => state.muted && !state.paused && state.speed === 1.3, 'speed restore without unmuting or pausing autoplay');
 			expect((await sample()).activated).toBe(false);
-			const blocked = await executeNative(page.url(), { mediaMuted: false });
-			expect(blocked).toMatchObject({ ok: true, data: { fields: { mediaMuted: { phase: 'error', lastError: { code: 'user-activation-required', retryable: false } } } } });
-			expect(await sample()).toMatchObject({ muted: true, paused: false, activated: false });
+			const explicit = await executeNative(page.url(), { mediaMuted: false });
+			expect(explicit).toMatchObject({ ok: true, data: { fields: { mediaMuted: {
+				phase: 'error', actual: null, lastError: { code: 'policy-denied' },
+			} } } });
+			expect(await sample()).toMatchObject({ muted: true, activated: false });
 			await page.click('#activate');
 			expect(await page.evaluate(() => navigator.userActivation.hasBeenActive)).toBe(true);
+			// Browser policy paused playback on the denied attempt. Resume the
+			// activated player before proving that a later unmute preserves play.
+			await passiveClient.send('Runtime.evaluate', { expression: `document.querySelector('video').play()`, awaitPromise: true, userGesture: false });
 			expect(await executeNative(page.url(), { mediaMuted: false })).toMatchObject({
 				ok: true, data: { fields: { mediaMuted: { phase: 'applied', actual: false } } },
 			});
@@ -338,6 +350,16 @@ describe('SPECTRA built extension smoke: actual speed toolbar', () => {
 	}, 20_000);
 
 	test.each([false, true])('synchronizes live volume through the real Action Popup slider (site unmuted: %s)', async (unmuteSite) => {
+		// A new same-origin document may restore the previous case's 40. Use
+		// distinct values so the physical-write barrier proves THIS slider input,
+		// not an earlier restoration which happens to expose the same number.
+		const gestureVolume = unmuteSite ? 30 : 40;
+		// A volume gesture is a request to hear the level. The fixture starts muted
+		// in the `false` case, exactly like a player that the autoplay policy parked
+		// at zero: the slider must still move the level, and the same gesture must
+		// leave the element audible instead of answering with a number nobody hears.
+		// Restoring a template is the opposite case and is covered above — it never
+		// releases a mute the viewer did not ask for.
 		const page = await openPlayer('', 'https://live.douyin.com', liveFixtureHtml);
 		const tabId = await getTabId(page.url());
 		await page.bringToFront();
@@ -353,22 +375,24 @@ describe('SPECTRA built extension smoke: actual speed toolbar', () => {
 			});
 			await eventually(() => popup.$eval(slider, (input) => (input as HTMLInputElement).value),
 				(value) => value === '60', 'site volume reaches live Popup');
-			await popup.$eval(slider, (input) => {
-				(input as HTMLInputElement).value = '40';
+			await popup.$eval(slider, (input, value) => {
+				(input as HTMLInputElement).value = String(value);
 				input.dispatchEvent(new Event('input', { bubbles: true }));
 				input.dispatchEvent(new Event('change', { bubbles: true }));
-			});
+			}, gestureVolume);
 			await eventually(() => page.$eval('video', (video) => video.volume),
-				(value) => value === 0.4, 'Popup continuous channel changes actual live volume');
-			expect(await page.$eval('#site-number', (number) => number.textContent)).toBe('40');
+				(value) => value === gestureVolume / 100, 'Popup continuous channel changes actual live volume');
+			expect(await page.$eval('#site-number', (number) => number.textContent)).toBe(String(gestureVolume));
 			await page.$eval('#site-volume', (input) => {
 				(input as HTMLInputElement).value = '80';
 				input.dispatchEvent(new Event('input', { bubbles: true }));
 			});
 			await eventually(() => popup.$eval(slider, (input) => (input as HTMLInputElement).value),
 				(value) => value === '80', 'page change supersedes acknowledged extension volume');
+			expect(await eventually(() => readBadgeText(tabId), value => value === '80',
+				'page actual supersedes staged and persisted badge volume')).toBe('80');
 			expect(await page.$eval('video', (video) => ({ muted: video.muted, paused: video.paused })))
-				.toEqual({ muted: !unmuteSite, paused: false });
+				.toEqual({ muted: false, paused: false });
 		} catch (error) {
 			console.error('Live volume diagnostic', JSON.stringify({
 				bootstrap: await readContentBootstrapStatus(page.url()),

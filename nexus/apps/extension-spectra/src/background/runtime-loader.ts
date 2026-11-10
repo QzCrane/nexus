@@ -74,7 +74,13 @@ const leases = new Map<string, Set<string>>();
 // intent clears this decision; navigation/tab removal retires it with the key.
 const releasedMediaIntents = new Set<string>();
 const disposeTimers = new Map<string, ReturnType<typeof setTimeout>>();
-const documentInitializations = new Map<string, Promise<void>>();
+interface DocumentInitialization {
+	operation: Promise<void>;
+	url: string | undefined;
+	phase: 'running' | 'deferred' | 'complete';
+	wakePending: boolean;
+}
+const documentInitializations = new Map<string, DocumentInitialization>();
 let initialized = false;
 
 const RUNTIME_HANDOFF_GRACE_MS = 250;
@@ -323,17 +329,40 @@ function beginDocumentInitialization(
 ): Promise<void> {
 	const key = runtimeKey(tabId, documentId);
 	const existing = documentInitializations.get(key);
-	if (existing) return existing;
-	const operation = Promise.resolve()
+	if (retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) return Promise.resolve();
+	if (existing && existing.phase !== 'deferred') return existing.operation;
+	const entry: DocumentInitialization = { operation: Promise.resolve(), url, phase: 'running', wakePending: false };
+	entry.operation = Promise.resolve()
 		.then(() => restoreDocumentForInitialization(tabId, documentId, url))
+		.then(() => { entry.phase = 'complete'; })
 		.catch((error) => {
-			// Initialization is an ordering barrier, not a permanent availability
-			// gate. A failed restore is reported once and explicit user control may
-			// proceed against the current document afterwards.
+			// Releasing the ordering barrier does not complete the restore duty.
+			// A later real lifecycle signal can resume this exact document, without
+			// requiring a user gesture or starting a polling/retry owner.
+			entry.phase = 'deferred';
 			swLog.warn(`[Runtime] document restore failed: ${String(error)}`);
+		}).finally(() => {
+			if (entry.phase === 'deferred' && entry.wakePending && documentInitializations.get(key) === entry) {
+				resumeDocumentInitialization(tabId, documentId, entry.url);
+			}
 		});
-	documentInitializations.set(key, operation);
-	return operation;
+	documentInitializations.set(key, entry);
+	return entry.operation;
+}
+
+// Only admitted lifecycle facts call this; READY/restore writes do not wake
+// their own initializer. Coalesce a signal that arrives before failure settles.
+export function resumeDocumentInitialization(tabId: number, documentId: string, url: string | undefined): void {
+	const key = runtimeKey(tabId, documentId);
+	if (!initialized || retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) return;
+	const existing = documentInitializations.get(key);
+	if (existing?.phase === 'running') {
+		if (url) existing.url = url;
+		existing.wakePending = true;
+		return;
+	}
+	const resourceUrl = url ?? existing?.url;
+	if (resourceUrl) void beginDocumentInitialization(tabId, documentId, resourceUrl);
 }
 
 // post: explicit control and initial snapshot reads observe one completed
@@ -466,6 +495,9 @@ async function loadRuntime(tabId: number, documentId: string): Promise<ContentRu
 			target: { tabId, documentIds: [documentId] },
 			files: ['content-runtime.js'],
 			world: 'ISOLATED',
+			// A lease already authorizes work in this exact document. Waiting for
+			// document_idle makes the first control depend on unrelated page loads.
+			injectImmediately: true,
 		});
 		const waitForInjection = inject().catch(async (error: unknown) => {
 			const message = error instanceof Error ? error.message : String(error);
@@ -571,6 +603,19 @@ export async function ensureContentRuntime(
 	}
 }
 
+async function recoverFailedRestoreLease(tabId: number, documentId: string): Promise<boolean> {
+	const surviving = await probeRuntime(tabId, documentId);
+	const key = runtimeKey(tabId, documentId);
+	if (await currentTopDocumentId(tabId).catch(() => null) !== documentId
+		|| retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) return false;
+	// An unavailable probe is not proof that the owned recovery template is
+	// absent. Keep only an already-held lease; do not invent one from unknown.
+	if (!surviving) return hasRuntimeLease(tabId, documentId, 'restore', MEDIA_INTENT_RUNTIME_CAPABILITY);
+	if (surviving.mediaIntentState !== 'retained') return false;
+	recoverMediaIntentRuntimeLease(tabId, documentId);
+	return true;
+}
+
 async function restoreIfConfigured(tabId: number, documentId: string, url: string | undefined): Promise<void> {
 	if (!url) return;
 	let identity: ReturnType<typeof storage.tabSession.identity>;
@@ -615,6 +660,12 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 		// one-shot write. Retain the event-driven runtime so media created later
 		// by an SPA can consume the same revision on registration/metadata/play.
 		retained = true;
+	} catch (error) {
+		// A rejected source ACK can still leave a legitimate document template
+		// in Content. Its event-driven continuation needs the existing lease.
+		// Probe exact physical ownership; a late answer cannot undo user release.
+		retained = await recoverFailedRestoreLease(tabId, documentId);
+		throw error;
 	} finally {
 		if (!retained) {
 			releaseContentRuntimeLease(tabId, documentId, 'restore', capability);
@@ -806,6 +857,7 @@ export function initializeContentRuntimeLoader(): void {
 		url: string;
 	}): void => {
 		if (details.frameId !== 0) return;
+		resumeDocumentInitialization(details.tabId, details.documentId, details.url);
 		void Promise.allSettled([
 			reconcileHotkeyRuntimeLease(details.tabId, details.documentId, details.url),
 		]);
@@ -875,7 +927,7 @@ function splitDocumentRestorePatch(patch: ControlSessionPatch): Array<{
 		const target = scope === 'active-video'
 			? video
 			: scope === 'document'
-				|| controlCapabilityUsesStrategy(field, 'capture')
+				|| controlCapabilityUsesStrategy(field, 'capture') && !controlCapabilityUsesStrategy(field, 'dom-native')
 				? full
 				: media;
 		(target as Record<string, unknown>)[field] = structuredClone(value);
@@ -923,6 +975,7 @@ async function resolveDocumentRestorePlan(
 }
 
 export const runtimeLoaderTestApi = {
+	recoverFailedRestoreLease,
 	setDocumentRestore(restore: DocumentRestore): void {
 		restoreDocumentForInitialization = restore;
 	},

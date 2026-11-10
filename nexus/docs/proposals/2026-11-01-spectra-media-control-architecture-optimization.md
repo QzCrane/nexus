@@ -264,6 +264,8 @@ interface SiteCapabilityProfile {
 
 **风险**：SPA 换播放器实例但复用同一 `<video>` → TTL + `emptied` 兜底；若仍出现陈旧，退化为"仅缓存 1 个帧边界"。
 
+**当前处置（2026-11-05）**：直播音量实验中的全局音频图拦截、滑条形状扫描、模拟手势、通用 volume 注册项和相关缓存均已撤除。桥接恢复到本分支已提交的 exact-element 实现，保留抖音倍速修复；不再声称这些实验有可接受的实测成本。`SCTRL-053` 约束桥接不得接管网页音频图或模拟滑条操作。根因、主线快捷键能力恢复和验证进度由[本轮回归记录](../research/2026-11-05-spectra-live-volume-regression-audit.md)持有。后续投影读取或缓存优化须重新证明收益及等价性，不能把本提案当作已落地证据。
+
 ---
 
 ### O7 · 执行器拆分（P1）
@@ -283,6 +285,24 @@ interface SiteCapabilityProfile {
 **前置**：先用 characterization tests 固化现状（对同一组事件序列断言 patch/字段状态），再拆。**不改变对外行为**。
 
 **验收**：拆前后同一批测试逐项相等；执行器文件行数下降 ≥50%；新增路由只需改 1 个协作对象。
+
+**状态（2026-11-02）：未落地。** 前置条件未满足，因此按 `file-length-policy.json` 里该文件的 `decompositionTrigger`（"Split a capability family only after its target/readback/rollback contract is executable independently and cannot create a second media selector"）继续挂起。当前 `native-media-executor.ts` 2626 行、登记上限 1950 行，`source-file-length` 报 1 条 review warning（非 error，不阻塞发布）。
+
+需要说清楚的是：**超限不是本轮造成的**。`git show HEAD` 基线是 2500 行，本轮修复把它推到 2626（+126）；`control-coordinator.ts` 基线 2885、上限 2600，本轮推到 2936（+51）。两个文件在本轮之前就已经超出登记上限，本轮只是加宽了既有违规。因此这里既没有新增门禁失败，也没有通过抬高 `maxLines` 把告警抹平——把上限改成 2626 会让一条准确的 review signal 消失，而这恰恰是 `check-file-length.ts` 头部禁止的用法。
+
+尚未动它的原因不是工作量，是顺序：本轮三个缺陷的修复全部落在 `applyField` 的写路径与 `handleMediaEvent` 的事件路径上，而这两处正是 O7 要搬走的东西。在缺少 characterization tests 的情况下先搬结构、再改语义，等于同时移动地基和墙体——一旦回归，无法判断是搬错了还是改错了。先把语义修对并让 131 个测试文件全绿，是让后续拆分"只可能搬错、不可能改错"的唯一办法。
+
+已勘定的拆分边界（下一次直接照此执行，无需重新勘察）：
+
+| 目标文件 | 从这里搬走 | 当前行范围 | 依赖特征 |
+|---|---|---|---|
+| `media-read-model.ts` | `readDomRestorableMediaField` / `readRestorableMediaField` / `readRestorableMediaFieldWithWriter` / `readRestorableMediaFieldForWrite` + writer 原语（`writeNativeVolumeBase` / `writeNativeMediaMuted` / `writeNativePlaybackRate` / `writeNativePreservesPitch` / `writeNativeLoop` / `writeRestorableMediaField`）+ `requiresUnmuteActivation` / `assertUnmuteAdmitted` | 311–497 | 纯函数，无 `this`，只需 `@nexus/contracts` 与 `page-media-bridge` |
+| `media-write-transaction.ts` | `writeRestorableMediaFieldWithStableAck` / `pageCandidateRestoredBaseline` | 498–610 | 纯函数，依赖 `native-media-async` 与 `native-write-confirmation` |
+| `media-observation-router.ts` | `markPending` / `expirePendingWrite` / `clearPending` / `reconcileExpiredPending` / `handleMediaEvent` / `queuePageObservation` / `flushPageObservations` | 2058–2366 | 有状态：需要 `pending` / `observed` / `desiredMedia` / `writeConfirmations` 与 4 个回调（`putState` / `rememberDesired` / `replayDesired` / `putError`），必须用显式 host port，不能靠 `this` |
+| `media-ownership-ledger.ts` | `commitOwnership` / `rollbackFailedRestorableWrite` / `putState` / `putError` / `synchronizeAppliedNative` / `auditDeclaredProjection` / `nativeFailure` | 1848–2057 | 有状态：与上一条共用同一组字段状态，两条应同批搬，否则会拆出两个半 owner |
+| `media-site-capability-router.ts` | 站点适配器解析（`resolveDeclaredSiteAdapter` / `wireStrategy` / `observationStrategy` / `WRITER_RANK` / `isPageSideWriter`） | 101–146 | 纯函数，但 `WRITER_RANK` 已被 `commitOwnership` 使用，搬它要连带改调用点 |
+
+前两项是无 `this` 的纯函数搬运，风险最低，可独立成一次提交；后三项共享字段状态，必须同批完成，否则 `SCTRL-003`（每个 `{document, media, field}` 只有一个 writer）会在结构上被撕成两个 owner。
 
 ---
 
@@ -352,6 +372,13 @@ interface SiteCapabilityProfile {
 - 遥测进入本地诊断导出（不上传），并在性能测试里设门槛。
 
 **验收**：`test:performance` 增加一项"媒体写路径预算"，超预算即失败。
+
+**落地（2026-11-02）**：指标已进 `test:performance`，但**没有**设预算，且第一版验收条件被有意收窄。两处偏离：
+
+1. **只有一条指标，且是 evidence-only。** 新增 `spectra.media-control.write-to-ack`，与既有的 `spectra.hotkey.speed-up.first-document-e2e` 从**同一次按键**采样：前者是"扩展回答了这次写"的时刻，后者是"文档真的变成新速率"的时刻。两个数字必须成对出现，因为本提案的核心主张就是前者不再等待后者；分两次按键采会让 IPC 抖动伪装成两者的差值。设计里的"发现扫描次数 / 跨世界往返次数 / 投影读取失败率"没有做成性能指标——它们没有可复现的采样点，硬塞进 Chromium 计时只会得到噪声。
+2. **预算被策略门禁挡下，不是遗漏。** `runtime-performance-policy.json` 当前 `phase: "baseline"`，而 `scripts/check-runtime-performance-policy.ts:81-83` 明确禁止在独立基线存在前写任何硬阈值。因此该指标登记为 `evidenceOnlyMetrics` 并写明 `evidenceOnlyReason`；`minimumIndependentRunsBeforeBudget: 2` 满足后再升级为 budgeted，届时 `budgets` 必须与"非 evidence-only 指标集"精确相等。
+
+因此验收条件从"超预算即失败"改为"指标被登记、被采样、被 `check-runtime-performance-policy.ts` 校验为有主且未被赋予臆造阈值"。这是这个阶段能诚实交付的最强形式。
 
 ---
 

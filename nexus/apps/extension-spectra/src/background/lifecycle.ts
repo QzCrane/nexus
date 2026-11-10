@@ -21,6 +21,7 @@ import {
 import { beginDocumentNavigation } from './control-coordinator';
 import { settingsRepository } from './settings-repository';
 import { clearBadgeUsage } from './badge-usage';
+import { forgetBadgePresentation } from './handlers/badge';
 import { mediaFacts } from './media-facts';
 import { mediaTabAvailability } from '../shared/media-card-policy';
 import { syncActiveActionPopups } from './popup-frame';
@@ -41,6 +42,7 @@ function evictCardSnapshotCache(tabId: number): Promise<void> {
 }
 
 async function clearTabDocumentState(tabId: number, tabClosed = false): Promise<void> {
+	forgetBadgePresentation(tabId);
 	const visualizerCleanup = tabClosed
 		? handleVisualizerTabRemoved(tabId)
 		: invalidateVisualizerDocument(tabId);

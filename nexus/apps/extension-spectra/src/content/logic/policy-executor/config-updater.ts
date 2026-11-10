@@ -95,6 +95,9 @@ export function persistConfigSnapshot(
 	generation: number,
 ): Promise<SpectraResponse<'spectra.audio.config.set'>> {
 	const snapshot: AudioConfig = { ...config, eqValues: [...config.eqValues] };
+	// Output ownership is proved for one live document and acquired through an
+	// explicit Capture admission. It must never become a persisted site setting.
+	delete snapshot.documentOutput;
 	const previous = internalState.configPersistenceTail ?? Promise.resolve();
 	const operation = previous.then(async () => {
 		try {

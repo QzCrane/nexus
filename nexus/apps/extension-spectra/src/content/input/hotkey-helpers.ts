@@ -9,6 +9,7 @@ import {
 	type ControlOperationRequest,
 	type HotkeyAction,
 	type HotkeyParams,
+	type MediaTarget,
 } from '@nexus/contracts';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import { getActiveNativeMediaExecutor } from '../logic/native-media-executor';
@@ -25,15 +26,16 @@ function finiteParam(value: unknown): number | undefined {
 export async function submitTrustedActivationControl(
 	field: 'playing' | 'pip' | 'fullscreen',
 	documentId?: string,
+	target?: MediaTarget,
 ): Promise<{ target: import('@nexus/contracts').MediaTarget; actual: boolean }> {
 	const executor = getActiveNativeMediaExecutor();
 	if (!executor) throw new Error('The native media runtime is unavailable');
 	if (documentId) executor.bindRequestContext(undefined, documentId);
 	// The browser API is invoked synchronously inside the trusted keydown stack.
-	// Only the observed actual value crosses Background afterwards. The ISOLATED
-	// world executor remains the canonical resolver of the actual media element
-	// for the toggle; the click-time context is bound separately, never here.
-	const result = await executor.toggleTrustedActivation(field);
+	// Only the observed actual value crosses Background afterwards. The explicit
+	// target is the one the viewer selected; without it a multi-video page falls
+	// back to whatever the registry happens to rank first.
+	const result = await executor.toggleTrustedActivation(field, target);
 	const response = await sendSpectraRequest('spectra.control.intent.submit', {
 		source: 'page',
 		requestedCoverage: 'active-target',
@@ -83,6 +85,9 @@ export async function submitHotkeyOperation<O extends ControlOperation>(
 		payload,
 	} as unknown as ControlOperationRequest);
 	if (!response.ok) throw new Error(response.error.message);
+	const failure = Object.values(response.data.fields)
+		.find((field) => field?.phase === 'error' && field.lastError);
+	if (failure?.lastError) throw new Error(failure.lastError.message);
 	return response.data as ControlOperationAck<O>;
 }
 

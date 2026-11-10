@@ -30,9 +30,9 @@ const COVERAGES = new Set(['full', 'active-target', 'partial', 'opaque']);
 const PHASES = new Set(['idle', 'applied', 'error']);
 const FIELD_STRATEGIES = {
 	audioEnabled: ['extension-state'],
-	volumeBase: ['page-native', 'dom-native'],
+	volumeBase: ['page-native', 'dom-native', 'capture'],
 	boost: ['media-webaudio', 'capture'],
-	mediaMuted: ['page-native', 'dom-native'],
+	mediaMuted: ['page-native', 'dom-native', 'capture'],
 	tabMuted: ['chrome-native'],
 	speed: ['page-native', 'dom-native'],
 	preservePitch: ['dom-native'],
@@ -146,6 +146,8 @@ const CONTROL_SNAPSHOT_KEYS = keySetOf<ControlSnapshot>()([
 	'activeVideo',
 	'fields',
 	'mediaObservation',
+	'live',
+	'prospectiveBoostRoute',
 ]);
 const APPLY_ACK_KEYS = keySetOf<ControlApplyAck>()([
 	'intentId',
@@ -285,6 +287,8 @@ function isControlValue(field: ControlField, value: unknown): boolean {
 }
 
 function isStrategyAdmitted(field: ControlField, value: Record<string, unknown>): boolean {
+	if ((field === 'volumeBase' || field === 'mediaMuted') && value.strategy === 'capture'
+		&& value.coverage !== 'full' && value.coverage !== 'opaque') return false;
 	if (typeof value.strategy !== 'string' || !STRATEGIES.has(value.strategy as ControlStrategy)) return false;
 	const strategy = value.strategy as ControlStrategy;
 	return FIELD_STRATEGIES[field].includes(strategy as never)
@@ -428,7 +432,10 @@ export function isUiControlSnapshot(value: unknown): value is ControlSnapshot {
 		&& (value.activeMedia === null || isMediaTarget(value.activeMedia))
 		&& (value.activeVideo === null || isMediaTarget(value.activeVideo) && value.activeVideo.kind === 'video')
 		&& isControlFieldStates(value.fields)
-		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation));
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation))
+		&& (value.live === undefined || typeof value.live === 'boolean')
+		&& (value.prospectiveBoostRoute === undefined || value.activeMedia !== null
+			&& (value.prospectiveBoostRoute === null || value.prospectiveBoostRoute === 'capture' || value.prospectiveBoostRoute === 'media-webaudio'));
 }
 
 export function isUiControlApplyAck(value: unknown): value is ControlApplyAck {

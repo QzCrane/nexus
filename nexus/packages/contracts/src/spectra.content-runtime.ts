@@ -9,6 +9,7 @@ import { isNavigationUrl, rpcFailure, rpcSuccess } from './spectra.protocol-prim
 import {
 	audioConfigToProcessorConfig,
 	DEFAULT_AUDIO_CONFIG,
+	audioVolumeStateToVolumeTone,
 	isAudioCaptureState,
 	isAudioConfig,
 	isAudioSessionSnapshot,
@@ -18,6 +19,7 @@ import {
 	resolveAudioVolumeState,
 	resolveDesiredAudioMode,
 } from './audio.contracts.js';
+import { resolveBoostRoute, resolveVolumeTone } from './volume-presentation.contracts.js';
 import { isAudioSitePolicy } from './settings.contracts.js';
 import {
 	isMediaRouteChangedEvent,
@@ -29,6 +31,7 @@ import {
 	compileEffectiveVolume,
 	isFiniteControlValue,
 	splitEffectiveVolume,
+	stepEffectiveVolume,
 	isAudioVolumeProjection,
 } from './control-value-limits.js';
 import { isCaptureAdmission } from './capture-admission.contracts.js';
@@ -38,6 +41,7 @@ import {
 	DEFAULT_HOTKEY_SETTINGS,
 	HOTKEY_ACTION_DESCRIPTORS,
 	isHotkeyAction,
+	isSpectraHotkeyPresentation,
 	isHotkeyParamsForAction,
 	isSpectraDefaultHotkeyKeyCombo,
 	resolveSpectraHotkeyActualFeedback,
@@ -57,6 +61,7 @@ import type {
 	ControlIntent,
 	ControlOperation,
 	ControlOperationAck,
+	ControlReadResult,
 	ControlStrategy,
 	MediaTarget,
 } from './control.contracts.js';
@@ -91,8 +96,12 @@ export {
 	requiresAudioProcessor,
 	resolveAudioVolume,
 	resolveAudioVolumeState,
+	resolveBoostRoute,
 	resolveDesiredAudioMode,
+	resolveVolumeTone,
+	audioVolumeStateToVolumeTone,
 	splitEffectiveVolume,
+	stepEffectiveVolume,
 	resolveSpectraDefaultHotkeyAction,
 	resolveSpectraHotkeyActualFeedback,
 	selectHotkeyFeedbackOwner,
@@ -168,11 +177,14 @@ const CONTROL_FIELD_STATE_KEYS = keySetOf<ControlFieldState<unknown>>()([
 const CONTROL_INTENT_KEYS = keySetOf<ControlIntent>()([
 	'intentId', 'tabId', 'documentId', 'generation', 'baseRevision', 'source',
 	'requestedCoverage', 'target', 'actualContext', 'patch', 'captureAdmission',
-	'processorHold', 'mediaRestore',
+	'processorHold', 'mediaRestore', 'releaseDocumentOutput',
 ]);
 const CONTROL_APPLY_ACK_KEYS = keySetOf<ControlApplyAck>()([
 	'intentId', 'tabId', 'documentId', 'generation', 'revision', 'target',
 	'fields', 'audioVolume', 'mediaObservation',
+]);
+const CONTROL_READ_RESULT_KEYS = keySetOf<ControlReadResult>()([
+	'target', 'patch', 'observedStrategies', 'mediaObservation', 'live', 'nativeAudioAbsent', 'prospectiveBoostRoute',
 ]);
 const CONTROL_OPERATION_ACK_KEYS = keySetOf<ControlOperationAck<'restore-page-settings'>>()([
 	'operationId', 'tabId', 'documentId', 'generation', 'revision', 'target',
@@ -259,6 +271,9 @@ function isControlPatch(value: unknown, allowEmpty = false): boolean {
 function isControlFieldStates(value: unknown): boolean {
 	if (!isRecord(value) || !hasOnly(value, CONTROL_FIELDS)) return false;
 	return Object.entries(value).every(([field, item]) => {
+		if (isRecord(item) && (field === 'volumeBase' || field === 'mediaMuted') && item.strategy === 'media-webaudio') return false;
+		if (isRecord(item) && (field === 'volumeBase' || field === 'mediaMuted') && item.strategy === 'capture'
+			&& item.coverage !== 'full' && item.coverage !== 'opaque') return false;
 		if (!isRecord(item)
 			|| !hasOnly(item, CONTROL_FIELD_STATE_KEYS)
 			|| item.mediaObservation !== undefined && !isMediaObservationStamp(item.mediaObservation)) return false;
@@ -291,6 +306,7 @@ function isControlIntent(value: unknown): boolean {
 		&& isControlPatch(value.patch)
 		&& (value.captureAdmission === undefined
 			|| isCaptureAdmission(value.captureAdmission))
+		&& (value.releaseDocumentOutput === undefined || value.releaseDocumentOutput === true && value.requestedCoverage === 'full')
 		&& (value.processorHold === undefined || typeof value.processorHold === 'boolean')
 		&& (value.mediaRestore === undefined || value.source === 'restore' && isMediaRestoreToken(value.mediaRestore));
 }
@@ -462,7 +478,7 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 	if (value.type === 'spectra.hotkey.target.feedback') return isInteger(value.tabId, true)
 		&& isRecord(value.payload)
 		&& hasOnly(value.payload, new Set([
-			'action', 'targetTabId', 'targetTitle', 'targetHostname', 'gesture', 'feedback',
+			'action', 'targetTabId', 'targetTitle', 'targetHostname', 'gesture', 'feedback', 'presentation',
 		]))
 		&& typeof value.payload.action === 'string'
 		&& isHotkeyAction(value.payload.action)
@@ -470,6 +486,7 @@ export function isSpectraEventEnvelope(value: unknown): value is SpectraEventEnv
 		&& isBoundedString(value.payload.targetTitle, 512)
 		&& isBoundedString(value.payload.targetHostname, 253)
 		&& (value.payload.gesture === undefined || isBoundedString(value.payload.gesture, 128))
+		&& (value.payload.presentation === undefined || isSpectraHotkeyPresentation(value.payload.presentation))
 		&& (value.payload.feedback === undefined || (
 			isRecord(value.payload.feedback)
 			&& (value.payload.feedback.kind === 'volume'
@@ -528,8 +545,12 @@ function isControlAck(value: unknown, operation = false): boolean {
 function isControlReadResult(value: unknown): boolean {
 	if (!isRecord(value)
 		|| value.mediaObservation !== undefined && !isMediaObservationStamp(value.mediaObservation)
-		|| !hasOnly(value, new Set(['target', 'patch', 'observedStrategies', 'mediaObservation']))
-		|| (value.target !== null && value.target !== undefined && !isMediaTarget(value.target))
+		|| !hasOnly(value, CONTROL_READ_RESULT_KEYS)
+		|| value.live !== undefined && typeof value.live !== 'boolean'
+		|| value.nativeAudioAbsent !== undefined && (typeof value.nativeAudioAbsent !== 'boolean' || value.target === null)
+		|| value.prospectiveBoostRoute !== undefined && (value.target === null
+			|| value.prospectiveBoostRoute !== null && value.prospectiveBoostRoute !== 'capture' && value.prospectiveBoostRoute !== 'media-webaudio')
+		|| (value.target !== null && !isMediaTarget(value.target))
 		|| !isControlPatch(value.patch, true)
 		|| !isRecord(value.observedStrategies)
 		|| !hasOnly(value.observedStrategies, DIRECT_FIELDS)) return false;

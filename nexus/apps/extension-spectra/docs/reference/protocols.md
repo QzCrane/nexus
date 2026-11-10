@@ -32,6 +32,24 @@ Runtime guards validate request type, payload, sender context, and identity. Nar
 
 ## Control transaction
 
+```mermaid
+sequenceDiagram
+  participant U as Popup / Remote / 快捷键
+  participant BG as Background: 串行 coordinator
+  participant C as Content executor
+  participant M as 页面媒体元素
+  U->>BG: ControlSubmitRequest (v2 envelope + requestId + 身份)
+  BG->>BG: 排序 document generation 与 field revision
+  BG->>BG: 可选: 仅当前 tab 可得的 Capture 准入
+  BG->>C: intent (target + revision)
+  C->>M: 唯一准入 writer 执行一次
+  M-->>C: 原生物理值
+  C-->>BG: ACK (读回值 + 全等身份)
+  BG->>BG: 身份全等才提交 ControlSnapshot
+  BG-->>U: 快照投影
+  Note over C,BG: 候选返回值不是 ACK; 失败字段回滚乐观投影
+```
+
 ```text
 intent (observation/Popup/remote/hotkey)
   → Background orders document generation/field revision
@@ -69,6 +87,24 @@ revision is stale. Tab/document/generation and exact media/source fences remain
 independent prerequisites. A delayed old ACK must not erase a newer physical
 sample of another field.
 
+```mermaid
+flowchart TD
+  In["到达的 mediaObservation"] --> Same{"owner 与当前相同?"}
+  Same -->|"否, epoch 更高"| Take["接管 owner"]
+  Same -->|"否, epoch 相同"| Conflict["同 epoch 不同 owner: 冲突, 拒绝"]
+  Same -->|"否, epoch 更低"| Stale["过期, 丢弃"]
+  Same -->|是| Order{"selection 与 revision<br/>字典序更大?"}
+  Order -->|是| Take
+  Order -->|否| Stale
+  Take --> Fence{"tab/document/generation<br/>与 media/source fence 仍成立?"}
+  Fence -->|是| Commit["提交 actual"]
+  Fence -->|否| Stale
+```
+
+图里两道门是独立的：`epoch/selection/revision` 只回答"这个样本是否比已知的更新"，
+target 与 resource fence 回答"它是否仍属于当前这个元素"。任何一个不成立都不提交，
+而"更新但错元素"和"旧但对元素"都不能被另一个条件救回来。
+
 Background publishes physical samples through its short snapshot lane while the
 writer actor waits for stable speed proof. Both converge on the same snapshot
 commit authority; this is not a second actual store. See the
@@ -79,7 +115,7 @@ fields against its current scene/visit/desired state before the physical write.
 A stale token fails closed, including after route/selection changes or explicit
 release. It cannot be used to replay a relative playback toggle on a new target.
 Scene identity and the return-visit example belong to
-[the replay owner](../control/06-media-and-video.md#document-replay-intent-lifetime).
+[the replay owner](../control/06-media-and-video.md#135-document-replay-intent-lifetime).
 
 ## Media inventory session projection
 
@@ -270,7 +306,7 @@ values `unset/retained/released`. Current bootstrap always emits it by reading
 the surviving executor; older responses may omit it. This is lifecycle evidence,
 not a second desired-value store or a physical speed ACK. Same-document worker
 recovery preserves retained/released decisions and uses the single restore lease;
-the [media owner](../control/06-media-and-video.md#document-replay-intent-lifetime)
+the [media owner](../control/06-media-and-video.md#135-document-replay-intent-lifetime)
 defines the transitions. Pure status replies cannot revive retired documents or
 templates explicitly released after their read began.
 
@@ -330,6 +366,24 @@ The ACK must echo the exact accepted authority. A delivery is classified as:
 
 ### Ownership transition ordering
 
+```mermaid
+stateDiagram-v2
+  state "none / 无键盘 owner" as None
+  state "lean / 精确配置站点宿主" as Lean
+  state "full / 完整 runtime" as Full
+  [*] --> None
+  None --> Lean: 注入 content-site-hotkeys.js + 非空配置 ACK 回显
+  None --> Full: 显式控制 / 设置 / 观察 / 已认证远程
+  Lean --> Full: 任一 live 绑定不再等价于五组标量默认
+  Full --> Lean: 全部 live 绑定回到标量默认且参数为空
+  Full --> None: 最后一个 reason 释放
+  Lean --> None: 配置清空或站点不再匹配
+```
+
+图中每条边都是一个有序事务，不是一次消息：先发精确空配置，再向重级 runtime 投影
+`sites:{}`，然后释放过期的 full 能力，最后才注入 lean 宿主或重新配置。顺序颠倒会
+产生两个键盘 owner，而这两个 owner 都会认为自己收到了同一个按键。
+
 For every `none | lean | full` transition:
 
 1. send exact empty lean configuration;
@@ -365,6 +419,22 @@ The host survives BFCache `pagehide` when `event.persisted` is true: held gestur
 ## MV3 worker-restart runtime recovery
 
 A worker restart loses Background's in-memory lease maps while a previous heavy Content Runtime may survive in a document. Background startup runs recovery for current HTTP top documents:
+
+```mermaid
+sequenceDiagram
+  participant BG as Background (new worker)
+  participant C as 存活的重级 Content runtime
+  participant L as runtime-loader
+  BG->>C: 1. exact status probe
+  C-->>BG: ownedSources + runtimeRevision + restore 线索
+  BG->>BG: 2. 仅当 runtimeRevision 是当前值才认领
+  BG->>L: 3. 取固定临时 worker-restart-recovery lease
+  BG->>BG: 4. 从 ownedSources 重建 source leases
+  BG->>BG: 5. 从 tab-session resourceUrl hostname 重建 restore capability
+  BG->>BG: 6. 对齐 configured-site 热键模式
+  BG->>L: 7. 只释放这条临时 lease
+  Note over BG,L: 真实 dispose 仍归 loader; 重建失败则保留安全 lease, 不猜孤儿
+```
 
 1. exact status probe;
 2. require current `runtimeRevision` before adopting the survivor;

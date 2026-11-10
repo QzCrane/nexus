@@ -63,27 +63,29 @@ describe('Popup single effective-volume control', () => {
 		expect(enhanced).toMatchObject({ volume: 350, volumeBase: 100, boost: 3.5 });
 	});
 
-	test('derives color only from acknowledged capture state, never from volume threshold', () => {
+	test('derives color only from acknowledged capture state above the native ceiling', () => {
 		expect(actualVolumeColor(false, 350, 'bypass', 'active')).toBe(COLORS.NATIVE);
 		expect(actualVolumeColor(false, 350, 'capture', 'starting')).toBe(COLORS.NATIVE);
-		expect(actualVolumeColor(false, 80, 'capture', 'active')).toBe(COLORS.CAPTURE);
+		expect(actualVolumeColor(false, 80, 'capture', 'active')).toBe(COLORS.NATIVE);
 		expect(actualVolumeColor(false, 350, 'capture', 'active')).toBe(COLORS.CAPTURE);
 		expect(actualVolumeColor(true, 350, 'capture', 'active')).toBe(COLORS.MUTED);
 		expect(actualVolumeColor(false, 0, 'capture', 'active')).toBe(COLORS.MUTED);
 	});
 
 	test('gestureVolumeColor uses the same tone as the settled frame', () => {
-		// An acknowledged active Capture owns the tone at every volume: the badge
-		// and the slider must not repaint at the 100 boundary, because the route
-		// did not change there. The gesture path used to disagree with the settled
-		// path below 100, which is exactly the desync this asserts away.
+		// Violet needs both facts: the value is above the native ceiling and the
+		// acknowledged route is Capture. At the ceiling the split is Boost 1, so
+		// the leaving gesture turns blue immediately instead of holding violet
+		// until the processor releases. Both paths read the same decision, so the
+		// badge and the slider cannot disagree at the boundary.
 		expect(gestureVolumeColor(false, 350, 'capture', 'active')).toBe(COLORS.CAPTURE);
 		expect(gestureVolumeColor(false, 101, 'capture', 'active')).toBe(COLORS.CAPTURE);
-		expect(gestureVolumeColor(false, 100, 'capture', 'active')).toBe(COLORS.CAPTURE);
-		expect(gestureVolumeColor(false, 50, 'capture', 'active')).toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 100, 'capture', 'active')).toBe(COLORS.NATIVE);
+		expect(gestureVolumeColor(false, 50, 'capture', 'active')).toBe(COLORS.NATIVE);
 		expect(gestureVolumeColor(false, 80, 'capture', 'active')).toBe(actualVolumeColor(false, 80, 'capture', 'active'));
 
-		// Page-native sites (never hijack): volume > 100 strictly remains native blue
+		// Page-native sites carry the amplified part themselves: 100 -> 350 is
+		// one continuous blue, whether or not the page ever acknowledged >100.
 		const pageNativeSnapshot = {
 			tabId: 1, documentId: 'doc1', origin: 'https://video.example', generation: 1, revision: 1,
 			activeMedia: null, activeVideo: null,
@@ -92,15 +94,19 @@ describe('Popup single effective-volume control', () => {
 		expect(gestureVolumeColor(false, 110, 'bypass', 'idle', undefined, pageNativeSnapshot)).toBe(COLORS.NATIVE);
 		expect(gestureVolumeColor(false, 350, 'bypass', 'idle', undefined, pageNativeSnapshot)).toBe(COLORS.NATIVE);
 
-		// Dom-native sites: volume > 100 cannot be done natively, escalates to capture
+		// Dom-native sites: the element's own volume stops at 1.0, but the MAIN
+		// bridge's output gain amplifies the same graph in place, so the crossing
+		// is still a page-side write. Violet is reserved for an acknowledged
+		// Capture, never for the threshold itself.
 		const domNativeSnapshot = {
 			tabId: 1, documentId: 'doc1', origin: 'https://dom.example', generation: 1, revision: 1,
 			activeMedia: null, activeVideo: null,
 			fields: { volumeBase: { phase: 'applied' as const, strategy: 'dom-native' as const, actual: 100, revision: 1, controlled: true, lastError: null } },
 		};
-		expect(gestureVolumeColor(false, 101, 'bypass', 'idle', undefined, domNativeSnapshot)).toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 101, 'bypass', 'idle', undefined, domNativeSnapshot)).toBe(COLORS.NATIVE);
+		expect(gestureVolumeColor(false, 350, 'bypass', 'idle', undefined, domNativeSnapshot)).toBe(COLORS.NATIVE);
 
-		// Unhijacked / bypass sites without explicit dom-native capture escalation: remain native blue
+		// Unhijacked / bypass sites without any acknowledgement: remain native blue
 		expect(gestureVolumeColor(false, 110, 'bypass', 'idle')).toBe(COLORS.NATIVE);
 
 		// Silence / muted
@@ -108,10 +114,47 @@ describe('Popup single effective-volume control', () => {
 		expect(gestureVolumeColor(false, 0, 'capture', 'active')).toBe(COLORS.MUTED);
 	});
 
+	test('only an acknowledged Capture Boost owner predicts violet in the gesture frame', () => {
+		// The one prediction the palette allows. It replays a fact the document
+		// already proved (`boost.strategy`), which is also the fact the shortcut
+		// pill reads, so the two surfaces cross on the same frame.
+		const captureOwned = {
+			tabId: 1, documentId: 'doc1', origin: 'https://live.example', generation: 1, revision: 1,
+			activeMedia: null, activeVideo: null,
+			fields: {
+				volumeBase: { phase: 'applied' as const, strategy: 'dom-native' as const, actual: 100,
+					revision: 1, controlled: true, lastError: null },
+				boost: { phase: 'applied' as const, strategy: 'capture' as const, actual: 1.1,
+					revision: 1, controlled: true, lastError: null },
+			},
+		};
+		expect(gestureVolumeColor(false, 110, 'bypass', 'idle', undefined, captureOwned))
+			.toBe(COLORS.CAPTURE);
+		expect(gestureVolumeColor(false, 350, 'bypass', 'idle', undefined, captureOwned))
+			.toBe(COLORS.CAPTURE);
+		// Below the ceiling nothing is being boosted, so nothing is violet.
+		expect(gestureVolumeColor(false, 100, 'bypass', 'idle', undefined, captureOwned))
+			.toBe(COLORS.NATIVE);
+
+		// An acknowledged in-page Boost graph covers the amplification itself.
+		const graph = { ...captureOwned, fields: { ...captureOwned.fields,
+			boost: { ...captureOwned.fields.boost, strategy: 'media-webaudio' as const } } };
+		expect(gestureVolumeColor(false, 110, 'bypass', 'idle', undefined, graph))
+			.toBe(COLORS.NATIVE);
+
+		// A page that acknowledged the amplified value through its own writer owns
+		// the scale outright.
+		const amplified = { ...captureOwned, fields: { volumeBase: {
+			...captureOwned.fields.volumeBase, strategy: 'page-native' as const, actual: 140,
+		} } };
+		expect(gestureVolumeColor(false, 110, 'bypass', 'idle', undefined, amplified))
+			.toBe(COLORS.NATIVE);
+	});
+
 	test('uses one volume-state truth table and fails closed on stale document identity', () => {
 		expect(resolveAudioVolumeState({
 			volume: 80, muted: false, actualMode: 'capture', phase: 'active',
-		})).toBe('capture');
+		})).toBe('native');
 		expect(resolveAudioVolumeState({
 			volume: 350, muted: false, actualMode: 'bypass', phase: 'active',
 		})).toBe('native');

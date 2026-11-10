@@ -5,9 +5,18 @@ import { existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { setDefaultTimeout } from 'bun:test';
 import puppeteer from 'puppeteer';
 import type { Browser, CDPSession, EvaluateFunc, Page, Target, WebWorker } from 'puppeteer';
 import type { AudioSessionSnapshot, RegistrySnapshot, SettingsPatch, SettingsSnapshot } from '@nexus/contracts';
+
+// A smoke case waits on a browser, not on a function call: the waits it declares
+// are up to 15s (`waitForContentStatus`) and 10s (`eventually`), so the runner's
+// 5s default aborts cases that are still inside their own budget - and reports a
+// bare timeout instead of the wait's diagnostic. One ceiling above every declared
+// wait keeps a slow build's failure message meaningful, and every spec imports
+// this module, so this is the only place that owns it.
+setDefaultTimeout(30_000);
 
 export const EXTENSION_DIR = resolve(process.env.SPECTRA_EXTENSION_DIR ?? join(import.meta.dir, '..', '..', 'dist'));
 
@@ -20,6 +29,24 @@ export const REMOTE_SITE_DIR = resolve(import.meta.dir, '..', '..', '..', '..', 
 export const SMOKE_LOCALE = process.env.SPECTRA_SMOKE_LOCALE?.trim() || 'en-US';
 
 export const EXPLICIT_CHROME = process.env.NEXUS_CHROME_EXECUTABLE?.trim();
+
+/**
+ * The browser the product actually runs on. Puppeteer's own download is a
+ * pinned, often older Chrome; a suite that installs the extension there tests
+ * an extension model Chrome 137+ no longer has.
+ */
+function systemChromeExecutable(): string | undefined {
+	const candidates = process.platform === 'win32'
+		? [
+			join(process.env.PROGRAMFILES ?? 'C:\\Program Files', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+			join(process.env['PROGRAMFILES(X86)'] ?? 'C:\\Program Files (x86)', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+			join(process.env.LOCALAPPDATA ?? '', 'Google', 'Chrome', 'Application', 'chrome.exe'),
+		]
+		: process.platform === 'darwin'
+			? ['/Applications/Google Chrome.app/Contents/MacOS/Google Chrome']
+			: ['/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium'];
+	return candidates.find((candidate) => candidate.length > 0 && existsSync(candidate));
+}
 
 if (!/^[a-z]{2}(?:-[A-Z]{2})?$/u.test(SMOKE_LOCALE)) {
 	throw new Error(`Unsupported SPECTRA smoke locale: ${SMOKE_LOCALE}`);
@@ -325,6 +352,45 @@ export async function triggerDefaultHotkeyFromContent(
 		if (!result?.press?.ok || !result.release?.ok) {
 			throw new Error(`Default hotkey trigger failed: ${JSON.stringify(result)}`);
 		}
+	}, { targetTabId: tabId, targetAction: action });
+}
+
+/**
+ * Fires the accepted Content envelope for a built-in chord without waiting for
+ * the gesture burst. A real browser hands a document's first Alt+Up to the
+ * manifest `volume_up` command, which a headless Input domain cannot dispatch;
+ * smoke tests therefore drive the same Content path directly and must not await
+ * gated press responses.
+ */
+export async function pressDefaultHotkeyFromContent(
+	tabId: number,
+	action: 'volume_up',
+): Promise<void> {
+	await evaluateServiceWorker(async ({ targetTabId, targetAction }) => {
+		await chrome.scripting.executeScript({
+			target: { tabId: targetTabId },
+			world: 'ISOLATED',
+			func: (isolatedAction) => {
+				// OSD admission accepts only `default:<positive integer>` gestures.
+				const gesture = `default:${Date.now() * 1_000 + Math.floor(Math.random() * 1_000)}`;
+				const send = (phase: 'press' | 'release') => {
+					void chrome.runtime.sendMessage({
+						protocolVersion: 2,
+						requestId: crypto.randomUUID(),
+						type: 'spectra.content.default-hotkey.trigger',
+						payload: {
+							action: isolatedAction,
+							gesture,
+							phase,
+							repeated: false,
+						},
+					}).catch(() => undefined);
+				};
+				send('press');
+				setTimeout(() => send('release'), 0);
+			},
+			args: [targetAction],
+		});
 	}, { targetTabId: tabId, targetAction: action });
 }
 
@@ -2442,6 +2508,7 @@ export async function installRemotePagePeerHarness(
 export interface SmokeLaunchOptions {
 	executablePath?: string;
 	headless: true;
+	enableExtensions: true;
 	userDataDir: string;
 	args: string[];
 }
@@ -2505,9 +2572,14 @@ export async function prepareSmokeSession(): Promise<SmokeLaunchOptions> {
 	});
 	fixtureUrl = `http://127.0.0.1:${server.port}/smoke-test.html`;
 	browserProfileDir = await mkdtemp(join(tmpdir(), 'spectra-smoke-'));
+	const chromePath = EXPLICIT_CHROME ?? systemChromeExecutable();
 	return {
-		...(EXPLICIT_CHROME ? { executablePath: EXPLICIT_CHROME } : {}),
+		// The shipped browser on this machine, not a cached old download: Chrome
+		// 137+ ignores `--load-extension`, and an older executable would test a
+		// permission/extension model the product no longer runs on.
+		...(chromePath ? { executablePath: chromePath } : {}),
 		headless: true,
+		enableExtensions: true,
 		userDataDir: browserProfileDir,
 		args: [
 			// Action-popup sizing is browser-owned; pin physical/CSS rounding for geometry assertions.
@@ -2515,8 +2587,6 @@ export async function prepareSmokeSession(): Promise<SmokeLaunchOptions> {
 			'--window-size=1280,960',
 			`--lang=${SMOKE_LOCALE}`,
 			`--accept-lang=${SMOKE_LOCALE}`,
-			`--disable-extensions-except=${EXTENSION_DIR}`,
-			`--load-extension=${EXTENSION_DIR}`,
 			'--no-sandbox',
 			'--disable-setuid-sandbox',
 			'--autoplay-policy=no-user-gesture-required',
@@ -2526,6 +2596,19 @@ export async function prepareSmokeSession(): Promise<SmokeLaunchOptions> {
 
 export async function startSmokeSession(launched: Browser): Promise<void> {
 	browser = launched;
+	// Chrome 137+ ignores `--load-extension` for an unpacked directory. The
+	// Extensions CDP domain is the supported installer, and it works in the
+	// current headless mode as well as headed, so the suite no longer depends
+	// on a retired browser generation.
+	try {
+		const installer = await browser.target().createCDPSession();
+		await installer.send('Extensions.loadUnpacked', { path: EXTENSION_DIR.replace(/\\/g, '/') });
+		await installer.detach().catch(() => undefined);
+	} catch (error) {
+		throw new Error(
+			`SPECTRA could not install the unpacked extension through CDP: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
 	try {
 		serviceWorkerTarget = await browser.waitForTarget(
 			(target) => target.type() === 'service_worker'
@@ -2533,6 +2616,8 @@ export async function startSmokeSession(launched: Browser): Promise<void> {
 			{ timeout: 30_000 },
 		);
 	} catch (error) {
+		// The installer succeeded but no worker appeared: report exactly which
+		// targets exist instead of waiting out a second 30s timeout.
 		const targets = browser.targets()
 			.map((target) => `${target.type()}:${target.url() || '<empty>'}`)
 			.join(', ');

@@ -12,7 +12,10 @@ Research documents are dated evidence and hypotheses. They help choose what to b
 
 ## Current evidence sets
 
+- [SPECTRA documentation quality audit 2026-11-09](2026-11-09-spectra-documentation-quality-audit.md): hard defects (three conflicting invariant totals, an EPR rule that contradicts the control owner, four competing owner tables), unverifiable prose (241 unnumbered must/never statements), and the structural gaps (no invariant index, no failure catalog, evidence contract defined but never cited by the normative layer).
+- [SPECTRA live volume regression audit 2026-11-05](2026-11-05-spectra-live-volume-regression-audit.md): branch and dirty scope, audio-owner routing gaps, limits of existing verification, and open reproduction/repair acceptance.
 - [SPECTRA tab lifecycle and Popup closure 2026-11-02](2026-11-02-spectra-tab-lifecycle-popup-closure.md): dynamic card membership, immediate structure, physical observation order, retirement and scene-speed repair evidence.
+- [SPECTRA PiP readback mismatch 2026-11-02](2026-11-02-spectra-pip-readback-root-cause.md): why the picture-in-picture window closed immediately after opening — the W3C §3.4 exit algorithm triggered by re-adding `disablePictureInPicture` in a `finally` block — together with the session-scoped attribute ownership repair and the write/acknowledgement/proof separation it depended on.
 
 - [`../_archive/market-research.md`](../_archive/market-research.md): legacy long-form HALO competitor research collected in 2025. Preserve as source material, but revalidate every dynamic number, price, policy, product capability, issue count, and user-count claim before using it in a current decision.
 - [HALO research index](../../apps/extension-halo/docs/research/README.md): application-specific market and gap evidence.

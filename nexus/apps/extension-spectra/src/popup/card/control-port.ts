@@ -23,6 +23,7 @@ export interface PopupControlTransport {
 	stage(input: {
 		inputRevision: number;
 		effectiveVolume?: number;
+		presentationVolume?: number;
 		tone?: VolumeTone;
 		groups: PopupControlPatchGroup[];
 	}): void;
@@ -95,6 +96,7 @@ export function openPopupControlTransport(
 			|| raw.volumeAck && (
 				raw.volumeAck.tabId !== tabId || raw.volumeAck.documentId !== documentId
 			)
+			|| raw.audioSession && (raw.audioSession.tabId !== tabId || raw.audioSession.documentId !== documentId)
 			|| raw.fieldAcks.some((ack) => ack.tabId !== tabId || ack.documentId !== documentId)) {
 			rejectChannel('Background returned an invalid Popup control acknowledgement');
 			return;

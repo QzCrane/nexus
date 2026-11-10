@@ -12,13 +12,18 @@ import {
 	isAudioVolumeProjection,
 	isFiniteControlValue,
 } from './control-value-limits.js';
-export { compileEffectiveVolume, splitEffectiveVolume } from './control-value-limits.js';
+export {
+	compileEffectiveVolume,
+	splitEffectiveVolume,
+	stepEffectiveVolume,
+} from './control-value-limits.js';
 import { isMediaObservationStamp, isMediaRestoreToken } from './media-observation.contracts.js';
 import {
 	isCaptureAdmission,
 	type CaptureAdmission,
 } from './capture-admission.contracts.js';
 import { keySetOf } from './key-set.js';
+import type { VolumeBoostRoute } from './volume-presentation.contracts.js';
 
 export const CONTROL_STRATEGIES = [
 	'observe',
@@ -548,9 +553,9 @@ const CONTROL_DIMENSION_INDEX = {
 	],
 	capabilities: [
 		[0, 1, 32, 1, 0, 3, 2],
-		[2, 0, 12, 6, 0, 1, 0],
+		[2, 0, 524, 38, 1, 2, 3],
 		[2, 0, 768, 32, 1, 3, 3],
-		[2, 0, 12, 6, 0, 1, 0],
+		[2, 0, 524, 38, 1, 2, 3],
 		[1, 0, 16, 16, 0, 1, 0],
 		[3, 0, 12, 6, 0, 1, 0],
 		[3, 0, 8, 8, 0, 1, 0],
@@ -807,6 +812,7 @@ export function resolveAcknowledgedProcessorLifecycle(
 	const processorStates = Object.entries(fields)
 		.flatMap(([field, state]) => {
 			if (state === undefined) return [];
+			if ((field === 'volumeBase' || field === 'mediaMuted') && state.strategy !== 'capture') return [];
 			return controlCapabilityUsesAcknowledgement(
 				field as ControlField,
 				'processor-readback',
@@ -896,6 +902,8 @@ export interface ControlIntent {
 	// chrome.commands transaction. It is deliberately absent from
 	// ControlSubmitRequest so callers cannot claim browser invocation authority.
 	captureAdmission?: CaptureAdmission;
+	// Internal reset/restore obligation; public submissions cannot claim it.
+	releaseDocumentOutput?: true;
 	// Retired optional v2 field: accepted for envelope compatibility only.
 	// It grants no processor demand and current producers never emit it.
 	processorHold?: boolean;
@@ -917,6 +925,12 @@ export interface ControlSubmitRequest {
 	observedStrategies?: ControlObservationStrategies;
 	mediaRestore?: MediaRestoreToken;
 	mediaObservation?: MediaObservationStamp;
+	/**
+	 * Presentation kind observed by the page reader for `target`. Page-originated
+	 * only: it is evidence about that media element, never a value a Popup or
+	 * hotkey can assert.
+	 */
+	live?: boolean;
 }
 
 export interface ControlMarker {
@@ -1056,6 +1070,19 @@ export interface ControlSnapshot {
 	activeVideo: MediaTarget | null;
 	fields: ControlFieldStates;
 	mediaObservation?: MediaObservationStamp;
+	/** Read-only prospective Boost owner for activeMedia; null means unknown.
+	 * This is a route candidate, never an active processor or Capture grant. */
+	prospectiveBoostRoute?: VolumeBoostRoute;
+	/**
+	 * True when `activeMedia` is a live presentation.
+	 *
+	 * It is a fact about that one element, so it is present only while a read of
+	 * that same media target proved it: a publication without a matching proof
+	 * keeps the last answer for the same target and omits the field as soon as the
+	 * target changes. "Unknown" is therefore representable and never masquerades
+	 * as "on demand".
+	 */
+	live?: boolean;
 }
 
 export interface ControlApplyAck {
@@ -1077,12 +1104,22 @@ export interface ControlReadRequest {
 
 export interface ControlReadResult {
 	target: MediaTarget | null;
+	/** Source-bound policy candidate. Null clears an older candidate. */
+	prospectiveBoostRoute?: VolumeBoostRoute;
+	// Source-bound proof: a video-only MediaStream cannot own the audible output.
+	nativeAudioAbsent?: boolean;
 	patch: ControlPatch;
 	// Native semantic fields may be read through a complete page controller or
 	// the standard DOM getter. Keep that provenance with the value instead of
 	// reconstructing it in Background.
 	observedStrategies: ControlObservationStrategies;
 	mediaObservation?: MediaObservationStamp;
+	/**
+	 * The presentation kind the reader observed for `target`. Omitted when the
+	 * read had no element to judge, so "unknown" never masquerades as "on demand",
+	 * and unattributable to any other target than the one returned here.
+	 */
+	live?: boolean;
 }
 
 const strategySet: ReadonlySet<string> = new Set(CONTROL_STRATEGIES);
@@ -1115,6 +1152,7 @@ const intentKeys = keySetOf<ControlIntent>()([
 	'actualContext',
 	'patch',
 	'captureAdmission',
+	'releaseDocumentOutput',
 	'processorHold',
 	'mediaRestore',
 ]);
@@ -1129,6 +1167,7 @@ const submitKeys = keySetOf<ControlSubmitRequest>()([
 	'observedStrategies',
 	'mediaRestore',
 	'mediaObservation',
+	'live',
 ]);
 const mutationKeys = keySetOf<ControlMutation>()(['field', 'operation', 'value']);
 const operationRequestKeys = keySetOf<ControlOperationRequest>()([
@@ -1155,7 +1194,7 @@ const ackKeys = keySetOf<ControlApplyAck>()([
 	'mediaObservation',
 ]);
 const readRequestKeys = keySetOf<ControlReadRequest>()(['fields', 'target']);
-const readResultKeys = keySetOf<ControlReadResult>()(['target', 'patch', 'observedStrategies', 'mediaObservation']);
+const readResultKeys = keySetOf<ControlReadResult>()(['target', 'patch', 'observedStrategies', 'mediaObservation', 'live', 'nativeAudioAbsent', 'prospectiveBoostRoute']);
 const snapshotKeys = keySetOf<ControlSnapshot>()([
 	'tabId',
 	'documentId',
@@ -1166,6 +1205,8 @@ const snapshotKeys = keySetOf<ControlSnapshot>()([
 	'activeVideo',
 	'fields',
 	'mediaObservation',
+	'live',
+	'prospectiveBoostRoute',
 ]);
 const targetKeys = keySetOf<MediaTarget>()([
 	'frameId',
@@ -1540,6 +1581,8 @@ function isControlActualContext(value: unknown): value is ControlActualContext {
 
 function isControlFieldState(field: ControlField, value: unknown): boolean {
 	if (!isRecord(value) || !hasOnlyKeys(value, fieldStateKeys)) return false;
+	if ((field === 'volumeBase' || field === 'mediaMuted') && value.strategy === 'capture'
+		&& value.coverage !== 'full' && value.coverage !== 'opaque') return false;
 	if (value.mediaObservation !== undefined && !isMediaObservationStamp(value.mediaObservation)) return false;
 	const strategy = value.strategy as ControlStrategy;
 	const admittedStrategy = typeof value.strategy === 'string'
@@ -1593,6 +1636,7 @@ export function isControlIntent(value: unknown): value is ControlIntent {
 		&& (value.target === null || isMediaTarget(value.target))
 		&& isControlActualContext(value.actualContext)
 		&& isControlPatch(value.patch)
+		&& (value.releaseDocumentOutput === undefined || value.releaseDocumentOutput === true && value.requestedCoverage === 'full')
 		&& (value.mediaRestore === undefined || value.source === 'restore' && isMediaRestoreToken(value.mediaRestore))
 		&& (value.captureAdmission === undefined
 			|| isCaptureAdmission(value.captureAdmission));
@@ -1615,6 +1659,7 @@ export function isControlSubmitRequest(value: unknown): value is ControlSubmitRe
 	return observationShapeIsValid
 		&& (value.mediaRestore === undefined || value.source === 'restore' && isMediaRestoreToken(value.mediaRestore))
 		&& (value.mediaObservation === undefined || sourceIsPage && isMediaObservationStamp(value.mediaObservation))
+		&& (value.live === undefined || sourceIsPage && typeof value.live === 'boolean')
 		&& (value.tabId === undefined || (Number.isInteger(value.tabId) && Number(value.tabId) > 0))
 		&& typeof value.source === 'string'
 		&& value.source !== 'system'
@@ -1712,6 +1757,10 @@ function isControlMutation(value: unknown): value is ControlMutation {
 		&& numericMutationFields.has(field);
 }
 
+function isProspectiveBoostRoute(value: unknown): value is VolumeBoostRoute {
+	return value === null || value === 'capture' || value === 'media-webaudio';
+}
+
 export function isControlSnapshot(value: unknown): value is ControlSnapshot {
 	return isRecord(value)
 		&& hasOnlyKeys(value, snapshotKeys)
@@ -1725,7 +1774,10 @@ export function isControlSnapshot(value: unknown): value is ControlSnapshot {
 		&& (value.activeVideo === null
 			|| isMediaTarget(value.activeVideo) && value.activeVideo.kind === 'video')
 		&& isControlFieldStates(value.fields)
-		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation));
+		&& (value.mediaObservation === undefined || isMediaObservationStamp(value.mediaObservation))
+		&& (value.live === undefined || typeof value.live === 'boolean')
+		&& (value.prospectiveBoostRoute === undefined
+			|| value.activeMedia !== null && isProspectiveBoostRoute(value.prospectiveBoostRoute));
 }
 
 export function isControlApplyAck(value: unknown): value is ControlApplyAck {
@@ -1796,6 +1848,10 @@ export function isControlReadResult(value: unknown): value is ControlReadResult 
 	const observedStrategies = value.observedStrategies;
 	if (!hasOnlyKeys(value, readResultKeys)
 		|| value.mediaObservation !== undefined && !isMediaObservationStamp(value.mediaObservation)
+		|| value.live !== undefined && typeof value.live !== 'boolean'
+		|| value.nativeAudioAbsent !== undefined && (typeof value.nativeAudioAbsent !== 'boolean' || value.target === null)
+		|| value.prospectiveBoostRoute !== undefined
+			&& (value.target === null || !isProspectiveBoostRoute(value.prospectiveBoostRoute))
 		|| (value.target !== null && !isMediaTarget(value.target))
 		|| !isControlPatch(patch)
 		// A read result is an observation: every value it carries must name the

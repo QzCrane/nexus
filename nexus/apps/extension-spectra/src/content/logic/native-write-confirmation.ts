@@ -18,6 +18,24 @@ import { settleNativeWrite } from './native-write-telemetry';
 export type RestorableMediaField = 'volumeBase' | 'mediaMuted' | 'speed' | 'preservePitch' | 'loop';
 
 /**
+ * The fields whose write can answer before it is proven.
+ *
+ * This is not every restorable field: a field with no native event to announce a
+ * change (preservePitch, loop) has nothing to defer to, so its two-frame readback
+ * stays inside the transaction and it never appears here.
+ */
+export type NativeProofField =
+	| 'volumeBase'
+	| 'mediaMuted'
+	| 'speed'
+	| 'playing'
+	| 'pip'
+	| 'fullscreen';
+
+/** Numbers use the tolerance; booleans compare exactly. */
+export type NativeProofValue = number | boolean;
+
+/**
  * The audit has to outlast a React render, not a network round trip. 300ms is
  * roughly three frames plus the commit phase of a batched update; the interval
  * keeps the cross-world read off the animation frame path.
@@ -27,8 +45,21 @@ const PROJECTION_AUDIT_INTERVAL_MS = 40;
 
 export interface WriteConfirmationRequest {
 	readonly element: HTMLMediaElement;
-	readonly field: RestorableMediaField;
-	readonly desired: ControlValues[RestorableMediaField];
+	readonly field: NativeProofField;
+	/**
+	 * The native events that can announce a change to this field. Supplied by the
+	 * writer rather than derived here: `playing` needs both `play` and `pause`,
+	 * PiP needs both directions, and a page that stops delivering events must not
+	 * leave the proof with nothing to wait on.
+	 */
+	readonly events: readonly string[];
+	/**
+	 * The physical value this write is proving. Also supplied by the writer: the
+	 * same field is read through a page controller on one site and the DOM
+	 * property on another, and only the writer knows which witness is authoritative.
+	 */
+	readonly read: () => NativeProofValue;
+	readonly desired: NativeProofValue;
 	readonly tolerance: number;
 	readonly siteKey: string;
 	readonly sampleId: number;
@@ -36,22 +67,7 @@ export interface WriteConfirmationRequest {
 	readonly signal?: AbortSignal;
 	readonly isCurrent?: () => boolean;
 	/** Reports what the page really holds once a rollback is proven. */
-	readonly onDrift: (actual: ControlValues[RestorableMediaField]) => void;
-}
-
-function readActual(
-	element: HTMLMediaElement,
-	field: RestorableMediaField,
-): ControlValues[RestorableMediaField] {
-	switch (field) {
-		case 'mediaMuted': return element.muted as ControlValues[RestorableMediaField];
-		case 'speed': return element.playbackRate as ControlValues[RestorableMediaField];
-		case 'preservePitch':
-			return (element as HTMLMediaElement & { preservesPitch: boolean })
-				.preservesPitch as ControlValues[RestorableMediaField];
-		case 'loop': return element.loop as ControlValues[RestorableMediaField];
-		default: return (element.volume * 100) as ControlValues[RestorableMediaField];
-	}
+	readonly onDrift: (actual: NativeProofValue) => void;
 }
 
 export interface ProjectionAuditRequest {
@@ -86,7 +102,8 @@ export class NativeWriteConfirmationRegistry {
 	schedule(key: string, request: WriteConfirmationRequest): void {
 		const {
 			element,
-			field,
+			events,
+			read,
 			desired,
 			tolerance,
 			siteKey,
@@ -105,8 +122,8 @@ export class NativeWriteConfirmationRegistry {
 			try {
 				const { actual, matched } = await confirmStableNativeEvent(
 					element,
-					field === 'speed' ? 'ratechange' : 'volumechange',
-					() => readActual(element, field),
+					events,
+					read,
 					desired,
 					tolerance,
 					750,

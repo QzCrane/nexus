@@ -163,6 +163,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
 	const acknowledgedLifecycle = acknowledgedProcessorLifecycle(controlSnapshot);
 	const lifecycle = resolveInitialProcessorLifecycle(status, acknowledgedSession, acknowledgedLifecycle);
 	const lifecycleFromSession = lifecycle !== null && lifecycle === acknowledgedSession;
+	const audioLifecycle = lifecycleFromSession ? acknowledgedSession : lifecycle === status ? status : null;
 	const isCaptureActive = isActiveCaptureLifecycle({
 		actualMode: lifecycle?.actualMode,
 		phase: lifecycle?.phase ?? 'idle',
@@ -192,7 +193,7 @@ export async function initCard(params: InitCardParams): Promise<boolean> {
     audioOrigin: lifecycle
       ? (lifecycleFromSession ? acknowledgedSession?.origin : controlSnapshot?.origin) ?? null
       : null,
-    audioGeneration: lifecycle?.generation ?? -1,
+    audioGeneration: audioLifecycle?.generation ?? -1,
 	    audioConfigRevision: lifecycleFromSession ? acknowledgedSession?.configRevision ?? 0 : 0,
     controlGeneration: controlSnapshot?.generation ?? 0,
     controlRevision: controlSnapshot?.revision ?? 0,

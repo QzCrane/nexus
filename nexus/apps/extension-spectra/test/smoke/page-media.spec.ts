@@ -18,6 +18,29 @@ describe('SPECTRA built extension smoke: page-media', () => {
 		await teardownSmokeSession();
 	});
 
+	test('leaves the page audio graph connect and disconnect contract intact', async () => {
+		const page = await browser.newPage();
+		try {
+			await page.goto(`${fixtureUrl}?audio-graph-ownership=1`, { waitUntil: 'domcontentloaded' });
+		const result = await page.evaluate(async () => {
+			const context = new AudioContext();
+			try {
+				const source = context.createOscillator();
+				const connected = source.connect(context.destination);
+				// A hidden output gain rewrites the edge and makes this native
+				// disconnect throw: the page no longer owns the graph it created.
+				source.disconnect(context.destination);
+				return { destinationPreserved: connected === context.destination };
+			} finally {
+				await context.close();
+			}
+		});
+		expect(result).toEqual({ destinationPreserved: true });
+		} finally {
+			await page.close();
+		}
+	});
+
 	test('restores cold page-native volume and speed across refresh without showing a badge', async () => {
 		const coldUrl = `${fixtureUrl}?cold-native-refresh=1`;
 		const coldPage = await browser.newPage();
@@ -655,16 +678,16 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				(rate) => rate === 2, 'new SPA live target inherits the document speed');
 			const live = await submitPopupControlIntent(tabId, { patch: { speed: 1.5 } });
 			expect(live).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 1.5 } } } });
-			await page.evaluate((closeMode) => {
-				const modal = document.querySelector<HTMLVideoElement>('#live-modal');
-				const feed = document.querySelector<HTMLVideoElement>('#v');
-				if (!modal || !feed || feed.paused) throw new Error('Expected a live modal above an already-playing feed');
-				(window as Window & { __spectraRetainedLive?: HTMLVideoElement }).__spectraRetainedLive = modal;
-				// The feed does not emit play again. Returning must come from the
-				// registry's close/visibility lifecycle, even without a URL change.
-				if (closeMode === 'detached') modal.remove();
-				else { modal.pause(); modal.style.display = 'none'; }
-			}, close);
+		await page.evaluate((closeMode) => {
+			const modal = document.querySelector<HTMLVideoElement>('#live-modal');
+			const feed = document.querySelector<HTMLVideoElement>('#v');
+			if (!modal || !feed || feed.paused) throw new Error('Expected a live modal above an already-playing feed');
+			(window as Window & { __spectraRetainedLive?: HTMLVideoElement }).__spectraRetainedLive = modal;
+			// The feed does not emit play again. Returning must come from the
+			// registry's close/visibility lifecycle, even without a URL change.
+			if (closeMode === 'detached') modal.remove();
+			else { modal.pause(); modal.style.display = 'none'; }
+		}, close);
 			const snapshot = await eventually(() => client.evaluate(async (targetTabId) => chrome.runtime.sendMessage({
 				protocolVersion: 2, requestId: crypto.randomUUID(), tabId: targetTabId,
 				type: 'spectra.control.snapshot.get', payload: { tabId: targetTabId },
@@ -807,9 +830,12 @@ describe('SPECTRA built extension smoke: page-media', () => {
 			const baseline = await submitPopupControlIntent(tabId, { patch: { speed: 1 } });
 			expect(baseline).toMatchObject({ ok: true, data: { fields: { speed: { phase: 'applied', actual: 1 } } } });
 			const rejected = await submitPopupControlIntent(tabId, { patch: { speed: 2 } });
+			// A realtime MediaStream has no timeline either — `duration` is
+			// `Infinity` — so the rate is refused before the write instead of being
+			// written and answered with a readback mismatch seconds later.
 			expect(rejected).toMatchObject({ ok: true, data: { fields: { speed: {
 				phase: 'error', actual: null, controlled: false,
-				lastError: { code: 'readback-mismatch' },
+				lastError: { code: 'capability-unavailable', retryable: false },
 			} } } });
 			expect(await page.evaluate(() => document.querySelector<HTMLVideoElement>('#v')?.playbackRate)).toBe(1);
 			await page.evaluate(async (toneBytes) => {
@@ -975,7 +1001,16 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				canvas.width = 640;
 				canvas.height = 360;
 				canvas.getContext('2d')?.fillRect(0, 0, 640, 360);
-				video.srcObject = canvas.captureStream(1);
+				const stream = canvas.captureStream(1);
+				// Native volume needs an actual audio track. A video-only stream
+				// intentionally exercises the separate document-output owner instead.
+				const context = new AudioContext();
+				const source = context.createOscillator();
+				const audio = context.createMediaStreamDestination();
+				source.connect(audio); source.start();
+				await context.resume();
+				for (const track of audio.stream.getAudioTracks()) stream.addTrack(track);
+				video.srcObject = stream;
 				await video.play();
 			});
 			await acquireSmokeRuntime(page.url(), 'live-preview-owner');
@@ -1011,6 +1046,50 @@ describe('SPECTRA built extension smoke: page-media', () => {
 		}
 	}, 25_000);
 
+	test('scrolling the same player out and back does not restore an older volume', async () => {
+		const page = await browser.newPage();
+		try {
+			await page.goto(`${fixtureUrl}?scroll-owned-volume=1`, { waitUntil: 'load' });
+			await page.evaluate(async bytes => {
+				const video = document.querySelector<HTMLVideoElement>('#v');
+				if (!video) throw new Error('Missing scroll player');
+				document.documentElement.style.cssText = 'overflow:auto;height:auto';
+				document.body.style.cssText = 'display:block;min-height:3000px;overflow:visible';
+				video.style.cssText = 'display:block;width:640px;height:360px';
+				video.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+				video.loop = true; await video.play();
+			}, [...SMOKE_TONE_WAV]);
+			const tabId = await getTabId(page.url());
+			await page.bringToFront();
+			await submitEffectiveVolume(tabId, 40);
+			await page.$eval('#v', video => { (video as HTMLVideoElement).volume = 0.8; });
+			await eventually(() => readBadgeText(tabId), text => text === '80', 'page volume owns current actual');
+			const selection = () => evaluateServiceWorker(async id => {
+				const key = `spectra.control.tab.${id}`;
+				return (await chrome.storage.local.get(key))[key]?.mediaObservation?.selection as number | undefined;
+			}, tabId);
+			const before = await selection();
+			for (const top of [1500, 0]) {
+				await page.evaluate(async y => {
+					const video = document.querySelector('#v');
+					if (!video) throw new Error('Missing scroll player');
+					await new Promise<void>(resolve => {
+						const observer = new IntersectionObserver(entries => {
+							if (entries.some(entry => entry.isIntersecting === (y === 0))) {
+								observer.disconnect(); requestAnimationFrame(() => resolve());
+							}
+						});
+						observer.observe(video); window.scrollTo(0, y);
+					});
+				}, top);
+			}
+			await new Promise(resolve => setTimeout(resolve, 150));
+			expect(await selection()).toBe(before);
+			expect(await page.$eval('#v', video => (video as HTMLVideoElement).volume)).toBe(0.8);
+			expect(await readBadgeText(tabId)).toBe('80');
+		} finally { await page.close(); }
+	}, 20_000);
+
 	test('fullscreen lifecycle preserves the site volume, mute, and playback rate', async () => {
 		// A preceding regression restarts the worker. Finish this document's
 		// initialization before exercising a subsequent page-owned gesture.
@@ -1018,7 +1097,7 @@ describe('SPECTRA built extension smoke: page-media', () => {
 		await fixturePage.bringToFront();
 		await sendFromActionPopup({ protocolVersion: 2, requestId: crypto.randomUUID(), tabId,
 			type: 'spectra.control.snapshot.get', payload: { tabId } });
-		const preserved = await fixturePage.evaluate(async () => {
+		await fixturePage.evaluate(() => {
 			const video = document.querySelector<HTMLVideoElement>('#v');
 			if (!video) throw new Error('SPA video is missing');
 			video.volume = 0.37;
@@ -1026,22 +1105,19 @@ describe('SPECTRA built extension smoke: page-media', () => {
 			video.playbackRate = 0.75;
 			document.dispatchEvent(new Event('fullscreenchange'));
 			document.dispatchEvent(new Event('webkitfullscreenchange'));
-			await new Promise((resolveWait) => setTimeout(resolveWait, 50));
-			return {
-				volume: video.volume,
-				muted: video.muted,
-				playbackRate: video.playbackRate,
-				audioContexts: (window as Window & { __spectraAudioContextCount?: number })
-					.__spectraAudioContextCount,
-			};
 		});
-		expect(preserved).toEqual({
-			volume: 0.37,
-			muted: true,
-			playbackRate: 0.75,
-			audioContexts: 0,
-		});
-		const status = await readContentStatus();
+		// The lifecycle event is a *notification*, not a synchronization point: the
+		// page-side gesture is adopted asynchronously. Wait for the extension to
+		// observe it, then assert the element was never rewritten.
+		const status = await eventually(
+			() => readContentStatus(),
+			(state) => state.config?.volume === 37
+				&& state.config.volumeBase === 37
+				&& state.config.boost === 1
+				&& state.config.muted === true
+				&& state.config.speed === 0.75,
+			'fullscreen lifecycle adopts the page-owned volume, mute, and rate',
+		);
 		expect(status).toMatchObject({
 			desiredMode: 'bypass',
 			actualMode: 'bypass',
@@ -1055,6 +1131,21 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				muted: true,
 				speed: 0.75,
 			},
+		});
+		expect(await fixturePage.evaluate(() => {
+			const video = document.querySelector<HTMLVideoElement>('#v');
+			return {
+				volume: video?.volume,
+				muted: video?.muted,
+				playbackRate: video?.playbackRate,
+				audioContexts: (window as Window & { __spectraAudioContextCount?: number })
+					.__spectraAudioContextCount,
+			};
+		})).toEqual({
+			volume: 0.37,
+			muted: true,
+			playbackRate: 0.75,
+			audioContexts: 0,
 		});
 	});
 });

@@ -65,8 +65,14 @@ export function assembleInitialState(
 		: session !== null
 			? 'session'
 			: 'fresh';
+	// A sender-bound live output owner is not a durable preference. Its flag and
+	// level are deliberately absent from policy storage, so hydrating from that
+	// storage first would turn an ordinary runtime rebuild into a Capture stop.
+	const outputSession = session?.actualMode === 'capture' && session.phase === 'active'
+		&& session.actualConfig.documentOutput === true ? session : null;
 	const config = cloneConfig(
-		handoff?.config
+		outputSession?.actualConfig
+			?? handoff?.config
 			?? sources.config
 			?? session?.actualConfig
 			?? DEFAULT_AUDIO_CONFIG,

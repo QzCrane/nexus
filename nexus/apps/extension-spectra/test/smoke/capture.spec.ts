@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
 import { createRemoteProof } from '../../src/remote/protocol';
 import { requireValue } from '../helpers/require-value';
-import { DEFAULT_AUDIO_CONFIG, acquireSmokeRuntime, browser, configureRuntime, deliverOffscreenTestRemote, detachOffscreenPeerRuntimeDebugger, evaluateServiceWorker, eventually, extensionId, fixturePage, fixtureUrl, getOffscreenContextCount, getTabId, installOffscreenPeerRuntimeProbe, installPageMediaControllerHarness, installSyntheticCaptureHarness, installTabCaptureStreamIdStub, openExtensionClient, openOffscreenTestRemote, patchExtensionSettings, peerRuntimeDebugEvents, readBadgeColor, readContentStatus, readCurrentAudioSession, readOffscreenPeerRuntimeProbe, readOffscreenSnapshot, readOffscreenTestRemoteMessages, readOsdFeedback, readPageMediaControllerHarness, readPopupVolumePresentation, readSyntheticCaptureState, releaseSmokeRuntime, releaseSyntheticCapture, removePageMediaControllerHarness, restartServiceWorker, restoreOffscreenPeerRuntimeProbe, sendCaptureRequest, sendFromActionPopup, server, startOsdFeedbackProbe, submitEffectiveVolume, tapDefaultShortcut, waitForContentBootstrapStatus, waitForContentStatus, withDiagnosticTimeout } from './harness';
+import { DEFAULT_AUDIO_CONFIG, acquireSmokeRuntime, browser, configureRuntime, deliverOffscreenTestRemote, detachOffscreenPeerRuntimeDebugger, evaluateServiceWorker, eventually, extensionId, fixturePage, fixtureUrl, getOffscreenContextCount, getTabId, installOffscreenPeerRuntimeProbe, installPageMediaControllerHarness, installSyntheticCaptureHarness, installTabCaptureStreamIdStub, openExtensionClient, openOffscreenTestRemote, patchExtensionSettings, peerRuntimeDebugEvents, pressDefaultHotkeyFromContent, readBadgeColor, readContentStatus, readCurrentAudioSession, readOffscreenPeerRuntimeProbe, readOffscreenSnapshot, readOffscreenTestRemoteMessages, readOsdFeedback, readPageMediaControllerHarness, readPopupVolumePresentation, readSyntheticCaptureState, releaseSmokeRuntime, releaseSyntheticCapture, removePageMediaControllerHarness, restartServiceWorker, restoreOffscreenPeerRuntimeProbe, sendCaptureRequest, sendFromActionPopup, server, startOsdFeedbackProbe, submitEffectiveVolume, tapDefaultShortcut, waitForContentBootstrapStatus, waitForContentStatus, withDiagnosticTimeout } from './harness';
 import type { ContentStatus, RemotePublicSession, SmokeRuntimeLease } from './harness';
 import { prepareSmokeSession, startSmokeSession, teardownSmokeSession } from './harness';
 
@@ -640,7 +640,7 @@ describe('SPECTRA built extension smoke: capture', () => {
 					&& status.config?.volume === 90,
 				15_000,
 			);
-			await tapDefaultShortcut(fixturePage, 'ArrowUp');
+			await pressDefaultHotkeyFromContent(tabId, 'volume_up');
 			await waitForContentStatus(
 				(status) => status.mode === 'bypass' && status.phase === 'idle'
 					&& status.config?.volume === 100,
@@ -648,7 +648,7 @@ describe('SPECTRA built extension smoke: capture', () => {
 			);
 			await startOsdFeedbackProbe(fixturePage, '%', true);
 			const captureCallsBeforeShortcut = (await readSyntheticCaptureState()).calls;
-			await tapDefaultShortcut(fixturePage, 'ArrowUp');
+			await pressDefaultHotkeyFromContent(tabId, 'volume_up');
 			await waitForContentStatus(
 				(status) => status.mode === 'bypass' && status.phase === 'idle'
 					&& status.config?.volume === 110

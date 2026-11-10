@@ -210,6 +210,9 @@ function createUiEvents(): Record<SpectraUiEventType, SpectraEventEnvelope> {
 	const session = createAudioSession();
 	return {
 		'spectra.navigation.changed': { protocolVersion: SPECTRA_PROTOCOL_VERSION, type: 'spectra.navigation.changed', tabId, documentId, payload: { url: 'https://media.example.com/watch?v=two' } },
+		'spectra.hotkey.target.feedback': { protocolVersion: SPECTRA_PROTOCOL_VERSION, type: 'spectra.hotkey.target.feedback', tabId, documentId,
+			payload: { action: 'volume_up', targetTabId: tabId, targetTitle: 'Media', targetHostname: 'media.example.com',
+				presentation: { phase: 'pending', token: { owner: 'hotkey:default:1', revision: 1 }, volume: 110, tone: 'capture' } } },
 		'spectra.control.snapshot.changed': {
 			protocolVersion: SPECTRA_PROTOCOL_VERSION,
 			type: 'spectra.control.snapshot.changed',
@@ -265,7 +268,7 @@ describe('restricted extension UI protocol facade', () => {
 	test('owns one unique closed request and event allowlist', () => {
 		expect(SPECTRA_UI_REQUEST_TYPES).toHaveLength(18);
 		expect(new Set(SPECTRA_UI_REQUEST_TYPES).size).toBe(SPECTRA_UI_REQUEST_TYPES.length);
-		expect(SPECTRA_UI_EVENT_TYPES).toHaveLength(7);
+		expect(SPECTRA_UI_EVENT_TYPES).toHaveLength(8);
 		expect(new Set(SPECTRA_UI_EVENT_TYPES).size).toBe(SPECTRA_UI_EVENT_TYPES.length);
 		for (const type of SPECTRA_UI_REQUEST_TYPES) expect(isSpectraUiRequestType(type)).toBe(true);
 		for (const type of SPECTRA_UI_EVENT_TYPES) expect(isSpectraUiEventType(type)).toBe(true);
@@ -327,6 +330,26 @@ describe('restricted extension UI protocol facade', () => {
 		expect(isSpectraUiResponse('spectra.control.operation.submit', response)).toBe(true);
 	});
 
+	test.each(['volumeBase', 'mediaMuted'] as const)('validates %s document-output coverage exactly like the canonical snapshot guard', (field) => {
+		const value = field === 'volumeBase' ? 100 : false;
+		const state = { desired: value, actual: value, revision: 5, phase: 'applied' as const,
+			controlled: true, lastError: null };
+		for (const coverage of ['full', 'opaque'] as const) {
+			const response = rpcSuccess({ ...createControlSnapshot(), fields: { [field]: { ...state, strategy: 'capture', coverage } } });
+			expect(isSpectraResponse('spectra.control.snapshot.get', response)).toBe(true);
+			expect(isSpectraUiResponse('spectra.control.snapshot.get', response)).toBe(true);
+		}
+		for (const invalid of [
+			{ ...state, strategy: 'capture', coverage: 'active-target' },
+			{ ...state, strategy: 'capture', coverage: 'partial' },
+			{ ...state, strategy: 'media-webaudio', coverage: 'full' },
+		]) {
+			const response = rpcSuccess({ ...createControlSnapshot(), fields: { [field]: invalid } });
+			expect(isSpectraResponse('spectra.control.snapshot.get', response)).toBe(false);
+			expect(isSpectraUiResponse('spectra.control.snapshot.get', response)).toBe(false);
+		}
+	});
+
 	test('accepts a proven Media WebAudio processor ACK in the focused Popup guard', () => {
 		const snapshot = createControlSnapshot();
 		snapshot.fields.boost = {
@@ -363,7 +386,7 @@ describe('restricted extension UI protocol facade', () => {
 			actual: 50,
 			revision: 1,
 			phase: 'applied',
-			strategy: 'capture',
+			strategy: 'media-webaudio',
 			coverage: 'full',
 			controlled: true,
 			lastError: null,

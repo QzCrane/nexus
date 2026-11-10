@@ -12,6 +12,11 @@ const here = dirname(fileURLToPath(import.meta.url));
 const appDir = resolve(here, "../..");
 const extensionDir = resolve(appDir, "dist");
 const evidenceDir = resolve(appDir, "../../docs/research/evidence");
+// Puppeteer's own download is a pinned older build that is not installed here,
+// and the user asked for the browser they actually run. Same resolution as the
+// other live probes.
+const CHROME_PATH = process.env.PUPPETEER_EXECUTABLE_PATH
+	|| "C:/Program Files/Google/Chrome/Application/chrome.exe";
 
 const results: { name: string; ok: boolean; detail: string }[] = [];
 function check(name: string, ok: boolean, detail = ""): void {
@@ -105,6 +110,7 @@ async function closePanel(page: Page): Promise<boolean> {
 const browser = await puppeteer.launch({
 	headless: false,
 	enableExtensions: true,
+	executablePath: CHROME_PATH,
 	args: [
 		"--no-sandbox",
 		"--disable-dev-shm-usage",
@@ -112,11 +118,20 @@ const browser = await puppeteer.launch({
 		"--disable-blink-features=AutomationControlled",
 		"--autoplay-policy=no-user-gesture-required",
 		"--lang=zh-CN",
-		`--disable-extensions-except=${extensionDir}`,
-		`--load-extension=${extensionDir}`,
 	],
 	defaultViewport: { width: 1440, height: 900 },
 });
+// Chrome no longer honours --load-extension, so the shipped extension has to be
+// installed through the debugging protocol. Without this the page-side checks
+// still pass (they only touch the site's own objects) while every bridge check
+// reports "no result" — which is what made this probe look like a bridge
+// regression.
+{
+	const session = await browser.target().createCDPSession();
+	await session.send("Extensions.loadUnpacked", { path: extensionDir }).catch((error: unknown) => {
+		throw new Error(`could not load ${extensionDir}: ${String(error)}`);
+	});
+}
 
 try {
 	await browser.waitForTarget((t) => t.type() === "service_worker", { timeout: 20000 }).catch(() => null);

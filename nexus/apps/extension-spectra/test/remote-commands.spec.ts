@@ -3,6 +3,8 @@ import {
 	REMOTE_COMMANDS,
 	REMOTE_COMMAND_DESCRIPTORS,
 	createSpectraEvent,
+	DEFAULT_AUDIO_CONFIG,
+	type AudioSessionSnapshot,
 	type ControlApplyAck,
 	type ControlOperationAck,
 	type ControlSnapshot,
@@ -16,6 +18,7 @@ import {
 } from '../src/background/remote-commands';
 
 const TAB_ID = 9_301;
+let snapshotListener: ((message: unknown, sender: { id?: string }) => boolean) | undefined;
 
 function deferred<T>() {
 	let resolve!: (value?: T) => void;
@@ -56,6 +59,7 @@ describe('remote acknowledged audio state', () => {
 		try {
 			setStateCallback(() => undefined);
 			const listener = listeners[0];
+			snapshotListener = listener;
 			expect(listener).toBeDefined();
 			const snapshot: ControlSnapshot = {
 				tabId: TAB_ID,
@@ -78,6 +82,103 @@ describe('remote acknowledged audio state', () => {
 			expect(listener?.(event, {})).toBe(false);
 			await Promise.resolve();
 			expect(tabReads).toBe(0);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('publishes newer page observations at the same control revision and rejects older field samples', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			runtime: { id: 'spectra-test', onMessage: { addListener: () => undefined } },
+			tabs: { get: async () => ({ id: TAB_ID, title: 'Remote', url: 'https://media.example' }) },
+		} });
+		const stamp = (revision: number) => ({ owner: 'remote-observation', epoch: 1, selection: 1, revision });
+		const sample = (revision: number, volume: number, speedRevision = revision): ControlSnapshot => ({
+			tabId: TAB_ID, documentId: 'remote-observed', origin: 'https://media.example', generation: 7, revision: 1,
+			activeMedia: null, activeVideo: null, mediaObservation: stamp(revision),
+			fields: { volumeBase: { ...field(volume), mediaObservation: stamp(revision) }, boost: field(1),
+				speed: { ...field(speedRevision), mediaObservation: stamp(speedRevision) } },
+		});
+		try {
+			const published: Array<import('../src/remote/protocol').RemoteState> = [];
+			setStateCallback((_tabId, state) => { published.push(state); });
+			for (const snapshot of [sample(1, 60), sample(3, 80), sample(2, 70), sample(4, 90, 2)]) {
+				await syncState(TAB_ID, gateway({ getSnapshot: async () => snapshot }));
+			}
+			expect(published.map(state => ({ volume: state.volume, speed: state.speed }))).toEqual([
+				{ volume: 60, speed: 1 }, { volume: 80, speed: 3 }, { volume: 90, speed: 3 },
+			]);
+		} finally {
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('coalesces blocked same-revision observations without losing the newest pending sample', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		const started = deferred<void>();
+		const release = deferred<void>();
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			runtime: { id: 'spectra-test', onMessage: { addListener: () => undefined } },
+			tabs: { get: async () => ({ id: TAB_ID, title: 'Remote', url: 'https://media.example' }) },
+		} });
+		let reads = 0;
+		const sample = (revision: number): ControlSnapshot => {
+			const mediaObservation = { owner: 'blocked-owner', epoch: 1, selection: 1, revision };
+			return { tabId: TAB_ID, documentId: 'blocked-page-observations', origin: 'https://media.example',
+				generation: 7, revision: 1, activeMedia: null, activeVideo: null, mediaObservation,
+				fields: { volumeBase: { ...field(revision * 10), mediaObservation }, boost: field(1) } };
+		};
+		try {
+			const published: number[] = [];
+			setStateCallback(async (_tabId, state) => {
+				published.push(state.volume);
+				if (published.length === 1) { started.resolve(); await release.promise; }
+			});
+			const snapshots = [sample(1), sample(3), sample(2)];
+			const control = gateway({ getSnapshot: async () => { reads++; return snapshots.shift() ?? null; } });
+			const first = syncState(TAB_ID, control);
+			await started.promise;
+			const second = syncState(TAB_ID, control);
+			const third = syncState(TAB_ID, control);
+			await waitFor(() => reads === 3);
+			await new Promise(resolve => setTimeout(resolve, 0));
+			release.resolve();
+			await Promise.all([first, second, third]);
+			expect(published).toEqual([10, 30]);
+		} finally {
+			release.resolve();
+			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
+			else Reflect.deleteProperty(globalThis, 'chrome');
+		}
+	});
+
+	test('publishes processor lifecycle changes without advancing the control revision', async () => {
+		const originalChrome = Object.getOwnPropertyDescriptor(globalThis, 'chrome');
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			runtime: { id: 'spectra-test', onMessage: { addListener: () => undefined } },
+			tabs: { get: async () => ({ id: TAB_ID, title: 'Remote', url: 'https://media.example' }) },
+		} });
+		const snapshot: ControlSnapshot = { tabId: TAB_ID, documentId: 'remote-session', origin: 'https://media.example',
+			generation: 7, revision: 1, activeMedia: null, activeVideo: null,
+			fields: { volumeBase: field(100), boost: field(1.5) } };
+		const session: AudioSessionSnapshot = { tabId: TAB_ID, documentId: snapshot.documentId, origin: snapshot.origin,
+			generation: 53, configRevision: 2, actualMode: 'capture', desiredMode: 'capture', phase: 'active',
+			actualConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues] }, lastError: null };
+		try {
+			const published: Array<import('../src/remote/protocol').RemoteState> = [];
+			setStateCallback((_tabId, state) => { published.push(state); });
+			await syncState(TAB_ID, gateway({ getSnapshot: async () => snapshot }));
+			if (!snapshotListener) throw new Error('The canonical snapshot listener was not installed');
+			const context = { tabId: TAB_ID, documentId: session.documentId, generation: session.generation };
+			snapshotListener(createSpectraEvent('spectra.audio.session.changed', session, context), { id: 'spectra-test' });
+			await waitFor(() => published.length === 2);
+			expect(published[1]).toMatchObject({ revision: 1, volume: 150, actualMode: 'capture', phase: 'active', volumeState: 'capture' });
+			snapshotListener(createSpectraEvent('spectra.audio.session.changed', { ...session, phase: 'starting' }, context), { id: 'spectra-test' });
+			await new Promise(resolve => setTimeout(resolve, 0));
+			expect(published).toHaveLength(2);
 		} finally {
 			if (originalChrome) Object.defineProperty(globalThis, 'chrome', originalChrome);
 			else Reflect.deleteProperty(globalThis, 'chrome');

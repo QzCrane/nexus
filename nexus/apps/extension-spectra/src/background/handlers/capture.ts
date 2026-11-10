@@ -7,6 +7,7 @@ import {
 	isOffscreenHostEvent,
 	mintStartIntent,
 	resolveAudioVolume,
+	splitEffectiveVolume,
 	rpcFailure,
 	rpcSuccess,
 	SPECTRA_PROTOCOL_VERSION,
@@ -68,12 +69,16 @@ function actualConfigFromProcessor(
 	requested: AudioConfig,
 	processor: AudioProcessorConfig,
 ): AudioConfig {
-	const volumeBase = resolveAudioVolume(requested).volumeBase;
+	const withoutOutput = { ...requested };
+	delete withoutOutput.documentOutput;
+	const volume = processor.outputLevel
+		? splitEffectiveVolume(Math.round(processor.outputLevel.gain * 10_000) / 100)
+		: { volumeBase: resolveAudioVolume(requested).volumeBase, boost: processor.boostGain };
 	return {
-		...requested,
-		volumeBase,
-		boost: processor.boostGain,
-		volume: Math.round(volumeBase * processor.boostGain * 100) / 100,
+		...withoutOutput,
+		...volume,
+		volume: Math.round(volume.volumeBase * volume.boost * 100) / 100,
+		...(processor.outputLevel ? { documentOutput: true, muted: processor.outputLevel.muted } : {}),
 		bass: processor.bass,
 		eqValues: [...processor.eqValues],
 		compressor: processor.compressor,
