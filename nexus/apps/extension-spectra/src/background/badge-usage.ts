@@ -43,7 +43,9 @@ export async function markBadgeUsed(tabId: number): Promise<true> {
 	});
 }
 
-// Tab closure is the sole lifecycle boundary that retires sticky usage.
+// Tab creation and closure are both lifecycle boundaries that retire sticky
+// usage. Creation also protects the new tab from inheriting a tabId that a
+// previous worker never got to clear.
 export async function clearBadgeUsage(tabId: number): Promise<void> {
 	await serialized(tabId, async () => {
 		persistedUsage.delete(tabId);

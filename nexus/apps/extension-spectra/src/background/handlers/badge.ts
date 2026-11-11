@@ -261,10 +261,6 @@ async function paintBadge(tabId: number, admittedPresentation = false): Promise<
 	}
 }
 
-async function resolveStickyUsage(tabId: number, userInteracted: boolean | undefined): Promise<boolean> {
-	return userInteracted ? markBadgeUsed(tabId) : hasBadgeUsage(tabId);
-}
-
 // post: successful plugin use remains sticky without inventing presentation.
 // Rendering starts only after a complete acknowledged volume projection exists.
 export async function markBadgeUsedForTab(tabId: number): Promise<void> {
@@ -302,10 +298,14 @@ export async function updateBadgeFromControlProjection(
 	snapshot: Pick<ControlSnapshot, 'tabId' | 'documentId' | 'origin' | 'generation'>,
 	projection: ControlSessionPatch,
 	isCaptureActive: boolean,
-	userInteracted: boolean,
+	confirmedGesture: boolean,
 	revision?: number,
 ): Promise<void> {
-	const used = await resolveStickyUsage(snapshot.tabId, userInteracted);
+	// I10: only the background's acknowledged gesture pipeline may create usage.
+	// A page observation, session report, programmatic configuration or
+	// navigation restore may refine a badge that already exists, never create
+	// one; the observation route always passes `false`.
+	const used = confirmedGesture ? await markBadgeUsed(snapshot.tabId) : await hasBadgeUsage(snapshot.tabId);
 	// Usage lookup may outlive a processor transition. Resolve its current
 	// lifecycle after that await instead of replaying the caller's old boolean.
 	const currentSession = await getAudioSession(snapshot.tabId).catch(() => null);
@@ -360,9 +360,10 @@ export async function updateBadgeFromControlProjection(
 }
 export async function updateBadgeFromSession(
 	snapshot: AudioSessionSnapshot,
-	userInteracted: boolean,
 ): Promise<void> {
-	const used = await resolveStickyUsage(snapshot.tabId, userInteracted);
+	// A session report describes content state, not proof of use; it can only
+	// refine a badge that already exists (I10).
+	const used = await hasBadgeUsage(snapshot.tabId);
 	// Audio and control generations have independent owners. Read the current
 	// audio lifecycle from its store and retain the badge's control identity.
 	const currentSession = await getAudioSession(snapshot.tabId).catch(() => null);

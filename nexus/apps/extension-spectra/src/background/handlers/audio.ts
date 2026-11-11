@@ -541,7 +541,7 @@ export function registerAudioV2Listener(): void {
 					error: message.payload.lastError,
 				});
 				observeStoppedAudioOutput(snapshot);
-				await updateBadgeFromSession(snapshot, message.payload.userInteracted);
+				await updateBadgeFromSession(snapshot);
 				return snapshot;
 			}
 			if (message.type === PROTO_AUDIO_SESSION_FLUSH) {

@@ -250,7 +250,7 @@ async function publishAcknowledgedCaptureState(
 		// The audio-session queue orders this best-effort presentation with the
 		// durable lifecycle commit and later updates without holding the physical
 		// Capture ACK open on Action API work.
-		scheduleAudioSessionProjection(tabId, () => updateBadgeFromSession(snapshot, false));
+		scheduleAudioSessionProjection(tabId, () => updateBadgeFromSession(snapshot));
 	}
 	publishCaptureState(tabId, state);
 }

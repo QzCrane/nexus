@@ -189,6 +189,13 @@ export function setupLifecycleListeners(): void {
 		}
 	});
 
+	// A tabId only identifies the tab until Chrome reuses it. Usage is keyed by
+	// tabId, so both ends of the tab's life are boundaries: creation clears any
+	// usage a dead worker left behind, exactly like closure (I10).
+	chrome.tabs.onCreated.addListener((tab) => {
+		if (tab.id !== undefined) void clearBadgeUsage(tab.id);
+	});
+
 	chrome.tabs.onRemoved.addListener((tabId) => {
 		for (const [windowId, activeTabId] of activeTabsByWindow) {
 			if (activeTabId === tabId) activeTabsByWindow.delete(windowId);

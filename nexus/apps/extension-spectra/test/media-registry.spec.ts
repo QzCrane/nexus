@@ -278,6 +278,75 @@ describe('event-driven media registry', () => {
 			expect(selected.at(-1)?.mediaId).toBe(after.mediaId);
 		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
+	test('admits an already-playing broadcast that registers after its first play (I8)', () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const feed = new FakeVideoElement(1);
+		feed.paused = false;
+		feed.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(feed);
+		document.media = [feed];
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const selected: MediaTarget[] = [];
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:register-admits', frameId: 0 }),
+			(target, event) => { if (event === 'selected') selected.push(target); });
+		try {
+			const before = requireValue(registry.resolve(null)?.target, 'Expected the feed to own control');
+			expect(before.mediaId).toBe(requireValue(registry.list().find(({ element }) => element === feed)?.target).mediaId);
+			// The SPA overlay pauses the feed and mounts the broadcast already playing.
+			// Its `play` happened before this listener existed, so registration is the
+			// only remaining lifecycle evidence; a canvas-rendered live player is 0x0.
+			feed.paused = true;
+			const live = new FakeVideoElement(1);
+			live.paused = false;
+			live.duration = Number.POSITIVE_INFINITY;
+			live.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+			document.documentElement.descendants.push(live);
+			document.media = [feed, live];
+			const revision = registry.selectionRevision;
+			FakeMutationObserver.latest?.emit([live]);
+			expect(registry.resolve(null)?.element).toBe(live);
+			expect(registry.selectionRevision).toBeGreaterThan(revision);
+			expect(selected.at(-1)).toEqual(registry.resolve(null)?.target);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
+	test('registration never steals control from a playing owner or a paused pick', () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const owner = new FakeVideoElement(1);
+		owner.paused = false;
+		owner.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(owner);
+		document.media = [owner];
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const selected: MediaTarget[] = [];
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:register-restraint', frameId: 0 }),
+			(target, event) => { if (event === 'selected') selected.push(target); });
+		try {
+			const before = requireValue(registry.resolve(null)?.target, 'Expected the playing owner to be selected');
+			const initialSelections = selected.length;
+			const revision = registry.selectionRevision;
+			const stopped = new FakeVideoElement(1);
+			stopped.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+			const hiddenMixed = new FakeVideoElement(1);
+			hiddenMixed.paused = false;
+			hiddenMixed.rect = { left: 0, top: 0, right: 0, bottom: 0, width: 0, height: 0 };
+			document.documentElement.descendants.push(stopped, hiddenMixed);
+			document.media = [owner, stopped, hiddenMixed];
+			FakeMutationObserver.latest?.emit([stopped, hiddenMixed]);
+			expect(registry.resolve(null)?.target).toEqual(before);
+			expect(registry.selectionRevision).toBe(revision);
+			expect(selected).toHaveLength(initialSelections);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
 	test.each(['audio', 'pip', 'fullscreen'] as const)('establishes independent initial media and video scopes (%s)', (presentation) => {
 		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
 			'MutationObserver', 'IntersectionObserver']);

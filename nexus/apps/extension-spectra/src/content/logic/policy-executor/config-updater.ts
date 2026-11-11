@@ -28,11 +28,10 @@ export function updateConfig(
 	options: PolicyUpdateOptions = {},
 	applyStateFn: (options?: PolicyApplicationOptions) => Promise<void>
 ): Promise<SpectraResponse<'spectra.audio.config.set'>> {
-	// rule: any configuration update NOT from native sync is considered a user engagement
-	// this activates the "Special Features" like sticky badge and bi-directional sync
-	if (!options.isNativeSync) {
-		state.userHasInteracted = true;
-	}
+	// rule: usage is a positive fact, never the absence of a native sync
+	// (I10). Initialization, `spectra.audio.runtime.configure` and delegate
+	// application are programmatic and must not make this tab look used; only an
+	// acknowledged Popup/hotkey gesture marks it via `markUserInteracted`.
 	const newConfig = { ...state.config, ...changes };
 	const effectiveVolume = changes.volume;
 	const effectiveVolumeOnly = effectiveVolume !== undefined

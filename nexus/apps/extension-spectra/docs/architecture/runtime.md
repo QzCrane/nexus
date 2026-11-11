@@ -444,6 +444,18 @@ observation epoch so the registry's samples supersede the bootstrap's and every
 replaced registry stays stale; when the registry loses its last selection the
 bootstrap resumes on the same ordering and keeps submitting.
 
+Two further boundaries keep that handoff honest. Registration is selection
+evidence: a player the SPA mounts after its own `play` already happened started
+playing before any listener existed, so `register` runs the same admission
+`play` would have run instead of leaving the element unselected until the viewer
+clicks it (I8). And a native `volumechange` is witnessed only by the element
+that produced it: the audio-runtime delegate reports the extension's applied
+policy, so in document-output mode it returns the same value before and after a
+gesture, and reading volume/mute through it made the gesture compare equal to
+the observation cache and vanish. Only hidden finite media is vetoed as a
+preview — a broadcast is audible even while a canvas hides the `<video>` or
+autoplay has not started it (I9).
+
 The pre-injection runtime-status probe is an optional read bounded to 1 second.
 Its settlement pool retains at most eight physical outstanding probes; observation
 expiry does not pretend to cancel a browser request. An expired or unavailable

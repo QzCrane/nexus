@@ -137,10 +137,11 @@ publishCurrentSelection(): void
   变化保持 target-only，避免把冷态 page-semantic 样本重归因。
 - `volumechange` 来自未被选中的元素时：以该元素自己的 target 提交 `volumeBase` /
   `mediaMuted` 页面观察，控制所有权不变。`flushPageObservations` 对这类 target
-  重新读取自己的元素，而不是用控制 owner 的 delegate 读数。**不设呈现判据**：
+  重新读取自己的元素，而不是用控制 owner 的 delegate 读数。**直播不设呈现判据**：
   抖音直播把画面画在 canvas 上、`<video>` 可以是 0×0，首次手势前 `duration` 是
   `NaN`、`paused`、`readyState 0`，站点还可能先静音再由自己的 UI 解除——这些都
-  是同一原生音量面的合法状态。曾经的 `isPresented` 判据会让这条例在真实直播页
+  是同一原生音量面的合法状态。语义隐藏只否决**隐藏的有限时长预览**（feed 的静音
+  预览、pre-roll 空壳）。曾经的 `isPresented` 判据会让这条例在真实直播页
   永不触发，且"点一次暂停/播放就恢复"正是它的反证（`play` 把所有权移过去，
   绕过了整道门）。
 
@@ -168,6 +169,80 @@ if (await port.resolvePersistentMediaObservation(target)) {
 
 只保留“存活 runtime + 当前 document 有媒体事实”的情况，不复活死运行时。
 
+### 4.4 复测回归的两个根因（2026-11-11 第二轮）
+
+用户复测：`1. 照样要按暂停按钮 2. 新打开 douyin 就把角标显示了`。
+本轮不再改观察权交接（I7 保留），而是修两个独立边界错误。
+
+#### R1 注册即准入（content/selection）
+
+**事实链**：
+- `MediaRegistry.register()` 只挂监听、写 `byElement/byId`、`emit('registered')`，
+  从不参与选择；选择只由 `play` / `pointerdown` / `loadedmetadata` 等**已经发生过的
+  事件**驱动（`media-registry.ts:419-488`）。
+- SPA 直播播放器在路由切换后才挂载，挂载时已经在播放；它的 `play` 发生在监听器
+  注册之前，因此 `selectRecord` 永远不会为它执行。`registered` 只触发
+  `primeObserved`（`native-media-executor.ts:2560`），不改变选中。
+- 结果：直播 `<video>` 一直不是选中元素，它的 `volumechange` 只能走未选中分支；
+  该分支带语义呈现门（`native-media-executor.ts:2578-2591`），而直播把画面画在
+  canvas 上、`<video>` 常被站点隐藏（这正是 spec §4.1 记录的真实形态）。样本被静音。
+- 用户点一次暂停 → `pointerdown`/`play` 才把该元素设为选中 → 选中分支**没有**呈现门，
+  并且 `publishEstablishedSelection` 补发一次物理值。这就是"必须按暂停"的完整因果。
+
+**修复**：`register()` 在挂好监听后必须执行与 `play` 相同的选择准入
+（`admitBetterCandidate(true)`，受 `isSelectionProtected`/暂停钉住语义约束），
+使"被发现时已在播放"的播放器无需任何用户手势就成为选中。选中变化仍由
+`selected` 事件发布 target + 物理值（既有 4.2）。
+
+**不变量 I8**：元素的生命周期事件（发现、注册）与它的播放状态同等构成选择证据；
+"播放事件早于监听器"不得导致播放器永久失去选择。
+
+#### R2 观测证人必须是元素本身（content/observation）
+
+**事实链**：选中分支的 `handleMediaEvent` 用 `this.read()` 取样，而
+`read()` 对 `volumeBase`/`mediaMuted` 优先问 `audioRuntimeDelegate`
+（`native-media-executor.ts:1508-1515`）；delegate 在文档输出（capture）生效时返回
+**扩展自己的 `appliedConfig`**，不是页面元素的实际值
+（`audio-runtime-control-delegate.ts:118-119`）。于是原生 UI 改音量后：
+`read()` 两次都返回同一个 applied 值 → 与 `this.observed` 相等 → 不产生 patch →
+不提交观测。原生手势在该模式下**结构性不可见**。
+
+**修复**：`volumechange` 的取证只以事件元素为证人——`volumeBase`/`mediaMuted`
+始终从 `element` 直接读（与 `readElementVolume` 同一读取器），其余字段保持 `read()`。
+delegate 只描述扩展写入的归属，不能冒充页面的物理事实。
+
+**不变量 I9**：页面观察的证人只能是产生事件的元素；扩展自身状态（delegate /
+appliedConfig / observed 缓存）不得作为页面物理值的来源。
+
+#### R3 使用事实只能由已确认的用户手势产生（background/badge）
+
+**事实链**：
+- `config-updater.ts:31-35`：任何"非 native sync"的配置更新都置
+  `userHasInteracted = true`。这是一个**否定式推断**，把程序化配置（初始化、
+  `spectra.audio.runtime.configure` 内部 RPC、delegate 应用）误判为用户使用。
+- 内容侧随后 `session.publish` 携带 `userInteracted: true`
+  （`badge-sync.ts:44`），后台 `updateBadgeFromSession`
+  → `resolveStickyUsage(tabId, true)` → `markBadgeUsed(tabId)`
+  （`handlers/badge.ts:264-266, 365`），把"使用"永久写进该 tab。
+- `isBadgeProjected` 因此为真，之后任何页面观察都可以画角标
+  （`control-coordinator.ts:1052`）。这就是"新开 douyin 未使用就出角标"。
+
+**修复**（唯一状态源，双向收口）：
+1. 内容侧：交互是显式肯定事实。删除 `!options.isNativeSync` 推断；
+   `PolicyUpdateOptions` 增加 `userOriginated?: boolean`，只有来自
+   `intent.source === 'popup' | 'hotkey'` 的已确认控制/配置写入才置位
+   （`audio-runtime-control-delegate.apply` 与显式用户配置入口）。
+   `isNativeSync` 只保留"抑制 applyState"的原义。
+2. 后台侧：用途事实只能由**已确认的显式意图**（`recordSuccessfulExtensionUse`，
+   source 为 popup/hotkey）写入。`updateBadgeFromSession` 与
+   `updateBadgeFromControlProjection` 只读用途（`hasBadgeUsage`），永不
+   `markBadgeUsed`。会话报告是内容状态，不是使用证明。
+3. tab 身份是用途的生命周期边界：`chrome.tabs.onCreated` 与 `onRemoved` 都清理
+   该 tabId 的用途，消除 tabId 复用把旧用途继承给新 tab 的路径。
+
+**不变量 I10**：角标可见性 = 该 tab 存在一次已确认的用户手势；页面观察、
+会话上报、程序化配置、导航恢复都只能细化一个已可见的角标，不能创造它。
+
 ## 5. 测试
 
 | 文件 | 用例 |
@@ -180,6 +255,9 @@ if (await port.resolvePersistentMediaObservation(target)) {
 | `test/media-presence.spec.ts` | `srcObject` 已绑定轨道但停在 `HAVE_NOTHING`、`src`/`currentSrc` 已赋值 → 文档有可控制媒体；空壳、空流 → 没有；`readyState`/`currentTime`/`played` 的既有证据不变 |
 | `test/smoke/live-target-restart.spec.ts` | 有限播放器持有控制、0×0 canvas 直播未选中时，页面改直播音量 → 角标从 80 变 37（上一版实现超时停在 80，已验证该用例能区分）；被点击过的有限播放器保持控制、页面再挂载 0×0 有限时间线出声播放器时，其音量 0.42 仍进角标；页面挂载无面积、无元数据、暂停且无播放历史的播放器后改其音量 0.31 → 角标从 80 变 31（旧判据下必然停在 80）；空文档挂载空播放器后再赋 `srcObject`（连接态触发 `loadstart`）→ 观察运行时必须由该生命周期事件加载（旧实现停在 `ready:false`），随后原生音量 0.27 进入快照 |
 | `test/smoke/badge-projection.spec.ts` | 同一 tab 进入新文档后，页面原生音量 0.55 仍进角标（运行时就绪后） |
+| `test/media-registry.spec.ts` | 发现时已在播放的媒体（`play` 早于监听器）注册后立即成为选中并 `emit('selected')`；暂停钉住/受保护选择不被注册抢占；已停止的媒体注册不改变选中 |
+| `test/native-media-executor.spec.ts`（新增用例） | 选中元素发生 `volumechange` 时 `volumeBase`/`mediaMuted` 取自元素本身：delegate 返回相同 applied 值时仍产生 patch 并提交页面观察；未选中元素同语义 |
+| `test/badge-volume-state.spec.ts`（新增用例） | 未使用 tab 收到 `userInteracted:true` 的会话上报 → 不画角标、`hasBadgeUsage` 仍为 false；已确认 popup/hotkey 意图 → 画角标并落用途；`onCreated` 后用同一 tabId 的新 tab 不继承用途 |
 
 ## 6. 文档投影
 
@@ -199,8 +277,8 @@ if (await port.resolvePersistentMediaObservation(target)) {
    `/follow/live/<id>`：**不开 Popup**，角标显示直播真实音量；
    原生 UI 改音量角标随即变化；快捷键立即生效。
 2. 直播页刷新：重复 1。
-3. 从未使用扩展的直播 tab：角标保持隐藏，但快照已在同步；
-   第一次快捷键成功并点亮角标。
+3. 从未使用扩展的直播 tab：角标保持隐藏（新开 douyin 即隐藏，刷新后仍隐藏），
+   但快照已在同步；第一次快捷键成功并点亮角标。
 4. 无媒体页面：不加载重运行时。
 5. 观看直播时 worker 重启：观察继续，不需要 Popup。
 

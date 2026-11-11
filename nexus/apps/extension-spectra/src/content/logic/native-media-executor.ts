@@ -2579,10 +2579,12 @@ export class NativeMediaExecutor {
 			// A page can mount hidden preview players beside the real one (a feed's
 			// muted preview, a pre-roll shell). Their volume is not the surface the
 			// viewer touched, and promoting it moved the badge and observations onto
-			// a player nobody hears. Semantic invisibility is the only veto here: a
-			// live route's own player can still be 0×0 while it mounts, so layout
-			// geometry must stay out of this decision.
-			if (!isSemanticallyPresented(element)) return;
+			// a player nobody hears. The veto is therefore limited to hidden finite
+			// media: a broadcast is audible even while the page paints it through a
+			// canvas, keeps the <video> hidden, or has not started playback yet
+			// (autoplay blocked). Geometry stays out of this decision because a live
+			// player can be 0×0.
+			if (!isSemanticallyPresented(element) && !isLiveMedia(element)) return;
 			const observed = this.readElementVolume(target);
 			if (!observed) {
 				this.traceDroppedVolume(target, 'unresolved-player');
@@ -2614,9 +2616,19 @@ export class NativeMediaExecutor {
 			// the stale pre-transition values for the rest of the session.
 			observedFields = ['fullscreen', 'volumeBase', 'mediaMuted', 'speed', 'preservePitch'];
 		} else return;
-		const { patch: candidates, observedStrategies: candidateStrategies } = this.read({
-			target, fields: observedFields,
-		});
+		// I9: a native volume gesture is witnessed by the element that produced
+		// it. `read()` prefers the audio-runtime delegate, which reports the
+		// extension's applied policy; in document-output mode that value does not
+		// move when the page's own UI does, so the gesture would compare equal to
+		// the cache and disappear. Only the element can testify for the page.
+		const candidateRead = event === 'volumechange'
+			? this.readElementVolumeFields(target)
+			: this.read({ target, fields: observedFields });
+		if (!candidateRead) {
+			this.traceDroppedVolume(target, 'unresolved-player');
+			return;
+		}
+		const { patch: candidates, observedStrategies: candidateStrategies } = candidateRead;
 
 		const pending = this.pending.get(mediaId);
 		const ownedSeek = event === 'seeked'
@@ -2702,18 +2714,16 @@ export class NativeMediaExecutor {
 	}
 
 	/**
-	 * Read the physical volume/mute of a registered element that another element
-	 * still owns. The audio runtime delegate describes the control owner, so an
-	 * unselected successor is read from its own element: an SPA live route must
-	 * reach the badge without moving control ownership.
+	 * Read page-physical volume/mute from the element itself.
+	 *
+	 * The audio-runtime delegate reports the extension's own applied policy, so
+	 * in document-output mode it returns the same value before and after a native
+	 * gesture: comparing it with the observation cache makes that gesture
+	 * structurally invisible. Only the element is a witness of the page (I9).
 	 */
-	private readElementVolume(
+	private readElementVolumeFields(
 		target: MediaTarget,
-	): {
-		patch: ControlPatch;
-		observedStrategies: ControlObservationStrategies;
-		mediaObservation?: ControlReadResult['mediaObservation'];
-	} | null {
+	): { patch: ControlPatch; observedStrategies: ControlObservationStrategies } | null {
 		const resolved = this.registry.resolve(target);
 		if (!resolved) return null;
 		const patch: ControlPatch = {};
@@ -2723,9 +2733,20 @@ export class NativeMediaExecutor {
 			(patch as Record<string, unknown>)[field] = observed.actual;
 			observedStrategies[field] = observationStrategy(observed.writer);
 		}
+		return { patch, observedStrategies };
+	}
+
+	private readElementVolume(
+		target: MediaTarget,
+	): {
+		patch: ControlPatch;
+		observedStrategies: ControlObservationStrategies;
+		mediaObservation?: ControlReadResult['mediaObservation'];
+	} | null {
+		const observed = this.readElementVolumeFields(target);
+		if (!observed) return null;
 		return {
-			patch,
-			observedStrategies,
+			...observed,
 			...(this.registry.captureObservation
 				? { mediaObservation: this.registry.captureObservation() }
 				: {}),
@@ -2781,8 +2802,26 @@ export class NativeMediaExecutor {
 				&& this.targetKey(selected.target) === this.targetKey(target));
 			// Queueing is not a sample. Read this batch again in one synchronous
 			// turn so the stamp cannot make an older queued value look newer.
+			// Volume/mute are re-witnessed by the element for the same reason as
+			// the event path (I9): re-reading them through the delegate would
+			// replace the page's gesture with the extension's applied policy.
+			const queuedFields = Object.keys(patch) as ControlReadRequest['fields'];
+			const volumeRequested = queuedFields.some((field) => field === 'volumeBase' || field === 'mediaMuted');
+			const volumeWitness = volumeRequested ? this.readElementVolumeFields(target) : null;
+			if (volumeRequested && !volumeWitness) {
+				this.traceDroppedVolume(target, 'unresolved-player');
+				continue;
+			}
 			const current = sameTarget
-				? this.read({ target, fields: Object.keys(patch) as ControlReadRequest['fields'] })
+				? ((): ControlReadResult => {
+					const read = this.read({ target, fields: queuedFields });
+					if (!volumeWitness) return read;
+					return {
+						...read,
+						patch: { ...read.patch, ...volumeWitness.patch },
+						observedStrategies: { ...read.observedStrategies, ...volumeWitness.observedStrategies },
+					};
+				})()
 				: this.readElementVolume(target);
 			if (!current || Object.keys(current.patch).length === 0) {
 				this.traceDroppedVolume(target, 'unreadable');

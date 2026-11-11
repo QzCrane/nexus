@@ -266,6 +266,10 @@ export function createMessageHandler(deps: MessageHandlerDeps): (
 				sendResponse(rpcFailure('forbidden', 'Content command is extension-internal only'));
 				return false;
 			}
+			// I10: a Popup/hotkey command is the only content-side proof of a
+			// viewer gesture. Configuration and runtime RPCs are programmatic and
+			// must never promote this tab to "used".
+			deps.policyExecutor?.markUserInteracted();
 			return handleSpectraContentCommand(message, sendResponse);
 		}
 		if (isRecord(message)

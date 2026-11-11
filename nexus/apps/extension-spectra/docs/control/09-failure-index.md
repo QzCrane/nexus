@@ -62,7 +62,7 @@ flowchart TD
 | 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中未交接；旧播放器的历史交互压过正在播放的直播，或空选中不自愈 | 056 | guarded |
 | 插件改了音量，站点自己的音量条不动，而且下次换流被站点覆盖回去 | 音量只写元素属性（`dom-native`），没有站点控制器适配；declared 行只有倍速 | 053、049 | open |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
-| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；或新播放器已呈现却因未选中而不被观察 | 052、014、056 | guarded |
+| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；新播放器已呈现却因未选中而不被观察；注册时 `play` 已发生使元素永不入选；文档输出模式下用 delegate 的 applied 值取证；程序化配置被当成用户使用而写入 usage | 052、014、056、I8、I9、I10 | guarded |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
 | Popup 打开首帧空白、随后跳高，或先英文后中文 | 首帧等异步 actual；结构高度被历史值预留 | 050 | guarded |
 | PiP 打开后立刻被关掉 | 站点策略属性被提前归还，浏览器在同一任务跑了退出算法 | 051 | guarded |
@@ -204,7 +204,28 @@ flowchart TD
   `play` 会把所有权移到该元素，从而绕过整道门。真实直播页的状态并不满足任何一条
   呈现证据——`live.douyin.com` 的 `<video>` 绑定 video-only MediaStream，首次手势前
   `paused`、`readyState 0`、`duration` 为 `NaN`（不是 `Infinity`），可能还在 0×0
-  布局盒里。音量是同一原生面上的物理状态，因此判据已删除，呈现证据只服务于选择与准入。
+  布局盒里。音量是同一原生面上的物理状态，因此判据只保留一件事：**隐藏的有限时长
+  预览**（feed 静音预览、pre-roll 空壳）不是用户触及的音量面，仍被否决；直播元素
+  （非有限时长）无论可见性、暂停与否都提交观察。呈现证据只服务于选择与准入。
+- 已落地的注册准入（I8）：SPA 在 `play` 已经发生之后才挂载的播放器，其 `play` 早于
+  监听器注册，`registered` 只做 `primeObserved`、从不参与选择；于是直播元素一直停在
+  未选中分支，直到用户点一次暂停/播放（`pointerdown`/`play`）才转移所有权。
+  `MediaRegistry.register()` 现在对"注册时已在播放"的元素执行与 `play` 相同的
+  `admitBetterCandidate(true)`；空选中仍由发现批次统一建立，注册不搅动初始选择，
+  暂停钉住、显式选择、PiP/全屏保护语义不变。
+- 已落地的观察证人（I9）：选中分支的 `volumechange` 曾用 `read()` 取音量，而
+  `read()` 优先问 audio delegate；delegate 在文档输出（capture）生效时返回扩展自己的
+  `appliedConfig`，原生手势前后不变，与 `observed` 缓存相等后直接丢弃。现在
+  `volumeBase`/`mediaMuted` 一律从事件元素本身读取（`readElementVolumeFields`），
+  `flushPageObservations` 的选中重读同样以元素覆盖 delegate 值；delegate 只描述扩展
+  写入的归属，不能冒充页面的物理事实。
+- 已落地的用途边界（I10）：内容侧的 `userHasInteracted` 曾用"非 native sync"反推，
+  初始化与 `spectra.audio.runtime.configure` 都会把它置真；`session.publish` 携带该
+  事实后，后台 `resolveStickyUsage` 直接 `markBadgeUsed`，之后任何页面观察都能画角标
+  ——新开 douyin 未使用就出现角标。现在内容侧只在 Popup/热键命令分发前
+  `markUserInteracted`；`isNativeSync` 只保留"抑制 applyState"。后台
+  `updateBadgeFromSession` 只读 `hasBadgeUsage`，用途只能由已结算的显式意图写入；
+  `tabs.onCreated` 与 `onRemoved` 都把 tabId 当作 usage 的生命周期边界。
 - 已落地的媒体边界：`hasMediaSurface` 把"有源"的媒体当作媒体面——`srcObject` 上已存在
   的轨道，或 `currentSrc`/`src` 已赋值。直播路由可在首次手势前把元素停在
   `HAVE_NOTHING`，此时 `readyState`/`currentTime`/`played` 都不成立；没有这条证据，

@@ -14,7 +14,7 @@ import {
 	settleBadgeVolumePresentation,
 } from '../src/background/handlers/badge';
 import { BADGE_COLORS, badgeState } from '../src/background/state';
-import { resetBadgeUsageForTests } from '../src/background/badge-usage';
+import { hasBadgeUsage, resetBadgeUsageForTests } from '../src/background/badge-usage';
 import { fenceAudioSession, flushAudioSessions, forgetAudioSession, updateAudioSession } from '../src/background/audio-session-store';
 
 const TAB_ID = 7_701;
@@ -229,10 +229,47 @@ describe('actual volume badge state', () => {
 		// A restarted worker has no badgeState, so it cannot prove the visible
 		// projection belongs to another document. Preserving it is the only
 		// non-inventing option; a document we *can* compare is cleared below.
-		await publishBadgeSession(session('active'), true);
+		await publishBadgeSession(session('active'));
 
 		expect(badgeState.has(TAB_ID)).toBe(false);
 		expect(texts).toHaveLength(0);
+	});
+
+	test('a session report can neither create usage nor a badge on an untouched tab (I10)', async () => {
+		const values: Record<string, unknown> = {};
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', {
+			configurable: true,
+			value: {
+				tabs: { get: async () => ({ id: TAB_ID }) },
+				storage: { session: {
+					get: async (key: string) => key in values ? { [key]: values[key] } : {},
+					set: async (items: Record<string, unknown>) => { Object.assign(values, items); },
+					remove: async (key: string) => { delete values[key]; },
+				} },
+				action: {
+					setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+					setBadgeBackgroundColor: async () => undefined,
+					setBadgeTextColor: async () => undefined,
+				},
+			},
+		});
+
+		// A programmatic document publishes a session without a viewer gesture.
+		await publishBadgeSession(session('active'));
+		expect(await hasBadgeUsage(TAB_ID)).toBe(false);
+		expect(badgeState.has(TAB_ID)).toBe(false);
+		// Clearing an empty projection is allowed; showing any text is not.
+		expect(texts.every((text) => text === '')).toBe(true);
+
+		// Only an acknowledged gesture can promote the tab to used, and a session
+		// alone still carries no volume facts to paint.
+		await publishBadgeSession(session('active'), true);
+		expect(await hasBadgeUsage(TAB_ID)).toBe(true);
+		expect(badgeState.has(TAB_ID)).toBe(false);
+		await updateBadgeFromControlProjection(identity(), projection(), false, false, 1);
+		expect(badgeState.get(TAB_ID)?.userInteracted).toBe(true);
+		expect(texts.at(-1)).toBe('100');
 	});
 
 	test('hides untouched native observations but restores sticky usage after a worker restart', async () => {
@@ -597,25 +634,25 @@ describe('actual volume badge state', () => {
 			12,
 		);
 		const active = await commitBadgeSession({ ...session('active'), generation: 1 });
-		await updateBadgeFromSession(active, false);
+		await updateBadgeFromSession(active);
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 190, generation: 42, isCapture: true });
 		expect(colors.at(-1)).toBe(BADGE_COLORS.CAPTURE);
 
 		await commitBadgeSession({ ...session('error'), generation: 2 });
 		// A late event resolves the store's current lifecycle and cannot revive Capture.
-		await updateBadgeFromSession(active, false);
+		await updateBadgeFromSession(active);
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 190, generation: 42, isCapture: false });
 		expect(colors.at(-1)).toBe(BADGE_COLORS.NATIVE);
 
 		const newerActive = await commitBadgeSession({ ...session('active'), generation: 3 });
-		await updateBadgeFromSession(newerActive, false);
+		await updateBadgeFromSession(newerActive);
 		expect(badgeState.get(TAB_ID)).toMatchObject({ generation: 42, isCapture: true });
 		await commitBadgeSession({ ...session('error'), generation: 3, actualConfig: {
 			...DEFAULT_AUDIO_CONFIG, volume: 50, volumeBase: 50, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues],
 		} });
-		await updateBadgeFromSession(newerActive, false);
+		await updateBadgeFromSession(newerActive);
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 190, generation: 42, isCapture: false });
-		await updateBadgeFromSession({ ...newerActive, documentId: 'retired-document', generation: 100 }, false);
+		await updateBadgeFromSession({ ...newerActive, documentId: 'retired-document', generation: 100 });
 		expect(badgeState.get(TAB_ID)).toMatchObject({ volume: 190, generation: 42, isCapture: false });
 	});
 });
@@ -643,8 +680,9 @@ async function commitBadgeSession(snapshot: AudioSessionSnapshot): Promise<Audio
 	});
 }
 
-async function publishBadgeSession(snapshot: AudioSessionSnapshot, userInteracted: boolean): Promise<void> {
-	await updateBadgeFromSession(await commitBadgeSession(snapshot), userInteracted);
+async function publishBadgeSession(snapshot: AudioSessionSnapshot, confirmedGesture = false): Promise<void> {
+	if (confirmedGesture) await markBadgeUsedForTab(TAB_ID);
+	await updateBadgeFromSession(await commitBadgeSession(snapshot));
 }
 
 

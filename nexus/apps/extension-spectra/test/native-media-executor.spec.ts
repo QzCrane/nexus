@@ -842,6 +842,39 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	}, 2_000);
 
+	test('witnesses a native volume gesture from the element even when the audio runtime owns output (I9)', async () => {
+		installFakeMediaGlobals();
+		const media = new FakeMediaElement();
+		media.volume = 1;
+		media.paused = false;
+		const registry = new FakeRegistry(media);
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
+		const submitted: Array<{ source?: string; patch?: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: { type: string; payload: { source?: string; patch?: Record<string, unknown> } }) => {
+				if (message.type === 'spectra.control.intent.submit') submitted.push(message.payload);
+				return { ok: true, data: { recorded: true } };
+			},
+		} } });
+		executor.setAudioRuntimeDelegate({
+			synchronizeNative() {},
+			// Document-output mode reports the extension's applied policy; that value
+			// does not move when the page's own UI does.
+			read: () => ({ patch: { volumeBase: 100, mediaMuted: false }, observedStrategies: {} }),
+			apply: async () => ({}),
+		});
+		try {
+			registry.emit('registered');
+			registry.emit('selected');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			media.forceVolume(0.4);
+			registry.emit('volumechange');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const page = submitted.filter(({ source }) => source === 'page');
+			expect(page.at(-1)?.patch).toMatchObject({ volumeBase: 40, mediaMuted: false });
+		} finally { executor.dispose(); }
+	});
+
 	test('rejects playback ACK when selection changes after physical proof while the old source remains registered', async () => {
 		installFakeMediaGlobals();
 		const media = new FakeMediaElement();

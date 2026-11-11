@@ -485,6 +485,15 @@ export class MediaRegistry {
 		this.observeMediaAttributes(element);
 		this.intersectionObserver.observe(element);
 		this.emit(record.target, 'registered', element);
+		// A player mounted after the SPA switched routes is already playing by the
+		// time this listener exists; its `play` event is in the past. Registration
+		// is the remaining lifecycle evidence, so an already-playing element must
+		// run the same admission `play` would have run (I8). Without this the live
+		// element never becomes the selection, its `volumechange` stays on the
+		// unselected path, and control only arrives when the viewer clicks it.
+		// An empty selection is admitted by the enclosing discovery batch instead,
+		// so registration never churns the initial selection.
+		if (this.activeMediaId !== null && !element.paused) this.admitBetterCandidate(true);
 	}
 
 	private unregister(element: HTMLMediaElement): void {
