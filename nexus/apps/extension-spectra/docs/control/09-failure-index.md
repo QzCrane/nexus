@@ -186,7 +186,9 @@ flowchart TD
 - 已落地的补建：媒体上报 `hasMediaElement` 时 `ensureMediaObservation` 以
   `document-media-observation` 能力确保运行时；观察与写入意图分离，空模板的运行时
   只观察、不写入。运行时 attach 到已有选中的文档时 `publishCurrentSelection` 立即
-  发布一次该选中；无选中不发布。
+  发布一次该选中，并把页面上已存在的物理值（音量、静音、速度、音高保持、播放）
+  作为页面观察一并提交——否则新文档在首次原生变化或被显式读取前没有任何字段快照，
+  角标仍会看起来"只在 Popup 打开时同步"。无选中不发布。
 - 已落地的重启保留：worker 重启只对存活的运行时、且 `mediaFacts` 中该 tab 的
   `documentId` 匹配、`outcome === 'found'` 时保留 observation lease；死运行时不会
   因历史媒体事实被复活。

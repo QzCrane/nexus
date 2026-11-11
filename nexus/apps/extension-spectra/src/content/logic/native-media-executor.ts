@@ -806,6 +806,15 @@ export class NativeMediaExecutor {
 			{ documentId: selected.target.documentId },
 		).catch(() => undefined);
 		this.replayDesired(selected.target, selected.element, true);
+		// The target alone is not a snapshot: a new document has no fields until
+		// the page fires its first native change or a surface reads it. Publishing
+		// the values that already exist here is what makes the badge correct on
+		// arrival instead of on the first Popup open.
+		const actual = this.read({
+			target: selected.target,
+			fields: ['volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing'],
+		});
+		this.queuePageObservation(selected.target, actual.patch, actual.observedStrategies);
 	}
 
 	setAudioRuntimeDelegate(delegate: AudioRuntimeControlDelegate | null): void {

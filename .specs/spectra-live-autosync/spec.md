@@ -87,7 +87,10 @@ publishCurrentSelection(): void
 - `registry.resolve(null)` 无选中则 no-op；
 - 有选中：`primeObserved(target)` → `publishPresentationKind` →
   发送 `spectra.content.target.changed`，带
-  `mediaObservation: registry.captureObservation?.()`。
+  `mediaObservation: registry.captureObservation?.()`；
+- 再读取当前物理值 `['volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing']`，
+  通过 `queuePageObservation` 作为页面观测提交——否则新文档在首次原生变化或被显式
+  读取前没有字段快照，角标仍会表现为“点开 Popup 才同步”。
 
 在 `content/core/index.ts` 的 `bootstrapMessaging(...)` 之后调用一次，
 保证消息通道就绪。重复发布由后台有序观测准入吸收，幂等。
@@ -117,9 +120,8 @@ if (await port.resolvePersistentMediaObservation(target)) {
 
 | 文件 | 用例 |
 | --- | --- |
-| `test/tab-state.media.spec.ts`（按现有 handler 测试落点） | `hasMediaElement: true` → 建立 observation；`false` → 不建立；stale document → 不建立 |
-| `test/runtime-loader.spec.ts` | `ensureMediaObservation` 在未初始化/已退役/已 release 时 no-op；正常时以 `observation` 能力 ensure |
-| `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`；无选中 → 不发 |
+| `test/runtime-loader.spec.ts` | `ensureMediaObservation` 在未初始化/已退役/已 release 时 no-op；正常时以 `observation` 能力 ensure；`hasMediaElement` handler 的接线由既有 `tab-visibility.spec.ts` 的 `recordMediaState` 用例守住 |
+| `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；无选中 → 不发 |
 | `test/runtime-restart-startup.spec.ts` | 媒体事实为 `found` 且 documentId 匹配 → 保留 observation；无事实 → 既有孤儿回收用例不变 |
 
 ## 6. 文档投影

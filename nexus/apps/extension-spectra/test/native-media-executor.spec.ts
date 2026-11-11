@@ -444,6 +444,14 @@ describe('native media single-writer correlation', () => {
 			const changed = messages.find((message) => message.type === 'spectra.content.target.changed');
 			expect(changed?.payload.target).toMatchObject({ mediaId: registry.target.mediaId });
 			expect(changed?.payload.mediaObservation).toMatchObject({ owner: 'attach-owner' });
+			// The badge must not wait for the first native change or a Popup read:
+			// the values that already exist are part of the attach publication.
+			const observation = messages.find((message) => message.type === 'spectra.control.intent.submit');
+			expect(observation?.payload).toMatchObject({
+				source: 'page',
+				target: registry.target,
+				patch: { volumeBase: 100, mediaMuted: false, speed: 1, playing: false },
+			});
 		} finally { executor.dispose(); }
 	});
 
