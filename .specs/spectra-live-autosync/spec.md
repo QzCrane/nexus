@@ -107,7 +107,9 @@ publishCurrentSelection(): void
 - `volumechange` 来自未被选中的元素时：若 `registry.isPresented(target)` 为真，
   以该元素自己的 target 提交 `volumeBase` / `mediaMuted` 页面观察；隐藏预览不提交，
   控制所有权不变。`flushPageObservations` 对这类 target 重新读取自己的元素，而不是
-  用控制 owner 的 delegate 读数。
+  用控制 owner 的 delegate 读数。`isPresented` 的证据是
+  "有面积 ∨ PiP/全屏 ∨ `isLiveMedia`"：抖音直播用 canvas 绘制画面、`<video>`
+  保持 0×0 布局盒，几何必须让位于无界时间线证据，否则本条永不触发。
 
 在 `content/core/index.ts` 的 `bootstrapMessaging(...)` 之后调用一次，
 保证消息通道就绪。重复发布由后台有序观测准入吸收，幂等。
@@ -140,6 +142,7 @@ if (await port.resolvePersistentMediaObservation(target)) {
 | `test/runtime-loader.spec.ts` | `ensureMediaObservation` 在未初始化/已退役/已 release 时 no-op；正常时以 `observation` 能力 ensure；`hasMediaElement` handler 的接线由既有 `tab-visibility.spec.ts` 的 `recordMediaState` 用例守住 |
 | `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；attach 无选中 → 不发，第一次选中补发一次且只补一次；SPA 切换到另一个播放器元素 → 发布该元素的物理值；同一元素身份变化 → 仍只发 target；未选中但呈现中的元素发生原生音量变化 → 以该元素 target 提交页面观察，隐藏预览不提交 |
 | `test/runtime-restart-startup.spec.ts` | 媒体事实为 `found` 且 documentId 匹配 → 保留 observation；无事实 → 既有孤儿回收用例不变 |
+| `test/media-registry.spec.ts` | 0×0 但直播时间线成立的元素 `isPresented` 为真；0×0 且非直播的隐藏预载为假 |
 
 ## 6. 文档投影
 

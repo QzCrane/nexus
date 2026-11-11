@@ -821,15 +821,21 @@ export class MediaRegistry {
 	 * follow a presented element the viewer adjusts before the registry moves
 	 * control onto it (an SPA live route); a hidden preview is not a presentation
 	 * and must stay unobserved.
+	 *
+	 * Geometry is not the only evidence. A broadcast is often painted through a
+	 * canvas while its `<video>` keeps an empty layout box, so an unbounded live
+	 * timeline also proves the element is presenting. A hidden preload is neither
+	 * laid out nor live.
 	 */
 	isPresented(target: MediaTarget): boolean {
 		const record = this.recordForTarget(target);
-		if (!record || record.element.ended || record.presentationHidden) return false;
+		if (!record || record.element.ended) return false;
 		if (record.visibleArea > 0) return true;
 		const fullscreen = document.fullscreenElement;
-		return document.pictureInPictureElement === record.element
+		if (document.pictureInPictureElement === record.element
 			|| fullscreen === record.element
-			|| fullscreen instanceof Element && fullscreen.contains(record.element);
+			|| fullscreen instanceof Element && fullscreen.contains(record.element)) return true;
+		return isLiveMedia(record.element);
 	}
 
 	peek(

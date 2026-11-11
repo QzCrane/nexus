@@ -201,6 +201,10 @@ flowchart TD
   元素的原生音量/静音变化仍以该元素自己的 target 提交页面观察；隐藏预览不观察，控制
   所有权也不因属性事件移动。否则 `volumechange` 会被"非当前目标"过滤，角标停在旧播放器
   的数字，直到用户手动暂停/播放或打开 Popup。
+- 已落地的呈现证据：几何不是唯一证据。抖音直播用 canvas 绘制画面、`<video>` 保持 0×0
+  布局盒且 `presentationHidden = true`，所以"0×0 即隐藏"曾让上一条规则完全不触发。
+  `isPresented` 现按"有面积 ∨ PiP/全屏 ∨ `isLiveMedia`（无界时间线且已缓冲/绑定
+  MediaStream）"判定；既无面积又无直播证据的隐藏预载仍不观察。
 - 测试：`test/runtime-loader.spec.ts` 的
   "acquires an observation runtime for a media document with no desired template"、
   "does not acquire an observation runtime after the viewer released the document"；
@@ -209,6 +213,8 @@ flowchart TD
   "completes the attach publication when the first selection arrives after it"、
   "publishes the replacement player values when a route switch selects another element"、
   "observes a native volume change from a presented player the selection has not reached"；
+  `test/media-registry.spec.ts` 的
+  "presents a broadcast the page paints without a layout box"；
   `test/runtime-restart-startup.spec.ts` 的
   "keeps the surviving runtime as an observation owner when its document reported media"、
   "does not resurrect a dead runtime for a media observation owner"。
