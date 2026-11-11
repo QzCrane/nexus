@@ -38,6 +38,7 @@ class ChromeEvent {
 interface RuntimeHarness {
 	currentDocumentId: string;
 	getFrameError: Error | null;
+	failNextFrames: number;
 	executeCount: number;
 	leanExecuteCount: number;
 	leanConfigureCount: number;
@@ -90,6 +91,7 @@ function installChromeHarness(
 	const harness = {
 		currentDocumentId: 'document-7',
 		getFrameError: null,
+		failNextFrames: 0,
 		executeCount: 0,
 		leanExecuteCount: 0,
 		leanConfigureCount: 0,
@@ -136,6 +138,10 @@ function installChromeHarness(
 		webNavigation: {
 			getFrame: async () => {
 				if (harness.getFrameError) throw harness.getFrameError;
+				if (harness.failNextFrames > 0) {
+					harness.failNextFrames -= 1;
+					throw new Error('The tab has no current top-level document');
+				}
 				return {
 					documentId: harness.currentDocumentId,
 					url: 'https://media.example/watch',
@@ -556,6 +562,16 @@ describe('document-scoped content runtime loader', () => {
 
 	test('acquires an observation runtime for a media document with no desired template', async () => {
 		const harness = installChromeHarness(false);
+		await ensureMediaObservation(7, 'document-7');
+		expect(harness.executeCount).toBe(1);
+	});
+
+	test('retries an observation load that lost the document-identity race', async () => {
+		// The first report of a redirected route can be answered while the tab still
+		// publishes the previous top-level document. The obligation must converge on
+		// its own rather than wait for a later gesture or the Popup.
+		const harness = installChromeHarness(false);
+		harness.failNextFrames = 1;
 		await ensureMediaObservation(7, 'document-7');
 		expect(harness.executeCount).toBe(1);
 	});

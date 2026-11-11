@@ -596,6 +596,45 @@ describe('volume after same-document runtime replacement', () => {
 		expect(await eventually(() => readBadgeText(tabId), text => text === '31', 'idle broadcast badge'))
 			.toBe('31');
 	}, 90_000);
+
+	test('loads the observation runtime when a live route mounts its player after the document is idle', async () => {
+		// A live route can serve an empty shell first and mount the player after the
+		// page is idle. The player is therefore connected before it gains its source,
+		// and the loadstart that establishes the media surface reaches the document
+		// bootstrap. Without that lifecycle trigger the document keeps no observation
+		// owner until an explicit read.
+		const origin = new URL(fixtureUrl).origin;
+		await fixturePage.goto(`${origin}/empty-live-route`, { waitUntil: 'domcontentloaded' });
+		expect(await readContentBootstrapStatus(fixturePage.url())).toMatchObject({ ready: false });
+		await fixturePage.evaluate(async () => {
+			const live = document.createElement('video');
+			document.body.append(live);
+			const canvas = document.createElement('canvas');
+			canvas.width = 320; canvas.height = 180;
+			canvas.getContext('2d')?.fillRect(0, 0, 320, 180);
+			live.volume = 0.8; live.muted = false;
+			live.srcObject = canvas.captureStream(1);
+			void live.play().catch(() => undefined);
+			await new Promise((resolve) => setTimeout(resolve, 200));
+		});
+		expect(await eventually(
+			() => readContentBootstrapStatus(fixturePage.url()).then(status => status.ready),
+			ready => ready === true,
+			'observation runtime loads for a player mounted after the document is idle',
+		)).toBe(true);
+		const tabId = await getTabId(fixturePage.url());
+		await fixturePage.evaluate(() => {
+			const live = document.querySelector('video');
+			if (!live) throw new Error('Late player missing');
+			live.volume = 0.27;
+		});
+		expect(await eventually(
+			() => storedSummary(tabId).then((stored) =>
+				(stored as { volumeBase?: { actual?: number } }).volumeBase?.actual),
+			actual => actual === 27,
+			'late player native volume reaches the snapshot',
+		)).toBe(27);
+	}, 60_000);
 });
 
 function storedSummary(tabId: number): Promise<unknown> {

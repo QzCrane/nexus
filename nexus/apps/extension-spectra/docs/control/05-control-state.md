@@ -237,9 +237,18 @@ runtime 接替 bootstrap 后仍须持续发布页面变化。回归证据见
 「有媒体」本身就是观察运行时的加载边界：文档上报 `hasMediaElement` 时，
 `ensureMediaObservation` 以 `document-media-observation` 能力确保重运行时存在，
 与是否存在待写入模板、是否已显式使用无关；没有媒体的文档不会因此加载重运行时，
-导航与显式 release 之后也不会被下一次媒体上报复活。`hasPlayableMedia` 把
-`srcObject` 上已存在的轨道也算作可控制媒体：直播路由在首次手势前把 `<video>`
-停在 `HAVE_NOTHING`，但流已经是真实的控制对象，运行时必须在那次音量手势之前存在。
+导航与显式 release 之后也不会被下一次媒体上报复活。`hasMediaSurface` 把已赋源的
+媒体算作媒体面：`srcObject` 上已存在的轨道，或 `currentSrc`/`src` 已赋值。直播路由
+在首次手势前把 `<video>` 停在 `HAVE_NOTHING`，但流已经是真实的控制对象，运行时必须
+在那次音量手势之前存在；只有没有任何资源的空壳标记仍不算媒体。加载触发同样是边界
+的一部分：bootstrap 只在文档起点监听真实媒体元素的生命周期事件（`loadstart`、`play`、
+`pause`、`playing`、`loadedmetadata`、`durationchange`、`emptied`、`timeupdate`）与
+`volumechange`/`ratechange`；播放器在页面空闲后才挂载时，先挂载再获得源会由
+`loadstart` 证明媒体面，先在游离元素上 `play()` 再挂载则由挂载后继续推进的
+`timeupdate` 证明。文档级 DOM 观察属于重运行时的 registry，bootstrap 不持有
+`MutationObserver`。上报与页面观察还必须是可确认的义务：后台拒绝（例如重定向后文档
+身份仍在收敛）时撤回去重闩锁并有界重试，后台侧 `ensureMediaObservation` 也对同一
+竞态按 120/400/1200 ms 重试；成功后立即停止，导航与显式 release 仍然优先。
 运行时 attach 到已有选中的文档时立即发布一次该选中（携带观测戳），并把页面上已经
 存在的物理值（音量、静音、速度、音高保持、播放状态）作为页面观察一并提交；无选中
 则不发布，但**紧随其后的第一次选中**会补完这次发布且只补一次。SPA 路由切换（`/follow` →

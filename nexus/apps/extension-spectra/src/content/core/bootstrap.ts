@@ -25,7 +25,7 @@ import {
 	runWithValidExtensionContext,
 } from './extension-context';
 import { createSiteSpeedLabelProjection, readPageMediaField } from '../logic/page-media-bridge';
-import { hasPlayableMedia } from '../../shared/media-presence';
+import { hasMediaSurface } from '../../shared/media-presence';
 import { isLiveMedia } from '../../shared/media-live';
 import { getPausedAt, updatePausedAt } from '../utils/pause-tracker';
 import { chooseInitialMedia } from './media-registry';
@@ -65,6 +65,14 @@ const PASSIVE_FIELDS = new Set([
 	'currentTime', 'loop', 'pip', 'fullscreen',
 ]);
 
+/**
+ * A bootstrap request is a fact about this document, and delivering it is an
+ * obligation: only an acknowledged background response proves the fact landed.
+ */
+function isAcceptedBootstrapResponse(response: unknown): boolean {
+	return !!response && typeof response === 'object' && (response as { ok?: unknown }).ok === true;
+}
+
 const previous = getContentBootstrapState();
 if (previous?.bootstrapRevision !== SPECTRA_CONTENT_BOOTSTRAP_REVISION) previous?.dispose();
 
@@ -84,6 +92,17 @@ if (!getContentBootstrapState()) {
 	let observationRevision = 0;
 	let lastReportedMediaPresence: boolean | null = null;
 	let lastReportedPlayback: boolean | null = null;
+	// A media fact and a media sample are obligations, not one-shot
+	// notifications. The first script of a redirected route runs while the
+	// background may still be resolving which document the tab now owns, and a
+	// rejected report or observation must converge on its own: withdrawing the
+	// dedupe latch and retrying a bounded number of times is what keeps the
+	// observation owner arriving without an unrelated pause/play or the Popup.
+	const DELIVERY_RETRY_DELAYS_MS = [150, 400, 900, 1_800] as const;
+	let presenceRetryAttempt = 0;
+	let presenceRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	let observationRetryAttempt = 0;
+	let observationRetryTimer: ReturnType<typeof setTimeout> | null = null;
 	// Page-entry solidification: the bootstrap is the only owner present before
 	// the deferred runtime loads, so the first media volume event probes the
 	// page controller read-only and records a positive amplified-scale verdict.
@@ -279,16 +298,28 @@ if (!getContentBootstrapState()) {
 	// with the runtime through the isolated-world bootstrap state, so the
 	// background's per-document monotonic gate never drops either producer.
 	//
-	// Detection stays passive and bounded like the rest of the bootstrap: no
-	// document-wide topology observation. The initial DOMContentLoaded snapshot
-	// covers media in the parsed HTML, pageshow re-reads a bfcache restore, and
-	// the media lifecycle listeners below only fire when a real media element
-	// emits play/pause/metadata events. Those are the only two moments a
-	// document can become or stop being a media tab, which is why this report -
-	// not a background sweep - is the inventory's sole source of truth about a
-	// tab the user is not looking at.
+	// Detection stays passive and bounded. The initial DOMContentLoaded snapshot
+	// covers media in the parsed HTML; pageshow re-reads a bfcache restore; the
+	// lifecycle listeners fire when a media element gains a source, starts
+	// playing, or advances its clock, including a player the page mounts after
+	// load and only then connects to its broadcast (`loadstart`). Document-wide
+	// DOM observation belongs to the heavy runtime's registry, never to this
+	// boundary. These are the moments a document can become or stop being a media
+	// tab, which is why this report - not a background sweep - is the inventory's
+	// sole source of truth about a tab the user is not looking at.
+	//
+	// A report and a page observation are obligations that expire only when the
+	// background acknowledges them. The first script of a redirected route runs
+	// while the tab may still be resolving its new document identity, so a
+	// rejected delivery withdraws its dedupe latch and retries a bounded number
+	// of times; otherwise one lost race would leave this document with no
+	// observation owner until an unrelated pause/play or the Popup.
 	const MEDIA_PRESENCE_EVENTS = [
-		'play', 'pause', 'playing', 'loadedmetadata', 'durationchange', 'emptied',
+		'loadstart', 'play', 'pause', 'playing', 'loadedmetadata', 'durationchange', 'emptied',
+		// A player that was played before it was mounted emits nothing else after the
+		// insertion; its playback clock still reaches the document, which is the same
+		// proof of an active media surface without observing the DOM.
+		'timeupdate',
 	] as const;
 	const onMediaPresenceSignal = (event: Event): void => {
 		if (!(event.target instanceof HTMLMediaElement)) return;
@@ -296,13 +327,24 @@ if (!getContentBootstrapState()) {
 		reportMediaPresence();
 	};
 
+	const schedulePresenceRetry = (): void => {
+		if (disposed || state.ready || presenceRetryTimer !== null
+			|| presenceRetryAttempt >= DELIVERY_RETRY_DELAYS_MS.length) return;
+		const delay = DELIVERY_RETRY_DELAYS_MS[presenceRetryAttempt];
+		presenceRetryAttempt += 1;
+		presenceRetryTimer = setTimeout(() => {
+			presenceRetryTimer = null;
+			reportMediaPresence();
+		}, delay);
+	};
+
 	const reportMediaPresence = (force = false): void => {
 		if (disposed || state.ready) return;
-		// Presence is a statement about playback, not markup: see
-		// shared/media-presence.ts. A player shell that never loaded a source is
-		// not a media tab, and reporting it as one puts a card in the Popup for a
-		// page that has nothing to control.
-		const current = hasPlayableMedia(document);
+		// Presence names the document's media surface, not its playback: see
+		// shared/media-presence.ts. A bare player shell with no resource is not a
+		// media tab, and reporting it as one puts a card in the Popup for a page
+		// with nothing to control.
+		const current = hasMediaSurface(document);
 		const playing = [...document.querySelectorAll<HTMLMediaElement>('video,audio')].some((media) => !media.paused && !media.ended);
 		updatePausedAt(playing, current);
 		if (!force && current === lastReportedMediaPresence && playing === lastReportedPlayback) return;
@@ -316,7 +358,26 @@ if (!getContentBootstrapState()) {
 			reportRevision: nextRevision,
 			playing,
 			pausedAt: getPausedAt(),
-		}, state.dispose).catch(() => undefined);
+		}, state.dispose).then((response) => {
+			if (isAcceptedBootstrapResponse(response)) {
+				presenceRetryAttempt = 0;
+				if (presenceRetryTimer !== null) {
+					clearTimeout(presenceRetryTimer);
+					presenceRetryTimer = null;
+				}
+				return;
+			}
+			// The durable fact never landed (a stale document identity while the
+			// route settles). Withdraw the dedupe latch so the retry is a real
+			// report, and keep trying without waiting for a playback change.
+			lastReportedMediaPresence = null;
+			lastReportedPlayback = null;
+			schedulePresenceRetry();
+		}).catch(() => {
+			lastReportedMediaPresence = null;
+			lastReportedPlayback = null;
+			schedulePresenceRetry();
+		});
 	};
 
 	const onMediaDomReady = (): void => {
@@ -350,6 +411,12 @@ if (!getContentBootstrapState()) {
 			speedLabels.dispose();
 			releaseDefaultScalarKeys();
 			pendingObservation = false;
+			if (presenceRetryTimer !== null) clearTimeout(presenceRetryTimer);
+			presenceRetryTimer = null;
+			presenceRetryAttempt = 0;
+			if (observationRetryTimer !== null) clearTimeout(observationRetryTimer);
+			observationRetryTimer = null;
+			observationRetryAttempt = 0;
 			document.removeEventListener('DOMContentLoaded', onMediaDomReady);
 			window.removeEventListener('pageshow', onMediaPageShow);
 			for (const type of MEDIA_PRESENCE_EVENTS) {
@@ -374,6 +441,18 @@ if (!getContentBootstrapState()) {
 				);
 			}
 		},
+	};
+
+	const scheduleObservationRetry = (): void => {
+		if (disposed || state.ready || state.disposeRuntime || observationRetryTimer !== null
+			|| observationRetryAttempt >= DELIVERY_RETRY_DELAYS_MS.length) return;
+		const delay = DELIVERY_RETRY_DELAYS_MS[observationRetryAttempt];
+		observationRetryAttempt += 1;
+		observationRetryTimer = setTimeout(() => {
+			observationRetryTimer = null;
+			pendingObservation = true;
+			drainObservation();
+		}, delay);
 	};
 
 	const drainObservation = (): void => {
@@ -402,7 +481,22 @@ if (!getContentBootstrapState()) {
 			patch: observation.patch,
 			observedStrategies: observation.observedStrategies,
 			mediaObservation: { owner: observationOwner, epoch: observationEpoch, selection: revision, revision },
-		}, state.dispose).catch(() => undefined).finally(() => {
+		}, state.dispose).then((response) => {
+			if (isAcceptedBootstrapResponse(response)) {
+				observationRetryAttempt = 0;
+				if (observationRetryTimer !== null) {
+					clearTimeout(observationRetryTimer);
+					observationRetryTimer = null;
+				}
+				return;
+			}
+			// An observation rejected while the route settles is still the current
+			// truth of this document; keep the obligation instead of waiting for
+			// the viewer's next gesture.
+			scheduleObservationRetry();
+		}).catch(() => {
+			scheduleObservationRetry();
+		}).finally(() => {
 			observationInFlight = false;
 			drainObservation();
 		});

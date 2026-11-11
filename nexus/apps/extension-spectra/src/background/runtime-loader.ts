@@ -610,11 +610,49 @@ export async function ensureContentRuntime(
  * consequence of a restore patch: a live route that inherits no desired values
  * still has a page-native volume/rate surface, and without an owner every later
  * gesture or surface has to cold-start the runtime with an explicit read.
+ *
+ * The first report of a redirected route can arrive while this worker is still
+ * resolving which document the tab now owns; a stale identity rejects the
+ * ensure. Ownership is an obligation, so a bounded retry converges on its own
+ * instead of waiting for a later report, a pause/play, or the Popup.
  */
-export async function ensureMediaObservation(tabId: number, documentId: string): Promise<void> {
+const MEDIA_OBSERVATION_RETRY_DELAYS_MS = [120, 400, 1_200] as const;
+const mediaObservationLoads = new Map<string, Promise<void>>();
+// A retry chain can outlive a test reset. The generation token retires it
+// instead of letting a delayed attempt load a runtime into the next harness.
+let loaderGeneration = 0;
+
+export function ensureMediaObservation(tabId: number, documentId: string): Promise<void> {
 	const key = runtimeKey(tabId, documentId);
-	if (retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) return;
-	await ensureContentRuntime(tabId, documentId, 'observation', DOCUMENT_OBSERVATION_CAPABILITY);
+	if (retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) return Promise.resolve();
+	const pending = mediaObservationLoads.get(key);
+	if (pending) return pending;
+	const load = ensureMediaObservationWithRetry(tabId, documentId, key);
+	mediaObservationLoads.set(key, load);
+	void load.catch(() => undefined).finally(() => {
+		if (mediaObservationLoads.get(key) === load) mediaObservationLoads.delete(key);
+	});
+	return load;
+}
+
+async function ensureMediaObservationWithRetry(
+	tabId: number,
+	documentId: string,
+	key: string,
+): Promise<void> {
+	const generation = loaderGeneration;
+	for (let attempt = 0; ; attempt += 1) {
+		try {
+			await ensureContentRuntime(tabId, documentId, 'observation', DOCUMENT_OBSERVATION_CAPABILITY);
+			return;
+		} catch (error) {
+			if (attempt >= MEDIA_OBSERVATION_RETRY_DELAYS_MS.length || generation !== loaderGeneration
+				|| retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) throw error;
+			await new Promise((resolve) => setTimeout(resolve, MEDIA_OBSERVATION_RETRY_DELAYS_MS[attempt]));
+			if (generation !== loaderGeneration
+				|| retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) throw error;
+		}
+	}
 }
 
 async function recoverFailedRestoreLease(tabId: number, documentId: string): Promise<boolean> {
@@ -889,6 +927,8 @@ export function resetContentRuntimeLoaderForTests(): void {
 	disposingDocuments.clear();
 	waiters.clear();
 	leases.clear();
+	mediaObservationLoads.clear();
+	loaderGeneration += 1;
 	releasedMediaIntents.clear();
 	retiredRuntimeKeys.clear();
 	for (const timer of disposeTimers.values()) clearTimeout(timer);

@@ -4,7 +4,7 @@ import { isExtensionContextValid, safeSend } from '../context-guard';
 import type { PolicyExecutorState } from '../../types';
 import { debounce, createCleanupManager, createEventListener } from '../../utils/timing';
 import { sendSpectraRequest } from '../../../shared/spectra-client';
-import { hasPlayableMedia } from '../../../shared/media-presence';
+import { hasMediaSurface } from '../../../shared/media-presence';
 import { getActiveMediaRegistry } from '../media-registry';
 import { getPausedAt, updatePausedAt } from '../../utils/pause-tracker';
 import { logger } from '../../../shared/logger';
@@ -29,7 +29,7 @@ export function reportMediaState(state?: PolicyExecutorState): void {
 	// question - is there a source the user could control? Both producers of the
 	// report answer it with the same shared predicate, so the background never
 	// sees a document flip between two definitions of "has media".
-	const hasMedia = hasPlayableMedia(document);
+	const hasMedia = hasMediaSurface(document);
 	const playing = getActiveMediaRegistry()?.hasPlayingMedia() ?? false;
 	updatePausedAt(playing, hasMedia);
 	const interacted = state?.userHasInteracted ?? false;

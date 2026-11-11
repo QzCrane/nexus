@@ -205,9 +205,22 @@ flowchart TD
   呈现证据——`live.douyin.com` 的 `<video>` 绑定 video-only MediaStream，首次手势前
   `paused`、`readyState 0`、`duration` 为 `NaN`（不是 `Infinity`），可能还在 0×0
   布局盒里。音量是同一原生面上的物理状态，因此判据已删除，呈现证据只服务于选择与准入。
-- 已落地的媒体边界：`hasPlayableMedia` 接受 `srcObject` 上已存在的轨道。直播路由可在
-  首次手势前把元素停在 `HAVE_NOTHING`，此时 `readyState`/`currentTime`/`played` 都不
-  成立；没有这条证据，观察运行时要等用户播放一次才被加载，第一轮音量手势无处可去。
+- 已落地的媒体边界：`hasMediaSurface` 把"有源"的媒体当作媒体面——`srcObject` 上已存在
+  的轨道，或 `currentSrc`/`src` 已赋值。直播路由可在首次手势前把元素停在
+  `HAVE_NOTHING`，此时 `readyState`/`currentTime`/`played` 都不成立；没有这条证据，
+  观察运行时要等用户播放一次才被加载，第一轮音量手势无处可去。没有任何资源的空壳
+  标记仍然不算媒体。
+- 已落地的加载触发：bootstrap 在文档起点监听真实媒体元素的生命周期事件
+  （`loadstart`、`play`、`pause`、`playing`、`loadedmetadata`、`durationchange`、
+  `emptied`、`timeupdate`）与 `volumechange`/`ratechange`，每次重算媒体面。直播路由
+  常在页面空闲后才挂载播放器：先挂载再获得源时 `loadstart` 会到达文档；先在游离元素
+  上 `play()` 再挂载时，挂载后继续推进的播放时钟（`timeupdate`）会到达文档。文档级
+  DOM 观察属于重运行时的 registry，bootstrap 不持有 `MutationObserver`。
+- 已落地的交付收敛：媒体上报和页面观察都是义务，只有后台确认（`ok:true`）才结束。
+  被重定向路由的文档身份竞态拒绝时，bootstrap 撤回去重闩锁并有界重试；后台
+  `ensureMediaObservation` 同样在身份过期/瞬时失败时按 120/400/1200 ms 重试，成功后
+  立即停止。这样一次丢失的上报不会把文档拖到"用户点一次暂停/播放"或"打开 Popup"
+  才恢复；重试受 navigation/release 退休与新文档代际约束。
 - 现场证据（真实页面）：`live.douyin.com` 的直播控制是
   `douyin-player-volume-slider(-track/-thumb/-number)` 这组 DOM，页面没有 `window.player`；
   播放器 `<video>` 是 `srcObject` MediaStream。内容运行时对每个 `volumechange` 输出最多
@@ -215,14 +228,18 @@ flowchart TD
   duration, buffered, rect})`（`console.info` 会被生产构建剥离）。没有输出说明元素未
   注册或事件未到达；`selected:false` 说明样本走的是非所有权路径；两者都正常而角标不动
   才需要查后台准入或角标投影。
-- 浏览器证据：`test/smoke/live-target-restart.spec.ts` 的三条门禁——
+- 浏览器证据：`test/smoke/live-target-restart.spec.ts` 的四条门禁——
   "follows the broadcast native volume while another player owns control"（0×0 canvas
   直播，角标 80 → 37）、"follows a finite player the page mounts without a layout box"
   （0×0 有限播放器，角标 80 → 42）、"follows a paused player the page keeps out of layout
-  before playback starts"（无面积、无元数据、未播放、无播放历史，角标 80 → 31）。
-  最后一条在旧判据下必然停在 80，是本次根因的回归门禁。
+  before playback starts"（无面积、无元数据、未播放、无播放历史，角标 80 → 31）、
+  "loads the observation runtime when a live route mounts its player after the document is
+  idle"（空文档 → 挂载空播放器 → 连接态赋 `srcObject` 触发 `loadstart`，运行时由该
+  生命周期事件加载，旧实现停在 `ready:false`）。最后两条分别看住"观察不以呈现为门"
+  和"媒体面由有界生命周期事件重算"。
 - 测试：`test/runtime-loader.spec.ts` 的
   "acquires an observation runtime for a media document with no desired template"、
+  "retries an observation load that lost the document-identity race"、
   "does not acquire an observation runtime after the viewer released the document"；
   `test/native-media-executor.spec.ts` 的
   "publishes an established selection when a runtime attaches after it was selected"、
