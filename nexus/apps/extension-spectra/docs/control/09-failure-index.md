@@ -205,6 +205,12 @@ flowchart TD
   布局盒且 `presentationHidden = true`，所以"0×0 即隐藏"曾让上一条规则完全不触发。
   `isPresented` 现按"有面积 ∨ PiP/全屏 ∨ `isLiveMedia`（无界时间线且已缓冲/绑定
   MediaStream）"判定；既无面积又无直播证据的隐藏预载仍不观察。
+- 浏览器证据：`test/smoke/live-target-restart.spec.ts` 的
+  "follows the broadcast native volume while another player owns control" 用真实
+  Chrome + 已构建扩展复现该症状——有限播放器持有控制、0×0 直播被 canvas 绘制时，
+  页面把直播音量改成 37，角标必须从 80 变成 37。同一用例在上一版
+  `presentationHidden` 否决下超时停在 `80`，因此它是本条的症状回归门禁，不能只在
+  单测里模拟 `isPresented`。
 - 测试：`test/runtime-loader.spec.ts` 的
   "acquires an observation runtime for a media document with no desired template"、
   "does not acquire an observation runtime after the viewer released the document"；

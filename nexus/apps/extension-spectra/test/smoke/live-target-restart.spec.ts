@@ -454,6 +454,59 @@ describe('volume after same-document runtime replacement', () => {
 		if (mode === 'reused') expect((await read()).preview).toBe(1);
 		await releaseSmokeRuntime(afterLease);
 	}, 40_000);
+	test('follows the broadcast native volume while another player owns control', async () => {
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+		const tabId = await getTabId(fixturePage.url());
+		// The finite player the route left behind is playing and visible, so it is
+		// the control owner. This is the state right after an SPA mounts a live page.
+		await fixturePage.evaluate(async bytes => {
+			const owner = document.querySelector<HTMLVideoElement>('#v');
+			if (!owner) throw new Error('Fixture player missing');
+			owner.style.cssText = 'position:fixed;left:0;top:0;width:640px;height:360px';
+			owner.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+			owner.loop = true; owner.volume = 0.8; owner.muted = false;
+			await owner.play();
+		}, [...SMOKE_TONE_WAV]);
+		await fixturePage.bringToFront();
+		// One extension gesture lights the badge and records durable usage.
+		await submitPopupControlIntent(tabId, { patch: { volumeBase: 80 } });
+		expect(await eventually(() => readBadgeText(tabId), text => text === '80', 'finite owner badge'))
+			.toBe('80');
+
+		// The live route mounts a broadcast painted through a canvas: the <video>
+		// keeps a 0x0 box and stays parked paused, so it never becomes the control
+		// owner. Its native volume gesture still has to reach the badge.
+		await fixturePage.evaluate(async () => {
+			const live = document.createElement('video');
+			live.id = 'broadcast';
+			live.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0';
+			const canvas = document.createElement('canvas');
+			canvas.width = 320; canvas.height = 180;
+			canvas.getContext('2d')?.fillRect(0, 0, 320, 180);
+			const stream = canvas.captureStream(1);
+			const context = new AudioContext();
+			const oscillator = context.createOscillator();
+			const destination = context.createMediaStreamDestination();
+			oscillator.connect(destination); oscillator.start();
+			await context.resume();
+			for (const track of destination.stream.getAudioTracks()) stream.addTrack(track);
+			live.srcObject = stream;
+			live.volume = 0.2; live.muted = false;
+			document.body.append(live);
+		});
+		await eventually(
+			() => fixturePage.evaluate(() => document.querySelector<HTMLVideoElement>('#broadcast')?.duration),
+			duration => duration === Number.POSITIVE_INFINITY,
+			'broadcast timeline',
+		);
+		await fixturePage.evaluate(() => {
+			const live = document.querySelector<HTMLVideoElement>('#broadcast');
+			if (!live) throw new Error('Broadcast player missing');
+			live.volume = 0.37;
+		});
+		expect(await eventually(() => readBadgeText(tabId), text => text === '37', 'broadcast native volume badge'))
+			.toBe('37');
+	}, 90_000);
 });
 
 function storedSummary(tabId: number): Promise<unknown> {

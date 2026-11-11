@@ -143,6 +143,7 @@ if (await port.resolvePersistentMediaObservation(target)) {
 | `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；attach 无选中 → 不发，第一次选中补发一次且只补一次；SPA 切换到另一个播放器元素 → 发布该元素的物理值；同一元素身份变化 → 仍只发 target；未选中但呈现中的元素发生原生音量变化 → 以该元素 target 提交页面观察，隐藏预览不提交 |
 | `test/runtime-restart-startup.spec.ts` | 媒体事实为 `found` 且 documentId 匹配 → 保留 observation；无事实 → 既有孤儿回收用例不变 |
 | `test/media-registry.spec.ts` | 0×0 但直播时间线成立的元素 `isPresented` 为真；0×0 且非直播的隐藏预载为假 |
+| `test/smoke/live-target-restart.spec.ts` | 有限播放器持有控制、0×0 canvas 直播未选中时，页面改直播音量 → 角标从 80 变 37（上一版实现超时停在 80，已验证该用例能区分） |
 
 ## 6. 文档投影
 
