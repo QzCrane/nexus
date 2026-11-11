@@ -217,9 +217,12 @@ flowchart TD
   上 `play()` 再挂载时，挂载后继续推进的播放时钟（`timeupdate`）会到达文档。文档级
   DOM 观察属于重运行时的 registry，bootstrap 不持有 `MutationObserver`。
 - 已落地的交付收敛：媒体上报和页面观察都是义务，只有后台确认（`ok:true`）才结束。
-  被重定向路由的文档身份竞态拒绝时，bootstrap 撤回去重闩锁并有界重试；后台
-  `ensureMediaObservation` 同样在身份过期/瞬时失败时按 120/400/1200 ms 重试，成功后
-  立即停止。这样一次丢失的上报不会把文档拖到"用户点一次暂停/播放"或"打开 Popup"
+  被重定向路由的文档身份竞态拒绝时，bootstrap 撤回去重闩锁并按
+  150/400/900/1800 ms 重试；HELLO 归属握手按 150/400/900/1800/3000/5000 ms 独立重试，
+  一次被拒绝的握手不会让文档永久失去观察路径。媒体上报只有在 observation owner
+  真正就绪后才确认：后台 `ensureMediaObservation` 以 120/400/1200/3000/6000/10000 ms
+  重试，等待中的消息通道让 worker 覆盖整个重试窗口，失败返回可重试错误并让 bootstrap
+  重新上报。这样一次丢失的上报不会把文档拖到"用户点一次暂停/播放"或"打开 Popup"
   才恢复；重试受 navigation/release 退休与新文档代际约束。
 - 现场证据（真实页面）：`live.douyin.com` 的直播控制是
   `douyin-player-volume-slider(-track/-thumb/-number)` 这组 DOM，页面没有 `window.player`；

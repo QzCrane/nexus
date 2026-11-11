@@ -616,7 +616,7 @@ export async function ensureContentRuntime(
  * ensure. Ownership is an obligation, so a bounded retry converges on its own
  * instead of waiting for a later report, a pause/play, or the Popup.
  */
-const MEDIA_OBSERVATION_RETRY_DELAYS_MS = [120, 400, 1_200] as const;
+const MEDIA_OBSERVATION_RETRY_DELAYS_MS = [120, 400, 1_200, 3_000, 6_000, 10_000] as const;
 const mediaObservationLoads = new Map<string, Promise<void>>();
 // A retry chain can outlive a test reset. The generation token retires it
 // instead of letting a delayed attempt load a runtime into the next harness.

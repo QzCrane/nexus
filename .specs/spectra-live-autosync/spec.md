@@ -97,8 +97,11 @@ if (message.payload.hasMediaElement) {
 - 交付必须是可确认的义务：`spectra.tab.media.report` 与 bootstrap 的页面观察只有
   收到 `ok:true` 才算落地；被重定向路由的文档身份竞态拒绝时撤回去重闩锁并按
   150/400/900/1800 ms 有界重试。后台 `ensureMediaObservation` 对同一竞态按
-  120/400/1200 ms 重试，导航/显式 release/新代际立即终止。一次丢失的上报不得把
-  观察 owner 拖到用户手动暂停/播放或打开 Popup 才出现。
+  120/400/1200/3000/6000/10000 ms 重试，导航/显式 release/新代际立即终止；并且
+  `spectra.tab.media.report` 只有在观察 owner 真正就绪后才返回成功，失败返回可重试
+  错误，等待中的消息通道让 worker 覆盖整个重试窗口。bootstrap 的 HELLO 归属握手
+  按 150/400/900/1800/3000/5000 ms 重试；一次被拒绝的握手不得让文档失去观察路径。
+  一次丢失的上报不得把观察 owner 拖到用户手动暂停/播放或打开 Popup 才出现。
 - 角标展示不得冻结：快捷键/Popup 的乐观展示记录其基于的 control revision；同一
   document/generation 下已有更大 revision 的已准入投影时，展示立即让位给实际值并
   删除。否则一次未收敛的写入（页面重置音量、可重试 unmute 拒绝、断开的 Popup Port）
@@ -166,6 +169,7 @@ if (await port.resolvePersistentMediaObservation(target)) {
 | `test/runtime-loader.spec.ts` | `ensureMediaObservation` 在未初始化/已退役/已 release 时 no-op；正常时以 `observation` 能力 ensure；文档身份竞态（`getFrame` 首次失败）时重试到成功；`hasMediaElement` handler 的接线由既有 `tab-visibility.spec.ts` 的 `recordMediaState` 用例守住 |
 | `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；attach 无选中 → 不发，第一次选中补发一次且只补一次；SPA 切换到另一个播放器元素 → 发布该元素的物理值；同一元素身份变化 → 仍只发 target；未选中元素发生原生音量变化 → 无论是否有面积/元数据/播放历史，都以该元素 target 提交页面观察；语义隐藏的未选中预览发生音量变化 → 不提交样本 |
 | `test/runtime-restart-startup.spec.ts` | 媒体事实为 `found` 且 documentId 匹配 → 保留 observation；无事实 → 既有孤儿回收用例不变 |
+| `test/content-runtime-readiness.spec.ts` | 路由文档首次 HELLO 因身份竞态被拒绝 → 150 ms 后重试，缓冲的 `volumechange` 在握手落地后提交（不需要暂停/播放或 Popup）；既有 deferred HELLO、runtime takeover、owner handoff 语义不变 |
 | `test/badge-volume-state.spec.ts` | 未结算的乐观展示（revision R）在页面观测以 R+1 被准入后让位给实际值（旧实现停在乐观数字）；同一 revision 的观测不得覆盖乐观展示；预览/快捷键结算语义不变 |
 | `test/media-presence.spec.ts` | `srcObject` 已绑定轨道但停在 `HAVE_NOTHING`、`src`/`currentSrc` 已赋值 → 文档有可控制媒体；空壳、空流 → 没有；`readyState`/`currentTime`/`played` 的既有证据不变 |
 | `test/smoke/live-target-restart.spec.ts` | 有限播放器持有控制、0×0 canvas 直播未选中时，页面改直播音量 → 角标从 80 变 37（上一版实现超时停在 80，已验证该用例能区分）；被点击过的有限播放器保持控制、页面再挂载 0×0 有限时间线出声播放器时，其音量 0.42 仍进角标；页面挂载无面积、无元数据、暂停且无播放历史的播放器后改其音量 0.31 → 角标从 80 变 31（旧判据下必然停在 80）；空文档挂载空播放器后再赋 `srcObject`（连接态触发 `loadstart`）→ 观察运行时必须由该生命周期事件加载（旧实现停在 `ready:false`），随后原生音量 0.27 进入快照 |

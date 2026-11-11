@@ -117,6 +117,17 @@ function registerTabStateV2Listener(): void {
 				const result = recordMediaState(tabId, sender.documentId, message.payload);
 				if (sender.tab?.active === true) mediaFacts.touchMediaFact(tabId);
 				await mediaFacts.flushMediaFacts();
+				// The report is not complete until this document has an observation
+				// owner. `recordMediaState` starts the load, but acknowledging before
+				// it lands let a rejected identity race look delivered: the bootstrap
+				// kept its dedupe latch, the retry chain exhausted, and the page stayed
+				// unobservable until a pause/play or the Popup loaded the runtime.
+				// Awaiting here keeps the message channel (and the worker) alive for
+				// the bounded retry horizon and returns a retryable failure, so the
+				// content script reports again.
+				if (message.payload.hasMediaElement) {
+					await ensureMediaObservation(tabId, sender.documentId);
+				}
 				return result;
 			}
 			if (message.type === 'spectra.content.inject') {

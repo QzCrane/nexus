@@ -99,8 +99,17 @@ if (!getContentBootstrapState()) {
 	// dedupe latch and retrying a bounded number of times is what keeps the
 	// observation owner arriving without an unrelated pause/play or the Popup.
 	const DELIVERY_RETRY_DELAYS_MS = [150, 400, 900, 1_800] as const;
+	// HELLO is the observation-ownership handshake. A routed document (the same
+	// tab following a 302 from a feed to a live room) can lose its identity race
+	// once, and the route may still be committing when this script runs, so the
+	// handshake gets a longer, independent retry horizon than a media sample.
+	const HELLO_RETRY_DELAYS_MS = [150, 400, 900, 1_800, 3_000, 5_000] as const;
 	let presenceRetryAttempt = 0;
 	let presenceRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	let presenceInFlight = false;
+	let helloRetryAttempt = 0;
+	let helloRetryTimer: ReturnType<typeof setTimeout> | null = null;
+	let helloInFlight = false;
 	let observationRetryAttempt = 0;
 	let observationRetryTimer: ReturnType<typeof setTimeout> | null = null;
 	// Page-entry solidification: the bootstrap is the only owner present before
@@ -348,10 +357,15 @@ if (!getContentBootstrapState()) {
 		const playing = [...document.querySelectorAll<HTMLMediaElement>('video,audio')].some((media) => !media.paused && !media.ended);
 		updatePausedAt(playing, current);
 		if (!force && current === lastReportedMediaPresence && playing === lastReportedPlayback) return;
+		// A live page emits `timeupdate` several times a second. While a report is
+		// in flight its outcome is still unknown, so sending another copy would only
+		// queue duplicate ownership obligations behind the same document identity.
+		if (presenceInFlight) return;
 		lastReportedMediaPresence = current;
 		lastReportedPlayback = playing;
 		const nextRevision = (state.mediaReportRevision ?? 0) + 1;
 		state.mediaReportRevision = nextRevision;
+		presenceInFlight = true;
 		void sendBootstrapRequest('spectra.tab.media.report', {
 			hasMediaElement: current,
 			userInteracted: false,
@@ -377,6 +391,8 @@ if (!getContentBootstrapState()) {
 			lastReportedMediaPresence = null;
 			lastReportedPlayback = null;
 			schedulePresenceRetry();
+		}).finally(() => {
+			presenceInFlight = false;
 		});
 	};
 
@@ -414,6 +430,11 @@ if (!getContentBootstrapState()) {
 			if (presenceRetryTimer !== null) clearTimeout(presenceRetryTimer);
 			presenceRetryTimer = null;
 			presenceRetryAttempt = 0;
+			presenceInFlight = false;
+			if (helloRetryTimer !== null) clearTimeout(helloRetryTimer);
+			helloRetryTimer = null;
+			helloRetryAttempt = 0;
+			helloInFlight = false;
 			if (observationRetryTimer !== null) clearTimeout(observationRetryTimer);
 			observationRetryTimer = null;
 			observationRetryAttempt = 0;
@@ -664,18 +685,48 @@ if (!getContentBootstrapState()) {
 		onMediaDomReady();
 	}
 
-	void sendBootstrapRequest('spectra.content.bootstrap.hello', {
-		bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
-	}, state.dispose).then((response) => {
-		if (!isBootstrapHelloResponse(response) || disposed) return;
-		state.runtimeRevision = response.data.runtimeRevision;
-		state.ready = response.data.runtimeRevision !== null;
-		observationsReady = true;
-		drainObservation();
-		// The HELLO verdict decides the media reporter owner for this document: a
-		// loaded runtime owns reporting (reportMediaPresence yields via state.ready),
-		// otherwise the bootstrap keeps the fact warm through lifecycle events.
-	}).catch(() => undefined);
+	const requestBootstrapHello = (): void => {
+		if (disposed || helloInFlight || observationsReady) return;
+		helloInFlight = true;
+		void sendBootstrapRequest('spectra.content.bootstrap.hello', {
+			bootstrapRevision: SPECTRA_CONTENT_BOOTSTRAP_REVISION,
+		}, state.dispose).then((response) => {
+			helloInFlight = false;
+			if (disposed) return;
+			if (!isBootstrapHelloResponse(response)) {
+				scheduleHelloRetry();
+				return;
+			}
+			helloRetryAttempt = 0;
+			if (helloRetryTimer !== null) {
+				clearTimeout(helloRetryTimer);
+				helloRetryTimer = null;
+			}
+			state.runtimeRevision = response.data.runtimeRevision;
+			state.ready = response.data.runtimeRevision !== null;
+			observationsReady = true;
+			drainObservation();
+			// The HELLO verdict decides the media reporter owner for this document: a
+			// loaded runtime owns reporting (reportMediaPresence yields via state.ready),
+			// otherwise the bootstrap keeps the fact warm through lifecycle events.
+		}).catch(() => {
+			helloInFlight = false;
+			scheduleHelloRetry();
+		});
+	};
+
+	const scheduleHelloRetry = (): void => {
+		if (disposed || observationsReady || helloRetryTimer !== null
+			|| helloRetryAttempt >= HELLO_RETRY_DELAYS_MS.length) return;
+		const delay = HELLO_RETRY_DELAYS_MS[helloRetryAttempt];
+		helloRetryAttempt += 1;
+		helloRetryTimer = setTimeout(() => {
+			helloRetryTimer = null;
+			requestBootstrapHello();
+		}, delay);
+	};
+
+	requestBootstrapHello();
 }
 
 function sendBootstrapRequest(

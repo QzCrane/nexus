@@ -42,6 +42,22 @@ describe('content runtime readiness boundary', () => {
 		expect(harness.intents).toHaveLength(1);
 	});
 
+	test('retries a routed HELLO that lost the document identity race', async () => {
+		const harness = installBootstrapHarness();
+		harness.failHelloOnce();
+		await importFreshBootstrap('hello-retry');
+
+		// The first handshake is rejected while the same-tab route is committing.
+		// The buffered volume change must survive that rejection and drain once the
+		// retried handshake lands, without any pause/play or Popup.
+		harness.media.volume = 0.42;
+		harness.dispatchNativeChange('volumechange');
+		await new Promise((resolveTick) => setTimeout(resolveTick, 220));
+		harness.resolveHello(null);
+		await waitFor(() => harness.intents.length === 1);
+		expect(harness.intents[0]?.payload).toMatchObject({ patch: { volumeBase: 42 } });
+	});
+
 	test('drops a buffered bootstrap observation when HELLO transfers ownership to runtime', async () => {
 		const harness = installBootstrapHarness();
 		await importFreshBootstrap('runtime-takeover');
@@ -121,6 +137,7 @@ function installBootstrapHarness() {
 	});
 	let resolveHello!: (response: unknown) => void;
 	const hello = new Promise<unknown>((resolvePromise) => { resolveHello = resolvePromise; });
+	let helloFailures = 0;
 	const intents: Array<{ type: string; payload: Record<string, unknown> }> = [];
 	let nextObservation: Promise<unknown> | null = null;
 	const onMessage = new Set<(...args: never[]) => unknown>();
@@ -137,7 +154,13 @@ function installBootstrapHarness() {
 					removeListener: (listener: (...args: never[]) => unknown) => onMessage.delete(listener),
 				},
 				sendMessage: (message: { type: string; payload: Record<string, unknown> }) => {
-					if (message.type === 'spectra.content.bootstrap.hello') return hello;
+					if (message.type === 'spectra.content.bootstrap.hello') {
+						if (helloFailures > 0) {
+							helloFailures -= 1;
+							return Promise.reject(new Error('Stale document identity'));
+						}
+						return hello;
+					}
 					if (message.type === 'spectra.control.intent.submit') {
 						intents.push(message);
 						const pending = nextObservation; nextObservation = null;
@@ -159,6 +182,9 @@ function installBootstrapHarness() {
 			let release!: () => void;
 			nextObservation = new Promise(resolve => { release = () => resolve({ ok: true, data: {} }); });
 			return release;
+		},
+		failHelloOnce() {
+			helloFailures += 1;
 		},
 		dispatchNativeChange(type: 'volumechange' | 'ratechange') {
 			const event = new Event(type);
