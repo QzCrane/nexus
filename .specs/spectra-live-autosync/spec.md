@@ -50,9 +50,9 @@ SPA 竞态：`/follow` → `/follow/live/<id>` 也可能在同一文档内完成
 - **I3 attach 即发布**：运行时接管已有选中的文档时立即发布该选中的观测；
   attach 时无选中则由紧随其后的第一次选中补完一次；SPA 切换选中另一个播放器
   元素时发布该元素自己的物理值。
-- **I4 观察不追随所有权**：呈现中元素的原生音量/静音变化始终以该元素自己的
-  target 提交页面观察，即使选中尚未迁移到它；隐藏预览不观察，控制所有权不因
-  属性事件移动。
+- **I4 观察不追随所有权，也不以呈现为门**：任何已注册元素的原生音量/静音变化
+  始终以该元素自己的 target 提交页面观察，即使选中尚未迁移到它；控制所有权不因
+  属性事件移动。呈现证据只服务于选择与准入。
 - **I5 页面不退化**：无媒体的文档不加载重运行时；显式 release 后不重建。
 - **I6 三件事互不门闩**：同步 / 使用 / 角标可见性保持既有分离。
 
@@ -104,14 +104,14 @@ publishCurrentSelection(): void
 - `selected` 事件：attach 挂起时补发一次物理值；否则仅当选中换成另一个元素
   （SPA 路由切换）时发布该元素自己的物理值。同一元素上 mediaId / sourceRevision
   变化保持 target-only，避免把冷态 page-semantic 样本重归因。
-- `volumechange` 来自未被选中的元素时：若 `registry.isPresented(target)` 为真，
-  以该元素自己的 target 提交 `volumeBase` / `mediaMuted` 页面观察；隐藏预览不提交，
-  控制所有权不变。`flushPageObservations` 对这类 target 重新读取自己的元素，而不是
-  用控制 owner 的 delegate 读数。`isPresented` 的证据是
-  "有面积 ∨ PiP/全屏 ∨ `isLiveMedia` ∨ 正在出声（未暂停、未静音、音量 > 0）"：
-  抖音直播用 canvas 绘制画面、`<video>` 保持 0×0 布局盒，几何必须让位于无界时间线
-  证据，否则本条永不触发；有限时间线的 DVR/高光播放器由"正在出声"覆盖，静音或
-  暂停的节点仍是隐藏预载。
+- `volumechange` 来自未被选中的元素时：以该元素自己的 target 提交 `volumeBase` /
+  `mediaMuted` 页面观察，控制所有权不变。`flushPageObservations` 对这类 target
+  重新读取自己的元素，而不是用控制 owner 的 delegate 读数。**不设呈现判据**：
+  抖音直播把画面画在 canvas 上、`<video>` 可以是 0×0，首次手势前 `duration` 是
+  `NaN`、`paused`、`readyState 0`，站点还可能先静音再由自己的 UI 解除——这些都
+  是同一原生音量面的合法状态。曾经的 `isPresented` 判据会让这条例在真实直播页
+  永不触发，且"点一次暂停/播放就恢复"正是它的反证（`play` 把所有权移过去，
+  绕过了整道门）。
 
 在 `content/core/index.ts` 的 `bootstrapMessaging(...)` 之后调用一次，
 保证消息通道就绪。重复发布由后台有序观测准入吸收，幂等。
@@ -142,10 +142,10 @@ if (await port.resolvePersistentMediaObservation(target)) {
 | 文件 | 用例 |
 | --- | --- |
 | `test/runtime-loader.spec.ts` | `ensureMediaObservation` 在未初始化/已退役/已 release 时 no-op；正常时以 `observation` 能力 ensure；`hasMediaElement` handler 的接线由既有 `tab-visibility.spec.ts` 的 `recordMediaState` 用例守住 |
-| `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；attach 无选中 → 不发，第一次选中补发一次且只补一次；SPA 切换到另一个播放器元素 → 发布该元素的物理值；同一元素身份变化 → 仍只发 target；未选中但呈现中的元素发生原生音量变化 → 以该元素 target 提交页面观察，隐藏预览不提交 |
+| `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；attach 无选中 → 不发，第一次选中补发一次且只补一次；SPA 切换到另一个播放器元素 → 发布该元素的物理值；同一元素身份变化 → 仍只发 target；未选中元素发生原生音量变化 → 无论是否有面积/元数据/播放历史，都以该元素 target 提交页面观察 |
 | `test/runtime-restart-startup.spec.ts` | 媒体事实为 `found` 且 documentId 匹配 → 保留 observation；无事实 → 既有孤儿回收用例不变 |
-| `test/media-registry.spec.ts` | 0×0 但直播时间线成立的元素 `isPresented` 为真；0×0 且非直播的隐藏预载为假；0×0 有限时间线但正在出声为真，静音或暂停为假 |
-| `test/smoke/live-target-restart.spec.ts` | 有限播放器持有控制、0×0 canvas 直播未选中时，页面改直播音量 → 角标从 80 变 37（上一版实现超时停在 80，已验证该用例能区分）；被点击过的有限播放器保持控制、页面再挂载 0×0 有限时间线出声播放器时，其音量 0.42 仍进角标 |
+| `test/media-presence.spec.ts` | `srcObject` 已绑定轨道但停在 `HAVE_NOTHING` → 文档有可控制媒体；空壳、空流 → 没有；`readyState`/`currentTime`/`played` 的既有证据不变 |
+| `test/smoke/live-target-restart.spec.ts` | 有限播放器持有控制、0×0 canvas 直播未选中时，页面改直播音量 → 角标从 80 变 37（上一版实现超时停在 80，已验证该用例能区分）；被点击过的有限播放器保持控制、页面再挂载 0×0 有限时间线出声播放器时，其音量 0.42 仍进角标；页面挂载无面积、无元数据、暂停且无播放历史的播放器后改其音量 0.31 → 角标从 80 变 31（旧判据下必然停在 80） |
 | `test/smoke/badge-projection.spec.ts` | 同一 tab 进入新文档后，页面原生音量 0.55 仍进角标（运行时就绪后） |
 
 ## 6. 文档投影

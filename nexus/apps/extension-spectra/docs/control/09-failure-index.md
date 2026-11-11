@@ -197,26 +197,30 @@ flowchart TD
   因历史媒体事实被复活。
 - 同源路由 `/follow` ↔ `/follow/live/<id>` 共用同一 tab session，不涉及跨 origin
   会话迁移；不要再从 tldts/site 分组方向修这个问题。
-- 观察不追随控制所有权：SPA 直播路由已挂载并播放新播放器、但选中尚未迁移时，呈现中
-  元素的原生音量/静音变化仍以该元素自己的 target 提交页面观察；隐藏预览不观察，控制
-  所有权也不因属性事件移动。否则 `volumechange` 会被"非当前目标"过滤，角标停在旧播放器
-  的数字，直到用户手动暂停/播放或打开 Popup。
-- 已落地的呈现证据：几何不是唯一证据。抖音直播用 canvas 绘制画面、`<video>` 保持 0×0
-  布局盒且 `presentationHidden = true`，所以"0×0 即隐藏"曾让上一条规则完全不触发。
-  `isPresented` 现按"有面积 ∨ PiP/全屏 ∨ `isLiveMedia`（无界时间线且已缓冲/绑定
-  MediaStream）∨ 正在出声（未暂停、未静音、音量 > 0）"判定；既无面积又无直播/出声
-  证据的隐藏预载仍不观察。有限时间线的 DVR/高光播放器靠最后一条成立。
-- 现场证据：内容运行时对每个 `volumechange` 输出最多 8 行
-  `console.info('[SPECTRA][volume]', {media, selected, presented, paused, muted,
-  volume, duration, buffered, rect})`。用户报告"原生音量不同步"时，先看这几行：
-  没有输出说明元素未注册或事件未到达；`presented:false` 说明呈现证据不足；
-  `selected:true / presented:true` 仍不同步则问题在后台准入或角标投影。
-- 浏览器证据：`test/smoke/live-target-restart.spec.ts` 的
-  "follows the broadcast native volume while another player owns control" 用真实
-  Chrome + 已构建扩展复现该症状——有限播放器持有控制、0×0 直播被 canvas 绘制时，
-  页面把直播音量改成 37，角标必须从 80 变成 37。同一用例在上一版
-  `presentationHidden` 否决下超时停在 `80`，因此它是本条的症状回归门禁，不能只在
-  单测里模拟 `isPresented`。
+- 已落地的观察边界：观察**不以呈现为门**。SPA 直播路由已挂载播放器、但选中尚未
+  迁移时，该元素自己的原生音量/静音变化仍以它自己的 target 提交页面观察；控制所有权
+  不因属性事件移动。曾经用 `isPresented`（有面积 ∨ PiP/全屏 ∨ `isLiveMedia` ∨ 正在
+  出声）否决未选中元素的观察，但"点一次暂停/播放就恢复同步"正是这个判据的反证：
+  `play` 会把所有权移到该元素，从而绕过整道门。真实直播页的状态并不满足任何一条
+  呈现证据——`live.douyin.com` 的 `<video>` 绑定 video-only MediaStream，首次手势前
+  `paused`、`readyState 0`、`duration` 为 `NaN`（不是 `Infinity`），可能还在 0×0
+  布局盒里。音量是同一原生面上的物理状态，因此判据已删除，呈现证据只服务于选择与准入。
+- 已落地的媒体边界：`hasPlayableMedia` 接受 `srcObject` 上已存在的轨道。直播路由可在
+  首次手势前把元素停在 `HAVE_NOTHING`，此时 `readyState`/`currentTime`/`played` 都不
+  成立；没有这条证据，观察运行时要等用户播放一次才被加载，第一轮音量手势无处可去。
+- 现场证据（真实页面）：`live.douyin.com` 的直播控制是
+  `douyin-player-volume-slider(-track/-thumb/-number)` 这组 DOM，页面没有 `window.player`；
+  播放器 `<video>` 是 `srcObject` MediaStream。内容运行时对每个 `volumechange` 输出最多
+  8 行 `console.warn('[SPECTRA][volume]', {media, selected, paused, muted, volume,
+  duration, buffered, rect})`（`console.info` 会被生产构建剥离）。没有输出说明元素未
+  注册或事件未到达；`selected:false` 说明样本走的是非所有权路径；两者都正常而角标不动
+  才需要查后台准入或角标投影。
+- 浏览器证据：`test/smoke/live-target-restart.spec.ts` 的三条门禁——
+  "follows the broadcast native volume while another player owns control"（0×0 canvas
+  直播，角标 80 → 37）、"follows a finite player the page mounts without a layout box"
+  （0×0 有限播放器，角标 80 → 42）、"follows a paused player the page keeps out of layout
+  before playback starts"（无面积、无元数据、未播放、无播放历史，角标 80 → 31）。
+  最后一条在旧判据下必然停在 80，是本次根因的回归门禁。
 - 测试：`test/runtime-loader.spec.ts` 的
   "acquires an observation runtime for a media document with no desired template"、
   "does not acquire an observation runtime after the viewer released the document"；
@@ -224,9 +228,8 @@ flowchart TD
   "publishes an established selection when a runtime attaches after it was selected"、
   "completes the attach publication when the first selection arrives after it"、
   "publishes the replacement player values when a route switch selects another element"、
-  "observes a native volume change from a presented player the selection has not reached"；
-  `test/media-registry.spec.ts` 的
-  "presents a broadcast the page paints without a layout box"；
+  "observes a native volume change from any registered player the selection has not reached"；
+  `test/media-presence.spec.ts` 的已绑定轨道用例；
   `test/runtime-restart-startup.spec.ts` 的
   "keeps the surviving runtime as an observation owner when its document reported media"、
   "does not resurrect a dead runtime for a media observation owner"。

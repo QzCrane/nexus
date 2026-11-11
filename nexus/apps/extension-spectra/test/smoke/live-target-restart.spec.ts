@@ -550,6 +550,52 @@ describe('volume after same-document runtime replacement', () => {
 		expect(await eventually(() => readBadgeText(tabId), text => text === '42', 'mounted player badge'))
 			.toBe('42');
 	}, 90_000);
+
+	test('follows a paused player the page keeps out of layout before playback starts', async () => {
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+		const tabId = await getTabId(fixturePage.url());
+		await fixturePage.evaluate(async bytes => {
+			const owner = document.querySelector<HTMLVideoElement>('#v');
+			if (!owner) throw new Error('Fixture player missing');
+			owner.style.cssText = 'position:fixed;left:0;top:0;width:640px;height:360px';
+			owner.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+			owner.loop = true; owner.volume = 0.8; owner.muted = false;
+			await owner.play();
+		}, [...SMOKE_TONE_WAV]);
+		await fixturePage.bringToFront();
+		await submitPopupControlIntent(tabId, { patch: { volumeBase: 80 } });
+		expect(await eventually(() => readBadgeText(tabId), text => text === '80', 'owner badge')).toBe('80');
+		// A broadcast the page attached but has not started: no layout box, no
+		// metadata, paused, and no playback history. This is the state a live route
+		// holds before the viewer's first gesture, and it used to require a
+		// pause/play click to move control onto the element before volume followed.
+		await fixturePage.evaluate(async () => {
+			const live = document.createElement('video');
+			live.id = 'idle-broadcast';
+			live.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0';
+			const canvas = document.createElement('canvas');
+			canvas.width = 320; canvas.height = 180;
+			canvas.getContext('2d')?.fillRect(0, 0, 320, 180);
+			live.srcObject = canvas.captureStream(1);
+			live.volume = 0.2; live.muted = false;
+			document.body.append(live);
+		});
+		await eventually(
+			() => fixturePage.evaluate(() => {
+				const live = document.querySelector<HTMLVideoElement>('#idle-broadcast');
+				return live ? { ready: live.readyState, played: live.played.length } : null;
+			}),
+			state => state !== null && state.ready === 0 && state.played === 0,
+			'idle broadcast never starts',
+		);
+		await fixturePage.evaluate(() => {
+			const live = document.querySelector<HTMLVideoElement>('#idle-broadcast');
+			if (!live) throw new Error('Idle broadcast missing');
+			live.volume = 0.31;
+		});
+		expect(await eventually(() => readBadgeText(tabId), text => text === '31', 'idle broadcast badge'))
+			.toBe('31');
+	}, 90_000);
 });
 
 function storedSummary(tabId: number): Promise<unknown> {

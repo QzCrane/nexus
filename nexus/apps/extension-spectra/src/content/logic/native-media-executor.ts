@@ -2552,14 +2552,17 @@ export class NativeMediaExecutor {
 		if (!selected) {
 			// An SPA route can mount and start the successor player before the
 			// registry moves control onto it (`/follow` -> `/follow/live/<id>`).
-			// The viewer's native volume/mute gesture is physical state of a
-			// presented element, so the badge has to follow it even while another
-			// element still owns control. Control ownership never moves on a property
-			// event, and a hidden preview is not a presentation.
-			if (event !== 'volumechange' || this.registry.isPresented?.(target) !== true) return;
-			const presented = this.readPresentedVolume(target);
-			if (!presented) return;
-			this.queuePageObservation(target, presented.patch, presented.observedStrategies);
+			// The volume/mute pair is that element's physical state and the native
+			// surface the viewer just touched, so the badge follows it even while
+			// another element still owns control. Control ownership never moves on a
+			// property event, and no presentation heuristic may veto the sample: a
+			// live route mounts players with an empty layout box, a non-finite
+			// timeline that is still `NaN` before metadata, or muted output that the
+			// site unmutes from its own UI.
+			if (event !== 'volumechange') return;
+			const observed = this.readElementVolume(target);
+			if (!observed) return;
+			this.queuePageObservation(target, observed.patch, observed.observedStrategies);
 			return;
 		}
 		const mediaId = target.mediaId;
@@ -2668,13 +2671,14 @@ export class NativeMediaExecutor {
 	private explainVolume(target: MediaTarget, element: HTMLMediaElement, selected: boolean): void {
 		if (this.volumeDiagnostics <= 0) return;
 		this.volumeDiagnostics -= 1;
-		const rect = element.getBoundingClientRect();
+		const rect = typeof element.getBoundingClientRect === 'function'
+			? element.getBoundingClientRect()
+			: { width: 0, height: 0 };
 		// `console.warn` survives the production bundle (the build drops
 		// `console.info`), so the trace is available in the extension the user runs.
 		console.warn('[SPECTRA][volume]', {
 			media: `${target.frameId}:${target.mediaId}`,
 			selected,
-			presented: selected || this.registry.isPresented?.(target) === true,
 			paused: element.paused,
 			muted: element.muted,
 			volume: element.volume,
@@ -2685,12 +2689,12 @@ export class NativeMediaExecutor {
 	}
 
 	/**
-	 * Read the physical volume/mute of a presented element that another element
+	 * Read the physical volume/mute of a registered element that another element
 	 * still owns. The audio runtime delegate describes the control owner, so an
 	 * unselected successor is read from its own element: an SPA live route must
 	 * reach the badge without moving control ownership.
 	 */
-	private readPresentedVolume(
+	private readElementVolume(
 		target: MediaTarget,
 	): {
 		patch: ControlPatch;
@@ -2762,12 +2766,11 @@ export class NativeMediaExecutor {
 			const selected = this.registry.resolve(null);
 			const sameTarget = Boolean(selected && selected.target.frameId === target.frameId
 				&& this.targetKey(selected.target) === this.targetKey(target));
-			if (!sameTarget && this.registry.isPresented?.(target) !== true) continue;
 			// Queueing is not a sample. Read this batch again in one synchronous
 			// turn so the stamp cannot make an older queued value look newer.
 			const current = sameTarget
 				? this.read({ target, fields: Object.keys(patch) as ControlReadRequest['fields'] })
-				: this.readPresentedVolume(target);
+				: this.readElementVolume(target);
 			if (!current || Object.keys(current.patch).length === 0) continue;
 			const live = 'live' in current && typeof current.live === 'boolean' ? current.live : undefined;
 			// Observation starts with this document's registry, before any control

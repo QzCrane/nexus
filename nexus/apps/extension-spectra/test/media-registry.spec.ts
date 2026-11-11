@@ -394,60 +394,6 @@ describe('event-driven media registry', () => {
 		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
 
-	test('presents a broadcast the page paints without a layout box', () => {
-		// A live page can paint the broadcast through a canvas while its <video>
-		// keeps a 0x0 box, so the IntersectionObserver reports no presentation.
-		// Geometry is therefore not the only evidence: an unbounded timeline that
-		// has data is a running presentation, and the viewer's native volume gesture
-		// belongs to it even before the registry moves control onto it.
-		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
-			'MutationObserver', 'IntersectionObserver']);
-		const document = new FakeDocument();
-		const broadcast = new FakeVideoElement(1);
-		broadcast.duration = Number.POSITIVE_INFINITY;
-		broadcast.paused = false;
-		const hiddenPreview = new FakeVideoElement(1);
-		hiddenPreview.duration = 45;
-		document.documentElement.descendants.push(broadcast, hiddenPreview);
-		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
-		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
-		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
-		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:canvas-broadcast', frameId: 0 }));
-		try {
-			const targets = registry.list().map(({ target }) => target);
-			expect(targets).toHaveLength(2);
-			expect(registry.isPresented(requireValue(targets[0], 'Expected the broadcast to be registered'))).toBe(true);
-			expect(registry.isPresented(requireValue(targets[1], 'Expected the preview to be registered'))).toBe(false);
-		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
-	});
-
-	test('presents an audible player without a layout box and keeps silent nodes out', () => {
-		// A DVR-style player can keep a 0x0 box while it is audibly playing, and its
-		// volume gesture is still what the viewer hears. Muted, zero-volume or paused
-		// nodes are silent, which is what keeps an inactive preview out.
-		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
-			'MutationObserver', 'IntersectionObserver']);
-		const document = new FakeDocument();
-		const audible = new FakeVideoElement(0.6);
-		audible.paused = false; audible.muted = false; audible.duration = 42;
-		const muted = new FakeVideoElement(0.6);
-		muted.paused = false; muted.muted = true; muted.duration = 42;
-		const paused = new FakeVideoElement(0.6);
-		paused.paused = true; paused.muted = false; paused.duration = 42;
-		document.documentElement.descendants.push(audible, muted, paused);
-		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
-		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
-		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
-		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:audible-player', frameId: 0 }));
-		try {
-			const targets = registry.list().map(({ target }) => target);
-			expect(targets).toHaveLength(3);
-			expect(registry.isPresented(requireValue(targets[0], 'audible'))).toBe(true);
-			expect(registry.isPresented(requireValue(targets[1], 'muted'))).toBe(false);
-			expect(registry.isPresented(requireValue(targets[2], 'paused'))).toBe(false);
-		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
-	});
-
 	test('resolves a retired control identity to the selected successor', async () => {
 		// The background projects the last announced target. When the page replaces
 		// the element, the first intent still carries the retired mediaId; the

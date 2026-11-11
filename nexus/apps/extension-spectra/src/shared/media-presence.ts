@@ -25,6 +25,11 @@ export function hasPlayableMedia(root: ParentNode): boolean {
 		// `played` is the only evidence left after a source swap resets readyState;
 		// it is read defensively because a media-shaped stub need not implement it.
 		if ((media.played?.length ?? 0) > 0) return true;
+		// A live route attaches the broadcast as a MediaStream and can park the
+		// element at `HAVE_NOTHING` until the first gesture. The tracks are already
+		// real media the controls address, so the document holds something the user
+		// can act on before playback starts. An empty shell has no tracks.
+		if ((media.srcObject as { getTracks?: () => unknown[] } | null)?.getTracks?.().length) return true;
 	}
 	return false;
 }

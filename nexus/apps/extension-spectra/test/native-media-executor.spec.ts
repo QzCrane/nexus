@@ -522,7 +522,7 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
-	test('observes a native volume change from a presented player the selection has not reached', async () => {
+	test('observes a native volume change from any registered player the selection has not reached', async () => {
 		installFakeMediaGlobals();
 		const registry = new FakeRegistry();
 		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
@@ -533,19 +533,10 @@ describe('native media single-writer correlation', () => {
 		const live = new FakeMediaElement();
 		live.volume = 0.42;
 		const liveTarget: MediaTarget = { ...registry.target, mediaId: 'media:live', kind: 'video' };
-		const presented = { value: true };
-		Object.assign(registry as unknown as Record<string, unknown>, {
-			isPresented: () => presented.value,
-		});
 		registry.resolve = ((requested?: MediaTarget | null) => requested?.mediaId === 'media:live'
 			? { element: live as unknown as HTMLMediaElement, target: liveTarget }
 			: { element: registry.element as unknown as HTMLMediaElement, target: { ...registry.target } });
 		try {
-			presented.value = false;
-			registry.listener?.({ ...liveTarget }, 'volumechange', live as unknown as HTMLMediaElement);
-			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
-			expect(messages.find((message) => message.type === 'spectra.control.intent.submit')).toBeUndefined();
-			presented.value = true;
 			registry.listener?.({ ...liveTarget }, 'volumechange', live as unknown as HTMLMediaElement);
 			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
 			const observation = messages.find((message) => message.type === 'spectra.control.intent.submit');
@@ -2200,7 +2191,7 @@ describe('native media single-writer correlation', () => {
 		}
 	});
 
-	test.each(['stable', 'selection-change', 'source-change'] as const)('reports cold page-semantic volume only while its queued target remains selected (%s)', async (transition) => {
+	test.each(['stable', 'selection-change', 'source-change'] as const)('reports cold page-semantic volume from the queued element itself (%s)', async (transition) => {
 		Object.defineProperty(globalThis, 'HTMLMediaElement', {
 			configurable: true,
 			value: FakeMediaElement,
@@ -2244,17 +2235,15 @@ describe('native media single-writer correlation', () => {
 			if (transition !== 'stable') registry.emit('selected');
 			await Promise.resolve();
 			const observation = messages.find((message) => message.type === 'spectra.control.intent.submit');
-			if (transition !== 'stable') {
-				expect(observation).toBeUndefined();
-				expect(messages.some((message) => message.type === 'spectra.content.target.changed')).toBe(true);
-				return;
-			}
 			expect(observation?.payload?.patch).toMatchObject({ volumeBase: 50, mediaMuted: false });
 			expect(observation?.payload?.observedStrategies).toEqual({
 				volumeBase: 'page-native',
 				mediaMuted: 'page-native',
 			});
 			expect(observation?.payload).not.toHaveProperty('tabId');
+			if (transition !== 'stable') {
+				expect(messages.some((message) => message.type === 'spectra.content.target.changed')).toBe(true);
+			}
 		} finally {
 			executor.dispose();
 		}
