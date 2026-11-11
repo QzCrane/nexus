@@ -173,6 +173,10 @@ export function retainSourceRuntimeLease(
 }
 
 export const MEDIA_INTENT_RUNTIME_CAPABILITY = 'document-media-intent';
+// Observation is a reason to own a document runtime in its own right. It carries
+// no desired values: a page-native volume/rate change must reach the canonical
+// snapshot even when the tab has never authored a preference.
+export const DOCUMENT_OBSERVATION_CAPABILITY = 'document-media-observation';
 
 // This lease owns the executor's document template, not any current source's
 // physical field. A rejected live speed or page observation cannot release it.
@@ -599,6 +603,18 @@ export async function ensureContentRuntime(
 		releaseContentRuntimeLease(tabId, currentDocumentId, reason, capability);
 		throw error;
 	}
+}
+
+/**
+ * A document that reports playable media must be observed. Observation is not a
+ * consequence of a restore patch: a live route that inherits no desired values
+ * still has a page-native volume/rate surface, and without an owner every later
+ * gesture or surface has to cold-start the runtime with an explicit read.
+ */
+export async function ensureMediaObservation(tabId: number, documentId: string): Promise<void> {
+	const key = runtimeKey(tabId, documentId);
+	if (retiredRuntimeKeys.has(key) || releasedMediaIntents.has(key)) return;
+	await ensureContentRuntime(tabId, documentId, 'observation', DOCUMENT_OBSERVATION_CAPABILITY);
 }
 
 async function recoverFailedRestoreLease(tabId: number, documentId: string): Promise<boolean> {

@@ -19,8 +19,10 @@ import {
 	ensureContentRuntime,
 	reconcileHotkeyRuntimeLease,
 	releaseContentRuntimeLease,
+	DOCUMENT_OBSERVATION_CAPABILITY,
 	MEDIA_INTENT_RUNTIME_CAPABILITY,
 } from './runtime-loader';
+import { mediaFacts } from './media-facts';
 import { recoverDocumentRuntimeAfterWorkerRestart } from './runtime-restart-recovery';
 import { forEachBounded } from './bounded-fanout';
 import { sendBackgroundTabRequestOnce } from './background-rpc';
@@ -51,6 +53,9 @@ export interface RuntimeRestartStartupPort {
 	/** True when the persisted processor session demands the content runtime stay alive. */
 	resolvePersistentAudioSession(target: RuntimeRestartTarget): Promise<boolean>;
 	retainAudioSessionRuntime(target: RuntimeRestartTarget): Promise<void>;
+	/** True when this document reported media and keeps an observation owner. */
+	resolvePersistentMediaObservation(target: RuntimeRestartTarget): Promise<boolean>;
+	retainMediaObservationRuntime(target: RuntimeRestartTarget): Promise<void>;
 	reconcileHotkeys(target: RuntimeRestartTarget, settings: HotkeySettings): Promise<SiteHotkeyRuntimeMode>;
 }
 
@@ -129,6 +134,28 @@ const chromePort: RuntimeRestartStartupPort = {
 	async resolvePersistentAudioSession(target) {
 		const snapshot = await getAudioSession(target.tabId).catch(() => null);
 		return snapshot !== null && isPersistedProcessorSession(snapshot);
+	},
+	async resolvePersistentMediaObservation(target) {
+		await mediaFacts.ready();
+		const fact = mediaFacts.readMediaFact(target.tabId);
+		return fact?.documentId === target.documentId && fact.outcome === 'found';
+	},
+	async retainMediaObservationRuntime(target) {
+		const ready = await ensureContentRuntime(
+			target.tabId,
+			target.documentId,
+			'observation',
+			DOCUMENT_OBSERVATION_CAPABILITY,
+		);
+		if (ready.documentId !== target.documentId) {
+			releaseContentRuntimeLease(
+				target.tabId,
+				ready.documentId,
+				'observation',
+				DOCUMENT_OBSERVATION_CAPABILITY,
+			);
+			throw new Error('Media observation retention resolved to a stale document');
+		}
 	},
 	async retainAudioSessionRuntime(target) {
 		// Reuse the exact owned-control lease a live commit would hold. The next
@@ -215,6 +242,15 @@ export async function recoverDocumentRuntimeOnWorkerStartup(
 			if (await port.resolvePersistentAudioSession(target)) {
 				durableOwner = true;
 				if (runtimeWasPresent) await port.retainAudioSessionRuntime(target);
+			}
+			// A document that reported media owns an observation runtime even with no
+			// desired values. Without this retain, the orphan sweep disposes the only
+			// listener for page-native volume/rate changes and the next surface has
+			// to cold-start it. Only a survivor is retained; a dead runtime is not
+			// resurrected here.
+			if (runtimeWasPresent && await port.resolvePersistentMediaObservation(target)) {
+				durableOwner = true;
+				await port.retainMediaObservationRuntime(target);
 			}
 		},
 		async reconcileHotkeyOwnership() {

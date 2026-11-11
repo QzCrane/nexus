@@ -62,7 +62,7 @@ flowchart TD
 | 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中未交接；旧播放器的历史交互压过正在播放的直播，或空选中不自愈 | 056 | guarded |
 | 插件改了音量，站点自己的音量条不动，而且下次换流被站点覆盖回去 | 音量只写元素属性（`dom-native`），没有站点控制器适配；declared 行只有倍速 | 053、049 | open |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
-| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 | 角标被第二写者重绘，或选中未迁移使原生 `volumechange` 被"非当前目标"过滤 | 052、014、056 | guarded |
+| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；或媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中） | 052、014、056 | guarded |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
 | Popup 打开首帧空白、随后跳高，或先英文后中文 | 首帧等异步 actual；结构高度被历史值预留 | 050 | guarded |
 | PiP 打开后立刻被关掉 | 站点策略属性被提前归还，浏览器在同一任务跑了退出算法 | 051 | guarded |
@@ -177,7 +177,33 @@ flowchart TD
 
 - 角标是投影，不是第二 owner；它必须记录每次决策并按决策序绘制，而不是按谁先到 Action API。
 - 页面事件保持精确资源状态；passive read 不写偏好；Popup 关闭时同步仍要成立。
-- 规则位置：08 的 052、014。
+- 已落地的观察加载边界：`NativeMediaExecutor` 是原生 `volumechange` 观测与
+  `spectra.content.target.changed` 的唯一发送者，运行时不存在就没有任何观察。
+  直播路由是**同源新文档**，`restoreIfConfigured` 的空 patch 曾经直接返回而不
+  `ensureContentRuntime`，媒体上报的 `resumeDocumentInitialization` 对已完成初始化的
+  document 又只返回旧 operation；于是观察 owner 缺失，直到 Popup 的显式读取冷启动
+  运行时——这就是"必须点开 Popup 才同步"的完整根因链。
+- 已落地的补建：媒体上报 `hasMediaElement` 时 `ensureMediaObservation` 以
+  `document-media-observation` 能力确保运行时；观察与写入意图分离，空模板的运行时
+  只观察、不写入。运行时 attach 到已有选中的文档时 `publishCurrentSelection` 立即
+  发布一次该选中；无选中不发布。
+- 已落地的重启保留：worker 重启只对存活的运行时、且 `mediaFacts` 中该 tab 的
+  `documentId` 匹配、`outcome === 'found'` 时保留 observation lease；死运行时不会
+  因历史媒体事实被复活。
+- 同源路由 `/follow` ↔ `/follow/live/<id>` 共用同一 tab session，不涉及跨 origin
+  会话迁移；不要再从 tldts/site 分组方向修这个问题。
+- 测试：`test/runtime-loader.spec.ts` 的
+  "acquires an observation runtime for a media document with no desired template"、
+  "does not acquire an observation runtime after the viewer released the document"；
+  `test/native-media-executor.spec.ts` 的
+  "publishes an established selection when a runtime attaches after it was selected"、
+  "does not publish an attach observation when the document has no selection"；
+  `test/runtime-restart-startup.spec.ts` 的
+  "keeps the surviving runtime as an observation owner when its document reported media"、
+  "does not resurrect a dead runtime for a media observation owner"。
+- 规则位置：08 的 052、014、056；投影与加载边界见
+  [runtime](../architecture/runtime.md#runtime-loading-and-shortcuts) 与
+  [05 §11](05-control-state.md#11-volume-and-mute)。
 
 **6. 音量条不跟手（rule）**
 

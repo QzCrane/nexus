@@ -784,6 +784,30 @@ export class NativeMediaExecutor {
 		this.replayDesired(selected.target, selected.element, true);
 	}
 
+	/**
+	 * Publish a selection that already existed when this runtime attached.
+	 *
+	 * Media can register and be selected before the heavy runtime exists: the
+	 * document reports media presence, and only then does the background acquire
+	 * this executor. No `selected` event will fire for that earlier selection, so
+	 * without this publish the canonical snapshot stays empty until an explicit
+	 * surface performs a passive read. That read is what used to look like "the
+	 * Popup is the switch".
+	 */
+	publishCurrentSelection(): void {
+		if (this.disposed) return;
+		const selected = this.registry.resolve(null);
+		if (!selected) return;
+		this.primeObserved(selected.target);
+		this.publishPresentationKind(selected.target, selected.element);
+		void sendSpectraRequest(
+			'spectra.content.target.changed',
+			{ target: selected.target, mediaObservation: this.registry.captureObservation?.() },
+			{ documentId: selected.target.documentId },
+		).catch(() => undefined);
+		this.replayDesired(selected.target, selected.element, true);
+	}
+
 	setAudioRuntimeDelegate(delegate: AudioRuntimeControlDelegate | null): void {
 		this.audioRuntimeDelegate = delegate;
 	}

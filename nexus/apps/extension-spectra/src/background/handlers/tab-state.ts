@@ -12,7 +12,7 @@ import { readMediaTabInventory } from '../media-inventory-runtime';
 import { syncActiveActionPopups } from '../popup-frame';
 import { mediaFacts } from '../media-facts';
 import { currentTopDocumentId } from '../../shared/top-document';
-import { resumeDocumentInitialization } from '../runtime-loader';
+import { ensureMediaObservation, resumeDocumentInitialization } from '../runtime-loader';
 import { isBackgroundRequestEnvelope, RPC_INVALID_REQUEST } from '../background-rpc';
 
 export type MediaReportOrdering =
@@ -51,7 +51,16 @@ export function recordMediaState(
 		},
 	);
 	if (!accepted) return { reported: true };
-	if (payload.hasMediaElement) resumeDocumentInitialization(tabId, documentId, undefined);
+	if (payload.hasMediaElement) {
+		resumeDocumentInitialization(tabId, documentId, undefined);
+		// Media presence is the observation load boundary, independent of restore
+		// intent. `resumeDocumentInitialization` only resumes a deferred plan; a
+		// live route whose plan was empty is already complete and would otherwise
+		// never create the executor that listens to page-native volume changes.
+		void ensureMediaObservation(tabId, documentId).catch((error: unknown) => {
+			swLog.warn(`[Runtime] Media observation for tab ${tabId} failed: ${error instanceof Error ? error.message : String(error)}`);
+		});
+	}
 	const state = getOrCreateTabAudioState(tabId, documentId);
 	state.hasMediaElement = payload.hasMediaElement;
 	state.reportRevision = ordering.revision;

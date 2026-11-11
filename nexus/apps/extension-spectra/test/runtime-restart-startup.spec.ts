@@ -36,6 +36,7 @@ function harness(options: {
 	status?: Partial<RuntimeRestartStatus>;
 	restoreCapability?: string | null;
 	audioSessionDurable?: boolean;
+	mediaObservation?: boolean;
 	hotkeyMode?: 'none' | 'lean' | 'full';
 	failRestoreResolution?: boolean;
 	failHotkeys?: boolean;
@@ -72,6 +73,13 @@ function harness(options: {
 		},
 		async retainAudioSessionRuntime() {
 			events.push('retain-audio');
+		},
+		async resolvePersistentMediaObservation() {
+			events.push('resolve-observation');
+			return options.mediaObservation ?? false;
+		},
+		async retainMediaObservationRuntime() {
+			events.push('retain-observation');
 		},
 		async reconcileHotkeys() {
 			events.push('hotkeys');
@@ -184,6 +192,7 @@ describe('MV3 startup runtime recovery adapter', () => {
 				'retain-recovery',
 				'resolve-restore',
 				'resolve-audio',
+				'resolve-observation',
 				'hotkeys',
 				'release-recovery',
 			]);
@@ -217,6 +226,7 @@ describe('MV3 startup runtime recovery adapter', () => {
 				'retain-recovery',
 				'resolve-restore',
 				'resolve-audio',
+				'resolve-observation',
 				'hotkeys',
 				'release-recovery',
 			]);
@@ -247,9 +257,34 @@ describe('MV3 startup runtime recovery adapter', () => {
 			'resolve-restore',
 			'resolve-audio',
 			'retain-audio',
+			'resolve-observation',
 			'hotkeys',
 			'release-recovery',
 		]);
+	});
+
+	test('keeps the surviving runtime as an observation owner when its document reported media', async () => {
+		const h = harness({ mediaObservation: true });
+		await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
+		expect(h.events).toEqual([
+			'status',
+			'retain-recovery',
+			'resolve-restore',
+			'resolve-audio',
+			'resolve-observation',
+			'retain-observation',
+			'hotkeys',
+			'release-recovery',
+		]);
+	});
+
+	test('does not resurrect a dead runtime for a media observation owner', async () => {
+		const h = harness({
+			status: { ready: false, runtimeRevision: null },
+			mediaObservation: true,
+		});
+		await recoverDocumentRuntimeOnWorkerStartup(target, DEFAULT_HOTKEY_SETTINGS, h.port);
+		expect(h.events).not.toContain('retain-observation');
 	});
 
 	test('does not resurrect a dead runtime for a persisted processor session', async () => {
@@ -291,6 +326,7 @@ describe('MV3 startup runtime recovery adapter', () => {
 				'retain-recovery',
 				'resolve-restore',
 				'resolve-audio',
+				'resolve-observation',
 				'hotkeys',
 			]);
 			expect(h.events).not.toContain('release-recovery');

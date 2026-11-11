@@ -3,7 +3,7 @@ type: explanation
 status: stable
 audience: developer
 owner: spectra-runtime-architecture
-last_reviewed: 2026-11-09
+last_reviewed: 2026-11-11
 ---
 
 # SPECTRA runtime architecture
@@ -429,6 +429,10 @@ or route behavior.
 
 Manifest loads minimal isolated bootstrap + closed MAIN bridges. Heavy Content runtime is acquired via consumer tokens. Final consumer releases listeners. Cold-document built-in hotkeys use READY ensure and release their transient capability after the admitted operation.
 
+A document that reports playable media is itself a consumer. `ensureMediaObservation` acquires the heavy runtime through the normal loader with the `document-media-observation` capability when `spectra.tab.media.report` reports `hasMediaElement`, independent of a desired value, a restore template, or prior explicit use. Observation and writing stay separate: an observation-only runtime writes nothing until a real intent arrives, and a navigation or explicit release retires the capability so a later media report cannot resurrect it. A document that reports no media does not load the heavy runtime for observation alone. `/follow` and `/follow/live/<id>` are the same origin and the same tab session; that transition is a new document, not a cross-origin session migration.
+
+When a runtime attaches to a document that already has a selection, `NativeMediaExecutor.publishCurrentSelection()` publishes that selection once after `bootstrapMessaging` — the presentation kind plus `spectra.content.target.changed` carrying the registry's observation stamp — and re-applies an existing desired template to it. A document with no selection publishes nothing. Background admits attach publication and a later `selected` through the same ordered observation rules, so the duplicate sample is idempotent.
+
 The pre-injection runtime-status probe is an optional read bounded to 1 second.
 Its settlement pool retains at most eight physical outstanding probes; observation
 expiry does not pretend to cancel a browser request. An expired or unavailable
@@ -497,11 +501,13 @@ A service-worker restart loses Background's in-memory runtime leases while an ol
 1. exact runtime-status probe;
 2. if a current-revision heavy runtime survived, acquire a fixed temporary `worker-restart-recovery` lease through the normal runtime loader;
 3. reconstruct source ownership from `ownedSources`;
-4. reconstruct the canonical restore capability from the exact tab-session identity/resource hostname;
-5. reconcile current configured-site hotkey ownership (`none | lean | full`);
-6. release only the temporary recovery lease.
+4. reconstruct the canonical restore capability from the exact tab-session identity/resource hostname; a restored document template returns here because it already owns the runtime;
+5. independently retain a surviving runtime for a persisted processor session;
+6. independently retain a surviving runtime when the session media fact names this document with outcome `found`, because a document that observed media owns its observation runtime with no desired values;
+7. reconcile current configured-site hotkey ownership (`none | lean | full`);
+8. release only the temporary recovery lease.
 
-Actual orphan disposal remains inside the normal runtime-loader lease authority, which rechecks concurrent/transient leases before sending RELEASE. Restore/hotkey reconstruction failure deliberately retains the temporary safety lease. Both per-document failures and discovery failures (settings/tab enumeration) use the same bounded retry schedule: `250 ms`, `1 s`, `4 s`. If no heavy runtime survived, recovery does not create one merely because a persistent restore plan exists.
+Actual orphan disposal remains inside the normal runtime-loader lease authority, which rechecks concurrent/transient leases before sending RELEASE. Restore/hotkey reconstruction failure deliberately retains the temporary safety lease. Both per-document failures and discovery failures (settings/tab enumeration) use the same bounded retry schedule: `250 ms`, `1 s`, `4 s`. If no heavy runtime survived, recovery does not create one merely because a persistent restore plan or a media fact exists; a later media report re-establishes observation at the normal document boundary.
 
 This model removes document-lifetime heavy **hotkey ownership** for eligible sites. It does not promise that an admitted control operation or another independent consumer can never load the heavy runtime transiently.
 

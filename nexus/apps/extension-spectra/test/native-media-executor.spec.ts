@@ -429,6 +429,39 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
+	test('publishes an established selection when a runtime attaches after it was selected', async () => {
+		installFakeMediaGlobals(); const registry = new FakeRegistry();
+		Object.assign(registry, { captureObservation: () => ({ owner: 'attach-owner', epoch: 1,
+			selection: registry.selectionRevision, revision: 1 }) });
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			executor.publishCurrentSelection();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			const changed = messages.find((message) => message.type === 'spectra.content.target.changed');
+			expect(changed?.payload.target).toMatchObject({ mediaId: registry.target.mediaId });
+			expect(changed?.payload.mediaObservation).toMatchObject({ owner: 'attach-owner' });
+		} finally { executor.dispose(); }
+	});
+
+	test('does not publish an attach observation when the document has no selection', async () => {
+		installFakeMediaGlobals(); const registry = new FakeRegistry();
+		Object.assign(registry, { resolve: () => null, list: () => [] });
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			executor.publishCurrentSelection();
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(messages).toHaveLength(0);
+		} finally { executor.dispose(); }
+	});
+
 	test('moves an active-target write to the new selection when another source becomes selected mid-write', async () => {
 		installFakeMediaGlobals(); const registry = new FakeRegistry();
 		const original = registry.resolve(); const next = { element: new FakeMediaElement() as unknown as HTMLMediaElement,

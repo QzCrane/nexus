@@ -384,6 +384,10 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	registry.track(registerControlOperationExecutor(nativeExecutor));
 	registry.track(registerTrustedActivationBridge());
 	bootstrapMessaging({ registry, settingsManager, captureManager, state, deps });
+	// A document can report media before this runtime exists, so the registry may
+	// already have a selection with no `selected` event this executor ever saw.
+	// Publish it now; otherwise the snapshot waits for an explicit surface read.
+	nativeExecutor.publishCurrentSelection();
 
   const policyExecutor = await createPolicyExecutor(
 		deps,

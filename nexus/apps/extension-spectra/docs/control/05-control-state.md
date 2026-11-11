@@ -2,7 +2,7 @@
 type: reference
 status: stable
 audience: developer
-last_reviewed: 2026-11-09
+last_reviewed: 2026-11-11
 ---
 
 # 05. Control state (Field states, volume/mute, audio processing)
@@ -233,6 +233,15 @@ stateDiagram-v2
 Background 从 Chrome sender 确认 tab、顶层 frame 与精确 target document。完整
 runtime 接替 bootstrap 后仍须持续发布页面变化。回归证据见
 [直播音量与 Popup 修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
+
+「有媒体」本身就是观察运行时的加载边界：文档上报 `hasMediaElement` 时，
+`ensureMediaObservation` 以 `document-media-observation` 能力确保重运行时存在，
+与是否存在待写入模板、是否已显式使用无关；没有媒体的文档不会因此加载重运行时，
+导航与显式 release 之后也不会被下一次媒体上报复活。运行时 attach 到已有选中的
+文档时立即发布一次该选中（携带观测戳），无选中则不发布。同步照常成立，角标是否
+可见仍只由本节下方的显式使用决定——同步、使用、隐藏三件事不互相门闩。
+`/follow` 与 `/follow/live/<id>` 同源且同 tab session，切换文档不涉及跨 origin
+会话迁移。
 
 ### §11.2 Tone ownership
 

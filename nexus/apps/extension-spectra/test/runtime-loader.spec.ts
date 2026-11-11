@@ -10,6 +10,7 @@ import {
 } from '@nexus/contracts';
 import {
 	ensureContentRuntime,
+	ensureMediaObservation,
 	awaitDocumentInitialization,
 	initializeContentRuntimeLoader,
 	reconcileHotkeyRuntimeLease,
@@ -551,6 +552,19 @@ describe('document-scoped content runtime loader', () => {
 		});
 		expect(harness.statusCount).toBe(1);
 		expect(harness.executeCount).toBe(1);
+	});
+
+	test('acquires an observation runtime for a media document with no desired template', async () => {
+		const harness = installChromeHarness(false);
+		await ensureMediaObservation(7, 'document-7');
+		expect(harness.executeCount).toBe(1);
+	});
+
+	test('does not acquire an observation runtime after the viewer released the document', async () => {
+		const harness = installChromeHarness(false);
+		releaseMediaIntentRuntimeLease(7, 'document-7');
+		await ensureMediaObservation(7, 'document-7');
+		expect(harness.executeCount).toBe(0);
 	});
 
 	test('accepts READY even while the executeScript promise remains pending', async () => {
