@@ -826,6 +826,10 @@ export class MediaRegistry {
 	 * canvas while its `<video>` keeps an empty layout box, so an unbounded live
 	 * timeline also proves the element is presenting. A hidden preload is neither
 	 * laid out nor live.
+	 *
+	 * A node that is producing sound is the last piece of evidence: finite-timeline
+	 * players (a DVR window, a highlight clipped to a range) present the same way
+	 * while an inactive preview is silent — muted, at zero volume, or paused.
 	 */
 	isPresented(target: MediaTarget): boolean {
 		const record = this.recordForTarget(target);
@@ -835,7 +839,8 @@ export class MediaRegistry {
 		if (document.pictureInPictureElement === record.element
 			|| fullscreen === record.element
 			|| fullscreen instanceof Element && fullscreen.contains(record.element)) return true;
-		return isLiveMedia(record.element);
+		if (isLiveMedia(record.element)) return true;
+		return !record.element.paused && record.element.muted !== true && record.element.volume > 0;
 	}
 
 	peek(

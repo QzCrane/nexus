@@ -507,6 +507,49 @@ describe('volume after same-document runtime replacement', () => {
 		expect(await eventually(() => readBadgeText(tabId), text => text === '37', 'broadcast native volume badge'))
 			.toBe('37');
 	}, 90_000);
+
+	test('follows a finite player the page mounts without a layout box', async () => {
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+		const tabId = await getTabId(fixturePage.url());
+		await fixturePage.evaluate(async bytes => {
+			const owner = document.querySelector<HTMLVideoElement>('#v');
+			if (!owner) throw new Error('Fixture player missing');
+			owner.style.cssText = 'position:fixed;left:0;top:0;width:640px;height:360px';
+			owner.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+			owner.loop = true; owner.volume = 0.8; owner.muted = false;
+			await owner.play();
+		}, [...SMOKE_TONE_WAV]);
+		await fixturePage.bringToFront();
+		// The viewer clicked this player before the route swapped, so it keeps
+		// control even after a successor starts playing.
+		await fixturePage.mouse.click(320, 180);
+		await submitPopupControlIntent(tabId, { patch: { volumeBase: 80 } });
+		expect(await eventually(() => readBadgeText(tabId), text => text === '80', 'clicked owner badge'))
+			.toBe('80');
+		// A finite-timeline player mounted with an empty layout box. It is audible,
+		// so its native volume is the presentation's even though control never moved.
+		await fixturePage.evaluate(async bytes => {
+			const second = document.createElement('video');
+			second.id = 'second-player';
+			second.style.cssText = 'position:fixed;left:0;top:0;width:0;height:0';
+			second.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+			second.loop = true; second.volume = 0.2; second.muted = false;
+			document.body.append(second);
+			await second.play();
+		}, [...SMOKE_TONE_WAV]);
+		await eventually(
+			() => fixturePage.evaluate(() => document.querySelector<HTMLMediaElement>('#second-player')?.readyState),
+			ready => typeof ready === 'number' && ready >= 2,
+			'second player data',
+		);
+		await fixturePage.evaluate(() => {
+			const second = document.querySelector<HTMLMediaElement>('#second-player');
+			if (!second) throw new Error('Second player missing');
+			second.volume = 0.42;
+		});
+		expect(await eventually(() => readBadgeText(tabId), text => text === '42', 'mounted player badge'))
+			.toBe('42');
+	}, 90_000);
 });
 
 function storedSummary(tabId: number): Promise<unknown> {

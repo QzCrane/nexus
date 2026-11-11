@@ -204,7 +204,13 @@ flowchart TD
 - 已落地的呈现证据：几何不是唯一证据。抖音直播用 canvas 绘制画面、`<video>` 保持 0×0
   布局盒且 `presentationHidden = true`，所以"0×0 即隐藏"曾让上一条规则完全不触发。
   `isPresented` 现按"有面积 ∨ PiP/全屏 ∨ `isLiveMedia`（无界时间线且已缓冲/绑定
-  MediaStream）"判定；既无面积又无直播证据的隐藏预载仍不观察。
+  MediaStream）∨ 正在出声（未暂停、未静音、音量 > 0）"判定；既无面积又无直播/出声
+  证据的隐藏预载仍不观察。有限时间线的 DVR/高光播放器靠最后一条成立。
+- 现场证据：内容运行时对每个 `volumechange` 输出最多 8 行
+  `console.info('[SPECTRA][volume]', {media, selected, presented, paused, muted,
+  volume, duration, buffered, rect})`。用户报告"原生音量不同步"时，先看这几行：
+  没有输出说明元素未注册或事件未到达；`presented:false` 说明呈现证据不足；
+  `selected:true / presented:true` 仍不同步则问题在后台准入或角标投影。
 - 浏览器证据：`test/smoke/live-target-restart.spec.ts` 的
   "follows the broadcast native volume while another player owns control" 用真实
   Chrome + 已构建扩展复现该症状——有限播放器持有控制、0×0 直播被 canvas 绘制时，

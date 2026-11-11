@@ -37,6 +37,25 @@ describe('SPECTRA built extension smoke: badge projection', () => {
 		await teardownSmokeSession();
 	});
 
+	test('keeps following page-native volume after the tab reaches a new document', async () => {
+		const tabId = await getTabId(fixtureUrl);
+		await fixturePage.bringToFront();
+		await submitPopupControlIntent(tabId, { patch: { volumeBase: 80 } });
+		expect(await eventually(() => readBadgeText(tabId), text => text === '80', 'usage badge')).toBe('80');
+		// A route change the browser serves as a new document keeps the tab-scoped
+		// Action projection while every in-memory fact of the old document is gone.
+		await fixturePage.goto(`${fixtureUrl}?second-document=1`, { waitUntil: 'domcontentloaded' });
+		await fixturePage.bringToFront();
+		await new Promise((resolveWait) => setTimeout(resolveWait, 1500));
+		await fixturePage.evaluate(() => {
+			const media = document.querySelector<HTMLMediaElement>('video,audio');
+			if (!media) throw new Error('fixture media is missing');
+			media.volume = 0.55;
+		});
+		expect(await eventually(() => readBadgeText(tabId), text => text === '55', 'badge after navigation'))
+			.toBe('55');
+	}, 90_000);
+
 	test('follows a page-native volume after the worker forgot its in-memory badge', async () => {
 		const tabId = await getTabId(fixtureUrl);
 		await fixturePage.bringToFront();

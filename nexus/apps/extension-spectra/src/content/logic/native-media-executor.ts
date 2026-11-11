@@ -2548,6 +2548,7 @@ export class NativeMediaExecutor {
 		const resolved = this.registry.resolve(null);
 		const selected = Boolean(resolved && resolved.target.frameId === target.frameId
 			&& resolved.target.mediaId === target.mediaId);
+		if (event === 'volumechange') this.explainVolume(target, element, selected);
 		if (!selected) {
 			// An SPA route can mount and start the successor player before the
 			// registry moves control onto it (`/follow` -> `/follow/live/<id>`).
@@ -2656,6 +2657,31 @@ export class NativeMediaExecutor {
 			}
 		}
 		this.queuePageObservation(target, patch, observedStrategies);
+	}
+
+	// Bounded field trace for the "the page's native volume never reaches the
+	// badge" report (SP-22.3 §22.3). Eight lines per document separate an
+	// unregistered player from a dropped observation, and the cap keeps a page
+	// that writes volume in a loop from flooding the console.
+	private volumeDiagnostics = 8;
+
+	private explainVolume(target: MediaTarget, element: HTMLMediaElement, selected: boolean): void {
+		if (this.volumeDiagnostics <= 0) return;
+		this.volumeDiagnostics -= 1;
+		const rect = element.getBoundingClientRect();
+		// `console.warn` survives the production bundle (the build drops
+		// `console.info`), so the trace is available in the extension the user runs.
+		console.warn('[SPECTRA][volume]', {
+			media: `${target.frameId}:${target.mediaId}`,
+			selected,
+			presented: selected || this.registry.isPresented?.(target) === true,
+			paused: element.paused,
+			muted: element.muted,
+			volume: element.volume,
+			duration: element.duration,
+			buffered: element.buffered?.length ?? 0,
+			rect: [Math.round(rect.width), Math.round(rect.height)],
+		});
 	}
 
 	/**

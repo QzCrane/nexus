@@ -421,6 +421,33 @@ describe('event-driven media registry', () => {
 		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
 
+	test('presents an audible player without a layout box and keeps silent nodes out', () => {
+		// A DVR-style player can keep a 0x0 box while it is audibly playing, and its
+		// volume gesture is still what the viewer hears. Muted, zero-volume or paused
+		// nodes are silent, which is what keeps an inactive preview out.
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const audible = new FakeVideoElement(0.6);
+		audible.paused = false; audible.muted = false; audible.duration = 42;
+		const muted = new FakeVideoElement(0.6);
+		muted.paused = false; muted.muted = true; muted.duration = 42;
+		const paused = new FakeVideoElement(0.6);
+		paused.paused = true; paused.muted = false; paused.duration = 42;
+		document.documentElement.descendants.push(audible, muted, paused);
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:audible-player', frameId: 0 }));
+		try {
+			const targets = registry.list().map(({ target }) => target);
+			expect(targets).toHaveLength(3);
+			expect(registry.isPresented(requireValue(targets[0], 'audible'))).toBe(true);
+			expect(registry.isPresented(requireValue(targets[1], 'muted'))).toBe(false);
+			expect(registry.isPresented(requireValue(targets[2], 'paused'))).toBe(false);
+		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
 	test('resolves a retired control identity to the selected successor', async () => {
 		// The background projects the last announced target. When the page replaces
 		// the element, the first intent still carries the retired mediaId; the
