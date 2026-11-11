@@ -223,11 +223,26 @@ flowchart TD
   才恢复；重试受 navigation/release 退休与新文档代际约束。
 - 现场证据（真实页面）：`live.douyin.com` 的直播控制是
   `douyin-player-volume-slider(-track/-thumb/-number)` 这组 DOM，页面没有 `window.player`；
-  播放器 `<video>` 是 `srcObject` MediaStream。内容运行时对每个 `volumechange` 输出最多
-  8 行 `console.warn('[SPECTRA][volume]', {media, selected, paused, muted, volume,
-  duration, buffered, rect})`（`console.info` 会被生产构建剥离）。没有输出说明元素未
-  注册或事件未到达；`selected:false` 说明样本走的是非所有权路径；两者都正常而角标不动
-  才需要查后台准入或角标投影。
+  播放器 `<video>` 是 `srcObject` MediaStream。正常播放不再输出任何音量诊断：早期实现
+  对每个 `volumechange` 打印 `console.warn('[SPECTRA][volume]', {...})`，控制台显示为
+  `[object Object]`，被当成错误上报。现在只有真正丢弃的样本才输出一条可读的
+  `console.debug('[SPECTRA][volume] dropped <reason> sample for <frame>:<media>')`
+  （每文档至多 4 条，生产构建剥离 `console.debug`）。没有输出但角标不动，才需要查
+  后台准入或角标投影。
+- 已落地的角标展示顺序：未结算的乐观展示（快捷键/Popup）记录其 control revision；
+  同一 document/generation 下出现更大 revision 的已准入投影时，展示立即让位给实际值
+  并删除。旧实现让乐观展示无条件压过实际值，只有结算、打开 Popup、identity 变化或
+  5 分钟 TTL 才释放——一次未收敛的写入即可把角标钉在旧数字，精确对应"点一次暂停/播放
+  或打开 Popup 才同步"。相等 revision 不让位，避免手势前采样的页面值覆盖乐观投影
+  （`test/badge-volume-state.spec.ts`）。
+- 隐藏预览不得接管：页面可以在真实播放器旁挂一个 `hidden` 预览播放器（抖音的静音
+  预览、预加载壳）。它的 `volumechange` 不是用户手势，未选中元素的样本因此被语义
+  可见性否决（`hidden` 属性或祖先、`display:none`、`visibility:hidden/collapse`）。
+  几何尺寸不参与判定——真实直播路由挂载中的播放器可以是 0×0、无元数据、未播放，
+  这正是"未选中元素也能提交样本"存在的原因。旧实现缺少该否决，预览以自己的
+  `13/M` 覆盖了正在播放的直播（`test/native-media-executor.spec.ts`、
+  `test/smoke/page-media.spec.ts` 的 "keeps native volume on the visible live stream
+  when a hidden preview starts"）。
 - 浏览器证据：`test/smoke/live-target-restart.spec.ts` 的四条门禁——
   "follows the broadcast native volume while another player owns control"（0×0 canvas
   直播，角标 80 → 37）、"follows a finite player the page mounts without a layout box"

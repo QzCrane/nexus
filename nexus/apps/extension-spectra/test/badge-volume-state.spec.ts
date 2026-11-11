@@ -35,6 +35,40 @@ afterEach(async () => {
 });
 
 describe('actual volume badge state', () => {
+	test('a newer admitted page sample replaces an unsettled optimistic presentation', async () => {
+		// A gesture whose write never settles keeps a presentation staged. The page's
+		// own volume change is still physical truth and must reach the badge without
+		// the Popup or a later playback gesture settling the old presentation.
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { get: async () => ({ id: TAB_ID }) },
+			action: { setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+				setBadgeBackgroundColor: async () => undefined, setBadgeTextColor: async () => undefined },
+		} });
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 80 }), false, true, 1);
+		await stageBadgeVolumePresentation(
+			{ ...identity(), revision: 1 }, { owner: 'hotkey:gesture', revision: 1 }, 110, 'capture',
+		);
+		expect(texts.at(-1)).toBe('110');
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 45 }), false, false, 2);
+		expect(texts.at(-1)).toBe('45');
+	});
+
+	test('a staged presentation still wins until a newer decision is admitted', async () => {
+		const texts: string[] = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {
+			tabs: { get: async () => ({ id: TAB_ID }) },
+			action: { setBadgeText: async ({ text }: { text: string }) => { texts.push(text); },
+				setBadgeBackgroundColor: async () => undefined, setBadgeTextColor: async () => undefined },
+		} });
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 80 }), false, true, 1);
+		await stageBadgeVolumePresentation(
+			{ ...identity(), revision: 2 }, { owner: 'hotkey:gesture', revision: 1 }, 110, 'capture',
+		);
+		await updateBadgeFromControlProjection(identity(), projection({ volumeBase: 45 }), false, false, 2);
+		expect(texts.at(-1)).toBe('110');
+	});
+
 	test('a newer admitted actual immediately replaces the previous volume', async () => {
 		let text = '';
 		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: {

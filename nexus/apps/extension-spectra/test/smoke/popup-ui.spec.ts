@@ -244,7 +244,16 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				__spectraFirstFrames: Array<{ label: string; cards: number; playing: string; playLabel: string; height: number; same: boolean;
 					backgrounds: number; sameBackgrounds: boolean; backgroundLabels: string[]; backgroundPlaying: string[] }>;
 			}).__spectraFirstFrames);
-			expect(frames.every((frame) => frame.label === '效果' && frame.cards === 1 && frame.playing === 'mixed' && frame.same)).toBe(true);
+			expect(frames.every((frame) => frame.label === '效果' && frame.cards === 1 && frame.same)).toBe(true);
+			// Prepaint starts from the aggregate `mixed`. A page-native playback fact
+			// can reach the open Popup before the held actual-state RPC answers; the
+			// active card may therefore settle once to a concrete `true`/`false`.
+			// It must never fall back to the aggregate or oscillate.
+			const played = frames.map((frame) => frame.playing);
+			const settled = played.filter((value) => value !== 'mixed');
+			expect(played.slice(0, played.length - settled.length).every((value) => value === 'mixed')).toBe(true);
+			expect(new Set(settled).size).toBeLessThanOrEqual(1);
+			expect(settled.every((value) => value === 'true' || value === 'false')).toBe(true);
 			expect(frames.every((frame) => frame.backgrounds === expectedIds.length && frame.sameBackgrounds
 				&& frame.backgroundLabels.every((label) => label === '效果') && frame.backgroundPlaying.every((value) => value === 'mixed'))).toBe(true);
 			expect(new Set(frames.map((frame) => frame.playLabel))).toEqual(new Set(['暂停/播放']));

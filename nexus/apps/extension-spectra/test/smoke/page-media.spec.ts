@@ -169,6 +169,11 @@ describe('SPECTRA built extension smoke: page-media', () => {
 				(state) => state.muted === false && state.speed === 1.5,
 				'detail document keeps native mute and explicit speed',
 			);
+			// The detail document now owns an observation runtime as soon as its media
+			// exists, so its resource row records its own boot-time physical sample
+			// (speed 1) and the automatic restore deliberately does not rewrite that
+			// row. The explicit intent is the portable patch; the row still proves the
+			// recommendation's mute did not leak into this document.
 			const detailProjection = await evaluateServiceWorker(async (targetTabId) => {
 				const key = `tab_session_${targetTabId}`;
 				return (await chrome.storage.session.get(key))[key] as {
@@ -179,10 +184,9 @@ describe('SPECTRA built extension smoke: page-media', () => {
 			}, tabId);
 			expect(detailProjection).toMatchObject({
 				identity: { resourceUrl: detailUrl },
-				patch: { speed: 1.5 },
+				patch: { mediaMuted: false },
 				portablePatch: { speed: 1.5 },
 			});
-			expect(detailProjection?.patch).toEqual({ speed: 1.5 });
 		} finally {
 			await page.close().catch(() => undefined);
 		}
@@ -798,8 +802,12 @@ describe('SPECTRA built extension smoke: page-media', () => {
 					operation: 'restore-page-settings', payload: {} },
 			});
 			expect(released).toMatchObject({ ok: true });
-			await eventually(() => readContentBootstrapStatus(url), (status) => status.ready === false,
-				'page settings release retires the shared initial/explicit media-template lease');
+			// Releasing page settings retires the desired template, not the
+			// observation owner: the document still holds media, so the runtime stays
+			// as a read-only observer (spec I2). Nothing may remain owned or desired.
+			await eventually(() => readContentBootstrapStatus(url), (status) =>
+				status.mediaIntentState === 'released' && status.ownedSources.length === 0,
+			'page settings release retires the shared initial/explicit media-template lease');
 		} finally { await client.close(); await page.close().catch(() => undefined); }
 	}, 35_000);
 

@@ -549,6 +549,28 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
+	test('never promotes a semantically hidden preview from its own volume event', async () => {
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		const preview = new FakeMediaElement();
+		(preview as unknown as { hidden: boolean }).hidden = true;
+		preview.volume = 0.13;
+		const previewTarget: MediaTarget = { ...registry.target, mediaId: 'media:preview', kind: 'video' };
+		registry.resolve = ((requested?: MediaTarget | null) => requested?.mediaId === 'media:preview'
+			? { element: preview as unknown as HTMLMediaElement, target: previewTarget }
+			: { element: registry.element as unknown as HTMLMediaElement, target: { ...registry.target } });
+		try {
+			registry.listener?.({ ...previewTarget }, 'volumechange', preview as unknown as HTMLMediaElement);
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			expect(messages.some((message) => message.type === 'spectra.control.intent.submit')).toBe(false);
+		} finally { executor.dispose(); }
+	});
+
 	test('moves an active-target write to the new selection when another source becomes selected mid-write', async () => {
 		installFakeMediaGlobals(); const registry = new FakeRegistry();
 		const original = registry.resolve(); const next = { element: new FakeMediaElement() as unknown as HTMLMediaElement,

@@ -57,6 +57,9 @@ describe('SPECTRA built extension smoke: badge projection', () => {
 	}, 90_000);
 
 	test('follows a page-native volume after the worker forgot its in-memory badge', async () => {
+		// The previous test left this tab on its second document; restore the
+		// fixture URL so the failure below can only come from badge state.
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
 		const tabId = await getTabId(fixtureUrl);
 		await fixturePage.bringToFront();
 
@@ -93,7 +96,8 @@ describe('SPECTRA built extension smoke: badge projection', () => {
 			.toBe('33');
 	}, 90_000);
 
-	test('keeps page sliders and mute observable after the full runtime releases with Popup closed', async () => {
+	test('keeps page sliders and mute observable after page settings release with Popup closed', async () => {
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
 		const tabId = await getTabId(fixtureUrl);
 		await fixturePage.bringToFront();
 		await fixturePage.evaluate(async bytes => {
@@ -110,8 +114,13 @@ describe('SPECTRA built extension smoke: badge projection', () => {
 			payload: { tabId, source: 'popup', target: null, operation: 'restore-page-settings', payload: {} },
 		});
 		expect(released.ok).toBe(true);
-		await eventually(() => waitForContentBootstrapStatus(fixtureUrl), state => !state.ready,
-			'full runtime really released');
+		// Releasing page settings retires the desired template. The document still
+		// holds media, so the runtime legitimately stays as a read-only observation
+		// owner (spec I2): nothing may remain owned or desired, while native events
+		// must still reach the background without opening a Popup.
+		await eventually(() => waitForContentBootstrapStatus(fixtureUrl), state =>
+			state.mediaIntentState === 'released' && state.ownedSources.length === 0,
+		'page settings release retires the desired template');
 		// This is the page's own input handler. Native events must reach the
 		// background without opening a Popup, requesting actual, or retaining a
 		// test runtime lease. Observe stored facts and Chrome's Action only.
@@ -159,15 +168,21 @@ describe('SPECTRA built extension smoke: badge projection', () => {
 			await fixturePage.evaluate(() => { const media = document.querySelector<HTMLMediaElement>('video,audio'); if (media) media.muted = true; });
 			expect(await eventually(observed, state => state.muted === true && state.badge === 'M',
 				'website mute reaches badge with no Popup')).toMatchObject({ volume: 37, muted: true, badge: 'M' });
-			expect((await waitForContentBootstrapStatus(fixtureUrl)).ready).toBe(false);
-			// A subsequent read-only Popup visit must return observation ownership
-			// to bootstrap too; it must not recreate the released desired template.
+			expect(await waitForContentBootstrapStatus(fixtureUrl)).toMatchObject({
+				ready: true, ownedSources: [], mediaIntentState: 'released',
+			});
+			// A read-only Popup visit must not recreate the released desired
+			// template; observation ownership stays with the document's media.
 			const popup = await (await openActionPopupTarget()).asPage();
 			try {
 				await popup.waitForSelector(`.glass-card[data-tab-id="${tabId}"] .vol-slider`);
-				await eventually(() => waitForContentBootstrapStatus(fixtureUrl), state => state.ready, 'Popup observation acquired');
+				expect(await waitForContentBootstrapStatus(fixtureUrl)).toMatchObject({
+					ownedSources: [], mediaIntentState: 'released',
+				});
 			} finally { await closeActionPopup(popup); }
-			await eventually(() => waitForContentBootstrapStatus(fixtureUrl), state => !state.ready, 'Popup observation released');
+			await eventually(() => waitForContentBootstrapStatus(fixtureUrl), state =>
+				state.ready && state.ownedSources.length === 0 && state.mediaIntentState === 'released',
+			'Popup close keeps the observation-only runtime');
 			await fixturePage.evaluate(() => { const media = document.querySelector<HTMLMediaElement>('video,audio'); if (media) { media.muted = false; media.volume = 0.62; } });
 			expect(await eventually(observed, state => state.volume === 62 && !state.muted && state.badge === '62',
 				'website changes still synchronize after a second Popup close')).toMatchObject({ volume: 62, muted: false, badge: '62' });

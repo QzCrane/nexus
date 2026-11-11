@@ -192,7 +192,14 @@ describe('SPECTRA built extension smoke: runtime-bootstrap', () => {
 					.__spectraAudioContextCount,
 			};
 		});
-		expect(status).toMatchObject({ ready: false, runtimeRevision: null, ownedSources: [] });
+		// The preceding test stated this document holds media, and media presence is
+		// the observation-runtime boundary: the runtime must exist so page-native
+		// volume is observable without the Popup. "Untouched" therefore means it
+		// owns no desired template, not that no runtime exists. The page itself must
+		// still be untouched: native values unchanged, no audio graph, no offscreen
+		// host.
+		expect(status).toMatchObject({ ready: true, ownedSources: [], mediaIntentState: 'unset' });
+		expect(status.runtimeRevision).toEqual(expect.any(String));
 		expect(state).toEqual({ volume: 1, muted: false, playbackRate: 1, audioContexts: 0 });
 		expect(offscreenBefore).toBe(0);
 		expect(await getOffscreenContextCount()).toBe(0);

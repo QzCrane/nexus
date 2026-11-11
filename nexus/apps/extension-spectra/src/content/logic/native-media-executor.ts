@@ -98,6 +98,23 @@ interface MediaScene {
 	speed?: number;
 }
 
+/**
+ * Whether the viewer can actually see and touch this player.
+ *
+ * This is intentionally semantic, never geometric: a live route legitimately
+ * mounts its player with a zero-sized box, so area cannot veto a sample. The
+ * `hidden` attribute and computed `display`/`visibility` describe a player the
+ * page keeps out of the presentation entirely, and a hidden preview's volume is
+ * not a viewer gesture.
+ */
+function isSemanticallyPresented(element: HTMLMediaElement): boolean {
+	if (element.hidden || element.closest?.('[hidden]')) return false;
+	const view = element.ownerDocument?.defaultView;
+	if (!view || typeof view.getComputedStyle !== 'function') return true;
+	const style = view.getComputedStyle(element);
+	return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse';
+}
+
 const MAX_RETAINED_MEDIA_SCENES = 128;
 
 type RestorableMediaWriter = 'declared-official' | 'page-native' | 'dom-native';
@@ -2548,7 +2565,6 @@ export class NativeMediaExecutor {
 		const resolved = this.registry.resolve(null);
 		const selected = Boolean(resolved && resolved.target.frameId === target.frameId
 			&& resolved.target.mediaId === target.mediaId);
-		if (event === 'volumechange') this.explainVolume(target, element, selected);
 		if (!selected) {
 			// An SPA route can mount and start the successor player before the
 			// registry moves control onto it (`/follow` -> `/follow/live/<id>`).
@@ -2560,8 +2576,18 @@ export class NativeMediaExecutor {
 			// timeline that is still `NaN` before metadata, or muted output that the
 			// site unmutes from its own UI.
 			if (event !== 'volumechange') return;
+			// A page can mount hidden preview players beside the real one (a feed's
+			// muted preview, a pre-roll shell). Their volume is not the surface the
+			// viewer touched, and promoting it moved the badge and observations onto
+			// a player nobody hears. Semantic invisibility is the only veto here: a
+			// live route's own player can still be 0×0 while it mounts, so layout
+			// geometry must stay out of this decision.
+			if (!isSemanticallyPresented(element)) return;
 			const observed = this.readElementVolume(target);
-			if (!observed) return;
+			if (!observed) {
+				this.traceDroppedVolume(target, 'unresolved-player');
+				return;
+			}
 			this.queuePageObservation(target, observed.patch, observed.observedStrategies);
 			return;
 		}
@@ -2569,7 +2595,7 @@ export class NativeMediaExecutor {
 		let observedFields: ControlReadRequest['fields'];
 		if (event === 'volumechange') {
 			observedFields = ['volumeBase', 'mediaMuted'];
-		} else 		if (event === 'ratechange') {
+		} else if (event === 'ratechange') {
 			// preservesPitch has no native event; observe it in the rate transaction.
 			observedFields = ['speed', 'preservePitch'];
 		} else if (event === 'play' || event === 'pause' || event === 'ended') {
@@ -2663,29 +2689,16 @@ export class NativeMediaExecutor {
 	}
 
 	// Bounded field trace for the "the page's native volume never reaches the
-	// badge" report (SP-22.3 §22.3). Eight lines per document separate an
-	// unregistered player from a dropped observation, and the cap keeps a page
-	// that writes volume in a loop from flooding the console.
-	private volumeDiagnostics = 8;
+	// badge" report (SP-22.3 §22.3). Only a genuine dropped sample is traced, as
+	// one readable line; an ordinary volume change stays silent. `console.debug`
+	// is stripped from the production bundle, so the extension the user runs does
+	// not print diagnostics for healthy playback.
+	private volumeDiagnostics = 4;
 
-	private explainVolume(target: MediaTarget, element: HTMLMediaElement, selected: boolean): void {
+	private traceDroppedVolume(target: MediaTarget, reason: string): void {
 		if (this.volumeDiagnostics <= 0) return;
 		this.volumeDiagnostics -= 1;
-		const rect = typeof element.getBoundingClientRect === 'function'
-			? element.getBoundingClientRect()
-			: { width: 0, height: 0 };
-		// `console.warn` survives the production bundle (the build drops
-		// `console.info`), so the trace is available in the extension the user runs.
-		console.warn('[SPECTRA][volume]', {
-			media: `${target.frameId}:${target.mediaId}`,
-			selected,
-			paused: element.paused,
-			muted: element.muted,
-			volume: element.volume,
-			duration: element.duration,
-			buffered: element.buffered?.length ?? 0,
-			rect: [Math.round(rect.width), Math.round(rect.height)],
-		});
+		console.debug(`[SPECTRA][volume] dropped ${reason} sample for ${target.frameId}:${target.mediaId}`);
 	}
 
 	/**
@@ -2771,7 +2784,10 @@ export class NativeMediaExecutor {
 			const current = sameTarget
 				? this.read({ target, fields: Object.keys(patch) as ControlReadRequest['fields'] })
 				: this.readElementVolume(target);
-			if (!current || Object.keys(current.patch).length === 0) continue;
+			if (!current || Object.keys(current.patch).length === 0) {
+				this.traceDroppedVolume(target, 'unreadable');
+				continue;
+			}
 			const live = 'live' in current && typeof current.live === 'boolean' ? current.live : undefined;
 			// Observation starts with this document's registry, before any control
 			// request binds this.tabId. Background derives the tab from Chrome's

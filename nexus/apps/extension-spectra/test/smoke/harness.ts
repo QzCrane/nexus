@@ -116,6 +116,7 @@ export interface ContentBootstrapStatus {
 		mediaId: string;
 		sourceRevision: number;
 	}>;
+	mediaIntentState?: 'unset' | 'retained' | 'released';
 }
 
 export type BootstrapListenerKey = readonly [

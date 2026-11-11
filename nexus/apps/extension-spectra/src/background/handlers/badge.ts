@@ -22,7 +22,11 @@ type BadgeAuthority = 'control' | 'session';
 type BadgeIdentity = Pick<ControlSnapshot, 'documentId' | 'origin' | 'generation'>;
 type BadgeFacts = Pick<BadgeInfo, 'volume' | 'muted' | 'enabled' | 'isCapture' | 'tone' | 'userInteracted'>;
 
-export type BadgePresentationIdentity = Pick<ControlSnapshot, 'tabId' | 'documentId' | 'origin' | 'generation'>;
+// `revision` is the control-basis revision the optimistic presentation was
+// staged from. Hotkeys pass their ControlSnapshot, so a page observation that
+// lands at a newer revision can prove the presentation is already superseded.
+export type BadgePresentationIdentity = Pick<ControlSnapshot, 'tabId' | 'documentId' | 'origin' | 'generation'>
+	& { revision?: number };
 interface PendingBadgePresentation {
 	identity: BadgePresentationIdentity;
 	token: SpectraHotkeyPresentationToken;
@@ -186,6 +190,29 @@ function admitBadgeProjection(
 	return true;
 }
 
+/**
+ * True when an admitted projection already outranks a staged presentation.
+ *
+ * An optimistic presentation stands in for the gesture that produced it. A
+ * projection decided at a newer revision for the same document is a later fact
+ * than that gesture's basis, so it must be able to replace the presentation even
+ * when the gesture's write never settles (a page that resets its own volume, a
+ * retryable unmute rejection, a dead Popup Port). Without this the presentation
+ * pinned the badge to its old number until settlement, the Popup, or the 5-minute
+ * TTL — the reported "the badge only follows after I open the Popup or pause and
+ * play once" symptom. Equal revisions are deliberately not superseded: a sample
+ * read before the gesture must never overwrite its optimistic value.
+ */
+function isSupersededPresentation(tabId: number, pending: PendingBadgePresentation): boolean {
+	const basis = pending.identity.revision;
+	if (basis === undefined) return false;
+	const applied = appliedBadgeProjections.get(tabId);
+	return applied !== undefined
+		&& applied.documentId === pending.identity.documentId
+		&& applied.generation === pending.identity.generation
+		&& applied.revision > basis;
+}
+
 async function paintBadge(tabId: number, admittedPresentation = false): Promise<void> {
 	if (!admittedPresentation && !await isTabExists(tabId)) {
 		badgeState.delete(tabId);
@@ -194,10 +221,12 @@ async function paintBadge(tabId: number, admittedPresentation = false): Promise<
 	}
 	const actual = badgeState.get(tabId);
 	const pending = pendingPresentations.get(tabId);
-	const decision = pending ? {
-		volume: pending.volume, tone: pending.tone, enabled: actual?.enabled ?? true,
-		muted: pending.tone === 'muted', isCapture: actual?.isCapture ?? false, userInteracted: false,
-		documentId: pending.identity.documentId, generation: pending.identity.generation,
+	const effectivePending = pending && isSupersededPresentation(tabId, pending) ? undefined : pending;
+	if (pending && !effectivePending) pendingPresentations.delete(tabId);
+	const decision = effectivePending ? {
+		volume: effectivePending.volume, tone: effectivePending.tone, enabled: actual?.enabled ?? true,
+		muted: effectivePending.tone === 'muted', isCapture: actual?.isCapture ?? false, userInteracted: false,
+		documentId: effectivePending.identity.documentId, generation: effectivePending.identity.generation,
 	} : actual;
 	const action = chrome.action;
 	if (!decision) {
@@ -218,7 +247,7 @@ async function paintBadge(tabId: number, admittedPresentation = false): Promise<
 			action.setBadgeBackgroundColor({ tabId, color }),
 			action.setBadgeTextColor({ tabId, color: BADGE_COLORS.WHITE }),
 		]);
-		if (badgeState.get(tabId) !== actual || pendingPresentations.get(tabId) !== pending) return;
+		if (badgeState.get(tabId) !== actual || pendingPresentations.get(tabId) !== effectivePending) return;
 		paintedBadges.set(tabId, {
 			text,
 			color,
