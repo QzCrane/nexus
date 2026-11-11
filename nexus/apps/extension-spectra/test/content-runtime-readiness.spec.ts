@@ -58,11 +58,25 @@ describe('content runtime readiness boundary', () => {
 		expect(harness.intents[0]?.payload).toMatchObject({ patch: { volumeBase: 42 } });
 	});
 
-	test('drops a buffered bootstrap observation when HELLO transfers ownership to runtime', async () => {
+	test('keeps observing when the runtime handshake lands but no media is registered', async () => {
+		const harness = installBootstrapHarness();
+		await importFreshBootstrap('runtime-blind');
+
+		// A ready runtime that never registered this document's player is not the
+		// observation owner. The document-start observer must keep submitting.
+		harness.media.muted = true;
+		harness.dispatchNativeChange('volumechange');
+		harness.resolveHello('runtime-1');
+		await waitFor(() => harness.intents.length === 1);
+		expect(harness.intents[0]?.payload).toMatchObject({ patch: { mediaMuted: true } });
+	});
+
+	test('drops a buffered bootstrap observation once the runtime registers media', async () => {
 		const harness = installBootstrapHarness();
 		await importFreshBootstrap('runtime-takeover');
 
 		harness.media.muted = true;
+		harness.state().runtimeObservesMedia = true;
 		harness.dispatchNativeChange('volumechange');
 		harness.resolveHello('runtime-1');
 		await Promise.resolve();
@@ -71,18 +85,18 @@ describe('content runtime readiness boundary', () => {
 		expect(harness.intents).toHaveLength(0);
 	});
 
-	test('claims a later epoch after full-runtime disposal and never steals loading ownership', async () => {
+	test('claims a later epoch after the runtime stops observing media', async () => {
 		const harness = installBootstrapHarness();
 		await importFreshBootstrap('owner-handoff'); harness.resolveHello(null);
 		harness.dispatchNativeChange('volumechange');
 		await waitFor(() => harness.intents.length === 1);
 		const state = harness.state();
-		state.disposeRuntime = async () => undefined;
+		state.runtimeObservesMedia = true;
 		expect(claimMediaObservationEpoch()).toBe(2);
 		harness.media.volume = 0.55; harness.dispatchNativeChange('volumechange');
 		await Promise.resolve();
 		expect(harness.intents).toHaveLength(1);
-		delete state.disposeRuntime;
+		delete state.runtimeObservesMedia;
 		harness.media.volume = 0.33; harness.dispatchNativeChange('volumechange');
 		await waitFor(() => harness.intents.length === 2);
 		expect(harness.intents[1]?.payload).toMatchObject({ patch: { volumeBase: 33 },

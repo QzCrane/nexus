@@ -175,8 +175,8 @@ export class MediaRegistry {
 	private explicitSelectionKey: string | null = null;
 	private selectionVisit = 0;
 	private observationRevision = 0;
-	private readonly observationOwner: string;
-	private readonly observationEpoch: number;
+	private observationOwner: string;
+	private observationEpoch: number;
 	private readonly pendingRemovals = new Set<HTMLMediaElement>();
 	// Control identities that left the document while a viewer still owned them.
 	// An SPA that swaps players keeps issuing intents against the element it had
@@ -279,6 +279,9 @@ export class MediaRegistry {
 
 	get selectionRevision(): number { return this.selectionVisit; }
 
+	/** The runtime has a concrete media element, so it can own native observation. */
+	get hasSelection(): boolean { return this.activeMediaId !== null; }
+
 	/**
 	 * True when the viewer pinned the current selection by choosing or pausing
 	 * that element. Automatic admission (SPA swap, geometry, live handover) never
@@ -292,9 +295,22 @@ export class MediaRegistry {
 		return this.explicitSelectionKey === key || this.pausedSelectionKey === key;
 	}
 
+	/**
+	 * Take observation ownership for this registry instance. Construction already
+	 * claims an epoch; this is the explicit handoff when a ready runtime starts
+	 * observing media, so its samples supersede the bootstrap's and every
+	 * replacement registry stays stale.
+	 */
+	claimObservationOwnership(): void {
+		const epoch = claimMediaObservationEpoch();
+		this.observationEpoch = epoch;
+		this.observationOwner = `${this.runtimeContext.identity.documentId}:${epoch}`;
+		this.observationRevision = 0;
+	}
+
 	captureObservation(): { owner: string; epoch: number; selection: number; revision: number } {
-		return { owner: this.observationOwner, epoch: this.observationEpoch, selection: this.selectionVisit,
-			revision: ++this.observationRevision };
+		return { owner: this.observationOwner, epoch: this.observationEpoch,
+			selection: this.selectionVisit, revision: ++this.observationRevision };
 	}
 
 	subscribe(listener: MediaRegistryListener): () => void {

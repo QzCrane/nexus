@@ -465,7 +465,7 @@ if (!getContentBootstrapState()) {
 	};
 
 	const scheduleObservationRetry = (): void => {
-		if (disposed || state.ready || state.disposeRuntime || observationRetryTimer !== null
+		if (disposed || state.runtimeObservesMedia || observationRetryTimer !== null
 			|| observationRetryAttempt >= DELIVERY_RETRY_DELAYS_MS.length) return;
 		const delay = DELIVERY_RETRY_DELAYS_MS[observationRetryAttempt];
 		observationRetryAttempt += 1;
@@ -478,8 +478,8 @@ if (!getContentBootstrapState()) {
 
 	const drainObservation = (): void => {
 		if (disposed || observationInFlight || !pendingObservation) return;
-		if (!observationsReady || state.ready || state.disposeRuntime) {
-			if (state.ready || state.disposeRuntime) pendingObservation = false;
+		if (!observationsReady || state.runtimeObservesMedia) {
+			if (state.runtimeObservesMedia) pendingObservation = false;
 			return;
 		}
 		pendingObservation = false;
@@ -530,14 +530,16 @@ if (!getContentBootstrapState()) {
 		);
 		if (!element?.isConnected) return;
 		if (event.type === 'ratechange') speedLabels.syncMedia(element);
-		if (state.disposeRuntime) return;
 		// Native media events double as presence evidence for media that never
 		// plays or loads metadata (volume-only elements).
 		reportMediaPresence();
 		// The first media volume event is the page-entry audio detection moment;
 		// solidify the amplified-controller verdict before the runtime loads.
 		if (event.type === 'volumechange') reportPageScale(element);
-		if (state.ready) return;
+		// Yield only to a runtime that registered a player. Injection or a READY
+		// handshake is not proof: a runtime that never discovered this document's
+		// media must not remove the only observer that hears native changes.
+		if (state.runtimeObservesMedia) return;
 		pendingObservation = true;
 		drainObservation();
 	};

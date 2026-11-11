@@ -27,6 +27,7 @@ import { createSnapshot, mountStub, consumeStub } from './sentinel';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import {
 	setContentRuntimeDisposer,
+	setContentRuntimeObservesMedia,
 	setContentRuntimeOwnershipProvider,
 	setContentRuntimeReady,
 } from '../../shared/content-runtime';
@@ -388,6 +389,24 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	// already have a selection with no `selected` event this executor ever saw.
 	// Publish it now; otherwise the snapshot waits for an explicit surface read.
 	nativeExecutor.publishCurrentSelection();
+	// Native observation has exactly one owner. The bootstrap yields only to a
+	// runtime that actually registered a player; a ready-but-blind runtime (a
+	// player it never discovered, a removed element, a page that mounts media
+	// outside its reach) must not silence the document-level observer.
+	let observationOwned = false;
+	const publishObservationOwnership = (): void => {
+		if (!isCurrentRuntime(runtime)) return;
+		const observing = mediaRegistry.hasSelection;
+		// Becoming the observation owner is a handoff, not an addition: advance the
+		// shared epoch so the registry's samples supersede the bootstrap's while
+		// both still describe this document.
+		if (observing && !observationOwned) mediaRegistry.claimObservationOwnership();
+		observationOwned = observing;
+		setContentRuntimeObservesMedia(observing);
+	};
+	publishObservationOwnership();
+	registry.track(mediaRegistry.subscribe(() => publishObservationOwnership()));
+	registry.track(() => setContentRuntimeObservesMedia(false));
 
   const policyExecutor = await createPolicyExecutor(
 		deps,

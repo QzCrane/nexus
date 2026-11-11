@@ -27,6 +27,14 @@ export interface ContentBootstrapState {
 	extensionInvoked?: boolean;
 	/** Never reset when the full runtime is replaced inside the same document. */
 	mediaOwnerEpoch?: number;
+	/**
+	 * The full runtime has registered media in this document and is the
+	 * observation owner. Until that is true the bootstrap keeps observing:
+	 * injection alone is not proof that a runtime can see the page's player,
+	 * and a ready runtime that never registered one must not silence the only
+	 * observer that actually receives native volume events.
+	 */
+	runtimeObservesMedia?: boolean;
 	disposeRuntime?: () => Promise<void>;
 	getOwnedSources?: () => ContentRuntimeSourceOwnership[];
 	getMediaIntent?: () => NonNullable<ContentRuntimeStatus['mediaIntentState']>;
@@ -114,6 +122,13 @@ export function needsManifestVolumeCommand(
 	mediaVolume: number | null,
 ): boolean {
 	return !extensionInvoked && mediaVolume !== null && mediaVolume >= 0.999;
+}
+
+export function setContentRuntimeObservesMedia(observing: boolean): void {
+	const state = getContentBootstrapState();
+	if (!state) return;
+	if (observing) state.runtimeObservesMedia = true;
+	else delete state.runtimeObservesMedia;
 }
 
 export function setContentRuntimeDisposer(disposer: (() => Promise<void>) | null): void {

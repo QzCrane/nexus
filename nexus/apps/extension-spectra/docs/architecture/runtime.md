@@ -433,6 +433,17 @@ A document that reports playable media is itself a consumer. `ensureMediaObserva
 
 When a runtime attaches to a document that already has a selection, `NativeMediaExecutor.publishCurrentSelection()` publishes that selection once after `bootstrapMessaging` — the presentation kind, `spectra.content.target.changed` carrying the registry's observation stamp, and the physical values that already exist (volume, mute, speed, pitch, playback) as a page observation. A document with no selection publishes nothing, but the first selection that follows completes the same publication exactly once; later selections keep the ordinary target-only path so no page observation is fabricated from a cold or superseded selection. An SPA route switch (`/follow` -> `/follow/live/<id>`) selects a different player element in the same document; that replacement also publishes its own physical values, because the previous player's numbers are not a snapshot of the new one. A selection that only changes identity on the same element stays target-only. The values matter because a new document otherwise has no field snapshot until its first native change or an explicit read: that empty window is what made the first Popup open look like the switch. Background admits attach publication and a later `selected` through the same ordered observation rules, so the duplicate sample is idempotent.
 
+The document-start bootstrap remains the native-observation owner until the heavy
+runtime proves it registered a player (`MediaRegistry.hasSelection`). Injection or
+a READY handshake alone does not transfer that duty: a ready-but-blind runtime — a
+player it never discovered, a removed element, media mounted outside its reach —
+must not silence the only observer that receives document-level `volumechange`,
+because the next Popup read would then be the first thing to move the snapshot.
+The handoff calls `claimObservationOwnership`, which advances the shared
+observation epoch so the registry's samples supersede the bootstrap's and every
+replaced registry stays stale; when the registry loses its last selection the
+bootstrap resumes on the same ordering and keeps submitting.
+
 The pre-injection runtime-status probe is an optional read bounded to 1 second.
 Its settlement pool retains at most eight physical outstanding probes; observation
 expiry does not pretend to cancel a browser request. An expired or unavailable
