@@ -816,6 +816,22 @@ export class MediaRegistry {
 		return initial ? this.byElement.get(initial) ?? null : null;
 	}
 
+	/**
+	 * Whether this target is still a presented media element. Observation may
+	 * follow a presented element the viewer adjusts before the registry moves
+	 * control onto it (an SPA live route); a hidden preview is not a presentation
+	 * and must stay unobserved.
+	 */
+	isPresented(target: MediaTarget): boolean {
+		const record = this.recordForTarget(target);
+		if (!record || record.element.ended || record.presentationHidden) return false;
+		if (record.visibleArea > 0) return true;
+		const fullscreen = document.fullscreenElement;
+		return document.pictureInPictureElement === record.element
+			|| fullscreen === record.element
+			|| fullscreen instanceof Element && fullscreen.contains(record.element);
+	}
+
 	peek(
 		target: MediaTarget | null,
 		kind: 'media' | 'video' = 'media',

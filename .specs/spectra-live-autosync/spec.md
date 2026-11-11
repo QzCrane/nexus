@@ -50,8 +50,11 @@ SPA 竞态：`/follow` → `/follow/live/<id>` 也可能在同一文档内完成
 - **I3 attach 即发布**：运行时接管已有选中的文档时立即发布该选中的观测；
   attach 时无选中则由紧随其后的第一次选中补完一次；SPA 切换选中另一个播放器
   元素时发布该元素自己的物理值。
-- **I4 页面不退化**：无媒体的文档不加载重运行时；显式 release 后不重建。
-- **I5 三件事互不门闩**：同步 / 使用 / 角标可见性保持既有分离。
+- **I4 观察不追随所有权**：呈现中元素的原生音量/静音变化始终以该元素自己的
+  target 提交页面观察，即使选中尚未迁移到它；隐藏预览不观察，控制所有权不因
+  属性事件移动。
+- **I5 页面不退化**：无媒体的文档不加载重运行时；显式 release 后不重建。
+- **I6 三件事互不门闩**：同步 / 使用 / 角标可见性保持既有分离。
 
 ## 4. 方案
 
@@ -101,6 +104,10 @@ publishCurrentSelection(): void
 - `selected` 事件：attach 挂起时补发一次物理值；否则仅当选中换成另一个元素
   （SPA 路由切换）时发布该元素自己的物理值。同一元素上 mediaId / sourceRevision
   变化保持 target-only，避免把冷态 page-semantic 样本重归因。
+- `volumechange` 来自未被选中的元素时：若 `registry.isPresented(target)` 为真，
+  以该元素自己的 target 提交 `volumeBase` / `mediaMuted` 页面观察；隐藏预览不提交，
+  控制所有权不变。`flushPageObservations` 对这类 target 重新读取自己的元素，而不是
+  用控制 owner 的 delegate 读数。
 
 在 `content/core/index.ts` 的 `bootstrapMessaging(...)` 之后调用一次，
 保证消息通道就绪。重复发布由后台有序观测准入吸收，幂等。
@@ -131,7 +138,7 @@ if (await port.resolvePersistentMediaObservation(target)) {
 | 文件 | 用例 |
 | --- | --- |
 | `test/runtime-loader.spec.ts` | `ensureMediaObservation` 在未初始化/已退役/已 release 时 no-op；正常时以 `observation` 能力 ensure；`hasMediaElement` handler 的接线由既有 `tab-visibility.spec.ts` 的 `recordMediaState` 用例守住 |
-| `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；attach 无选中 → 不发，第一次选中补发一次且只补一次；SPA 切换到另一个播放器元素 → 发布该元素的物理值；同一元素身份变化 → 仍只发 target |
+| `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；attach 无选中 → 不发，第一次选中补发一次且只补一次；SPA 切换到另一个播放器元素 → 发布该元素的物理值；同一元素身份变化 → 仍只发 target；未选中但呈现中的元素发生原生音量变化 → 以该元素 target 提交页面观察，隐藏预览不提交 |
 | `test/runtime-restart-startup.spec.ts` | 媒体事实为 `found` 且 documentId 匹配 → 保留 observation；无事实 → 既有孤儿回收用例不变 |
 
 ## 6. 文档投影

@@ -522,6 +522,42 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
+	test('observes a native volume change from a presented player the selection has not reached', async () => {
+		installFakeMediaGlobals();
+		const registry = new FakeRegistry();
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		const live = new FakeMediaElement();
+		live.volume = 0.42;
+		const liveTarget: MediaTarget = { ...registry.target, mediaId: 'media:live', kind: 'video' };
+		const presented = { value: true };
+		Object.assign(registry as unknown as Record<string, unknown>, {
+			isPresented: () => presented.value,
+		});
+		registry.resolve = ((requested?: MediaTarget | null) => requested?.mediaId === 'media:live'
+			? { element: live as unknown as HTMLMediaElement, target: liveTarget }
+			: { element: registry.element as unknown as HTMLMediaElement, target: { ...registry.target } });
+		try {
+			presented.value = false;
+			registry.listener?.({ ...liveTarget }, 'volumechange', live as unknown as HTMLMediaElement);
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			expect(messages.find((message) => message.type === 'spectra.control.intent.submit')).toBeUndefined();
+			presented.value = true;
+			registry.listener?.({ ...liveTarget }, 'volumechange', live as unknown as HTMLMediaElement);
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			const observation = messages.find((message) => message.type === 'spectra.control.intent.submit');
+			expect(observation?.payload).toMatchObject({
+				source: 'page',
+				target: liveTarget,
+				patch: { volumeBase: 42, mediaMuted: false },
+			});
+			expect(messages.some((message) => message.type === 'spectra.content.target.changed')).toBe(false);
+		} finally { executor.dispose(); }
+	});
+
 	test('moves an active-target write to the new selection when another source becomes selected mid-write', async () => {
 		installFakeMediaGlobals(); const registry = new FakeRegistry();
 		const original = registry.resolve(); const next = { element: new FakeMediaElement() as unknown as HTMLMediaElement,

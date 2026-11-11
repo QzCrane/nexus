@@ -2546,7 +2546,21 @@ export class NativeMediaExecutor {
 			this.replayDesired(target, element, true);
 		}
 		const resolved = this.registry.resolve(null);
-		if (!resolved || resolved.target.mediaId !== target.mediaId) return;
+		const selected = Boolean(resolved && resolved.target.frameId === target.frameId
+			&& resolved.target.mediaId === target.mediaId);
+		if (!selected) {
+			// An SPA route can mount and start the successor player before the
+			// registry moves control onto it (`/follow` -> `/follow/live/<id>`).
+			// The viewer's native volume/mute gesture is physical state of a
+			// presented element, so the badge has to follow it even while another
+			// element still owns control. Control ownership never moves on a property
+			// event, and a hidden preview is not a presentation.
+			if (event !== 'volumechange' || this.registry.isPresented?.(target) !== true) return;
+			const presented = this.readPresentedVolume(target);
+			if (!presented) return;
+			this.queuePageObservation(target, presented.patch, presented.observedStrategies);
+			return;
+		}
 		const mediaId = target.mediaId;
 		let observedFields: ControlReadRequest['fields'];
 		if (event === 'volumechange') {
@@ -2645,6 +2659,37 @@ export class NativeMediaExecutor {
 	}
 
 	/**
+	 * Read the physical volume/mute of a presented element that another element
+	 * still owns. The audio runtime delegate describes the control owner, so an
+	 * unselected successor is read from its own element: an SPA live route must
+	 * reach the badge without moving control ownership.
+	 */
+	private readPresentedVolume(
+		target: MediaTarget,
+	): {
+		patch: ControlPatch;
+		observedStrategies: ControlObservationStrategies;
+		mediaObservation?: ControlReadResult['mediaObservation'];
+	} | null {
+		const resolved = this.registry.resolve(target);
+		if (!resolved) return null;
+		const patch: ControlPatch = {};
+		const observedStrategies: ControlObservationStrategies = {};
+		for (const field of ['volumeBase', 'mediaMuted'] as const) {
+			const observed = readRestorableMediaFieldWithWriter(resolved.element, field);
+			(patch as Record<string, unknown>)[field] = observed.actual;
+			observedStrategies[field] = observationStrategy(observed.writer);
+		}
+		return {
+			patch,
+			observedStrategies,
+			...(this.registry.captureObservation
+				? { mediaObservation: this.registry.captureObservation() }
+				: {}),
+		};
+	}
+
+	/**
 	 * Publish a page-native observation.
 	 *
 	 * A single page gesture changes several fields and dispatches one native
@@ -2689,11 +2734,16 @@ export class NativeMediaExecutor {
 		this.pageObservations.clear();
 		for (const { target, patch, observedStrategies } of entries) {
 			const selected = this.registry.resolve(null);
-			if (!selected || selected.target.frameId !== target.frameId
-				|| this.targetKey(selected.target) !== this.targetKey(target)) continue;
+			const sameTarget = Boolean(selected && selected.target.frameId === target.frameId
+				&& this.targetKey(selected.target) === this.targetKey(target));
+			if (!sameTarget && this.registry.isPresented?.(target) !== true) continue;
 			// Queueing is not a sample. Read this batch again in one synchronous
 			// turn so the stamp cannot make an older queued value look newer.
-			const current = this.read({ target, fields: Object.keys(patch) as ControlReadRequest['fields'] });
+			const current = sameTarget
+				? this.read({ target, fields: Object.keys(patch) as ControlReadRequest['fields'] })
+				: this.readPresentedVolume(target);
+			if (!current || Object.keys(current.patch).length === 0) continue;
+			const live = 'live' in current && typeof current.live === 'boolean' ? current.live : undefined;
 			// Observation starts with this document's registry, before any control
 			// request binds this.tabId. Background derives the tab from Chrome's
 			// sender and validates this exact target/document, as for lean bootstrap.
@@ -2704,7 +2754,7 @@ export class NativeMediaExecutor {
 				patch: current.patch,
 				observedStrategies: { ...observedStrategies, ...current.observedStrategies },
 				mediaObservation: current.mediaObservation,
-				...(typeof current.live === 'boolean' ? { live: current.live } : {}),
+				...(typeof live === 'boolean' ? { live } : {}),
 			}).catch(() => undefined);
 		}
 	}

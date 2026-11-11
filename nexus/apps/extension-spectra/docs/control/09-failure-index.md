@@ -62,7 +62,7 @@ flowchart TD
 | 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中未交接；旧播放器的历史交互压过正在播放的直播，或空选中不自愈 | 056 | guarded |
 | 插件改了音量，站点自己的音量条不动，而且下次换流被站点覆盖回去 | 音量只写元素属性（`dom-native`），没有站点控制器适配；declared 行只有倍速 | 053、049 | open |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
-| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；或 SPA 切换选中新播放器元素后没有发布它自己的物理值 | 052、014、056 | guarded |
+| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；或新播放器已呈现却因未选中而不被观察 | 052、014、056 | guarded |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
 | Popup 打开首帧空白、随后跳高，或先英文后中文 | 首帧等异步 actual；结构高度被历史值预留 | 050 | guarded |
 | PiP 打开后立刻被关掉 | 站点策略属性被提前归还，浏览器在同一任务跑了退出算法 | 051 | guarded |
@@ -197,13 +197,18 @@ flowchart TD
   因历史媒体事实被复活。
 - 同源路由 `/follow` ↔ `/follow/live/<id>` 共用同一 tab session，不涉及跨 origin
   会话迁移；不要再从 tldts/site 分组方向修这个问题。
+- 观察不追随控制所有权：SPA 直播路由已挂载并播放新播放器、但选中尚未迁移时，呈现中
+  元素的原生音量/静音变化仍以该元素自己的 target 提交页面观察；隐藏预览不观察，控制
+  所有权也不因属性事件移动。否则 `volumechange` 会被"非当前目标"过滤，角标停在旧播放器
+  的数字，直到用户手动暂停/播放或打开 Popup。
 - 测试：`test/runtime-loader.spec.ts` 的
   "acquires an observation runtime for a media document with no desired template"、
   "does not acquire an observation runtime after the viewer released the document"；
   `test/native-media-executor.spec.ts` 的
   "publishes an established selection when a runtime attaches after it was selected"、
   "completes the attach publication when the first selection arrives after it"、
-  "publishes the replacement player values when a route switch selects another element"；
+  "publishes the replacement player values when a route switch selects another element"、
+  "observes a native volume change from a presented player the selection has not reached"；
   `test/runtime-restart-startup.spec.ts` 的
   "keeps the surviving runtime as an observation owner when its document reported media"、
   "does not resurrect a dead runtime for a media observation owner"。
