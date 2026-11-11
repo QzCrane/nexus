@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { resolve } from 'node:path';
 import { runInThisContext } from 'node:vm';
-import { claimMediaObservationEpoch, type ContentBootstrapState } from '../src/shared/content-runtime';
+import {
+	claimMediaObservationEpoch,
+	noteMediaUserGesture,
+	type ContentBootstrapState,
+} from '../src/shared/content-runtime';
 
 const originalGlobals = new Map(
 	['window', 'document', 'chrome', 'HTMLMediaElement']
@@ -40,6 +44,23 @@ describe('content runtime readiness boundary', () => {
 		});
 		await Promise.resolve();
 		expect(harness.intents).toHaveLength(1);
+		// Autoplay/player setup changes volume without trusted input; it may sync
+		// but it must not claim a gesture that could make the badge appear.
+		expect(harness.intents[0]?.payload.userGesture).toBeUndefined();
+	});
+
+	test('carries the viewer gesture witness on a buffered volume change', async () => {
+		const harness = installBootstrapHarness();
+		await importFreshBootstrap('gesture-witness');
+		noteMediaUserGesture();
+		harness.media.volume = 0.31;
+		harness.dispatchNativeChange('volumechange');
+		harness.resolveHello(null);
+		await waitFor(() => harness.intents.length === 1);
+		expect(harness.intents[0]?.payload).toMatchObject({
+			userGesture: true,
+			patch: { volumeBase: 31 },
+		});
 	});
 
 	test('retries a routed HELLO that lost the document identity race', async () => {

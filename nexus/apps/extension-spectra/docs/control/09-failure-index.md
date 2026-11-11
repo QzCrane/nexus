@@ -62,7 +62,7 @@ flowchart TD
 | 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中未交接；旧播放器的历史交互压过正在播放的直播，或空选中不自愈 | 056 | guarded |
 | 插件改了音量，站点自己的音量条不动，而且下次换流被站点覆盖回去 | 音量只写元素属性（`dom-native`），没有站点控制器适配；declared 行只有倍速 | 053、049 | open |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
-| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；新播放器已呈现却因未选中而不被观察；注册时 `play` 已发生使元素永不入选；文档输出模式下用 delegate 的 applied 值取证；程序化配置被当成用户使用而写入 usage | 052、014、056、I8、I9、I10 | guarded |
+| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 / 一开始永远不同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；新播放器已呈现却因未选中而不被观察；注册时 `play` 已发生使元素永不入选；文档输出模式下用 delegate 的 applied 值取证；程序化配置被当成用户使用而写入 usage；把使用收紧为"仅扩展命令"后页面原生音量手势无法创建角标 | 052、014、056、I8、I9、I10 | guarded |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
 | Popup 打开首帧空白、随后跳高，或先英文后中文 | 首帧等异步 actual；结构高度被历史值预留 | 050 | guarded |
 | PiP 打开后立刻被关掉 | 站点策略属性被提前归还，浏览器在同一任务跑了退出算法 | 051 | guarded |
@@ -226,6 +226,16 @@ flowchart TD
   `markUserInteracted`；`isNativeSync` 只保留"抑制 applyState"。后台
   `updateBadgeFromSession` 只读 `hasBadgeUsage`，用途只能由已结算的显式意图写入；
   `tabs.onCreated` 与 `onRemoved` 都把 tabId 当作 usage 的生命周期边界。
+- 已落地的页面手势用途证人（I10 修订）：只允许 Popup/热键创建 usage 后，观众直接
+  拖站点原生音量条只会产生页面观察，`isBadgeProjected` 恒为假，角标"一开始永远
+  不同步"，直到打开 Popup。document-start bootstrap 现在记录 `isTrusted` 的
+  pointerdown、按住期间的 pointermove、keydown 与 wheel，时间戳写入跨 bundle 共享的
+  `ContentBootstrapState.mediaUserGestureAt`；`volumechange` 若落在该输入后 1 秒内，
+  内容侧把 `userGesture` 随页面观察提交（合同仅允许 `source=page`），后台在准入
+  该观察前 `markBadgeUsedForTab`。自动播放初始化、SPA 脚手架、恢复写入都没有受
+  信任输入，不能创建角标；观众拖动/点击静音则立即让角标出现并绘制该观察值。
+  明确不使用 `navigator.userActivation`：同源导航后可能残留，自动化浏览器中也可能
+  恒为真，会重新制造"新开页面就出角标"。
 - 已落地的媒体边界：`hasMediaSurface` 把"有源"的媒体当作媒体面——`srcObject` 上已存在
   的轨道，或 `currentSrc`/`src` 已赋值。直播路由可在首次手势前把元素停在
   `HAVE_NOTHING`，此时 `readyState`/`currentTime`/`played` 都不成立；没有这条证据，

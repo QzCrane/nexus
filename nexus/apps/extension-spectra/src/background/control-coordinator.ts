@@ -2799,6 +2799,17 @@ async function submitOrderedPageObservation(request: RoutedControlSubmitRequest)
 			generation: baseline.generation, revision: baseline.revision, target: baseline.activeMedia, fields: {},
 			...(baseline.mediaObservation ? { mediaObservation: baseline.mediaObservation } : {}) };
 	}
+	// I10: a page-native volume/mute change that arrived within the trusted-input
+	// window of the document-start tracker is a confirmed viewer gesture. Landing
+	// the sample in the canonical snapshot is not enough — with no badge projected
+	// the viewer sees nothing, which is exactly the "badge never syncs until the
+	// Popup opens" report. This is the only page-side fact allowed to make the
+	// badge visible; autoplay initialization and player scaffolding carry no
+	// trusted input.
+	if (request.userGesture === true
+		&& (typeof request.patch?.volumeBase === 'number' || typeof request.patch?.mediaMuted === 'boolean')) {
+		await markBadgeUsedForTab(request.tabId);
+	}
 	// Processor normalization remains an effectful control transaction. Pure
 	// native observations (especially playing) never wait behind that actor.
 	if (typeof request.patch?.volumeBase === 'number' && volumeObservationCanNormalize(baseline, request.mediaObservation)) {

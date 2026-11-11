@@ -28,6 +28,13 @@ export interface ContentBootstrapState {
 	/** Never reset when the full runtime is replaced inside the same document. */
 	mediaOwnerEpoch?: number;
 	/**
+	 * `performance.now()` of the last trusted input that can explain a native
+	 * volume/mute change. The document-start bootstrap owns the input listeners;
+	 * the full runtime reads the same stamp. A page's autoplay setup and player
+	 * scaffolding never set it, so they cannot make the badge appear.
+	 */
+	mediaUserGestureAt?: number;
+	/**
 	 * The full runtime has registered media in this document and is the
 	 * observation owner. Until that is true the bootstrap keeps observing:
 	 * injection alone is not proof that a runtime can see the page's player,
@@ -81,6 +88,28 @@ export function requiresContentRuntime(type: SpectraRequestType): boolean {
 export function getContentBootstrapState(): ContentBootstrapState | undefined {
 	if (typeof window === 'undefined') return undefined;
 	return (window as ContentBootstrapWindow).__SPECTRA_CONTENT_BOOTSTRAP__;
+}
+
+/**
+ * How long a trusted input remains a plausible cause of a native volume change.
+ * Sites apply a slider value synchronously or within a frame; the window only
+ * has to cover that hand-off, not the whole interaction. A drag refreshes it on
+ * every pointer move, so long drags stay covered.
+ */
+const MEDIA_USER_GESTURE_WINDOW_MS = 1_000;
+// The two content bundles share this module's state only through the bootstrap
+// object. Outside a DOM (unit tests) the local stamp keeps the witness usable.
+let localMediaUserGestureAt: number | undefined;
+
+export function noteMediaUserGesture(now = performance.now()): void {
+	localMediaUserGestureAt = now;
+	const state = getContentBootstrapState();
+	if (state) state.mediaUserGestureAt = now;
+}
+
+export function hasRecentMediaUserGesture(now = performance.now()): boolean {
+	const at = getContentBootstrapState()?.mediaUserGestureAt ?? localMediaUserGestureAt;
+	return typeof at === 'number' && now - at >= 0 && now - at <= MEDIA_USER_GESTURE_WINDOW_MS;
 }
 
 /** One document clock for full-registry and passive-bootstrap ownership. */

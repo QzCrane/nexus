@@ -439,10 +439,11 @@ describe('authoritative control coordinator', () => {
 	const media = (harness: Harness, id = 'current'): MediaTarget => ({ frameId: 0, documentId: harness.documentId,
 		mediaId: `media:${id}`, sourceRevision: 0, kind: 'video' });
 	const observe = (target: MediaTarget, patch: ControlSubmitRequest['patch'], mediaObservation: MediaObservationStamp,
-		live?: boolean) => controlCoordinatorTestApi.submit({
+		live?: boolean, userGesture?: boolean) => controlCoordinatorTestApi.submit({
 		tabId: 7, source: 'page', requestedCoverage: 'active-target', target, patch, mediaObservation,
 		observedStrategies: Object.fromEntries(Object.keys(patch ?? {}).map((field) => [field, 'dom-native'])),
 		...(typeof live === 'boolean' ? { live } : {}),
+		...(userGesture ? { userGesture: true } : {}),
 	});
 
 	test('admits fresh playback while speed waits without advancing the control revision or losing its ACK', async () => {
@@ -2375,7 +2376,7 @@ describe('authoritative control coordinator', () => {
 		expect(badgeText).toBe('30');
 	});
 
-	test('syncs an untouched tab without painting, then draws that synced value on first explicit use', async () => {
+	test('keeps a page-only tab hidden until a gesture, then reveals the synced value', async () => {
 		const harness = installHarness();
 		let badgeText = '';
 		Object.assign(chrome.action, {
@@ -2398,7 +2399,7 @@ describe('authoritative control coordinator', () => {
 		};
 		const target = media(harness);
 
-		// Sync is unconditional. A page gesture is admitted to the canonical
+		// Sync is unconditional. A page observation is admitted to the canonical
 		// snapshot and this resource's durable row even though no badge exists.
 		await observe(target, { volumeBase: 42, mediaMuted: false }, sample(1));
 		await controlCoordinatorTestApi.flushSessionProjections();
@@ -2408,18 +2409,21 @@ describe('authoritative control coordinator', () => {
 		expect((harness.storage.get('tab_session_7') as { patch?: Record<string, unknown> } | undefined)?.patch)
 			.toMatchObject({ volumeBase: 42, mediaMuted: false });
 
-		// Hiding is a separate decision: no explicit use has ever happened, so the
-		// badge stays empty no matter what the page does with its own slider.
+		// Autoplay setup and player scaffolding run without user activation. A
+		// fresh page reporting its own volume must not make the badge appear.
+		expect(badgeText).toBe('');
+		expect(badgeState.has(7)).toBe(false);
+		await observe(target, { volumeBase: 70, mediaMuted: false }, sample(2));
+		await controlCoordinatorTestApi.flushSessionProjections();
 		expect(badgeText).toBe('');
 		expect(badgeState.has(7)).toBe(false);
 
-		// The first explicit gesture lights the badge, and it paints the volume the
-		// page already reported — not the gesture's own field.
-		await controlCoordinatorTestApi.submitInvoked({
-			...request({ speed: 1.5 }),
-			source: 'hotkey',
-		}, invocation(harness, 'site-page'));
+		// The viewer's own volume slider moves inside transient activation. That is
+		// the page-side witness: the badge appears and paints the observed value
+		// immediately, with no Popup, no hotkey and no pause/play round trip.
+		await observe(target, { volumeBase: 42, mediaMuted: false }, sample(3), undefined, true);
 		await controlCoordinatorTestApi.flushSessionProjections();
+		expect(badgeState.get(7)).toMatchObject({ userInteracted: true, volume: 42 });
 		expect(badgeText).toBe('42');
 	});
 

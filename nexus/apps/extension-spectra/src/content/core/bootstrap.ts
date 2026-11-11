@@ -16,7 +16,9 @@ import {
 import {
 	getContentBootstrapState,
 	claimMediaObservationEpoch,
+	hasRecentMediaUserGesture,
 	needsManifestVolumeCommand,
+	noteMediaUserGesture,
 	setContentBootstrapState,
 	type ContentBootstrapState,
 } from '../../shared/content-runtime';
@@ -87,6 +89,9 @@ if (!getContentBootstrapState()) {
 		repeated: boolean;
 	}>();
 	let pendingObservation = false;
+	// Sampled at event time: a trusted pointer/key/wheel input shortly before
+	// this change is the witness that the viewer, not page setup, moved it.
+	let pendingObservationGesture = false;
 	const observationOwner = crypto.randomUUID();
 	let observationEpoch = 0;
 	let observationRevision = 0;
@@ -242,6 +247,36 @@ if (!getContentBootstrapState()) {
 
 	const onVisibilityChange = (): void => {
 		if (document.hidden) releaseDefaultScalarKeys();
+	};
+
+	// Trusted input is the witness a native volume change needs; the page's own
+	// autoplay setup, player scaffolding and route restoration never produce it.
+	// Pointer moves only refresh the witness while a press is held, so long
+	// slider drags stay attributed without idle mouse movement doing so.
+	let pointerPressed = false;
+	const onGestureInput = (event: Event): void => {
+		if (!event.isTrusted) return;
+		switch (event.type) {
+			case 'pointerdown':
+				pointerPressed = true;
+				break;
+			case 'pointerup':
+			case 'pointercancel':
+				pointerPressed = false;
+				break;
+			case 'pointermove':
+				// A release outside the window may never reach it as `pointerup`.
+				// `buttons` is the authoritative held-state, so an idle hover cannot
+				// keep refreshing the witness after such a release.
+				if (!pointerPressed || (event as PointerEvent).buttons === 0) {
+					pointerPressed = false;
+					return;
+				}
+				break;
+			default:
+				break;
+		}
+		noteMediaUserGesture();
 	};
 
 	const readNativeActual = (
@@ -427,6 +462,7 @@ if (!getContentBootstrapState()) {
 			speedLabels.dispose();
 			releaseDefaultScalarKeys();
 			pendingObservation = false;
+			pendingObservationGesture = false;
 			if (presenceRetryTimer !== null) clearTimeout(presenceRetryTimer);
 			presenceRetryTimer = null;
 			presenceRetryAttempt = 0;
@@ -445,6 +481,7 @@ if (!getContentBootstrapState()) {
 			}
 			document.removeEventListener('volumechange', onNativeMediaChange, true);
 			document.removeEventListener('ratechange', onNativeMediaChange, true);
+			gestureInputs.abort();
 			unsubscribePhysicalHotkeyRelease();
 			window.removeEventListener('keydown', onDefaultHotkeyKeydown, true);
 			window.removeEventListener('keyup', onDefaultHotkeyKeyup, true);
@@ -479,10 +516,15 @@ if (!getContentBootstrapState()) {
 	const drainObservation = (): void => {
 		if (disposed || observationInFlight || !pendingObservation) return;
 		if (!observationsReady || state.runtimeObservesMedia) {
-			if (state.runtimeObservesMedia) pendingObservation = false;
+			if (state.runtimeObservesMedia) {
+				pendingObservation = false;
+				pendingObservationGesture = false;
+			}
 			return;
 		}
 		pendingObservation = false;
+		const userGesture = pendingObservationGesture;
+		pendingObservationGesture = false;
 		// The queue retains a sampling obligation, never old values. Read both
 		// complete bootstrap groups from the canonical selected media together.
 		// No registry target is claimed: each stateless sample is a new selection.
@@ -502,6 +544,7 @@ if (!getContentBootstrapState()) {
 			patch: observation.patch,
 			observedStrategies: observation.observedStrategies,
 			mediaObservation: { owner: observationOwner, epoch: observationEpoch, selection: revision, revision },
+			...(userGesture ? { userGesture: true } : {}),
 		}, state.dispose).then((response) => {
 			if (isAcceptedBootstrapResponse(response)) {
 				observationRetryAttempt = 0;
@@ -514,8 +557,10 @@ if (!getContentBootstrapState()) {
 			// An observation rejected while the route settles is still the current
 			// truth of this document; keep the obligation instead of waiting for
 			// the viewer's next gesture.
+			if (userGesture) pendingObservationGesture = true;
 			scheduleObservationRetry();
 		}).catch(() => {
+			if (userGesture) pendingObservationGesture = true;
 			scheduleObservationRetry();
 		}).finally(() => {
 			observationInFlight = false;
@@ -540,6 +585,7 @@ if (!getContentBootstrapState()) {
 		// handshake is not proof: a runtime that never discovered this document's
 		// media must not remove the only observer that hears native changes.
 		if (state.runtimeObservesMedia) return;
+		if (event.type === 'volumechange' && hasRecentMediaUserGesture()) pendingObservationGesture = true;
 		pendingObservation = true;
 		drainObservation();
 	};
@@ -675,6 +721,14 @@ if (!getContentBootstrapState()) {
 	// website-first in the heavy hotkey listener.
 	window.addEventListener('keydown', onDefaultHotkeyKeydown, true);
 	window.addEventListener('keyup', onDefaultHotkeyKeyup, true);
+	const gestureInputs = new AbortController();
+	for (const type of ['pointerdown', 'pointermove', 'pointerup', 'pointercancel', 'keydown', 'wheel']) {
+		window.addEventListener(type, onGestureInput, {
+			capture: true,
+			passive: true,
+			signal: gestureInputs.signal,
+		});
+	}
 	document.addEventListener('visibilitychange', onVisibilityChange);
 	window.addEventListener('blur', releaseDefaultScalarKeys);
 	window.addEventListener('pagehide', onPageHide, { once: true });

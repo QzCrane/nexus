@@ -70,3 +70,16 @@
   - `bun run typecheck`、`bun run lint`、`bun run verify:q`、`bun run test:unit`。
   - `bun run build:spectra`。
   - 单提交：`fix(spectra): observe media documents without opening popup`。
+
+- [x] T11 页面手势用途证人（R4，content → background）
+  - `packages/contracts/src/control.contracts.ts`：`ControlSubmitRequest` 增加
+    `userGesture?: boolean`，合同只允许 `source=page` 携带；加入 key 集合。
+  - `native-media-executor.ts`：`volumechange` 到达时读取
+    `navigator.userActivation.isActive`，随排队页面观察提交 `userGesture`；
+    attach/选中发布等非手势路径恒为 false。
+  - `control-coordinator.ts`：准入带 `userGesture` 且含 `volumeBase`/`mediaMuted`
+    的页面观察前 `markBadgeUsedForTab`，使角标由观众拖动站点原生音量条创建并
+    立即绘制该值；无激活的程序化写入仍不能创建角标。
+  - 测试：`control-contracts` 的 page-only 断言、`native-media-executor` 的
+    激活/非激活对、`control-coordinator` 的"自动播放不画、手势立即画"。
+  - 文档：spec §4.4 R4 / I10 修订、05-control-state、09-failure-index。

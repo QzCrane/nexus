@@ -269,12 +269,21 @@ runtime 接替 bootstrap 后仍须持续发布页面变化。回归证据见
 不互相门闩。`/follow` 与 `/follow/live/<id>` 同源且同 tab session，切换文档不涉及
 跨 origin 会话迁移。
 
-角标可见性只由已确认的用户手势创造（I10）：只有 Background 自己结算过的
-Popup/热键意图可以写入该 tab 的 usage。会话上报、程序化配置、页面观察、被动读取
-和导航恢复都只能细化一个已经可见的角标。内容侧的 `userHasInteracted` 不再是
-"非 native sync"的否定推断，只由 Popup/热键命令置位；`spectra.audio.runtime.configure`
-与初始化应用配置都不再制造使用事实。tabId 是 usage 的生命周期边界：
-`tabs.onCreated` 与 `onRemoved` 都清退它，新 tab 不会继承一个被复用的旧 tabId。
+角标可见性只由已确认的用户手势创造（I10），确认证人只有两个：Background 自己
+结算过的 Popup/热键意图，以及**受信任输入后 1 秒内**到达的页面原生音量/静音观察。
+后者由 document-start bootstrap 记录 `isTrusted` 的 pointerdown、按住期间的
+pointermove、keydown 与 wheel，时间戳写入两个内容 bundle 共享的
+`ContentBootstrapState.mediaUserGestureAt`；`volumechange` 到达时若仍在窗口内，
+内容侧把 `userGesture` 随页面观察提交（合同只允许 `source=page` 携带），Background
+在准入该观察前落下 usage。这样观众直接拖站点原生音量条就会让角标出现并显示该值，
+不需要先打开 Popup 或按热键；自动播放初始化、SPA 脚手架、恢复写入都没有受信任
+输入，不能创造角标。不要用 `navigator.userActivation` 作证人：它可能在同一源导航
+后残留，也会在自动化浏览器里为真。会话上报、其余页面观察、
+程序化配置、被动读取和导航恢复都只能细化一个已经可见的角标。内容侧的
+`userHasInteracted` 不再是"非 native sync"的否定推断，只由 Popup/热键命令置位；
+`spectra.audio.runtime.configure` 与初始化应用配置都不再制造使用事实。tabId 是
+usage 的生命周期边界：`tabs.onCreated` 与 `onRemoved` 都清退它，新 tab 不会继承
+一个被复用的旧 tabId。
 
 元素注册本身也是选择证据（I8）：SPA 在 `play` 已经发生之后才挂载的播放器，
 注册时必须执行与 `play` 相同的准入，否则它会一直停在未选中分支。页面观察的证人

@@ -82,6 +82,7 @@ import {
 } from '../../shared/page-media-bridge';
 import { resolveDeclaredSiteAdapter } from '../../shared/site-adapter-registry';
 import { isLiveMedia, isLiveUnsupportedField } from '../../shared/media-live';
+import { hasRecentMediaUserGesture } from '../../shared/content-runtime';
 
 interface PendingWrite {
 	intentId: string;
@@ -676,6 +677,7 @@ export class NativeMediaExecutor {
 		target: MediaTarget;
 		patch: ControlPatch;
 		observedStrategies: ControlObservationStrategies;
+		userGesture: boolean;
 	}>();
 	private pageObservationFlushQueued = false;
 	private effects: VideoEffectsControllerPort | null;
@@ -2436,7 +2438,8 @@ export class NativeMediaExecutor {
 		(observedStrategies as Record<string, unknown>)[field] = strategy;
 		this.observe(mediaId, field, actual as ControlValues[ControlField]);
 		this.audioRuntimeDelegate?.synchronizeNative(patch);
-		this.queuePageObservation(target, patch, observedStrategies);
+		const volumeGesture = (field === 'volumeBase' || field === 'mediaMuted') && this.pageUserGesture();
+		this.queuePageObservation(target, patch, observedStrategies, volumeGesture);
 	}
 
 	/**
@@ -2590,7 +2593,7 @@ export class NativeMediaExecutor {
 				this.traceDroppedVolume(target, 'unresolved-player');
 				return;
 			}
-			this.queuePageObservation(target, observed.patch, observed.observedStrategies);
+			this.queuePageObservation(target, observed.patch, observed.observedStrategies, this.pageUserGesture());
 			return;
 		}
 		const mediaId = target.mediaId;
@@ -2697,7 +2700,18 @@ export class NativeMediaExecutor {
 				// a document-wide desired template replayed onto later media elements.
 			}
 		}
-		this.queuePageObservation(target, patch, observedStrategies);
+		this.queuePageObservation(target, patch, observedStrategies, event === 'volumechange' && this.pageUserGesture());
+	}
+
+	/**
+	 * A trusted input (press, drag, key, wheel) recorded by the document-start
+	 * bootstrap is the only page-side proof that a native volume change belongs to
+	 * the viewer. Browser user activation is deliberately not used: it can survive
+	 * same-origin navigation or be present in automation, and page setup would
+	 * then create a badge with nobody interacting.
+	 */
+	private pageUserGesture(): boolean {
+		return hasRecentMediaUserGesture();
 	}
 
 	// Bounded field trace for the "the page's native volume never reaches the
@@ -2768,17 +2782,20 @@ export class NativeMediaExecutor {
 		target: import('@nexus/contracts').MediaTarget,
 		patch: ControlPatch,
 		observedStrategies: ControlObservationStrategies,
+		userGesture = false,
 	): void {
 		const key = this.targetKey(target);
 		const queued = this.pageObservations.get(key);
 		if (queued) {
 			Object.assign(queued.patch, patch);
 			Object.assign(queued.observedStrategies, observedStrategies);
+			queued.userGesture ||= userGesture;
 		} else {
 			this.pageObservations.set(key, {
 				target,
 				patch: { ...patch },
 				observedStrategies: { ...observedStrategies },
+				userGesture,
 			});
 		}
 		if (this.pageObservationFlushQueued) return;
@@ -2796,7 +2813,7 @@ export class NativeMediaExecutor {
 		}
 		const entries = [...this.pageObservations.values()];
 		this.pageObservations.clear();
-		for (const { target, patch, observedStrategies } of entries) {
+		for (const { target, patch, observedStrategies, userGesture } of entries) {
 			const selected = this.registry.resolve(null);
 			const sameTarget = Boolean(selected && selected.target.frameId === target.frameId
 				&& this.targetKey(selected.target) === this.targetKey(target));
@@ -2839,6 +2856,7 @@ export class NativeMediaExecutor {
 				observedStrategies: { ...observedStrategies, ...current.observedStrategies },
 				mediaObservation: current.mediaObservation,
 				...(typeof live === 'boolean' ? { live } : {}),
+				...(userGesture ? { userGesture: true } : {}),
 			}).catch(() => undefined);
 		}
 	}

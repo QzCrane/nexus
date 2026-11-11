@@ -37,6 +37,60 @@ describe('SPECTRA built extension smoke: badge projection', () => {
 		await teardownSmokeSession();
 	});
 
+	test('reveals the badge on the first page-native volume gesture of an untouched tab', async () => {
+		await fixturePage.goto(fixtureUrl, { waitUntil: 'domcontentloaded' });
+		const tabId = await getTabId(fixtureUrl);
+		await fixturePage.bringToFront();
+		await fixturePage.evaluate(async bytes => {
+			const media = document.querySelector<HTMLMediaElement>('video,audio');
+			if (!media) throw new Error('Missing website media');
+			media.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+			media.loop = true;
+		}, [...SMOKE_TONE_WAV]);
+		const observed = () => evaluateServiceWorker(async id => {
+			const key = `spectra.control.tab.${id}`;
+			const state = (await chrome.storage.local.get(key))[key];
+			return { volume: state?.fields?.volumeBase?.actual, badge: await chrome.action.getBadgeText({ tabId: id }) };
+		}, tabId);
+		await eventually(observed, state => state.volume === 100, 'initial page observation');
+
+		// Autoplay/player setup writes volume without any trusted input. It updates
+		// the canonical snapshot but must not reveal a badge on an untouched tab.
+		await fixturePage.evaluate(() => {
+			const media = document.querySelector<HTMLMediaElement>('video,audio');
+			if (!media) throw new Error('Missing website media');
+			media.volume = 0.7;
+		});
+		await eventually(observed, state => state.volume === 70, 'programmatic volume observation');
+		expect(await readBadgeText(tabId)).toBe('');
+
+		// The viewer's own gesture on the site's volume slider is trusted input the
+		// document-start tracker observed. That is the page-side witness: the badge
+		// appears and paints the observed value with no Popup, hotkey or pause/play
+		// round trip.
+		await fixturePage.evaluate(() => {
+			const slider = document.createElement('input');
+			slider.id = 'first-gesture-volume';
+			slider.type = 'range';
+			slider.min = '0';
+			slider.max = '100';
+			slider.value = '70';
+			slider.addEventListener('input', () => {
+				const media = document.querySelector<HTMLMediaElement>('video,audio');
+				if (!media) throw new Error('Missing website media');
+				media.volume = Number(slider.value) / 100;
+			});
+			document.body.append(slider);
+		});
+		await fixturePage.focus('#first-gesture-volume');
+		await fixturePage.keyboard.press('Home');
+		expect(await eventually(observed, state => state.volume === 0 && state.badge === 'M',
+			'first page gesture reveals the badge')).toMatchObject({ volume: 0, badge: 'M' });
+		await fixturePage.keyboard.press('ArrowRight');
+		expect(await eventually(observed, state => state.volume === 1 && state.badge === '1',
+			'badge keeps following the gesture')).toMatchObject({ volume: 1, badge: '1' });
+	}, 90_000);
+
 	test('keeps following page-native volume after the tab reaches a new document', async () => {
 		const tabId = await getTabId(fixtureUrl);
 		await fixturePage.bringToFront();

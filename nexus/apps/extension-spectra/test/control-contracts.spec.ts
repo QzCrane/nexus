@@ -306,6 +306,16 @@ describe('per-field SPECTRA control contracts', () => {
 			...pageObservation,
 			source: 'popup',
 		})).toBe(false);
+		// Only a page observation can claim user activation; a Popup or hotkey
+		// intent describes its own gesture and must not smuggle this witness.
+		expect(isControlSubmitRequest({ ...pageObservation, userGesture: true })).toBe(true);
+		expect(isControlSubmitRequest({ ...pageObservation, userGesture: false })).toBe(true);
+		expect(isControlSubmitRequest({ ...pageObservation, userGesture: 'yes' })).toBe(false);
+		expect(isControlSubmitRequest({
+			...pageObservation,
+			source: 'hotkey',
+			userGesture: true,
+		})).toBe(false);
 		expect(isControlSubmitRequest({
 			tabId: 42,
 			source: 'popup',

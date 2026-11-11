@@ -19,6 +19,7 @@ import {
 	snapshotNativeWriteTelemetry,
 } from '../src/content/logic/native-write-telemetry';
 import { writePageMediaField } from '../src/content/logic/page-media-bridge';
+import { noteMediaUserGesture } from '../src/shared/content-runtime';
 import type { VideoEffectsController } from '../src/content/video/video-effects-controller';
 import {
 	SPECTRA_PAGE_MEDIA_EVENT,
@@ -849,9 +850,9 @@ describe('native media single-writer correlation', () => {
 		media.paused = false;
 		const registry = new FakeRegistry(media);
 		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as unknown as VideoEffectsController);
-		const submitted: Array<{ source?: string; patch?: Record<string, unknown> }> = [];
+		const submitted: Array<{ source?: string; patch?: Record<string, unknown>; userGesture?: boolean }> = [];
 		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
-			id: 'spectra-test', sendMessage: async (message: { type: string; payload: { source?: string; patch?: Record<string, unknown> } }) => {
+			id: 'spectra-test', sendMessage: async (message: { type: string; payload: { source?: string; patch?: Record<string, unknown>; userGesture?: boolean } }) => {
 				if (message.type === 'spectra.control.intent.submit') submitted.push(message.payload);
 				return { ok: true, data: { recorded: true } };
 			},
@@ -872,6 +873,17 @@ describe('native media single-writer correlation', () => {
 			await new Promise((resolve) => setTimeout(resolve, 0));
 			const page = submitted.filter(({ source }) => source === 'page');
 			expect(page.at(-1)?.patch).toMatchObject({ volumeBase: 40, mediaMuted: false });
+			// Autoplay setup and player scaffolding write volume without trusted input.
+			expect(page.at(-1)?.userGesture).toBeUndefined();
+
+			// A viewer dragging the site's own slider produces trusted input first.
+			// That witness is what lets the badge appear without the Popup (I10).
+			noteMediaUserGesture();
+			media.forceVolume(0.3);
+			registry.emit('volumechange');
+			await new Promise((resolve) => setTimeout(resolve, 0));
+			expect(submitted.filter(({ source }) => source === 'page').at(-1))
+				.toMatchObject({ userGesture: true, patch: { volumeBase: 30 } });
 		} finally { executor.dispose(); }
 	});
 

@@ -242,6 +242,35 @@ appliedConfig / observed 缓存）不得作为页面物理值的来源。
 
 **不变量 I10**：角标可见性 = 该 tab 存在一次已确认的用户手势；页面观察、
 会话上报、程序化配置、导航恢复都只能细化一个已可见的角标，不能创造它。
+"已确认的用户手势"有两个肯定证人：扩展命令（Popup/热键）的已结算意图，
+以及**文档处于瞬时用户激活窗口时**到达的页面原生音量/静音变化（见 R4）。
+
+#### R4 页面原生音量手势也是用途证人（content → background）
+
+**事实链**：
+- I10 收紧后，用途只能由 Popup/热键意图写入；页面观察、会话上报、程序化配置
+  只能细化已可见角标。
+- 但观众在抖音页面上直接拖原生音量条时的唯一事实是元素 `volumechange` 页面观察；
+  它永远不能创建角标，于是 `isBadgeProjected` 恒为假，`projectBadgeFromSnapshot`
+  的 observation 门直接返回。观众看到的就是"角标同步一开始永远不行"——除非先
+  打开 Popup 或按一次扩展热键。
+- 如果直接让所有页面观察创建角标，自动播放初始化和播放器脚手架程序化写入的
+  音量又会让"新开 douyin 就出角标"复发。
+
+**修复**：document-start bootstrap 在文档上记录**受信任输入**（`isTrusted` 的
+pointerdown/按住期间的 pointermove/keydown/wheel），时间戳写入两个内容 bundle
+共享的 `ContentBootstrapState.mediaUserGestureAt`。`volumechange` 到达时若距最近
+一次受信任输入不超过 1 秒，内容侧把 `userGesture` 随页面观察提交（仅
+`source=page` 合同允许）；后台在准入该观察前调用 `markBadgeUsedForTab`。
+自动播放初始化、SPA 脚手架与恢复写入没有任何受信任输入，因此不能创建角标；
+观众拖动站点音量条/点击静音则会在输入后的相关窗口内产生角标，立即绘制该观察值，
+不需要 Popup、热键或暂停/播放。明确不使用 `navigator.userActivation`：它可能在
+同源导航后残留、在自动化环境中为真，会让页面初始化重新伪造出"使用"。
+
+**不变量 I10（修订）**：角标可见性 = 该 tab 存在一次已确认的用户手势。确认
+证人只有两个：已结算的扩展命令（Popup/热键），或受信任输入后 1 秒内到达的
+页面原生音量/静音观察。页面观察的其余字段、会话上报、程序化配置、导航恢复
+都只能细化一个已可见的角标，不能创造它。
 
 ## 5. 测试
 
@@ -256,7 +285,11 @@ appliedConfig / observed 缓存）不得作为页面物理值的来源。
 | `test/smoke/live-target-restart.spec.ts` | 有限播放器持有控制、0×0 canvas 直播未选中时，页面改直播音量 → 角标从 80 变 37（上一版实现超时停在 80，已验证该用例能区分）；被点击过的有限播放器保持控制、页面再挂载 0×0 有限时间线出声播放器时，其音量 0.42 仍进角标；页面挂载无面积、无元数据、暂停且无播放历史的播放器后改其音量 0.31 → 角标从 80 变 31（旧判据下必然停在 80）；空文档挂载空播放器后再赋 `srcObject`（连接态触发 `loadstart`）→ 观察运行时必须由该生命周期事件加载（旧实现停在 `ready:false`），随后原生音量 0.27 进入快照 |
 | `test/smoke/badge-projection.spec.ts` | 同一 tab 进入新文档后，页面原生音量 0.55 仍进角标（运行时就绪后） |
 | `test/media-registry.spec.ts` | 发现时已在播放的媒体（`play` 早于监听器）注册后立即成为选中并 `emit('selected')`；暂停钉住/受保护选择不被注册抢占；已停止的媒体注册不改变选中 |
-| `test/native-media-executor.spec.ts`（新增用例） | 选中元素发生 `volumechange` 时 `volumeBase`/`mediaMuted` 取自元素本身：delegate 返回相同 applied 值时仍产生 patch 并提交页面观察；未选中元素同语义 |
+| `test/native-media-executor.spec.ts`（新增用例） | 选中元素发生 `volumechange` 时 `volumeBase`/`mediaMuted` 取自元素本身：delegate 返回相同 applied 值时仍产生 patch 并提交页面观察；未选中元素同语义；无受信任输入的观察不带 `userGesture`，`noteMediaUserGesture()` 后带 `userGesture` |
+| `test/content-runtime-readiness.spec.ts`（新增用例） | bootstrap 缓冲的 `volumechange` 在无受信任输入时不带 `userGesture`，`noteMediaUserGesture()` 后携带 `userGesture` |
+| `test/smoke/badge-projection.spec.ts`（新增用例） | 真实 Chrome：未使用 tab 的程序化音量观察更新快照但角标保持空；键盘驱动站点音量条（受信任输入）后角标立即出现并持续跟随 |
+| `test/control-contracts.spec.ts`（新增断言） | `userGesture` 仅 page 观察可声明；Popup/热键携带即拒绝；非布尔拒绝 |
+| `test/control-coordinator.spec.ts`（改写用例） | 自动播放/脚手架程序化音量观察不创建用途、不画角标；带 `userGesture` 的原生音量观察创建用途并立即绘制该值，无需 Popup/热键/暂停 |
 | `test/badge-volume-state.spec.ts`（新增用例） | 未使用 tab 收到 `userInteracted:true` 的会话上报 → 不画角标、`hasBadgeUsage` 仍为 false；已确认 popup/hotkey 意图 → 画角标并落用途；`onCreated` 后用同一 tabId 的新 tab 不继承用途 |
 
 ## 6. 文档投影
@@ -277,8 +310,9 @@ appliedConfig / observed 缓存）不得作为页面物理值的来源。
    `/follow/live/<id>`：**不开 Popup**，角标显示直播真实音量；
    原生 UI 改音量角标随即变化；快捷键立即生效。
 2. 直播页刷新：重复 1。
-3. 从未使用扩展的直播 tab：角标保持隐藏（新开 douyin 即隐藏，刷新后仍隐藏），
-   但快照已在同步；第一次快捷键成功并点亮角标。
+3. 从未使用扩展的直播 tab：自动播放与脚手架写入不显示角标（新开 douyin 即隐藏，
+   刷新后仍隐藏），但快照已在同步；**直接在页面原生音量条上拖动** → 角标立即出现
+   并显示拖动后的值，随后持续跟随；不需要 Popup、热键或暂停/播放。
 4. 无媒体页面：不加载重运行时。
 5. 观看直播时 worker 重启：观察继续，不需要 Popup。
 

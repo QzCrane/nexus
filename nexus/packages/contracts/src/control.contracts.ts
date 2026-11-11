@@ -931,6 +931,15 @@ export interface ControlSubmitRequest {
 	 * hotkey can assert.
 	 */
 	live?: boolean;
+	/**
+	 * Page-originated only. The document-start bootstrap observed trusted input —
+	 * a press, a drag, a key or a wheel — shortly before this volume/mute change,
+	 * so the viewer's own gesture on the site's UI is the cause. Programmatic page
+	 * writes (autoplay initialization, player scaffolding, route setup) produce no
+	 * trusted input and must not claim it. This is the page-side witness a volume/
+	 * mute gesture needs to make the badge visible.
+	 */
+	userGesture?: boolean;
 }
 
 export interface ControlMarker {
@@ -1168,6 +1177,7 @@ const submitKeys = keySetOf<ControlSubmitRequest>()([
 	'mediaRestore',
 	'mediaObservation',
 	'live',
+	'userGesture',
 ]);
 const mutationKeys = keySetOf<ControlMutation>()(['field', 'operation', 'value']);
 const operationRequestKeys = keySetOf<ControlOperationRequest>()([
@@ -1660,6 +1670,7 @@ export function isControlSubmitRequest(value: unknown): value is ControlSubmitRe
 		&& (value.mediaRestore === undefined || value.source === 'restore' && isMediaRestoreToken(value.mediaRestore))
 		&& (value.mediaObservation === undefined || sourceIsPage && isMediaObservationStamp(value.mediaObservation))
 		&& (value.live === undefined || sourceIsPage && typeof value.live === 'boolean')
+		&& (value.userGesture === undefined || sourceIsPage && typeof value.userGesture === 'boolean')
 		&& (value.tabId === undefined || (Number.isInteger(value.tabId) && Number(value.tabId) > 0))
 		&& typeof value.source === 'string'
 		&& value.source !== 'system'
