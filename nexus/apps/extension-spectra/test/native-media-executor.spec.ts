@@ -455,9 +455,45 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
-	test('does not publish an attach observation when the document has no selection', async () => {
+	test('completes the attach publication when the first selection arrives after it', async () => {
 		installFakeMediaGlobals(); const registry = new FakeRegistry();
-		Object.assign(registry, { resolve: () => null, list: () => [] });
+		let available = false;
+		const resolve = registry.resolve.bind(registry);
+		registry.resolve = (requested?: MediaTarget | null) => available ? resolve(requested) : null;
+		registry.list = () => available ? [resolve()] : [];
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
+			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
+		} } });
+		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
+		try {
+			// A restore can attach the runtime before the player exists. The attach
+			// itself has nothing to announce.
+			executor.publishCurrentSelection();
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			expect(messages).toHaveLength(0);
+
+			// The first selection completes that publication with the values that
+			// already exist; later selections keep the target-only path.
+			available = true;
+			registry.emit('selected');
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			const observations = messages.filter((message) => message.type === 'spectra.control.intent.submit');
+			expect(observations).toHaveLength(1);
+			expect(observations[0]?.payload).toMatchObject({
+				source: 'page',
+				target: registry.target,
+				patch: { volumeBase: 100, mediaMuted: false, speed: 1, playing: false },
+			});
+
+			registry.emit('selected');
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			expect(messages.filter((message) => message.type === 'spectra.control.intent.submit')).toHaveLength(1);
+		} finally { executor.dispose(); }
+	});
+
+	test('publishes the replacement player values when a route switch selects another element', async () => {
+		installFakeMediaGlobals(); const registry = new FakeRegistry();
 		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
 		Object.defineProperty(globalThis, 'chrome', { configurable: true, value: { runtime: {
 			id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => { messages.push(message); },
@@ -465,8 +501,24 @@ describe('native media single-writer correlation', () => {
 		const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry, { dispose() {} } as VideoEffectsController);
 		try {
 			executor.publishCurrentSelection();
-			await new Promise((resolve) => setTimeout(resolve, 0));
-			expect(messages).toHaveLength(0);
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			messages.length = 0;
+			// `/follow` -> `/follow/live/<id>` is an SPA switch: same document, a
+			// different player element. The badge must adopt that player's own
+			// values instead of waiting for a native change or a Popup read.
+			const live = new FakeMediaElement();
+			live.volume = 0.42;
+			const liveTarget = { ...registry.target, mediaId: 'media:live' };
+			registry.resolve = () => ({ element: live as unknown as HTMLMediaElement, target: liveTarget });
+			registry.list = () => [registry.resolve()];
+			registry.listener?.({ ...liveTarget }, 'selected', live as unknown as HTMLMediaElement);
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			const observation = messages.find((message) => message.type === 'spectra.control.intent.submit');
+			expect(observation?.payload).toMatchObject({
+				source: 'page',
+				target: liveTarget,
+				patch: { volumeBase: 42, mediaMuted: false, speed: 1, playing: false },
+			});
 		} finally { executor.dispose(); }
 	});
 

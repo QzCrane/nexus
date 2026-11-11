@@ -62,7 +62,7 @@ flowchart TD
 | 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中未交接；旧播放器的历史交互压过正在播放的直播，或空选中不自愈 | 056 | guarded |
 | 插件改了音量，站点自己的音量条不动，而且下次换流被站点覆盖回去 | 音量只写元素属性（`dom-native`），没有站点控制器适配；declared 行只有倍速 | 053、049 | open |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
-| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；或媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中） | 052、014、056 | guarded |
+| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；或 SPA 切换选中新播放器元素后没有发布它自己的物理值 | 052、014、056 | guarded |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
 | Popup 打开首帧空白、随后跳高，或先英文后中文 | 首帧等异步 actual；结构高度被历史值预留 | 050 | guarded |
 | PiP 打开后立刻被关掉 | 站点策略属性被提前归还，浏览器在同一任务跑了退出算法 | 051 | guarded |
@@ -187,8 +187,11 @@ flowchart TD
   `document-media-observation` 能力确保运行时；观察与写入意图分离，空模板的运行时
   只观察、不写入。运行时 attach 到已有选中的文档时 `publishCurrentSelection` 立即
   发布一次该选中，并把页面上已存在的物理值（音量、静音、速度、音高保持、播放）
-  作为页面观察一并提交——否则新文档在首次原生变化或被显式读取前没有任何字段快照，
-  角标仍会看起来"只在 Popup 打开时同步"。无选中不发布。
+  作为页面观察一并提交；attach 时没有选中，则紧随其后的第一次选中补完这次发布且
+  只补一次。SPA 路由切换（`/follow` → `/follow/live/<id>`，同一文档、不同播放器
+  元素）在选中替换时发布新元素自己的物理值；仅同一元素上身份变化（mediaId /
+  sourceRevision）的选中保持只发布目标。否则新文档或新播放器在首次原生变化或被
+  显式读取前没有任何字段快照，角标仍会看起来"只在 Popup 打开时同步"。
 - 已落地的重启保留：worker 重启只对存活的运行时、且 `mediaFacts` 中该 tab 的
   `documentId` 匹配、`outcome === 'found'` 时保留 observation lease；死运行时不会
   因历史媒体事实被复活。
@@ -199,7 +202,8 @@ flowchart TD
   "does not acquire an observation runtime after the viewer released the document"；
   `test/native-media-executor.spec.ts` 的
   "publishes an established selection when a runtime attaches after it was selected"、
-  "does not publish an attach observation when the document has no selection"；
+  "completes the attach publication when the first selection arrives after it"、
+  "publishes the replacement player values when a route switch selects another element"；
   `test/runtime-restart-startup.spec.ts` 的
   "keeps the surviving runtime as an observation owner when its document reported media"、
   "does not resurrect a dead runtime for a media observation owner"。

@@ -12,7 +12,10 @@
 - [x] T2 attach 即发布（content）
   - `src/content/logic/native-media-executor.ts`：新增 `publishCurrentSelection()`。
   - `src/content/core/index.ts`：`bootstrapMessaging(...)` 后调用一次。
-  - 验证：`test/native-media-executor.spec.ts` 新增“已有选中 → 发布一次”“无选中 → 不发”。
+  - attach 无选中时挂起，第一次选中补发一次；SPA 切换选中另一个播放器元素时
+    发布该元素自己的物理值；同一元素身份变化保持 target-only。
+  - 验证：`test/native-media-executor.spec.ts` 新增“已有选中 → 发布一次”“无选中 →
+    不发、首次选中补一次”“SPA 替换元素 → 发布新元素值”。
 
 - [x] T3 worker 重启保留（background）
   - `src/background/runtime-restart-startup.ts`：port 增加

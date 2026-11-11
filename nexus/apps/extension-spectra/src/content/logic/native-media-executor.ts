@@ -676,6 +676,16 @@ export class NativeMediaExecutor {
 	private readonly targetScenes = new Map<string, MediaScene>();
 	private nextSceneId = 1;
 	private disposed = false;
+	// Set when the runtime attaches before the document has a selection. The
+	// first selection completes that publication exactly once; later selections
+	// keep the ordinary target-only path.
+	private attachPublicationPending = false;
+	// The element the last publication described. An SPA route switch selects a
+	// different player in the same document, and that player's own physical
+	// values are the only correct snapshot for the badge. A new identity on the
+	// same element (source revision/media id) stays target-only so a cold
+	// page-semantic sample is never reattributed.
+	private publishedSelectionElement: HTMLMediaElement | null = null;
 	private readonly lifecycleController = new AbortController();
 	private readonly sourceOperationScopes = new Map<string, Set<AbortController>>();
 	// Deferred stabilization proofs, keyed `<mediaId>:<field>`. At most one runs
@@ -797,24 +807,43 @@ export class NativeMediaExecutor {
 	publishCurrentSelection(): void {
 		if (this.disposed) return;
 		const selected = this.registry.resolve(null);
-		if (!selected) return;
-		this.primeObserved(selected.target);
-		this.publishPresentationKind(selected.target, selected.element);
+		if (!selected) {
+			// The restore boundary can attach before the player exists. The first
+			// selection then has to complete the attach publication; otherwise the
+			// document keeps an empty snapshot until a native change or a Popup read.
+			this.attachPublicationPending = true;
+			return;
+		}
+		this.publishedSelectionElement = selected.element;
+		this.publishEstablishedSelection(selected.target, selected.element, true);
+	}
+
+	// A target announcement is not a snapshot. The badge projects physical
+	// values, and a document can establish its selection after the runtime
+	// attaches (the live player settles late). `publishValues` completes that
+	// attach publication, and also seeds a replacement player selected by an SPA
+	// route switch; a selection that only changes identity on the same element
+	// keeps the target-only path so a page observation is never fabricated from a
+	// cold or superseded selection.
+	private publishEstablishedSelection(
+		target: MediaTarget,
+		element: HTMLMediaElement,
+		publishValues = false,
+	): void {
+		this.primeObserved(target);
+		this.publishPresentationKind(target, element);
 		void sendSpectraRequest(
 			'spectra.content.target.changed',
-			{ target: selected.target, mediaObservation: this.registry.captureObservation?.() },
-			{ documentId: selected.target.documentId },
+			{ target, mediaObservation: this.registry.captureObservation?.() },
+			{ documentId: target.documentId },
 		).catch(() => undefined);
-		this.replayDesired(selected.target, selected.element, true);
-		// The target alone is not a snapshot: a new document has no fields until
-		// the page fires its first native change or a surface reads it. Publishing
-		// the values that already exist here is what makes the badge correct on
-		// arrival instead of on the first Popup open.
+		this.replayDesired(target, element, true);
+		if (!publishValues) return;
 		const actual = this.read({
-			target: selected.target,
+			target,
 			fields: ['volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing'],
 		});
-		this.queuePageObservation(selected.target, actual.patch, actual.observedStrategies);
+		this.queuePageObservation(target, actual.patch, actual.observedStrategies);
 	}
 
 	setAudioRuntimeDelegate(delegate: AudioRuntimeControlDelegate | null): void {
@@ -2500,14 +2529,15 @@ export class NativeMediaExecutor {
 			for (const attemptKey of this.automaticPageMaturationRevision.keys()) {
 				if (attemptKey.startsWith(`${key}:`)) this.automaticPageMaturationRevision.delete(attemptKey);
 			}
-			this.primeObserved(target);
-			this.publishPresentationKind(target, element);
-			void sendSpectraRequest(
-				'spectra.content.target.changed',
-				{ target, mediaObservation: this.registry.captureObservation?.() },
-				{ documentId: target.documentId },
-			).catch(() => undefined);
-			this.replayDesired(target, element, true);
+			// A route switch selects another player element in the same document
+			// (`/follow` -> `/follow/live/<id>`). That element's own values are its
+			// snapshot; without them the badge keeps the previous player's numbers
+			// until the first native change or an explicit read.
+			const publishValues = this.attachPublicationPending
+				|| this.publishedSelectionElement !== null && this.publishedSelectionElement !== element;
+			this.attachPublicationPending = false;
+			this.publishedSelectionElement = element;
+			this.publishEstablishedSelection(target, element, publishValues);
 			return;
 		}
 		if (event === 'registered') this.primeObserved(target);

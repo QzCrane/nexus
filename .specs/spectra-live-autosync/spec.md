@@ -32,7 +32,12 @@
 5. Popup 的显式读取冷启动运行时并补发当前值——这是唯一被观测到的路径。
 
 补充竞态：即使运行时被提前创建，`NativeMediaExecutor` 构造时只
-`primeObserved`，不会为“已经选中”的目标补发观测。
+`primeObserved`，不会为“已经选中”的目标补发观测。若 restore 早于播放器出现，
+attach 时无选中；首次选中只发 target，快照仍为空。
+
+SPA 竞态：`/follow` → `/follow/live/<id>` 也可能在同一文档内完成，选中替换为
+一个新的播放器元素。既有 `selected` 只发布 target，不发布物理值，于是角标保留
+上一个播放器的数字，直到首次原生变化或 Popup 的显式读取。
 
 结论：**“有媒体”没有成为观察所有权的加载边界**，观察被错误地绑在
 “存在待写入值”上。
@@ -42,7 +47,9 @@
 - **I1 有媒体就必须有观察 owner**：文档上报可播放媒体时，必须建立内容运行时；
   与是否存在待写入值、是否已显式使用无关。
 - **I2 观察 owner 与写入意图分离**：空 desired 的运行时只观察、不写入。
-- **I3 attach 即发布**：运行时接管已有选中的文档时立即发布该选中的观测。
+- **I3 attach 即发布**：运行时接管已有选中的文档时立即发布该选中的观测；
+  attach 时无选中则由紧随其后的第一次选中补完一次；SPA 切换选中另一个播放器
+  元素时发布该元素自己的物理值。
 - **I4 页面不退化**：无媒体的文档不加载重运行时；显式 release 后不重建。
 - **I5 三件事互不门闩**：同步 / 使用 / 角标可见性保持既有分离。
 
@@ -84,13 +91,16 @@ if (message.payload.hasMediaElement) {
 publishCurrentSelection(): void
 ```
 
-- `registry.resolve(null)` 无选中则 no-op；
+- `registry.resolve(null)` 无选中则挂起 `attachPublicationPending`，不发送；
 - 有选中：`primeObserved(target)` → `publishPresentationKind` →
   发送 `spectra.content.target.changed`，带
   `mediaObservation: registry.captureObservation?.()`；
 - 再读取当前物理值 `['volumeBase', 'mediaMuted', 'speed', 'preservePitch', 'playing']`，
   通过 `queuePageObservation` 作为页面观测提交——否则新文档在首次原生变化或被显式
   读取前没有字段快照，角标仍会表现为“点开 Popup 才同步”。
+- `selected` 事件：attach 挂起时补发一次物理值；否则仅当选中换成另一个元素
+  （SPA 路由切换）时发布该元素自己的物理值。同一元素上 mediaId / sourceRevision
+  变化保持 target-only，避免把冷态 page-semantic 样本重归因。
 
 在 `content/core/index.ts` 的 `bootstrapMessaging(...)` 之后调用一次，
 保证消息通道就绪。重复发布由后台有序观测准入吸收，幂等。
@@ -121,7 +131,7 @@ if (await port.resolvePersistentMediaObservation(target)) {
 | 文件 | 用例 |
 | --- | --- |
 | `test/runtime-loader.spec.ts` | `ensureMediaObservation` 在未初始化/已退役/已 release 时 no-op；正常时以 `observation` 能力 ensure；`hasMediaElement` handler 的接线由既有 `tab-visibility.spec.ts` 的 `recordMediaState` 用例守住 |
-| `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；无选中 → 不发 |
+| `test/native-media-executor.spec.ts` | attach 时已有选中 → 发布一次带观测戳的 `target.changed`，并以 page 观测提交已有物理值；attach 无选中 → 不发，第一次选中补发一次且只补一次；SPA 切换到另一个播放器元素 → 发布该元素的物理值；同一元素身份变化 → 仍只发 target |
 | `test/runtime-restart-startup.spec.ts` | 媒体事实为 `found` 且 documentId 匹配 → 保留 observation；无事实 → 既有孤儿回收用例不变 |
 
 ## 6. 文档投影
