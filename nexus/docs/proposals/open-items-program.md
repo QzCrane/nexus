@@ -3,7 +3,7 @@ type: explanation
 status: draft
 audience: contributor
 owner: architecture
-last_reviewed: 2026-10-28
+last_reviewed: 2026-11-14
 ---
 
 # 未决项统一治理：清单、相互影响、跨模块方案与执行顺序
@@ -211,11 +211,27 @@ O1 的三条失败在修复前应登记为 `blocker`，而不是留在发布时�
 | 项 | 优先级 | 状态 | 落地内容与实测结果 |
 |---|---|---|---|
 | **O1** | P0 | ✅ 已解决 | 发布门禁全通：修复 Content 校验副本键缺失，消除热键媒体未就绪竞态与测试标签页冲突。`test:chrome:dist` 实测 47/47 通过。 |
-| **O2** | P1 | 🔄 就绪待合入 | 分支架构收敛完整，`verify`/`lint`/`typecheck`/`docs:check`/`unit`/`smoke` 全绿，准备提交推送并合入主干。 |
+| **O2** | P1 | ✅ 已合入 | 分支 `docs/spectra-douyin-speed-sync` 已推送并合入 `main`。`verify` 21 项 0 error、Strict Biome 482 文件 0 diagnostics、`docs:check` 157 篇、锚点 0 缺失、`check-public-parity` 0 error。真站端到端证据见 §9。 |
 | **O3** | P1 | ✅ 已解决 | 单测运行器加固：`run-tests.ts` 增加 Bun `--timeout 30000` 强力超时、15s 慢速诊断预警及挂死退出现场 stdout/stderr dump。118 个单测进程稳定通过。 |
 | **O4** | P1 | ✅ 已解决 | 契约键集合类型安全：全仓 35 处手写 `Set` 100% 迁移为 `keySetOf<T>()` 编译期强类型绑定，`contract-key-set-baseline.json` 存量技术债务计数清零并封锁。 |
 | **O5** | P2 | ✅ 已解决 | 公开镜像投影解耦：`scripts/sync-public.ts` 支持 `--plan` 临时目录端到端验证构建（实测 371 文件投影与构建 8.49s 通过），`.github/workflows/sync-public.yml` 引入 PR 门禁。 |
 | **O6** | P2 | ℹ️ 已审计 | 音量路径性能与诊断端口完备，`popupControlSettleSamples/P50/P95/Max` 具备自动统计能力，继续按长期性能监控体系演进。 |
 | **O7** | P3 | ✅ 已加固 | 源码扫描门禁审查加固：`SCTRL-041` 与架构提取规则全面兼容 `keySetOf<T>()` 语法模式，`verify` 22 项门禁 0 警告 0 报错全绿。 |
 | **O8** | P3 | ℹ️ 明确保留 | 依据第 7 条原则，Options 与 Popup 双面色彩设计（暗色/亮色）属产品既定视觉决策，非架构缺陷，保持不变。 |
+| **O9** | P2 | 🔄 待办 | 全量 `test:smoke` 有 6 个既有失败：hotkeys 1、live-target-restart 4、popup-ui 1。单独跑 `live-target-restart.spec.ts` 仍 4 fail，不是并发污染。本轮未改产品源码，重建产物逐字节确定且与 11-11 一致，故与本轮改动无关。需单独定位，不阻塞 O2。 |
+
+## 9. 2026-11-14 合入备注
+
+O2 合入时按用户授权执行：重建当前 HEAD 生产产物、归档三份 `[E-current]` 真站证据、
+把 [09 故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 第 3 行收为 `guarded`、
+推送分支并合入 `main`。
+
+真站结论摘要：虎牙 102411 触发 `documentOutput`/Capture 并改变产品输出 RMS；
+抖音直播间走 `dom-native`，写 `element.volume` 同时改变 tab 音频与站点自身音量数字；
+`www.douyin.com` 被验证码拦截，本轮无证据。
+真站 smoke 用例此前失败的根因是 Puppeteer 默认 `800×600` 视口，已在该用例内修正为
+`1600×1200` 并要求播放器落在视口内。**产品源码一行未改。**
+
+上表 O2 原写的「smoke 全绿」不再成立，故改写为逐项门禁结果。
+既有的 6 个 smoke 失败另立 O9，不用放宽断言掩盖（遵守第 7 条原则）。
 

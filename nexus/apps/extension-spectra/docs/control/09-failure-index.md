@@ -3,7 +3,7 @@ type: reference
 status: draft
 audience: developer
 owner: spectra-control-failure-index
-last_reviewed: 2026-11-11
+last_reviewed: 2026-11-14
 ---
 
 # 09. Failure index (symptom → cause → rule)
@@ -42,7 +42,7 @@ flowchart TD
   Surface -->|"音量条 / 角标 / OSD"| D["呈现与色调判定<br/>048 / 049 / 057"]
   Surface -->|"Popup 首帧 / 高度"| E["首帧与几何 owner<br/>050"]
   Kind -->|"控制落到别的媒体"| F["准入排序与选中身份<br/>056"]
-  Kind -->|"站点原生 UI 不跟随"| G["站点适配声明<br/>053"]
+  Kind -->|"站点原生 UI 不跟随 / 听不见"| G["可听路径与站点 UI 边界<br/>053 / 049 · 真站已验"]
   A --> Row["回到下表找同一行"]
   B --> Row
   C --> Row
@@ -60,7 +60,7 @@ flowchart TD
 | `stale-media-source: The media source changed before the asynchronous native operation committed`，直播里尤其频繁 | 资源身份 `sourceRevision` 被当成控制身份用：同一个元素换流后，在途写入被判过期 | 045、054 | guarded |
 | 视频页切到直播后第一次快捷键必报 `stale-media-source`，再按一次才生效 | Background 投影落后于元素替换：请求携带已注销的 control identity，在途写入又跨过注销 | 045、054、056 | guarded |
 | 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中未交接；旧播放器的历史交互压过正在播放的直播，或空选中不自愈 | 056 | guarded |
-| 插件改了音量，站点自己的音量条不动，而且下次换流被站点覆盖回去 | 音量只写元素属性（`dom-native`），没有站点控制器适配；declared 行只有倍速 | 053、049 | open |
+| 插件改了音量，站点自己的音量条不动；无控制器的直播页上声音也不变 | 两条可听路径均已有当前 HEAD 的真站物理证据：video-only 流走 `documentOutput`/Capture；带音轨流写 `element.volume`，站点自身监听 `volumechange` 后同步 UI。此前缺的是真站证据与测试视口，不是实现 | 053、049 | guarded |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
 | 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 / 一开始永远不同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；新播放器已呈现却因未选中而不被观察；注册时 `play` 已发生使元素永不入选；文档输出模式下用 delegate 的 applied 值取证；程序化配置被当成用户使用而写入 usage；把使用收紧为"仅扩展命令"后页面原生音量手势无法创建角标 | 052、014、056、I8、I9、I10 | guarded |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
@@ -158,14 +158,50 @@ flowchart TD
   "accepts an automatic restore after the same element starts a new selection visit"。
 - 证据：[2026-11-01 直播音量修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
 
-**3. 站点原生 UI 不同步（open）**
+**3. 站点原生 UI 不同步 / 直播音量听不见（guarded，2026-11-14 真站收口）**
 
-- 音量能力探测在 `src/content/injector/page-media-bridge.ts` 只认 `getVolume`/`setVolume` 方法对；
-  muted 有 `.muted` 访问器兜底、speed 有 `.playbackRate` 兜底，音量没有 `.volume` 兜底。
-- `src/shared/site-adapter-registry.ts` 目前只有 `douyin-speed` 一条 declared 行，没有任何音量声明。
-- 所以音量永远 `dom-native`：写元素、站点控制器状态不变、下次换流被站点状态覆盖。
-- 边界：`boost > 100` 走 Capture 处理器增益，站点 UI **物理上不可能**同步；只有 ≤100 且 declared 才谈得上同步。
-- 证据：[2026-11-01 直播音量修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
+三个诉求互不替代。混在一起会反复产生「改了控制逻辑却没有效果」的循环：
+**S-A 可听音量**、**S-B 站点 UI 数字**、**S-C ACK 诚实性**。
+`applied` 只表示元素物理值写入并读回一致，不宣称响度变化。
+完整重审、v2 方案与本次收口见
+[2026-11-14 音量可听路径重审](../../../../docs/research/2026-11-14-spectra-volume-audible-path-reaudit.md)。
+
+2026-11-14 用当前 HEAD 重建产物（`dist` 的 SHA-256 与 11-11 构建逐字节相同）、
+本机 Chrome 157.0.8103.39 与 CDP `Extensions.loadUnpacked` 做了真站取证。
+三份 `[E-current]` 证据如下。
+
+- [形态侦察](../../../../docs/research/evidence/2026-11-14-real-site-media-shape-survey.json)：
+  虎牙 `102411` 的主视频是 video-only `MediaStream`；抖音直播首页与三个房间的主视频都带
+  `audioTracks=1`；`www.douyin.com` 被验证码中间页拦截，本轮没有该站证据。
+- [虎牙真站用例](../../../../docs/research/evidence/2026-11-14-real-site-document-output-huya.json)：
+  `documentOutput` 链路触发，策略为 `capture` 且 `live:true`。产品输出 analyser 的 RMS 在
+  `volume-0` 与 `mute` 均为 0，`volume-70` 为 0.00346，`unmute` 为 0.000884，快捷键为 0.00314。
+  `test/smoke/document-output.spec.ts` 完整文件为 `3 pass / 65 expect()`。
+- [抖音真站可听性](../../../../docs/research/evidence/2026-11-14-real-site-dom-native-audibility-douyin.json)：
+  带音轨的流留在 `dom-native`。同一轮内 `volumeBase 0 → 100` 使 `element.volume 0 → 1`，
+  tab 音频 RMS 从 0 变为 0.1449。站点自身音量数字从 `0` 变 `100`，滑块 class 从
+  `douyin-player-muted` 变为 `show-number`。站点监听的是浏览器原生 `volumechange`，
+  不需要 declared 适配、合成手势或任何新机制。
+
+真站用例此前两次稳定失败在 `strategy` 收到 `dom-native`。根因是 Puppeteer 默认
+`800×600` 视口把播放器留在首屏之外，IntersectionObserver 的 `visibleArea` 全为 0，
+`mediaRank` 的 live 优先项失效，后注册的静音广告凭 `registrationOrder` 抢走选中。
+改成 `1600×1200` 并要求播放器落在视口内后，选中立即回到直播元素。
+**产品源码一行未改**，本行状态变更伴随同一提交里的测试修正与真站证据，符合 §22.4。
+
+仍然成立的边界：
+
+- `boost > 100` 走已验证的 Capture 处理器增益，站点 UI 物理上不可能同步。
+- `gain` 节点数值变化不等于可听变化。11-05 虎牙证据里 gain 到 0.25 / 0.6 而 rms 全为 0。
+- 站点 UI 跟随只在抖音直播间采样；虎牙未单独采样，`www.douyin.com` 本轮被验证码拦截。
+- 通用三层解析与全局输出 gain 拦截已由用户在
+  [11-05 回归审计](../../../../docs/research/2026-11-05-spectra-live-volume-regression-audit.md)
+  授权移除，`SCTRL-053` 禁止复活。11-04 的用户确认证据采自未提交实验产物，不描述当前 HEAD。
+- `capabilityFor('volumeBase')` 仍只认 `getVolume`/`setVolume` 方法对，硬编码 `declared: false`。
+  `site-adapter-registry.ts` 仍只有 `douyin-speed` 一条 declared 行。这不是本行故障的原因，
+  抖音直播间通过原生 `volumechange` 就完成了 UI 跟随
+  （[11-01 探针](../../../../docs/research/evidence/2026-11-01-douyin-speed-probe.json)
+  的 `candidateCount = 0`）。
 
 **4. 按了暂停却还在放（rule）**
 

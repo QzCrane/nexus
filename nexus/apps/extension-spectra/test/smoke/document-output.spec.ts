@@ -142,17 +142,29 @@ describe('built extension document-output control', () => {
 		let popup: Page | null = null;
 		let oracle: CDPSession | null = null;
 		try {
+			// The registry admits a live broadcast through IntersectionObserver
+			// geometry. Puppeteer's default 800x600 viewport leaves a real player
+			// below the fold, which zeroes every recorded visible area and lets a
+			// late, silent pre-roll win the selection by registration order. Size
+			// the viewport so the broadcast is genuinely on screen before asking
+			// the shipped extension to own it.
+			await page.setViewport({ width: 1600, height: 1200, deviceScaleFactor: 1 });
 			await page.goto(liveUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 			await eventually(() => page.evaluate(() => {
 				const media = [...document.querySelectorAll<HTMLMediaElement>('video,audio')];
-				const live = media.some(video => video.srcObject instanceof MediaStream
-					&& video.srcObject.getAudioTracks().length === 0 && video.srcObject.getVideoTracks().length > 0
-					&& !video.paused && video.currentTime > 25);
+				const live = media.some(video => {
+					if (!(video.srcObject instanceof MediaStream)
+						|| video.srcObject.getAudioTracks().length !== 0
+						|| video.srcObject.getVideoTracks().length === 0
+						|| video.paused || video.currentTime <= 25) return false;
+					const box = video.getBoundingClientRect();
+					return box.width > 0 && box.height > 0 && box.top < innerHeight && box.bottom > 0;
+				});
 				// A loud pre-roll is not evidence that the broadcast is controlled.
 				const noAudibleFiniteClip = media.every(video => !Number.isFinite(video.duration)
 					|| video.paused || video.ended || video.muted || video.volume === 0);
 				return live && noAudibleFiniteClip;
-			}), ready => ready, 'playing video-only broadcast without an audible finite advertisement', 60_000);
+			}), ready => ready, 'on-screen video-only broadcast without an audible finite advertisement', 60_000);
 			const tabId = await getTabId(page.url());
 			popup = await toolbarPopup(page);
 			const initial = await sliderVolume(popup, tabId, 70);

@@ -1,0 +1,103 @@
+{
+  "capturedAt": "2026-11-14T16:43:26+08:00",
+  "kind": "real-site-dom-native-audibility",
+  "realSite": true,
+  "evidenceGrade": "[E-current]",
+  "question": "On a live stream whose MediaStream carries its own audio track, does the unchanged dom-native element.volume write change the audible tab output and does the site's own volume UI follow it?",
+  "head": "0b907ee0",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "rebuiltForThisRun": true,
+    "rebuiltAt": "2026-11-14 16:08 +0800",
+    "manifestVersion": "1.4.2",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "b78c85da33a12b5674f5c8279cbf773237e2a2a3b9b1f1da3bd78cb829813a65",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251"
+    }
+  },
+  "browser": {
+    "version": "Google Chrome 157.0.8103.39",
+    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "loadMethod": "CDP Extensions.loadUnpacked",
+    "profile": "temporary, isolated",
+    "viewport": "1600x1200"
+  },
+  "site": {
+    "url": "https://live.douyin.com/751699964025",
+    "title": "东哥美食J的抖音直播间 - 抖音直播",
+    "loginState": "anonymous public room",
+    "mainVideo": "MediaStream with videoTracks=1 and audioTracks=1, duration=Infinity, playing"
+  },
+  "command": "cd nexus/apps/extension-spectra && SPECTRA_PROBE_TAB_AUDIO=1 SPECTRA_PROBE_WAIT_MS=30000 SPECTRA_PROBE_LIVE_URL=https://live.douyin.com/751699964025 NEXUS_CHROME_EXECUTABLE=<chrome> bun scripts/probe-live-control.mjs",
+  "method": "Load the rebuilt production extension, open a real toolbar Action Popup, submit trusted control intents for volumeBase 0 and 100, read the element volume, sample the whole tab's audio with chrome.tabCapture + getUserMedia + AnalyserNode from the popup page, and read the site's own volume widgets in the page world.",
+  "runs": [
+    {
+      "name": "audibility contrast round",
+      "controlPath": "spectra.control.intent.submit through the trusted Action Popup",
+      "actualRead": {
+        "target": "media:1:1",
+        "patchVolumeBase": 60,
+        "live": true,
+        "nativeAudioAbsent": "absent",
+        "observedStrategies": { "volumeBase": "dom-native", "boost": "media-webaudio" }
+      },
+      "sliderResult": {
+        "actual": 70,
+        "strategy": "dom-native",
+        "coverage": "active-target",
+        "controlled": true,
+        "writeState": "written",
+        "lastError": null,
+        "elementVolume": 0.7
+      },
+      "tabAudio": {
+        "0": { "controlOk": true, "elementVolume": [0], "tabRms": 0 },
+        "100": { "controlOk": true, "elementVolume": [1], "tabRms": 0.14492294216453572 }
+      }
+    },
+    {
+      "name": "site UI contrast round",
+      "tabAudio": {
+        "0": {
+          "controlOk": true,
+          "elementVolume": [0],
+          "tabRms": 0,
+          "siteVolumeNumber": "0",
+          "siteSliderClass": "douyin-player-volume-slider douyin-player-muted douyin-player-volume-slider-show"
+        },
+        "100": {
+          "controlOk": true,
+          "elementVolume": [1],
+          "tabRms": 4.2020182854001344e-05,
+          "siteVolumeNumber": "100",
+          "siteSliderClass": "douyin-player-volume-slider  douyin-player-volume-slider-show-number"
+        }
+      },
+      "note": "The 100-level tab RMS was near zero in this round while the first round measured 0.1449 at the same level. The broadcast content changed between runs (quiet programme material). The zero level is exactly zero in both rounds. The nonzero proof is the within-run 0 -> 0.1449 contrast of the first round, not a comparison across runs."
+    }
+  ],
+  "findings": {
+    "nativeAudioAbsentNotProved": true,
+    "correctOwner": "dom-native element write, not documentOutput/Capture",
+    "elementVolumeWriteAndReadbackAgree": true,
+    "audibleOutputChangesWithElementVolume": true,
+    "siteOwnVolumeUiFollows": true,
+    "siteFollowMechanism": "the page listens to the browser's own volumechange event; no site adapter, synthetic slider gesture or new mechanism was added",
+    "staleMediaSourceObserved": false,
+    "productSourceChanged": false
+  },
+  "summary": "On this Douyin live room the stream carries an audio track, so the native element is the truthful owner. Writing element.volume changes the tab's audible output (0 -> 0.1449 RMS within one run) and the site's own volume UI updates from 0 to 100. The v2 hypothesis that a live stream with an audio track might be inaudible under dom-native is contradicted by current real-site evidence.",
+  "notEvidenceFor": [
+    "That every Douyin live room behaves this way at every time",
+    "That the site UI follows on Huya or www.douyin.com",
+    "That a quiet programme segment proves inaudibility (see the note on the second round)",
+    "Behaviour above 100, which belongs to the admitted Capture boost path",
+    "Any behaviour on www.douyin.com, which was captcha-blocked"
+  ],
+  "relatedDocuments": [
+    "docs/research/2026-11-14-spectra-volume-audible-path-reaudit.md",
+    "docs/research/evidence/2026-11-14-real-site-media-shape-survey.json",
+    "apps/extension-spectra/docs/control/09-failure-index.md"
+  ]
+}

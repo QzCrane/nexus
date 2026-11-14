@@ -1,0 +1,87 @@
+{
+  "capturedAt": "2026-11-14T16:43:26+08:00",
+  "kind": "real-site-media-shape-survey",
+  "realSite": true,
+  "evidenceGrade": "[E-current]",
+  "question": "Which public live rooms actually satisfy the video-only MediaStream admission that documentOutput requires, and why did the existing live smoke case fail on them?",
+  "head": "0b907ee0",
+  "headCommittedAt": "2026-11-11 23:03:21 +0800",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "rebuiltForThisRun": true,
+    "rebuiltAt": "2026-11-14 16:08 +0800",
+    "manifestVersion": "1.4.2",
+    "contentScripts": 3,
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "b78c85da33a12b5674f5c8279cbf773237e2a2a3b9b1f1da3bd78cb829813a65",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251",
+      "content-runtime.js": "1e6e53d89ca5a9318f29fd215876230be22689b316d38032a6baaefe4e61c16c",
+      "content-page-media-bridge.js": "0bb5ea0fc772ca3539d98d5a3401f7d2d526ab358ad7ae4affd5a7176e318d11",
+      "popup.js": "148fbd5de94a60846eabe34f16285e0b2f386133c366581a1be3947e35ec51a6"
+    },
+    "note": "The rebuild hashes are byte-identical to the 11-11 workspace build recorded in 2026-11-14-local-document-output-built-extension-proof.json, so the earlier local rounds and these real-site rounds ran the same shipped source."
+  },
+  "browser": {
+    "version": "Google Chrome 157.0.8103.39",
+    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "loadMethod": "CDP Extensions.loadUnpacked",
+    "profile": "temporary, isolated",
+    "headless": true
+  },
+  "method": "Load the rebuilt production extension into real Chrome; open public HTTPS rooms; observe every frame's video/audio elements, srcObject track inventory, duration, playback state and IntersectionObserver geometry. The shape survey used no extension control; the control diagnostics are archived separately.",
+  "tools": [
+    "apps/extension-spectra/scripts/probe-live-media.mjs",
+    "apps/extension-spectra/scripts/probe-live-control.mjs"
+  ],
+  "findings": {
+    "huya": {
+      "url": "https://www.huya.com/102411",
+      "mainVideo": "video-only MediaStream (videoTracks=1, audioTracks=0), duration=Infinity, isLiveMedia=true",
+      "concurrentElement": "a finite silent pre-roll video (mp4, volume=0, duration about 35s, bounding area 20628 vs 406406 for the broadcast)",
+      "documentOutputAdmission": true,
+      "note": "After the pre-roll leaves the DOM only the broadcast remains."
+    },
+    "douyinLivePortal": {
+      "url": "https://live.douyin.com/",
+      "mainVideo": "MediaStream with videoTracks=1 and audioTracks=1",
+      "documentOutputAdmission": false
+    },
+    "douyinLiveRooms": {
+      "urls": [
+        "https://live.douyin.com/751699964025",
+        "https://live.douyin.com/341273431211",
+        "https://live.douyin.com/858136504972"
+      ],
+      "mainVideo": "MediaStream with videoTracks=1 and audioTracks=1 on all three rooms; duration=Infinity; playing; currentTime>25",
+      "documentOutputAdmission": false,
+      "note": "The stream carries its own audio track, so nativeAudioAbsent is not proved and the native element route is the correct owner."
+    },
+    "douyinWww": {
+      "url": "https://www.douyin.com/",
+      "result": "captcha interstitial (verifycenter iframe); no media element observed",
+      "collected": false,
+      "note": "This station could not be sampled in this run. Historical 11-04 page_native confirmation remains the only evidence for www.douyin.com and does not describe the current HEAD."
+    },
+    "viewportRootCause": {
+      "defaultViewport": "800x600 (Puppeteer default, despite --window-size=1280,960)",
+      "broadcastBoundingBox": { "x": 90, "y": 898, "width": 850, "height": 478 },
+      "intersectionAt800x600": { "isIntersecting": false, "intersectionArea": 0 },
+      "intersectionAt1600x1200": { "isIntersecting": true, "intersectionArea": 376320 },
+      "consequence": "With every recorded visibleArea at zero, mediaRank's live-priority term (visibleArea > 0 && isLiveMedia) cannot fire and selection falls through to registration order, so a late silent pre-roll can win. At 1600x1200 the broadcast is admitted immediately.",
+      "productSourceChanged": false,
+      "testChange": "test/smoke/document-output.spec.ts now sizes the viewport to 1600x1200 and requires the broadcast to be inside the viewport before driving the slider."
+    }
+  },
+  "summary": "Huya 102411 is the real-site case that exercises documentOutput. Douyin live rooms carry an audio track and correctly stay on the native element route. www.douyin.com was blocked by a captcha and is explicitly out of scope for this run. The earlier live-case failure was a test viewport artefact, not a product regression.",
+  "notEvidenceFor": [
+    "Any behaviour on www.douyin.com in the current HEAD build",
+    "That the same room always has the same stream shape at a later date",
+    "That a viewer with a different window size or scroll position sees identical geometry",
+    "That the site UI follows the extension on Huya (not sampled there)"
+  ],
+  "relatedDocuments": [
+    "docs/research/2026-11-14-spectra-volume-audible-path-reaudit.md",
+    "apps/extension-spectra/docs/control/09-failure-index.md"
+  ]
+}

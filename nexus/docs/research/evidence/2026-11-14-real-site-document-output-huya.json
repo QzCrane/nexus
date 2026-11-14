@@ -1,0 +1,133 @@
+{
+  "capturedAt": "2026-11-14T16:43:26+08:00",
+  "kind": "real-site-document-output-control",
+  "realSite": true,
+  "evidenceGrade": "[E-current]",
+  "question": "Does the current HEAD build control the audible output of a public live broadcast through the admitted Capture graph, using the product graph analyser as the signal oracle?",
+  "head": "0b907ee0",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "rebuiltForThisRun": true,
+    "rebuiltAt": "2026-11-14 16:08 +0800",
+    "manifestVersion": "1.4.2",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "b78c85da33a12b5674f5c8279cbf773237e2a2a3b9b1f1da3bd78cb829813a65",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251"
+    }
+  },
+  "browser": {
+    "version": "Google Chrome 157.0.8103.39",
+    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "loadMethod": "CDP Extensions.loadUnpacked",
+    "profile": "temporary, isolated"
+  },
+  "site": {
+    "url": "https://www.huya.com/102411",
+    "host": "www.huya.com",
+    "room": "102411",
+    "loginState": "anonymous public room",
+    "mainVideo": "video-only MediaStream, Infinity duration, playing, currentTime > 25"
+  },
+  "command": "cd nexus/apps/extension-spectra && SPECTRA_DOCUMENT_OUTPUT_LIVE_URL=https://www.huya.com/102411 NEXUS_CHROME_EXECUTABLE=<chrome> bun test test/smoke/document-output.spec.ts",
+  "runs": [
+    {
+      "name": "pre-fix real-site round 1",
+      "viewport": "800x600 (unchanged suite default)",
+      "result": "1 fail / 0 pass",
+      "failure": "expect(initial.fields.volumeBase?.strategy).toBe('capture') received 'dom-native'",
+      "durationMs": 28459.04
+    },
+    {
+      "name": "pre-fix real-site round 2",
+      "viewport": "800x600 (unchanged suite default)",
+      "result": "1 fail / 0 pass",
+      "failure": "identical assertion, reproducible",
+      "durationMs": 28189.68
+    },
+    {
+      "name": "post-fix real-site only",
+      "viewport": "1600x1200",
+      "result": "1 pass / 0 fail / 13 expect()",
+      "durationMs": 31490.44,
+      "productLiveOutputRms": {
+        "baseline": 0.0020883657038338484,
+        "volume-0": 0,
+        "volume-70": 0.0023572682873366263,
+        "muted": 0,
+        "unmuted": 0.00614358296111285,
+        "shortcut": 0.003572280994956042
+      }
+    },
+    {
+      "name": "post-fix full file (two fixture rounds plus the real-site round)",
+      "viewport": "1600x1200 for the real-site case; fixture cases unchanged",
+      "result": "3 pass / 0 fail / 65 expect()",
+      "durationMs": 45150,
+      "fixtureRms": {
+        "audio-reset": { "0": 0, "30": 0.01065884051454437, "70": 0.02477452641418024, "100": 0.0353252695141558, "200": 0.07067254123102067 },
+        "restore-page-settings": { "0": 0, "30": 0.010614201483518082, "70": 0.02476645934319007, "100": 0.03536585535192164, "200": 0.07050571517620013 }
+      },
+      "productLiveOutputRms": {
+        "baseline": 0.0040293420136546495,
+        "volume-0": 0,
+        "volume-70": 0.003457962076386941,
+        "muted": 0,
+        "unmuted": 0.000884024693101485,
+        "shortcut": 0.0031447704137536163
+      }
+    }
+  ],
+  "assertionsProven": [
+    "initial slider gesture resolves strategy === 'capture' on the real room",
+    "initial ControlSnapshot reports live === true",
+    "the product output analyser has a nonzero baseline",
+    "volume 0 and mute drive the product output RMS to zero",
+    "volume 70 and unmute restore nonzero product output",
+    "a shortcut volume step changes the product output",
+    "restore-page-settings releases the document-output processor",
+    "both fixture release paths still pass after the viewport fix"
+  ],
+  "diagnosticChain": {
+    "protoActualReadAt800x600": {
+      "target": "media:3:3 (the silent finite pre-roll)",
+      "patchVolumeBase": 0,
+      "live": false,
+      "nativeAudioAbsent": "absent",
+      "strategyAfterSlider": "dom-native"
+    },
+    "protoActualReadAt1600x1200": {
+      "target": "media:2:1 (the video-only broadcast)",
+      "patchVolumeBase": 50,
+      "live": true,
+      "nativeAudioAbsent": true,
+      "strategyAfterSlider": "capture",
+      "actual": 70,
+      "controlled": true,
+      "coverage": "opaque",
+      "lastError": null
+    },
+    "isolatedWorld": "srcObject instanceof MediaStream is true; videoTracks=1, audioTracks=0; nativeAudioAbsent predicate true",
+    "source": "apps/extension-spectra/scripts/probe-live-control.mjs"
+  },
+  "findings": {
+    "documentOutputTriggeredOnRealSite": true,
+    "audibleProductOutputChangesWithVolume": true,
+    "muteAndShortcutPathsWork": true,
+    "firstGestureAfterPageReadyWorks": true,
+    "staleMediaSourceObserved": false,
+    "productSourceChanged": false,
+    "onlyChangedFile": "apps/extension-spectra/test/smoke/document-output.spec.ts (viewport and on-screen readiness predicate)"
+  },
+  "notEvidenceFor": [
+    "Behaviour on www.douyin.com (captcha blocked)",
+    "Behaviour on live.douyin.com (that stream carries an audio track; see the separate dom-native evidence file)",
+    "That the same room is still online or uses the same player at a later date",
+    "A human listener's subjective loudness judgement; the oracle is the product graph analyser RMS"
+  ],
+  "relatedDocuments": [
+    "docs/research/2026-11-14-spectra-volume-audible-path-reaudit.md",
+    "docs/research/2026-11-14-local-document-output-built-extension-proof.json",
+    "apps/extension-spectra/docs/control/09-failure-index.md"
+  ]
+}

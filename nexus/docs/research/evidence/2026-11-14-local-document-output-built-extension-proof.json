@@ -1,0 +1,95 @@
+{
+  "capturedAt": "2026-11-14T15:46:28+08:00",
+  "kind": "local-built-extension-verification",
+  "realSite": false,
+  "evidenceGrade": "[E-local-extension]",
+  "question": "Is the documentOutput to outputLevel path present and physically effective in the current HEAD build?",
+  "head": "0b907ee0",
+  "headCommittedAt": "2026-11-11 23:03:21 +0800",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "builtAt": "2026-11-11 23:02 +0800",
+    "rebuiltForThisRun": false,
+    "note": "Pre-existing workspace build, one minute before the HEAD commit timestamp. Not a fresh production rebuild.",
+    "manifestVersion": "1.4.2",
+    "contentScripts": 3,
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "b78c85da33a12b5674f5c8279cbf773237e2a2a3b9b1f1da3bd78cb829813a65",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251"
+    }
+  },
+  "browser": {
+    "version": "Google Chrome 157.0.8103.39",
+    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "loadMethod": "CDP Extensions.loadUnpacked",
+    "profile": "temporary, isolated"
+  },
+  "runs": [
+    {
+      "name": "production graph unit-level physical proof",
+      "command": "SPECTRA_CHROME_INTEGRATION=1 NEXUS_CHROME_EXECUTABLE=<chrome> bun test apps/extension-spectra/test/audio-output-level.spec.ts",
+      "result": "4 pass / 0 fail / 69 expect() / 4.24s",
+      "chromeCaseMs": 4025.71,
+      "method": "Inject the bundled AudioGraphRouter into a page; drive a 1 kHz oscillator through it; sample the analyser RMS.",
+      "assertions": "gain in [0, 0.3, 0.7, 1, 2] gives rms approximately 0.1 * gain / sqrt(2); mute drives rms to zero; unmute restores it; legacy Boost and bypass release cleanly.",
+      "note": "The Chrome case is skipped by default and only runs when SPECTRA_CHROME_INTEGRATION=1."
+    },
+    {
+      "name": "built-extension document-output fixture round",
+      "command": "NEXUS_CHROME_EXECUTABLE=<chrome> bun test apps/extension-spectra/test/smoke/document-output.spec.ts",
+      "result": "2 pass / 1 skip / 0 fail / 52 expect() / 13.81s",
+      "method": "Load the built extension into real Chrome; drive the Action Popup volume slider on an audio/video-separated fixture page; sample the product graph analyser in the offscreen target via CDP.",
+      "productOutputRms": {
+        "audio-reset": {
+          "0": 0,
+          "30": 0.01065461331341406,
+          "70": 0.02472756584799067,
+          "100": 0.03543300132896285,
+          "200": 0.07069581878215321
+        },
+        "restore-page-settings": {
+          "0": 0,
+          "30": 0.01065331159328297,
+          "70": 0.02474397435201016,
+          "100": 0.035445272141320934,
+          "200": 0.07091434808358692
+        }
+      },
+      "skippedCase": "controls a public separated live output with the product graph oracle",
+      "skippedBecause": "SPECTRA_DOCUMENT_OUTPUT_LIVE_URL was not set",
+      "note": "Both release paths (audio-reset and restore-page-settings) pass. RMS is monotonic and proportional to the requested level."
+    }
+  ],
+  "findings": {
+    "implementationPresent": true,
+    "physicalOutputChangesWithRequestedLevel": true,
+    "monotonicAcrossZeroToTwoHundred": true,
+    "muteAndReleasePathsPass": true,
+    "realSiteRoundExecuted": false
+  },
+  "notEvidenceFor": [
+    "That nativeAudioAbsent resolves true on douyin.com, live.douyin.com or huya.com",
+    "That Capture is admitted on any real live room",
+    "That a viewer hears a change on a real broadcast",
+    "That the site's own volume UI follows the extension",
+    "That explicit-target and implicit-target gestures behave identically on a real site",
+    "That stale-media-source and the video-to-live selection handoff no longer reproduce on a real site"
+  ],
+  "scope": {
+    "confirmed": [
+      "The current HEAD build owns a separate document-output level through the admitted Capture graph",
+      "The product output signal scales with the requested 0..200 level on a fixture page",
+      "A real-site smoke case already exists and is gated by SPECTRA_DOCUMENT_OUTPUT_LIVE_URL"
+    ],
+    "notConfirmed": [
+      "Any real-site behaviour",
+      "A freshly rebuilt production artifact",
+      "The two guarded symptoms in 09 rows 1 and 2"
+    ]
+  },
+  "relatedDocuments": [
+    "docs/research/2026-11-14-spectra-volume-audible-path-reaudit.md",
+    "docs/research/2026-11-05-spectra-live-volume-regression-audit.md"
+  ]
+}
