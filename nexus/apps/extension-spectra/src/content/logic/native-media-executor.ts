@@ -43,6 +43,10 @@ import type {
 } from '../video/video-effects-controller';
 import { contentControlStrategy } from './content-control-policy';
 import {
+	projectSiteNativePlayback,
+	projectSiteNativeVolume,
+} from './site-native-control-surface';
+import {
 	assertNativeOperationCurrent,
 	clampNativeSeek,
 	clearNativeMediaAsyncState,
@@ -251,6 +255,7 @@ export interface AudioRuntimeControlDelegate {
 	read(fields: readonly ControlField[]): AudioRuntimeReadResult;
 	readAudioVolume?(volumeBase: number, muted: boolean): NonNullable<ControlApplyAck['audioVolume']>;
 	synchronizeNative(context: ControlActualContext): void;
+	setSiteNativeLevel?(level: number | null): void;
 	runFullscreenTransition?<T>(operation: () => Promise<T>): Promise<T>;
 }
 
@@ -1102,13 +1107,36 @@ export class NativeMediaExecutor {
 			// Restore its element/template without manufacturing Capture authority.
 			|| Boolean(intent.source !== 'restore' && audioTarget && nativeAudioAbsent(audioTarget.element)
 				&& !isPageSideWriter(readRestorableMediaFieldWithWriter(audioTarget.element, 'volumeBase').writer));
+		// On a document-output page the site's own volume control owns the audible
+		// gain and its UI. Writing `element.volume` alone leaves both behind; drive
+		// the site control instead and keep the processor at unity so the level is
+		// applied once, not twice (Huya tab RMS: 0.5 -> 0.0241, 0.03 -> 0.00016,
+		// 0.9 -> 0.0726). A page without such a control keeps the old routing.
+		const siteNativeVolume = documentOutput && audioTarget
+			&& typeof intent.patch.volumeBase === 'number'
+			? await projectSiteNativeVolume(audioTarget.element, intent.patch.volumeBase)
+			: null;
+		// This executor is the only canonical `element.volume` writer (SCTRL-003).
+		// A paused Huya player moves its own bar without refreshing the DOM mirror,
+		// so align it once here; the resulting `volumechange` is the existing
+		// passive witness that keeps the snapshot and badge on the site's level.
+		if (siteNativeVolume !== null && audioTarget) {
+			const level = siteNativeVolume / 100;
+			if (Math.abs(audioTarget.element.volume - level) > 0.005) {
+				audioTarget.element.volume = level;
+			}
+		}
 		this.audioRuntimeDelegate?.synchronizeNative(intent.actualContext);
+		// The processor's gain input stays at unity; the level the card reports is
+		// the one the site's own control just applied.
+		this.audioRuntimeDelegate?.setSiteNativeLevel?.(siteNativeVolume);
 		for (const [rawField, rawValue] of Object.entries(intent.patch)) {
 			const field = rawField as ControlField;
 			const value = rawValue as ControlValues[ControlField];
 			if (AUDIO_RUNTIME_FIELDS.has(field)
 				|| documentOutput && (field === 'volumeBase' || field === 'mediaMuted')) {
-				(runtimePatch as Record<string, unknown>)[field] = value;
+				(runtimePatch as Record<string, unknown>)[field] = siteNativeVolume !== null
+					&& field === 'volumeBase' ? 100 : value;
 			} else {
 				directEntries.push([field, value]);
 			}
@@ -1183,6 +1211,20 @@ export class NativeMediaExecutor {
 				}
 			}
 		}
+		if (siteNativeVolume !== null && this.audioRuntimeDelegate) {
+			// The processor keeps its capture session at unity; the number the
+			// viewer sees is the level the site's own control actually applied.
+			// Extend the runtime's own field state so its coverage/strategy stay
+			// contract-valid (a capture field may only be `full` or `opaque`).
+			const runtimeState = fields.volumeBase;
+			if (runtimeState) {
+				fields.volumeBase = { ...runtimeState,
+					desired: siteNativeVolume, actual: siteNativeVolume,
+					phase: 'applied', controlled: true, lastError: null };
+			} else {
+				this.putState(fields, 'volumeBase', siteNativeVolume, siteNativeVolume, intent, 'dom-native');
+			}
+		}
 		if (resolved && directEntries.some(([field]) => RESTORABLE_MEDIA_FIELDS.has(field))) {
 			const restored = directEntries
 				.filter(([field]) => RESTORABLE_MEDIA_FIELDS.has(field))
@@ -1197,7 +1239,7 @@ export class NativeMediaExecutor {
 		// Feedback is a physical readback, not a mutation of unrelated snapshot
 		// fields. A cold mute still needs actual base volume and processor state.
 		let audioVolume: ControlApplyAck['audioVolume'];
-		if (resolved && this.audioRuntimeDelegate?.readAudioVolume
+		if (siteNativeVolume === null && resolved && this.audioRuntimeDelegate?.readAudioVolume
 			&& (fields.mediaMuted?.phase === 'applied' || fields.volumeBase?.phase === 'applied')) {
 			try {
 				const { patch } = this.read({ fields: ['volumeBase', 'mediaMuted'], target: resolved.target });
@@ -1910,6 +1952,12 @@ export class NativeMediaExecutor {
 				}
 				case 'playing': {
 					if (value === false) this.registry.pinPaused?.(target);
+					// A live player's own button owns its playback state. Driving it
+					// first is what makes a pause stick: a raw element.pause() is
+					// replayed by Huya's player because its state still says watching,
+					// and the stable readback then mismatches on every press. Pages
+					// without such a button keep the standard write below.
+					projectSiteNativePlayback(element, value as boolean);
 					// Playback never answers before its proof. A page is free to
 					// restart what we just paused — and to swallow the `pause` event
 					// while doing it — so the synchronous `paused` getter is the

@@ -82,8 +82,19 @@ export function createAudioRuntimeControlDelegate(
 	state: PolicyExecutorState,
 	fullscreenHandoff?: Pick<FullscreenAudioHandoff, 'run'>,
 ): AudioRuntimeControlDelegate {
+	// On a document-output page whose own volume control owns the audible level,
+	// the processor stays at unity. Its `volumeBase` is then a gain input, not the
+	// number the viewer sees; this witness keeps every passive read on the site's
+	// own level without changing the audio policy state or the RPC contract.
+	let siteNativeLevel: number | null = null;
+	const setSiteNativeLevel = (level: number | null): void => { siteNativeLevel = level; };
 	const synchronizeNative = (context: ControlActualContext): void => {
 		const documentOutput = state.config.documentOutput === true || state.appliedConfig.documentOutput === true;
+		// Only a document that actually owns a site-native slider adopts the
+		// witness; a fixture or a plain DOM page keeps the historical read.
+		if (documentOutput && siteNativeLevel !== null && typeof context.volumeBase === 'number') {
+			siteNativeLevel = context.volumeBase;
+		}
 		if (!documentOutput && typeof context.volumeBase === 'number') {
 			const desiredBoost = resolveAudioVolume(state.config).boost;
 			const appliedBoost = resolveAudioVolume(state.appliedConfig).boost;
@@ -115,7 +126,7 @@ export function createAudioRuntimeControlDelegate(
 		for (const field of fields) {
 			let actual: unknown;
 			switch (field) {
-				case 'volumeBase': if (documentOutputActive(state)) actual = applied.volumeBase; break;
+				case 'volumeBase': if (documentOutputActive(state)) actual = siteNativeLevel ?? applied.volumeBase; break;
 				case 'mediaMuted': if (documentOutputActive(state)) actual = applied.muted; break;
 				case 'audioEnabled': actual = actualAudioEnabled(state); break;
 				case 'boost': actual = resolveAudioVolume(applied).boost; break;
@@ -310,6 +321,7 @@ export function createAudioRuntimeControlDelegate(
 			};
 		},
 		synchronizeNative,
+		setSiteNativeLevel,
 		...(fullscreenHandoff
 			? { runFullscreenTransition: fullscreenHandoff.run.bind(fullscreenHandoff) }
 			: {}),
