@@ -337,7 +337,13 @@ Strict Biome 163 文件 0 diagnostics、0 silent handlers、exit 0；`bun script
   [真站证据](../research/evidence/2026-11-14-huya-native-control-parity-proof.json)
   （`[E-current]`）。[09 故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md)
   补两条症状行与第四轮复核，并纠正「虎牙未单独采样」这条已被证伪的边界。
+- 发布同步：两个产品提交让公共镜像漂移 1 个新源码 + 2 处改动，真实入口
+  `check-public-parity` 报 `PUBLIC-PARITY-002/003`。按第 7 条原则**不放宽 baseline**，
+  改用 `sync-public.ts spectra --amend` 修正候选为 `1068341`（本地，未推送远端），
+  再跑真实入口回到 `0 differing / 0 missing / 0 warnings / exit 0`。
+  候选提交沿用 O10 的 `091005a` 所属历史提交信息，属脚本 `--amend` 行为。
 - 诚实剩余：虎牙 90px 轨道 + 10px 手柄的物理上限约 0.944，请求 100 时如实 ACK 94；
   `boost > 100` 仍走 Capture 处理器增益；O11 启动阶段短暂 `100` / `idle` 闪动仍在；
-  `www.douyin.com` 仍被验证码拦截；Chrome 157 之外的版本无证据。
+  `www.douyin.com` 仍被验证码拦截；Chrome 157 之外的版本无证据；
+  公共候选 `1068341` 待推送公共远端，属外部发布动作。
 

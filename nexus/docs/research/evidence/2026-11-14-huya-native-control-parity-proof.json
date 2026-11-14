@@ -224,7 +224,7 @@
     "strictBiome": "490 files, 0 diagnostics, 0 silent handlers, exit 0",
     "docs:check": "160 Markdown files, strict=true, exit 0",
     "adHocDocsScan": "90 docs, 421 relative Markdown links, 81 Mermaid blocks, 0 odd-fence files; one pre-existing stale link in _archive/2026-Q3 is outside the official strict checker and was not introduced by this repair",
-    "publicParity": "recorded in docs/proposals/open-items-program.md §12 after the commit"
+    "publicParity": "check-public-parity real entry after sync-public.ts spectra --amend: 0 differing / 0 missing / 0 warnings, exit 0; baseline was not loosened; local public candidate 1068341 is not pushed"
   },
   "notEvidenceFor": [
     "Chrome versions other than 157.0.8103.39",
