@@ -211,14 +211,15 @@ O1 的三条失败在修复前应登记为 `blocker`，而不是留在发布时�
 | 项 | 优先级 | 状态 | 落地内容与实测结果 |
 |---|---|---|---|
 | **O1** | P0 | ✅ 已解决 | 发布门禁全通：修复 Content 校验副本键缺失，消除热键媒体未就绪竞态与测试标签页冲突。`test:chrome:dist` 实测 47/47 通过。 |
-| **O2** | P1 | ✅ 已合入 | 分支 `docs/spectra-douyin-speed-sync` 已推送并合入 `main`。`verify` 21 项 0 error、Strict Biome 482 文件 0 diagnostics、`docs:check` 157 篇、锚点 0 缺失、`check-public-parity` 0 error。真站端到端证据见 §9。 |
+| **O2** | P1 | ✅ 已合入 | 分支 `docs/spectra-douyin-speed-sync` 已推送并合入 `main`（`b7f01b4c`，快进 55 个提交）。`verify` 21 项 0 error、Strict Biome 482 文件 0 diagnostics、`docs:check` 157 篇、锚点 0 缺失。合入后复核发现 `check-public-parity` 的「0 error」属空跑导出模块的假通过，真实入口报 `PUBLIC-PARITY-003`，另立 O10。真站端到端证据见 §9。 |
 | **O3** | P1 | ✅ 已解决 | 单测运行器加固：`run-tests.ts` 增加 Bun `--timeout 30000` 强力超时、15s 慢速诊断预警及挂死退出现场 stdout/stderr dump。118 个单测进程稳定通过。 |
 | **O4** | P1 | ✅ 已解决 | 契约键集合类型安全：全仓 35 处手写 `Set` 100% 迁移为 `keySetOf<T>()` 编译期强类型绑定，`contract-key-set-baseline.json` 存量技术债务计数清零并封锁。 |
 | **O5** | P2 | ✅ 已解决 | 公开镜像投影解耦：`scripts/sync-public.ts` 支持 `--plan` 临时目录端到端验证构建（实测 371 文件投影与构建 8.49s 通过），`.github/workflows/sync-public.yml` 引入 PR 门禁。 |
 | **O6** | P2 | ℹ️ 已审计 | 音量路径性能与诊断端口完备，`popupControlSettleSamples/P50/P95/Max` 具备自动统计能力，继续按长期性能监控体系演进。 |
 | **O7** | P3 | ✅ 已加固 | 源码扫描门禁审查加固：`SCTRL-041` 与架构提取规则全面兼容 `keySetOf<T>()` 语法模式，`verify` 22 项门禁 0 警告 0 报错全绿。 |
 | **O8** | P3 | ℹ️ 明确保留 | 依据第 7 条原则，Options 与 Popup 双面色彩设计（暗色/亮色）属产品既定视觉决策，非架构缺陷，保持不变。 |
-| **O9** | P2 | 🔄 待办 | 全量 `test:smoke` 有 6 个既有失败：hotkeys 1、live-target-restart 4、popup-ui 1。单独跑 `live-target-restart.spec.ts` 仍 4 fail，不是并发污染。本轮未改产品源码，重建产物逐字节确定且与 11-11 一致，故与本轮改动无关。需单独定位，不阻塞 O2。 |
+| **O9** | P2 | 🔄 待办 | 全量 `test:smoke` 6 个既有失败（96 pass / 5 skip / 6 fail / 772 expect）。三个文件单独复跑均稳定复现，排除并发污染：`hotkeys.spec.ts` 6 pass / 1 fail（冷默认快捷键序列多出一次 `window keydown`）；`popup-ui.spec.ts` 16 pass / 1 skip / 1 fail（worker 替换后 `site preset badge` 为空）；`live-target-restart.spec.ts` 13 pass / 4 fail（「直播旁更大广告」场景把 40% 音量写到了广告而非直播；冷恢复的 40% 未被媒体自动消费；两个「首个真实快捷键」用例超时等待 `runtime fully released`）。本轮未改产品源码，重建产物与 11-11 逐字节一致，故与本轮改动无关；不阻塞 O2，但「广告抢选中」与核心直播选目标问题同源，建议下一轮优先定位。 |
+| **O10** | P2 | 🔄 发布步骤 | 公开镜像门禁真实入口 `bun scripts/check-public-parity.ts`（在 `nexus/` 下）报 `PUBLIC-PARITY-003: content drift grew to 46 files (baseline 22)`，exit 1。公共 checkout 仍是 1.4.2 发布快照，本分支 55 个提交带来的源码漂移尚未发布；baseline 的 `reason` 已写明下次 `bun scripts/sync-public.ts spectra` 会让差异归零。按第 7 条原则不放宽 baseline 掩盖，也不把直接单跑 `scripts/verify/check-public-parity.ts`（仅导出函数、无顶层调用、静默 exit 0）当作通过证据。 |
 
 ## 9. 2026-11-14 合入备注
 
@@ -234,4 +235,20 @@ O2 合入时按用户授权执行：重建当前 HEAD 生产产物、归档三�
 
 上表 O2 原写的「smoke 全绿」不再成立，故改写为逐项门禁结果。
 既有的 6 个 smoke 失败另立 O9，不用放宽断言掩盖（遵守第 7 条原则）。
+
+### 收尾复核（2026-11-14，合入后）
+
+仓库状态：`HEAD`、`main`、`origin/main`、`docs/spectra-douyin-speed-sync`、
+`origin/docs/spectra-douyin-speed-sync` 全部指向 `b7f01b4c`；`git status --porcelain` 为空，
+`origin/main..main` 与 `main..origin/main` 均为 0。
+
+最终门禁实测：`docs:check` 157 篇 exit 0；`verify` 21 项 0 error、8 条已登记 warning、exit 0；
+Strict Biome 163 文件 0 diagnostics、0 silent handlers、exit 0；`bun scripts/run-tests.ts`
+137 个隔离单测文件全通过；锚点 76 篇 / 78 个跨文件锚点 0 缺失；76 篇文档 81 个 Mermaid 块
+的围栏闭合、起始图类型与括号平衡 0 异常；`check-public-parity` 真实入口 1 error（见 O10）。
+全量 `test:smoke` 重跑为 96 pass / 5 skip / 6 fail / 772 expect，与 O9 登记一致。
+
+上一轮把 `check-public-parity` 记为 0 error，原因是把只导出 `checkPublicParity` 的模块文件
+单独执行：该脚本没有顶层调用，因此静默 exit 0。真实入口是 `scripts/check-public-parity.ts`，
+本表 O2 行已更正。此处不修改 baseline，也不把该更正追溯为 O2 未合入。
 
