@@ -218,8 +218,8 @@ O1 的三条失败在修复前应登记为 `blocker`，而不是留在发布时�
 | **O6** | P2 | ℹ️ 已审计 | 音量路径性能与诊断端口完备，`popupControlSettleSamples/P50/P95/Max` 具备自动统计能力，继续按长期性能监控体系演进。 |
 | **O7** | P3 | ✅ 已加固 | 源码扫描门禁审查加固：`SCTRL-041` 与架构提取规则全面兼容 `keySetOf<T>()` 语法模式，`verify` 22 项门禁 0 警告 0 报错全绿。 |
 | **O8** | P3 | ℹ️ 明确保留 | 依据第 7 条原则，Options 与 Popup 双面色彩设计（暗色/亮色）属产品既定视觉决策，非架构缺陷，保持不变。 |
-| **O9** | P2 | 🔄 待办 | 全量 `test:smoke` 6 个既有失败（96 pass / 5 skip / 6 fail / 772 expect）。三个文件单独复跑均稳定复现，排除并发污染：`hotkeys.spec.ts` 6 pass / 1 fail（冷默认快捷键序列多出一次 `window keydown`）；`popup-ui.spec.ts` 16 pass / 1 skip / 1 fail（worker 替换后 `site preset badge` 为空）；`live-target-restart.spec.ts` 13 pass / 4 fail（「直播旁更大广告」场景把 40% 音量写到了广告而非直播；冷恢复的 40% 未被媒体自动消费；两个「首个真实快捷键」用例超时等待 `runtime fully released`）。本轮未改产品源码，重建产物与 11-11 逐字节一致，故与本轮改动无关；不阻塞 O2，但「广告抢选中」与核心直播选目标问题同源，建议下一轮优先定位。 |
-| **O10** | P2 | 🔄 发布步骤 | 公开镜像门禁真实入口 `bun scripts/check-public-parity.ts`（在 `nexus/` 下）报 `PUBLIC-PARITY-003: content drift grew to 46 files (baseline 22)`，exit 1。公共 checkout 仍是 1.4.2 发布快照，本分支 55 个提交带来的源码漂移尚未发布；baseline 的 `reason` 已写明下次 `bun scripts/sync-public.ts spectra` 会让差异归零。按第 7 条原则不放宽 baseline 掩盖，也不把直接单跑 `scripts/verify/check-public-parity.ts`（仅导出函数、无顶层调用、静默 exit 0）当作通过证据。 |
+| **O9** | P2 | ✅ 已解决 | 6 个既有 smoke 失败全部消除，全量 `test:smoke` 为 `102 pass / 5 skip / 0 fail / 783 expect()`。归类见 [重审报告](../research/2026-11-14-spectra-o9-smoke-repair.md)：2 个产品回归（暂停直播被更大广告接管、恢复计划被页面原生 100 污染）已修 `media-registry.ts` 与 `runtime-loader.ts`；4 个测试期望过时（`0b907ee0` 的 AbortController 监听组、badge usage 门、11-11 常驻观察 lease）按新行为精确更新断言，未放宽。真站回归证据见 §10。 |
+| **O10** | P2 | ✅ 本地收口 | `sync-public.ts spectra --plan` 通过；正式运行生成公共候选提交 `9596b5f`（68 文件变化，含此前 3 个 `knownMissing` 源码），脚本按设计不 push。baseline 从 `22 differing / 3 missing` **收紧**为 `0 / 0`，`check-public-parity` 真实入口为 `0 differing / 0 missing / 0 warnings / exit 0`。剩余：候选提交待推送公共远端，属外部发布动作。 |
 
 ## 9. 2026-11-14 合入备注
 
@@ -251,4 +251,22 @@ Strict Biome 163 文件 0 diagnostics、0 silent handlers、exit 0；`bun script
 上一轮把 `check-public-parity` 记为 0 error，原因是把只导出 `checkPublicParity` 的模块文件
 单独执行：该脚本没有顶层调用，因此静默 exit 0。真实入口是 `scripts/check-public-parity.ts`，
 本表 O2 行已更正。此处不修改 baseline，也不把该更正追溯为 O2 未合入。
+（这句指上一轮不为通过而放宽 baseline；下一节的收紧是发布同步后的相反方向。）
+
+## 10. 2026-11-14 第二轮收口（O9 / O10）
+
+用户授权「继续一切」后，把上节登记的两个剩余项做实。
+
+- 提交 `34718000`：5 个文件、+63/−8，含 2 个产品源码修复与 3 个 smoke 用例更新。
+- 全量门禁结果与分类依据见 [重审报告](../research/2026-11-14-spectra-o9-smoke-repair.md) §5：
+  `102 pass / 0 fail / 783 expect`、137 个隔离单测文件、typecheck / Strict Biome /
+  `verify` / `docs:check` / 锚点 / 图表语法全绿。
+- 从该 HEAD 重建生产产物，用本机 Chrome 157 跑虎牙 102411 真站轮，
+  `3 pass / 65 expect()`，归档
+  `docs/research/evidence/2026-11-14-o9-repair-real-site-regression-proof.json`（`[E-current]`）。
+  证据 JSON 明确写出本轮修的 6 个失败是 fixture 级断言；真站轮只证明产品改动没有破坏
+  既有 `documentOutput` / Capture 链路，不冒充这 6 个修复的真站复现。
+- 公共镜像候选提交 `9596b5f` 未推送，推送需另行授权。
+- [09 故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 的
+  `status: draft` 与 `guarded` 状态按既有约定保留。
 

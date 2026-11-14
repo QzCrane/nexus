@@ -42,6 +42,23 @@ The browser was local Chrome 157.0.8103.39, loaded through CDP `Extensions.loadU
 The only code change in that batch is the real-site case's viewport in `apps/extension-spectra/test/smoke/document-output.spec.ts`.
 No product source was modified.
 
+## Post-repair evidence 2026-11-14 (`[E-current]`, HEAD `34718000`)
+
+This batch differs from the section above: it **did modify two shipped sources**
+(`media-registry.ts` and `runtime-loader.ts`) to close O9.
+See [O9 smoke repair](2026-11-14-spectra-o9-smoke-repair.md) for the classification
+of two product regressions versus four stale test expectations.
+
+- [Real-site regression proof](evidence/2026-11-14-o9-repair-real-site-regression-proof.json):
+  production artifact rebuilt from `34718000`, local Chrome 157.0.8103.39 loaded via
+  CDP `Extensions.loadUnpacked`, Huya 102411 `3 pass / 65 expect()`. Product-output
+  RMS is zero for volume-0/mute and nonzero for volume-70/unmute/shortcut. Its
+  `notEvidenceFor` states that the six O9 fixes are built-extension fixture assertions,
+  not real-site reproductions; Douyin and `www.douyin.com` were not retried.
+
+`sync-public spectra` produced public candidate commit `9596b5f` (not pushed), and the
+parity baseline was tightened from `22/3` to `0 differing / 0 missing`.
+
 ## Evidence contract
 
 Every current research claim that affects prioritization records:

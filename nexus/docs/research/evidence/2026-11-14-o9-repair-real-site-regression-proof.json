@@ -1,0 +1,126 @@
+{
+  "capturedAt": "2026-11-14T18:58:26+08:00",
+  "kind": "post-fix real-site regression proof",
+  "realSite": true,
+  "evidenceGrade": "[E-current]",
+  "question": "After the O9 smoke repairs changed shipped sources, does the current HEAD still control a public video-only live broadcast through the documentOutput/Capture path?",
+  "head": "34718000",
+  "headFull": "3471800025efe80acb066b5dddba9c14ca77e440",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "rebuiltForThisRun": true,
+    "rebuiltFromHead": "34718000",
+    "manifestVersion": "1.4.2",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "75b5eca09d97d7fa10793fc586f0241164b58d5603ff732f84e85d6949cd7815",
+      "content-runtime.js": "4295ba3c895068c4993be6a40875278b45b6be73d0c4375c0cbfd5f3e963307a",
+      "content-bootstrap.js": "37ba50350f6084b9c952c472712621e2cb67b8855ddaa630d8ade6d4f5bfd25d",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251"
+    }
+  },
+  "browser": {
+    "version": "Google Chrome 157.0.8103.39",
+    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "loadMethod": "CDP Extensions.loadUnpacked",
+    "profile": "temporary, isolated"
+  },
+  "site": {
+    "url": "https://www.huya.com/102411",
+    "host": "www.huya.com",
+    "room": "102411",
+    "loginState": "anonymous public room",
+    "shape": "on-screen video-only MediaStream, Infinity duration, playing, currentTime > 25, no audible finite advertisement",
+    "viewport": "1600x1200"
+  },
+  "command": "cd nexus/apps/extension-spectra && SPECTRA_DOCUMENT_OUTPUT_LIVE_URL=https://www.huya.com/102411 NEXUS_CHROME_EXECUTABLE=\"C:/Program Files/Google/Chrome/Application/chrome.exe\" bun test test/smoke/document-output.spec.ts",
+  "suite": {
+    "pass": 3,
+    "fail": 0,
+    "expectCalls": 65,
+    "durationSeconds": 45.49,
+    "skipped": 0
+  },
+  "runs": [
+    {
+      "name": "controls separate page audio and releases through audio-reset",
+      "realSite": false,
+      "result": "pass",
+      "durationMs": 7061.53,
+      "documentOutputRms": {
+        "0": 0,
+        "30": 0.010591767310633868,
+        "70": 0.024759220494169374,
+        "100": 0.03526320394884282,
+        "200": 0.07056646556393587
+      }
+    },
+    {
+      "name": "controls separate page audio and releases through restore-page-settings",
+      "realSite": false,
+      "result": "pass",
+      "durationMs": 6904.84,
+      "documentOutputRms": {
+        "0": 0,
+        "30": 0.010638760469683685,
+        "70": 0.024864674033623666,
+        "100": 0.03542122848673031,
+        "200": 0.0709002289972554
+      }
+    },
+    {
+      "name": "controls a public separated live output with the product graph oracle",
+      "realSite": true,
+      "result": "pass",
+      "durationMs": 31286.51,
+      "host": "www.huya.com",
+      "productLiveOutputRms": {
+        "baseline": 0.0018972198488195243,
+        "volume-0": 0,
+        "volume-70": 0.001256046307053983,
+        "muted": 0,
+        "unmuted": 0.004248797025703251,
+        "shortcut": 0.0031572066664791515
+      }
+    }
+  ],
+  "assertionsProven": [
+    "The popup volume slider on the public live room reports volumeBase.strategy === 'capture'.",
+    "The same snapshot reports live === true.",
+    "The offscreen product-graph analyser has a nonzero live output baseline (> 1e-5).",
+    "volume-0 and muted drive the product output RMS below 1e-6.",
+    "volume-70, unmuted and the shortcut each keep the product output RMS above 1e-5.",
+    "The shortcut ACK reaches volumeBase.actual === 80 and restore-page-settings succeeds.",
+    "The media registry still admits the on-screen video-only broadcast instead of a finite pre-roll."
+  ],
+  "findings": [
+    "The two shipped-source repairs (live-rank preservation in media-registry and a stable pending restore plan in runtime-loader) did not regress the current HEAD's real-site documentOutput/Capture control path.",
+    "The rebuilt artifact is deterministic for this HEAD: manifest.json, content-bootstrap.js and offscreen.js keep the 2026-11-14 hashes, while background.js changes exactly because runtime-loader.ts changed.",
+    "The six O9 failures themselves were fixture-level assertions on the built extension; this run does not claim to reproduce them on a public live site."
+  ],
+  "localGates": {
+    "grade": "[E-local-extension]",
+    "note": "These are local gates on the same HEAD, not real-site evidence.",
+    "smoke": "102 pass / 5 skip / 0 fail / 783 expect() calls across 14 files",
+    "isolatedUnitFiles": "137 passed",
+    "typecheck": "exit 0",
+    "strictBiome": "163 files, 0 diagnostics, 0 silent handlers",
+    "verify": "21 gates, 0 errors, 8 registered warnings",
+    "docsCheck": "157 Markdown files passed",
+    "anchorCheck": "76 files, 78 cross-file anchors, 0 missing",
+    "publicParity": "0 differing, 0 missing, 0 warnings, exit 0 after sync-public spectra"
+  },
+  "notEvidenceFor": [
+    "The six repaired smoke failures occurring or being fixed on a public live site; they are built-extension fixture assertions.",
+    "The Douyin live room dom-native path; it was not run in this batch.",
+    "www.douyin.com; the earlier batch was captcha-blocked and this batch did not retry it.",
+    "Volume above 100 or Capture admission from page-level key handlers.",
+    "A published public repository: sync-public spectra produced local candidate commit 9596b5f in the sibling checkout, deliberately not pushed."
+  ],
+  "relatedDocuments": [
+    "../2026-11-14-spectra-o9-smoke-repair.md",
+    "../../proposals/open-items-program.md",
+    "../../../apps/extension-spectra/docs/control/09-failure-index.md",
+    "../2026-11-14-spectra-volume-audible-path-reaudit.md"
+  ]
+}
