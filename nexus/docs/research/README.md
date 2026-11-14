@@ -59,6 +59,32 @@ of two product regressions versus four stale test expectations.
 `sync-public spectra` produced public candidate commit `9596b5f` (not pushed), and the
 parity baseline was tightened from `22/3` to `0 differing / 0 missing`.
 
+## Video-to-live switch evidence 2026-11-14 (`[E-current]`, HEAD `8c644981`)
+
+The user reported that the switch from a Douyin video to a live broadcast still
+does not follow automatically. Every earlier real-site round above opened a live
+room directly; none observed the transition. This batch closes that gap.
+
+- [Repair report](2026-11-14-spectra-douyin-video-to-live-switch.md): the site
+  reuses one video element and changes its `MediaStream` from video-only to
+  audio-carrying. A later 10x10 probe player briefly took the selection; its
+  removal cleared `activeMedia` and left the card `idle` with no further event
+  to repaint it. Four minimal product changes reuse the existing passive view
+  read and the existing admission rules, with no new mechanism.
+- [Real-site proof](evidence/2026-11-14-douyin-video-to-live-switch-proof.json):
+  production artifact rebuilt from `8c644981`, local Chrome 157.0.8103.39 via
+  CDP `Extensions.loadUnpacked`. The gated switch case proves the transition
+  (5 video-only frames, 80 live frames) and then stays passive for nine seconds:
+  `activeMedia=media:2:1`, `volumeBase=60`, site volume 60. A later gesture to
+  30 moves the element, the site number and the badge together. Three stability
+  rounds pass; the Huya Capture regression is `3 pass / 65 expect()`.
+- The short startup projection flicker is registered as O11 and is explicitly
+  not claimed as eliminated. `www.douyin.com` remains captcha-blocked, so a
+  cross-origin video-page to live-room navigation has no current-HEAD evidence.
+- `sync-public.ts spectra --amend` revised the unpushed public candidate from
+  `9596b5f` to `091005a` after the two product sources changed. The parity
+  baseline was not loosened: the real entry reports `0 differing / 0 missing`.
+
 ## Evidence contract
 
 Every current research claim that affects prioritization records:

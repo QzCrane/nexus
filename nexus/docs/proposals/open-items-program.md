@@ -219,7 +219,8 @@ O1 的三条失败在修复前应登记为 `blocker`，而不是留在发布时�
 | **O7** | P3 | ✅ 已加固 | 源码扫描门禁审查加固：`SCTRL-041` 与架构提取规则全面兼容 `keySetOf<T>()` 语法模式，`verify` 22 项门禁 0 警告 0 报错全绿。 |
 | **O8** | P3 | ℹ️ 明确保留 | 依据第 7 条原则，Options 与 Popup 双面色彩设计（暗色/亮色）属产品既定视觉决策，非架构缺陷，保持不变。 |
 | **O9** | P2 | ✅ 已解决 | 6 个既有 smoke 失败全部消除，全量 `test:smoke` 为 `102 pass / 5 skip / 0 fail / 783 expect()`。归类见 [重审报告](../research/2026-11-14-spectra-o9-smoke-repair.md)：2 个产品回归（暂停直播被更大广告接管、恢复计划被页面原生 100 污染）已修 `media-registry.ts` 与 `runtime-loader.ts`；4 个测试期望过时（`0b907ee0` 的 AbortController 监听组、badge usage 门、11-11 常驻观察 lease）按新行为精确更新断言，未放宽。真站回归证据见 §10。 |
-| **O10** | P2 | ✅ 本地收口 | `sync-public.ts spectra --plan` 通过；正式运行生成公共候选提交 `9596b5f`（68 文件变化，含此前 3 个 `knownMissing` 源码），脚本按设计不 push。baseline 从 `22 differing / 3 missing` **收紧**为 `0 / 0`，`check-public-parity` 真实入口为 `0 differing / 0 missing / 0 warnings / exit 0`。剩余：候选提交待推送公共远端，属外部发布动作。 |
+| **O10** | P2 | ✅ 本地收口 | `sync-public.ts spectra --plan` 通过；正式运行生成公共候选提交，脚本按设计不 push。baseline 从 `22 differing / 3 missing` **收紧**为 `0 / 0`。第三轮改动两处产品源码后再跑 `sync-public.ts spectra --amend`，候选提交从 `9596b5f` 修正为 **`091005a`**（68 文件变化，含此前 3 个 `knownMissing` 源码与本轮改动），`check-public-parity` 真实入口回到 `0 differing / 0 missing / 0 warnings / exit 0`。剩余：候选提交待推送公共远端，属外部发布动作。 |
+| **O11** | P3 | 🔄 待办 | 抖音门户启动阶段仍有短暂投影抖动：诊断记录到 3 次 `volumeBase=100` 与 5 次 `idle` 写入，均由 `8c644981` 的自动重投影恢复到 `media:2:1 / 60`，最终三个采样与门控真站用例都正确。但插件数字在启动的一小段时间内可能闪到 100，未达到「全程完美」。不冒充已解决，不阻塞 O9/O10 与切换自动同步；`www.douyin.com` 仍被验证码拦截，跨 origin 整页导航进直播间同样无当前 HEAD 证据。详见 [重审报告](../research/2026-11-14-spectra-douyin-video-to-live-switch.md) §7。 |
 
 ## 9. 2026-11-14 合入备注
 
@@ -269,4 +270,33 @@ Strict Biome 163 文件 0 diagnostics、0 silent handlers、exit 0；`bun script
 - 公共镜像候选提交 `9596b5f` 未推送，推送需另行授权。
 - [09 故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 的
   `status: draft` 与 `guarded` 状态按既有约定保留。
+
+## 11. 2026-11-14 第三轮收口（视频切直播自动同步）
+
+用户反馈「抖音切到直播自动完美同步还是没做到」。复核确认上一轮收口收早了：
+三份 `[E-current]` 真站证据都是**直接打开直播间**后的静态结果，没有任何一轮观察
+「视频 → 直播」这个过程，也没有一轮检验「切换后完全不操作，插件是否自己留在直播上」。
+
+- 提交 `8c644981`：4 个产品源码改动（后台释放后复用既有被动视图读、内容侧呈现证据
+  与几何回退、`play` 复用既有准入规则）、1 个单测桩精确更新、1 个门控真站用例、
+  2 个只读侦察探针。
+- 门控用例 `test/smoke/douyin-video-to-live-switch.spec.ts` 用 `sessionStorage` 采样器
+  先证明 `live.douyin.com` 门户确实发生 video-only → live 换流，再**九秒内不发起任何
+  控制意图**才断言 `activeMedia`、`live`、`phase` 与站点音量数字一致。修复前该用例
+  失败在 `activeMedia=null`；修复后正式轮与三轮稳定性复跑全部通过。
+- 从该 HEAD 重建产物（哈希见证据 JSON），本机 Chrome 157.0.8103.39 经
+  CDP `Extensions.loadUnpacked` 取证：抖音门户手势前站点与插件同为 60，手势到 30 后
+  元素音量 0.3、站点数字 30、角标 30；虎牙 102411 `3 pass / 65 expect()`，
+  产品输出 RMS 链路完整。归档
+  [真站证据](../research/evidence/2026-11-14-douyin-video-to-live-switch-proof.json)。
+- 全量门禁：`test:smoke` `102 pass / 6 skip / 0 fail / 783 expect()`、137 个隔离单测
+  文件全过、typecheck / Strict Biome / `verify` / `docs:check` 159 篇 / 控制规则门禁 /
+  78 个锚点 / 81 个 Mermaid 块全绿。两处产品改动让公共候选漂移 2 文件，
+  按第 7 条原则不放宽 baseline，改用 `sync-public.ts spectra --amend` 修正候选为
+  `091005a`，parity 回到 `0 / 0`。
+- 诚实剩余：启动阶段短暂 `100` 投影登记为 O11；`www.douyin.com` 验证码中间页、
+  0 个媒体元素，本轮无该站证据；虎牙三轮中一轮因真站快捷键 ACK 超时失败，随后两轮全绿。
+
+[09 故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 第 2 行
+补上真正遗漏的因果链，状态仍按既有约定保留。
 

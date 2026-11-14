@@ -59,7 +59,7 @@ flowchart TD
 | --- | --- | --- | --- |
 | `stale-media-source: The media source changed before the asynchronous native operation committed`，直播里尤其频繁 | 资源身份 `sourceRevision` 被当成控制身份用：同一个元素换流后，在途写入被判过期 | 045、054 | guarded |
 | 视频页切到直播后第一次快捷键必报 `stale-media-source`，再按一次才生效 | Background 投影落后于元素替换：请求携带已注销的 control identity，在途写入又跨过注销 | 045、054、056 | guarded |
-| 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 元素替换时选中未交接；旧播放器的历史交互压过正在播放的直播，或空选中不自愈 | 056 | guarded |
+| 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 两类原因都要看：元素替换时选中未交接、旧播放器的历史交互压过正在播放的直播，或空选中不自愈；以及 2026-11-14 真站新确认的一链——站点移除临时小播放器后 `handleSourceReleased` 清空 `activeMedia` 且不重投影，内容侧 `selectionVisit` 未变因此不再发事件，状态永久停在 `idle`；同时主播放器在 `duration=NaN` 且几何未到达时被播放中的预览压过，短暂读到 100 | 056、O11 | guarded |
 | 插件改了音量，站点自己的音量条不动；无控制器的直播页上声音也不变 | 两条可听路径均已有当前 HEAD 的真站物理证据：video-only 流走 `documentOutput`/Capture；带音轨流写 `element.volume`，站点自身监听 `volumechange` 后同步 UI。此前缺的是真站证据与测试视口，不是实现 | 053、049 | guarded |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
 | 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 / 一开始永远不同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；新播放器已呈现却因未选中而不被观察；注册时 `play` 已发生使元素永不入选；文档输出模式下用 delegate 的 applied 值取证；程序化配置被当成用户使用而写入 usage；把使用收紧为"仅扩展命令"后页面原生音量手势无法创建角标 | 052、014、056、I8、I9、I10 | guarded |
@@ -157,6 +157,30 @@ flowchart TD
   "applies an active-target intent to the selection when the projection names a superseded player"、
   "accepts an automatic restore after the same element starts a new selection visit"。
 - 证据：[2026-11-01 直播音量修复记录](../../../../docs/research/2026-11-01-spectra-live-volume-popup-repair.md)。
+
+#### 2026-11-14 第三轮真站复核（本行的 `guarded` 曾被过早收口）
+
+上面各条都针对元素替换，且此前的真站证据都是**直接打开直播间**后的静态结果。
+用户再次反馈「抖音切到直播自动完美同步还是没做到」后，过程侦察发现另一条独立因果链，
+上述 `guarded` 并没有覆盖它。
+
+- `live.douyin.com` 门户是**同一个元素换流**：video-only `MediaStream`、
+  `duration=NaN`、`paused` → 带音轨、`Infinity`、播放中。站点音量控件全程是 60。
+- 切换后站点挂载又移除一个 10×10 的有限时长小视频。它短暂抢到选中，后台读到
+  `volumeBase=100`；移除时 `handleSourceReleased` 把 `activeMedia` 置 null、字段置 `idle`。
+- 主直播从未离场，registry 的 `selectionVisit` 没变，所以不会再发 `selected` 来重绘卡片。
+  九秒完全不操作后仍是 `null / idle`，手动拖一次滑块才恢复。
+- 修复见提交 `8c644981`：释放后复用 `handleTargetChanged` 已在用的被动视图读；
+  `mediaRank` 把挂载的 `MediaStream` 与 `isLiveMedia` 并列为呈现证据；几何为 0 时
+  回退元素自身布局盒；`play` 改走 `admitBetterCandidate`。没有新增机制。
+- 证据：[重审报告](../../../../docs/research/2026-11-14-spectra-douyin-video-to-live-switch.md)
+  与 [真站证据](../../../../docs/research/evidence/2026-11-14-douyin-video-to-live-switch-proof.json)
+  （`[E-current]`，HEAD `8c644981`）。门控用例
+  `test/smoke/douyin-video-to-live-switch.spec.ts` 在修复前失败于 `activeMedia=null`，
+  修复后正式轮与三轮稳定性复跑全绿，虎牙 Capture 回归 `3 pass / 65 expect()`。
+- 剩余：启动阶段短暂的 `100` / `idle` 投影仍会自愈，登记为
+  [未决项 O11](../../../../docs/proposals/open-items-program.md)，不写成已消除；
+  `www.douyin.com` 仍是验证码中间页、0 个媒体元素，本轮无该站证据。
 
 **3. 站点原生 UI 不同步 / 直播音量听不见（guarded，2026-11-14 真站收口）**
 

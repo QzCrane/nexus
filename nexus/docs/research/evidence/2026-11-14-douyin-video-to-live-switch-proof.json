@@ -1,0 +1,172 @@
+{
+  "capturedAt": "2026-11-14T21:21:32+08:00",
+  "kind": "real-site-video-to-live-switch-repair",
+  "realSite": true,
+  "evidenceGrade": "[E-current]",
+  "question": "Does the shipped extension keep the live broadcast selected and its volume equal to the site's own volume UI after Douyin switches a video-only player to a live stream, with no viewer gesture at all?",
+  "head": "8c644981",
+  "headFull": "8c644981479db4af26e5a6af283c1f7cc67b9341",
+  "headCommittedAt": "2026-11-14T21:17:48+08:00",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "rebuiltFromHead": true,
+    "rebuiltAt": "2026-11-14 21:18 +0800",
+    "manifestVersion": "1.4.2",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "4ad5df43a7800f1384a7216d8cbb2f6ee3e9b16de339d262089530a457453f40",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251",
+      "content-runtime.js": "49ddd0429c6e24a09a9009aacf40c1b800cd831a463140012f2cc311d622825b",
+      "content-bootstrap.js": "0e1568ee0c95f81a0d2b1122b15e835b703d1d13477957b5bf3bbd1e71d4cb76",
+      "content-page-media-bridge.js": "0bb5ea0fc772ca3539d98d5a3401f7d2d526ab358ad7ae4affd5a7176e318d11",
+      "popup.js": "148fbd5de94a60846eabe34f16285e0b2f386133c366581a1be3947e35ec51a6"
+    }
+  },
+  "browser": {
+    "version": "Google Chrome 157.0.8103.39",
+    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "loadMethod": "CDP Extensions.loadUnpacked",
+    "profile": "temporary, isolated",
+    "headless": true,
+    "viewport": { "width": 1600, "height": 1200 }
+  },
+  "site": {
+    "url": "https://live.douyin.com/",
+    "scope": "anonymous public live portal",
+    "nativeVolumeWidget": ".douyin-player-volume-number",
+    "nativeVolumeShown": 60,
+    "transition": "A single main video element changes its MediaStream from videoTracks=1/audioTracks=0, duration=NaN, paused=true to videoTracks=1/audioTracks=1, duration=Infinity, playing. The site later mounts and removes a 10x10 finite probe video."
+  },
+  "method": "Rebuild the production extension from the recorded HEAD, load it into the specified local Chrome via CDP, sample the shipped control snapshot and the site DOM repeatedly across the transition, and keep the viewer completely passive for nine seconds after the switch. A gated smoke case asserts the automatic state before any control intent; a separate physical-oracle case guards the Huya Capture route. Two observation-only probes record the DOM shape and the shipped snapshot writes.",
+  "tools": [
+    "apps/extension-spectra/test/smoke/douyin-video-to-live-switch.spec.ts",
+    "apps/extension-spectra/test/smoke/document-output.spec.ts",
+    "apps/extension-spectra/scripts/probe-douyin-transition.mjs",
+    "apps/extension-spectra/scripts/probe-douyin-switch-control.mjs"
+  ],
+  "command": "SPECTRA_DOUYIN_SWITCH_URL=https://live.douyin.com/ NEXUS_CHROME_EXECUTABLE=\"C:/Program Files/Google/Chrome/Application/chrome.exe\" bun test test/smoke/douyin-video-to-live-switch.spec.ts",
+  "suite": {
+    "gatedRealSiteCase": "test/smoke/douyin-video-to-live-switch.spec.ts",
+    "captureGuardCase": "test/smoke/document-output.spec.ts",
+    "passiveWindowMs": 9000,
+    "assertions": [
+      "the site really transitioned from a video-only stream to a playing live stream",
+      "activeMedia is non-null without any gesture",
+      "live is true and volumeBase.phase is applied",
+      "volumeBase.actual equals the site's own volume number before any gesture",
+      "a later popup gesture moves element.volume, the site number and the badge together"
+    ]
+  },
+  "runs": [
+    {
+      "label": "before repair, same HEAD before 8c644981",
+      "case": "douyin-video-to-live-switch.spec.ts",
+      "result": "1 fail / 0 pass / 3 expect()",
+      "failure": "expect(state?.activeMedia).not.toBeNull() received null after a nine-second passive window",
+      "transitionSamples": { "videoOnly": 7, "live": 1 }
+    },
+    {
+      "label": "official post-repair round",
+      "case": "douyin-video-to-live-switch.spec.ts",
+      "result": "1 pass / 0 fail / 11 expect()",
+      "siteVolumeBeforeGesture": 60,
+      "volumeBaseBeforeGesture": 60,
+      "activeMediaBeforeGesture": { "mediaId": "media:2:1", "kind": "video", "sourceRevision": 1 },
+      "transitionSamples": { "total": 85, "videoOnly": 5, "live": 80 }
+    },
+    {
+      "label": "post-repair stability rounds 1-3",
+      "result": "3 pass / 0 fail",
+      "siteVolumeBeforeGesture": [60, 60, 60]
+    },
+    {
+      "label": "official Huya Capture regression",
+      "case": "document-output.spec.ts",
+      "result": "3 pass / 0 fail / 65 expect()",
+      "productLiveOutputRms": {
+        "baseline": 0.0006869529853057504,
+        "volume-0": 0,
+        "volume-70": 0.0016352744860409153,
+        "muted": 0,
+        "unmuted": 0.0033005428674631986,
+        "shortcut": 0.016443319319912008
+      }
+    }
+  ],
+  "assertionsProven": [
+    "The passive nine-second window leaves the shipped snapshot on the live broadcast with volumeBase 60, matching the site's own 60.",
+    "A real toolbar gesture after that passive window sets element.volume to 0.3, the site number to 30 and the badge to 30.",
+    "The Huya documentOutput/Capture route still responds to volume, mute and shortcut with a nonzero product output RMS."
+  ],
+  "findings": {
+    "observedShape": {
+      "videoPhase": "main video has a video-only MediaStream, duration NaN, paused true, volume 0.6, visible area 345387; several finite muted previews are registered beside it",
+      "livePhase": "the same element carries a MediaStream with an audio track, duration Infinity, playing, volume 0.6; the site volume widget reads 60 throughout",
+      "probePlayer": "a 10x10 finite video is mounted and removed a few seconds after the switch"
+    },
+    "beforeRepair": {
+      "videoStage": "the shipped snapshot published volumeBase 100 while the site showed 60, because a playing finite preview outranked the parked main player",
+      "afterSwitch": "activeMedia briefly became the tiny probe player (volumeBase 100), then the probe was removed; handleSourceReleased set activeMedia null and volumeBase phase idle",
+      "stall": "the content registry kept selectionVisit unchanged, so no later selected event arrived; all fourteen remaining passive samples stayed activeMedia=null / actual=null / phase=idle",
+      "manualRecovery": "one popup intent to 30 restored element.volume 0.3, site number 30 and badge 30"
+    },
+    "rootCause": [
+      "A source release marks a retired control identity and clears activeMedia, but nothing republishes the presentation that is still on screen.",
+      "The main player's MediaStream is not counted as live presentation evidence until duration becomes Infinity, so a playing preview can win the comparison.",
+      "Before IntersectionObserver geometry arrives, a zero visibleArea is treated as invisible rather than unmeasured.",
+      "The play event picked the best of all records unconditionally instead of using the same admission rules as other lifecycle events."
+    ],
+    "repair": [
+      "control-coordinator.ts: after a release clears the active source, reuse the passive view read that target changes already perform and project the still-present presentation.",
+      "media-registry.ts: count an attached MediaStream as presentation evidence alongside isLiveMedia.",
+      "media-registry.ts: fall back to the element's own layout box when recorded geometry is still zero.",
+      "media-registry.ts: route play through admitBetterCandidate instead of an unconditional best-of-all-records.",
+      "control-coordinator.spec.ts: the unit stub answers the extra passive read with capability-unavailable when no other player exists."
+    ],
+    "afterRepair": {
+      "timelineChanges": 14,
+      "finalThreeSamples": [{ "site": 60, "activeMedia": "media:2:1", "volumeBase": 60 }],
+      "transientVolume100Writes": 3,
+      "transientIdleWrites": 5,
+      "note": "Every transient idle write is followed by an automatic reprojection back to media:2:1 / 60. The remaining startup projection flicker is registered as O11 and is not claimed to be eliminated."
+    },
+    "huyaRounds": {
+      "total": 3,
+      "pass": 2,
+      "fail": 1,
+      "singleFailure": "a live shortcut ACK timed out at volumeBase 80 while the snapshot showed 100; the first 63 assertions of that round passed and two subsequent rounds were fully green",
+      "classification": "real-site timing variance, not a change in the documentOutput route; the official round's RMS chain is intact"
+    },
+    "scopeLimit": {
+      "wwwDouyinCom": "https://www.douyin.com/ still serves a verifycenter captcha interstitial with zero media elements; no current-HEAD evidence for that host or a cross-origin www -> live navigation"
+    }
+  },
+  "localGates": {
+    "test:smoke": "102 pass / 6 skip / 0 fail / 783 expect()",
+    "isolatedUnitFiles": "137 files, all pass",
+    "typecheck": "exit 0",
+    "strictBiome": "485 files, 0 diagnostics, 0 silent handlers",
+    "verify": "21 gates, 0 errors, 8 registered warnings, exit 0",
+    "docs:check": "159 Markdown files, exit 0",
+    "controlGate": "check-spectra-control.ts, exit 0",
+    "anchors": "78 files / 78 cross-file anchors, 0 missing",
+    "diagrams": "81 Mermaid blocks, 0 fence, start-type or bracket defects",
+    "publicParity": "after sync-public.ts spectra --amend: 0 differing, 0 missing, 0 warnings, exit 0",
+    "publicCandidateCommit": "091005a (local, not pushed)"
+  },
+  "notEvidenceFor": [
+    "Any behaviour on www.douyin.com, which remains captcha-blocked in this run",
+    "A cross-origin full-page navigation from a Douyin video page into a live room",
+    "Every Douyin live room, account state, window size or later site revision",
+    "Boost above 100 or the separate documentOutput gain path on Douyin live rooms",
+    "Elimination of the short startup projection flicker (registered as O11)",
+    "Chrome versions other than 157.0.8103.39",
+    "That a quiet programme segment proves inaudibility"
+  ],
+  "relatedDocuments": [
+    "../2026-11-14-spectra-douyin-video-to-live-switch.md",
+    "../2026-11-14-spectra-o9-smoke-repair.md",
+    "../../proposals/open-items-program.md",
+    "../../../apps/extension-spectra/docs/control/09-failure-index.md"
+  ]
+}
