@@ -137,11 +137,26 @@ test('keeps each OSD volume and tone together across older plans, ACKs and forei
 				['window', 'pagehide', false],
 				['window', 'pageshow', false],
 			];
+			// The trusted-input witness uses one AbortController for six window
+			// listeners. `abort()` removes them without calling removeEventListener,
+			// so the probe only ever sees them on the added side. They are still
+			// owned by this bootstrap instance, not a listener leak.
+			const expectedAbortListeners: BootstrapListenerKey[] = [
+				['window', 'keydown', true],
+				['window', 'pointercancel', true],
+				['window', 'pointerdown', true],
+				['window', 'pointermove', true],
+				['window', 'pointerup', true],
+				['window', 'wheel', true],
+			];
+			const byKey = (left: BootstrapListenerKey, right: BootstrapListenerKey): number => (
+				JSON.stringify(left).localeCompare(JSON.stringify(right))
+			);
 			expect(replacement).toMatchObject({ same: false });
 			expect(replacement.listenerChanges).toEqual({
-				added: expectedListenerOwnership,
+				added: [...expectedListenerOwnership, ...expectedAbortListeners].sort(byKey),
 				// The original document-start host also retires its one-shot readiness hook.
-				removed: [['document', 'DOMContentLoaded', false], ...expectedListenerOwnership],
+				removed: [['document', 'DOMContentLoaded', false], ...expectedListenerOwnership].sort(byKey),
 			});
 			await waitForContentBootstrapStatus(coldUrl);
 

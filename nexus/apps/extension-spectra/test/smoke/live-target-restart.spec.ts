@@ -416,7 +416,14 @@ describe('volume after same-document runtime replacement', () => {
 		const neutral = await submitPopupControlIntent(tabId, { requestedCoverage: 'full', patch: { boost: 1 } });
 		expect(neutral.ok).toBe(true);
 		await releaseSmokeRuntime(lease);
-		await eventually(() => readContentBootstrapStatus(url), status => !status.ready, 'runtime fully released');
+		// Since 2026-11-11 a document that reports media keeps a resident
+		// observation lease, so releasing one smoke lease no longer tears the
+		// runtime down and `ready` legitimately stays true. The rebuilt-presentation
+		// case needs the retired source and media intent gone; the later
+		// `acquireSmokeRuntime` reuses or reloads the resident host as needed.
+		await eventually(() => readContentBootstrapStatus(url),
+			status => status.ownedSources.length === 0 && status.mediaIntentState === 'unset',
+			'retired source and media intent released');
 		await fixturePage.evaluate(async (reuse) => {
 			const old = document.querySelector<HTMLVideoElement>('#v');
 			if (!old) throw new Error('Old presentation is missing');

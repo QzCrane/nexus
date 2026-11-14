@@ -79,6 +79,12 @@ interface DocumentInitialization {
 	wakePending: boolean;
 }
 const documentInitializations = new Map<string, DocumentInitialization>();
+// A rejected restore delivery must be retried with the plan it started with.
+// Between two attempts a page-native observation can write the element's own
+// default into the session, and re-resolving would then replace the viewer's
+// preset with that default. One document keeps one pending obligation; the
+// entry is dropped as soon as the restore is acknowledged.
+const pendingDocumentRestorePlans = new Map<string, ControlSessionPatch>();
 let initialized = false;
 
 const RUNTIME_HANDOFF_GRACE_MS = 250;
@@ -487,6 +493,11 @@ function forgetDocument(tabId: number, documentId?: string): void {
 			documentInitializations.delete(key);
 		}
 	}
+	for (const key of [...pendingDocumentRestorePlans.keys()]) {
+		if (key.startsWith(prefix) && (!documentId || key === runtimeKey(tabId, documentId))) {
+			pendingDocumentRestorePlans.delete(key);
+		}
+	}
 }
 
 async function loadRuntime(tabId: number, documentId: string): Promise<ContentRuntimeReadyResult> {
@@ -682,12 +693,13 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 		if (surviving.mediaIntentState === 'retained') recoverMediaIntentRuntimeLease(tabId, documentId);
 		return;
 	}
-	const restore = await resolveDocumentRestorePlan(
-		tabId,
-		documentId,
-		identity.resourceUrl,
-	);
+	const key = runtimeKey(tabId, documentId);
+	const pending = pendingDocumentRestorePlans.get(key);
+	const restore = pending
+		? { patch: pending }
+		: await resolveDocumentRestorePlan(tabId, documentId, identity.resourceUrl);
 	if (Object.keys(restore.patch).length === 0) return;
+	if (!pending) pendingDocumentRestorePlans.set(key, restore.patch);
 	const capability = MEDIA_INTENT_RUNTIME_CAPABILITY;
 	await ensureContentRuntime(tabId, documentId, 'restore', capability);
 	let retained = false;
@@ -705,6 +717,9 @@ async function restoreIfConfigured(tabId: number, documentId: string, url: strin
 		// one-shot write. Retain the event-driven runtime so media created later
 		// by an SPA can consume the same revision on registration/metadata/play.
 		retained = true;
+		// The obligation is fulfilled; a later SPA navigation resolves a fresh
+		// plan from the settings and session the viewer actually has then.
+		pendingDocumentRestorePlans.delete(key);
 	} catch (error) {
 		// A rejected source ACK can still leave a legitimate document template
 		// in Content. Its event-driven continuation needs the existing lease.
@@ -935,6 +950,7 @@ export function resetContentRuntimeLoaderForTests(): void {
 	disposeTimers.clear();
 	resetDocumentSiteHotkeysForTests();
 	documentInitializations.clear();
+	pendingDocumentRestorePlans.clear();
 	runtimeProbes = createSettlementPool(RUNTIME_PROBE_CONCURRENCY);
 	restoreDocumentForInitialization = (...args) => restoreIfConfigured(...args);
 	initialized = false;

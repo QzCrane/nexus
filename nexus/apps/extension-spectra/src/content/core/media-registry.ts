@@ -753,10 +753,17 @@ export class MediaRegistry {
 			// the broadcast. The newest visible video in the same presentation scope
 			// takes over. Requiring a later registration refuses an older pre-roll,
 			// and the area guard refuses an older/tiny preview (SP-22.3 §2).
+			// A paused broadcast is still a broadcast: a larger, later finite
+			// advertisement beside it must not inherit control just because the
+			// viewer paused. Keep the same live-first class `compare` already uses,
+			// so a video -> live swap can still take over while a live -> ad swap
+			// cannot (SP-22.3 §2).
+			const activeLiveClass = mediaRank(active.element, active.visibleArea)[0];
 			const successor = this.bestRecord([...this.byElement.values()].filter((record) => (
 				record !== active && record.target.kind === 'video'
 				&& !record.element.ended && record.visibleArea >= active.visibleArea
 				&& record.registrationOrder > active.registrationOrder
+				&& mediaRank(record.element, record.visibleArea)[0] >= activeLiveClass
 			)));
 			if (successor) this.selectRecord(successor, true);
 			return;

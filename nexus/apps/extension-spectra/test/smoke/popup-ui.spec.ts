@@ -917,6 +917,16 @@ describe('SPECTRA built extension smoke: popup-ui', () => {
 				getTabId(siteUrl.href),
 				getTabId(globalUrl.href),
 			]);
+			// Since 2026-11-11 a purely programmatic preset never creates extension
+			// usage, so the Action badge stays hidden until an extension-authored
+			// gesture. A neutral popup intent establishes that usage without moving
+			// either preset's volume, leaving the precedence assertion intact.
+			for (const tabId of [siteTabId, globalTabId]) {
+				const neutral = await submitPopupControlIntent(tabId, {
+					requestedCoverage: 'full', patch: { boost: 1 },
+				});
+				expect(neutral.ok).toBe(true);
+			}
 			await eventually(() => readBadgeText(siteTabId), (text) => text === '73', 'site preset badge');
 			await eventually(() => readBadgeText(globalTabId), (text) => text === '54', 'global preset badge');
 		} finally {
