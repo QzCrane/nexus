@@ -106,12 +106,24 @@ function outranks(left: readonly number[], right: readonly number[]): boolean {
  * A hidden live preview has no presentation evidence and cannot take the visit.
  * Explicit selection, playback pins and browser presentation retain their guards.
  */
+function hasAttachedPresentationStream(element: HTMLMediaElement): boolean {
+	// A page's main player is fed by a MediaStream from the moment it mounts,
+	// often while `duration` is still NaN and playback is parked. Pre-roll and
+	// recommendation previews are ordinary finite `src` clips. Without this
+	// distinction a playing preview outranks the parked main player on the
+	// second tuple, so the extension briefly reads the preview's volume and
+	// publishes it as the site's own level.
+	const attached = element.srcObject as { getTracks?: unknown } | null;
+	return Boolean(attached && typeof attached.getTracks === 'function');
+}
+
 function mediaRank(
 	element: HTMLMediaElement,
 	visibleArea: number,
 ): [number, number, number] {
 	return [
-		visibleArea > 0 && !element.ended && isLiveMedia(element) ? 1 : 0,
+		visibleArea > 0 && !element.ended
+			&& (isLiveMedia(element) || hasAttachedPresentationStream(element)) ? 1 : 0,
 		!element.paused && !element.ended ? 1 : 0,
 		visibleArea,
 	];
@@ -441,10 +453,13 @@ export class MediaRegistry {
 					record.visibleArea = initialVisibleArea(element);
 					const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
 					if (active && active !== record) active.visibleArea = initialVisibleArea(active.element);
-					const candidate = this.bestRecord([...this.byElement.values()].filter(candidate => (
-						!active || !this.isSelectionProtected(active, candidate)
-					)));
-					if (candidate) this.selectRecord(candidate, true);
+					// A tiny probe clip starting to play is not a new presentation
+					// while the viewer's broadcast is still on screen. Use the same
+					// admission rules as every other lifecycle event: they keep the
+					// live class, geometry and the current owner in the comparison.
+					// An unconditional best-of-all-records let such a clip take the
+					// visit and publish its own default volume as the site's level.
+					this.admitBetterCandidate(true);
 				}
 				if (type === 'pause' || type === 'ended' || type === 'leavepictureinpicture') {
 					record.visibleArea = initialVisibleArea(element);
@@ -844,7 +859,16 @@ export class MediaRegistry {
 		const active = activeId ? this.byId.get(activeId) : undefined;
 		if (active && (kind === 'media' || active.target.kind === 'video')) return active;
 		const initial = chooseInitialMedia([...this.byElement.keys()], kind,
-			(element) => this.byElement.get(element)?.visibleArea ?? 0);
+			(element) => {
+				const recorded = this.byElement.get(element)?.visibleArea ?? 0;
+				// IntersectionObserver geometry arrives asynchronously. Before it
+				// does, a zero reading is "not measured yet", not "no layout box":
+				// treating it as invisible lets a playing finite preview outrank
+				// the main stream and publishes the preview's volume as the site's.
+				// `initialVisibleArea` returns zero for a genuinely unlaid-out or
+				// off-screen element, so this fallback cannot admit a hidden one.
+				return recorded > 0 ? recorded : initialVisibleArea(element);
+			});
 		return initial ? this.byElement.get(initial) ?? null : null;
 	}
 

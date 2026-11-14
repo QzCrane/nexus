@@ -1766,6 +1766,31 @@ async function handleSourceReleased(
 		activeMedia: ownsActiveSource ? null : snapshot.activeMedia,
 		activeVideo: ownsActiveVideo ? null : snapshot.activeVideo,
 	}, navigationEpoch(tabId), { fields, mediaObservation, observation: true });
+	// A live page can remove a short-lived probe player while the broadcast is
+	// still playing. Clearing the selection is then the last event the content
+	// registry sends: its selection visit never changed, so no later `selected`
+	// will arrive to repaint the card. The view stays idle until the viewer
+	// clicks. Reuse the passive read that a target change already performs to
+	// project the presentation that is still on screen (SP-22.3 §2).
+	if (ownsActiveSource || ownsActiveVideo) {
+		await reprojectReleasedSource(tabId, snapshot.documentId, snapshot.generation);
+	}
+}
+
+async function reprojectReleasedSource(
+	tabId: number,
+	documentId: string,
+	generation: number,
+): Promise<void> {
+	const response = await readSpectraTabPassively(tabId, PROTO_ACTUAL_READ,
+		{ fields: [...PAGE_OBSERVABLE_FIELDS] as ControlDirectField[], target: null },
+		{ documentId, generation }).catch(() => null);
+	if (!response?.ok || !response.data.target) return;
+	const latest = await getSnapshot(tabId);
+	// A viewer gesture or another projection has already restored the target.
+	if (!latest || latest.documentId !== documentId || latest.activeMedia) return;
+	await admitPhysicalObservation(latest, response.data, 'media', navigationEpoch(tabId))
+		.catch(() => undefined);
 }
 
 async function handleTargetChanged(

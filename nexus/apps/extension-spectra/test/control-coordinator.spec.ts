@@ -645,7 +645,15 @@ describe('authoritative control coordinator', () => {
 		const entered = deferred<void>();
 		const reply = deferred<unknown>();
 		let intent: ControlIntent | undefined;
-		harness.contentResponder = ({ payload }) => { intent = payload as ControlIntent; entered.resolve(); return reply.promise; };
+		harness.contentResponder = ({ type, payload }) => {
+			// A source release now asks the page once for the presentation that is
+			// still on screen. This case has no other player left, so that passive
+			// read reports no capability and must not revive the retired target.
+			if (type === 'spectra.control.actual.read') {
+				return { ok: false, error: { code: 'capability-unavailable', message: 'No media remains', retryable: true } };
+			}
+			intent = payload as ControlIntent; entered.resolve(); return reply.promise;
+		};
 		const waiting = controlCoordinatorTestApi.submitInvoked({ tabId: 7, source: 'popup', requestedCoverage: 'active-target',
 			target, patch: { speed: 2.5 } }, invocation(harness, 'popup'));
 		const settled = waiting.then(() => null, (error: unknown) => error);
