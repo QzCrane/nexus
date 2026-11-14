@@ -42,7 +42,8 @@ flowchart TD
   Surface -->|"音量条 / 角标 / OSD"| D["呈现与色调判定<br/>048 / 049 / 057"]
   Surface -->|"Popup 首帧 / 高度"| E["首帧与几何 owner<br/>050"]
   Kind -->|"控制落到别的媒体"| F["准入排序与选中身份<br/>056"]
-  Kind -->|"站点原生 UI 不跟随 / 听不见"| G["可听路径与站点 UI 边界<br/>053 / 049 · 真站已验"]
+  Kind -->|"站点原生 UI 不跟随 / 听不见"| G["可听路径与站点 UI 边界<br/>053 / 049 · 抖音真站已验"]
+  Kind -->|"暂停读回失配 / 站点控件是 owner"| H["站点原生控件投影<br/>045 · 虎牙真站已验"]
   A --> Row["回到下表找同一行"]
   B --> Row
   C --> Row
@@ -50,6 +51,7 @@ flowchart TD
   E --> Row
   F --> Row
   G --> Row
+  H --> Row
 ```
 
 图里的编号是 08 的不变量号，不是本文件的章节号。先定位分支，再读下表该行的
@@ -60,7 +62,9 @@ flowchart TD
 | `stale-media-source: The media source changed before the asynchronous native operation committed`，直播里尤其频繁 | 资源身份 `sourceRevision` 被当成控制身份用：同一个元素换流后，在途写入被判过期 | 045、054 | guarded |
 | 视频页切到直播后第一次快捷键必报 `stale-media-source`，再按一次才生效 | Background 投影落后于元素替换：请求携带已注销的 control identity，在途写入又跨过注销 | 045、054、056 | guarded |
 | 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 两类原因都要看：元素替换时选中未交接、旧播放器的历史交互压过正在播放的直播，或空选中不自愈；以及 2026-11-14 真站新确认的一链——站点移除临时小播放器后 `handleSourceReleased` 清空 `activeMedia` 且不重投影，内容侧 `selectionVisit` 未变因此不再发事件，状态永久停在 `idle`；同时主播放器在 `duration=NaN` 且几何未到达时被播放中的预览压过，短暂读到 100 | 056、O11 | guarded |
-| 插件改了音量，站点自己的音量条不动；无控制器的直播页上声音也不变 | 两条可听路径均已有当前 HEAD 的真站物理证据：video-only 流走 `documentOutput`/Capture；带音轨流写 `element.volume`，站点自身监听 `volumechange` 后同步 UI。此前缺的是真站证据与测试视口，不是实现 | 053、049 | guarded |
+| 插件改了音量，站点自己的音量条不动；无控制器的直播页上声音也不变 | 抖音 `dom-native` 页写 `element.volume` 时站点监听原生 `volumechange` 自己同步 UI；video-only 流走 `documentOutput`/Capture。但虎牙 `102411` 的 `vplayer.js` 才是可听电平与音量条的 owner：外部写 `element.volume=0.8` 只改 DOM 镜像，站点条仍 12.5px。两站不能混为一条结论 | 053、049 | guarded |
+| 虎牙暂停按钮每次都报 `Playback readback mismatch: requested playing=false; after write=false; stable=true` | 站点播放器是播放状态 owner。isolated world 的 raw `element.pause()` 让元素停下，但 `vplayer.js` 内部仍是「观看中」，约 30ms 后再次 `play()`；稳定读回为 `true`，与 `requested=false` 冲突，必然抛错。不是 ACK 过严，也不是偶发时序 | 045 | guarded |
+| 虎牙音量「双向都不同步」：站点拖条插件不跟，插件滑块站点条不跟 | 站点 → 插件方向本来就靠原生 `volumechange`，只是从未列为虎牙验收项；插件 → 站点方向在 `documentOutput` 下只改扩展自己的 Capture 处理器，站点条与 `element.volume` 都不动。修复是驱动站点自己的音量轨道、以站点 `.sound-bar` 宽度为证人，并把 display level 与 gain input 分离 | 053、049、045 | guarded |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
 | 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 / 一开始永远不同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；新播放器已呈现却因未选中而不被观察；注册时 `play` 已发生使元素永不入选；文档输出模式下用 delegate 的 applied 值取证；程序化配置被当成用户使用而写入 usage；把使用收紧为"仅扩展命令"后页面原生音量手势无法创建角标 | 052、014、056、I8、I9、I10 | guarded |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
@@ -217,7 +221,9 @@ flowchart TD
 
 - `boost > 100` 走已验证的 Capture 处理器增益，站点 UI 物理上不可能同步。
 - `gain` 节点数值变化不等于可听变化。11-05 虎牙证据里 gain 到 0.25 / 0.6 而 rms 全为 0。
-- 站点 UI 跟随只在抖音直播间采样；虎牙未单独采样，`www.douyin.com` 本轮被验证码拦截。
+- 上面的三份证据只覆盖抖音直播间的站点 UI 跟随。虎牙的站点 UI 在本轮**确实没有单独采样**，
+  这个边界后来被用户投诉证伪；虎牙的单独收口见下文「第四轮真站复核」。
+  `www.douyin.com` 仍被验证码拦截。
 - 通用三层解析与全局输出 gain 拦截已由用户在
   [11-05 回归审计](../../../../docs/research/2026-11-05-spectra-live-volume-regression-audit.md)
   授权移除，`SCTRL-053` 禁止复活。11-04 的用户确认证据采自未提交实验产物，不描述当前 HEAD。
@@ -227,11 +233,49 @@ flowchart TD
   （[11-01 探针](../../../../docs/research/evidence/2026-11-01-douyin-speed-probe.json)
   的 `candidateCount = 0`）。
 
+#### 2026-11-14 第四轮真站复核（虎牙原生控件 owner）
+
+用户反馈「为什么不做完：虎牙暂停按钮永远 `readback-mismatch`，音量同步双向都永远不行」。
+上面三份 `[E-current]` 证据没有一份把虎牙自己的按钮或音量条当 oracle，所以第 3 行的
+`guarded` 收早了。完整重审见
+[虎牙原生控件重审](../../../../docs/research/2026-11-14-spectra-huya-native-control-parity.md)，
+真站证据见
+[2026-11-14 虎牙双向同步证明](../../../../docs/research/evidence/2026-11-14-huya-native-control-parity-proof.json)。
+
+- **暂停**：isolated world `call:pause`（`content-runtime.js`）→ `event:pause paused=true`
+  → 约 30ms 后 page world 的 `vplayer.js` 调 `play()` → `event:playing paused=false`。
+  `writePlaybackWithStableAck` 的稳定读回必然是 `true`，于是每次都抛
+  `requested playing=false; after write=false; stable=true`。站点才是播放状态 owner。
+- **音量条的物主关系**：真实拖动 `.sound-btn` 到 0.12 时站点条 12.5px、
+  `element.volume=0.12`，扩展已通过原生 `volumechange` 跟到 12（站点 → 插件方向没有坏，
+  只是从未验收）。插件滑杆在 `documentOutput` 下只改 Capture 处理器，snapshot / 角标 70
+  而站点条仍是 43.5px。外部写 `element.volume=0.8` 只把镜像改成 0.8，站点条仍 12.5px。
+- **可听性证人**：同一轮 tab RMS 在站点条 43.5px / 5px / 77px 分别为
+  `0.0241` / `0.000160` / `0.0726`，证明站点条控制真实输出。product 所在的 isolated world
+  派发合成 pointer/mouse 输入能把站点条从 12.5px 推到 67px、`element.volume` 推到 0.78。
+- **修复**：新增 `site-native-control-surface.ts`，观察优先地发现站点自己的播放按钮与音量轨道；
+  `playing` 先点站点按钮再走原有稳定 ACK；`documentOutput` 的 `volumeBase` 先投影到站点轨道，
+  以站点 `.bar` 宽度为证人做有界校准，处理器保持 unity，display level 与 gain input 分离。
+  找不到控件或够不到目标就返回 `null`，沿用原有路由。没有复活
+  `SCTRL-053` 禁止的全局输出 gain 拦截，也没有新增 declared 适配行。
+  新模块不写 `element.volume`：第一次 `verify` 报 `SCTRL-003: unowned volume writer`
+  后，把镜像对齐挪回唯一 canonical writer `native-media-executor.ts`，
+  并加单测看住边界；门禁没有被放宽，baseline 没有改。
+- **真站验收**：门控用例 `test/smoke/huya-native-parity.spec.ts` 共七轮全绿；
+  从已提交 HEAD `332fe7a` 重建产物的正式两轮各 `1 pass / 16 expect()`，数值一致：
+  站点 0.12 → 插件 12；插件暂停 `applied` / `lastError=null` / 站点按钮 `开始观看`；
+  插件 70 → 站点 0.7 / 63px / 角标 70。单测 `test/site-native-control-surface.spec.ts`
+  5 条覆盖无 DOM no-op、校准与单写者边界。
+- **不写成已消除**：虎牙 90px 轨道 + 10px 手柄的物理上限约 0.944，请求 100 时如实 ACK 94；
+  `boost > 100` 仍只改处理器增益；O11 启动闪动仍在；Chrome 157 之外的版本无证据。
+
 **4. 按了暂停却还在放（rule）**
 
 - 写入成功与稳定证明是两个事实；`speed`、`playing`、page-controller 写入与处理器输出必须在同一事务内
   等待证明，只有合格的标准 DOM 音量/静音可以先答 `written`。
 - 规则位置：05 §11.1 与 [08](08-invariants-and-gates.md) 的 045。
+- 虎牙的 `readback-mismatch` 不是「判据过严」而是站点重放写入：见上一段第四轮复核。
+  稳定读回判据保持不动，修复的是写入对象（站点自己的按钮），不是放宽 ACK。
 
 **5. 角标不刷新（guarded）**
 

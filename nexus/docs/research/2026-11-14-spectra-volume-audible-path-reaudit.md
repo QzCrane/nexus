@@ -424,7 +424,13 @@ D3 的执行结果是**分支 A（链路生效）**：`documentOutput` 在虎牙
 ### §13.3 仍然成立的边界
 
 - `boost > 100` 走 Capture 处理器增益，站点 UI 物理上不可能同步。
-- 站点 UI 跟随只在抖音直播间采样；虎牙未单独采样。
+- 站点 UI 跟随在本轮只采样了抖音直播间。这条边界后来被虎牙真站证伪：虎牙
+  `vplayer.js` 自己拥有播放状态，`element.volume` 与 `element.paused` 都只是镜像，
+  写 DOM 属性不更新站点自己的音量条，raw `pause()` 还会被站点重新 `play()` 覆盖。
+  本节的 `guarded` 结论因此只对抖音 `dom-native` 路径成立。虎牙的暂停读回失配与
+  音量双向同步另在 [虎牙原生控件重审](2026-11-14-spectra-huya-native-control-parity.md)
+  单独收口，证据见
+  [真站证据](evidence/2026-11-14-huya-native-control-parity-proof.json)。
 - `www.douyin.com` 被验证码中间页拦截，本轮无该站证据。11-04 的用户确认出自未提交的实验产物。
 - 抖音第二次运行里 `volume-100` 的 tab RMS 为 `4.2e-05`（节目内容安静）。
   可听性结论取自**同一轮内**的 `0 → 0.1449` 对比，不跨轮比较。

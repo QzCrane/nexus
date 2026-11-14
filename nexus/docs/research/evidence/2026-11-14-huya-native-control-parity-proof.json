@@ -1,0 +1,243 @@
+{
+  "capturedAt": "2026-11-14T22:34:10+08:00",
+  "kind": "real-site-huya-native-control-parity-repair",
+  "realSite": true,
+  "evidenceGrade": "[E-current]",
+  "question": "On a real Huya live room, does the shipped extension pause without a playback readback mismatch, and do its volume and the site's own volume slider follow each other in both directions?",
+  "head": "332fe7a",
+  "headFull": "332fe7a850ac7ba7f0aa8f5d4081e4e78d96ee54",
+  "commit": "332fe7a fix(spectra): sync huya native playback and volume controls",
+  "repairState": "The repair was first probed and verified in a working tree on top of 91ad0f63, then committed as 332fe7a. The production artifact was rebuilt again from that committed HEAD and the same content-runtime.js SHA-256 was obtained byte for byte; the two official acceptance rounds below were re-run against that committed-HEAD build.",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "rebuiltFromHead": true,
+    "rebuiltFrom": "committed HEAD 332fe7a; identical to the working-tree build used by the intermediate rounds",
+    "rebuiltAt": "2026-11-14 22:47 +0800",
+    "manifestVersion": "1.4.2",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "4ad5df43a7800f1384a7216d8cbb2f6ee3e9b16de339d262089530a457453f40",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251",
+      "content-runtime.js": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "content-bootstrap.js": "0e1568ee0c95f81a0d2b1122b15e835b703d1d13477957b5bf3bbd1e71d4cb76",
+      "content-page-media-bridge.js": "0bb5ea0fc772ca3539d98d5a3401f7d2d526ab358ad7ae4affd5a7176e318d11",
+      "popup.js": "148fbd5de94a60846eabe34f16285e0b2f386133c366581a1be3947e35ec51a6"
+    },
+    "preRepairContentRuntimeSha256": "49ddd0429c6e24a09a9009aacf40c1b800cd831a463140012f2cc311d622825b",
+    "intermediateContentRuntimeSha256": "a050b17f6c5f2d002640371d6a4db0afbbea2e828919836d0e090b22dfdd43e4",
+    "finalRefactor": "SCTRL-003 requires exactly one canonical element.volume writer. The mirror alignment was moved from site-native-control-surface.ts into native-media-executor.ts without changing behaviour; the final four real-site rounds below and the full smoke run use this final artifact, and the two OFFICIAL rounds rebuilt it from the committed HEAD."
+  },
+  "browser": {
+    "version": "Google Chrome 157.0.8103.39",
+    "executable": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "loadMethod": "CDP Extensions.loadUnpacked",
+    "profile": "temporary, isolated",
+    "headless": true,
+    "viewport": { "width": 1600, "height": 1200 }
+  },
+  "site": {
+    "url": "https://www.huya.com/102411",
+    "scope": "anonymous public Huya live room, 2026-11-14 build of vplayer.js",
+    "nativeWidgets": {
+      "playPause": "#player-btn (player-pause-btn / 暂停观看 -> player-play-btn / 开始观看)",
+      "soundButton": "#player-sound-btn",
+      "volumeTrack": ".sound-progress (90 x 12 px)",
+      "volumeHandle": ".sound-btn (10 x 10 px)",
+      "volumeBar": ".sound-bar (width in px is the site's own level)",
+      "media": "#hy-video"
+    },
+    "ownership": "The site's vplayer.js owns playback state and the audible volume level. The media element's paused / volume properties are mirrors the player writes, not the source of truth."
+  },
+  "method": "Rebuild the production extension from the working tree, load it into the specified local Chrome via CDP, and use only real viewer input for the site side: scroll the control bar into view, move the pointer over #player-wrap and #player-sound-btn, drag .sound-btn with the mouse, open the trusted toolbar action popup with Extensions.triggerAction, click .btn-pause and drive .vol-slider with real keyboard input. Oracles are the shipped control snapshot in chrome.storage.local, the action badge, the popup slider, and the site's own DOM. Observation-only probes additionally wrap HTMLMediaElement.prototype.play/pause and the volume descriptor in both page and isolated worlds to record call stacks, and sample tab-capture RMS for audibility.",
+  "tools": [
+    "apps/extension-spectra/test/smoke/huya-native-parity.spec.ts",
+    "apps/extension-spectra/test/site-native-control-surface.spec.ts",
+    "apps/extension-spectra/scripts/probe-huya-playback-volume.mjs",
+    "apps/extension-spectra/scripts/probe-huya-native-audibility.mjs"
+  ],
+  "commands": {
+    "gatedRealSiteCase": "SPECTRA_HUYA_PARITY_URL=https://www.huya.com/102411 NEXUS_CHROME_EXECUTABLE=\"C:/Program Files/Google/Chrome/Application/chrome.exe\" bun test test/smoke/huya-native-parity.spec.ts",
+    "isolatedUnits": "bun scripts/run-tests.ts",
+    "productionBuild": "bun run build"
+  },
+  "suite": {
+    "gatedRealSiteCase": "test/smoke/huya-native-parity.spec.ts",
+    "assertions": [
+      "the site's own #player-btn and .sound-bar widgets exist before any gesture is used as parity evidence",
+      "a real drag of the site's own volume handle moves element.volume below 0.45 and the shipped volumeBase follows within 3 units",
+      "the extension pause ACK is phase applied with lastError null and the site's #player-btn title becomes 开始观看",
+      "a second pause press resumes with an applied ACK and lastError null",
+      "real arrow keys on the popup slider to 70 make the snapshot, the site's element volume, the site's filled bar, the badge and the popup slider agree"
+    ]
+  },
+  "runs": [
+    {
+      "label": "official gated real-site round, intermediate artifact",
+      "artifactContentRuntime": "a050b17f6c5f2d002640371d6a4db0afbbea2e828919836d0e090b22dfdd43e4",
+      "result": "1 pass / 0 fail / 14 expect()",
+      "tabId": 635324769,
+      "siteToExtension": { "elementVolume": 0.12, "barWidth": 12.5, "extensionVolume": 12 },
+      "pause": { "phase": "applied", "lastError": null, "sitePaused": true, "playTitle": "开始观看" },
+      "resume": { "phase": "applied", "lastError": null },
+      "extensionToSite": { "extensionVolume": 70, "elementVolume": 0.7, "barWidth": 63 }
+    },
+    {
+      "label": "stability round 1, intermediate artifact",
+      "artifactContentRuntime": "a050b17f6c5f2d002640371d6a4db0afbbea2e828919836d0e090b22dfdd43e4",
+      "result": "1 pass / 0 fail / 14 expect()",
+      "siteToExtension": { "elementVolume": 0.12, "barWidth": 12.5, "extensionVolume": 12 },
+      "pause": { "phase": "applied", "lastError": null, "sitePaused": true, "playTitle": "开始观看" },
+      "extensionToSite": { "extensionVolume": 70, "elementVolume": 0.7, "barWidth": 63 }
+    },
+    {
+      "label": "stability round 2, intermediate artifact",
+      "artifactContentRuntime": "a050b17f6c5f2d002640371d6a4db0afbbea2e828919836d0e090b22dfdd43e4",
+      "result": "1 pass / 0 fail / 14 expect()",
+      "siteToExtension": { "elementVolume": 0.12, "barWidth": 12.5, "extensionVolume": 12 },
+      "pause": { "phase": "applied", "lastError": null, "sitePaused": true, "playTitle": "开始观看" },
+      "extensionToSite": { "extensionVolume": 70, "elementVolume": 0.7, "barWidth": 63 }
+    },
+    {
+      "label": "working-tree final artifact round 1 (before the SCTRL-003 commit)",
+      "artifactContentRuntime": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "result": "1 pass / 0 fail / 14 expect()",
+      "tabId": 173526048,
+      "siteToExtension": { "elementVolume": 0.12, "barWidth": 12.5, "extensionVolume": 12 },
+      "pause": { "phase": "applied", "lastError": null, "sitePaused": true, "playTitle": "开始观看" },
+      "resume": { "phase": "applied", "lastError": null },
+      "extensionToSite": { "extensionVolume": 70, "elementVolume": 0.7, "barWidth": 63 }
+    },
+    {
+      "label": "working-tree final artifact round 2 (before the SCTRL-003 commit)",
+      "artifactContentRuntime": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "result": "1 pass / 0 fail / 14 expect()",
+      "tabId": 1574097477,
+      "siteToExtension": { "elementVolume": 0.12, "barWidth": 12.5, "extensionVolume": 12 },
+      "pause": { "phase": "applied", "lastError": null, "sitePaused": true, "playTitle": "开始观看" },
+      "resume": { "phase": "applied", "lastError": null },
+      "extensionToSite": { "extensionVolume": 70, "elementVolume": 0.7, "barWidth": 63 }
+    },
+    {
+      "label": "OFFICIAL committed-HEAD round 1, rebuilt from 332fe7a",
+      "artifactContentRuntime": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "rebuiltFromHead": true,
+      "result": "1 pass / 0 fail / 16 expect()",
+      "tabId": 1967657927,
+      "siteToExtension": { "elementVolume": 0.12, "barWidth": 12.5, "extensionVolume": 12 },
+      "pause": { "phase": "applied", "lastError": null, "sitePaused": true, "playTitle": "开始观看" },
+      "resume": { "phase": "applied", "lastError": null },
+      "extensionToSite": { "extensionVolume": 70, "elementVolume": 0.7, "barWidth": 63 }
+    },
+    {
+      "label": "OFFICIAL committed-HEAD round 2, rebuilt from 332fe7a",
+      "artifactContentRuntime": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "rebuiltFromHead": true,
+      "result": "1 pass / 0 fail / 16 expect()",
+      "tabId": 1517064497,
+      "siteToExtension": { "elementVolume": 0.12, "barWidth": 12.5, "extensionVolume": 12 },
+      "pause": { "phase": "applied", "lastError": null, "sitePaused": true, "playTitle": "开始观看" },
+      "resume": { "phase": "applied", "lastError": null },
+      "extensionToSite": { "extensionVolume": 70, "elementVolume": 0.7, "barWidth": 63 }
+    }
+  ],
+  "assertionsProven": [
+    "Seven real-site rounds agree on the same numbers in both directions. The two OFFICIAL rounds rebuilt the production artifact from the committed HEAD 332fe7a, obtained the same content-runtime.js SHA-256, and each passed 16 expect() after two added widget-existence assertions.",
+    "The pause button no longer produces readback-mismatch; the shipped playing field is applied with actual false and lastError null, and Huya's own button changes to 开始观看.",
+    "The site's native slider owns the audible level; the extension now drives that slider and reports the site's own level to the popup, snapshot and badge."
+  ],
+  "findings": {
+    "pauseRootCause": {
+      "symptom": "Playback readback mismatch: requested playing=false; after write=false; stable=true, on every pause press",
+      "beforeRepairAck": {
+        "desired": false,
+        "actual": null,
+        "phase": "error",
+        "lastError": { "code": "readback-mismatch", "message": "Playback readback mismatch: requested playing=false; after write=false; stable=true", "retryable": true }
+      },
+      "isolatedWorldTimeline": [
+        { "t": 33333, "world": "isolated", "kind": "call:pause", "pausedBefore": false, "stack": "content-runtime.js -> zr.applyField" },
+        { "t": 33339, "kind": "event:pause", "paused": true },
+        { "t": 33363, "kind": "event:play", "paused": false },
+        { "t": 33363, "kind": "event:playing", "paused": false }
+      ],
+      "pageWorldCaller": "prototype.play called from https://a.msstatic.com/huya/h5player/room/2611111128/vplayer.js (recorded in the same room in a later probe)",
+      "explanation": "A raw element.pause() from the isolated content world pauses the media element, but Huya's own state machine still says watching and calls play() again about 30 ms later. writePlaybackWithStableAck waits for a stable readback, sees true, and necessarily throws.",
+      "afterRepairAck": { "desired": false, "actual": false, "phase": "applied", "controlled": true, "lastError": null }
+    },
+    "volumeRootCause": {
+      "siteToExtensionBefore": "A real drag of .sound-btn from 0.5 to 0.12 moved element.volume to 0.12 and the extension already followed to 12 through the native volumechange observation (bar 43.5px -> 12.5px, badge 12). This direction was never a Huya acceptance item.",
+      "extensionToSiteBefore": "The plugin slider went through documentOutput / Capture: snapshot and badge showed 70 while element.volume stayed 0.5 and .sound-bar stayed 43.5px. The site's own UI never moved.",
+      "domMirrorExperiment": {
+        "externalWrite": 0.8,
+        "before": { "barWidth": 12.5, "elementVolume": 0.12, "snapshotVolumeBase": 70 },
+        "after": { "barWidth": 12.5, "elementVolume": 0.8, "snapshotVolumeBase": 70 },
+        "conclusion": "Writing element.volume changes only the DOM mirror; the site's own bar and the site's audible level do not follow. It cannot bridge the two UIs."
+      },
+      "audibilityOracle": {
+        "sampler": "tabCapture MediaStreamId + AnalyserNode RMS",
+        "baseline": { "barWidth": 43.5, "elementVolume": 0.5, "rms": 0.02409850181727154 },
+        "nativeSliderLow": { "barWidth": 5, "elementVolume": 0.03, "rms": 0.00016003282988121334 },
+        "nativeSliderHigh": { "barWidth": 77, "elementVolume": 0.9, "rms": 0.07258579466431939 },
+        "conclusion": "Huya's own slider controls the real audible output, so the extension must move that slider rather than only its own processor gain."
+      },
+      "syntheticInputOracle": {
+        "world": "isolated content script (the product's own execution world), plus a page-world control",
+        "playback": { "before": "player-pause-btn / paused=false", "after": "player-play-btn / paused=true" },
+        "volume": { "barBefore": 12.5, "volumeBefore": 0.12, "barAfter": 67, "volumeAfter": 0.78 },
+        "conclusion": "Synthetic MouseEvent input dispatched on the site's own widgets reaches Huya's handlers from the isolated world; no page-global player API and no CDP input are required in the product."
+      }
+    },
+    "repair": [
+      "site-native-control-surface.ts: discover the site's own play/pause button and volume track observation-first; a missing or unresponsive control is a no-op and the standard DOM writer stays authoritative.",
+      "site-native-control-surface.ts: projectSiteNativePlayback clicks the site's own button before writePlaybackWithStableAck, so the player's internal state agrees with the element and the pause is not replayed.",
+      "site-native-control-surface.ts: projectSiteNativeVolume drives the site's own track with bounded synthetic pointer/mouse input, reads the site's filled bar as the physical witness, returns the level it actually reached or null, and never writes element.volume.",
+      "native-media-executor.ts: route playing and documentOutput volumeBase through those projections; align the DOM mirror here as the single canonical volume writer required by SCTRL-003; keep the Capture processor at unity when the site owns the level; publish the witnessed site level as the displayed volumeBase while retaining the runtime field-state contract (strategy capture / coverage opaque).",
+      "audio-runtime-control-delegate.ts: separate the gain input from the displayed level with a siteNativeLevel witness, so a passive read does not report the processor's 100 as the viewer's volume.",
+      "test/site-native-control-surface.spec.ts and test/smoke/huya-native-parity.spec.ts: 5 unit cases (no-op, calibration, canonical-writer boundary) and a gated real-site two-way acceptance case."
+    ],
+    "canonicalWriterRefactor": "The first verify run reported SCTRL-003: unowned volume writer at site-native-control-surface.ts. The mirror write was moved into native-media-executor.ts (the existing single canonical writer) and a unit case now asserts the projection leaves the mirror alone. The gate was not loosened and no baseline was changed.",
+    "rejected": [
+      "Writing element.volume to bridge the site UI: proven not to move the site bar.",
+      "Only changing the Capture processor gain: the site UI stays at its old number while the extension shows another.",
+      "Using a page-global player API: the diagnostic probe found no usable volume/play method pair on the exposed globals.",
+      "Overriding the RPC read with the site bar width directly in NativeMediaExecutor.read(): it broke the popup's field-state contract (Control state unavailable / aria-pressed mixed) and was reverted in favour of the delegate witness."
+    ]
+  },
+  "boundaries": {
+    "sitePhysicalCeiling": {
+      "requested": 100,
+      "reached": { "barWidth": 85, "elementVolume": 0.9444444444444444, "extensionActual": 94 },
+      "decision": "The site's 90px track and 10px handle make 0.944 its physical maximum for a track click. The extension reports 94 honestly to the snapshot, popup and badge; it does not claim 100 while the site shows 94. A request of 30 reaches 0.3 / 27px / 30 exactly."
+    },
+    "fallback": "If no site-native control is found, or three bounded calibration passes cannot reach the requested level within tolerance, the projection returns null and the previous routing is kept unchanged. Ordinary dom-native pages are not affected.",
+    "boost": "boost > 100 still goes through the verified Capture processor gain; a site UI cannot display a value above its own maximum.",
+    "rmsAfterRepair": "The separate tab-capture RMS sampler cannot open a second stream while the extension already owns an active capture ('Cannot capture a tab with an active stream.'). The audibility oracle above was sampled before the extension held that capture."
+  },
+  "localGates": {
+    "isolatedUnitFiles": "138 files, all pass",
+    "siteNativeUnitCase": "5 pass / 0 fail / 19 expect()",
+    "typecheck": "exit 0",
+    "productionBuild": "exit 0, 88/89 artifacts reachable, 1 registered release notice",
+    "test:smoke": "102 pass / 7 skip / 0 fail / 783 expect(), final artifact",
+    "gatedRealSiteCase": "7 green rounds; the 2 OFFICIAL committed-HEAD rounds are 1 pass / 0 fail / 16 expect() each",
+    "verify": "0 errors / 8 registered warnings, exit 0",
+    "strictBiome": "490 files, 0 diagnostics, 0 silent handlers, exit 0",
+    "docs:check": "160 Markdown files, strict=true, exit 0",
+    "adHocDocsScan": "90 docs, 421 relative Markdown links, 81 Mermaid blocks, 0 odd-fence files; one pre-existing stale link in _archive/2026-Q3 is outside the official strict checker and was not introduced by this repair",
+    "publicParity": "recorded in docs/proposals/open-items-program.md §12 after the commit"
+  },
+  "notEvidenceFor": [
+    "Chrome versions other than 157.0.8103.39",
+    "Huya room layouts, accounts, player revisions or viewport sizes other than the recorded 1600x1200",
+    "Douyin live rooms, www.douyin.com (captcha-blocked), or any other site",
+    "Elimination of the O11 startup projection flicker",
+    "That a quiet programme segment proves inaudibility",
+    "That the extension can force a site slider beyond its physical maximum"
+  ],
+  "relatedDocuments": [
+    "../2026-11-14-spectra-huya-native-control-parity.md",
+    "../2026-11-14-spectra-volume-audible-path-reaudit.md",
+    "../../proposals/open-items-program.md",
+    "../../../apps/extension-spectra/docs/control/09-failure-index.md"
+  ]
+}

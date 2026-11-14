@@ -221,6 +221,7 @@ O1 的三条失败在修复前应登记为 `blocker`，而不是留在发布时�
 | **O9** | P2 | ✅ 已解决 | 6 个既有 smoke 失败全部消除，全量 `test:smoke` 为 `102 pass / 5 skip / 0 fail / 783 expect()`。归类见 [重审报告](../research/2026-11-14-spectra-o9-smoke-repair.md)：2 个产品回归（暂停直播被更大广告接管、恢复计划被页面原生 100 污染）已修 `media-registry.ts` 与 `runtime-loader.ts`；4 个测试期望过时（`0b907ee0` 的 AbortController 监听组、badge usage 门、11-11 常驻观察 lease）按新行为精确更新断言，未放宽。真站回归证据见 §10。 |
 | **O10** | P2 | ✅ 本地收口 | `sync-public.ts spectra --plan` 通过；正式运行生成公共候选提交，脚本按设计不 push。baseline 从 `22 differing / 3 missing` **收紧**为 `0 / 0`。第三轮改动两处产品源码后再跑 `sync-public.ts spectra --amend`，候选提交从 `9596b5f` 修正为 **`091005a`**（68 文件变化，含此前 3 个 `knownMissing` 源码与本轮改动），`check-public-parity` 真实入口回到 `0 differing / 0 missing / 0 warnings / exit 0`。剩余：候选提交待推送公共远端，属外部发布动作。 |
 | **O11** | P3 | 🔄 待办 | 抖音门户启动阶段仍有短暂投影抖动：诊断记录到 3 次 `volumeBase=100` 与 5 次 `idle` 写入，均由 `8c644981` 的自动重投影恢复到 `media:2:1 / 60`，最终三个采样与门控真站用例都正确。但插件数字在启动的一小段时间内可能闪到 100，未达到「全程完美」。不冒充已解决，不阻塞 O9/O10 与切换自动同步；`www.douyin.com` 仍被验证码拦截，跨 origin 整页导航进直播间同样无当前 HEAD 证据。详见 [重审报告](../research/2026-11-14-spectra-douyin-video-to-live-switch.md) §7。 |
+| **O12** | P1 | ✅ 已解决 | 用户反馈虎牙暂停按钮永远报 `Playback readback mismatch` 且音量双向不同步。真站定位为虎牙 `vplayer.js` 自己拥有播放状态与可听电平：raw `pause()` 被站点重新 `play()`，外部写 `element.volume` 不更新站点音量条。修复落在站点原生控件投影 + display level / gain input 分离；门控真站用例三轮 `1 pass / 14 expect()`，数值一致（站点 0.12→插件 12、插件 70→站点 0.7/63px、暂停 `applied` 且 `lastError=null`）。详见 [重审报告](../research/2026-11-14-spectra-huya-native-control-parity.md) 与 [真站证据](../research/evidence/2026-11-14-huya-native-control-parity-proof.json)。诚实剩余：虎牙站点条物理上限约 94，请求 100 如实 ACK 94。 |
 
 ## 9. 2026-11-14 合入备注
 
@@ -299,4 +300,44 @@ Strict Biome 163 文件 0 diagnostics、0 silent handlers、exit 0；`bun script
 
 [09 故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md) 第 2 行
 补上真正遗漏的因果链，状态仍按既有约定保留。
+
+## 12. 2026-11-14 第四轮收口（虎牙暂停与音量双向同步）
+
+用户反馈「为什么不做完：虎牙暂停按钮永远 `Playback readback mismatch`，音量同步双向都永远不行」。
+复核确认第四轮之前的所有真站证据都没有把虎牙自己的按钮与音量条当 oracle：
+[音量可听路径重审](../research/2026-11-14-spectra-volume-audible-path-reaudit.md) §13.3
+写明的「虎牙未单独采样」就是被遗漏的边界。
+
+- 根因 A：虎牙 `vplayer.js` 是播放状态 owner。isolated world 的 raw `element.pause()`
+  让元素停下，站点约 30ms 后再次 `play()`，稳定读回为 `true`，于是每次暂停都抛
+  `requested playing=false; after write=false; stable=true`。不是 ACK 判据过严。
+- 根因 B：虎牙自己的 `.sound-progress/.sound-bar/.sound-btn` 是可听电平 owner。
+  站点 → 插件方向本来靠原生 `volumechange` 就跟（拖到 0.12，插件 12），只是从未验收；
+  插件 → 站点方向在 `documentOutput` 下只改扩展自己的 Capture 处理器，站点条不动。
+  外部写 `element.volume=0.8` 只改 DOM 镜像，站点条仍 12.5px。
+  同一轮 tab RMS `0.0241 → 0.000160 → 0.0726` 证明站点条控制真实输出。
+- 修复提交 `332fe7a`：新增 `site-native-control-surface.ts`（观察优先的站点控件投影）、
+  改 `native-media-executor.ts`（`playing` 先点站点按钮、音量先投影站点轨道、
+  唯一 canonical writer 对齐 DOM 镜像、保留 runtime 字段状态契约）与
+  `audio-runtime-control-delegate.ts`（`siteNativeLevel` 分离 display level 与 gain input）；
+  另加 1 个模块单测、1 个门控真站用例与 2 个只读侦察探针。
+  第一次 `verify` 报 `SCTRL-003: unowned volume writer` 后把镜像写回唯一 writer，
+  没有放宽门禁、没有改 baseline。
+- 门控真站用例 `test/smoke/huya-native-parity.spec.ts` 从**已提交 HEAD 重建的产物**
+  （`content-runtime.js` SHA-256 `b4bcffb3…`，与提交前工作树构建逐字节一致）连跑
+  正式两轮，各 `1 pass / 0 fail / 16 expect()`，数值一致：站点 0.12 / 12.5px → 插件 12；
+  插件暂停 `applied` / `lastError=null`、站点按钮 `开始观看`；插件滑杆 70 →
+  站点 0.7 / 63px / 角标 70。提交前的中间产物另有 5 轮同样的结果，共 7 轮全绿。
+- 全量门禁实测：`bun scripts/run-tests.ts` 138 个隔离单测文件全过、
+  新增模块单测 `5 pass / 19 expect()`、`typecheck` exit 0、`bun run build` exit 0、
+  `test:smoke` `102 pass / 7 skip / 0 fail / 783 expect()`、
+  `verify` `0 error / 8 已登记 warning`、Strict Biome `490 files / 0 diagnostics /
+  0 silent handlers`、`docs:check` 160 篇 strict 通过。
+- 证据：[重审报告](../research/2026-11-14-spectra-huya-native-control-parity.md) 与
+  [真站证据](../research/evidence/2026-11-14-huya-native-control-parity-proof.json)
+  （`[E-current]`）。[09 故障索引](../../apps/extension-spectra/docs/control/09-failure-index.md)
+  补两条症状行与第四轮复核，并纠正「虎牙未单独采样」这条已被证伪的边界。
+- 诚实剩余：虎牙 90px 轨道 + 10px 手柄的物理上限约 0.944，请求 100 时如实 ACK 94；
+  `boost > 100` 仍走 Capture 处理器增益；O11 启动阶段短暂 `100` / `idle` 闪动仍在；
+  `www.douyin.com` 仍被验证码拦截；Chrome 157 之外的版本无证据。
 

@@ -85,6 +85,37 @@ room directly; none observed the transition. This batch closes that gap.
   `9596b5f` to `091005a` after the two product sources changed. The parity
   baseline was not loosened: the real entry reports `0 differing / 0 missing`.
 
+## Huya native-control parity evidence 2026-11-14 (`[E-current]`, HEAD `332fe7a`)
+
+The user reported that the Huya pause button always produced
+`Playback readback mismatch: requested playing=false; after write=false; stable=true`
+and that volume never synchronized in either direction. Earlier rounds used product
+output RMS, Douyin's site UI and a directly opened live room as oracles; none of
+them observed Huya's own controls.
+
+- [Repair report](2026-11-14-spectra-huya-native-control-parity.md): Huya's
+  `vplayer.js` owns playback state and the audible volume level. A raw
+  `element.pause()` is replayed by the site about 30 ms later; writing
+  `element.volume=0.8` moves only the DOM mirror while `.sound-bar` stays at
+  12.5px. The repair drives the site's own button and volume track, reads the
+  site's filled bar as the physical witness, and separates display level from
+  the Capture processor's gain input.
+- [Real-site proof](evidence/2026-11-14-huya-native-control-parity-proof.json):
+  production artifact rebuilt from the committed HEAD `332fe7a` (byte-identical
+  to the working-tree build), local Chrome 157.0.8103.39 via CDP
+  `Extensions.loadUnpacked`. The gated case uses real mouse drags on `.sound-btn`,
+  a trusted toolbar popup, and real arrow keys on `.vol-slider`. Seven rounds pass;
+  the two official committed-HEAD rounds each report `1 pass / 16 expect()` with
+  identical numbers: site 0.12 / 12.5px -> extension 12; pause `applied` with
+  `lastError=null` and the site button reading `开始观看`; extension 70 ->
+  site 0.7 / 63px / badge 70.
+- The site's 90px track and 10px handle make 0.944 its physical maximum; a
+  request of 100 is honestly acknowledged as 94. `boost > 100`, O11's startup
+  flicker, Chrome versions other than 157 and Douyin are explicitly out of scope.
+- The new projection module never writes `element.volume`: `SCTRL-003` keeps a
+  single canonical media writer. Mirror alignment stays in
+  `native-media-executor.ts`, with a unit test guarding the boundary.
+
 ## Evidence contract
 
 Every current research claim that affects prioritization records:
