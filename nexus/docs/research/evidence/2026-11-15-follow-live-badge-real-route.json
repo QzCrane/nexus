@@ -1,0 +1,118 @@
+{
+  "capturedAt": "2026-11-15T15:16:25.397Z",
+  "kind": "douyin-follow-live-native-badge-real-route-proof",
+  "evidenceLevel": "[E-current]",
+  "status": "no-product-defect-reproduced-on-active-live-tab",
+  "question": "From https://www.douyin.com/follow, click into a live room with a signed-in account; with ZERO extension gestures, does dragging the site's native volume slider keep the Action badge, badge usage and canonical snapshot in sync?",
+  "environment": {
+    "chrome": "Chrome/157.0.8103.51",
+    "extensionId": "llnmkgnjogffpmachecfdhfhdepfppli",
+    "extensionCount": 1,
+    "artifact": "apps/extension-spectra/dist (1.4.2, unchanged between all rounds)",
+    "artifactSha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "aa367cf1bfd0ed3ff81dcdcf6bf9f555a9eb528874d86f53243dee5fc2953014",
+      "content-runtime.js": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8"
+    },
+    "loading": "production dist via CDP Extensions.loadUnpacked (Chrome 137+ ignores --load-extension)",
+    "input": "real trusted mouse input only; no dispatchEvent, no synthetic events"
+  },
+  "loginResolution": {
+    "previousBlocker": "Chrome 157 App-Bound Encryption (v20) makes a byte copy of Default/Network/Cookies undecryptable; the throwaway profile had 0 douyin cookies and /follow showed a QR-login dialog.",
+    "resolution": "WorkBuddy's built-in browser is an Electron webview partition (persist:agent-browser-preview-webview). Its Cookies DB is NOT app-bound and keeps clear values in the `value` column; the live SQLite file is exclusively locked, so `esentutl /y /vss` takes a VSS snapshot. 35 douyin cookies including sessionid, sid_guard, sid_tt, ssid_ucp_v1, uid_tt and odin_tt are read into process memory and injected into a FRESH throwaway Chrome profile via CDP Network.setCookies. Clear values are never logged or written to disk.",
+    "source": "C:/Users/QzCrane/.workbuddy/app/session/Partitions/agent-browser-preview-webview/Network/Cookies",
+    "verified": {
+      "injectedCookieCount": 35,
+      "loginPromptAfterInjection": false,
+      "followFeedRendered": true,
+      "liveAnchorsFound": 41
+    }
+  },
+  "routeFacts": {
+    "reportedPath": "https://www.douyin.com/follow -> click a live card",
+    "result": "Douyin does BOTH at once: the original tab stays on the same origin and SPA-navigates to /follow/live/448882955167?anchor_id=69697014176, AND a new tab opens at https://live.douyin.com/448882955167?from_app_resume=live with openerTabId pointing at the original tab and active=true.",
+    "tabCountBefore": 2,
+    "tabCountAfterClick": 3,
+    "newTabOpened": true,
+    "liveAnchorTargetsPresent": ["", "(same-tab default)", "_blank"],
+    "originChangedOnOriginalTab": false
+  },
+  "siteControl": {
+    "kind": "A/B control with the production extension NOT loaded",
+    "file": "apps/extension-spectra/scripts/probe-douyin-follow-newtab-control.mjs",
+    "sameSignedInCookies": 35,
+    "sameCard": { "x": 1227, "y": 131, "cls": "DcrXDoga", "text": "直播中" },
+    "tabCountBefore": 2,
+    "tabCountAfterClick": 3,
+    "newTabOpened": true,
+    "conclusion": "The extra live tab is Douyin site behaviour (a target=_blank live link plus the site's app-resume open), NOT a SPECTRA action. The only chrome.tabs.create in the background is the explicit open-url operation, which this run never invokes."
+  },
+  "validSample": {
+    "run": "v10 (focus warm-up without any extension control intent, active live tab sampled)",
+    "sampleValid": true,
+    "reportedRouteExact": true,
+    "sampledTabId": 721305411,
+    "activeTabSwitch": { "from": 721305410, "to": 721305411, "url": "https://live.douyin.com/448882955167?from_app_resume=live" },
+    "phaseAFocusWarmup": "blank tab open/close + bringToFront + pointer move; no extension control intent",
+    "phaseA_zeroExtensionGestures": {
+      "beforeBadge": "",
+      "beforeUsage": false,
+      "drags": [
+        { "ratio": 0.3, "dragOk": true, "site": 30, "elementVolume": 0.3, "badge": "30", "usage": true, "volumeBase": 30, "badgeMatchesSite": true, "snapshotMatchesSite": true },
+        { "ratio": 0.75, "dragOk": true, "site": 75, "elementVolume": 0.75, "badge": "75", "usage": true, "volumeBase": 75, "badgeMatchesSite": true, "snapshotMatchesSite": true }
+      ]
+    },
+    "phaseB_afterOnePopupButton": { "badges": ["30", "75"], "usage": true, "volumeBase": [30, 75], "allSynchronized": true },
+    "phaseC_afterReload": { "badge": "75", "usage": true, "volumeBase": 75, "allSynchronized": true },
+    "conclusion": "On the signed-in reported route, in the ACTIVE live tab, with zero extension gestures, the production build DOES create the badge usage fact and keeps badge / element volume / site number / canonical snapshot in sync. The reported 'badge never moves' symptom was NOT reproduced in this sample."
+  },
+  "invalidSamples": [
+    {
+      "runs": ["v1-v4"],
+      "reason": "profile copies were NOT signed in (Chrome v20 App-Bound Encryption); /follow showed a QR-login dialog and no live feed",
+      "disposition": "void; do not quote"
+    },
+    {
+      "runs": ["v5", "v6"],
+      "reason": "the probe read the badge/usage/snapshot of the ORIGINAL /follow tab instead of the newly opened ACTIVE live tab; the click also opened a second tab, so the sampled tabId did not match the tab the viewer sees. v6 additionally showed 0 userGesture intents because the drag targeted the non-active tab.",
+      "disposition": "void as evidence about the viewer's tab; kept only as an observation about the backgrounded same-origin SPA tab"
+    },
+    {
+      "runs": ["v7", "v8", "v9"],
+      "reason": "active-tab sampling was fixed, but phase A could not expand the site's hover-only volume slider (dragOk=false for both ratios); no real native gesture happened in phase A. v8/v9 still reproduced the reported recovery: after ONE popup button, site/element/badge/usage/snapshot all synchronized (30/75).",
+      "disposition": "phase A void; phase B/C recovery is valid"
+    }
+  ],
+  "staticFindings": [
+    {
+      "location": "src/background/control-coordinator.ts:2811-2842 submitOrderedPageObservation",
+      "fact": "markBadgeUsedForTab (the only page-side path allowed to create badge usage) sits AFTER the stale-document throw (2814-2817) and the mediaSampleCanReplace / isRetiredMediaSample early return (2826-2831). A trusted-gesture observation rejected by those gates cannot create usage.",
+      "status": "static only, not proven on the real route"
+    },
+    {
+      "location": "src/background/handlers/badge.ts:266 markBadgeUsedForTab",
+      "fact": "It only writes the sticky usage fact. recordSuccessfulExtensionUse additionally calls reprojectBadgeForCurrentDocument, which is why clicking a popup button both creates usage and immediately paints the badge.",
+      "status": "static only"
+    },
+    {
+      "location": "src/background/control-coordinator.ts:1057 projectBadgeFromSnapshot",
+      "fact": "observationOnly && !isBadgeProjected(tabId) blocks any page observation from being the reason a badge appears (I10 contract). A brand-new untouched tab therefore starts with an empty badge by design.",
+      "status": "static only; consistent with v10 where the first trusted drag itself established usage"
+    }
+  ],
+  "notReproduced": {
+    "userSymptom": "The viewer reported that dragging the native UI leaves the badge frozen until a reload or one popup pause/play click.",
+    "hypothesesNotProven": [
+      "The viewer actually interacts with the same-origin SPA tab (/follow/live/<id>) that the new tab pushed into the background; v5/v6 saw that tab stay out of sync, but those runs sampled it with a broken focus/tab setup and are not valid evidence.",
+      "The viewer's own Chrome 157 still runs an older content script in already-open tabs (unpacked extensions do not hot-reload content scripts), which would explain 'reload fixes it'. Chrome started at 05:35 while dist was rebuilt at 03:21, so this is possible but was not verified on the user's own browser."
+    ],
+    "nextStep": "Reproduce on the user's own signed-in Chrome 157 with a debugging port and CDP, sampling BOTH tabs, before changing any product code. No product change was made in this round."
+  },
+  "decision": "Do NOT make a 101st blind fix. The login blocker is solved, the exact route is reproducible, the extra tab is proven to be site behaviour, and the production build tests clean on the active live tab. Product source is untouched; all changes are probe scripts and evidence.",
+  "files": [
+    "apps/extension-spectra/scripts/probe-douyin-follow-live-badge.mjs",
+    "apps/extension-spectra/scripts/probe-douyin-follow-recon.mjs",
+    "apps/extension-spectra/scripts/probe-douyin-follow-newtab-control.mjs",
+    "apps/extension-spectra/scripts/probe-douyin-follow-spa-badge.mjs"
+  ]
+}

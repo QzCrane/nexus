@@ -112,6 +112,21 @@ export function hasRecentMediaUserGesture(now = performance.now()): boolean {
 	return typeof at === 'number' && now - at >= 0 && now - at <= MEDIA_USER_GESTURE_WINDOW_MS;
 }
 
+/**
+ * The heavy runtime observes only the players it registered. A same-document
+ * SPA route can mount the player the viewer actually hears after that handoff;
+ * yielding the whole document-start listener in that state drops the trusted
+ * native gesture, and the badge stays frozen until a Popup click or a reload.
+ * Setup-only changes still yield, so automatic samples are never duplicated.
+ */
+export function shouldYieldNativeMediaObservation(
+	runtimeObservesMedia: boolean,
+	trustedGesture: boolean,
+	pendingTrustedGesture: boolean,
+): boolean {
+	return runtimeObservesMedia && !trustedGesture && !pendingTrustedGesture;
+}
+
 /** One document clock for full-registry and passive-bootstrap ownership. */
 export function claimMediaObservationEpoch(fallback = 0): number {
 	const state = getContentBootstrapState();

@@ -1,0 +1,135 @@
+{
+  "capturedAt": "2026-11-15T15:42:10.450Z",
+  "kind": "douyin-follow-live-native-badge-handoff-repair-proof",
+  "evidenceLevel": "[E-current]",
+  "status": "reproduced-and-repaired",
+  "question": "From https://www.douyin.com/follow, click into a live room; in the SAME-DOCUMENT SPA tab (/follow/live/<id>) with ZERO extension gestures, does dragging Douyin's native volume slider keep the Action badge, badge usage and canonical snapshot in sync?",
+  "environment": {
+    "chrome": "Chrome/157.0.8103.51",
+    "extensionId": "llnmkgnjogffpmachecfdhfhdepfppli",
+    "extensionCount": 1,
+    "artifact": "apps/extension-spectra/dist (1.4.2)",
+    "loading": "production dist via CDP Extensions.loadUnpacked; Chrome 137+ ignores --load-extension",
+    "input": "real trusted mouse input only; no dispatchEvent, no synthetic events",
+    "login": "WorkBuddy built-in Electron webview partition clear-value Cookies DB read via esentutl /y /vss (35 douyin cookies incl. sessionid / sid_tt / sid_guard / uid_tt), injected into a FRESH throwaway Chrome profile via CDP Network.setCookies. Clear values never logged or written to disk. See [login resolution](./2026-11-15-follow-live-badge-real-route.json).",
+    "sampling": "SPECTRA_SAMPLE_TAB=spa keeps the probe on the original same-origin SPA tab; =active follows the _blank live tab. See [route facts](./2026-11-15-follow-live-badge-real-route.json)."
+  },
+  "routeFacts": {
+    "reportedPath": "https://www.douyin.com/follow -> REAL click on an in-feed live card",
+    "originalTab": "same-origin SPA navigation to https://www.douyin.com/follow/live/448882955167?anchor_id=69697014176 (originChanged=false)",
+    "extraTab": "https://live.douyin.com/448882955167?from_app_resume=live, target=_blank, becomes active, openerTabId = original tab",
+    "tabCount": "2 -> 3",
+    "extraTabIsSiteBehaviour": "A/B control with NO extension loaded still opens it (see [real-route proof](./2026-11-15-follow-live-badge-real-route.json))",
+    "whyThisTabMatters": "The viewer's report says '明明是同页跳转的' (it should have been a same-page navigation). The active-tab sample did NOT reproduce the defect; the same-document SPA tab DOES."
+  },
+  "baseline": {
+    "run": "spectra-follow-spa-v1.json",
+    "artifactSha256": {
+      "content-bootstrap.js": "0e1568ee0c95f81a…",
+      "content-runtime.js": "b4bcffb3bb82353c…",
+      "background.js": "aa367cf1bfd0ed3f…"
+    },
+    "sampleValid": true,
+    "reportedRouteExact": true,
+    "phaseA_zeroExtensionGestures": {
+      "beforeBadge": "",
+      "beforeUsage": false,
+      "drags": [
+        { "site": 30, "badge": "", "usage": false, "volumeBase": 50, "dragOk": true },
+        { "site": 75, "badge": "", "usage": false, "volumeBase": 50, "dragOk": true }
+      ]
+    },
+    "pageFacts": {
+      "trustedInputs": "17 -> 32",
+      "trustedVolumeChanges": "16 -> 30",
+      "witnessVolumeTail": [0.3, 0.65, 0.69, 0.72, 0.75],
+      "siteVolumeNumber": "50 -> 30 -> 75",
+      "playingElement": "top-frame video index 2 (paused=false, hasStream=true, duration=Infinity): volume 0.5 -> 0.3 -> 0.75",
+      "probeCaveat": "The probe's summary field `elementVolume` reads document.querySelectorAll('video,audio')[0] (a paused 0.5 preview), NOT the player the site drives. Per-frame media arrays are the authoritative volumes.",
+      "frames": "14 frames; content script bootstrap state exists ONLY in top frame (frameId 0), all child frames hasState=false because manifest content_scripts has no all_frames"
+    },
+    "backgroundFacts": {
+      "intentsDuringPhaseA": "the last-16 intent snapshot is byte-identical before/after both drags, last timestamp 1794756449845, while the drags happened at 1794756452xxx => ZERO new observations reached the background",
+      "intentTimeline": "160 records, userGesture=true count 0, volumeBase=50 in 152 records",
+      "afterReload": "documentId 011CC140… immediately produces a normal page observation volumeBase=75 / media:1:1",
+      "afterOnePopupButton": "canonical snapshot catches up to 75 (one read later), badge stays empty"
+    },
+    "conclusion": "The symptom is real on the same-document SPA tab. Native volume facts exist in the DOM and in trusted events, but the content side never publishes an observation for them; a Popup read or a reload is what re-establishes the path."
+  },
+  "rootCause": {
+    "location": "src/content/core/bootstrap.ts onNativeMediaChange / drainObservation / scheduleObservationRetry; src/shared/content-runtime.ts",
+    "mechanism": "The document-start bootstrap hears EVERY native volumechange in the document capture phase, but yields the whole document as soon as state.runtimeObservesMedia is true. That flag only means the heavy runtime registered SOME player. On a same-document SPA route the audible successor player is mounted after that handoff and is not in the runtime registry, so its volumechange has no publisher. The runtime's own `!selected` branch cannot help because it only fires for elements the registry registered.",
+    "whyTheTwoReportedWorkaroundsFit": "A Popup button performs an explicit read / extension intent that re-establishes the snapshot; a reload rebuilds the document, the registry and the epoch (baseline shows volumeBase=75 / media:1:1 immediately after reload).",
+    "whyEarlierRoundsMissedIt": "Prior probes sampled the ACTIVE _blank live tab, where the player is registered in the top frame and the defect does not reproduce. Earlier /follow attempts were also invalid (unsigned profile copies, wrong tab, hover-only slider not expanded). See [void samples](./2026-11-15-follow-live-badge-probe-environment.json) and [real-route proof](./2026-11-15-follow-live-badge-real-route.json).",
+    "notTheCause": [
+      "badge usage contract (I10): the repaired run creates badge.used=true only through trusted-gesture observations, never from autoplay",
+      "background observation gates: in the baseline the background received NO new intent at all during the drags",
+      "child-frame injection: the player being driven is in the top frame (frameId 0)",
+      "site login / site A/B: identical signed-in cookies and identical card coordinates across all rounds"
+    ]
+  },
+  "ablation": [
+    {
+      "run": "spectra-follow-spa-ab1.json",
+      "change": "remove ONLY the onNativeMediaChange yield",
+      "bootstrapSha256Prefix": "a08b1261ddb7fda3",
+      "result": "no change; badge still empty, zero new observations",
+      "lesson": "drainObservation and scheduleObservationRetry contain two further unconditional yields, so a single-site ablation is a false negative"
+    },
+    {
+      "run": "spectra-follow-spa-ab2.json",
+      "change": "remove ALL THREE yields (full A/B)",
+      "bootstrapSha256Prefix": "033486f561edcf15",
+      "result": "phaseA site 30/75 -> badge 30/75, usage=true, snapshot 30/75; 30 userGesture=true intents; phaseB and phaseC also fully synchronized; no regression",
+      "lesson": "the handoff yield is the sole cause; this run is diagnostic only, it also lets setup-only changes publish twice"
+    }
+  ],
+  "repair": {
+    "kind": "minimum change, no new mechanism",
+    "productFiles": [
+      "src/shared/content-runtime.ts: exported pure predicate shouldYieldNativeMediaObservation(runtimeObservesMedia, trustedGesture, pendingTrustedGesture)",
+      "src/content/core/bootstrap.ts: onNativeMediaChange computes the trusted-gesture witness FIRST and yields only when the runtime owns observation AND neither the current event nor a pending obligation carries that witness",
+      "src/content/core/bootstrap.ts: drainObservation and scheduleObservationRetry no longer cancel an existing sampling obligation because of the runtime handoff"
+    ],
+    "contractPreserved": "Setup-only changes (autoplay, player scaffolding, route restoration) still yield to the runtime exactly as before. Only a trusted viewer gesture keeps the document-start observer alive, and I10 still requires userGesture=true before any page fact may create badge usage.",
+    "unitTest": "test/native-media-handoff.spec.ts: 5 tests / 10 expect(), isolates the four handoff combinations and the I10 admission boundary",
+    "bootstrapSha256Prefix": "88d56eb44d3362df",
+    "otherArtifactsUnchanged": "content-runtime.js b4bcffb3bb82353c… and background.js aa367cf1bfd0ed3f… are byte-identical to the baseline, so only the bootstrap changed"
+  },
+  "verification": {
+    "spa": {
+      "run": "spectra-follow-spa-fix.json",
+      "sampleValid": true,
+      "reportedRouteExact": true,
+      "userGestureTrueIntents": 24,
+      "phaseA_zeroExtensionGestures": [
+        { "site": 30, "badge": "30", "usage": true, "volumeBase": 30, "badgeMatchesSite": true, "snapshotMatchesSite": true },
+        { "site": 75, "badge": "75", "usage": true, "volumeBase": 75, "badgeMatchesSite": true, "snapshotMatchesSite": true }
+      ],
+      "phaseB_afterOnePopupButton": "badge 30/75, usage=true, snapshot 30/75, all synchronized",
+      "phaseC_afterReload": "badge 75, usage=true, snapshot 75, all synchronized"
+    },
+    "activeTabRegression": {
+      "run": "spectra-follow-active-fix.json",
+      "sampleValid": true,
+      "reportedRouteExact": true,
+      "userGestureTrueIntents": 114,
+      "phaseA": "badge 30/75, usage=true, snapshot 30/75",
+      "phaseB": "badge 30/75, usage=true, snapshot 30/75",
+      "phaseC": "badge 30/75, usage=true, snapshot 30/75 (dragOk=true in all three phases)",
+      "conclusion": "no regression on the previously healthy active live tab"
+    },
+    "gates": {
+      "lint": "Strict Biome 501 files, 0 diagnostics, 0 silent handlers",
+      "typecheck": "bun tsc --noEmit, exit 0",
+      "unitNew": "bun test test/native-media-handoff.spec.ts, 5 pass / 0 fail / 10 expect()",
+      "verify": "bun run verify, exit 0, 0 errors, 8 pre-existing warnings (content-response-coverage 4 + source-file-length 4)"
+    }
+  },
+  "honestRemaining": [
+    "The repaired run's intent timeline contains 3 volumeBase=100 and 6 volumeBase=0 setup samples; the canonical snapshot and badge still settle on 30/75. O11 remains 'partially closed' and its assertions were not relaxed.",
+    "Probe runs use a throwaway Chrome profile with the signed-in cookies injected in memory. The user's own running Chrome was not taken over; the production dist loaded by the probe is the same 1.4.2 directory installed there.",
+    "The SPA tab's badge was verified through chrome.action.getBadgeText / chrome.storage.session / chrome.storage.local, not by screenshotting the toolbar icon.",
+    "No public-parity / release step was run; all files were uncommitted when the evidence was captured."
+  ]
+}

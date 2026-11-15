@@ -1,0 +1,790 @@
+{
+  "evidenceGrade": "[E-anecdotal]",
+  "head": "e9f7e73a",
+  "workingTreeModified": false,
+  "question": "Does the shipped extension publish transient volumeBase=100 or idle fields during a signed-in Douyin portal startup, before any O11 repair?",
+  "method": "Headful Chrome 157.0.8103.39 with a throwaway copy of the signed-in Douyin profile; production dist loaded via CDP Extensions.loadUnpacked; chrome.storage.onChanged records every published control snapshot from before navigation through a 15-second fully passive window.",
+  "scope": "One local Windows Chrome 157 session on 2026-11-15, www.douyin.com/jingxuan, signed-in profile copy; no cookie values recorded.",
+  "historicalBoundary": "Pre-repair baseline captured with unmodified product sources. Historical evidence is not rewritten into current tense.",
+  "competingExplanation": "A published 100 may be the site's own default element.volume=1 rather than an extension projection defect. The sequence returns to 50 on the previously selected media:1:1, so this run is graded anecdotal rather than a standalone causal proof.",
+  "notEvidenceFor": [
+    "the live-room video-to-live switch gated case (see 2026-11-15-o11-startup-projection-proof.json)",
+    "anonymous or headless portal behaviour",
+    "Chrome versions other than 157.0.8103.39",
+    "the stale-media-source symptom rows"
+  ],
+  "revalidationTrigger": "Control snapshot publication path, Douyin portal SPA source lifecycle, or local Chrome major version changes.",
+  "capturedAt": "2026-11-15T11:07:19.680Z",
+  "kind": "douyin-startup-volumeBase-projection-sampling",
+  "chrome": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "chromeVersion": "Chrome/157.0.8103.39",
+  "headless": false,
+  "portal": "https://www.douyin.com/",
+  "viewport": {
+    "width": 1600,
+    "height": 1200
+  },
+  "sampleWindowMs": 15000,
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "4ad5df43a7800f1384a7216d8cbb2f6ee3e9b16de339d262089530a457453f40",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251",
+      "content-runtime.js": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "content-bootstrap.js": "0e1568ee0c95f81a0d2b1122b15e835b703d1d13477957b5bf3bbd1e71d4cb76",
+      "content-page-media-bridge.js": "0bb5ea0fc772ca3539d98d5a3401f7d2d526ab358ad7ae4affd5a7176e318d11",
+      "popup.js": "148fbd5de94a60846eabe34f16285e0b2f386133c366581a1be3947e35ec51a6"
+    }
+  },
+  "steps": {
+    "profilePrepared": {
+      "copied": [
+        "Local State",
+        "Default/Preferences",
+        "Default/Secure Preferences",
+        "Default/Network/Cookies",
+        "Default/Network/Cookies-journal"
+      ],
+      "profileDir": "C:\\Users\\QzCrane\\AppData\\Local\\Temp\\spectra-o11-startup-SL287Q"
+    },
+    "samplerInstalledAt": "2026-11-15T11:07:20.331Z",
+    "navigation": {
+      "to": "https://www.douyin.com/",
+      "startedAt": "2026-11-15T11:07:20.331Z"
+    },
+    "site": {
+      "href": "https://www.douyin.com/jingxuan",
+      "title": "抖音精选电脑版 - 抖音旗下优质视频平台",
+      "captchaIframes": 1,
+      "mediaCount": 2,
+      "nativeVolumeText": null
+    },
+    "samples": [
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": null,
+        "at": 1794740846399,
+        "desired": null,
+        "generation": 2,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": null,
+        "strategy": null
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740846403,
+        "desired": 50,
+        "generation": 2,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740846630,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740846636,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740846655,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740847122,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740847138,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740847145,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:2",
+          "sourceRevision": 0
+        },
+        "actual": 100,
+        "at": 1794740848007,
+        "desired": 100,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": null,
+        "actual": null,
+        "at": 1794740848043,
+        "desired": null,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": "idle",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740848069,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740852593,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740859470,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:5",
+          "sourceRevision": 0
+        },
+        "actual": null,
+        "at": 1794740859472,
+        "desired": null,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": "idle",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:5",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740859508,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": null,
+        "actual": null,
+        "at": 1794740859514,
+        "desired": null,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": "idle",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:5",
+          "sourceRevision": 1
+        },
+        "actual": null,
+        "at": 1794740859531,
+        "desired": null,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": "idle",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:5",
+          "sourceRevision": 1
+        },
+        "actual": 50,
+        "at": 1794740859602,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": null,
+        "actual": null,
+        "at": 1794740859611,
+        "desired": null,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": "idle",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": null,
+        "at": 1794740859613,
+        "desired": null,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": null,
+        "phase": "idle",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740859645,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740859686,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      },
+      {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "actual": 50,
+        "at": 1794740860149,
+        "desired": 50,
+        "generation": 3,
+        "key": "spectra.control.tab.298033951",
+        "live": false,
+        "phase": "applied",
+        "strategy": "dom-native"
+      }
+    ],
+    "finalSnapshots": {
+      "spectra.control.tab.298033951": {
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false,
+        "volumeBase": {
+          "actual": 50,
+          "controlled": false,
+          "coverage": "active-target",
+          "desired": 50,
+          "lastError": null,
+          "mediaObservation": {
+            "epoch": 3,
+            "owner": "FB6566BF4403481F9774CDCB82573E51:3",
+            "revision": 4,
+            "selection": 4
+          },
+          "phase": "applied",
+          "revision": 1,
+          "strategy": "dom-native"
+        },
+        "generation": 3
+      }
+    },
+    "elapsedMs": 20579,
+    "transitions": [
+      {
+        "at": 1794740846399,
+        "actual": null,
+        "phase": null,
+        "strategy": null,
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": null
+      },
+      {
+        "at": 1794740846403,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740846630,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": null
+      },
+      {
+        "at": 1794740846636,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740846655,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740847122,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740847138,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740847145,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740848007,
+        "actual": 100,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:2",
+          "sourceRevision": 0
+        },
+        "live": null
+      },
+      {
+        "at": 1794740848043,
+        "actual": null,
+        "phase": "idle",
+        "strategy": "dom-native",
+        "activeMedia": null,
+        "live": null
+      },
+      {
+        "at": 1794740848069,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740852593,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740859470,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740859472,
+        "actual": null,
+        "phase": "idle",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:5",
+          "sourceRevision": 0
+        },
+        "live": null
+      },
+      {
+        "at": 1794740859508,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:5",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740859514,
+        "actual": null,
+        "phase": "idle",
+        "strategy": "dom-native",
+        "activeMedia": null,
+        "live": null
+      },
+      {
+        "at": 1794740859531,
+        "actual": null,
+        "phase": "idle",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:5",
+          "sourceRevision": 1
+        },
+        "live": null
+      },
+      {
+        "at": 1794740859602,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:5",
+          "sourceRevision": 1
+        },
+        "live": false
+      },
+      {
+        "at": 1794740859611,
+        "actual": null,
+        "phase": "idle",
+        "strategy": "dom-native",
+        "activeMedia": null,
+        "live": null
+      },
+      {
+        "at": 1794740859613,
+        "actual": null,
+        "phase": "idle",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": null
+      },
+      {
+        "at": 1794740859645,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740859686,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      },
+      {
+        "at": 1794740860149,
+        "actual": 50,
+        "phase": "applied",
+        "strategy": "dom-native",
+        "activeMedia": {
+          "documentId": "FB6566BF4403481F9774CDCB82573E51",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:1:1",
+          "sourceRevision": 0
+        },
+        "live": false
+      }
+    ]
+  },
+  "counts": {
+    "totalPublications": 23,
+    "hundredWrites": 1,
+    "idleWrites": 6,
+    "appliedWrites": 16,
+    "distinctStates": 23,
+    "final": {
+      "actual": 50,
+      "phase": "applied"
+    },
+    "siteNativeVolume": null
+  },
+  "assertions": {},
+  "errors": [],
+  "extensionId": "llnmkgnjogffpmachecfdhfhdepfppli"
+}

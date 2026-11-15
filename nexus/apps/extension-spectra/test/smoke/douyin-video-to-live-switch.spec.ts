@@ -62,9 +62,27 @@ describe('built extension Douyin video-to-live switch', () => {
 						}
 						setTimeout(tick, 100);
 					};
-					tick();
+				tick();
+			});
+			// O11: a transient 100 / idle projection lasts milliseconds. Record
+			// every published snapshot from before navigation, because polling
+			// only after the passive window would hide it entirely.
+			await evaluateServiceWorker(async () => {
+				const key = '__spectraStartupProjectionSamples';
+				const samples: Array<{ at: number; actual: number | null; phase: string | null }> = [];
+				await chrome.storage.session.set({ [key]: [] });
+				chrome.storage.onChanged.addListener((changes, area) => {
+					if (area !== 'local') return;
+					for (const [name, change] of Object.entries(changes)) {
+						if (!name.startsWith('spectra.control.tab.')) continue;
+						const snapshot = change.newValue as { fields?: { volumeBase?: { actual?: number | null; phase?: string | null } } } | undefined;
+						const field = snapshot?.fields?.volumeBase ?? null;
+						samples.push({ at: Date.now(), actual: field?.actual ?? null, phase: field?.phase ?? null });
+					}
+					void chrome.storage.session.set({ [key]: samples });
 				});
-				await page.goto(liveUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
+			});
+			await page.goto(liveUrl, { waitUntil: 'domcontentloaded', timeout: 60_000 });
 				await eventually(() => page.evaluate(() => {
 					const main = [...document.querySelectorAll('video')].find(node => (node as HTMLVideoElement).srcObject);
 					if (!main) return false;
@@ -78,9 +96,22 @@ describe('built extension Douyin video-to-live switch', () => {
 				// the switch. Stay completely passive through that whole window: no
 				// popup, hotkey, snapshot write or control intent may rescue the state.
 				await new Promise(resolve => setTimeout(resolve, 9_000));
-				const samples = await page.evaluate(() => JSON.parse(
-					sessionStorage.getItem('__spectraSwitchSamples') ?? '[]') as SwitchSample[]);
-				const videoOnly = samples.filter(sample => sample.video > 0 && sample.audio === 0).length;
+			const samples = await page.evaluate(() => JSON.parse(
+				sessionStorage.getItem('__spectraSwitchSamples') ?? '[]') as SwitchSample[]);
+			const projection = await evaluateServiceWorker(async () => {
+				const key = '__spectraStartupProjectionSamples';
+				return (await chrome.storage.session.get(key))[key] as Array<{ at: number; actual: number | null; phase: string | null }> ?? [];
+			});
+			const hundredWrites = projection.filter(sample => sample.actual === 100).length;
+			const idleWrites = projection.filter(sample => sample.phase === 'idle').length;
+			console.log(JSON.stringify({ o11StartupProjection: {
+				total: projection.length, hundredWrites, idleWrites,
+			} }));
+			// Guard against an empty sampler silently passing the O11 oracle.
+			expect(projection.length).toBeGreaterThan(0);
+			expect(hundredWrites).toBe(0);
+			expect(idleWrites).toBe(0);
+			const videoOnly = samples.filter(sample => sample.video > 0 && sample.audio === 0).length;
 				const liveSamples = samples.filter(sample => sample.audio > 0 && sample.duration === 'Infinity').length;
 				console.log(JSON.stringify({ switchSampler: {
 					total: samples.length, first: samples.slice(0, 4), videoOnly, live: liveSamples,

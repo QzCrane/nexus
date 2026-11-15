@@ -1,0 +1,349 @@
+{
+  "evidenceGrade": "[E-anecdotal]",
+  "realSite": true,
+  "head": "e9f7e73a",
+  "question": "Can Huya's own volume track reach 1.0, and do the site's exposed player globals offer a volume API that bypasses the track?",
+  "scope": "one anonymous public Huya room 102411 in local Chrome 157.0.8103.39 on 2026-11-15, no extension loaded, observation only",
+  "sampling": "baseline bar width, then four bounded synthetic pointer/mouse dispatches at x=837/842/847/857, one real mouse drag to x=857, three keyboard presses, and an own-property scan of five player globals",
+  "competingExplanation": "The own-property scan only inspects properties defined directly on HYPlayer, VPlayer, TT_ROOM_PLAYER, VPlayerUI and hyPlayerConfig; prototype methods or lazily created instances could still expose volume control. The keyboard leg is inconclusive because focus failed and the control scrolled out of the viewport (y=-5382).",
+  "decision": "Independently corroborates the existing [E-current] boundary that a 90px track with a 10px handle caps Huya at 85px (0.944), so a request of 100 must keep its honest ACK 94. No product change and no attempt to force the site UI past its own maximum.",
+  "notEvidenceFor": "Not evidence that no Huya volume API exists at all, not a keyboard-parity result, and not an extension control test.",
+  "revalidationTrigger": "Re-run when Huya changes its player widget geometry or exposes a documented volume API, or when the local Chrome major version changes.",
+  "capturedAt": "2026-11-15T10:38:43.317Z",
+  "kind": "huya-native-volume-ceiling-diagnostic",
+  "chrome": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "url": "https://www.huya.com/102411",
+  "viewport": {
+    "width": 1600,
+    "height": 1200
+  },
+  "method": "real mouse click and drag plus bounded synthetic pointer/mouse events on Huya .sound-progress; no extension write",
+  "steps": {
+    "baseline": {
+      "barWidth": 43.5,
+      "barStyle": "width: 43.5px;",
+      "buttonClass": "player-sound-on",
+      "buttonTitle": "音量",
+      "progress": {
+        "x": 747,
+        "y": 624,
+        "width": 90,
+        "height": 12,
+        "right": 837
+      },
+      "handle": {
+        "x": 788.5,
+        "y": 625,
+        "width": 10,
+        "height": 10
+      },
+      "media": [
+        {
+          "id": "_video_423",
+          "volume": 0.05,
+          "paused": false,
+          "primary": false
+        },
+        {
+          "id": "hy-video",
+          "volume": 0,
+          "paused": false,
+          "primary": true
+        }
+      ]
+    },
+    "synthetic": [
+      {
+        "offset": 0,
+        "x": 837,
+        "dispatched": true,
+        "after": {
+          "barWidth": 85,
+          "barStyle": "width: 85px;",
+          "buttonClass": "player-sound-on",
+          "buttonTitle": "音量",
+          "progress": {
+            "x": 747,
+            "y": 624,
+            "width": 90,
+            "height": 12,
+            "right": 837
+          },
+          "handle": {
+            "x": 830,
+            "y": 625,
+            "width": 10,
+            "height": 10
+          },
+          "media": [
+            {
+              "id": "_video_423",
+              "volume": 0.005000000000000006,
+              "paused": false,
+              "primary": false
+            },
+            {
+              "id": "hy-video",
+              "volume": 0,
+              "paused": false,
+              "primary": true
+            }
+          ]
+        }
+      },
+      {
+        "offset": 5,
+        "x": 842,
+        "dispatched": true,
+        "after": {
+          "barWidth": 85,
+          "barStyle": "width: 85px;",
+          "buttonClass": "player-sound-on",
+          "buttonTitle": "音量",
+          "progress": {
+            "x": 747,
+            "y": 624,
+            "width": 90,
+            "height": 12,
+            "right": 837
+          },
+          "handle": {
+            "x": 830,
+            "y": 625,
+            "width": 10,
+            "height": 10
+          },
+          "media": [
+            {
+              "id": "_video_423",
+              "volume": 0.1,
+              "paused": false,
+              "primary": false
+            },
+            {
+              "id": "hy-video",
+              "volume": 0,
+              "paused": false,
+              "primary": true
+            }
+          ]
+        }
+      },
+      {
+        "offset": 10,
+        "x": 847,
+        "dispatched": true,
+        "after": {
+          "barWidth": 85,
+          "barStyle": "width: 85px;",
+          "buttonClass": "player-sound-on",
+          "buttonTitle": "音量",
+          "progress": {
+            "x": 747,
+            "y": 624,
+            "width": 90,
+            "height": 12,
+            "right": 837
+          },
+          "handle": {
+            "x": 830,
+            "y": 625,
+            "width": 10,
+            "height": 10
+          },
+          "media": [
+            {
+              "id": "_video_423",
+              "volume": 0.1,
+              "paused": false,
+              "primary": false
+            },
+            {
+              "id": "hy-video",
+              "volume": 0,
+              "paused": false,
+              "primary": true
+            }
+          ]
+        }
+      },
+      {
+        "offset": 20,
+        "x": 857,
+        "dispatched": true,
+        "after": {
+          "barWidth": 85,
+          "barStyle": "width: 85px;",
+          "buttonClass": "player-sound-on",
+          "buttonTitle": "音量",
+          "progress": {
+            "x": 747,
+            "y": 624,
+            "width": 90,
+            "height": 12,
+            "right": 837
+          },
+          "handle": {
+            "x": 830,
+            "y": 625,
+            "width": 10,
+            "height": 10
+          },
+          "media": [
+            {
+              "id": "_video_423",
+              "volume": 0.1,
+              "paused": false,
+              "primary": false
+            },
+            {
+              "id": "hy-video",
+              "volume": 0,
+              "paused": false,
+              "primary": true
+            }
+          ]
+        }
+      }
+    ],
+    "realDrag": [
+      {
+        "x": 857,
+        "handleBox": {
+          "x": 830,
+          "y": 625,
+          "height": 10,
+          "width": 10
+        },
+        "after": {
+          "barWidth": 85,
+          "barStyle": "width: 85px;",
+          "buttonClass": "player-sound-on",
+          "buttonTitle": "音量",
+          "progress": {
+            "x": 747,
+            "y": 624,
+            "width": 90,
+            "height": 12,
+            "right": 837
+          },
+          "handle": {
+            "x": 830,
+            "y": 625,
+            "width": 10,
+            "height": 10
+          },
+          "media": [
+            {
+              "id": "_video_423",
+              "volume": 0.1,
+              "paused": false,
+              "primary": false
+            },
+            {
+              "id": "hy-video",
+              "volume": 0,
+              "paused": false,
+              "primary": true
+            }
+          ]
+        }
+      }
+    ],
+    "keyboard": {
+      "focused": false,
+      "after": {
+        "barWidth": 85,
+        "barStyle": "width: 85px;",
+        "buttonClass": "player-sound-on",
+        "buttonTitle": "音量",
+        "progress": {
+          "x": 747,
+          "y": -5382,
+          "width": 90,
+          "height": 12,
+          "right": 837
+        },
+        "handle": {
+          "x": 830,
+          "y": -5381,
+          "width": 10,
+          "height": 10
+        },
+        "media": [
+          {
+            "id": "_video_423",
+            "volume": 0.1,
+            "paused": false,
+            "primary": false
+          },
+          {
+            "id": "hy-video",
+            "volume": 0,
+            "paused": false,
+            "primary": true
+          }
+        ]
+      }
+    },
+    "globals": [
+      "onvolumechange",
+      "TT_PLAYER_CFG",
+      "TT_PLAYER_CONF",
+      "hyPlayerConfig",
+      "HYVodPlayer",
+      "HYPlayer",
+      "H5Player",
+      "VPlayer",
+      "TT_ROOM_PLAYER",
+      "hyPerformanceReport",
+      "__hySetupNativeModules__",
+      "__HY_HYBRID_JS_SDK_INIT_MS__",
+      "JSONP_CALLBACK_HYEXT_LIB_GEGISTRY",
+      "VPlayerUI",
+      "stopVideo",
+      "hymitt",
+      "webpackChunkHyExtComp",
+      "HyExtComp",
+      "vplayerTaf",
+      "HyLogin",
+      "hyTafNetWork",
+      "hyTaf",
+      "hyOuterJssdkReady",
+      "HyUDBWebSDK"
+    ],
+    "siteApi": [
+      {
+        "key": "HYPlayer",
+        "kind": "function",
+        "methods": [],
+        "ctor": "Function"
+      },
+      {
+        "key": "VPlayer",
+        "kind": "function",
+        "methods": [],
+        "ctor": "Function"
+      },
+      {
+        "key": "TT_ROOM_PLAYER",
+        "kind": "object",
+        "methods": [],
+        "ctor": "n"
+      },
+      {
+        "key": "VPlayerUI",
+        "kind": "function",
+        "methods": [],
+        "ctor": "Function"
+      },
+      {
+        "key": "hyPlayerConfig",
+        "kind": "object",
+        "methods": [],
+        "ctor": "Object"
+      }
+    ]
+  },
+  "errors": []
+}

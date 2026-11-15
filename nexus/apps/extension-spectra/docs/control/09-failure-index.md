@@ -269,6 +269,55 @@ flowchart TD
 - **不写成已消除**：虎牙 90px 轨道 + 10px 手柄的物理上限约 0.944，请求 100 时如实 ACK 94；
   `boost > 100` 仍只改处理器增益；O11 启动闪动仍在；Chrome 157 之外的版本无证据。
 
+#### 2026-11-15 跨 origin 接管与虎牙上限复核（HEAD `e9f7e73a`）
+
+上面两处「`www.douyin.com` 仍是验证码中间页 / 本轮无该站证据」属于 11-14 轮的历史边界，
+保持原样，不改写成现在时。本轮用登录态 profile 的 headful 真站补上该路径，
+**产品源码一行未改**，只修正了探针里两个把契约测反的 oracle（见证据的 `oracleCorrection`）。
+
+- [抖音跨 origin 接管证明](../../../../docs/research/evidence/2026-11-15-douyin-cross-origin-takeover-proof.json)
+  （`[E-current]`）：`www.douyin.com/jingxuan`（标题正常、2 个媒体）整文档导航到
+  `live.douyin.com`，随后 9 秒完全不操作。快照已是新 document 的
+  `activeMedia=media:2:1`、`live:true`、`generation 5`，`volumeBase` 为 `applied` 且
+  `actual=60` 与站点自己的 `60` 一致，全部字段 `lastError=null`；两轮独立复跑数值相同。
+  这补上了「视频切出直播后自动不能控制到直播」主诉里此前唯一缺的跨 origin 整文档路径证据：
+  在当前 HEAD 上接管成立。角标为空是 I10 要求的被动窗口结果，不是同步丢失。
+- [虎牙上限诊断](../../../../docs/research/evidence/2026-11-15-huya-volume-ceiling-diagnostic.json)
+  （`[E-anecdotal]`）：站点自己的 90px 轨道 + 10px 手柄，在合成输入 x=837~857、真实拖到
+  857 后都停在 85px；五个站点全局播放器对象的自有属性里没有音量入口（原型方法与懒加载实例
+  未覆盖，键盘支路因失焦无效）。它独立复现而非扩展 11-14 的 0.944 边界，因此
+  「请求 100 如实 ACK 94」不改，也不试图把站点 UI 推过它自己的物理上限。
+- 仍然不写成已消除：`stale-media-source` 两条症状行、O11 启动闪动、`boost > 100` 只改
+  处理器增益、Chrome 157 之外的版本、匿名/headless 门户仍被验证码拦。生产产物重建后
+  七个 dist 入口哈希逐字节一致，`check-dist-integrity` 与 `check-production-artifacts` 通过。
+
+#### 2026-11-15 O11 启动投影部分收口（HEAD `e9f7e73a` + 工作树修复）
+
+上面「O11 启动闪动仍在」是同日早些时候跨 origin 复核批次的历史口径，不回溯改写。
+本轮补上登录态 headful 的启动采样：用 `chrome.storage.onChanged` 捕捉每一次快照发布，
+而不是轮询（瞬态值只有毫秒级）。修复前两轮分别观察到 `1` 次 100 / `1` 次 idle 与
+`1` 次 100 / `6` 次 idle，最终都回到 `media:1:1 / 50`。
+
+- **修复**：`control-coordinator-values.ts` 增加纯函数 `preserveAcknowledgedVolumeBase`，
+  在 observation 发布时把「retire 产生的 idle」与「新目标未经确认的默认 100」保持为
+  上一已确认值；`control-coordinator.ts` 的 `mergeSnapshotPublication` 只加一行调用。
+  内容侧选择逻辑、几何准入与 `8c644981` 的 `reprojectReleasedSource` 自愈一行未动，
+  没有新增模块、状态或协议。
+- **真站验收**：`test/smoke/douyin-video-to-live-switch.spec.ts` 在导航前注册同一采样器，
+  9 秒纯被动窗口后要求 `0` 次 100 / `0` 次 idle，并要求采样器确实抓到发布（防空跑假通过）。
+  本机 Chrome 157、重建产物实测 `10` 次发布中两项均为 0，站点 60 与快照一致，
+  `activeMedia=media:2:1`，插件写 30 → 站点 0.3 / 角标 30，`1 pass / 14 expect()`。
+  隔离单测 `test/startup-projection-publication.spec.ts` 6 条覆盖准入与放行边界。
+- **可复跑诊断**：`scripts/probe-douyin-startup-projection.mjs`（登录态 profile 副本、
+  CDP `Extensions.loadUnpacked`、`SPECTRA_O11_EXPECT_CLEAN=1` 输出断言）。修复后门户两轮
+  `idle` 均为 0；其中一轮全程 100 无漂移，另一轮仍有 `0 → 100 → 50` 的 SPA 换源中间值。
+  第三轮页面停在未重定向根路径、0 次发布，属站点加载波动，不作判据。
+- **仍然不写成已消除**：门户 SPA 换源路径的中间 100 仍在；`stale-media-source` 两条症状行、
+  `boost > 100` 只改处理器增益、Chrome 157 之外的版本、匿名/headless 门户验证码边界
+  全部保持原样。修复前 A/B 对照轮因站点 132s 内未挂载直播流而超时，未取得同场景对照，
+  因此不把「修复后 0/0」单独当作因果证明，只与单测、修复前门户基线合起来支持结论。
+  证据见 [O11 启动投影证据](../../../../docs/research/evidence/2026-11-15-o11-startup-projection-proof.json)。
+
 **4. 按了暂停却还在放（rule）**
 
 - 写入成功与稳定证明是两个事实；`speed`、`playing`、page-controller 写入与处理器输出必须在同一事务内
@@ -423,6 +472,17 @@ flowchart TD
 - 站点策略属性在会话期内由扩展持有，会话结束才归还；会话期内重复添加会让浏览器执行退出算法，
   页面自己终止的会话要报 `policy-denied` 而不是读回不一致。
 - 规则位置：08 的 051；实现见 06 §14.8。
+
+#### 2026-11-15 第五轮：关注页同源 SPA 直播「调原生条角标不动」（已修复）
+
+- **症状与真实路径**：用户两次明确是 `https://www.douyin.com/follow` 里点进直播。站点同时做两件事：原 tab 同源 SPA 跳 `/follow/live/<id>`，并 `target=_blank` 新开 `live.douyin.com/...?from_app_resume=live` 且置为 active（无扩展对照证明确系站点行为）。此前所有「不复现」结论都采的是**活动的直播 tab**，不是用户说的同页跳转 tab。
+- **基线（真站、登录态、生产 `dist` 1.4.2、真实鼠标）**：`SPECTRA_SAMPLE_TAB=spa` 下零扩展手势拖原生条，站点数字 50→30→75，顶层 frame 索引 2 的播放元素音量 0.5→0.3→0.75，trusted `volumechange` 16→30 次；但角标始终空、`spectra.badge.used=false`、snapshot `volumeBase` 卡 50。后台在拖动前后抓到的最后 16 条意图**完全相同**（末条时间戳早于拖动）：内容侧一条观察都没发。按一次 popup 按钮后 snapshot 追到 75，reload 后立刻出现 `volumeBase=75 / media:1:1` 的正常观察。
+- **根因**：`content-bootstrap.ts` 的 document-start 捕获监听本可听见文档内**所有** `volumechange`，却在 `state.runtimeObservesMedia === true` 时于 `onNativeMediaChange` / `drainObservation` / `scheduleObservationRetry` 三处无条件让出。该标志只表示重运行时**注册过某个**播放器；SPA 换源后挂载的可听播放器不在 registry 里，其 `volumechange` 既没有 runtime 的注册监听，也被 bootstrap 让出，于是掉进空隙。runtime 的 `!selected` 分支救不了：它只对 registry 注册过的元素触发。
+- **A/B 教训**：只放开 `onNativeMediaChange` 一处**完全无效**（另两道让出仍在），曾造成一次假阴性；三处全放开后 A/B/C 三阶段角标 30/75、usage=true、snapshot 30/75，后台出现 30 条 `userGesture:true`。
+- **修复（不新增机制）**：`shared/content-runtime.ts` 增加纯函数 `shouldYieldNativeMediaObservation(runtimeObservesMedia, trustedGesture, pendingTrustedGesture)`；bootstrap 先算 trusted 手势证人，**只在「runtime 已接管且当前事件与待发义务都不带手势」时让出**，并让已成立的采样义务不再被交接标志取消。自动播放/脚手架/路由恢复仍照旧让出，I10 仍要求 `userGesture:true` 才允许页面事实创建角标 usage。隔离单测 `test/native-media-handoff.spec.ts` 5 条 / 10 `expect()`。
+- **真站复验**：`spa` 路径 A/B/C 全程角标 30/75、usage=true、snapshot 30/75（24 条 `userGesture:true`）；`active` 路径同样全同步、无回归（114 条）。两轮 `content-bootstrap.js` 哈希一致，`content-runtime.js` / `background.js` 与基线逐字节一致。
+- **规则**：观察所有权交接是**按元素**的事实，不能用一个文档级布尔把 document-start 观察者整体关掉；trusted 手势产生的采样义务在交接后仍必须送达。任何「只改一处让出」的 A/B 都不足以证伪交接链。
+- 证据：[handoff repair proof](../../../../docs/research/evidence/2026-11-15-follow-live-native-badge-handoff-repair.json)、[real-route proof](../../../../docs/research/evidence/2026-11-15-follow-live-badge-real-route.json)、[作废样本](../../../../docs/research/evidence/2026-11-15-follow-live-badge-probe-environment.json)。
 
 ### §22.4 维护规则
 

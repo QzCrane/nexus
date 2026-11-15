@@ -1,0 +1,118 @@
+{
+  "kind": "probe-environment-diagnosis",
+  "classification": "[E-anecdotal]",
+  "status": "no-valid-route-evidence",
+  "capturedAt": "2026-11-15T14:29:07.178Z",
+  "subject": "Why every automated probe of the reported www.douyin.com/follow -> live room badge-sync route was invalid, and where the static badge-creation chain breaks",
+  "warning": "This file records an ENVIRONMENT FAILURE and a STATIC code finding. It contains NO valid real-site evidence for the reported route. Do not cite any badge number from this batch as proof.",
+  "environment": {
+    "chrome": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "chromeVersion": "Chrome/157.0.8103.51",
+    "extensionId": "llnmkgnjogffpmachecfdhfhdepfppli",
+    "serviceWorkerCount": 1,
+    "extensionVersion": "1.4.2",
+    "loading": "production dist via CDP Extensions.loadUnpacked into a headful real Chrome with a throwaway profile copy",
+    "input": "real trusted mouse events only (no synthetic dispatchEvent)"
+  },
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "aa367cf1bfd0ed3ff81dcdcf6bf9f555a9eb528874d86f53243dee5fc2953014",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251",
+      "content-runtime.js": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "content-bootstrap.js": "0e1568ee0c95f81a0d2b1122b15e835b703d1d13477957b5bf3bbd1e71d4cb76",
+      "content-page-media-bridge.js": "0bb5ea0fc772ca3539d98d5a3401f7d2d526ab358ad7ae4affd5a7176e318d11",
+      "popup.js": "148fbd5de94a60846eabe34f16285e0b2f386133c366581a1be3947e35ec51a6"
+    }
+  },
+  "rootCauseOfInvalidProbes": {
+    "finding": "Chrome 157 App-Bound Encryption makes a byte copy of Default/Network/Cookies undecryptable, so every throwaway profile copy was signed OUT, not signed in.",
+    "realProfile": {
+      "douyinCookieCount": 61,
+      "loginCookieNames": ["sessionid", "sessionid_ss", "sid_tt", "sid_guard", "uid_tt", "uid_tt_ss", "passport_csrf_token"],
+      "loginCookiesAreHttpOnly": true,
+      "encryptedValuePrefix": "v20 (App-Bound Encryption)",
+      "osCrypt": { "app_bound_encrypted_key": true, "encrypted_key": true }
+    },
+    "throwawayCopy": {
+      "cdpStorageGetCookiesTotal": 57,
+      "cdpStorageGetCookiesDouyin": 0,
+      "documentCookieCount": 31,
+      "documentCookieNote": "All 31 are freshly written by the Douyin SDK after page load; none are the original login cookies.",
+      "followVisibleText": "开启读屏标签…精选推荐AI抖音关注朋友我的直播…登录后即可关注扫码登录如何扫码打开「抖音APP」…验证码登录密码登录",
+      "loginPrompt": true,
+      "followFeedApi": "https://www.douyin.com/aweme/v1/web/follow/feed/ returned HTTP 200 but the follow feed did not render"
+    },
+    "correction": "An earlier interim claim that the /follow feed 'never rendered because only Cookies were copied' was wrong. Copying Local Storage / IndexedDB / WebStorage does NOT fix it; the login cookies themselves are v20-encrypted and lost. A 300-character body sample also looked empty because inline <script> text dominates body.textContent, so it must never be used as a feed-render oracle.",
+    "failedRemedy": {
+      "approach": "Export clear cookie values from the real signed-in Chrome via CDP Storage.getCookies and inject them into the throwaway copy with Network.setCookies (values kept in process memory only).",
+      "result": "Puppeteer 25.16.0 BrowserLauncher.js:227 raises 'The browser is already running for <real profile>'. On Windows this is a ProcessSingleton false positive: Chrome logs 'Failed to create a ProcessSingleton for your profile directory', Puppeteer sees a writable directory and blames a running browser.",
+      "verification": "No chrome.exe processes alive and <real profile>/lockfile did not exist, yet two consecutive launches were rejected. Passing --user-data-dir as a raw Chrome arg does not bypass the check."
+    }
+  },
+  "routeFacts": {
+    "followEntry": "https://www.douyin.com/follow",
+    "followPageLivePlayer": "LivePlayer_PreCreatePlayer douyin-player is present even while signed out, with text '直播加载中'",
+    "liveTab": {
+      "selector": "div.tab-live",
+      "text": "直播",
+      "box": { "x": 80, "y": 376, "w": 128, "h": 40 },
+      "clickResult": "whole-document CROSS-ORIGIN navigation to https://live.douyin.com/?from_nav=1"
+    },
+    "afterLiveTab": {
+      "bodyLength": 890557,
+      "player": "LivePlayer_LiveBigCardPlayer douyin-player",
+      "volumeNumber": "0",
+      "volumeTrackBox": { "w": 0, "h": 0 },
+      "mediaElements": 6,
+      "mediaMuted": true,
+      "myFollowLiveText": "暂时没有关注的人在直播",
+      "concreteRoomLink": "https://live.douyin.com/789718821370 (text 点击进入直播间)"
+    },
+    "conclusion": "The signed-out copy cannot reach the logged-in same-origin /follow SPA route that the report describes; the reachable route is a cross-origin portal hop, which was already measured in earlier rounds and does NOT reproduce the symptom."
+  },
+  "popupFact": {
+    "observation": "Opening popup.html on the unauthenticated /follow page rendered btn-pin, btn-close-panel and a row of sp-btn icon buttons, but NO .btn-pause / playback button.",
+    "meaning": "The reported 'press popup pause/play once' gesture cannot even be issued in this environment, so phase B of every probe was structurally invalid."
+  },
+  "staticCodeFinding": {
+    "file": "apps/extension-spectra/src/background/control-coordinator.ts",
+    "function": "submitOrderedPageObservation",
+    "lines": "2811-2842",
+    "chain": [
+      "2814-2817: a page observation whose target documentId differs from baseline throws 'Physical page observation belongs to a stale document' before any badge work.",
+      "2826-2831: if (!mediaSampleCanReplace(...) && !sameSelection || isRetiredMediaSample(...)) the function RETURNS EARLY with empty fields.",
+      "2839-2842: markBadgeUsedForTab(request.tabId) — the ONLY page-side path allowed by I10 to create durable badge usage — sits AFTER both gates."
+    ],
+    "consequence": "After an SPA route/player swap, if the first trusted-gesture volume observation is judged an older sample or a retired source, the trusted-input witness reaches the background but never earns badge usage. projectBadgeFromSnapshot (line 1057) then drops the projection at the observationOnly gate, so the badge stays empty.",
+    "unblockPathsExplainThemselves": {
+      "popupPausePlay": "recordSuccessfulExtensionUse / scheduleSuccessfulExtensionUse (line 2740 / 2803) call markBadgeUsedForTab directly, bypassing page-observation admission; thereafter the observationOnly gate admits refinements.",
+      "reload": "a fresh document rebuilds baseline/mediaObservation ownership and re-injects content scripts, so the first observation is no longer stale or retired."
+    },
+    "priorArt": "apps/extension-spectra/src/background/handlers/badge.ts lines 193-214 (isSupersededPresentation) already names 'the badge only follows after I open the Popup or pause and play once' symptom, but that fix is in the badge presentation layer, not in the observation admission layer above.",
+    "status": "STATIC INFERENCE ONLY. Not confirmed on the reported route. No product code was changed in this round."
+  },
+  "probeRuns": [
+    { "id": "follow-live-v1", "result": "invalid", "reason": "signed-out copy; liveCards.markers=0, liveAnchors=[], no click, all phase drags failed" },
+    { "id": "follow-recon-no-click", "result": "invalid as feed oracle", "reason": "bodyLength 690935 was inline script text; liveCardCount 21 included <script> contents" },
+    { "id": "follow-recon-click", "result": "diagnostic only", "reason": "proved div.tab-live is a cross-origin whole-document navigation, not the reported SPA route" },
+    { "id": "follow-recon-cookie-state", "result": "valid environment fact", "reason": "CDP Storage.getCookies: 57 total / 0 douyin in the copy; loginPrompt=true" },
+    { "id": "follow-live-v2 / v3", "result": "failed to launch", "reason": "real-profile ProcessSingleton false positive on clear-cookie export" },
+    { "id": "follow-live-v4", "result": "invalid", "reason": "signed out; markerCard mis-selected div.douyin-player-loading ('直播加载中'); click did not change URL; no second-hop room link; all three phases dragOk=false; popupGesture.ok=false; sampleValid=false; reportedRouteExact=false" }
+  ],
+  "conclusion": "This round produced NO valid real-site evidence for the reported route. It did establish why earlier /follow probe batches were invalid (v20 ABE signed-out copies) and it located a concrete static break point in the badge-creation chain. The reported symptom remains UNVERIFIED and UNFIXED.",
+  "notProven": [
+    "That the /follow -> /follow/live/<id> same-origin SPA route exists in the signed-in state.",
+    "That the first trusted volume observation is actually rejected after that SPA swap.",
+    "That moving or duplicating badge-usage creation before the admission gates fixes the symptom without breaking I10.",
+    "Any claim that this batch reproduces or eliminates the badge-sync symptom."
+  ],
+  "nextStep": [
+    "Take evidence on the user's own signed-in Chrome 157 (which already has the workspace dist 1.4.2 installed) by starting it with a remote debugging port and attaching over CDP, instead of copying the profile.",
+    "On that session, drive: /follow -> real click on an in-feed live avatar -> zero-extension-gesture native volume drag, and record badgeText / spectra.badge.used.<tabId> / snapshot / content runtime status / trusted-input witness as one timeline.",
+    "Only after that timeline confirms the static break point, make the smallest product change and re-run the same gated real-site case plus the isolated unit tests."
+  ],
+  "productCodeChanged": false,
+  "committed": false
+}

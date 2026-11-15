@@ -71,6 +71,7 @@ import {
 	sameMediaTarget,
 	sameMediaObservationSelection,
 	mergeMediaObservedFields,
+	preserveAcknowledgedVolumeBase,
 	retireMediaActualFields,
 	snapshotActualPatch,
 	stageSnapshot,
@@ -922,11 +923,15 @@ function mergeSnapshotPublication(
 	const retired = replacesSelection ? retireMediaActualFields(current.fields,
 		ownerChanged || !sameMediaTarget(current.activeMedia, activeMedia),
 		ownerChanged || !sameMediaTarget(current.activeVideo, activeVideo), proposed.revision) : {};
+	const observation = physical?.observation === true;
+	const fields = preserveAcknowledgedVolumeBase(current.fields,
+		mergeMediaObservedFields({ ...current.fields, ...retired }, delta, stamp, observation),
+		!sameMediaTarget(activeMedia, current.activeMedia), observation);
 	return applyPublishedProspectiveBoostRoute(current, physical, applyPublishedLive({
 		...proposed,
 		activeMedia,
 		activeVideo,
-		fields: mergeMediaObservedFields({ ...current.fields, ...retired }, delta, stamp, physical?.observation === true),
+		fields,
 		...(replacesSelection && stamp ? { mediaObservation: stamp }
 			: current.mediaObservation ? { mediaObservation: current.mediaObservation } : {}),
 	}, publishedLive(current, physical, activeMedia)));

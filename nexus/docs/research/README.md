@@ -81,6 +81,9 @@ room directly; none observed the transition. This batch closes that gap.
 - The short startup projection flicker is registered as O11 and is explicitly
   not claimed as eliminated. `www.douyin.com` remains captcha-blocked, so a
   cross-origin video-page to live-room navigation has no current-HEAD evidence.
+  This is the 11-14 boundary, preserved in its original tense; the 11-15
+  [cross-origin takeover proof](evidence/2026-11-15-douyin-cross-origin-takeover-proof.json)
+  below closes it with a signed-in headful profile.
 - `sync-public.ts spectra --amend` revised the unpushed public candidate from
   `9596b5f` to `091005a` after the two product sources changed. The parity
   baseline was not loosened: the real entry reports `0 differing / 0 missing`.
@@ -115,6 +118,73 @@ them observed Huya's own controls.
 - The new projection module never writes `element.volume`: `SCTRL-003` keeps a
   single canonical media writer. Mirror alignment stays in
   `native-media-executor.ts`, with a unit test guarding the boundary.
+
+## Cross-origin takeover and Huya ceiling evidence 2026-11-15 (HEAD `e9f7e73a`)
+
+No product source was modified in this batch. The production artifact was rebuilt
+from the unmodified sources and reproduced the seven dist entrypoint hashes byte
+for byte; `check-dist-integrity` and `check-production-artifacts` pass. Browser:
+local Chrome 157.0.8103.39 via CDP `Extensions.loadUnpacked` for the control run.
+
+- [Douyin cross-origin takeover proof](evidence/2026-11-15-douyin-cross-origin-takeover-proof.json)
+  (`[E-current]`): a headful copy of the signed-in profile loads
+  `www.douyin.com/jingxuan` without a captcha interception (2 media). A
+  whole-document navigation to `live.douyin.com` is followed by a nine-second
+  passive window with no gesture, hotkey, popup or snapshot write. The shipped
+  snapshot then reports `activeMedia=media:2:1`, `live:true`, generation 5 and
+  `volumeBase=60 applied`, matching the site's own `60`; every field has
+  `lastError=null`. Two independent runs agree. The badge stays empty, which is
+  the required I10 outcome for a passive window, not a missed sync.
+- [Huya volume-ceiling diagnostic](evidence/2026-11-15-huya-volume-ceiling-diagnostic.json)
+  (`[E-anecdotal]`): the site's own 90px track with a 10px handle stops at 85px
+  (0.944) under synthetic clicks at x=837..857 and a real drag to 857; a scan of
+  five player globals exposed no own volume methods. It corroborates, but does
+  not extend, the 11-14 `[E-current]` honest-ACK-94 boundary.
+
+Scope is one local Windows Chrome 157 session on 2026-11-15 with a signed-in
+Douyin profile copy; no cookie values are recorded. The competing explanation for
+the 60/60 agreement (the site's own default rather than an extension projection)
+is addressed by the rebuilt snapshot identity and the absence of errors, not by
+the number alone; the signed-in headful profile is itself a selection bias. The
+decision is to close the cross-origin evidence gap while keeping O11, the
+stale-media-source rows, `boost > 100` and the Chrome-157 scope out of any
+"eliminated" claim. Revalidate when the control snapshot, content bootstrap,
+Douyin risk-control behaviour, Huya widget geometry, or the local Chrome major
+version changes.
+
+## O11 startup projection evidence 2026-11-15 (HEAD `e9f7e73a` + working tree)
+
+This batch does modify product source. The shipped artifact was rebuilt from the
+modified sources and the seven dist entrypoint hashes are recorded in the
+evidence JSON. Browser: local Chrome 157.0.8103.39, headful, CDP
+`Extensions.loadUnpacked`, throwaway copy of the signed-in Douyin profile.
+
+- [O11 startup projection proof](evidence/2026-11-15-o11-startup-projection-proof.json)
+  (`[E-current]`): every control-snapshot publication is captured by
+  `chrome.storage.onChanged` from before navigation, not by polling. Two
+  pre-repair portal runs observed 1 and 6 `idle` writes and one unconfirmed `100`
+  each. The repair adds one pure admission helper to
+  `control-coordinator-values.ts` and one call in `mergeSnapshotPublication`;
+  content-side selection, geometry admission and the `8c644981` reprojection
+  self-heal are untouched. The gated `douyin-video-to-live-switch.spec.ts` run
+  then reported 10 publications with zero `100` and zero `idle`,
+  `activeMedia=media:2:1 / 60`, and a real gesture writing 30 through to the
+  site. Six isolated unit tests guard the admission and its pass-through cases.
+- [Pre-repair baseline](evidence/2026-11-15-o11-startup-projection-baseline.json)
+  (`[E-anecdotal]`): the raw richer pre-repair sampling run, retained for the
+  exact publication sequence rather than a summary statistic.
+
+Scope and honest limits: the portal SPA source-replacement path can still read a
+`0 -> 100 -> 50` intermediate value, so O11 is recorded as partially closed,
+not eliminated. One pre-repair gated A/B run timed out because the site did not
+mount a live stream within 132s, so no same-scene before/after pair exists. A
+later element-witness run stayed on the unredirected root path with zero
+publications and is excluded, not counted as a pass. The signed-in headful
+profile is itself a selection bias; anonymous and headless portals remain
+captcha-blocked. The `stale-media-source` rows, `boost > 100`, and Chrome
+versions other than 157 stay out of any eliminated claim. Revalidate when the
+control snapshot publication path, the Douyin portal SPA source lifecycle, or
+the local Chrome major version changes.
 
 ## Evidence contract
 

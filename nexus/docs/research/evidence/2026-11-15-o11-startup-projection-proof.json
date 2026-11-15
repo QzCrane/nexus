@@ -1,0 +1,130 @@
+{
+  "evidenceGrade": "[E-current]",
+  "head": "e9f7e73a",
+  "workingTreeModified": true,
+  "capturedAt": "2026-11-15T11:45:32Z",
+  "kind": "o11-startup-projection-repair-proof",
+  "question": "Can O11's startup volumeBase flicker be reproduced on the shipped artifact, and does a minimal publication-time admission remove the 100 / idle repaints without breaking the Douyin video-to-live takeover?",
+  "method": "Headful local Chrome 157.0.8103.39 with a throwaway copy of the signed-in Douyin profile; production dist loaded via CDP Extensions.loadUnpacked; chrome.storage.onChanged records every published control snapshot from before navigation through a fully passive window (15s portal probe / 9s gated case). No popup, hotkey, snapshot write or control intent is issued before the passive window ends.",
+  "scope": "One local Windows Chrome 157 session on 2026-11-15; signed-in www.douyin.com portal and public live.douyin.com; no cookie values recorded.",
+  "chromeVersion": "Chrome/157.0.8103.39",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "source": "rebuilt from the modified working tree with bun run build",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "aa367cf1bfd0ed3ff81dcdcf6bf9f555a9eb528874d86f53243dee5fc2953014",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251",
+      "content-runtime.js": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "content-bootstrap.js": "0e1568ee0c95f81a0d2b1122b15e835b703d1d13477957b5bf3bbd1e71d4cb76",
+      "content-page-media-bridge.js": "0bb5ea0fc772ca3539d98d5a3401f7d2d526ab358ad7ae4affd5a7176e318d11",
+      "popup.js": "148fbd5de94a60846eabe34f16285e0b2f386133c366581a1be3947e35ec51a6"
+    }
+  },
+  "repair": {
+    "files": [
+      "apps/extension-spectra/src/background/control-coordinator-values.ts",
+      "apps/extension-spectra/src/background/control-coordinator.ts"
+    ],
+    "description": "A pure helper preserveAcknowledgedVolumeBase keeps the last acknowledged volumeBase when an observation publication carries either a retired idle field or a new target's unconfirmed default of 100. mergeSnapshotPublication adds one call. Control intents, ordinary reads and non-observation publications are untouched.",
+    "unchanged": [
+      "content-side media selection and geometry admission in media-registry.ts",
+      "8c644981 reprojectReleasedSource self-heal and its activeMedia empty trigger",
+      "retireMediaActualFields semantics",
+      "all smoke assertions (three new ones added, none relaxed)"
+    ],
+    "unitTest": {
+      "file": "apps/extension-spectra/test/startup-projection-publication.spec.ts",
+      "result": "6 pass / 0 fail / 7 expect()",
+      "coverage": "retired idle, new-target default 100, confirmed new value, unchanged target 100, non-observation publication, no acknowledged value"
+    }
+  },
+  "baseline": {
+    "rawEvidence": "2026-11-15-o11-startup-projection-baseline.json",
+    "run1": { "totalPublications": 8, "hundredWrites": 1, "idleWrites": 1, "appliedWrites": 6, "final": { "actual": 50, "phase": "applied" } },
+    "run2": { "totalPublications": 23, "hundredWrites": 1, "idleWrites": 6, "appliedWrites": 16, "final": { "actual": 50, "phase": "applied" } },
+    "historical": "11-14 report section 7 recorded 3 volumeBase=100 and 5 idle writes, all repaired by the 8c644981 automatic reprojection to media:2:1 / 60",
+    "note": "The 100 in both runs came from a short-lived media:2:2 selection; the idle writes came from its source release. Both returned to media:1:1 / 50."
+  },
+  "acceptance": {
+    "command": "SPECTRA_DOUYIN_SWITCH_URL=https://live.douyin.com/ NEXUS_CHROME_EXECUTABLE=\"C:/Program Files/Google/Chrome/Application/chrome.exe\" bun test test/smoke/douyin-video-to-live-switch.spec.ts",
+    "result": "1 pass / 0 fail / 14 expect()",
+    "assertionsAdded": [
+      "sampler observed at least one publication (anti-empty-run guard)",
+      "zero published 100 values",
+      "zero published idle fields"
+    ],
+    "o11StartupProjection": { "total": 10, "hundredWrites": 0, "idleWrites": 0 },
+    "siteVolumeBeforeGesture": 60,
+    "activeMediaBeforeGesture": "media:2:1",
+    "transitionSamples": 61,
+    "gesture": { "requested": 30, "siteNativeVolume": 30, "elementVolume": 0.3, "badge": "30" }
+  },
+  "postRepairPortalRuns": [
+    {
+      "run": 1,
+      "totalPublications": 5,
+      "hundredWrites": 5,
+      "idleWrites": 0,
+      "final": { "actual": 100, "phase": "applied" },
+      "transientRepaint": false,
+      "note": "Every publication was 100 on the same media:2:1 target; 100 was the page's own level, not a flicker."
+    },
+    {
+      "run": 2,
+      "totalPublications": 16,
+      "hundredWrites": 6,
+      "idleWrites": 0,
+      "final": { "actual": 50, "phase": "applied" },
+      "transientRepaint": true,
+      "note": "A 0 -> 100 -> 50 sequence during portal SPA source replacement. idle is gone, but the intermediate 100 remains, so O11 is not fully eliminated."
+    },
+    {
+      "run": 3,
+      "totalPublications": 0,
+      "note": "Excluded, not counted as a pass: the portal stayed on the unredirected root path with one unlaid-out media element and mounted no control snapshot. Adds an element-level witness sampler to the probe."
+    }
+  ],
+  "failedControl": {
+    "attempt": "Pre-repair A/B on the same gated spec after reverting the two product files, rebuilding dist, then restoring the repair and rebuilding again",
+    "outcome": "The before-run failed after 132s waiting for 'Douyin mounts a playing live stream with an audio track'. No same-scene before/after pair was obtained.",
+    "classification": "Site-side load variance, not an assertion failure. The final dist was restored to the repair build and its seven hashes match the acceptance run."
+  },
+  "gates": {
+    "typecheck": "exit 0",
+    "lint": "Strict Biome 495 files, 0 diagnostics, 0 silent handlers",
+    "build": "exit 0",
+    "check-dist-integrity": "exit 0",
+    "check-production-artifacts": "exit 0",
+    "newUnitTest": "6 pass / 0 fail / 7 expect()",
+    "gatedRealSite": "1 pass / 0 fail / 14 expect()",
+    "verify": "6 timing timeouts at a 5000ms threshold while only 3.5 GB RAM was free; single-file diagnostics with a 15s timeout: 15 pass / 0 fail / 27 expect()",
+    "isolatedUnitSuite": "4 timing timeouts at concurrency 8 under the same memory pressure; the same 4 files run with a 15s diagnostic timeout: 117 pass / 0 fail / 485 expect()",
+    "docs:check": "rerun after this evidence file was archived; the only prior failures were three links pointing at this missing file",
+    "noBaselineWasRelaxed": true
+  },
+  "assertions": {
+    "baselineReproduced": true,
+    "postRepairZeroIdleOnEveryRun": true,
+    "gatedCaseZeroHundredAndZeroIdle": true,
+    "gatedCaseSamplerObservedPublications": true,
+    "finalStateMatchesSite": true,
+    "gestureStillControlsSite": true,
+    "unitCoversAdmissionAndPassThrough": true,
+    "contentSideSelectionUnchanged": true,
+    "o11FullyEliminated": false
+  },
+  "notEvidenceFor": [
+    "elimination of O11 on the portal SPA source-replacement path",
+    "a same-scene pre-repair gated A/B comparison",
+    "the stale-media-source symptom rows",
+    "boost > 100 or the Huya 0.944 physical ceiling",
+    "anonymous or headless Douyin portal behaviour",
+    "Chrome versions other than 157.0.8103.39",
+    "other rooms, viewports or player versions"
+  ],
+  "competingExplanation": "The post-repair 0/0 gated run could be a quiet page load rather than the repair's effect. It is therefore combined with the pre-repair portal baseline, the six unit tests on the admission helper and the unchanged final value, not read as a standalone causal proof.",
+  "selectionBias": "A signed-in headful profile copy on one Windows machine; anonymous profiles are captcha-blocked and cannot supply the same scene.",
+  "decision": "Record O11 as partially closed: idle repaints are removed and the gated live-room takeover is clean, but the portal SPA intermediate 100 remains. Do not mark O11 resolved and do not relax any assertion.",
+  "revalidationTrigger": "Control snapshot publication path, Douyin portal SPA source lifecycle, Douyin risk-control behaviour, or the local Chrome major version changes."
+}

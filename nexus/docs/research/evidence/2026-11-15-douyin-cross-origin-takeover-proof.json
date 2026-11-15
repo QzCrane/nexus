@@ -1,0 +1,325 @@
+{
+  "evidenceGrade": "[E-current]",
+  "realSite": true,
+  "head": "e9f7e73a",
+  "headFull": "e9f7e73ad3936209d2879acbafa5120eadf56065",
+  "artifactRebuiltFromHead": "bun run build on the unmodified product sources reproduced the seven dist SHA-256 values under artifact.sha256 byte for byte; check-dist-integrity and check-production-artifacts both pass",
+  "question": "After a whole-document cross-origin navigation from the www.douyin.com video portal into live.douyin.com, does the shipped extension take over the live player with no gesture, hotkey, popup or snapshot write?",
+  "scope": "local Chrome 157.0.8103.39 on Windows, headful, a throwaway copy of the signed-in Chrome profile, public Douyin pages observed 2026-11-15; only cookie file names are recorded, never values",
+  "sampling": "one portal read after 6s; then a whole-document navigation and a 9s passive window with no control intent; oracles are the shipped chrome.storage.local control snapshot, the action badge and the site's own DOM",
+  "tools": [
+    "apps/extension-spectra/scripts/probe-douyin-authed-control.mjs",
+    "apps/extension-spectra/scripts/probe-douyin-authed.mjs"
+  ],
+  "oracleCorrection": "The first run used two wrong oracles: portalIsNotCaptcha required zero captcha iframes although a non-blocking risk-control iframe remains on a normally loaded portal; badgeMatchesVolume demanded a numeric badge in a deliberately passive window, which contradicts I10 (badge visibility is created only by a confirmed user gesture). Both raw counts are still recorded under observed. The probe now tests the real title plus media for the portal and an empty badge for the passive window; no product source was changed and no product-behaviour assertion was weakened.",
+  "repeatability": {
+    "round1CapturedAt": "2026-11-15T10:38:42.878Z",
+    "round2CapturedAt": "2026-11-15T10:40:05.147Z",
+    "round1SiteVolume": "60",
+    "round1VolumeBaseActual": 60,
+    "round1ActiveMedia": "media:2:1",
+    "round1BadgeText": "",
+    "note": "Both runs independently reached the same live selection, applied volumeBase 60 matching the site number 60, and an empty badge."
+  },
+  "competingExplanation": "The 60/60 agreement could be the site's own default rather than an extension projection; activeMedia present, live:true, generation 5 and every field phase applied with lastError null show the shipped snapshot was rebuilt for the new document. A signed-in headful profile is a selection bias: anonymous or headless sessions remain captcha-blocked.",
+  "decision": "Close the 2026-11-14 gap recorded in research/README.md: a cross-origin video-portal to live-room navigation now has current-HEAD real-site evidence and takeover holds. Keep the stale-media-source rows, O11 startup flicker and the Chrome 157 scope unchanged.",
+  "notEvidenceFor": "Not evidence for direct entry into an arbitrary live room, for an anonymous or headless portal, for Chrome versions other than 157, for badge visibility without a gesture, or for Huya native-control parity.",
+  "revalidationTrigger": "Re-run when the product control snapshot, content bootstrap, Douyin portal login or risk-control behaviour, or the local Chrome major version changes.",
+  "capturedAt": "2026-11-15T10:40:05.147Z",
+  "kind": "douyin-cross-origin-navigation-real-site-proof",
+  "chrome": "C:/Program Files/Google/Chrome/Application/chrome.exe",
+  "chromeVersion": "Chrome/157.0.8103.39",
+  "headless": false,
+  "portal": "https://www.douyin.com/",
+  "live": "https://live.douyin.com/",
+  "viewport": {
+    "width": 1600,
+    "height": 1200
+  },
+  "method": "headful real Chrome with a throwaway copy of the signed-in profile; production extension loaded via CDP; nine-second passive window after a whole-document cross-origin navigation",
+  "artifact": {
+    "path": "apps/extension-spectra/dist",
+    "sha256": {
+      "manifest.json": "d8adf4010fea8c73aaede0b1356809d83e0f57ad0e71344c91f5f4d3779f475b",
+      "background.js": "4ad5df43a7800f1384a7216d8cbb2f6ee3e9b16de339d262089530a457453f40",
+      "offscreen.js": "5e95e3ebd592c86d8357608b6282aa0b9792c693c0061e71a683ecf555865251",
+      "content-runtime.js": "b4bcffb3bb82353c6f63c51210e9118aca2b81ff6e176a90f0051b7c71e69ce8",
+      "content-bootstrap.js": "0e1568ee0c95f81a0d2b1122b15e835b703d1d13477957b5bf3bbd1e71d4cb76",
+      "content-page-media-bridge.js": "0bb5ea0fc772ca3539d98d5a3401f7d2d526ab358ad7ae4affd5a7176e318d11",
+      "popup.js": "148fbd5de94a60846eabe34f16285e0b2f386133c366581a1be3947e35ec51a6"
+    }
+  },
+  "steps": {
+    "profilePrepared": {
+      "copied": [
+        "Local State",
+        "Default/Preferences",
+        "Default/Secure Preferences",
+        "Default/Network/Cookies",
+        "Default/Network/Cookies-journal"
+      ],
+      "profileDir": "C:\\Users\\QzCrane\\AppData\\Local\\Temp\\spectra-douyin-control-iwvgVd"
+    },
+    "portal": {
+      "href": "https://www.douyin.com/jingxuan",
+      "title": "抖音精选电脑版 - 抖音旗下优质视频平台",
+      "captchaIframes": 1,
+      "mediaCount": 2,
+      "nativeVolumeText": null,
+      "main": [
+        {
+          "id": "",
+          "volume": 1,
+          "paused": false,
+          "tracks": null,
+          "box": {
+            "w": 10,
+            "h": 10
+          },
+          "duration": "2.6"
+        },
+        {
+          "id": "",
+          "volume": 0,
+          "paused": true,
+          "tracks": {
+            "video": 1,
+            "audio": 0
+          },
+          "box": {
+            "w": 1600,
+            "h": 0
+          },
+          "duration": "NaN"
+        }
+      ],
+      "liveLinks": [
+        "https://live.douyin.com/?from_nav=1"
+      ]
+    },
+    "identity": {
+      "tabId": 298033951
+    },
+    "navigation": {
+      "from": "https://www.douyin.com/jingxuan",
+      "to": "https://live.douyin.com/?from_nav=1"
+    },
+    "afterPassiveWindow": {
+      "site": {
+        "href": "https://live.douyin.com/",
+        "title": "抖音直播电脑版_抖音直播网页版入口_抖音直播",
+        "captchaIframes": 0,
+        "mediaCount": 9,
+        "nativeVolumeText": "60",
+        "main": [
+          {
+            "id": "",
+            "volume": 1,
+            "paused": false,
+            "tracks": null,
+            "box": {
+              "w": 10,
+              "h": 10
+            },
+            "duration": "2.6"
+          },
+          {
+            "id": "",
+            "volume": 0.6,
+            "paused": false,
+            "tracks": {
+              "video": 1,
+              "audio": 1
+            },
+            "box": {
+              "w": 683,
+              "h": 500
+            },
+            "duration": "Infinity"
+          },
+          {
+            "id": "",
+            "volume": 1,
+            "paused": false,
+            "tracks": null,
+            "box": {
+              "w": 220,
+              "h": 390
+            },
+            "duration": "16.067"
+          },
+          {
+            "id": "",
+            "volume": 1,
+            "paused": false,
+            "tracks": null,
+            "box": {
+              "w": 220,
+              "h": 390
+            },
+            "duration": "20.019999999999996"
+          },
+          {
+            "id": "",
+            "volume": 1,
+            "paused": false,
+            "tracks": null,
+            "box": {
+              "w": 220,
+              "h": 388
+            },
+            "duration": "608.016009"
+          },
+          {
+            "id": "",
+            "volume": 1,
+            "paused": false,
+            "tracks": null,
+            "box": {
+              "w": 332,
+              "h": 589
+            },
+            "duration": "20"
+          },
+          {
+            "id": "",
+            "volume": 1,
+            "paused": false,
+            "tracks": null,
+            "box": {
+              "w": 332,
+              "h": 589
+            },
+            "duration": "11"
+          },
+          {
+            "id": "",
+            "volume": 1,
+            "paused": false,
+            "tracks": null,
+            "box": {
+              "w": 332,
+              "h": 589
+            },
+            "duration": "21.038005"
+          }
+        ],
+        "liveLinks": [
+          "https://live.douyin.com/?from_nav=1",
+          "https://live.douyin.com/download/pc/obj/douyin-pc-web/douyin-pc-client/7044145585217083655/releases/540056698/8.8.0/win32-ia32/douyin-downloader-v8.8.0-win32-ia32-douyincold.exe",
+          "https://live.douyin.com/",
+          "https://live.douyin.com/categorynew/4_101"
+        ]
+      },
+      "snapshot": {
+        "documentId": "D1686F7A53196E7EB9F5984BC6CCFCA5",
+        "generation": 5,
+        "activeMedia": {
+          "documentId": "D1686F7A53196E7EB9F5984BC6CCFCA5",
+          "frameId": 0,
+          "kind": "video",
+          "mediaId": "media:2:1",
+          "sourceRevision": 1
+        },
+        "live": true,
+        "fields": {
+          "currentTime": {
+            "actual": 4.085462,
+            "desired": 4.085462,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          },
+          "fullscreen": {
+            "actual": false,
+            "desired": false,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          },
+          "loop": {
+            "actual": false,
+            "desired": false,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          },
+          "mediaMuted": {
+            "actual": false,
+            "desired": false,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          },
+          "pip": {
+            "actual": false,
+            "desired": false,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          },
+          "playing": {
+            "actual": true,
+            "desired": true,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          },
+          "preservePitch": {
+            "actual": true,
+            "desired": true,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          },
+          "speed": {
+            "actual": 1,
+            "desired": 1,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          },
+          "volumeBase": {
+            "actual": 60,
+            "desired": 60,
+            "phase": "applied",
+            "strategy": "dom-native",
+            "lastError": null
+          }
+        }
+      },
+      "badge": {
+        "text": ""
+      }
+    }
+  },
+  "assertions": {
+    "portalIsNotCaptcha": true,
+    "navigationIsCrossOrigin": true,
+    "liveHasMedia": true,
+    "activeMediaPresent": true,
+    "volumeBaseApplied": true,
+    "volumeMatchesSite": true,
+    "badgeAbsentWithoutGesture": true,
+    "observed": {
+      "portalTitle": "抖音精选电脑版 - 抖音旗下优质视频平台",
+      "portalMediaCount": 2,
+      "portalCaptchaIframes": 1,
+      "liveTitle": "抖音直播电脑版_抖音直播网页版入口_抖音直播",
+      "liveMediaCount": 9,
+      "siteNativeVolumeText": "60",
+      "volumeBaseActual": 60,
+      "volumeBasePhase": "applied",
+      "badgeText": "",
+      "activeMedia": {
+        "documentId": "D1686F7A53196E7EB9F5984BC6CCFCA5",
+        "frameId": 0,
+        "kind": "video",
+        "mediaId": "media:2:1",
+        "sourceRevision": 1
+      }
+    }
+  },
+  "errors": [],
+  "extensionId": "llnmkgnjogffpmachecfdhfhdepfppli"
+}

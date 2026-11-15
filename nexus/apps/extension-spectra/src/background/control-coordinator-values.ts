@@ -196,6 +196,31 @@ export function mergeMediaObservedFields(
 	return fields;
 }
 
+/**
+ * O11: startup projections must not repaint an already acknowledged level.
+ * A short-lived probe player can win the selection before geometry proves the
+ * real presentation, so its untouched `element.volume = 1` reads as 100; the
+ * source release that follows retires the field to `idle`. The passive
+ * reprojection publishes the confirmed value milliseconds later. Keep the last
+ * acknowledged `volumeBase` for exactly those two shapes and only for
+ * observation publications, so control intents and ordinary reads are intact.
+ */
+export function preserveAcknowledgedVolumeBase(
+	current: ControlFieldStates,
+	incoming: ControlFieldStates,
+	targetChanged: boolean,
+	observation: boolean,
+): ControlFieldStates {
+	if (!observation) return incoming;
+	const before = current.volumeBase;
+	const after = incoming.volumeBase;
+	if (!before || !after || before.phase !== 'applied' || typeof before.actual !== 'number') return incoming;
+	const retired = after.phase === 'idle' && after.actual === null && !after.controlled;
+	const provisionalDefault = targetChanged && after.actual === 100 && before.actual !== 100;
+	if (!retired && !provisionalDefault) return incoming;
+	return { ...incoming, volumeBase: before };
+}
+
 // An observation is a value and the writer that produced it. The two travel
 // together so no caller can synthesise an "actual" value and guess its
 // provenance: `applyPageObservation` already refuses that, and native

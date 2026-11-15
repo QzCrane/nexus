@@ -20,6 +20,7 @@ import {
 	needsManifestVolumeCommand,
 	noteMediaUserGesture,
 	setContentBootstrapState,
+	shouldYieldNativeMediaObservation,
 	type ContentBootstrapState,
 } from '../../shared/content-runtime';
 import {
@@ -502,7 +503,10 @@ if (!getContentBootstrapState()) {
 	};
 
 	const scheduleObservationRetry = (): void => {
-		if (disposed || state.runtimeObservesMedia || observationRetryTimer !== null
+		// A sampling obligation is not cancelled by the runtime's observation
+		// ownership. Once a trusted gesture has opened it, a rejected delivery
+		// must keep retrying even while the runtime owns a different player.
+		if (disposed || observationRetryTimer !== null
 			|| observationRetryAttempt >= DELIVERY_RETRY_DELAYS_MS.length) return;
 		const delay = DELIVERY_RETRY_DELAYS_MS[observationRetryAttempt];
 		observationRetryAttempt += 1;
@@ -515,13 +519,11 @@ if (!getContentBootstrapState()) {
 
 	const drainObservation = (): void => {
 		if (disposed || observationInFlight || !pendingObservation) return;
-		if (!observationsReady || state.runtimeObservesMedia) {
-			if (state.runtimeObservesMedia) {
-				pendingObservation = false;
-				pendingObservationGesture = false;
-			}
-			return;
-		}
+		// `onNativeMediaChange` already filtered setup-only changes before the
+		// runtime handoff. Once an obligation exists, delivering it must not be
+		// vetoed by that handoff: the HELLO verdict describes ownership of media
+		// presence reporting, not a guarantee that every player is registered.
+		if (!observationsReady) return;
 		pendingObservation = false;
 		const userGesture = pendingObservationGesture;
 		pendingObservationGesture = false;
@@ -584,8 +586,18 @@ if (!getContentBootstrapState()) {
 		// Yield only to a runtime that registered a player. Injection or a READY
 		// handshake is not proof: a runtime that never discovered this document's
 		// media must not remove the only observer that hears native changes.
-		if (state.runtimeObservesMedia) return;
-		if (event.type === 'volumechange' && hasRecentMediaUserGesture()) pendingObservationGesture = true;
+		//
+		// A trusted viewer gesture is the exception. A same-document SPA route can
+		// mount the player the viewer actually hears after the heavy runtime has
+		// already registered a different (preview) element; that successor's
+		// `volumechange` never reaches the runtime, while this document-start
+		// capture listener hears it. Yielding the whole document in that state
+		// left the badge frozen until a Popup click or a reload. Verified on
+		// www.douyin.com/follow -> /follow/live/<id> with real trusted drags.
+		const gesture = event.type === 'volumechange' && hasRecentMediaUserGesture();
+		if (gesture) pendingObservationGesture = true;
+		if (shouldYieldNativeMediaObservation(
+			state.runtimeObservesMedia === true, gesture, pendingObservationGesture)) return;
 		pendingObservation = true;
 		drainObservation();
 	};
