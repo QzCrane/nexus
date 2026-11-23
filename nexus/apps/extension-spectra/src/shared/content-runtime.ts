@@ -42,6 +42,7 @@ export interface ContentBootstrapState {
 	 * observer that actually receives native volume events.
 	 */
 	runtimeObservesMedia?: boolean;
+	observeNativeMediaChange?: (element: HTMLMediaElement, type: 'volumechange' | 'ratechange') => void;
 	disposeRuntime?: () => Promise<void>;
 	getOwnedSources?: () => ContentRuntimeSourceOwnership[];
 	getMediaIntent?: () => NonNullable<ContentRuntimeStatus['mediaIntentState']>;
@@ -173,6 +174,17 @@ export function setContentRuntimeObservesMedia(observing: boolean): void {
 	if (!state) return;
 	if (observing) state.runtimeObservesMedia = true;
 	else delete state.runtimeObservesMedia;
+}
+
+export function setContentNativeMediaObserver(
+	observer: NonNullable<ContentBootstrapState['observeNativeMediaChange']>,
+): () => void {
+	const state = getContentBootstrapState();
+	if (!state) return () => undefined;
+	state.observeNativeMediaChange = observer;
+	return () => {
+		if (state.observeNativeMediaChange === observer) delete state.observeNativeMediaChange;
+	};
 }
 
 export function setContentRuntimeDisposer(disposer: (() => Promise<void>) | null): void {

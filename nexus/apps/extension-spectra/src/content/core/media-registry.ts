@@ -511,6 +511,20 @@ export class MediaRegistry {
 		if (this.activeMediaId !== null && !element.paused) this.admitBetterCandidate(true);
 	}
 
+	observeNativeMediaChange(element: HTMLMediaElement, type: 'volumechange' | 'ratechange'): void {
+		if (this.disposed || !element.isConnected) return;
+		this.register(element);
+		const record = this.byElement.get(element);
+		if (!record) return;
+		record.visibleArea = initialVisibleArea(element);
+		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
+		if (active) active.visibleArea = initialVisibleArea(active.element);
+		this.refreshSource(element, false);
+		if (active && (active.element.paused || active.element.ended)) this.reconcileRetiredSelection();
+		this.establishInitialSelection(true);
+		this.emit(record.target, type, element);
+	}
+
 	private unregister(element: HTMLMediaElement): void {
 		const record = this.byElement.get(element);
 		if (!record) return;

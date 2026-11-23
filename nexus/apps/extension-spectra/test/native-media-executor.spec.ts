@@ -523,7 +523,7 @@ describe('native media single-writer correlation', () => {
 		} finally { executor.dispose(); }
 	});
 
-	test('observes a native volume change from any registered player the selection has not reached', async () => {
+	test('publishes successor volume only after the registry admits that control target', async () => {
 		installFakeMediaGlobals();
 		const registry = new FakeRegistry();
 		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
@@ -538,15 +538,21 @@ describe('native media single-writer correlation', () => {
 			? { element: live as unknown as HTMLMediaElement, target: liveTarget }
 			: { element: registry.element as unknown as HTMLMediaElement, target: { ...registry.target } });
 		try {
+			executor.publishCurrentSelection();
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			messages.length = 0;
 			registry.listener?.({ ...liveTarget }, 'volumechange', live as unknown as HTMLMediaElement);
+			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
+			expect(messages.some((message) => message.type === 'spectra.control.intent.submit')).toBe(false);
+			expect(messages.some((message) => message.type === 'spectra.content.target.changed')).toBe(false);
+			registry.resolve = () => ({ element: live as unknown as HTMLMediaElement, target: liveTarget });
+			registry.listener?.({ ...liveTarget }, 'selected', live as unknown as HTMLMediaElement);
 			await new Promise((resolveTick) => setTimeout(resolveTick, 0));
 			const observation = messages.find((message) => message.type === 'spectra.control.intent.submit');
 			expect(observation?.payload).toMatchObject({
-				source: 'page',
-				target: liveTarget,
-				patch: { volumeBase: 42, mediaMuted: false },
+				source: 'page', target: liveTarget, patch: { volumeBase: 42, mediaMuted: false },
 			});
-			expect(messages.some((message) => message.type === 'spectra.content.target.changed')).toBe(false);
+			expect(messages.some((message) => message.type === 'spectra.content.target.changed')).toBe(true);
 		} finally { executor.dispose(); }
 	});
 
@@ -2308,6 +2314,7 @@ describe('native media single-writer correlation', () => {
 				mediaMuted: 'page-native',
 			});
 			expect(observation?.payload).not.toHaveProperty('tabId');
+			expect(observation?.payload).toMatchObject({ target: registry.resolve().target });
 			if (transition !== 'stable') {
 				expect(messages.some((message) => message.type === 'spectra.content.target.changed')).toBe(true);
 			}

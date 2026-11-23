@@ -707,6 +707,25 @@ describe('authoritative control coordinator', () => {
 		expect((await controlCoordinatorTestApi.getSnapshot(7))?.fields.playing?.actual).toBe(false);
 	});
 
+	test('a late trusted bootstrap gesture cannot borrow the runtime stamp or replace its physical values', async () => {
+		const harness = installHarness();
+		const target = media(harness);
+		const stamp = sample(34, 5, 3);
+		await observe(target, { volumeBase: 50, mediaMuted: false, playing: true }, stamp);
+		const before = await controlCoordinatorTestApi.getSnapshot(7);
+		await controlCoordinatorTestApi.submit({ tabId: 7, observationDocumentId: harness.documentId,
+			source: 'page', target: null, requestedCoverage: 'active-target', userGesture: true,
+			patch: { volumeBase: 70, mediaMuted: true },
+			observedStrategies: { volumeBase: 'dom-native', mediaMuted: 'dom-native' },
+			mediaObservation: { owner: 'late-bootstrap', epoch: 2, selection: 99, revision: 999 },
+		});
+		const after = await controlCoordinatorTestApi.getSnapshot(7);
+		expect(after?.activeMedia).toEqual(target);
+		expect(after?.mediaObservation).toEqual(stamp);
+		expect(after?.fields).toEqual(before?.fields);
+		expect(harness.contentMessages).toHaveLength(0);
+	});
+
 	test('hands ordered observation to bootstrap and back without reviving retired targets or requiring Popup', async () => {
 		const harness = installHarness();
 		let badge = '';
@@ -3559,6 +3578,19 @@ describe('authoritative control coordinator', () => {
 		const switched = await controlCoordinatorTestApi.getSnapshot(7);
 		expect(switched?.activeMedia?.mediaId).toBe('media:next');
 		expect(switched?.live).toBeUndefined();
+	});
+
+	test('does not let an older observation replace a newer presentation fact on the same target', async () => {
+		const harness = installHarness();
+		const target = media(harness);
+		await observe(target, { volumeBase: 60 }, sample(2), true);
+		await observe(target, { playing: true }, sample(1), false);
+		expect(await controlCoordinatorTestApi.getSnapshot(7)).toMatchObject({
+			activeMedia: target, live: true, mediaObservation: sample(2),
+			fields: { volumeBase: { actual: 60 }, playing: { actual: true } },
+		});
+		await observe(target, {}, sample(3), false);
+		expect((await controlCoordinatorTestApi.getSnapshot(7))?.live).toBe(false);
 	});
 
 	test('never lets a video-scoped proof describe the media target', async () => {

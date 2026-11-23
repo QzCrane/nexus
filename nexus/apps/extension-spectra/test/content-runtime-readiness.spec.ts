@@ -4,6 +4,7 @@ import { runInThisContext } from 'node:vm';
 import {
 	claimMediaObservationEpoch,
 	noteMediaUserGesture,
+	setContentNativeMediaObserver,
 	type ContentBootstrapState,
 } from '../src/shared/content-runtime';
 
@@ -104,6 +105,64 @@ describe('content runtime readiness boundary', () => {
 		await Promise.resolve();
 
 		expect(harness.intents).toHaveLength(0);
+	});
+
+	test.each([false, true])('forwards captured changes to the runtime without a second owner (registered=%s)', async observing => {
+		const harness = installBootstrapHarness();
+		await importFreshBootstrap(`forward-${observing}`);
+		harness.resolveHello('runtime-1');
+		harness.state().runtimeObservesMedia = observing;
+		const epoch = claimMediaObservationEpoch();
+		const events: Array<{ element: HTMLMediaElement; type: string }> = [];
+		const release = setContentNativeMediaObserver((element, type) => events.push({ element, type }));
+		noteMediaUserGesture();
+		harness.media.volume = 0.31;
+		harness.dispatchNativeChange('volumechange');
+		harness.dispatchNativeChange('ratechange');
+		await Promise.resolve();
+		expect(events).toEqual([
+			{ element: harness.media, type: 'volumechange' },
+			{ element: harness.media, type: 'ratechange' },
+		]);
+		expect(harness.state().mediaOwnerEpoch).toBe(epoch);
+		expect(harness.intents).toHaveLength(0);
+		release();
+	});
+
+	test('an old runtime cleanup cannot remove its replacement observer', async () => {
+		const harness = installBootstrapHarness();
+		await importFreshBootstrap('observer-replacement');
+		const releaseOld = setContentNativeMediaObserver(() => undefined);
+		let events = 0;
+		const releaseCurrent = setContentNativeMediaObserver(() => { events += 1; });
+		releaseOld();
+		harness.dispatchNativeChange('volumechange');
+		expect(events).toBe(1);
+		releaseCurrent();
+		expect(harness.state().observeNativeMediaChange).toBeUndefined();
+	});
+
+	test('an in-flight bootstrap sample cannot reclaim ownership after runtime handoff', async () => {
+		const harness = installBootstrapHarness();
+		await importFreshBootstrap('in-flight-handoff');
+		harness.resolveHello(null);
+		const releaseSample = harness.holdNextObservation();
+		harness.dispatchNativeChange('volumechange');
+		await waitFor(() => harness.intents.length === 1);
+		harness.state().runtimeObservesMedia = true;
+		const epoch = claimMediaObservationEpoch();
+		let events = 0;
+		const releaseObserver = setContentNativeMediaObserver(() => { events += 1; });
+		noteMediaUserGesture();
+		harness.media.volume = 0.27;
+		harness.dispatchNativeChange('volumechange');
+		releaseSample();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(events).toBe(1);
+		expect(harness.intents).toHaveLength(1);
+		expect(harness.state().mediaOwnerEpoch).toBe(epoch);
+		releaseObserver();
 	});
 
 	test('claims a later epoch after the runtime stops observing media', async () => {

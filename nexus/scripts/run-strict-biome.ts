@@ -471,13 +471,35 @@ function partitionBiomeFileArguments(fileArguments, maximumCharacters = 16 * 102
 	return batches;
 }
 
+let resolvedBiomeCommand: { command: string; prefixArgs: string[] } | null = null;
+
+function getBiomeCommand(): { command: string; prefixArgs: string[] } {
+	if (resolvedBiomeCommand) return resolvedBiomeCommand;
+	const executable = process.platform === 'win32' ? 'biome.exe' : 'biome';
+	const candidates = [
+		path.join(path.dirname(process.execPath), executable),
+		executable,
+	];
+	for (const candidate of candidates) {
+		const probe = spawnSync(candidate, ['--version'], {
+			encoding: 'utf8',
+			env: process.env,
+		});
+		if (probe.status === 0 && !probe.error) {
+			resolvedBiomeCommand = { command: candidate, prefixArgs: [] };
+			return resolvedBiomeCommand;
+		}
+	}
+	resolvedBiomeCommand = { command: process.execPath, prefixArgs: ['x', '--bun', 'biome'] };
+	return resolvedBiomeCommand;
+}
+
 function runBiomeBatch(fileArguments) {
+	const { command, prefixArgs } = getBiomeCommand();
 	const result = spawnSync(
-		process.execPath,
+		command,
 		[
-			'x',
-			'--bun',
-			'biome',
+			...prefixArgs,
 			'check',
 			...fileArguments,
 			'--reporter=json',

@@ -102,8 +102,27 @@ function portableRepoPath(value, root = workspaceDir) {
 	return relative(canonicalRoot, canonicalPath).replaceAll('\\', '/');
 }
 
+function getTurboCommand(): { command: string; prefixArgs: string[] } {
+	const executable = process.platform === 'win32' ? 'turbo.exe' : 'turbo';
+	const candidates = [
+		resolve(dirname(process.execPath), executable),
+		executable,
+	];
+	for (const candidate of candidates) {
+		const probe = spawnSync(candidate, ['--skip-infer', '--version'], {
+			encoding: 'utf8',
+			env: process.env,
+		});
+		if (probe.status === 0 && !probe.error) {
+			return { command: candidate, prefixArgs: ['--skip-infer'] };
+		}
+	}
+	return { command: process.execPath, prefixArgs: ['x', '--bun', 'turbo'] };
+}
+
 function discoverWorkspaces() {
-	const result = spawnSync(process.execPath, ['x', '--bun', 'turbo', 'ls', '--output=json'], {
+	const { command, prefixArgs } = getTurboCommand();
+	const result = spawnSync(command, [...prefixArgs, 'ls', '--output=json'], {
 		cwd: workspaceDir,
 		encoding: 'utf8',
 		env: { ...process.env, NO_COLOR: '1' },

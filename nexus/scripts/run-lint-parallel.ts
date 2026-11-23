@@ -17,28 +17,48 @@
 // Run via:  bun run lint            (private, delegates to package.json scripts)
 //          bun scripts/run-lint-parallel.ts --public  (public repo mode)
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const workspaceDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const isPublic = process.argv.includes('--public');
 
+function getTurboCommand(): { command: string; prefixArgs: string[] } {
+	const executable = process.platform === 'win32' ? 'turbo.exe' : 'turbo';
+	const candidates = [
+		resolve(dirname(process.execPath), executable),
+		executable,
+	];
+	for (const candidate of candidates) {
+		const probe = spawnSync(candidate, ['--skip-infer', '--version'], {
+			encoding: 'utf8',
+			env: process.env,
+		});
+		if (probe.status === 0 && !probe.error) {
+			return { command: candidate, prefixArgs: ['--skip-infer'] };
+		}
+	}
+	return { command: process.execPath, prefixArgs: ['x', 'turbo'] };
+}
+
+const turboCmd = getTurboCommand();
+
 const commands = isPublic
 	? [
 			{ name: 'coverage', args: ['scripts/check-workspace-lint.ts', '--public'] },
 			{ name: 'surfaces', args: ['scripts/run-strict-biome.ts', 'scripts', 'package.json', 'biome.json', 'tsconfig.base.json', 'turbo.json'] },
-			{ name: 'turbo', args: ['x', 'turbo', 'run', 'lint'] },
+			{ name: 'turbo', command: turboCmd.command, args: [...turboCmd.prefixArgs, 'run', 'lint'] },
 		]
 	: [
 			{ name: 'coverage', args: ['run', 'lint:workspace-coverage'] },
-			{ name: 'turbo', args: ['x', 'turbo', 'run', 'lint', '--output-logs=new-only'] },
+			{ name: 'turbo', command: turboCmd.command, args: [...turboCmd.prefixArgs, 'run', 'lint', '--output-logs=new-only'] },
 			{ name: 'surfaces', args: ['run', 'lint:repository-surfaces'] },
 		];
 
-function runParallel({ name, args }) {
+function runParallel({ name, command, args }: { name: string; command?: string; args: string[] }) {
 	return new Promise((resolve) => {
-		const proc = spawn(process.execPath, args, {
+		const proc = spawn(command ?? process.execPath, args, {
 			cwd: workspaceDir,
 			stdio: ['ignore', 'pipe', 'pipe'],
 			env: process.env,

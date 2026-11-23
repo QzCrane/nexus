@@ -429,32 +429,41 @@ or route behavior.
 
 Manifest loads minimal isolated bootstrap + closed MAIN bridges. Heavy Content runtime is acquired via consumer tokens. Final consumer releases listeners. Cold-document built-in hotkeys use READY ensure and release their transient capability after the admitted operation.
 
-A document that reports playable media is itself a consumer. `ensureMediaObservation` acquires the heavy runtime through the normal loader with the `document-media-observation` capability when `spectra.tab.media.report` reports `hasMediaElement`, independent of a desired value, a restore template, or prior explicit use. Observation and writing stay separate: an observation-only runtime writes nothing until a real intent arrives, and a navigation or explicit release retires the capability so a later media report cannot resurrect it. A document that reports no media does not load the heavy runtime for observation alone. The report is an acknowledged obligation rather than a notification: the background answers `spectra.tab.media.report` only after `ensureMediaObservation` settles, so `ok:true` means this document has an observation owner. A failed ownership load is a retryable RPC failure; the bootstrap withdraws its dedupe latch and sends again. The loader retries the transient document-identity race at 120/400/1200/3000/6000/10000 ms, and the awaiting message channel keeps the worker alive across that horizon, so one rejected delivery cannot leave a redirected document unobserved until an unrelated pause/play or the Popup. The bootstrap's own HELLO handshake — the verdict that assigns observation ownership — retries at 150/400/900/1800/3000/5000 ms; one rejected handshake must not leave the document with no observation path. `/follow` and `/follow/live/<id>` are the same origin and the same tab session; that transition is a new document, not a cross-origin session migration.
+A document that reports playable media is itself a consumer. `ensureMediaObservation` acquires the heavy runtime through the normal loader with the `document-media-observation` capability when `spectra.tab.media.report` reports `hasMediaElement`, independent of a desired value, a restore template, or prior explicit use. Observation and writing stay separate: an observation-only runtime writes nothing until a real intent arrives, and a navigation or explicit release retires the capability so a later media report cannot resurrect it. A document that reports no media does not load the heavy runtime for observation alone. The report is an acknowledged obligation rather than a notification: the background answers `spectra.tab.media.report` only after `ensureMediaObservation` settles, so `ok:true` means this document has an observation owner. A failed ownership load is a retryable RPC failure; the bootstrap withdraws its dedupe latch and sends again. The loader retries the transient document-identity race at 120/400/1200/3000/6000/10000 ms, and the awaiting message channel keeps the worker alive across that horizon, so one rejected delivery cannot leave a redirected document unobserved until an unrelated pause/play or the Popup. The bootstrap's own HELLO handshake — the verdict that assigns observation ownership — retries at 150/400/900/1800/3000/5000 ms; one rejected handshake must not leave the document with no observation path. `/follow` and `/follow/live/<id>` share an origin and tab session, but their paths do not prove a document replacement. Chrome's document identity decides whether the transition retires a document or changes the route/player within the same document. Earlier new-document evidence does not cover the reported same-document SPA transition.
 
-When a runtime attaches to a document that already has a selection, `NativeMediaExecutor.publishCurrentSelection()` publishes that selection once after `bootstrapMessaging` — the presentation kind, `spectra.content.target.changed` carrying the registry's observation stamp, and the physical values that already exist (volume, mute, speed, pitch, playback) as a page observation. A document with no selection publishes nothing, but the first selection that follows completes the same publication exactly once; later selections keep the ordinary target-only path so no page observation is fabricated from a cold or superseded selection. An SPA route switch (`/follow` -> `/follow/live/<id>`) selects a different player element in the same document; that replacement also publishes its own physical values, because the previous player's numbers are not a snapshot of the new one. A selection that only changes identity on the same element stays target-only. The values matter because a new document otherwise has no field snapshot until its first native change or an explicit read: that empty window is what made the first Popup open look like the switch. Background admits attach publication and a later `selected` through the same ordered observation rules, so the duplicate sample is idempotent.
+When a runtime attaches to a document that already has a selection, `NativeMediaExecutor.publishCurrentSelection()` publishes that selection once after `bootstrapMessaging` — the presentation kind, `spectra.content.target.changed` carrying the registry's observation stamp, and the physical values that already exist (volume, mute, speed, pitch, playback) as a page observation. A document with no selection publishes nothing, but the first selection that follows completes the same publication exactly once; later selections keep the ordinary target-only path so no page observation is fabricated from a cold or superseded selection. When a same-document SPA transition (such as the reported `/follow` -> `/follow/live/<id>` switch) admits a different player element, that replacement also publishes its own physical values, because the previous player's numbers are not a snapshot of the new one. A selection that only changes identity on the same element stays target-only. The values matter because a new document otherwise has no field snapshot until its first native change or an explicit read: that empty window is what made the first Popup open look like the switch. Background admits attach publication and a later `selected` through the same ordered observation rules, so the duplicate sample is idempotent.
 
-The document-start bootstrap remains the native-observation owner until the heavy
-runtime proves it registered a player (`MediaRegistry.hasSelection`). Injection or
-a READY handshake alone does not transfer that duty: a ready-but-blind runtime — a
-player it never discovered, a removed element, media mounted outside its reach —
-must not silence the only observer that receives document-level `volumechange`,
-because the next Popup read would then be the first thing to move the snapshot.
-The handoff calls `claimObservationOwnership`, which advances the shared
-observation epoch so the registry's samples supersede the bootstrap's and every
-replaced registry stays stale; when the registry loses its last selection the
-bootstrap resumes on the same ordering and keeps submitting.
+The document-start bootstrap captures `volumechange` and `ratechange` and first
+forwards the event element to the current runtime callback, even if that runtime
+has no selection yet. `setContentNativeMediaObserver` in shared state installs
+that callback; `content/core/index.ts` checks runtime identity before calling
+`MediaRegistry.observeNativeMediaChange`. Cleanup removes only the callback it
+installed, so an old runtime cannot delete its replacement's observer. Without a
+callback, the existing bootstrap fallback remains: `runtimeObservesMedia` gates
+its own sampling, and injection or READY alone does not prove observation ownership.
 
-Two further boundaries keep that handoff honest. Registration is selection
-evidence: a player the SPA mounts after its own `play` already happened started
-playing before any listener existed, so `register` runs the same admission
-`play` would have run instead of leaving the element unselected until the viewer
-clicks it (I8). And a native `volumechange` is witnessed only by the element
-that produced it: the audio-runtime delegate reports the extension's applied
-policy, so in document-output mode it returns the same value before and after a
-gesture, and reading volume/mute through it made the gesture compare equal to
-the observation cache and vanish. Only hidden finite media is vetoed as a
-preview — a broadcast is audible even while a canvas hides the `<video>` or
-autoplay has not started it (I9).
+The registry registers a missed element, refreshes geometry and source facts, then
+uses its existing selection admission before emitting to the sole
+`NativeMediaExecutor`. A captured property event is not an explicit user pick:
+explicit selection, PiP/fullscreen and pause-pin protections (including the existing
+running-broadcast exception) remain. Native capture does not retire/reselect a
+running zero-area broadcast merely because it has no layout box. Registration of
+an already-playing element also runs the admission its missed `play` would have
+run (I8). `claimObservationOwnership` advances the epoch on the real bootstrap-to-
+registry ownership handoff; a trusted gesture in the same observing runtime does
+not claim another epoch.
+
+Only a registry-admitted selected target may publish volume facts with that
+registry's selection stamp; an unselected live player or preview cannot use its
+own sample to move Background's target. The observation queue retains the original
+element. At flush, only if it is still selected does the executor physically read
+it again and send the current target/sourceRevision and stamp; it never relabels
+old values, and a replaced element's queued obligation is dropped. Volume/mute
+are witnessed by the element's native/page getter, not the audio delegate's applied
+processor policy (I9). A first trusted volume gesture still carries its observation
+obligation when `primeObserved` already cached the same values, provided neither
+volume nor mute has a pending write. Background keeps its existing ACK guards;
+it does not repair mismatched target/stamp pairs by rewriting their stamps.
 
 The pre-injection runtime-status probe is an optional read bounded to 1 second.
 Its settlement pool retains at most eight physical outstanding probes; observation

@@ -1,6 +1,12 @@
 // goal: prove the site-native control projection is a no-op without a control
 //       and converges on the site's own level when one exists
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { DEFAULT_AUDIO_CONFIG, isControlApplyAck, type AudioConfig, type ControlFieldStates, type ControlIntent, type MediaTarget } from '@nexus/contracts';
+import type { MediaRegistry } from '../src/content/core/media-registry';
+import { createAudioRuntimeControlDelegate } from '../src/content/logic/audio-runtime-control-delegate';
+import { NativeMediaExecutor } from '../src/content/logic/native-media-executor';
+import type { PolicyExecutor } from '../src/content/logic/policy-executor';
+import type { PolicyExecutorState } from '../src/content/types';
 import {
 	projectSiteNativePlayback,
 	projectSiteNativeVolume,
@@ -29,12 +35,14 @@ class FakeBar {
 }
 
 class FakeTrack {
+	className = 'sound-progress';
 	childElementCount = 1;
 	bar = new FakeBar();
 	level = 0.5;
 	media: FakeMedia;
 	dispatched: FakeInput[] = [];
 	writesMirror = true;
+	handleOffset = 0.02;
 	constructor(media: FakeMedia) { this.media = media; }
 	getBoundingClientRect(): Record<string, number> {
 		return { x: 0, y: 0, left: 0, top: 0, width: 90, height: 12, right: 90, bottom: 12 };
@@ -50,7 +58,7 @@ class FakeTrack {
 		// The player offsets the click by its handle radius and writes the level
 		// to its own bar and to the media element's mirror.
 		const ratio = Math.max(0, Math.min(1, event.clientX / 90));
-		this.level = Math.max(0, Math.min(0.944, ratio - 0.02));
+		this.level = Math.max(0, Math.min(0.944, ratio - this.handleOffset));
 		this.bar.width = this.level * 90;
 		if (this.writesMirror) this.media.volume = this.level;
 		return true;
@@ -73,11 +81,31 @@ class FakePlayButton {
 	}
 }
 
-class FakeMedia {
-	volume = 0.5;
+class FakeMedia extends EventTarget {
+	private level = 0.5;
+	get volume(): number { return this.level; }
+	set volume(value: number) {
+		if (this.level === value) return;
+		this.level = value;
+		queueMicrotask(() => this.dispatchEvent(new Event('volumechange')));
+	}
 	muted = false;
 	paused = false;
+	currentTime = 4;
+	duration = 120;
+	buffered = { length: 1 };
+	playbackRate = 1;
+	preservesPitch = true;
 	parentElement: FakeContainer | null = null;
+	play(): Promise<void> {
+		this.paused = false;
+		queueMicrotask(() => this.dispatchEvent(new Event('play')));
+		return Promise.resolve();
+	}
+	pause(): void {
+		this.paused = true;
+		queueMicrotask(() => this.dispatchEvent(new Event('pause')));
+	}
 }
 
 class FakeContainer {
@@ -99,8 +127,49 @@ class FakeContainer {
 	}
 }
 
+function createOutputFixture() {
+	install();
+	Object.assign(globalThis, { HTMLMediaElement: FakeMedia, HTMLVideoElement: class extends FakeMedia {} });
+	const media = new FakeMedia();
+	const container = new FakeContainer();
+	const track = new FakeTrack(media);
+	// A slider without a handle offset gives an exact 70% readback.
+	track.handleOffset = 0;
+	track.writesMirror = false;
+	container.track = track;
+	container.playButton = new FakePlayButton(media);
+	media.parentElement = container;
+	const target: MediaTarget = {
+		frameId: 0, documentId: 'document:site-output', mediaId: 'media:site-output', sourceRevision: 0, kind: 'audio',
+	};
+	const resolved = { target, element: media as unknown as HTMLMediaElement };
+	const registry = {
+		documentId: target.documentId, selectionRevision: 0,
+		resolve: () => resolved, list: () => [resolved], subscribe: () => () => {},
+	};
+	const state: PolicyExecutorState = {
+		config: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues], documentOutput: true },
+		appliedConfig: { ...DEFAULT_AUDIO_CONFIG, eqValues: [...DEFAULT_AUDIO_CONFIG.eqValues], documentOutput: true },
+		activeMode: 'capture', desiredMode: 'capture', actualMode: 'capture', phase: 'active',
+		generation: 2, userHasInteracted: true, isPopupOpen: false,
+	};
+	const updateConfig = async (changes: Partial<AudioConfig>) => {
+		state.config = { ...state.config, ...changes };
+		state.appliedConfig = { ...state.config, eqValues: [...state.config.eqValues] };
+		return { ok: true as const, data: { revision: 1 } };
+	};
+	const delegate = createAudioRuntimeControlDelegate({ updateConfig } as unknown as PolicyExecutor, state);
+	const executor = new NativeMediaExecutor(registry as unknown as MediaRegistry);
+	executor.setAudioRuntimeDelegate(delegate);
+	const intent = (patch: ControlIntent['patch'], actualContext: ControlIntent['actualContext'] = {}): ControlIntent => ({
+		intentId: 'intent:site-output', tabId: 7, documentId: target.documentId,
+		generation: 2, baseRevision: 3, source: 'popup', requestedCoverage: 'full', target, actualContext, patch,
+	});
+	return { media, container, track, state, delegate, executor, intent };
+}
+
 const originals: Record<string, unknown> = {};
-for (const key of ['document', 'MouseEvent']) {
+for (const key of ['document', 'MouseEvent', 'HTMLMediaElement', 'HTMLVideoElement']) {
 	originals[key] = (globalThis as unknown as Record<string, unknown>)[key];
 }
 
@@ -173,6 +242,177 @@ describe('site-native control projection', () => {
 		// Each pass drives the site's own control, never the DOM property first.
 		expect(container.track.dispatched.length).toBeGreaterThan(0);
 	});
+
+	test('does not drive an unrelated timeline slider', async () => {
+		const { executor, media, track } = createOutputFixture();
+		try {
+			track.className = 'timeline';
+			expect(await projectSiteNativeVolume(media as unknown as HTMLMediaElement, 70)).toBeNull();
+			expect(track.dispatched).toHaveLength(0);
+		} finally { executor.dispose(); }
+	});
+
+	test('a zero site level is not replaced by the stale DOM mirror', () => {
+		const { executor, media, track } = createOutputFixture();
+		try {
+			track.bar.width = 0;
+			expect(media.volume).toBe(0.5);
+			expect(readSiteNativeVolumeLevel(media as unknown as HTMLMediaElement)).toBe(0);
+		} finally { executor.dispose(); }
+	});
+
+	test('a site readback failure cannot fall through to a successful DOM-only write', async () => {
+		const { executor, media, track, state, intent } = createOutputFixture();
+		state.config.documentOutput = undefined;
+		state.appliedConfig.documentOutput = undefined;
+		state.actualMode = 'native';
+		track.dispatchEvent = event => { track.dispatched.push(event); return true; };
+		try {
+			const request = intent({ volumeBase: 70 });
+			request.requestedCoverage = 'active-target';
+			const ack = await executor.execute(request);
+			expect(ack.fields.volumeBase).toMatchObject({ phase: 'error', controlled: false,
+				lastError: { code: 'readback-mismatch' } });
+			expect(media.volume).toBe(0.5);
+		} finally { executor.dispose(); }
+	});
+
+	test('a selection change during calibration stops further site inputs', async () => {
+		const { executor, media, track } = createOutputFixture();
+		track.handleOffset = 0.1;
+		let current = true;
+		try {
+			const operation = projectSiteNativeVolume(media as unknown as HTMLMediaElement, 70,
+				{ isCurrent: () => current });
+			const inputs = track.dispatched.length;
+			expect(inputs).toBeGreaterThan(0);
+			current = false;
+			await expect(operation).rejects.toMatchObject({ code: 'stale-media-source' });
+			expect(track.dispatched).toHaveLength(inputs);
+			expect(media.volume).toBe(0.5);
+		} finally { executor.dispose(); }
+	});
+
+	test('keeps site volume 70 through pause, resume and mute without replacing processor unity', async () => {
+		const { executor, delegate, state, media, track, intent } = createOutputFixture();
+		try {
+			delegate.setSiteNativeLevel?.(50);
+			const ack = await executor.execute(intent({ volumeBase: 70 }, { volumeBase: 50 }));
+			expect(isControlApplyAck(ack)).toBe(true);
+			expect(ack.fields.volumeBase).toMatchObject({ desired: 70, actual: 70, phase: 'applied',
+				controlled: true, strategy: 'capture', coverage: 'opaque', lastError: null });
+			expect(media.volume).toBe(0.7);
+			expect(track.dispatched.length).toBeGreaterThan(0);
+			expect(delegate.read(['volumeBase']).patch.volumeBase).toBe(70);
+			const trackInputs = track.dispatched.length;
+			for (const patch of [{ playing: false }, { playing: true }, { mediaMuted: true }, { mediaMuted: false }]) {
+				const request = intent(patch);
+				if (patch.playing !== undefined) request.requestedCoverage = 'active-target';
+				const next = await executor.execute(request);
+				expect(isControlApplyAck(next)).toBe(true);
+				if (patch.playing !== undefined) {
+					expect(next.fields.playing).toMatchObject({ actual: patch.playing, phase: 'applied' });
+					expect(media.paused).toBe(!patch.playing);
+				} else {
+					expect(next.fields.mediaMuted).toMatchObject({ actual: patch.mediaMuted, phase: 'applied' });
+				}
+				expect(executor.read({ target: null, fields: ['volumeBase'] })).toMatchObject({
+					patch: { volumeBase: 70 }, observedStrategies: { volumeBase: 'capture' },
+				});
+				expect(state.appliedConfig.volumeBase).toBe(100);
+				expect(track.dispatched.length).toBe(trackInputs);
+			}
+		} finally { executor.dispose(); }
+	});
+
+	test.each([70, 100])('calibrates a native blob player before acknowledging volume %s without Capture', async (volume) => {
+		const { executor, media, track, state, intent } = createOutputFixture();
+		state.config.documentOutput = undefined;
+		state.appliedConfig.documentOutput = undefined;
+		state.actualMode = 'native';
+		const processorBefore = structuredClone(state.appliedConfig);
+		try {
+			const request = intent({ volumeBase: volume });
+			request.requestedCoverage = 'active-target';
+			const ack = await executor.execute(request);
+			const actual = volume === 100 ? 94 : volume;
+			expect(ack.fields.volumeBase).toMatchObject({ actual, phase: 'applied',
+				controlled: true, strategy: 'dom-native', coverage: 'active-target', lastError: null });
+			expect(ack.fields.volumeBase?.writeState).not.toBe('written');
+			expect(media.volume).toBe(actual / 100);
+			expect(Math.round(track.bar.width / 90 * 100)).toBe(actual);
+			expect(track.dispatched.length).toBeGreaterThan(0);
+			expect(state.appliedConfig.documentOutput).toBeUndefined();
+			expect(state.appliedConfig.boost).toBe(processorBefore.boost);
+		} finally { executor.dispose(); }
+	});
+
+	test('disposal during site calibration prevents mirror writes and processor acknowledgement', async () => {
+		const { executor, media, track, state, intent } = createOutputFixture();
+		track.handleOffset = 0.1;
+		const operation = executor.execute(intent({ volumeBase: 70 }));
+		expect(track.dispatched.length).toBeGreaterThan(0);
+		const inputs = track.dispatched.length;
+		const applied = structuredClone(state.appliedConfig);
+		executor.dispose();
+		await expect(operation).rejects.toMatchObject({ code: 'cancelled' });
+		expect(track.dispatched).toHaveLength(inputs);
+		expect(media.volume).toBe(0.5);
+		expect(state.appliedConfig).toEqual(applied);
+	});
+
+	test('clears the site witness when an explicit volume request returns to processor-owned output', async () => {
+		const { executor, delegate, container, state, intent } = createOutputFixture();
+		try {
+			await executor.execute(intent({ volumeBase: 70 }));
+			expect(delegate.read(['volumeBase']).patch.volumeBase).toBe(70);
+			container.track = null;
+			const ack = await executor.execute(intent({ volumeBase: 40 }, { volumeBase: 70 }));
+			expect(isControlApplyAck(ack)).toBe(true);
+			expect(ack.fields.volumeBase).toMatchObject({ actual: 40, phase: 'applied', strategy: 'capture' });
+			expect(state.appliedConfig.volumeBase).toBe(40);
+			expect(executor.read({ target: null, fields: ['volumeBase'] }).patch.volumeBase).toBe(40);
+		} finally { executor.dispose(); }
+	});
+
+	test.each(['processor-error', 'coverage-error', 'idle', 'uncontrolled', 'non-unity', 'last-error', 'missing'] as const)(
+		'never turns a site slider write into processor success (%s)', async (outcome) => {
+			const { executor, delegate, state, media, intent } = createOutputFixture();
+			const apply = delegate.apply;
+			let processorState: ControlFieldStates['volumeBase'];
+			delegate.apply = async (...args) => {
+				// Use the real delegate's coverage rejection as well as adversarial ACKs
+				// to check every part of the success predicate independently.
+				const fields = await apply(...args);
+				const volume = fields.volumeBase;
+				if (!volume) throw new Error('Expected the processor volume result');
+				if (outcome === 'processor-error' || outcome === 'last-error') {
+					volume.lastError = { code: 'readback-mismatch', message: 'Processor unity was not confirmed', retryable: true };
+					if (outcome === 'processor-error') {
+						volume.phase = 'error';
+						volume.controlled = false;
+					}
+				}
+				if (outcome === 'idle') volume.phase = 'idle';
+				if (outcome === 'uncontrolled') volume.controlled = false;
+				if (outcome === 'non-unity') volume.actual = 99;
+				if (outcome === 'missing') delete fields.volumeBase;
+				processorState = structuredClone(fields.volumeBase);
+				return fields;
+			};
+			if (outcome === 'coverage-error') state.mediaRoute = 'direct';
+			try {
+				const ack = await executor.execute(intent({ volumeBase: 70 }));
+				expect(media.volume).toBe(0.7);
+				expect(ack.fields.volumeBase).toEqual(processorState);
+				expect(isControlApplyAck(ack)).toBe(true);
+				if (outcome === 'coverage-error') expect(ack.fields.volumeBase).toMatchObject({
+					phase: 'error', actual: null, strategy: 'unsupported', coverage: 'partial', controlled: false,
+					lastError: { code: 'capability-unavailable' },
+				});
+			} finally { executor.dispose(); }
+		},
+	);
 
 	test('leaves the DOM mirror to the single canonical media writer', async () => {
 		const media = new FakeMedia();

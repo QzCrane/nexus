@@ -7,7 +7,7 @@ import {
 	setActiveMediaRegistry,
 } from '../src/content/core/media-registry';
 import { DocumentRuntimeContext } from '../src/content/core/content-runtime-context';
-import { claimMediaObservationEpoch } from '../src/shared/content-runtime';
+import { claimMediaObservationEpoch, noteMediaUserGesture } from '../src/shared/content-runtime';
 import { NativeMediaExecutor } from '../src/content/logic/native-media-executor';
 import type { VideoEffectsController } from '../src/content/video/video-effects-controller';
 import { isAnyMediaPlaying } from '../src/content/audio/media-detection';
@@ -312,6 +312,70 @@ describe('event-driven media registry', () => {
 			expect(registry.selectionRevision).toBeGreaterThan(revision);
 			expect(selected.at(-1)).toEqual(registry.resolve(null)?.target);
 		} finally { registry.dispose(); restoreGlobalDescriptors(descriptors); }
+	});
+
+	test.each([false, true])('captured native changes discover a live successor without changing observation owner (pinned=%s)', async pinned => {
+		const descriptors = captureGlobalDescriptors(['window', 'document', 'chrome', 'Node', 'Element', 'HTMLMediaElement',
+			'HTMLVideoElement', 'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const feed = new FakeVideoElement(0.8);
+		feed.paused = false;
+		feed.rect = { left: 0, top: 0, right: 640, bottom: 360, width: 640, height: 360 };
+		document.documentElement.descendants.push(feed);
+		installGlobal('window', { __SPECTRA_CONTENT_BOOTSTRAP__: { mediaOwnerEpoch: 2 },
+			innerWidth: 1280, innerHeight: 720, location: { href: 'https://media.example/follow' } });
+		installGlobal('document', document); installGlobal('Node', EventTarget); installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement); installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver); installGlobal('IntersectionObserver', FakeIntersectionObserver);
+		const messages: Array<{ type: string; payload: Record<string, unknown> }> = [];
+		installGlobal('chrome', { runtime: { id: 'spectra-test', sendMessage: async (message: typeof messages[number]) => {
+			messages.push(message);
+		} } });
+		const registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:captured-live', frameId: 0 }));
+		const executor = new NativeMediaExecutor(registry, { dispose() {} } as VideoEffectsController);
+		try {
+			const original = requireValue(registry.resolve(null)?.target);
+			if (pinned) registry.select(original);
+			executor.publishCurrentSelection();
+			await Promise.resolve();
+			messages.length = 0;
+			const stamp = registry.captureObservation();
+			feed.paused = true;
+			const live = new FakeVideoElement(0.31);
+			live.paused = false; live.duration = Number.POSITIVE_INFINITY;
+			document.documentElement.descendants.push(live);
+			noteMediaUserGesture();
+			registry.observeNativeMediaChange(live as unknown as HTMLMediaElement, 'volumechange');
+			live.dispatchEvent(new Event('volumechange'));
+			await Promise.resolve();
+			const after = registry.captureObservation();
+			expect(after.owner).toBe(stamp.owner); expect(after.epoch).toBe(stamp.epoch);
+			expect(registry.resolve(null)?.element).toBe(pinned ? feed : live);
+			const observations = messages.filter(message => message.type === 'spectra.control.intent.submit'
+				&& typeof message.payload.patch === 'object' && message.payload.patch !== null
+				&& 'volumeBase' in message.payload.patch);
+			if (pinned) {
+				expect(after.selection).toBe(stamp.selection);
+				expect(observations).toHaveLength(0);
+			} else {
+				expect(after.selection).toBe(stamp.selection + 1);
+				expect(observations).toHaveLength(1);
+				expect(observations[0]?.payload).toMatchObject({ target: registry.resolve(null)?.target,
+				patch: { volumeBase: 31, mediaMuted: false }, userGesture: true,
+				mediaObservation: { owner: after.owner, epoch: after.epoch, selection: after.selection } });
+				const ack = await executor.execute({ intentId: 'first-volume', tabId: 7, documentId: registry.documentId,
+					generation: 1, baseRevision: 0, source: 'popup', requestedCoverage: 'active-target', target: original,
+					actualContext: {}, patch: { volumeBase: 60 } });
+				expect(ack.target).toEqual(registry.resolve(null)?.target);
+				expect(ack.fields.volumeBase).toMatchObject({ actual: 60, phase: 'applied', lastError: null });
+				expect(ack.mediaObservation).toMatchObject({ owner: after.owner, epoch: after.epoch, selection: after.selection });
+				expect(live.volume).toBe(0.6); expect(feed.volume).toBe(0.8);
+			}
+			executor.dispose(); registry.dispose();
+			const events = messages.length;
+			registry.observeNativeMediaChange(new FakeVideoElement(0.1) as unknown as HTMLMediaElement, 'volumechange');
+			expect(registry.size).toBe(0); expect(messages).toHaveLength(events);
+		} finally { executor.dispose(); registry.dispose(); restoreGlobalDescriptors(descriptors); }
 	});
 
 	test('registration never steals control from a playing owner or a paused pick', () => {

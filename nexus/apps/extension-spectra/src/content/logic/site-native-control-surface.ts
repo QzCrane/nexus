@@ -1,6 +1,7 @@
 // goal: drive the site's own native controls when the site owns the audible signal
-// inv: observation-first discovery; a missing or unresponsive control returns null/false
-//      and the caller keeps its existing standard-DOM writer unchanged
+// A missing control permits DOM routing; a discovered control must prove its readback.
+
+import { assertNativeOperationCurrent, type NativeMediaOperationOptions } from './native-media-async';
 
 const VOLUME_TRACK_SELECTOR = [
 	'[class*="sound-progress"]',
@@ -47,13 +48,16 @@ function controlScope(element: Element): ParentNode | null {
 		if (hasControl(node, VOLUME_TRACK_SELECTOR)
 			|| hasControl(node, PLAYBACK_BUTTON_SELECTOR)) return node;
 	}
-	return typeof document !== 'undefined' && typeof document.querySelectorAll === 'function'
-		? document : null;
+	if (typeof document === 'undefined') return null;
+	const media = queryAll(document, 'video,audio');
+	return media.length === 1 && media[0] === element ? document : null;
 }
 
 function findVolumeTrack(element: Element): HTMLElement | null {
 	for (const candidate of queryAll(controlScope(element), VOLUME_TRACK_SELECTOR)) {
 		if (!isUsableControl(candidate)) continue;
+		const name = `${candidate.className} ${candidate.getAttribute?.('aria-label') ?? ''}`;
+		if (!/sound-progress|volume|音量/iu.test(name)) continue;
 		const rect = candidate.getBoundingClientRect();
 		// A volume track has a filled bar / handle and a real horizontal extent.
 		if (rect.width >= 24 && rect.height > 0 && (candidate.childElementCount ?? 0) > 0) return candidate;
@@ -111,7 +115,7 @@ function readSiteLevel(control: HTMLElement, element: HTMLMediaElement): number 
 	const rect = control.getBoundingClientRect();
 	const filled = queryAll(control, '[class*="bar"]')[0];
 	const width = filled && isUsableControl(filled) ? filled.getBoundingClientRect().width : 0;
-	if (rect.width > 0 && width > 0) return Math.max(0, Math.min(1, width / rect.width));
+	if (rect.width > 0 && filled && isUsableControl(filled)) return Math.max(0, Math.min(1, width / rect.width));
 	return element.volume;
 }
 
@@ -140,13 +144,13 @@ export function readSiteNativeVolumeLevel(element: HTMLMediaElement): number | n
  *
  * The player animates its volume in small steps and offsets the click by the
  * handle radius, so three bounded calibration passes converge on the requested
- * value. A control that cannot reach the value returns null and the caller
- * keeps its previous routing.
+ * value. A discovered control that cannot reach the value fails readback;
+ * a DOM-only write cannot prove that the site's audible gain changed.
  */
 export async function projectSiteNativeVolume(
 	element: HTMLMediaElement,
 	requested: number,
-	signal?: AbortSignal,
+	options: NativeMediaOperationOptions = {},
 ): Promise<number | null> {
 	const control = findVolumeTrack(element);
 	if (!control || typeof MouseEvent !== 'function') return null;
@@ -154,14 +158,15 @@ export async function projectSiteNativeVolume(
 	let ratio = target;
 	let level = readSiteLevel(control, element);
 	for (let attempt = 0; attempt < 3; attempt += 1) {
-		if (signal?.aborted) return null;
+		assertNativeOperationCurrent(options);
 		if (Math.abs(level - target) <= 0.02) break;
 		dispatchTrackInput(control, ratio);
 		await wait(220);
+		assertNativeOperationCurrent(options);
 		level = readSiteLevel(control, element);
 		ratio = Math.max(0, Math.min(1, ratio + (target - level)));
 	}
-	if (Math.abs(level - target) > 0.06) return null;
+	if (Math.abs(level - target) > 0.06) throw new Error('Site volume readback did not acknowledge the requested value');
 	// This module never writes `element.volume`: SCTRL-003 keeps a single
 	// canonical media writer (native-media-executor.ts). The caller aligns the
 	// DOM mirror when the site's own handler has not already done so, and the

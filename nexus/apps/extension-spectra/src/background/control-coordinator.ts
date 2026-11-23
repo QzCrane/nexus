@@ -857,8 +857,11 @@ function publishedLive(
 	physical: PhysicalPublication | undefined,
 	activeMedia: MediaTarget | null,
 ): boolean | undefined {
-	if (typeof physical?.live === 'boolean' && physical.liveTarget) {
-		return sameMediaTarget(physical.liveTarget, activeMedia) ? physical.live : undefined;
+	if (typeof physical?.live === 'boolean' && physical.liveTarget
+		&& sameMediaTarget(physical.liveTarget, activeMedia)
+		&& (!current || mediaSampleCanReplace(current, physical.mediaObservation)
+			&& !isRetiredMediaSample(current.tabId, physical.liveTarget, physical.mediaObservation))) {
+		return physical.live;
 	}
 	if (!current || !sameMediaTarget(current.activeMedia, activeMedia)) return undefined;
 	return current.live;
@@ -2817,14 +2820,15 @@ async function submitOrderedPageObservation(request: RoutedControlSubmitRequest)
 	}
 	const intent = createIntent(baseline, { ...request, patch: request.patch ?? {} }, crypto.randomUUID());
 	const fields = applyPageObservation(intent, request.observedStrategies);
-	const sameSelection = request.mediaObservation && baseline.mediaObservation
-		&& sameMediaObservationSelection(request.mediaObservation, baseline.mediaObservation)
+	const stamp = request.mediaObservation;
+	const sameSelection = stamp && baseline.mediaObservation
+		&& sameMediaObservationSelection(stamp, baseline.mediaObservation)
 		&& sameMediaTarget(request.target, baseline.activeMedia);
 	// A newer sample of another field can advance the selection's maxclock
 	// while this partial sample is in flight. Field clocks decide those values;
 	// only another selection/owner or a retired source rejects the whole batch.
-	if (!mediaSampleCanReplace(baseline, request.mediaObservation) && !sameSelection
-		|| isRetiredMediaSample(request.tabId, request.target, request.mediaObservation)) {
+	if (!mediaSampleCanReplace(baseline, stamp) && !sameSelection
+		|| isRetiredMediaSample(request.tabId, request.target, stamp)) {
 		return { intentId: intent.intentId, tabId: baseline.tabId, documentId: baseline.documentId,
 			generation: baseline.generation, revision: baseline.revision, target: baseline.activeMedia, fields: {},
 			...(baseline.mediaObservation ? { mediaObservation: baseline.mediaObservation } : {}) };
@@ -2842,7 +2846,7 @@ async function submitOrderedPageObservation(request: RoutedControlSubmitRequest)
 	}
 	// Processor normalization remains an effectful control transaction. Pure
 	// native observations (especially playing) never wait behind that actor.
-	if (typeof request.patch?.volumeBase === 'number' && volumeObservationCanNormalize(baseline, request.mediaObservation)) {
+	if (typeof request.patch?.volumeBase === 'number' && volumeObservationCanNormalize(baseline, stamp)) {
 		const known = baseline.fields.boost?.actual;
 		const session = typeof known === 'number' ? null : await getAudioSession(baseline.tabId).catch(() => null);
 		const boost = typeof known === 'number' ? known : session?.documentId === baseline.documentId
@@ -2850,7 +2854,7 @@ async function submitOrderedPageObservation(request: RoutedControlSubmitRequest)
 		if (boost !== 1) return serialized(request.tabId, () => executeIntent(request));
 	}
 	const current = await admitPhysicalObservation(baseline, { target: request.target, patch: request.patch ?? {},
-		observedStrategies: request.observedStrategies ?? {}, mediaObservation: request.mediaObservation,
+		observedStrategies: request.observedStrategies ?? {}, mediaObservation: stamp,
 		...(typeof request.live === 'boolean' ? { live: request.live } : {}) }, 'media', expectedEpoch, true);
 	return { intentId: intent.intentId, tabId: current.tabId, documentId: current.documentId,
 		generation: current.generation, revision: current.revision, target: current.activeMedia,

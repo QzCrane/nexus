@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
+import type { ControlSnapshot } from '@nexus/contracts';
+import type { Page } from 'puppeteer';
 import { launchPuppeteerBrowser } from '../../../../scripts/browser-driver';
 import { SPECTRA_PAGE_MEDIA_EVENT, SPECTRA_PAGE_MEDIA_REQUEST_ATTRIBUTE, SPECTRA_PAGE_MEDIA_RESULT_ATTRIBUTE } from '../../src/shared/page-media-bridge';
-import { SMOKE_TONE_WAV, acquireSmokeRuntime, browser, collectPageErrors, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, openExtensionClient, patchExtensionSettings, readBadgeText, readContentBootstrapStatus, readContentStatus, restartServiceWorker, sendFromActionPopup, submitEffectiveVolume, submitPopupControlIntent, waitForContentBootstrapStatus, waitForContentStatus } from './harness';
+import { SMOKE_TONE_WAV, acquireSmokeRuntime, browser, closeActionPopup, collectPageErrors, evaluateServiceWorker, eventually, fixturePage, fixtureUrl, getTabId, openActionPopupTarget, openExtensionClient, patchExtensionSettings, readBadgeText, readContentBootstrapStatus, readContentStatus, restartServiceWorker, sendFromActionPopup, submitEffectiveVolume, submitPopupControlIntent, waitForContentBootstrapStatus, waitForContentStatus } from './harness';
 import { installAudioContextProbe, prepareSmokeSession, releaseSmokeRuntimes, startSmokeSession, teardownSmokeSession } from './harness';
 
 describe('SPECTRA built extension smoke: page-media', () => {
@@ -990,6 +992,199 @@ describe('SPECTRA built extension smoke: page-media', () => {
 			);
 		} finally {
 			await spaPage.close().catch(() => undefined);
+		}
+	}, 35_000);
+
+	test('same-document SPA first Popup volume', async () => {
+		// Mechanism fixture only: these page-owned property writes are not a
+		// real-site/native-player-UI or audible-output claim.
+		const settingsClient = await openExtensionClient('options.html');
+		const settings = await patchExtensionSettings(settingsClient, {
+			scope: 'global', changes: { visualizerEnabled: false },
+		});
+		const page = await browser.newPage();
+		const errors: string[] = [];
+		collectPageErrors(page, errors);
+		let popup: Page | null = null;
+		try {
+			const url = `${fixtureUrl}?spa-first-popup-volume=1`;
+			await page.goto(url, { waitUntil: 'load' });
+			await page.evaluate(async bytes => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (!feed) throw new Error('Missing SPA feed');
+				feed.style.cssText = 'width:640px;height:360px';
+				feed.src = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: 'audio/wav' }));
+				feed.loop = true;
+				feed.muted = false;
+				feed.volume = 0.5;
+				await feed.play();
+			}, [...SMOKE_TONE_WAV]);
+			// Natural document observation must already own the runtime: opening
+			// Popup or issuing a preparatory control must not repair this switch.
+			await eventually(() => readContentBootstrapStatus(url),
+				status => status.ready && status.runtimeRevision !== null, 'SPA feed observation runtime');
+			// Sample after READY, not the bootstrap's earlier cold snapshot.
+			await page.$eval('#v', node => {
+				const feed = node as HTMLVideoElement;
+				feed.volume = 0.4;
+				feed.muted = false;
+			});
+			const tabId = await getTabId(url);
+			const snapshot = () => evaluateServiceWorker(async id => {
+				const key = `spectra.control.tab.${id}`;
+				return (await chrome.storage.local.get(key))[key] as ControlSnapshot | undefined;
+			}, tabId);
+			const before = await eventually(snapshot, state => !!state?.activeMedia && !!state.mediaObservation
+				&& state.fields.volumeBase?.actual === 40, 'playing feed physical observation');
+			if (!before?.activeMedia || !before.mediaObservation) throw new Error('Missing feed observation identity');
+			const owner = { owner: before.mediaObservation.owner, epoch: before.mediaObservation.epoch };
+			await page.evaluate(() => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				if (!feed || feed.paused) throw new Error('SPA feed must be playing before the route gesture');
+				feed.dataset.volumeChanges = '0';
+				feed.addEventListener('volumechange', () => {
+					feed.dataset.volumeChanges = String(Number(feed.dataset.volumeChanges) + 1);
+				});
+				const enter = document.createElement('button') as HTMLButtonElement & { transition?: Promise<void> };
+				enter.id = 'enter-spa-live';
+				enter.textContent = 'Enter live';
+				enter.addEventListener('click', event => {
+					enter.dataset.trusted = String(event.isTrusted);
+					enter.transition = (async () => {
+						history.pushState({}, '', '/smoke-test.html/live/first-popup-volume');
+						feed.pause();
+						feed.style.display = 'none';
+						const canvas = document.createElement('canvas');
+						canvas.width = 640; canvas.height = 360;
+						const drawing = canvas.getContext('2d');
+						if (!drawing) throw new Error('SPA live fixture needs a canvas context');
+						drawing.fillRect(0, 0, 640, 360);
+						const stream = canvas.captureStream(1);
+						const context = new AudioContext();
+						const oscillator = context.createOscillator();
+						const audio = context.createMediaStreamDestination();
+						oscillator.connect(audio); oscillator.start();
+						for (const track of audio.stream.getAudioTracks()) stream.addTrack(track);
+						const live = document.createElement('video');
+						live.id = 'spa-live';
+						live.style.cssText = 'width:640px;height:360px';
+						live.srcObject = stream;
+						live.dataset.pauses = '0';
+						live.addEventListener('pause', () => {
+							live.dataset.pauses = String(Number(live.dataset.pauses) + 1);
+						});
+						live.addEventListener('volumechange', nativeEvent => {
+							live.dataset.nativeVolumeChange = String(nativeEvent.isTrusted);
+						});
+						feed.after(live);
+						// Let the browser dispatch volumechange; never fabricate the
+						// event or explicitly select/reacquire the replacement target.
+						live.volume = 0.6;
+						await context.resume();
+						await live.play();
+					})();
+				});
+				document.body.append(enter);
+			});
+			await page.bringToFront();
+			await page.click('#enter-spa-live');
+			await page.$eval('#enter-spa-live', async node => {
+				const transition = (node as HTMLButtonElement & { transition?: Promise<void> }).transition;
+				if (!transition || node.getAttribute('data-trusted') !== 'true') throw new Error('Missing trusted SPA route gesture');
+				await transition;
+			});
+			await eventually(() => page.$eval('#spa-live', node => ({
+				paused: (node as HTMLVideoElement).paused, nativeVolumeChange: (node as HTMLElement).dataset.nativeVolumeChange,
+			})), state => !state.paused && state.nativeVolumeChange === 'true', 'live plays after native volumechange without a pause/play repair');
+			const replacement = await eventually(snapshot, state => !!state?.activeMedia
+				&& state.activeMedia.mediaId !== before.activeMedia?.mediaId && state.live === true
+				&& state.fields.volumeBase?.actual === 60 && state.fields.mediaMuted?.actual === false,
+			'replacement publishes its own physical volume before Popup opens').catch(async error => {
+				const physical = await page.$eval('#spa-live', node => {
+					const video = node as HTMLVideoElement;
+					return { duration: String(video.duration), readyState: video.readyState, paused: video.paused,
+						volume: video.volume, buffered: video.buffered.length, currentTime: video.currentTime,
+						tracks: video.srcObject instanceof MediaStream
+							? video.srcObject.getTracks().map(track => ({ kind: track.kind, state: track.readyState, muted: track.muted })) : null };
+				});
+				throw new Error(`${String(error)}; physical=${JSON.stringify(physical)}`);
+			});
+			if (!replacement?.activeMedia || !replacement.mediaObservation) throw new Error('Missing live observation identity');
+			expect(replacement).toMatchObject({ documentId: before.documentId, generation: before.generation,
+				activeMedia: { documentId: before.documentId, frameId: before.activeMedia.frameId }, mediaObservation: owner });
+			expect(replacement.mediaObservation.selection).toBeGreaterThan(before.mediaObservation.selection);
+
+			const actionPopup = await (await openActionPopupTarget()).asPage();
+			popup = actionPopup;
+			collectPageErrors(actionPopup, errors);
+			const slider = `.glass-card[data-tab-id="${tabId}"] .vol-slider`;
+			await actionPopup.waitForSelector(slider);
+			await eventually(() => actionPopup.$eval(slider, node => ({
+				value: (node as HTMLInputElement).value, disabled: (node as HTMLInputElement).disabled,
+			})), state => state.value === '60' && !state.disabled, 'first Action Popup binds live volume');
+			expect(await actionPopup.$eval(slider, node => (node as HTMLInputElement).step)).toBe('10');
+			await actionPopup.$eval(slider, node => {
+				const input = node as HTMLInputElement;
+				input.dataset.inputs = '0';
+				input.addEventListener('input', event => {
+					input.dataset.inputs = String(Number(input.dataset.inputs) + 1);
+					input.dataset.trustedInput = String(event.isTrusted);
+				});
+				document.body.dataset.volumeErrors = '';
+				new MutationObserver(() => {
+					const toasts = [...document.querySelectorAll('.popup-toast-error')];
+					if (toasts.length) document.body.dataset.volumeErrors = toasts.map(toast => toast.textContent).join('\n');
+				}).observe(document.body, { childList: true, subtree: true, characterData: true });
+			});
+			await actionPopup.focus(slider);
+			// Exactly one trusted input: Home + repeated arrows would allow a
+			// later request to hide a rejected first ACK. Never reopen this Popup.
+			await actionPopup.keyboard.press('ArrowRight');
+			const ack = await eventually(snapshot, state => state?.fields.volumeBase?.phase === 'applied'
+				&& state.fields.volumeBase.controlled && state.fields.volumeBase.actual === 70
+				&& state.fields.volumeBase.desired === 70 && state.fields.volumeBase.lastError === null,
+			'first Popup input commits a controlled physical ACK');
+			expect(ack).toMatchObject({ documentId: before.documentId, generation: before.generation,
+				activeMedia: replacement.activeMedia,
+				mediaObservation: { ...owner, selection: replacement.mediaObservation.selection } });
+			await eventually(async () => ({
+				physical: await page.evaluate(() => {
+					const feed = document.querySelector<HTMLVideoElement>('#v');
+					const live = document.querySelector<HTMLVideoElement>('#spa-live');
+					return { feed: feed?.volume, live: live?.volume, paused: live?.paused, muted: live?.muted };
+				}),
+				badge: await readBadgeText(tabId),
+				value: await actionPopup.$eval(slider, node => (node as HTMLInputElement).value),
+			}), state => state.physical.feed === 0.4 && state.physical.live === 0.7
+				&& state.physical.paused === false && state.physical.muted === false
+				&& state.badge === '70' && state.value === '70', 'first-input DOM, Popup and badge agree');
+			expect(await page.evaluate(() => {
+				const feed = document.querySelector<HTMLVideoElement>('#v');
+				const live = document.querySelector<HTMLVideoElement>('#spa-live');
+				return { feedPaused: feed?.paused, feedHidden: feed?.style.display === 'none',
+					oldVolumeChanges: feed?.dataset.volumeChanges, livePauses: live?.dataset.pauses,
+					nativeVolumeChange: live?.dataset.nativeVolumeChange,
+					audioTracks: live?.srcObject instanceof MediaStream
+						? live.srcObject.getAudioTracks().map(track => track.readyState) : [],
+					path: location.pathname };
+			})).toEqual({ feedPaused: true, feedHidden: true, oldVolumeChanges: '0', livePauses: '0',
+				nativeVolumeChange: 'true', audioTracks: ['live'], path: '/smoke-test.html/live/first-popup-volume' });
+			expect(await actionPopup.$eval(slider, node => ({ inputs: (node as HTMLElement).dataset.inputs,
+				trusted: (node as HTMLElement).dataset.trustedInput, errors: document.body.dataset.volumeErrors,
+				toasts: document.querySelectorAll('.popup-toast-error').length,
+			}))).toEqual({ inputs: '1', trusted: 'true', errors: '', toasts: 0 });
+			expect(errors).toEqual([]);
+		} finally {
+			try { if (popup) await closeActionPopup(popup); }
+			finally {
+				// Closing this document also disposes its oscillator and stream.
+				try { await page.close(); }
+				finally {
+					try { await patchExtensionSettings(settingsClient, {
+						scope: 'global', changes: { visualizerEnabled: settings.previous.globalSettings.visualizerEnabled },
+					}); } finally { await settingsClient.close(); }
+				}
+			}
 		}
 	}, 35_000);
 

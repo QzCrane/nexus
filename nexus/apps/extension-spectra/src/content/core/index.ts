@@ -27,6 +27,7 @@ import { createSnapshot, mountStub, consumeStub } from './sentinel';
 import { sendSpectraRequest } from '../../shared/spectra-client';
 import {
 	setContentRuntimeDisposer,
+	setContentNativeMediaObserver,
 	setContentRuntimeObservesMedia,
 	setContentRuntimeOwnershipProvider,
 	setContentRuntimeReady,
@@ -406,7 +407,12 @@ async function initSpectra(runtime: ContentRuntime): Promise<void> {
 	};
 	publishObservationOwnership();
 	registry.track(mediaRegistry.subscribe(() => publishObservationOwnership()));
-	registry.track(() => setContentRuntimeObservesMedia(false));
+	registry.track(setContentNativeMediaObserver((element, type) => {
+		if (isCurrentRuntime(runtime)) mediaRegistry.observeNativeMediaChange(element, type);
+	}));
+	registry.track(() => {
+		if (spectraWindow.__SPECTRA_CONTENT_RUNTIME__ === runtime) setContentRuntimeObservesMedia(false);
+	});
 
   const policyExecutor = await createPolicyExecutor(
 		deps,

@@ -64,9 +64,9 @@ flowchart TD
 | 视频切到直播后"自动控制不了"，点一下播放器或重开 Popup 又好了 | 两类原因都要看：元素替换时选中未交接、旧播放器的历史交互压过正在播放的直播，或空选中不自愈；以及 2026-11-14 真站新确认的一链——站点移除临时小播放器后 `handleSourceReleased` 清空 `activeMedia` 且不重投影，内容侧 `selectionVisit` 未变因此不再发事件，状态永久停在 `idle`；同时主播放器在 `duration=NaN` 且几何未到达时被播放中的预览压过，短暂读到 100 | 056、O11 | guarded |
 | 插件改了音量，站点自己的音量条不动；无控制器的直播页上声音也不变 | 抖音 `dom-native` 页写 `element.volume` 时站点监听原生 `volumechange` 自己同步 UI；video-only 流走 `documentOutput`/Capture。但虎牙 `102411` 的 `vplayer.js` 才是可听电平与音量条的 owner：外部写 `element.volume=0.8` 只改 DOM 镜像，站点条仍 12.5px。两站不能混为一条结论 | 053、049 | guarded |
 | 虎牙暂停按钮每次都报 `Playback readback mismatch: requested playing=false; after write=false; stable=true` | 站点播放器是播放状态 owner。isolated world 的 raw `element.pause()` 让元素停下，但 `vplayer.js` 内部仍是「观看中」，约 30ms 后再次 `play()`；稳定读回为 `true`，与 `requested=false` 冲突，必然抛错。不是 ACK 过严，也不是偶发时序 | 045 | guarded |
-| 虎牙音量「双向都不同步」：站点拖条插件不跟，插件滑块站点条不跟 | 站点 → 插件方向本来就靠原生 `volumechange`，只是从未列为虎牙验收项；插件 → 站点方向在 `documentOutput` 下只改扩展自己的 Capture 处理器，站点条与 `element.volume` 都不动。修复是驱动站点自己的音量轨道、以站点 `.sound-bar` 宽度为证人，并把 display level 与 gain input 分离 | 053、049、045 | guarded |
+| 虎牙音量「双向都不同步」；70 后暂停读回 100 / processor 失败被报成功 | 既有双向问题通过站点轨道与 display level/gain input 分离修复；11-22 新回归是非音量命令清掉站点证人，以及站点校准成功覆盖失败/缺失 processor ACK，见第 3 段既有虎牙记录 | 053、049、045 | guarded（11-14 范围；11-22 回归待实机） |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
-| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 / 一开始永远不同步 | 角标被第二写者重绘；选中未迁移使原生 `volumechange` 被"非当前目标"过滤；媒体文档没有观察运行时（空 patch 跳过运行时，attach 也不补发已有选中）；SPA 切换选中新播放器元素后没有发布它自己的物理值；新播放器已呈现却因未选中而不被观察；注册时 `play` 已发生使元素永不入选；文档输出模式下用 delegate 的 applied 值取证；程序化配置被当成用户使用而写入 usage；把使用收紧为"仅扩展命令"后页面原生音量手势无法创建角标 | 052、014、056、I8、I9、I10 | guarded |
+| 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 / 同文档 SPA 首次音量 ACK 报 older-selection | 既有加载、attach/替换值发布、漏发现/漏准入、delegate 错误取证与 usage 问题见第 5 段；本轮还定位到旧方案允许未选中 target 携 registry selection 戳发布，导致 target/stamp 失配。修复捕获事件到当前 runtime 的交接及 registry 准入，不让未选中样本夺 target，不靠可信手势换 epoch 或 Background 改戳绕过 ACK 守卫 | 052、014、056、066、I8、I9、I10 | guarded（既有用例；11-22 同文档 SPA 待实机） |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
 | Popup 打开首帧空白、随后跳高，或先英文后中文 | 首帧等异步 actual；结构高度被历史值预留 | 050 | guarded |
 | PiP 打开后立刻被关掉 | 站点策略属性被提前归还，浏览器在同一任务跑了退出算法 | 051 | guarded |
@@ -186,7 +186,7 @@ flowchart TD
   [未决项 O11](../../../../docs/proposals/open-items-program.md)，不写成已消除；
   `www.douyin.com` 仍是验证码中间页、0 个媒体元素，本轮无该站证据。
 
-**3. 站点原生 UI 不同步 / 直播音量听不见（guarded，2026-11-14 真站收口）**
+**3. 站点原生 UI 不同步 / 直播音量听不见（guarded：2026-11-14 验收范围；11-22 新回归待实机验证）**
 
 三个诉求互不替代。混在一起会反复产生「改了控制逻辑却没有效果」的循环：
 **S-A 可听音量**、**S-B 站点 UI 数字**、**S-C ACK 诚实性**。
@@ -268,6 +268,15 @@ flowchart TD
   5 条覆盖无 DOM no-op、校准与单写者边界。
 - **不写成已消除**：虎牙 90px 轨道 + 10px 手柄的物理上限约 0.944，请求 100 时如实 ACK 94；
   `boost > 100` 仍只改处理器增益；O11 启动闪动仍在；Chrome 157 之外的版本无证据。
+- **2026-11-22 新增回归原因**：`70 → pause → 100` 不是新音量请求，而是非音量命令
+  清掉 `siteNativeLevel`，让 processor unity 冒充站点 display level；另一条失败转成功路径
+  是站点校准后无条件重写 `volumeBase`，掩盖 processor 的失败或缺失 ACK。本轮保留非音量
+  命令的站点证人，只转换已确认 unity 的 processor ACK，完整判据见
+  [06 §14.12](06-media-and-video.md#1412-which-element-the-controls-belong-to)。校准已有的
+  source operation、signal 与前后目标断言继续保护 dispose 后不写镜像/processor。
+  `test/site-native-control-surface.spec.ts` 补充 70 后暂停/恢复/静音、processor 错误/缺失/
+  非 unity/未受控 ACK 与校准中 dispose 回归。以上 11-14 真站 PASS 只属于当时范围；
+  本轮真实 Popup 与虎牙回弹链尚在验证，不能据此宣称完全修复。
 
 #### 2026-11-15 跨 origin 接管与虎牙上限复核（HEAD `e9f7e73a`）
 
@@ -326,40 +335,46 @@ flowchart TD
 - 虎牙的 `readback-mismatch` 不是「判据过严」而是站点重放写入：见上一段第四轮复核。
   稳定读回判据保持不动，修复的是写入对象（站点自己的按钮），不是放宽 ACK。
 
-**5. 角标不刷新（guarded）**
+**5. 角标不刷新 / 同文档 SPA 首次音量 ACK 失配（guarded：既有用例；11-22 新链路待实机）**
 
 - 角标是投影，不是第二 owner；它必须记录每次决策并按决策序绘制，而不是按谁先到 Action API。
 - 页面事件保持精确资源状态；passive read 不写偏好；Popup 关闭时同步仍要成立。
-- 已落地的观察加载边界：`NativeMediaExecutor` 是原生 `volumechange` 观测与
-  `spectra.content.target.changed` 的唯一发送者，运行时不存在就没有任何观察。
-  直播路由是**同源新文档**，`restoreIfConfigured` 的空 patch 曾经直接返回而不
-  `ensureContentRuntime`，媒体上报的 `resumeDocumentInitialization` 对已完成初始化的
-  document 又只返回旧 operation；于是观察 owner 缺失，直到 Popup 的显式读取冷启动
-  运行时——这就是"必须点开 Popup 才同步"的完整根因链。
+- 历史新文档加载缺口：此前按**同源新文档**记录的链路中，`restoreIfConfigured` 的空
+  patch 直接返回而不 `ensureContentRuntime`，媒体上报的 `resumeDocumentInitialization`
+  对已完成初始化的 document 又只返回旧 operation；完整观察 owner 缺失，直到 Popup
+  显式读取才冷启动。该历史解释不覆盖本轮用户的**同文档 SPA** 首次音量 ACK 故障；
+  `/follow` → `/follow/live/<id>` 路径不能证明 document 更换，必须核对 Chrome document
+  身份。当前没有 runtime callback 时仍有 bootstrap fallback，不能写成“无 runtime 就无观察”。
 - 已落地的补建：媒体上报 `hasMediaElement` 时 `ensureMediaObservation` 以
   `document-media-observation` 能力确保运行时；观察与写入意图分离，空模板的运行时
   只观察、不写入。运行时 attach 到已有选中的文档时 `publishCurrentSelection` 立即
   发布一次该选中，并把页面上已存在的物理值（音量、静音、速度、音高保持、播放）
   作为页面观察一并提交；attach 时没有选中，则紧随其后的第一次选中补完这次发布且
-  只补一次。SPA 路由切换（`/follow` → `/follow/live/<id>`，同一文档、不同播放器
-  元素）在选中替换时发布新元素自己的物理值；仅同一元素上身份变化（mediaId /
-  sourceRevision）的选中保持只发布目标。否则新文档或新播放器在首次原生变化或被
+  只补一次。Chrome 确认仍是同一文档的 SPA 路由切换（如本轮 `/follow` →
+  `/follow/live/<id>`）若选中不同播放器元素，就发布新元素自己的物理值；同一元素仅
+  sourceRevision 变化的选中保持只发布目标。否则新文档或新播放器在首次原生变化或被
   显式读取前没有任何字段快照，角标仍会看起来"只在 Popup 打开时同步"。
 - 已落地的重启保留：worker 重启只对存活的运行时、且 `mediaFacts` 中该 tab 的
   `documentId` 匹配、`outcome === 'found'` 时保留 observation lease；死运行时不会
   因历史媒体事实被复活。
 - 同源路由 `/follow` ↔ `/follow/live/<id>` 共用同一 tab session，不涉及跨 origin
   会话迁移；不要再从 tldts/site 分组方向修这个问题。
-- 已落地的观察边界：观察**不以呈现为门**。SPA 直播路由已挂载播放器、但选中尚未
-  迁移时，该元素自己的原生音量/静音变化仍以它自己的 target 提交页面观察；控制所有权
-  不因属性事件移动。曾经用 `isPresented`（有面积 ∨ PiP/全屏 ∨ `isLiveMedia` ∨ 正在
-  出声）否决未选中元素的观察，但"点一次暂停/播放就恢复同步"正是这个判据的反证：
-  `play` 会把所有权移到该元素，从而绕过整道门。真实直播页的状态并不满足任何一条
-  呈现证据——`live.douyin.com` 的 `<video>` 绑定 video-only MediaStream，首次手势前
-  `paused`、`readyState 0`、`duration` 为 `NaN`（不是 `Infinity`），可能还在 0×0
-  布局盒里。音量是同一原生面上的物理状态，因此判据只保留一件事：**隐藏的有限时长
-  预览**（feed 静音预览、pre-roll 空壳）不是用户触及的音量面，仍被否决；直播元素
-  （非有限时长）无论可见性、暂停与否都提交观察。呈现证据只服务于选择与准入。
+- **旧方案及本轮失配**：此前以“观察不以呈现为门”为由，让未选中元素携带自己的 target
+  和 registry 当前 selection 戳提交音量事实；“控制所有权不因属性事件移动”的说明并不
+  成立，Background 会投影该 target，造成 target/stamp 失配，并让首次控制 ACK 遇到
+  `older-selection`。历史现场确有 video-only MediaStream、`paused`、`readyState 0`、
+  `duration=NaN`、0×0 布局，且点暂停/播放后恢复同步；这些事实证明发现/准入链要补齐，
+  不证明未选中直播无条件发样本安全。旧 `isPresented`（面积 ∨ PiP/全屏 ∨ live ∨
+  出声）过滤及随后只排除隐藏有限预览的方案保留为历史原因，不再作为当前观察准入。
+- **2026-11-22 当前交接机制**：bootstrap 捕获 `volumechange/ratechange` 后优先交给
+  `setContentNativeMediaObserver` 注册的当前 runtime 回调；registry 补发现、刷新几何与
+  source，按既有准入协调选择，再 emit 给唯一 `NativeMediaExecutor`。显式选择、PiP/
+  fullscreen 与暂停保护保留，运行中零面积直播不因捕获事件反复退休/补选；只有准入后的
+  选中 target 可发布带 selection 戳的音量事实。旧 runtime cleanup 不删除新 callback，
+  无 callback 时原 bootstrap fallback 保留；同一观察 runtime 不因可信手势 claim 新
+  epoch。本轮删除未提交的 `canonicalPassiveObservationStamp` 改戳尝试，Background
+  原 ACK 守卫不放宽。实现拓扑见 [runtime](../architecture/runtime.md#runtime-loading-and-shortcuts)，
+  选择与观察的区别见 [06 §13](06-media-and-video.md#13-active-media)。
 - 已落地的注册准入（I8）：SPA 在 `play` 已经发生之后才挂载的播放器，其 `play` 早于
   监听器注册，`registered` 只做 `primeObserved`、从不参与选择；于是直播元素一直停在
   未选中分支，直到用户点一次暂停/播放（`pointerdown`/`play`）才转移所有权。
@@ -372,6 +387,11 @@ flowchart TD
   `volumeBase`/`mediaMuted` 一律从事件元素本身读取（`readElementVolumeFields`），
   `flushPageObservations` 的选中重读同样以元素覆盖 delegate 值；delegate 只描述扩展
   写入的归属，不能冒充页面的物理事实。
+- **本轮队列与首次手势边界**：queue 保留原 element，flush 只有它仍是当前选中元素才
+  重新物理读取，并以当前 target/sourceRevision 和 stamp 发出，不给排队旧值换新戳。
+  另一个元素已经接管则丢弃旧义务。补注册的 `primeObserved` 可能已经读到首次手势后的
+  同值；没有 volume/mute pending write 时，仍保留可信手势的观察义务，不能被同值去重
+  吞掉。手势证明用途，不另建 observation owner，也不替 registry 选择 target。
 - 已落地的用途边界（I10）：内容侧的 `userHasInteracted` 曾用"非 native sync"反推，
   初始化与 `spectra.audio.runtime.configure` 都会把它置真；`session.publish` 携带该
   事实后，后台 `resolveStickyUsage` 直接 `markBadgeUsed`，之后任何页面观察都能画角标
@@ -422,23 +442,23 @@ flowchart TD
   5 分钟 TTL 才释放——一次未收敛的写入即可把角标钉在旧数字，精确对应"点一次暂停/播放
   或打开 Popup 才同步"。相等 revision 不让位，避免手势前采样的页面值覆盖乐观投影
   （`test/badge-volume-state.spec.ts`）。
-- 隐藏预览不得接管：页面可以在真实播放器旁挂一个 `hidden` 预览播放器（抖音的静音
-  预览、预加载壳）。它的 `volumechange` 不是用户手势，未选中元素的样本因此被语义
-  可见性否决（`hidden` 属性或祖先、`display:none`、`visibility:hidden/collapse`）。
-  几何尺寸不参与判定——真实直播路由挂载中的播放器可以是 0×0、无元数据、未播放，
-  这正是"未选中元素也能提交样本"存在的原因。旧实现缺少该否决，预览以自己的
-  `13/M` 覆盖了正在播放的直播（`test/native-media-executor.spec.ts`、
-  `test/smoke/page-media.spec.ts` 的 "keeps native volume on the visible live stream
-  when a hidden preview starts"）。
-- 浏览器证据：`test/smoke/live-target-restart.spec.ts` 的四条门禁——
+- 隐藏预览不得接管：历史上未选中预览以自己的 `13/M` 覆盖正在播放的直播，曾用
+  `hidden` 属性或祖先、`display:none`、`visibility:hidden/collapse` 的语义可见性否决
+  补洞，并以真实播放器可能 0×0、无元数据、未播放为由允许其它未选中样本。这不能保证
+  target/stamp 一致；本轮 executor 不再发布任何未选中元素的音量事实，由 registry
+  负责发现和准入，而不是在 executor 再判“哪个看起来像直播”。原回归证据保留：
+  `test/native-media-executor.spec.ts`、`test/smoke/page-media.spec.ts` 的
+  "keeps native volume on the visible live stream when a hidden preview starts"。
+- 历史浏览器证据（不是 2026-11-22 复验）：`test/smoke/live-target-restart.spec.ts` 的四条用例——
   "follows the broadcast native volume while another player owns control"（0×0 canvas
   直播，角标 80 → 37）、"follows a finite player the page mounts without a layout box"
   （0×0 有限播放器，角标 80 → 42）、"follows a paused player the page keeps out of layout
   before playback starts"（无面积、无元数据、未播放、无播放历史，角标 80 → 31）、
   "loads the observation runtime when a live route mounts its player after the document is
   idle"（空文档 → 挂载空播放器 → 连接态赋 `srcObject` 触发 `loadstart`，运行时由该
-  生命周期事件加载，旧实现停在 `ready:false`）。最后两条分别看住"观察不以呈现为门"
-  和"媒体面由有界生命周期事件重算"。
+  生命周期事件加载，旧实现停在 `ready:false`）。当时最后两条分别针对“观察不以呈现为门”
+  和“媒体面由有界生命周期事件重算”；上述数值仅保留当时结果，不能证明本轮未选中样本
+  应获准入，也不能替代当前 callback → registry 选择 → executor 物理采样链的浏览器复验。
 - 测试：`test/runtime-loader.spec.ts` 的
   "acquires an observation runtime for a media document with no desired template"、
   "retries an observation load that lost the document-identity race"、
@@ -446,13 +466,20 @@ flowchart TD
   `test/native-media-executor.spec.ts` 的
   "publishes an established selection when a runtime attaches after it was selected"、
   "completes the attach publication when the first selection arrives after it"、
-  "publishes the replacement player values when a route switch selects another element"、
-  "observes a native volume change from any registered player the selection has not reached"；
-  `test/media-presence.spec.ts` 的已绑定轨道用例；
+  "publishes the replacement player values when a route switch selects another element"；
+  旧 "observes a native volume change from any registered player the selection has not reached"
+  用例已改为 "publishes successor volume only after the registry admits that control target"，
+  不再维护未选中样本可发布的旧断言；`test/media-presence.spec.ts` 的已绑定轨道用例；
   `test/runtime-restart-startup.spec.ts` 的
   "keeps the surviving runtime as an observation owner when its document reported media"、
   "does not resurrect a dead runtime for a media observation owner"。
-- 规则位置：08 的 052、014、056；投影与加载边界见
+- **2026-11-22 验证阶段**：本轮记录范围为 unit/typecheck/devbuild 阶段，不新增真实站点
+  PASS 结论。`content-runtime-readiness.spec.ts` 覆盖回调优先、epoch 不变和旧 cleanup
+  不删新 observer；`media-registry.spec.ts` 覆盖捕获事件补发现、显式 pin 与首次控制 ACK；
+  `native-media-executor.spec.ts` 覆盖选中准入及原 element 的重新采样。真实 Action Popup
+  首次音量 ACK、用户所报同文档抖音 SPA 链路及虎牙 70 后暂停回弹仍在验证；历史新文档/
+  夹具/11-14 真站结果均不能证明本轮已完全修复。
+- 规则位置：08 的 052、014、056、066；投影与加载边界见
   [runtime](../architecture/runtime.md#runtime-loading-and-shortcuts) 与
   [05 §11](05-control-state.md#11-volume-and-mute)。
 

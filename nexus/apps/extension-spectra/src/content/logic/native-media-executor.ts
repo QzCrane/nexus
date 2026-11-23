@@ -103,23 +103,6 @@ interface MediaScene {
 	speed?: number;
 }
 
-/**
- * Whether the viewer can actually see and touch this player.
- *
- * This is intentionally semantic, never geometric: a live route legitimately
- * mounts its player with a zero-sized box, so area cannot veto a sample. The
- * `hidden` attribute and computed `display`/`visibility` describe a player the
- * page keeps out of the presentation entirely, and a hidden preview's volume is
- * not a viewer gesture.
- */
-function isSemanticallyPresented(element: HTMLMediaElement): boolean {
-	if (element.hidden || element.closest?.('[hidden]')) return false;
-	const view = element.ownerDocument?.defaultView;
-	if (!view || typeof view.getComputedStyle !== 'function') return true;
-	const style = view.getComputedStyle(element);
-	return style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse';
-}
-
 const MAX_RETAINED_MEDIA_SCENES = 128;
 
 type RestorableMediaWriter = 'declared-official' | 'page-native' | 'dom-native';
@@ -679,7 +662,7 @@ export class NativeMediaExecutor {
 		element: HTMLMediaElement;
 	}>();
 	private readonly pageObservations = new Map<string, {
-		target: MediaTarget;
+		element: HTMLMediaElement;
 		patch: ControlPatch;
 		observedStrategies: ControlObservationStrategies;
 		userGesture: boolean;
@@ -1112,10 +1095,17 @@ export class NativeMediaExecutor {
 		// the site control instead and keep the processor at unity so the level is
 		// applied once, not twice (Huya tab RMS: 0.5 -> 0.0241, 0.03 -> 0.00016,
 		// 0.9 -> 0.0726). A page without such a control keeps the old routing.
-		const siteNativeVolume = documentOutput && audioTarget
-			&& typeof intent.patch.volumeBase === 'number'
-			? await projectSiteNativeVolume(audioTarget.element, intent.patch.volumeBase)
-			: null;
+		let siteNativeVolume: number | null = null;
+		if (documentOutput && audioTarget && typeof intent.patch.volumeBase === 'number') {
+			const calibration = this.beginSourceOperation(audioTarget.target);
+			try {
+				this.assertCurrentTarget(audioTarget.target, audioTarget.element, calibration.signal, true);
+				siteNativeVolume = await projectSiteNativeVolume(audioTarget.element, intent.patch.volumeBase, {
+					signal: calibration.signal, isCurrent: () => this.isSelectedTarget(audioTarget.target, audioTarget.element),
+				});
+				this.assertCurrentTarget(audioTarget.target, audioTarget.element, calibration.signal, true);
+			} finally { calibration.close(); }
+		}
 		// This executor is the only canonical `element.volume` writer (SCTRL-003).
 		// A paused Huya player moves its own bar without refreshing the DOM mirror,
 		// so align it once here; the resulting `volumechange` is the existing
@@ -1127,9 +1117,10 @@ export class NativeMediaExecutor {
 			}
 		}
 		this.audioRuntimeDelegate?.synchronizeNative(intent.actualContext);
-		// The processor's gain input stays at unity; the level the card reports is
-		// the one the site's own control just applied.
-		this.audioRuntimeDelegate?.setSiteNativeLevel?.(siteNativeVolume);
+		// Preserve unrelated controls' witness; an older context must not undo the new site level.
+		if (typeof intent.patch.volumeBase === 'number') {
+			this.audioRuntimeDelegate?.setSiteNativeLevel?.(siteNativeVolume);
+		}
 		for (const [rawField, rawValue] of Object.entries(intent.patch)) {
 			const field = rawField as ControlField;
 			const value = rawValue as ControlValues[ControlField];
@@ -1212,17 +1203,12 @@ export class NativeMediaExecutor {
 			}
 		}
 		if (siteNativeVolume !== null && this.audioRuntimeDelegate) {
-			// The processor keeps its capture session at unity; the number the
-			// viewer sees is the level the site's own control actually applied.
-			// Extend the runtime's own field state so its coverage/strategy stay
-			// contract-valid (a capture field may only be `full` or `opaque`).
+			// A site slider write cannot repair a failed or missing processor ACK.
 			const runtimeState = fields.volumeBase;
-			if (runtimeState) {
+			if (runtimeState?.phase === 'applied' && runtimeState.controlled
+				&& runtimeState.actual === 100 && runtimeState.lastError === null) {
 				fields.volumeBase = { ...runtimeState,
-					desired: siteNativeVolume, actual: siteNativeVolume,
-					phase: 'applied', controlled: true, lastError: null };
-			} else {
-				this.putState(fields, 'volumeBase', siteNativeVolume, siteNativeVolume, intent, 'dom-native');
+					desired: siteNativeVolume, actual: siteNativeVolume };
 			}
 		}
 		if (resolved && directEntries.some(([field]) => RESTORABLE_MEDIA_FIELDS.has(field))) {
@@ -1726,9 +1712,10 @@ export class NativeMediaExecutor {
 		const tolerance = field === 'volumeBase' || field === 'speed'
 			? 0.01
 			: field === 'currentTime' ? 0.05 : 0;
-		const effectiveDesired = field === 'currentTime'
+		let effectiveDesired = field === 'currentTime'
 			? clampNativeSeek(element, value as number)
 			: value;
+		let siteVolumeProjected = false;
 		let baseline: ControlValues[RestorableMediaField] | undefined;
 		let controllerBaseline: number | undefined;
 		let mediaWriter: RestorableMediaWriter = 'dom-native';
@@ -1743,7 +1730,20 @@ export class NativeMediaExecutor {
 				mediaWriter = baselineState.writer;
 				writerUpgrade = baselineState.upgradeFrom;
 				speedFallbackFrom = baselineState.speedFallbackFrom;
+				if (field === 'volumeBase' && mediaWriter === 'dom-native'
+					&& (effectiveDesired as number) <= CONTROL_VALUE_LIMITS.volumeBase.max) {
+					const level = await projectSiteNativeVolume(element, effectiveDesired as number, {
+						signal, isCurrent: () => this.isSelectedTarget(target, element),
+					});
+					assertCurrent();
+					if (level !== null) {
+						this.assertCurrentTarget(target, element, signal, true);
+						effectiveDesired = level;
+						siteVolumeProjected = true;
+					}
+				}
 			} catch (error) {
+				if (isContentLifecycleError(error)) throw error;
 				const failure = this.nativeFailure(field, error);
 				this.putError(
 					fields,
@@ -1805,6 +1805,7 @@ export class NativeMediaExecutor {
 				// detached 750ms listener with no user-visible gain.
 				const siteKey = resolveNativeWriteSiteKey();
 				const canSplitAck = mediaWriter === 'dom-native'
+					&& !siteVolumeProjected
 					&& writerUpgrade === undefined
 					&& field !== 'speed'
 					&& !(field === 'mediaMuted' && effectiveDesired === false)
@@ -2616,34 +2617,8 @@ export class NativeMediaExecutor {
 		const resolved = this.registry.resolve(null);
 		const selected = Boolean(resolved && resolved.target.frameId === target.frameId
 			&& resolved.target.mediaId === target.mediaId);
-		if (!selected) {
-			// An SPA route can mount and start the successor player before the
-			// registry moves control onto it (`/follow` -> `/follow/live/<id>`).
-			// The volume/mute pair is that element's physical state and the native
-			// surface the viewer just touched, so the badge follows it even while
-			// another element still owns control. Control ownership never moves on a
-			// property event, and no presentation heuristic may veto the sample: a
-			// live route mounts players with an empty layout box, a non-finite
-			// timeline that is still `NaN` before metadata, or muted output that the
-			// site unmutes from its own UI.
-			if (event !== 'volumechange') return;
-			// A page can mount hidden preview players beside the real one (a feed's
-			// muted preview, a pre-roll shell). Their volume is not the surface the
-			// viewer touched, and promoting it moved the badge and observations onto
-			// a player nobody hears. The veto is therefore limited to hidden finite
-			// media: a broadcast is audible even while the page paints it through a
-			// canvas, keeps the <video> hidden, or has not started playback yet
-			// (autoplay blocked). Geometry stays out of this decision because a live
-			// player can be 0×0.
-			if (!isSemanticallyPresented(element) && !isLiveMedia(element)) return;
-			const observed = this.readElementVolume(target);
-			if (!observed) {
-				this.traceDroppedVolume(target, 'unresolved-player');
-				return;
-			}
-			this.queuePageObservation(target, observed.patch, observed.observedStrategies, this.pageUserGesture());
-			return;
-		}
+		// Only the registry can admit the target named by its selection stamp.
+		if (!selected) return;
 		const mediaId = target.mediaId;
 		let observedFields: ControlReadRequest['fields'];
 		if (event === 'volumechange') {
@@ -2714,7 +2689,9 @@ export class NativeMediaExecutor {
 			if (!strategy) throw new Error(`Native observation strategy is missing for ${field}`);
 			observedStrategies[field as keyof ControlObservationStrategies] = strategy;
 		}
-		if (event === 'volumechange' && Object.keys(patch).length > 0) {
+		const userGesture = event === 'volumechange' && this.pageUserGesture();
+		if (event === 'volumechange' && (Object.keys(patch).length > 0
+			|| userGesture && !pending?.has('volumeBase') && !pending?.has('mediaMuted'))) {
 			// Page volume and page mute are one semantic transaction even when only
 			// one value changed. Publishing the coherent pair prevents Popup state
 			// from combining a fresh slider value with stale mute state.
@@ -2748,7 +2725,7 @@ export class NativeMediaExecutor {
 				// a document-wide desired template replayed onto later media elements.
 			}
 		}
-		this.queuePageObservation(target, patch, observedStrategies, event === 'volumechange' && this.pageUserGesture());
+		this.queuePageObservation(target, patch, observedStrategies, userGesture);
 	}
 
 	/**
@@ -2798,23 +2775,6 @@ export class NativeMediaExecutor {
 		return { patch, observedStrategies };
 	}
 
-	private readElementVolume(
-		target: MediaTarget,
-	): {
-		patch: ControlPatch;
-		observedStrategies: ControlObservationStrategies;
-		mediaObservation?: ControlReadResult['mediaObservation'];
-	} | null {
-		const observed = this.readElementVolumeFields(target);
-		if (!observed) return null;
-		return {
-			...observed,
-			...(this.registry.captureObservation
-				? { mediaObservation: this.registry.captureObservation() }
-				: {}),
-		};
-	}
-
 	/**
 	 * Publish a page-native observation.
 	 *
@@ -2832,6 +2792,8 @@ export class NativeMediaExecutor {
 		observedStrategies: ControlObservationStrategies,
 		userGesture = false,
 	): void {
+		const resolved = this.registry.resolve(target);
+		if (!resolved) return;
 		const key = this.targetKey(target);
 		const queued = this.pageObservations.get(key);
 		if (queued) {
@@ -2840,7 +2802,7 @@ export class NativeMediaExecutor {
 			queued.userGesture ||= userGesture;
 		} else {
 			this.pageObservations.set(key, {
-				target,
+				element: resolved.element,
 				patch: { ...patch },
 				observedStrategies: { ...observedStrategies },
 				userGesture,
@@ -2861,10 +2823,10 @@ export class NativeMediaExecutor {
 		}
 		const entries = [...this.pageObservations.values()];
 		this.pageObservations.clear();
-		for (const { target, patch, observedStrategies, userGesture } of entries) {
+		for (const { element, patch, observedStrategies, userGesture } of entries) {
 			const selected = this.registry.resolve(null);
-			const sameTarget = Boolean(selected && selected.target.frameId === target.frameId
-				&& this.targetKey(selected.target) === this.targetKey(target));
+			if (!selected || selected.element !== element) continue;
+			const target = selected.target;
 			// Queueing is not a sample. Read this batch again in one synchronous
 			// turn so the stamp cannot make an older queued value look newer.
 			// Volume/mute are re-witnessed by the element for the same reason as
@@ -2877,17 +2839,12 @@ export class NativeMediaExecutor {
 				this.traceDroppedVolume(target, 'unresolved-player');
 				continue;
 			}
-			const current = sameTarget
-				? ((): ControlReadResult => {
-					const read = this.read({ target, fields: queuedFields });
-					if (!volumeWitness) return read;
-					return {
-						...read,
-						patch: { ...read.patch, ...volumeWitness.patch },
-						observedStrategies: { ...read.observedStrategies, ...volumeWitness.observedStrategies },
-					};
-				})()
-				: this.readElementVolume(target);
+			const read = this.read({ target, fields: queuedFields });
+			const current = volumeWitness ? {
+				...read,
+				patch: { ...read.patch, ...volumeWitness.patch },
+				observedStrategies: { ...read.observedStrategies, ...volumeWitness.observedStrategies },
+			} : read;
 			if (!current || Object.keys(current.patch).length === 0) {
 				this.traceDroppedVolume(target, 'unreadable');
 				continue;

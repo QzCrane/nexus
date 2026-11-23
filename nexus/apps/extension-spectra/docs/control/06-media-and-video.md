@@ -36,7 +36,7 @@ interface MediaTarget {
 ```
 
 - **目标选择**: 显式媒体选择保持粘性；新 `play` 事件按 `有效用户指针交互 -> 可见、未结束且已确认的直播 -> 当前播放中 -> 可见面积 -> 最近播放 -> 注册顺序` 比较自动候选。直播因启动或广告过场暂时 paused，仍应在证据成立时获得控制，不能等第二次播放才找到它。有限时长广告不能因正在播放或面积更大抢走该直播，隐藏预览也不能因最后触发 `play` 就覆盖主播放器。已结束媒体、暂停或不可见视频的历史指针交互不阻止新播放器接管；纯音频不受可见面积限制。实际选择变化通过唯一 `selected` 通知同步 Background。
-- **观察与恢复边界**: `volumechange`、`ratechange`、`seeked` 即使由浏览器标记为 trusted，也可能来自网页脚本，不能据此切换控制目标。恢复已确认的音量/速度只作用于当前选中媒体；后台预加载元素的恢复 ACK 不得夺取当前目标。
+- **观察与恢复边界**: `volumechange`、`ratechange`、`seeked` 即使由浏览器标记为 trusted，也可能来自网页脚本，不等于用户显式选择。document 捕获的 `volumechange/ratechange` 可经当前 runtime 回调交给 `MediaRegistry.observeNativeMediaChange`，补发现元素、刷新几何/source，再按上述既有准入建立或协调选择；不是凭事件的 trusted 标记选中事件元素。显式选择、PiP/fullscreen 与暂停 pin 的保护及既有运行中直播接管例外不变；捕获路径不因运行中直播面积为零反复退休、补选。只有 registry 准入的当前选中 target 才能携带其 selection 戳发布音量事实，未选中样本不能夺 target。恢复已确认的音量/速度也只作用于当前选中媒体；后台预加载元素的恢复 ACK 不得夺取当前目标。回调交接见 [runtime](../architecture/runtime.md#runtime-loading-and-shortcuts)。
 - `activeMedia` 与 `activeVideo` 独立关联，音频元素选择不清除视频目标。控制写入作用域限定为 top-level document only (`frameId: 0`)；媒体列表读取自然报告与 Chrome 事实，不为打开 Popup 注入 frame census。
 
 ### §13.1 Document-level inventory
@@ -329,8 +329,10 @@ runtime status probe 是纯读。只有仍持有 loading/initialization 身份�
 初始 IntersectionObserver 面积送达只补几何事实，不能伪造一次目标切换并把
 尚在提交的 portable restore 降为页面观察。隐藏、结束或退出 PiP/fullscreen 时，
 先协调选择，再投递相应媒体状态事件。source retirement 仍先发 `removed` 取消
-旧源，再完成身份更新或删除。排队的 page observation 在微任务发送前重新核对当前完整目标身份，
-旧但仍注册的隐藏播放器不能用迟到观察把 Background 的目标改回去。
+旧源，再完成身份更新或删除。page observation 队列保留原 element；微任务发送时只有它仍是
+当前选中元素才重新物理采样，使用当前 target/sourceRevision 与 observation stamp 发出。
+这不是给旧值换新戳；已换成另一个元素则丢弃旧义务，旧但仍注册的隐藏播放器不能用迟到观察
+把 Background 的目标改回去。
 
 IntersectionObserver 的视口相交面积和元素布局尺寸是不同事实：普通滚动出视口
 只改变 `intersectionRect`，不能创建新 visit 或重放旧音量/倍速。仅确实失去
@@ -696,6 +698,20 @@ pause 后的普通继任路径也必须比较同一排序，不能把目标退�
 音量事务的 fresh read 所证明的 `live/liveTarget` 随物理 ACK 一起提交到唯一快照，
 由 `publishedLive` 检查其与最终 activeMedia 的完整 source identity 一致。不能只
 提交音量而丢掉首次选择的直播状态，也不能把旧目标的直播标签带给新目标。
+
+站点音量轨道的所有权不由 `srcObject` 类型决定：普通 `blob` 源也可能由站点保存并回写
+音量。没有 page-native controller 的标准原生音量写入，同样先校准站点轨道，再由唯一
+媒体写者对齐属性并等待稳定确认；不能把 DOM 的 `written` 当作站点成功。校准已发现
+的音量轨道失败时不降级为仅写 DOM，时间轴滑块不得当音量轨道；每个异步校准阶段都
+检查 source/selection 生命周期。未发现站点音量控件时保留标准 DOM 路径。
+
+站点原生轨道承接 `documentOutput` 音量时，display level 与 processor unity 分离；
+`executeAttempt` 的非音量命令不能清除 `siteNativeLevel`，否则暂停后的读回会从站点 70
+跳回 processor 的 100。只有 processor ACK 同时为 `applied`、`controlled:true`、
+`actual:100`、`lastError:null`，才能把该字段映射成站点校准音量；失败或缺失 ACK
+不能被站点滑条成功掩盖。校准沿用 `beginSourceOperation` 的 signal 及前后当前目标断言，
+dispose 后不得继续写 DOM 镜像或 processor。一般处理器证明仍由
+[document-output owner](05-control-state.md#document-output-ownership) 定义。
 
 广告的页面静音/零音量只是该 source 的实际值，不是直播偏好。页面 observation 不写
 document desired；跨 document 恢复继续丢弃未经显式用户选择证实的静音/零音量，

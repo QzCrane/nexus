@@ -583,6 +583,10 @@ if (!getContentBootstrapState()) {
 		// The first media volume event is the page-entry audio detection moment;
 		// solidify the amplified-controller verdict before the runtime loads.
 		if (event.type === 'volumechange') reportPageScale(element);
+		if (state.observeNativeMediaChange && (event.type === 'volumechange' || event.type === 'ratechange')) {
+			state.observeNativeMediaChange(element, event.type);
+			return;
+		}
 		// Yield only to a runtime that registered a player. Injection or a READY
 		// handshake is not proof: a runtime that never discovered this document's
 		// media must not remove the only observer that hears native changes.
