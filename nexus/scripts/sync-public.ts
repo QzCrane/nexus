@@ -699,6 +699,36 @@ function cleanGeneratedArtifacts() {
   cleanIncrementalBuildState(destinationRoot);
 }
 
+function ensureWindowsToolchainShims(root) {
+  if (process.platform !== 'win32') return;
+  const binDir = path.join(root, 'node_modules', '.bin');
+  if (!fs.existsSync(binDir)) return;
+  const turboBin = path.join(path.dirname(process.execPath), 'turbo.exe');
+  const biomeBin = path.join(path.dirname(process.execPath), 'biome.exe');
+  const turboExe = path.join(binDir, 'turbo.exe');
+  const biomeExe = path.join(binDir, 'biome.exe');
+  if (fs.existsSync(turboBin)) {
+    fs.writeFileSync(path.join(binDir, 'turbo.cmd'), `@echo off\r\n"${turboBin}" --skip-infer %*\r\n`);
+    if (fs.existsSync(turboExe)) {
+      try {
+        fs.renameSync(turboExe, path.join(binDir, 'turbo.exe.bak'));
+      } catch (error) {
+        console.warn(`[sync-public] could not rename ${turboExe}: ${String(error)}`);
+      }
+    }
+  }
+  if (fs.existsSync(biomeBin)) {
+    fs.writeFileSync(path.join(binDir, 'biome.cmd'), `@echo off\r\n"${biomeBin}" %*\r\n`);
+    if (fs.existsSync(biomeExe)) {
+      try {
+        fs.renameSync(biomeExe, path.join(binDir, 'biome.exe.bak'));
+      } catch (error) {
+        console.warn(`[sync-public] could not rename ${biomeExe}: ${String(error)}`);
+      }
+    }
+  }
+}
+
 function runPublicValidationScript(script) {
   run(process.execPath, ['run', script, `--cache-dir=${PUBLIC_TURBO_CACHE_DIR}`], {
     cwd: destinationRoot,
@@ -839,7 +869,10 @@ function main() {
       validatePublicMarkdownLinks();
     });
 
-    runStage('install dependencies', () => run(process.execPath, ['install'], { cwd: destinationRoot }));
+    runStage('install dependencies', () => {
+      run(process.execPath, ['install'], { cwd: destinationRoot });
+      ensureWindowsToolchainShims(destinationRoot);
+    });
     for (const script of PUBLIC_VALIDATION_SCRIPTS) {
       runStage(`validate public ${script}`, () => runPublicValidationScript(script));
     }
