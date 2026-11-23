@@ -11,14 +11,32 @@ const VOLUME_TRACK_SELECTOR = [
 	'[role="slider"]',
 ].join(',');
 
-const PLAYBACK_BUTTON_SELECTOR = [
-	'[class*="player-pause"]',
+const PLAY_BUTTON_SELECTOR = [
 	'[class*="player-play"]',
-	'[title*="暂停"]',
+	'[class*="btn-play"]',
+	'[class*="play-btn"]',
 	'[title*="播放"]',
 	'[title*="开始观看"]',
-	'[aria-label*="Pause"]',
 	'[aria-label*="Play"]',
+	'[aria-label*="播放"]',
+].join(',');
+
+const PAUSE_BUTTON_SELECTOR = [
+	'[class*="player-pause"]',
+	'[class*="btn-pause"]',
+	'[class*="pause-btn"]',
+	'[title*="暂停"]',
+	'[aria-label*="Pause"]',
+	'[aria-label*="暂停"]',
+].join(',');
+
+const PLAYBACK_BUTTON_FALLBACK_SELECTOR = [
+	'#player-btn',
+	'[class*="player-btn"]',
+	'[class*="play-pause"]',
+	'[class*="pause-play"]',
+	'[role="button"][class*="play"]',
+	'[role="button"][class*="pause"]',
 ].join(',');
 
 // A unit harness may install only the media globals. Discovery must then be a
@@ -46,11 +64,33 @@ function controlScope(element: Element): ParentNode | null {
 	let node: Element | null = element.parentElement ?? null;
 	for (let depth = 0; node && depth < 8; depth += 1, node = node.parentElement ?? null) {
 		if (hasControl(node, VOLUME_TRACK_SELECTOR)
-			|| hasControl(node, PLAYBACK_BUTTON_SELECTOR)) return node;
+			|| hasControl(node, PLAY_BUTTON_SELECTOR)
+			|| hasControl(node, PAUSE_BUTTON_SELECTOR)
+			|| hasControl(node, PLAYBACK_BUTTON_FALLBACK_SELECTOR)) return node;
 	}
 	if (typeof document === 'undefined') return null;
 	const media = queryAll(document, 'video,audio');
 	return media.length === 1 && media[0] === element ? document : null;
+}
+
+function wakeControlScope(element: Element): void {
+	if (typeof MouseEvent !== 'function') return;
+	const scope = controlScope(element);
+	if (!scope || typeof (scope as Element).dispatchEvent !== 'function') return;
+	const candidate = scope as Element;
+	const rect = typeof candidate.getBoundingClientRect === 'function'
+		? candidate.getBoundingClientRect()
+		: { left: 0, top: 0, width: 0, height: 0 };
+	const base = {
+		bubbles: true,
+		cancelable: true,
+		view: eventView(),
+		clientX: rect.left + rect.width / 2,
+		clientY: rect.top + rect.height / 2,
+	};
+	for (const type of ['pointerenter', 'mousemove']) {
+		candidate.dispatchEvent(new MouseEvent(type, base));
+	}
 }
 
 function findVolumeTrack(element: Element): HTMLElement | null {
@@ -59,14 +99,22 @@ function findVolumeTrack(element: Element): HTMLElement | null {
 		const name = `${candidate.className} ${candidate.getAttribute?.('aria-label') ?? ''}`;
 		if (!/sound-progress|volume|音量/iu.test(name)) continue;
 		const rect = candidate.getBoundingClientRect();
-		// A volume track has a filled bar / handle and a real horizontal extent.
-		if (rect.width >= 24 && rect.height > 0 && (candidate.childElementCount ?? 0) > 0) return candidate;
+		// A volume track has a filled bar / handle and a real horizontal or vertical extent.
+		const isHorizontal = rect.width >= 24 && rect.height > 0;
+		const isVertical = rect.height >= 24 && rect.width > 0;
+		if ((isHorizontal || isVertical) && (candidate.childElementCount ?? 0) > 0) return candidate;
 	}
 	return null;
 }
 
-function findPlaybackButton(element: Element): HTMLElement | null {
-	for (const candidate of queryAll(controlScope(element), PLAYBACK_BUTTON_SELECTOR)) {
+function findPlaybackButton(element: Element, playing: boolean): HTMLElement | null {
+	const scope = controlScope(element);
+	const primarySelector = playing ? PLAY_BUTTON_SELECTOR : PAUSE_BUTTON_SELECTOR;
+	const candidates = [
+		...queryAll(scope, primarySelector),
+		...queryAll(scope, PLAYBACK_BUTTON_FALLBACK_SELECTOR),
+	];
+	for (const candidate of candidates) {
 		if (!isUsableControl(candidate)) continue;
 		if (candidate === element || (typeof candidate.contains === 'function' && candidate.contains(element))) continue;
 		const rect = candidate.getBoundingClientRect();
@@ -76,7 +124,10 @@ function findPlaybackButton(element: Element): HTMLElement | null {
 			? candidate.getAttribute('title') ?? '' : '';
 		const aria = typeof candidate.getAttribute === 'function'
 			? candidate.getAttribute('aria-label') ?? '' : '';
-		if (/refresh|reload|fullscreen|rotate|tooltips|tooltip|刷新|全屏|旋转/i.test(`${className} ${title} ${aria}`)) continue;
+		const label = `${className} ${title} ${aria}`;
+		if (/refresh|reload|fullscreen|rotate|tooltips|tooltip|刷新|全屏|旋转/i.test(label)) continue;
+		if (playing && /pause|暂停/i.test(label) && !/play|播放/i.test(label)) continue;
+		if (!playing && /play|播放/i.test(label) && !/pause|暂停/i.test(label)) continue;
 		return candidate;
 	}
 	return null;
@@ -91,8 +142,10 @@ function eventView(): Window | null | undefined {
 function dispatchTrackInput(control: HTMLElement, ratio: number): void {
 	if (typeof MouseEvent !== 'function') return;
 	const rect = control.getBoundingClientRect();
-	const x = rect.left + rect.width * Math.max(0, Math.min(1, ratio));
-	const y = rect.top + rect.height / 2;
+	const isVertical = rect.height > rect.width * 1.5;
+	const clampedRatio = Math.max(0, Math.min(1, ratio));
+	const x = isVertical ? rect.left + rect.width / 2 : rect.left + rect.width * clampedRatio;
+	const y = isVertical ? rect.bottom - rect.height * clampedRatio : rect.top + rect.height / 2;
 	const base = { bubbles: true, cancelable: true, view: eventView(), clientX: x, clientY: y };
 	for (const type of ['pointerdown', 'mousedown']) {
 		control.dispatchEvent(new MouseEvent(type, { ...base, buttons: 1 }));
@@ -118,9 +171,29 @@ function wait(ms: number): Promise<void> {
  */
 function readSiteLevel(control: HTMLElement, element: HTMLMediaElement): number {
 	const rect = control.getBoundingClientRect();
+	const isVertical = rect.height > rect.width * 1.5;
 	const filled = queryAll(control, '[class*="bar"]')[0];
-	const width = filled && isUsableControl(filled) ? filled.getBoundingClientRect().width : 0;
-	if (rect.width > 0 && filled && isUsableControl(filled)) return Math.max(0, Math.min(1, width / rect.width));
+	let ratio = 0;
+	if (isVertical) {
+		const height = filled && isUsableControl(filled) ? filled.getBoundingClientRect().height : 0;
+		if (rect.height > 0 && filled && isUsableControl(filled)) {
+			ratio = Math.max(0, Math.min(1, height / rect.height));
+		}
+	} else {
+		const width = filled && isUsableControl(filled) ? filled.getBoundingClientRect().width : 0;
+		if (rect.width > 0 && filled && isUsableControl(filled)) {
+			ratio = Math.max(0, Math.min(1, width / rect.width));
+		}
+	}
+	if (ratio <= 0.005 && element.volume > 0.05 && !element.muted) {
+		const isCollapsed = !filled
+			|| (isVertical ? rect.height <= 0 : rect.width <= 0)
+			|| ('offsetParent' in control && (control as HTMLElement).offsetParent === null);
+		if (isCollapsed) return element.volume;
+	}
+	if ((isVertical ? rect.height > 0 : rect.width > 0) && filled && isUsableControl(filled)) {
+		return ratio;
+	}
 	return element.volume;
 }
 
@@ -157,6 +230,7 @@ export async function projectSiteNativeVolume(
 	requested: number,
 	options: NativeMediaOperationOptions = {},
 ): Promise<number | null> {
+	wakeControlScope(element);
 	const control = findVolumeTrack(element);
 	if (!control || typeof MouseEvent !== 'function') return null;
 	const target = Math.max(0, Math.min(100, requested)) / 100;
@@ -186,13 +260,76 @@ export async function projectSiteNativeVolume(
  * `play()` again ~10ms later because its own state still says "watching", and
  * the stable readback then reports a mismatch on every single press. Clicking
  * the native button updates the player's state first, so the pause sticks and
- * the ordinary playback ACK succeeds. Returns false when no such button exists.
+ * the ordinary playback ACK succeeds.
+ *
+ * This implementation is strictly event-driven: it never polls with busy loops.
+ * It listens for the native 'play'/'pause' event on the media element, dispatches
+ * the gesture, and resolves immediately when the native event fires or if the
+ * state settles synchronously.
  */
-export function projectSiteNativePlayback(element: HTMLMediaElement, playing: boolean): boolean {
+export function projectSiteNativePlayback(
+	element: HTMLMediaElement,
+	playing: boolean,
+	options: NativeMediaOperationOptions = {},
+): boolean | Promise<boolean> {
 	if (typeof MouseEvent !== 'function') return false;
-	const control = findPlaybackButton(element);
-	if (!control) return false;
+	assertNativeOperationCurrent(options);
 	if (!element.paused === playing) return true;
-	control.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: eventView() }));
-	return true;
+
+	wakeControlScope(element);
+	const control = findPlaybackButton(element, playing);
+	if (!control) return false;
+
+	const targetEvent = playing ? 'play' : 'pause';
+
+	return new Promise<boolean>((resolve) => {
+		let settled = false;
+		let timeoutId: ReturnType<typeof setTimeout> | null = null;
+
+		const cleanup = (): void => {
+			if (settled) return;
+			settled = true;
+			if (timeoutId !== null) clearTimeout(timeoutId);
+			element.removeEventListener(targetEvent, onNativeStateAchieved);
+			options.signal?.removeEventListener('abort', onAbort);
+		};
+
+		const onNativeStateAchieved = (): void => {
+			cleanup();
+			resolve(true);
+		};
+
+		const onAbort = (): void => {
+			cleanup();
+			resolve(!element.paused === playing);
+		};
+
+		element.addEventListener(targetEvent, onNativeStateAchieved, { once: true });
+		options.signal?.addEventListener('abort', onAbort, { once: true });
+
+		timeoutId = setTimeout(() => {
+			cleanup();
+			resolve(!element.paused === playing);
+		}, 200);
+
+		const rect = control.getBoundingClientRect();
+		const base = {
+			bubbles: true,
+			cancelable: true,
+			view: eventView(),
+			clientX: rect.left + rect.width / 2,
+			clientY: rect.top + rect.height / 2,
+		};
+		for (const type of ['pointerdown', 'mousedown']) {
+			control.dispatchEvent(new MouseEvent(type, { ...base, buttons: 1 }));
+		}
+		for (const type of ['pointerup', 'mouseup', 'click']) {
+			control.dispatchEvent(new MouseEvent(type, { ...base, buttons: 0 }));
+		}
+
+		if (!element.paused === playing) {
+			cleanup();
+			resolve(true);
+		}
+	});
 }

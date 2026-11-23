@@ -74,9 +74,11 @@ class FakePlayButton {
 	getBoundingClientRect(): Record<string, number> {
 		return { x: 0, y: 0, left: 0, top: 0, width: 24, height: 24, right: 24, bottom: 24 };
 	}
-	dispatchEvent(): boolean {
-		this.clicks += 1;
-		this.media.paused = !this.media.paused;
+	dispatchEvent(event?: FakeInput | FakeMouseEvent): boolean {
+		if (!event || event.type === 'click') {
+			this.clicks += 1;
+			this.media.paused = !this.media.paused;
+		}
 		return true;
 	}
 }
@@ -116,9 +118,11 @@ class FakeContainer {
 			|| selector.includes('volume-track') || selector.includes('volume-slider')
 			|| selector.includes('role="slider"')) return this.track;
 		if (selector.includes('player-pause') || selector.includes('player-play')
+			|| selector.includes('btn-pause') || selector.includes('btn-play')
+			|| selector.includes('pause-btn') || selector.includes('play-btn')
 			|| selector.includes('title*="暂停"') || selector.includes('title*="播放"')
 			|| selector.includes('开始观看') || selector.includes('aria-label*="Pause"')
-			|| selector.includes('aria-label*="Play"')) return this.playButton;
+			|| selector.includes('aria-label*="Play"') || selector.includes('player-btn')) return this.playButton;
 		return null;
 	}
 	querySelectorAll(selector: string): unknown[] {
@@ -197,36 +201,36 @@ describe('site-native control projection', () => {
 	test('is a complete no-op when the page exposes no native control', async () => {
 		const media = new FakeMedia();
 		media.parentElement = null;
-		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
 		expect(await projectSiteNativeVolume(media as unknown as HTMLMediaElement, 70)).toBeNull();
 		expect(readSiteNativeVolumeLevel(media as unknown as HTMLMediaElement)).toBeNull();
 	});
 
-	test('does not throw when document has no querySelectorAll', () => {
+	test('does not throw when document has no querySelectorAll', async () => {
 		const media = new FakeMedia();
 		media.parentElement = new FakeContainer();
 		install();
 		(globalThis as unknown as Record<string, unknown>).document = {
 			dispatchEvent: () => true,
 		};
-		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
 	});
 
-	test('clicks the site play/pause button instead of writing a vetoed DOM pause', () => {
+	test('clicks the site play/pause button instead of writing a vetoed DOM pause', async () => {
 		const media = new FakeMedia();
 		const container = new FakeContainer();
 		container.playButton = new FakePlayButton(media);
 		media.parentElement = container;
 		install();
-		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(true);
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(true);
 		expect(media.paused).toBe(true);
 		expect(container.playButton.clicks).toBe(1);
 		// A second request for the same state must not click again.
-		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(true);
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(true);
 		expect(container.playButton.clicks).toBe(1);
 	});
 
-	test('ignores outer containers containing the media, zero-sized elements and tooltip/rotate controls', () => {
+	test('ignores outer containers containing the media, zero-sized elements and tooltip/rotate controls', async () => {
 		const media = new FakeMedia();
 		const container = new FakeContainer();
 		const outerWrapper = new FakePlayButton(media);
@@ -235,19 +239,19 @@ describe('site-native control projection', () => {
 		media.parentElement = container;
 		install();
 		// Contains media element -> skipped
-		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
 
 		// Zero size -> skipped
 		const zeroSize = new FakePlayButton(media);
 		zeroSize.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 });
 		container.playButton = zeroSize;
-		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
 
 		// Rotate / tooltip control -> skipped
 		const tooltipButton = new FakePlayButton(media);
 		Object.defineProperty(tooltipButton, 'className', { get: () => 'player-play-btn rotate-button' });
 		container.playButton = tooltipButton;
-		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
 	});
 
 	test('calibrates the site slider to the requested level and aligns the element mirror', async () => {
@@ -452,5 +456,84 @@ describe('site-native control projection', () => {
 		// A paused player may move its bar without refreshing the mirror. The
 		// projection must not become a second volume writer to compensate.
 		expect(media.volume).toBe(0.5);
+	});
+
+	test('distinguishes play and pause buttons when resuming and pausing', async () => {
+		const media = new FakeMedia();
+		const container = new FakeContainer();
+		const playBtn = new FakePlayButton(media);
+		const pauseBtn = new FakePlayButton(media);
+		Object.defineProperty(playBtn, 'className', { get: () => 'player-play-btn' });
+		Object.defineProperty(pauseBtn, 'className', { get: () => 'player-pause-btn' });
+		container.querySelector = (selector: string) => {
+			if (selector.includes('player-play') || selector.includes('btn-play') || selector.includes('play-btn')) return playBtn;
+			if (selector.includes('player-pause') || selector.includes('btn-pause') || selector.includes('pause-btn')) return pauseBtn;
+			return null;
+		};
+		container.querySelectorAll = (selector: string) => {
+			const found = container.querySelector(selector);
+			return found ? [found] : [];
+		};
+		media.parentElement = container;
+		install();
+
+		// Currently playing: request pause
+		media.paused = false;
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(true);
+		expect(media.paused).toBe(true);
+		expect(pauseBtn.clicks).toBe(1);
+		expect(playBtn.clicks).toBe(0);
+
+		// Currently paused: request resume play
+		expect(await projectSiteNativePlayback(media as unknown as HTMLMediaElement, true)).toBe(true);
+		expect(media.paused).toBe(false);
+		expect(playBtn.clicks).toBe(1);
+		expect(pauseBtn.clicks).toBe(1);
+	});
+
+	test('supports vertical volume tracks and projects vertical inputs', async () => {
+		const media = new FakeMedia();
+		const container = new FakeContainer();
+		const verticalTrack = new FakeTrack(media);
+		verticalTrack.getBoundingClientRect = () => ({
+			x: 0, y: 0, left: 0, top: 0, width: 12, height: 100, right: 12, bottom: 100,
+		});
+		verticalTrack.bar.getBoundingClientRect = () => ({
+			width: 12, height: verticalTrack.level * 100,
+		});
+		verticalTrack.dispatchEvent = (event: FakeInput) => {
+			verticalTrack.dispatched.push(event);
+			const ratio = Math.max(0, Math.min(1, (100 - event.clientY) / 100));
+			verticalTrack.level = ratio;
+			verticalTrack.bar.width = 12;
+			return true;
+		};
+		container.track = verticalTrack;
+		media.parentElement = container;
+		install();
+
+		verticalTrack.level = 0.7;
+		expect(readSiteNativeVolumeLevel(media as unknown as HTMLMediaElement)).toBe(70);
+
+		const level = await projectSiteNativeVolume(media as unknown as HTMLMediaElement, 40);
+		expect(level).toBe(40);
+		expect(verticalTrack.dispatched.length).toBeGreaterThan(0);
+	});
+
+	test('falls back to media volume mirror when site volume track is collapsed to prevent false zero collapse', () => {
+		const media = new FakeMedia();
+		media.volume = 0.75;
+		media.muted = false;
+		const container = new FakeContainer();
+		const track = new FakeTrack(media);
+		// Simulate collapsed popup bar
+		track.bar.width = 0;
+		(track as unknown as { offsetParent: null }).offsetParent = null;
+		container.track = track;
+		media.parentElement = container;
+		install();
+
+		// Should not read 0, but fallback to 75 from media.volume
+		expect(readSiteNativeVolumeLevel(media as unknown as HTMLMediaElement)).toBe(75);
 	});
 });

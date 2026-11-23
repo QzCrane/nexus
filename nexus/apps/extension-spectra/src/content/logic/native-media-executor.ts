@@ -1112,7 +1112,7 @@ export class NativeMediaExecutor {
 		// passive witness that keeps the snapshot and badge on the site's level.
 		if (siteNativeVolume !== null && audioTarget) {
 			const level = siteNativeVolume / 100;
-			if (Math.abs(audioTarget.element.volume - level) > 0.005) {
+			if (Math.abs(audioTarget.element.volume - level) > 0.02) {
 				audioTarget.element.volume = level;
 			}
 		}
@@ -1958,7 +1958,10 @@ export class NativeMediaExecutor {
 					// replayed by Huya's player because its state still says watching,
 					// and the stable readback then mismatches on every press. Pages
 					// without such a button keep the standard write below.
-					projectSiteNativePlayback(element, value as boolean);
+					const sitePlayback = projectSiteNativePlayback(element, value as boolean, { signal, isCurrent });
+					if (sitePlayback instanceof Promise) {
+						await sitePlayback;
+					}
 					// Playback never answers before its proof. A page is free to
 					// restart what we just paused — and to swallow the `pause` event
 					// while doing it — so the synchronous `paused` getter is the

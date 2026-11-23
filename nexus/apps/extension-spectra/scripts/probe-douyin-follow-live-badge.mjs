@@ -1020,7 +1020,7 @@ try {
 	}
 	if (profile && browserClosed) {
 		try {
-			await rm(profile, { recursive: true, force: true });
+			await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
 			out.steps.profileCleanup = { ok: true, scope: 'this invocation temporary profile only' };
 		} catch (error) { out.errors.push(`remove owned temporary profile: ${String(error)}`); }
 	} else if (profile) {
