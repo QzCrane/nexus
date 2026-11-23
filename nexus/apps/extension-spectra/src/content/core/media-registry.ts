@@ -450,12 +450,10 @@ export class MediaRegistry {
 					record.lastPlay = performance.now();
 					// A pre-rendered modal can become visible and start before the
 					// asynchronous IntersectionObserver delivers its new geometry.
-					const area = initialVisibleArea(element);
-					if (area > 0 || record.visibleArea === 0) record.visibleArea = area;
+					record.visibleArea = initialVisibleArea(element);
 					const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
 					if (active && active !== record) {
-						const activeArea = initialVisibleArea(active.element);
-						if (activeArea > 0 || active.visibleArea === 0) active.visibleArea = activeArea;
+						active.visibleArea = initialVisibleArea(active.element);
 					}
 					// A tiny probe clip starting to play is not a new presentation
 					// while the viewer's broadcast is still on screen. Use the same
@@ -466,8 +464,7 @@ export class MediaRegistry {
 					this.admitBetterCandidate(true);
 				}
 				if (type === 'pause' || type === 'ended' || type === 'leavepictureinpicture') {
-					const area = initialVisibleArea(element);
-					if (area > 0 || record.visibleArea === 0) record.visibleArea = area;
+					record.visibleArea = initialVisibleArea(element);
 					this.reconcileRetiredSelection();
 				}
 				if (type === 'loadstart' || type === 'emptied') this.refreshSource(element, true);
@@ -523,10 +520,20 @@ export class MediaRegistry {
 		if (!record) return;
 		record.visibleArea = initialVisibleArea(element);
 		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
-		if (active) active.visibleArea = initialVisibleArea(active.element);
+		if (active && active !== record) {
+			active.visibleArea = initialVisibleArea(active.element);
+			if (active.element.paused || active.element.ended) {
+				if (this.pausedSelectionKey === this.controlKey(active.target)) {
+					this.pausedSelectionKey = null;
+				}
+			}
+		}
 		this.refreshSource(element, false);
 		if (active && (active.element.paused || active.element.ended)) this.reconcileRetiredSelection();
 		this.establishInitialSelection(true);
+		if (this.activeMediaId !== record.target.mediaId && !element.paused && record.visibleArea > 0) {
+			this.selectRecord(record, true);
+		}
 		this.emit(record.target, type, element);
 	}
 
@@ -701,7 +708,7 @@ export class MediaRegistry {
 	private isSelectionProtected(
 		active: MediaRecord,
 		candidate: MediaRecord,
-		runningBroadcast = false,
+		runningPresentation = false,
 	): boolean {
 		// A presentation owner outranks geometry: a hidden fullscreen or PiP player
 		// is still the surface the viewer is controlling even when its layout box
@@ -714,7 +721,7 @@ export class MediaRegistry {
 			|| presented instanceof Element && presented.contains(active.element) && !presented.contains(candidate.element)) return true;
 		if (this.explicitSelectionKey === this.controlKey(active.target)) return true;
 		if (this.pausedSelectionKey === this.controlKey(active.target)
-			&& !(runningBroadcast && (active.element.paused || active.element.ended))) return true;
+			&& !(runningPresentation && (active.element.paused || active.element.ended))) return true;
 		// Nothing else pins a target. In particular a video whose layout box is
 		// empty is no longer a presentation, so an SPA that swaps players must be
 		// allowed to hand control to the successor it just mounted (SP-22.3 §2).
@@ -731,25 +738,28 @@ export class MediaRegistry {
 			this.establishInitialSelection(notify);
 			return;
 		}
-		// A paused selection cannot be what the viewer hears. A broadcast that is
-		// already running is proof of a live resource even when the page paints it
-		// through a canvas and its layout box stays empty; it may take over only a
-		// silent selection, so a playing owner is never churned and a viewer pause
-		// stays protected.
+		// A paused selection cannot be what the viewer hears. A broadcast or
+		// visible video that is already running is proof of a real presentation.
+		// It may take over only a silent selection, so a playing owner is never
+		// churned and an explicit viewer pause on the current presentation stays
+		// protected from small background previews.
 		const silent = active.element.paused || active.element.ended;
 		const challenger = this.bestRecord([...this.byElement.values()].filter((record) => {
-			// A broadcast that is already running is what the viewer hears; it is
-			// the only challenger allowed to release a paused-target pin.
-			const runningBroadcast = silent && !record.element.paused && isLiveMedia(record.element);
+			const isPresentation = !record.element.paused && !record.element.ended && (
+				isLiveMedia(record.element)
+				|| record.visibleArea >= active.visibleArea
+				|| active.visibleArea <= 0
+			);
+			const runningPresentation = silent && isPresentation;
 			return record !== active
 				&& !record.element.ended
-				&& !this.isSelectionProtected(active, record, runningBroadcast)
+				&& !this.isSelectionProtected(active, record, runningPresentation)
 				&& (!record.element.paused || isLiveMedia(record.element))
 				// A hidden or unlaid-out preview is not a presentation. Geometry is
 				// what proves the viewer can actually see this element; a live
 				// timeline does not. Playback is the exception: a running broadcast
 				// is audible, and a silent selection has nothing to protect.
-				&& (record.visibleArea > 0 || runningBroadcast);
+				&& (record.visibleArea > 0 || (runningPresentation && isLiveMedia(record.element)));
 		}));
 		if (!challenger || this.compare(challenger, active) <= 0) return;
 		this.selectRecord(challenger, notify);
@@ -797,7 +807,7 @@ export class MediaRegistry {
 				record !== active && record.target.kind === 'video'
 				&& !record.element.ended && record.visibleArea >= active.visibleArea
 				&& record.registrationOrder > active.registrationOrder
-				&& mediaRank(record.element, record.visibleArea)[0] >= activeLiveClass
+				&& (mediaRank(record.element, record.visibleArea)[0] >= activeLiveClass || !record.element.paused)
 			)));
 			if (successor) this.selectRecord(successor, true);
 			return;
@@ -948,6 +958,16 @@ export class MediaRegistry {
 	}
 
 	private compare(left: MediaRecord, right: MediaRecord): number {
+		// A retired, paused broadcast cannot suppress an actively playing successor:
+		// an SPA route switch from live back to a standard video feed presents
+		// the playing video to the viewer. When one element is paused and the other
+		// is playing with confirmed geometry and registered later, the active
+		// presentation wins over the silent historical stream.
+		const leftActivePlaying = !left.element.paused && !left.element.ended && left.visibleArea > 0;
+		const rightActivePlaying = !right.element.paused && !right.element.ended && right.visibleArea > 0;
+		if (leftActivePlaying && right.element.paused && left.registrationOrder > right.registrationOrder) return 1;
+		if (rightActivePlaying && left.element.paused && right.registrationOrder > left.registrationOrder) return -1;
+
 		// A past click cannot pin a paused/retired/hidden feed above a newly opened
 		// modal. Audio-only media is intentionally independent of geometry.
 		const interaction = (record: MediaRecord): number => record.element.ended

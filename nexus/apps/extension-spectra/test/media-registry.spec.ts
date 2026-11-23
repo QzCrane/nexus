@@ -1590,6 +1590,153 @@ describe('event-driven media registry', () => {
 			FakeMutationObserver.latest = null;
 		}
 	});
+
+	test('SPA video-to-video switch hands control to playing successor even when prior video was paused and pinned', () => {
+		const descriptors = captureGlobalDescriptors([
+			'document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const videoA = new FakeVideoElement(1);
+		const videoB = new FakeVideoElement(1);
+		videoA.paused = false;
+		videoA.duration = 60;
+		videoA.rect = { left: 0, top: 0, right: 1280, bottom: 720, width: 1280, height: 720 };
+		document.documentElement.descendants.push(videoA);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:spa-v2v-switch', frameId: 0 }),
+				() => undefined,
+			);
+			expect(registry.resolve(null)?.element).toBe(videoA);
+
+			// User pauses videoA, pinning it
+			videoA.paused = true;
+			registry.pinPaused(requireValue(registry.resolve(null)?.target));
+			videoA.dispatchEvent(new Event('pause'));
+
+			// SPA mounts videoB in the same document and plays it
+			videoB.paused = false;
+			videoB.duration = 120;
+			videoB.rect = { left: 0, top: 0, right: 1280, bottom: 720, width: 1280, height: 720 };
+			document.documentElement.descendants.push(videoB);
+			FakeMutationObserver.latest?.emit([videoB]);
+			videoB.dispatchEvent(new Event('play'));
+
+			expect(registry.resolve(null)?.element).toBe(videoB);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
+	test('SPA live-to-video switch hands control to playing finite video when broadcast stops', () => {
+		const descriptors = captureGlobalDescriptors([
+			'document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const live = new FakeVideoElement(1);
+		const video = new FakeVideoElement(1);
+		live.paused = false;
+		live.duration = Number.POSITIVE_INFINITY;
+		live.rect = { left: 0, top: 0, right: 1280, bottom: 720, width: 1280, height: 720 };
+		document.documentElement.descendants.push(live);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:spa-l2v-switch', frameId: 0 }),
+				() => undefined,
+			);
+			expect(registry.resolve(null)?.element).toBe(live);
+
+			// Viewer leaves live room: live stream pauses and is pinned/retired
+			live.paused = true;
+			registry.pinPaused(requireValue(registry.resolve(null)?.target));
+			live.dispatchEvent(new Event('pause'));
+
+			// Regular video feed mounts and plays in the same document
+			video.paused = false;
+			video.duration = 60;
+			video.rect = { left: 0, top: 0, right: 1280, bottom: 720, width: 1280, height: 720 };
+			document.documentElement.descendants.push(video);
+			FakeMutationObserver.latest?.emit([video]);
+			video.dispatchEvent(new Event('play'));
+
+			expect(registry.resolve(null)?.element).toBe(video);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
+	test('observeNativeMediaChange aligns selection and emits event for native UI slider interaction', () => {
+		const descriptors = captureGlobalDescriptors([
+			'document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver',
+		]);
+		const document = new FakeDocument();
+		const oldVideo = new FakeVideoElement(1);
+		const newVideo = new FakeVideoElement(0.5);
+		oldVideo.paused = true;
+		oldVideo.rect = { left: 0, top: 0, right: 1280, bottom: 720, width: 1280, height: 720 };
+		newVideo.paused = false;
+		newVideo.rect = { left: 0, top: 0, right: 1280, bottom: 720, width: 1280, height: 720 };
+		document.documentElement.descendants.push(oldVideo, newVideo);
+
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		const events: string[] = [];
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(
+				new DocumentRuntimeContext({ documentId: 'document:native-sync', frameId: 0 }),
+				(target, event) => {
+					if (event === 'volumechange') events.push(target.mediaId);
+				},
+			);
+			registry.pinPaused(requireValue(registry.resolve(null)?.target));
+
+			// User drags native volume slider on newVideo
+			newVideo.volume = 0.8;
+			registry.observeNativeMediaChange(newVideo, 'volumechange');
+
+			expect(registry.resolve(null)?.element).toBe(newVideo);
+			expect(events.length).toBeGreaterThan(0);
+			expect(events.at(-1)).toBe(registry.resolve(null)?.target.mediaId);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
 });
 
 function installGlobal(key: string, value: unknown): void {
