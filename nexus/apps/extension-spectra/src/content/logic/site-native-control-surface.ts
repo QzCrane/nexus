@@ -68,10 +68,15 @@ function findVolumeTrack(element: Element): HTMLElement | null {
 function findPlaybackButton(element: Element): HTMLElement | null {
 	for (const candidate of queryAll(controlScope(element), PLAYBACK_BUTTON_SELECTOR)) {
 		if (!isUsableControl(candidate)) continue;
+		if (candidate === element || (typeof candidate.contains === 'function' && candidate.contains(element))) continue;
+		const rect = candidate.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) continue;
 		const className = typeof candidate.className === 'string' ? candidate.className : '';
 		const title = typeof candidate.getAttribute === 'function'
 			? candidate.getAttribute('title') ?? '' : '';
-		if (/refresh|reload|fullscreen|刷新|全屏/i.test(`${className} ${title}`)) continue;
+		const aria = typeof candidate.getAttribute === 'function'
+			? candidate.getAttribute('aria-label') ?? '' : '';
+		if (/refresh|reload|fullscreen|rotate|tooltips|tooltip|刷新|全屏|旋转/i.test(`${className} ${title} ${aria}`)) continue;
 		return candidate;
 	}
 	return null;

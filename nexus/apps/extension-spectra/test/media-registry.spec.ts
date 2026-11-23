@@ -858,6 +858,55 @@ describe('event-driven media registry', () => {
 		}
 	});
 
+	test('retains viewer paused pin and selection when resource revision advances and successor pauses', () => {
+		const descriptors = captureGlobalDescriptors(['document', 'Node', 'Element', 'HTMLMediaElement', 'HTMLVideoElement',
+			'MutationObserver', 'IntersectionObserver']);
+		const document = new FakeDocument();
+		const feed = new FakeVideoElement(1);
+		const background = new FakeVideoElement(1);
+		feed.paused = false;
+		feed.rect = { left: 0, top: 0, right: 1_280, bottom: 720, width: 1_280, height: 720 };
+		background.paused = false;
+		background.rect = { left: 0, top: 0, right: 320, bottom: 180, width: 320, height: 180 };
+		document.documentElement.descendants.push(feed, background);
+		installGlobal('document', document);
+		installGlobal('Node', EventTarget);
+		installGlobal('Element', FakeElement);
+		installGlobal('HTMLMediaElement', FakeMediaElement);
+		installGlobal('HTMLVideoElement', FakeVideoElement);
+		installGlobal('MutationObserver', FakeMutationObserver);
+		installGlobal('IntersectionObserver', FakeIntersectionObserver);
+
+		let registry: MediaRegistry | null = null;
+		try {
+			registry = new MediaRegistry(new DocumentRuntimeContext({ documentId: 'document:paused-source-churn', frameId: 0 }));
+			const initialTarget = requireValue(registry.resolve(null)?.target, 'Expected the feed target');
+			expect(registry.resolve(null)?.element).toBe(feed);
+
+			// Viewer pauses the feed and pins it
+			feed.paused = true;
+			registry.pinPaused(initialTarget);
+			expect(registry.selectionPinnedByViewer).toBe(true);
+
+			// Stream reconnects / source changes on the paused element, incrementing sourceRevision
+			feed.src = 'https://example.com/live-stream-reconnect.flv';
+			feed.dispatchEvent(new Event('loadstart'));
+			expect(registry.resolve(null)?.target.sourceRevision).toBe(initialTarget.sourceRevision + 1);
+
+			// The paused pin must remain held by controlKey, not lost due to sourceRevision mismatch
+			expect(registry.selectionPinnedByViewer).toBe(true);
+
+			// Even after a pause event fires on the reconnected stream, feed must remain the selected media
+			feed.dispatchEvent(new Event('pause'));
+			expect(registry.resolve(null)?.element).toBe(feed);
+			expect(registry.selectionPinnedByViewer).toBe(true);
+		} finally {
+			registry?.dispose();
+			restoreGlobalDescriptors(descriptors);
+			FakeMutationObserver.latest = null;
+		}
+	});
+
 	test('seeds initial selection from visible geometry before IntersectionObserver delivery', () => {
 		const descriptors = captureGlobalDescriptors([
 			'document',

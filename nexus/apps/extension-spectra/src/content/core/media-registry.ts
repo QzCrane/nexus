@@ -303,7 +303,7 @@ export class MediaRegistry {
 	get selectionPinnedByViewer(): boolean {
 		const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
 		if (!active) return false;
-		const key = this.targetKey(active.target);
+		const key = this.controlKey(active.target);
 		return this.explicitSelectionKey === key || this.pausedSelectionKey === key;
 	}
 
@@ -446,13 +446,17 @@ export class MediaRegistry {
 		] as const) {
 			const listener = (): void => {
 				if (type === 'play') {
-					if (this.pausedSelectionKey === this.targetKey(record.target)) this.pausedSelectionKey = null;
+					if (this.pausedSelectionKey === this.controlKey(record.target)) this.pausedSelectionKey = null;
 					record.lastPlay = performance.now();
 					// A pre-rendered modal can become visible and start before the
 					// asynchronous IntersectionObserver delivers its new geometry.
-					record.visibleArea = initialVisibleArea(element);
+					const area = initialVisibleArea(element);
+					if (area > 0 || record.visibleArea === 0) record.visibleArea = area;
 					const active = this.activeMediaId ? this.byId.get(this.activeMediaId) : undefined;
-					if (active && active !== record) active.visibleArea = initialVisibleArea(active.element);
+					if (active && active !== record) {
+						const activeArea = initialVisibleArea(active.element);
+						if (activeArea > 0 || active.visibleArea === 0) active.visibleArea = activeArea;
+					}
 					// A tiny probe clip starting to play is not a new presentation
 					// while the viewer's broadcast is still on screen. Use the same
 					// admission rules as every other lifecycle event: they keep the
@@ -462,7 +466,8 @@ export class MediaRegistry {
 					this.admitBetterCandidate(true);
 				}
 				if (type === 'pause' || type === 'ended' || type === 'leavepictureinpicture') {
-					record.visibleArea = initialVisibleArea(element);
+					const area = initialVisibleArea(element);
+					if (area > 0 || record.visibleArea === 0) record.visibleArea = area;
 					this.reconcileRetiredSelection();
 				}
 				if (type === 'loadstart' || type === 'emptied') this.refreshSource(element, true);
@@ -546,8 +551,8 @@ export class MediaRegistry {
 		// A pin or an explicit pick belonged to the element that just left. Keeping
 		// the key would let a detached identity protect its successor's slot, which
 		// is exactly what blocked the live replacement after a video -> live swap.
-		if (this.explicitSelectionKey === this.targetKey(record.target)) this.explicitSelectionKey = null;
-		if (this.pausedSelectionKey === this.targetKey(record.target)) this.pausedSelectionKey = null;
+		if (this.explicitSelectionKey === this.controlKey(record.target)) this.explicitSelectionKey = null;
+		if (this.pausedSelectionKey === this.controlKey(record.target)) this.pausedSelectionKey = null;
 		this.retireControlIdentity(record.target);
 		this.rebuildMediaAttributeObservation();
 		this.emit(record.target, 'removed', element, 'detached');
@@ -707,8 +712,8 @@ export class MediaRegistry {
 			// A fullscreen player container can contain both a pre-roll and the
 			// broadcast. Protect its scope without pinning the pre-roll inside it.
 			|| presented instanceof Element && presented.contains(active.element) && !presented.contains(candidate.element)) return true;
-		if (this.explicitSelectionKey === this.targetKey(active.target)) return true;
-		if (this.pausedSelectionKey === this.targetKey(active.target)
+		if (this.explicitSelectionKey === this.controlKey(active.target)) return true;
+		if (this.pausedSelectionKey === this.controlKey(active.target)
 			&& !(runningBroadcast && (active.element.paused || active.element.ended))) return true;
 		// Nothing else pins a target. In particular a video whose layout box is
 		// empty is no longer a presentation, so an SPA that swaps players must be
@@ -773,8 +778,8 @@ export class MediaRegistry {
 			|| fullscreen === active.element
 			|| fullscreen instanceof Element && fullscreen.contains(active.element)) return;
 		if (!active.element.ended && active.visibleArea > 0) {
-			if (!active.element.paused || this.pausedSelectionKey === this.targetKey(active.target)
-				|| this.explicitSelectionKey === this.targetKey(active.target)) return;
+			if (!active.element.paused || this.pausedSelectionKey === this.controlKey(active.target)
+				|| this.explicitSelectionKey === this.controlKey(active.target)) return;
 			// The player the viewer owned is still registered but stopped
 			// presenting. A live element the page mounts is routinely paused with
 			// `readyState = 0` until its first frame, so requiring playback here is
@@ -810,14 +815,14 @@ export class MediaRegistry {
 		const record = this.recordForTarget(target);
 		if (!record) return false;
 		this.selectRecord(record, true);
-		this.explicitSelectionKey = this.targetKey(record.target);
+		this.explicitSelectionKey = this.controlKey(record.target);
 		return true;
 	}
 
 	/** Explicit pause/selection ownership differs from a historical pointer. */
 	pinPaused(target: MediaTarget): void {
 		const record = this.recordForTarget(target);
-		if (record) this.pausedSelectionKey = this.targetKey(record.target);
+		if (record) this.pausedSelectionKey = this.controlKey(record.target);
 	}
 
 	private recordForTarget(target: MediaTarget): MediaRecord | null {

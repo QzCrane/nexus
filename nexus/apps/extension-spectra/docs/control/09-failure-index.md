@@ -65,6 +65,7 @@ flowchart TD
 | 插件改了音量，站点自己的音量条不动；无控制器的直播页上声音也不变 | 抖音 `dom-native` 页写 `element.volume` 时站点监听原生 `volumechange` 自己同步 UI；video-only 流走 `documentOutput`/Capture。但虎牙 `102411` 的 `vplayer.js` 才是可听电平与音量条的 owner：外部写 `element.volume=0.8` 只改 DOM 镜像，站点条仍 12.5px。两站不能混为一条结论 | 053、049 | guarded |
 | 虎牙暂停按钮每次都报 `Playback readback mismatch: requested playing=false; after write=false; stable=true` | 站点播放器是播放状态 owner。isolated world 的 raw `element.pause()` 让元素停下，但 `vplayer.js` 内部仍是「观看中」，约 30ms 后再次 `play()`；稳定读回为 `true`，与 `requested=false` 冲突，必然抛错。不是 ACK 过严，也不是偶发时序 | 045 | guarded |
 | 虎牙音量「双向都不同步」；70 后暂停读回 100 / processor 失败被报成功 | 既有双向问题通过站点轨道与 display level/gain input 分离修复；11-22 新回归是非音量命令清掉站点证人，以及站点校准成功覆盖失败/缺失 processor ACK，见第 3 段既有虎牙记录 | 053、049、045 | guarded（11-14 范围；11-22 回归待实机） |
+| 抖音直播控制无法正常暂停和继续，点了一次暂停之后整个都失效了 | 直播流暂停/换流使 `sourceRevision` 递增，而暂停锁定此前绑定 `targetKey`（含修订号）导致锁失效被退场；叠加 pause 盲目覆盖几何为 0 及站点按钮误匹配播放器大容器派发点击 | 045、054、056 | guarded |
 | 按了暂停却还在放（或反过来） | 写入被当成成功，稳定证明没完成就作答 | 045 | rule |
 | 角标显示旧音量 / 不刷新 / 必须打开 Popup 才同步 / 新开页面凭空出现角标 / 同文档 SPA 首次音量 ACK 报 older-selection | 既有加载、attach/替换值发布、漏发现/漏准入、delegate 错误取证与 usage 问题见第 5 段；本轮还定位到旧方案允许未选中 target 携 registry selection 戳发布，导致 target/stamp 失配。修复捕获事件到当前 runtime 的交接及 registry 准入，不让未选中样本夺 target，不靠可信手势换 epoch 或 Background 改戳绕过 ACK 守卫 | 052、014、056、066、I8、I9、I10 | guarded（既有用例；11-22 同文档 SPA 待实机） |
 | 音量条不跟手、拖完回弹、数字冻结在 100 | 呈现值来自已确认快照而不是当前手势；或把阈值当成 Capture | 048、049、057 | rule |
@@ -327,13 +328,24 @@ flowchart TD
   因此不把「修复后 0/0」单独当作因果证明，只与单测、修复前门户基线合起来支持结论。
   证据见 [O11 启动投影证据](../../../../docs/research/evidence/2026-11-15-o11-startup-projection-proof.json)。
 
-**4. 按了暂停却还在放（rule）**
+**4. 按了暂停却还在放（rule / guarded）**
 
 - 写入成功与稳定证明是两个事实；`speed`、`playing`、page-controller 写入与处理器输出必须在同一事务内
   等待证明，只有合格的标准 DOM 音量/静音可以先答 `written`。
 - 规则位置：05 §11.1 与 [08](08-invariants-and-gates.md) 的 045。
 - 虎牙的 `readback-mismatch` 不是「判据过严」而是站点重放写入：见上一段第四轮复核。
   稳定读回判据保持不动，修复的是写入对象（站点自己的按钮），不是放宽 ACK。
+- **抖音直播间暂停即失效（2026-11-23 根治）**:
+  - 现象：抖音直播间中点击暂停后无法继续播放，后续所有控制（音量/继续/热键）全部报废并抛出 `stale-media-source`。
+  - 因果链：
+    1. 选区锁绑定错误身份：直播流暂停时播放器重置流缓冲导致 `sourceRevision` 递增。原 `media-registry.ts` 中 `pausedSelectionKey` 与 `explicitSelectionKey` 存储的是携带 `sourceRevision` 的 `targetKey`；修订号一变，锁立刻失配失效，`reconcileRetiredSelection` 判定主直播已退场，直接移交选区或置空，随后的 `isSelectedTarget` 抛错 `stale-media-source: Playback target is no longer the selected media`；
+    2. 瞬时几何抹杀：`pause` 监听中曾无条件调用 `initialVisibleArea` 覆盖 `record.visibleArea`，在瞬时无尺寸时清零呈现几何；
+    3. 控件发现过度贪婪：`findPlaybackButton` 之前误将包围 `<video>` 的播放器大容器（`LivePlayer_PreCreatePlayer`）和 0 尺寸占位元素当成按钮，派发 synthetic click 导致内部状态机异常。
+  - 落地解法：
+    - `pausedSelectionKey`、`explicitSelectionKey`、`selectionPinnedByViewer`、`isSelectionProtected`、`reconcileRetiredSelection`、`select`、`pinPaused`、`unregister` 全量统一采用 `controlKey`（`documentId:frameId:mediaId`），锁定宿主受控元素身份而非瞬时资源修订号；
+    - `pause` 与 `play` 事件统一保留正向呈现几何（`if (area > 0 || record.visibleArea === 0) record.visibleArea = area`）；
+    - `findPlaybackButton` 增加祖先容器过滤（`candidate.contains(element)`）与有效尺寸检查（`rect.width > 0 && rect.height > 0`），排除 `rotate`/`tooltip` 等干扰元素。
+  - 门禁与回归：`test/media-registry.spec.ts` 补充了资源修订递增下保持暂停选区锁的专项回归测试；`test/site-native-control-surface.spec.ts` 补充了祖先容器、零尺寸和旋转按钮的过滤测试。
 
 **5. 角标不刷新 / 同文档 SPA 首次音量 ACK 失配（guarded：既有用例；11-22 新链路待实机）**
 

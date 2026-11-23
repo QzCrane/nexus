@@ -226,6 +226,30 @@ describe('site-native control projection', () => {
 		expect(container.playButton.clicks).toBe(1);
 	});
 
+	test('ignores outer containers containing the media, zero-sized elements and tooltip/rotate controls', () => {
+		const media = new FakeMedia();
+		const container = new FakeContainer();
+		const outerWrapper = new FakePlayButton(media);
+		(outerWrapper as unknown as { contains: (node: unknown) => boolean }).contains = (node) => node === media;
+		container.playButton = outerWrapper;
+		media.parentElement = container;
+		install();
+		// Contains media element -> skipped
+		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
+
+		// Zero size -> skipped
+		const zeroSize = new FakePlayButton(media);
+		zeroSize.getBoundingClientRect = () => ({ x: 0, y: 0, left: 0, top: 0, width: 0, height: 0, right: 0, bottom: 0 });
+		container.playButton = zeroSize;
+		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
+
+		// Rotate / tooltip control -> skipped
+		const tooltipButton = new FakePlayButton(media);
+		Object.defineProperty(tooltipButton, 'className', { get: () => 'player-play-btn rotate-button' });
+		container.playButton = tooltipButton;
+		expect(projectSiteNativePlayback(media as unknown as HTMLMediaElement, false)).toBe(false);
+	});
+
 	test('calibrates the site slider to the requested level and aligns the element mirror', async () => {
 		const media = new FakeMedia();
 		const container = new FakeContainer();
